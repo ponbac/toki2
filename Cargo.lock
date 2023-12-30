@@ -84,6 +84,9 @@ dependencies = [
  "azure_devops_rust_api",
  "azure_identity",
  "dotenvy",
+ "serde",
+ "serde_json",
+ "time",
  "tokio",
 ]
 
