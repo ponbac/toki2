@@ -1,0 +1,17 @@
+[package]
+name = "az-devops"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+azure_devops_rust_api = { version = "0.15.1", features = [
+    "git",
+    "pipelines",
+    "work",
+    "graph",
+] }
+azure_identity = "0.18.1"
+dotenvy = "0.15.7"
+tokio = { version = "1.35.1", features = ["full"] }
