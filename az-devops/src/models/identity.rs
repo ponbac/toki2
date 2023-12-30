@@ -1,4 +1,4 @@
-use azure_devops_rust_api::git::models::IdentityRef;
+use azure_devops_rust_api::git::models::{IdentityRef, IdentityRefWithVote};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -8,6 +8,37 @@ pub struct Identity {
     pub display_name: String,
     pub unique_name: String,
     pub avatar_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Vote {
+    Approved,
+    ApprovedWithSuggestions,
+    NoResponse,
+    WaitingForAuthor,
+    Rejected,
+}
+
+impl From<i64> for Vote {
+    fn from(vote: i64) -> Self {
+        match vote {
+            10 => Self::Approved,
+            5 => Self::ApprovedWithSuggestions,
+            0 => Self::NoResponse,
+            -5 => Self::WaitingForAuthor,
+            -10 => Self::Rejected,
+            _ => panic!("Invalid vote value"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IdentityWithVote {
+    pub identity: Identity,
+    pub vote: Option<Vote>,
+    pub has_declined: Option<bool>,
+    pub is_required: Option<bool>,
+    pub is_flagged: Option<bool>,
 }
 
 impl From<IdentityRef> for Identity {
@@ -21,7 +52,23 @@ impl From<IdentityRef> for Identity {
                 .links
                 .unwrap()
                 .get("avatar")
-                .map(Value::to_string),
+                .map(|obj| {
+                    Value::to_string(obj.get("href").unwrap())
+                        .trim_matches('"')
+                        .to_string()
+                }),
+        }
+    }
+}
+
+impl From<IdentityRefWithVote> for IdentityWithVote {
+    fn from(identity: IdentityRefWithVote) -> Self {
+        Self {
+            identity: identity.identity_ref.into(),
+            vote: identity.vote.map(|vote| vote.into()),
+            has_declined: identity.has_declined,
+            is_required: identity.is_required,
+            is_flagged: identity.is_flagged,
         }
     }
 }

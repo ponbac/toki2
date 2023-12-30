@@ -17,9 +17,10 @@ async fn main() {
         .await
         .unwrap();
 
-    let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
+    let all_pull_requests = repo_client.get_all_pull_requests().await.unwrap();
 
-    for pr in &pull_requests {
+    println!("\nAll pull requests:");
+    for pr in &all_pull_requests {
         let pr = pr.clone();
 
         println!(
@@ -30,4 +31,6 @@ async fn main() {
             pr.created_by.avatar_url.unwrap()
         );
     }
+
+    println!("\nFound {} pull requests", all_pull_requests.len());
 }
