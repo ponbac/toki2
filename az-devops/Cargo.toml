@@ -9,7 +9,7 @@ edition = "2021"
 azure_devops_rust_api = { version = "0.15.1", features = [
     "git",
     "pipelines",
-    "work",
+    "wit",
     "graph",
 ] }
 azure_identity = "0.18.1"
