@@ -2,12 +2,12 @@ use azure_devops_rust_api::{
     git::{self},
     wit::{
         self,
-        models::{work_item_batch_get_request::Expand, WorkItem, WorkItemBatchGetRequest},
+        models::{work_item_batch_get_request::Expand, WorkItemBatchGetRequest},
     },
     Credential,
 };
 
-use crate::{models::PullRequest, Thread};
+use crate::{models::PullRequest, Thread, WorkItem};
 
 pub struct RepoClient {
     git_client: git::Client,
@@ -156,7 +156,10 @@ impl RepoClient {
             .await?
             .value;
 
-        Ok(work_items)
+        Ok(work_items
+            .into_iter()
+            .map(WorkItem::from)
+            .collect::<Vec<_>>())
     }
 }
 
@@ -204,9 +207,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_work_items() {
         let repo_client = get_repo_client().await;
-        let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
 
+        let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
         assert!(!pull_requests.is_empty());
+
         let test_pr = pull_requests
             .iter()
             .find(|pr| pr.title == "[FE] Edit subgroups")
@@ -216,7 +220,6 @@ mod tests {
             .get_work_item_ids_in_pull_request(test_pr.id)
             .await
             .unwrap();
-
         assert!(!work_item_ids.is_empty());
 
         let work_items = repo_client.get_work_items(work_item_ids).await.unwrap();
