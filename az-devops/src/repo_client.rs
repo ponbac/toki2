@@ -220,7 +220,6 @@ mod tests {
         assert!(!work_item_ids.is_empty());
 
         let work_items = repo_client.get_work_items(work_item_ids).await.unwrap();
-        println!("{:?}", work_items);
         assert!(!work_items.is_empty());
     }
 }
