@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <div>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.12.1.min.js"></script>
+        <div id="plotly-html-element" class="plotly-graph-div" style="height:100%; width:100%;"></div>
+
+        <script type="module">
+            const graph_div = document.getElementById("plotly-html-element");
+            await Plotly.newPlot(graph_div, {
+  "data": [
+    {
+      "type": "scatter",
+      "x": [
+        "2021-December",
+        "2022-January",
+        "2022-February",
+        "2022-March",
+        "2022-April",
+        "2022-May",
+        "2022-June",
+        "2022-August",
+        "2022-September",
+        "2022-October",
+        "2022-November",
+        "2022-December",
+        "2023-January",
+        "2023-February",
+        "2023-March",
+        "2023-April",
+        "2023-May",
+        "2023-June",
+        "2023-July",
+        "2023-August",
+        "2023-September",
+        "2023-October",
+        "2023-November",
+        "2023-December",
+        "2024-January"
+      ],
+      "y": [
+        "18",
+        "6",
+        "76",
+        "39",
+        "3",
+        "8",
+        "11",
+        "1",
+        "65",
+        "139",
+        "108",
+        "54",
+        "40",
+        "108",
+        "172",
+        "83",
+        "74",
+        "56",
+        "31",
+        "27",
+        "56",
+        "78",
+        "110",
+        "50",
+        "6"
+      ]
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "PRs created per month"
+    },
+    "xaxis": {
+      "range": [
+        "2021-12-01",
+        "2024-01-31"
+      ]
+    }
+  },
+  "config": {}
+});
+        </script>
+    </div>
+</body>
+
+</html>
