@@ -1,5 +1,5 @@
 use azure_devops_rust_api::{
-    git::{self},
+    git::{self, models::GitCommitRef},
     wit::{
         self,
         models::{work_item_batch_get_request::Expand, WorkItemBatchGetRequest},
@@ -57,10 +57,7 @@ impl RepoClient {
             .await?
             .value;
 
-        Ok(pull_requests
-            .into_iter()
-            .map(PullRequest::from)
-            .collect::<Vec<_>>())
+        Ok(pull_requests.into_iter().map(PullRequest::from).collect())
     }
 
     pub async fn get_all_pull_requests(
@@ -90,10 +87,7 @@ impl RepoClient {
             skip += top;
         }
 
-        Ok(pull_requests
-            .into_iter()
-            .map(PullRequest::from)
-            .collect::<Vec<_>>())
+        Ok(pull_requests.into_iter().map(PullRequest::from).collect())
     }
 
     pub async fn get_threads_in_pull_request(
@@ -115,7 +109,7 @@ impl RepoClient {
         Ok(threads
             .into_iter()
             .map(|t| Thread::from(t.comment_thread))
-            .collect::<Vec<_>>())
+            .collect())
     }
 
     pub async fn get_work_item_ids_in_pull_request(
@@ -138,7 +132,26 @@ impl RepoClient {
             .into_iter()
             .filter_map(|r| r.id)
             .map(|id| id.parse().unwrap())
-            .collect::<Vec<_>>())
+            .collect())
+    }
+
+    pub async fn get_commits_in_pull_request(
+        &self,
+        pull_request_id: i32,
+    ) -> Result<Vec<GitCommitRef>, Box<dyn std::error::Error>> {
+        let commits = self
+            .git_client
+            .pull_request_commits_client()
+            .get_pull_request_commits(
+                &self.organization,
+                &self.repo_id,
+                pull_request_id,
+                &self.project,
+            )
+            .await?
+            .value;
+
+        Ok(commits)
     }
 
     pub async fn get_work_items(
@@ -156,10 +169,7 @@ impl RepoClient {
             .await?
             .value;
 
-        Ok(work_items
-            .into_iter()
-            .map(WorkItem::from)
-            .collect::<Vec<_>>())
+        Ok(work_items.into_iter().map(WorkItem::from).collect())
     }
 }
 
@@ -202,6 +212,22 @@ mod tests {
             .unwrap();
 
         assert!(!threads.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_pull_request_commits() {
+        let repo_client = get_repo_client().await;
+        let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
+
+        assert!(!pull_requests.is_empty());
+
+        let test_pr = &pull_requests[0];
+        let commits = repo_client
+            .get_commits_in_pull_request(test_pr.id)
+            .await
+            .unwrap();
+
+        assert!(!commits.is_empty());
     }
 
     #[tokio::test]

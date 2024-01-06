@@ -1,6 +1,6 @@
 use azure_devops_rust_api::git::models::{
     git_pull_request::{MergeFailureType, MergeStatus, Status},
-    GitCommitRef, GitPullRequest, GitPullRequestCompletionOptions,
+    GitPullRequest, GitPullRequestCompletionOptions,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -20,7 +20,6 @@ pub struct PullRequest {
     pub closed_at: Option<OffsetDateTime>,
     pub auto_complete_set_by: Option<Identity>,
     pub completion_options: Option<GitPullRequestCompletionOptions>,
-    pub commits: Vec<GitCommitRef>,
     pub is_draft: bool,
     pub merge_status: Option<MergeStatus>,
     pub merge_job_id: Option<String>,
@@ -44,7 +43,6 @@ impl From<GitPullRequest> for PullRequest {
             closed_at: pr.closed_date,
             auto_complete_set_by: pr.auto_complete_set_by.map(|identity| identity.into()),
             completion_options: pr.completion_options,
-            commits: pr.commits,
             is_draft: pr.is_draft,
             merge_status: pr.merge_status,
             merge_job_id: pr.merge_id,

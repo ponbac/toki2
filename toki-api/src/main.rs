@@ -6,8 +6,6 @@ use az_devops::RepoClient;
 async fn main() {
     dotenvy::from_filename("./toki-api/.env.local").ok();
 
-    println!("Hello, world!");
-
     let organization = env::var("ADO_ORGANIZATION").unwrap();
     let project = env::var("ADO_PROJECT").unwrap();
     let repo_name = env::var("ADO_REPO").unwrap();
@@ -17,20 +15,12 @@ async fn main() {
         .await
         .unwrap();
 
-    let all_pull_requests = repo_client.get_all_pull_requests().await.unwrap();
+    let pull_requests = repo_client.get_all_pull_requests().await.unwrap();
 
-    println!("\nAll pull requests:");
-    for pr in &all_pull_requests {
-        let pr = pr.clone();
-
+    for (i, pr) in pull_requests.iter().rev().enumerate() {
         println!(
-            "PR: {} by {} ({}, {})",
-            pr.title,
-            pr.created_by.display_name,
-            pr.created_by.unique_name,
-            pr.created_by.avatar_url.unwrap()
+            "{}: {} by {} ({})",
+            i, pr.title, pr.created_by.display_name, pr.created_by.unique_name,
         );
     }
-
-    println!("\nFound {} pull requests", all_pull_requests.len());
 }
