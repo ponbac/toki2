@@ -1,8 +1,9 @@
-use std::env;
+use std::{collections::HashMap, env};
 
 use az_devops::RepoClient;
 use itertools::Itertools;
 use plotly::{common::Title, layout::Axis, Layout, Plot, Scatter};
+use time::Month;
 
 #[tokio::main]
 async fn main() {
@@ -18,6 +19,7 @@ async fn main() {
         .unwrap();
 
     let pull_requests = repo_client.get_all_pull_requests().await.unwrap();
+    // let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
 
     for (i, pr) in pull_requests.iter().rev().enumerate() {
         println!(
@@ -29,31 +31,38 @@ async fn main() {
         );
     }
 
-    // group by year and month created
-    let pull_requests_by_month = pull_requests
-        .iter()
-        .sorted_by(|a, b| b.created_at.cmp(&a.created_at))
-        .rev()
-        .group_by(|pr| format!("{}-{}", pr.created_at.year(), pr.created_at.month()))
-        .into_iter()
-        .map(|(key, group)| (key, group.count()))
-        .collect::<Vec<(String, usize)>>();
+    let mut month_author_counts = HashMap::new();
+    for pr in &pull_requests {
+        let month = format!(
+            "{}-{}",
+            pr.created_at.year(),
+            pr.created_at.month().as_double_digit_str()
+        );
+        let entry = month_author_counts
+            .entry((month, pr.created_by.display_name.clone()))
+            .or_insert(0);
+        *entry += 1;
+    }
 
-    // use plotly to plot the data
-    let date = pull_requests_by_month
-        .clone()
-        .into_iter()
-        .map(|(month, _)| month)
-        .collect::<Vec<_>>();
-    let count = pull_requests_by_month
-        .iter()
-        .map(|(_, count)| count.to_string())
-        .collect::<Vec<_>>();
-
-    let trace = Scatter::new(date, count);
+    // Ensure each author has an entry for each month
+    let mut author_months = HashMap::new();
+    for ((month, author), count) in month_author_counts {
+        author_months
+            .entry(author)
+            .or_insert_with(Vec::new)
+            .push((month, count));
+    }
 
     let mut plot = Plot::new();
-    plot.add_trace(trace);
+    for (author, mut months_counts) in author_months {
+        // Sort by month
+        months_counts.sort_by(|(month_a, _), (month_b, _)| month_a.cmp(month_b));
+
+        // Unzip into separate vectors
+        let (dates, counts): (Vec<_>, Vec<_>) = months_counts.into_iter().unzip();
+        let trace = Scatter::new(dates, counts).name(&author);
+        plot.add_trace(trace);
+    }
 
     let layout = Layout::new()
         .x_axis(Axis::new().range(vec!["2021-12-01", "2024-01-31"]))
@@ -62,4 +71,27 @@ async fn main() {
 
     let html = plot.to_html();
     std::fs::write("plot.html", html).unwrap();
+}
+
+trait MonthExt {
+    fn as_double_digit_str(&self) -> &'static str;
+}
+
+impl MonthExt for Month {
+    fn as_double_digit_str(&self) -> &'static str {
+        match self {
+            Month::January => "01",
+            Month::February => "02",
+            Month::March => "03",
+            Month::April => "04",
+            Month::May => "05",
+            Month::June => "06",
+            Month::July => "07",
+            Month::August => "08",
+            Month::September => "09",
+            Month::October => "10",
+            Month::November => "11",
+            Month::December => "12",
+        }
+    }
 }
