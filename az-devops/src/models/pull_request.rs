@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use super::identity::{Identity, IdentityWithVote};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PullRequest {
     pub id: i32,
     pub title: String,
@@ -16,7 +17,9 @@ pub struct PullRequest {
     pub target_branch: String,
     pub status: Status,
     pub created_by: Identity,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     pub closed_at: Option<OffsetDateTime>,
     pub auto_complete_set_by: Option<Identity>,
     pub completion_options: Option<GitPullRequestCompletionOptions>,

@@ -10,7 +10,9 @@ pub struct Thread {
     pub comments: Vec<Comment>,
     pub status: Option<Status>,
     pub is_deleted: Option<bool>,
+    #[serde(with = "time::serde::rfc3339")]
     pub last_updated_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     pub published_at: OffsetDateTime,
 }
 

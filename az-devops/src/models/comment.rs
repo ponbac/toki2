@@ -11,6 +11,7 @@ pub struct Comment {
     pub content: String,
     pub comment_type: CommentType,
     pub is_deleted: Option<bool>,
+    #[serde(with = "time::serde::rfc3339")]
     pub published_at: OffsetDateTime,
     pub liked_by: Vec<Identity>,
 }

@@ -9,6 +9,7 @@ use azure_devops_rust_api::{
 
 use crate::{models::PullRequest, Thread, WorkItem};
 
+#[derive(Clone)]
 pub struct RepoClient {
     git_client: git::Client,
     work_item_client: wit::Client,

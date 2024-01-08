@@ -14,7 +14,9 @@ pub struct WorkItem {
     pub title: String,
     pub state: String,
     pub item_type: String,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     pub changed_at: OffsetDateTime,
     pub assigned_to: Option<Identity>,
     pub created_by: Option<Identity>,
