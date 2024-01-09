@@ -83,19 +83,19 @@ async fn open_pull_requests(
             ),
         ))?;
 
-    let pull_requests = client
-        .get_open_pull_requests()
-        .await
-        .unwrap()
-        .into_iter()
-        .filter(|pr| {
-            if let Some(author) = &query.author {
-                pr.created_by.unique_name == *author
-            } else {
-                true
-            }
-        })
-        .collect::<Vec<PullRequest>>();
-
-    Ok(Json(pull_requests))
+    Ok(Json(
+        client
+            .get_open_pull_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|pr| {
+                if let Some(author) = &query.author {
+                    pr.created_by.unique_name == *author
+                } else {
+                    true
+                }
+            })
+            .collect(),
+    ))
 }
