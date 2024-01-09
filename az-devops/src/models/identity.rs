@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub id: String,
     pub display_name: String,
@@ -33,6 +34,7 @@ impl From<i64> for Vote {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityWithVote {
     pub identity: Identity,
     pub vote: Option<Vote>,

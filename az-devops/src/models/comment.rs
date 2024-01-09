@@ -5,6 +5,7 @@ use time::OffsetDateTime;
 use crate::Identity;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Comment {
     pub id: i64,
     pub author: Identity,

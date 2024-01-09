@@ -8,6 +8,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use crate::Identity;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkItem {
     pub id: i32,
     pub parent_id: Option<i32>,
@@ -108,6 +109,7 @@ impl TryFrom<&Value> for Identity {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkItemRelation {
     pub id: Option<i32>,
     pub name: String,
