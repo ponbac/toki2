@@ -9,6 +9,9 @@ use axum::{
 use az_devops::{PullRequest, RepoClient};
 use serde::Deserialize;
 use tokio::net::TcpListener;
+use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::config::read_config;
 
@@ -22,6 +25,15 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     dotenvy::from_filename("./toki-api/.env.local").ok();
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::DEBUG.into())
+                .from_env_lossy()
+                .add_directive("hyper=info".parse().unwrap()),
+        )
+        .init();
 
     let organization = env::var("ADO_ORGANIZATION").unwrap();
     let project = env::var("ADO_PROJECT").unwrap();
@@ -54,13 +66,17 @@ async fn main() {
                 .into_iter()
                 .collect(),
             ),
-        });
+        })
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        );
 
     let socket_addr = format!("{}:{}", config.application.host, config.application.port)
         .parse::<SocketAddr>()
         .expect("Failed to parse socket address");
 
-    println!("Listening on {}", socket_addr);
+    tracing::info!("Starting server at {}", socket_addr);
     let listener = TcpListener::bind(socket_addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
