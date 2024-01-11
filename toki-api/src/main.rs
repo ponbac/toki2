@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, env, net::SocketAddr, sync::Arc};
 
 use axum::{
     extract::{Query, State},
@@ -9,6 +9,10 @@ use axum::{
 use az_devops::{PullRequest, RepoClient};
 use serde::Deserialize;
 use tokio::net::TcpListener;
+
+use crate::config::read_config;
+
+mod config;
 
 #[derive(Clone)]
 struct AppState {
@@ -36,6 +40,8 @@ async fn main() {
         .await
         .unwrap();
 
+    let config = read_config().expect("Failed to read configuration");
+
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/pull-requests", get(open_pull_requests))
@@ -50,8 +56,12 @@ async fn main() {
             ),
         });
 
-    println!("Listening on http://localhost:3000");
-    let listener = TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let socket_addr = format!("{}:{}", config.application.host, config.application.port)
+        .parse::<SocketAddr>()
+        .expect("Failed to parse socket address");
+
+    println!("Listening on {}", socket_addr);
+    let listener = TcpListener::bind(socket_addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
