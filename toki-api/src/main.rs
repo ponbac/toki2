@@ -10,7 +10,7 @@ use az_devops::{PullRequest, RepoClient};
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
-use tracing::level_filters::LevelFilter;
+use tracing::{instrument, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::config::read_config;
@@ -81,13 +81,21 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OpenPullRequestsQuery {
     repo_name: String,
     author: Option<String>,
 }
 
+#[instrument(
+    name = "GET /pull-requests",
+    skip(app_state, query),
+    fields(
+        repo_name = %query.repo_name,
+        author = ?query.author,
+    )
+)]
 async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
