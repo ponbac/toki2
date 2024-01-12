@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use serde::Deserialize;
 use serde_with::serde_as;
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use strum::{Display, EnumString};
 
 #[derive(Deserialize)]
@@ -28,6 +29,27 @@ pub struct DatabaseSettings {
     pub host: String,
     pub database_name: String,
     pub require_ssl: bool,
+}
+
+impl DatabaseSettings {
+    pub fn without_db(&self) -> PgConnectOptions {
+        let ssl_mode = if self.require_ssl {
+            PgSslMode::Require
+        } else {
+            PgSslMode::Prefer
+        };
+
+        PgConnectOptions::new()
+            .host(&self.host)
+            .port(self.port)
+            .username(&self.username)
+            .password(&self.password)
+            .ssl_mode(ssl_mode)
+    }
+
+    pub fn with_db(&self) -> PgConnectOptions {
+        self.without_db().database(&self.database_name)
+    }
 }
 
 pub fn read_config() -> Result<Settings, config::ConfigError> {

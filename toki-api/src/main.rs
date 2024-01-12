@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     extract::{Query, State},
@@ -8,17 +8,23 @@ use axum::{
 };
 use az_devops::{PullRequest, RepoClient};
 use serde::Deserialize;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::net::TcpListener;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::{instrument, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::config::read_config;
+use crate::{
+    config::read_config,
+    repository::{query_repositories, repo_configs_to_clients},
+};
 
 mod config;
+mod repository;
 
 #[derive(Clone)]
 struct AppState {
+    db_pool: Arc<PgPool>,
     repo_clients: Arc<HashMap<String, RepoClient>>,
 }
 
@@ -35,36 +41,26 @@ async fn main() {
         )
         .init();
 
-    let organization = env::var("ADO_ORGANIZATION").unwrap();
-    let project = env::var("ADO_PROJECT").unwrap();
-    let repo_name = env::var("ADO_REPO").unwrap();
-    let token = env::var("ADO_TOKEN").unwrap();
-
-    // let organization_2 = env::var("ADO_ORGANIZATION_2").unwrap();
-    // let project_2 = env::var("ADO_PROJECT_2").unwrap();
-    // let repo_name_2 = env::var("ADO_REPO_2").unwrap();
-    // let token_2 = env::var("ADO_TOKEN_2").unwrap();
-
-    let repo_client = RepoClient::new(&repo_name, &organization, &project, &token)
-        .await
-        .unwrap();
-    // let repo_client_2 = RepoClient::new(&repo_name_2, &organization_2, &project_2, &token_2)
-    //     .await
-    //     .unwrap();
-
     let config = read_config().expect("Failed to read configuration");
+    let connection_pool = PgPoolOptions::new()
+        .acquire_timeout(Duration::from_secs(5))
+        .connect_with(config.database.with_db())
+        .await
+        .expect("Failed to connect to database");
+
+    let repo_configs = query_repositories(connection_pool.clone())
+        .await
+        .expect("Failed to query repos");
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/pull-requests", get(open_pull_requests))
         .with_state(AppState {
+            db_pool: Arc::new(connection_pool),
             repo_clients: Arc::new(
-                vec![
-                    (repo_name.to_lowercase(), repo_client),
-                    // (repo_name_2.to_lowercase(), repo_client_2),
-                ]
-                .into_iter()
-                .collect(),
+                repo_configs_to_clients(repo_configs)
+                    .await
+                    .expect("Failed to create repo clients"),
             ),
         })
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
