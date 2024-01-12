@@ -40,17 +40,17 @@ async fn main() {
     let repo_name = env::var("ADO_REPO").unwrap();
     let token = env::var("ADO_TOKEN").unwrap();
 
-    let organization_2 = env::var("ADO_ORGANIZATION_2").unwrap();
-    let project_2 = env::var("ADO_PROJECT_2").unwrap();
-    let repo_name_2 = env::var("ADO_REPO_2").unwrap();
-    let token_2 = env::var("ADO_TOKEN_2").unwrap();
+    // let organization_2 = env::var("ADO_ORGANIZATION_2").unwrap();
+    // let project_2 = env::var("ADO_PROJECT_2").unwrap();
+    // let repo_name_2 = env::var("ADO_REPO_2").unwrap();
+    // let token_2 = env::var("ADO_TOKEN_2").unwrap();
 
     let repo_client = RepoClient::new(&repo_name, &organization, &project, &token)
         .await
         .unwrap();
-    let repo_client_2 = RepoClient::new(&repo_name_2, &organization_2, &project_2, &token_2)
-        .await
-        .unwrap();
+    // let repo_client_2 = RepoClient::new(&repo_name_2, &organization_2, &project_2, &token_2)
+    //     .await
+    //     .unwrap();
 
     let config = read_config().expect("Failed to read configuration");
 
@@ -61,16 +61,13 @@ async fn main() {
             repo_clients: Arc::new(
                 vec![
                     (repo_name.to_lowercase(), repo_client),
-                    (repo_name_2.to_lowercase(), repo_client_2),
+                    // (repo_name_2.to_lowercase(), repo_client_2),
                 ]
                 .into_iter()
                 .collect(),
             ),
         })
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
-        );
+        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
 
     let socket_addr = format!("{}:{}", config.application.host, config.application.port)
         .parse::<SocketAddr>()
@@ -117,19 +114,28 @@ async fn open_pull_requests(
             ),
         ))?;
 
-    Ok(Json(
-        client
-            .get_open_pull_requests()
-            .await
-            .unwrap()
-            .into_iter()
-            .filter(|pr| {
-                if let Some(author) = &query.author {
-                    pr.created_by.unique_name == *author
-                } else {
-                    true
-                }
-            })
-            .collect(),
-    ))
+    let pull_requests = client
+        .get_open_pull_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|pr| {
+            if let Some(author) = &query.author {
+                pr.created_by.unique_name == *author
+            } else {
+                true
+            }
+        })
+        .collect::<Vec<PullRequest>>();
+    tracing::debug!(
+        "Found {} open pull requests: [{}]",
+        pull_requests.len(),
+        pull_requests
+            .iter()
+            .map(|pr| pr.title.clone())
+            .collect::<Vec<String>>()
+            .join(", ")
+    );
+
+    Ok(Json(pull_requests))
 }
