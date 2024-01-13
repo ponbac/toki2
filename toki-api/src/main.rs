@@ -39,6 +39,13 @@ impl AppState {
             .cloned()
             .ok_or_else(|| format!("Repository '{}' not found", key))
     }
+
+    async fn insert_repo_client(&self, key: impl Into<RepoKey>, client: RepoClient) {
+        let mut repo_clients = self.repo_clients.lock().await;
+        let key: RepoKey = key.into();
+
+        repo_clients.insert(key, client);
+    }
 }
 
 #[tokio::main]
@@ -169,6 +176,12 @@ struct AddRepositoryBody {
     token: String,
 }
 
+impl From<&AddRepositoryBody> for RepoKey {
+    fn from(body: &AddRepositoryBody) -> Self {
+        Self::new(&body.organization, &body.project, &body.repo_name)
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct AddRepositoryResponse {
     id: i32,
@@ -216,13 +229,8 @@ async fn add_repository(
         )
     })?;
 
-    {
-        app_state.repo_clients.lock().await.insert(
-            RepoKey::new(&body.organization, &body.project, &body.repo_name),
-            repo_client,
-        );
-        tracing::info!("Added new repository: {}", body.repo_name);
-    }
+    app_state.insert_repo_client(&body, repo_client).await;
+    tracing::info!("Added new repository: {}", body.repo_name);
 
     Ok(Json(AddRepositoryResponse { id }))
 }
