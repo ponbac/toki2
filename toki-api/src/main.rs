@@ -1,15 +1,17 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
+    debug_handler,
     extract::{Query, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use az_devops::{PullRequest, RepoClient};
+use repository::insert_repository;
 use serde::Deserialize;
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::Mutex};
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::{instrument, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -25,7 +27,7 @@ mod repository;
 #[derive(Clone)]
 struct AppState {
     db_pool: Arc<PgPool>,
-    repo_clients: Arc<HashMap<String, RepoClient>>,
+    repo_clients: Arc<Mutex<HashMap<String, RepoClient>>>,
 }
 
 #[tokio::main]
@@ -48,20 +50,21 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    let repo_configs = query_repositories(connection_pool.clone())
+    let repo_configs = query_repositories(&connection_pool)
         .await
         .expect("Failed to query repos");
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/pull-requests", get(open_pull_requests))
+        .route("/repositories", post(add_repository))
         .with_state(AppState {
             db_pool: Arc::new(connection_pool),
-            repo_clients: Arc::new(
+            repo_clients: Arc::new(Mutex::new(
                 repo_configs_to_clients(repo_configs)
                     .await
                     .expect("Failed to create repo clients"),
-            ),
+            )),
         })
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
 
@@ -134,4 +137,45 @@ async fn open_pull_requests(
     );
 
     Ok(Json(pull_requests))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddRepositoryBody {
+    organization: String,
+    project: String,
+    repo_name: String,
+    token: String,
+}
+
+#[debug_handler]
+async fn add_repository(
+    State(app_state): State<AppState>,
+    Json(body): Json<AddRepositoryBody>,
+) -> Result<String, (StatusCode, String)> {
+    let repo_client = RepoClient::new(
+        &body.repo_name,
+        &body.organization,
+        &body.project,
+        &body.token,
+    )
+    .await
+    .map_err(|err| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Failed to create repository: {}", err),
+        )
+    })?;
+
+    let db_id = insert_repository(
+        &app_state.db_pool,
+        &body.organization,
+        &body.project,
+        &body.repo_name,
+        &body.token,
+    )
+    .await
+    .unwrap();
+
+    Ok(db_id.to_string())
 }
