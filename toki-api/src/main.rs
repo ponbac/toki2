@@ -1,7 +1,6 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
-    debug_handler,
     extract::{Query, State},
     http::StatusCode,
     routing::{get, post},
@@ -53,6 +52,11 @@ async fn main() {
     let repo_configs = query_repositories(&connection_pool)
         .await
         .expect("Failed to query repos");
+    tracing::info!("Found {} repositories: [{}]", repo_configs.len(), repo_configs
+        .iter()
+        .map(|repo| format!("{} ({}/{})", repo.repo_name, repo.organization, repo.project))
+        .collect::<Vec<String>>()
+        .join(", "));
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
@@ -96,22 +100,23 @@ async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-    let client = app_state
-        .repo_clients
+    let repos_map = app_state.repo_clients.lock().await;
+    let client = repos_map
         .get(&query.repo_name.to_lowercase())
         .ok_or((
             StatusCode::NOT_FOUND,
             format!(
                 "Repository '{}' not found. Available repositories: [{}]",
                 query.repo_name,
-                app_state
-                    .repo_clients
+                repos_map
                     .keys()
                     .map(|s| s.to_string())
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
-        ))?;
+        ))?
+        .clone();
+    drop(repos_map);
 
     let pull_requests = client
         .get_open_pull_requests()
@@ -148,7 +153,15 @@ struct AddRepositoryBody {
     token: String,
 }
 
-#[debug_handler]
+#[instrument(
+    name = "POST /repositories",
+    skip(app_state, body), 
+    fields(
+        organization = %body.organization,
+        project = %body.project,
+        repo_name = %body.repo_name,
+    )
+)]
 async fn add_repository(
     State(app_state): State<AppState>,
     Json(body): Json<AddRepositoryBody>,
@@ -175,7 +188,19 @@ async fn add_repository(
         &body.token,
     )
     .await
-    .unwrap();
+    .map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to insert repository: {}", err),
+        )
+    })?;
+
+    app_state
+        .repo_clients
+        .lock()
+        .await
+        .insert(body.repo_name.to_lowercase(), repo_client);
+    tracing::info!("Added new repository: {}", body.repo_name);
 
     Ok(db_id.to_string())
 }
