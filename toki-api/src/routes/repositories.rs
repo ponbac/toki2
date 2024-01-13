@@ -120,6 +120,9 @@ async fn insert_repository(
         r#"
         INSERT INTO repositories (organization, project, repo_name, token)
         VALUES ($1, $2, $3, $4)
+        ON CONFLICT (project, repo_name, organization) 
+        DO UPDATE SET
+        token = EXCLUDED.token
         RETURNING id
         "#,
         organization,
