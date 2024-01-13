@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 use az_devops::{PullRequest, RepoClient};
-use repository::insert_repository;
+use repository::{insert_repository, RepoKey};
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::{net::TcpListener, sync::Mutex};
@@ -26,7 +26,7 @@ mod repository;
 #[derive(Clone)]
 struct AppState {
     db_pool: Arc<PgPool>,
-    repo_clients: Arc<Mutex<HashMap<String, RepoClient>>>,
+    repo_clients: Arc<Mutex<HashMap<RepoKey, RepoClient>>>,
 }
 
 #[tokio::main]
@@ -52,11 +52,18 @@ async fn main() {
     let repo_configs = query_repositories(&connection_pool)
         .await
         .expect("Failed to query repos");
-    tracing::info!("Found {} repositories: [{}]", repo_configs.len(), repo_configs
-        .iter()
-        .map(|repo| format!("{} ({}/{})", repo.repo_name, repo.organization, repo.project))
-        .collect::<Vec<String>>()
-        .join(", "));
+    tracing::info!(
+        "Found {} repositories: [{}]",
+        repo_configs.len(),
+        repo_configs
+            .iter()
+            .map(|repo| format!(
+                "{} ({}/{})",
+                repo.repo_name, repo.organization, repo.project
+            ))
+            .collect::<Vec<String>>()
+            .join(", ")
+    );
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
@@ -81,28 +88,27 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OpenPullRequestsQuery {
+    organization: String,
+    project: String,
     repo_name: String,
     author: Option<String>,
 }
 
-#[instrument(
-    name = "GET /pull-requests",
-    skip(app_state, query),
-    fields(
-        repo_name = %query.repo_name,
-        author = ?query.author,
-    )
-)]
+#[instrument(name = "GET /pull-requests", skip(app_state))]
 async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
     let repos_map = app_state.repo_clients.lock().await;
     let client = repos_map
-        .get(&query.repo_name.to_lowercase())
+        .get(&RepoKey::new(
+            &query.organization,
+            &query.project,
+            &query.repo_name,
+        ))
         .ok_or((
             StatusCode::NOT_FOUND,
             format!(
@@ -160,7 +166,7 @@ struct AddRepositoryResponse {
 
 #[instrument(
     name = "POST /repositories",
-    skip(app_state, body), 
+    skip(app_state, body),
     fields(
         organization = %body.organization,
         project = %body.project,
@@ -200,17 +206,11 @@ async fn add_repository(
         )
     })?;
 
-    app_state
-        .repo_clients
-        .lock()
-        .await
-        .insert(body.repo_name.to_lowercase(), repo_client);
-        tracing::info!("Added new repository: {}", body.repo_name);
+    app_state.repo_clients.lock().await.insert(
+        RepoKey::new(&body.organization, &body.project, &body.repo_name),
+        repo_client,
+    );
+    tracing::info!("Added new repository: {}", body.repo_name);
 
-    Ok(
-
-        Json(AddRepositoryResponse {
-                id,
-            }),
-    )
+    Ok(Json(AddRepositoryResponse { id }))
 }

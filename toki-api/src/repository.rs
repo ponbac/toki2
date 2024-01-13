@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use az_devops::RepoClient;
 use serde::Deserialize;
@@ -24,6 +24,41 @@ impl RepositoryConfig {
         .await?;
 
         Ok(repo_client)
+    }
+
+    pub fn key(&self) -> RepoKey {
+        RepoKey {
+            organization: self.organization.clone(),
+            project: self.project.clone(),
+            repo_name: self.repo_name.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct RepoKey {
+    pub organization: String,
+    pub project: String,
+    pub repo_name: String,
+}
+
+impl Display for RepoKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}/{}/{}",
+            self.organization, self.project, self.repo_name
+        )
+    }
+}
+
+impl RepoKey {
+    pub fn new(organization: &str, project: &str, repo_name: &str) -> Self {
+        Self {
+            organization: organization.to_owned(),
+            project: project.to_owned(),
+            repo_name: repo_name.to_owned(),
+        }
     }
 }
 
@@ -76,10 +111,10 @@ pub async fn insert_repository(
 
 pub async fn repo_configs_to_clients(
     repo_configs: Vec<RepositoryConfig>,
-) -> Result<HashMap<String, RepoClient>, Box<dyn std::error::Error>> {
+) -> Result<HashMap<RepoKey, RepoClient>, Box<dyn std::error::Error>> {
     let mut repos = HashMap::new();
     for repo in repo_configs {
-        repos.insert(repo.repo_name.to_lowercase(), repo.to_client().await?);
+        repos.insert(repo.key(), repo.to_client().await?);
     }
 
     Ok(repos)
