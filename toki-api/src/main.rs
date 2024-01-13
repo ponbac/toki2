@@ -29,6 +29,18 @@ struct AppState {
     repo_clients: Arc<Mutex<HashMap<RepoKey, RepoClient>>>,
 }
 
+impl AppState {
+    async fn get_repo_client(&self, key: impl Into<RepoKey>) -> Result<RepoClient, String> {
+        let repo_clients = self.repo_clients.lock().await;
+        let key: RepoKey = key.into();
+
+        repo_clients
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| format!("Repository '{}' not found", key))
+    }
+}
+
 #[tokio::main]
 async fn main() {
     dotenvy::from_filename("./toki-api/.env.local").ok();
@@ -98,33 +110,21 @@ struct OpenPullRequestsQuery {
     author: Option<String>,
 }
 
+impl From<&OpenPullRequestsQuery> for RepoKey {
+    fn from(query: &OpenPullRequestsQuery) -> Self {
+        Self::new(&query.organization, &query.project, &query.repo_name)
+    }
+}
+
 #[instrument(name = "GET /pull-requests", skip(app_state))]
 async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-    let client = {
-        let repos_map = app_state.repo_clients.lock().await;
-        repos_map
-            .get(&RepoKey::new(
-                &query.organization,
-                &query.project,
-                &query.repo_name,
-            ))
-            .ok_or((
-                StatusCode::NOT_FOUND,
-                format!(
-                    "Repository '{}' not found. Available repositories: [{}]",
-                    query.repo_name,
-                    repos_map
-                        .keys()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                ),
-            ))?
-            .clone()
-    };
+    let client = app_state
+        .get_repo_client(&query)
+        .await
+        .map_err(|err| (StatusCode::NOT_FOUND, err))?;
 
     let pull_requests = client
         .get_open_pull_requests()
