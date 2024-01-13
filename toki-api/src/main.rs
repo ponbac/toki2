@@ -229,8 +229,9 @@ async fn add_repository(
         )
     })?;
 
-    app_state.insert_repo_client(&body, repo_client).await;
-    tracing::info!("Added new repository: {}", body.repo_name);
+    let key = RepoKey::from(&body);
+    app_state.insert_repo_client(key.clone(), repo_client).await;
+    tracing::info!("Added new repository: {}", key);
 
     Ok(Json(AddRepositoryResponse { id }))
 }
