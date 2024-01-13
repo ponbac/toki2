@@ -4,21 +4,18 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use sqlx::postgres::PgPoolOptions;
+use domain::RepoConfig;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::net::TcpListener;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::{
-    app_state::AppState,
-    config::read_config,
-    repository::{query_repository_configs, repo_configs_to_clients},
-};
+use crate::{app_state::AppState, config::read_config};
 
 mod app_state;
 mod config;
-mod repository;
+mod domain;
 mod routes;
 
 #[tokio::main]
@@ -43,7 +40,7 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    // Fetch all repositories from the database and create a client for each one
+    // Fetch all repositories from the database
     let repo_configs = query_repository_configs(&connection_pool)
         .await
         .expect("Failed to query repos");
@@ -66,12 +63,7 @@ async fn main() {
         .route("/pull-requests", get(routes::open_pull_requests))
         .route("/repositories", get(routes::get_repositories))
         .route("/repositories", post(routes::add_repository))
-        .with_state(AppState::new(
-            connection_pool,
-            repo_configs_to_clients(repo_configs)
-                .await
-                .expect("Failed to create repo clients"),
-        ))
+        .with_state(AppState::new(connection_pool, repo_configs).await)
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
 
     let socket_addr = format!("{}:{}", config.application.host, config.application.port)
@@ -81,4 +73,20 @@ async fn main() {
     tracing::info!("Starting server at {}", socket_addr);
     let listener = TcpListener::bind(socket_addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+pub async fn query_repository_configs(
+    pool: &PgPool,
+) -> Result<Vec<RepoConfig>, Box<dyn std::error::Error>> {
+    let repos = sqlx::query_as!(
+        RepoConfig,
+        r#"
+        SELECT id, organization, project, repo_name, token
+        FROM repositories
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(repos)
 }

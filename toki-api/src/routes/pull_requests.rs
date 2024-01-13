@@ -7,7 +7,7 @@ use az_devops::PullRequest;
 use serde::Deserialize;
 use tracing::instrument;
 
-use crate::{repository::RepoKey, AppState};
+use crate::{domain::RepoKey, AppState};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

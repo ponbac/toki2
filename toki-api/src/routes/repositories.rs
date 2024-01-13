@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::instrument;
 
-use crate::{repository::RepoKey, AppState};
+use crate::{domain::RepoKey, AppState};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

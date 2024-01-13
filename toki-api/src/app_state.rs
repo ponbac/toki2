@@ -4,7 +4,7 @@ use az_devops::RepoClient;
 use sqlx::PgPool;
 use tokio::sync::Mutex;
 
-use crate::repository::RepoKey;
+use crate::domain::{RepoConfig, RepoKey};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -13,10 +13,20 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(db_pool: PgPool, repo_clients: HashMap<RepoKey, RepoClient>) -> Self {
+    pub async fn new(db_pool: PgPool, repo_configs: Vec<RepoConfig>) -> Self {
+        let mut repos = HashMap::new();
+        for repo in repo_configs {
+            repos.insert(
+                repo.key(),
+                repo.to_client().await.unwrap_or_else(|_| {
+                    panic!("Failed to create client for repo '{}'", repo.key())
+                }),
+            );
+        }
+
         Self {
             db_pool: Arc::new(db_pool),
-            repo_clients: Arc::new(Mutex::new(repo_clients)),
+            repo_clients: Arc::new(Mutex::new(repos)),
         }
     }
 
