@@ -66,6 +66,7 @@ impl RepoKey {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RepositoryDto {
     id: i32,
     organization: String,
