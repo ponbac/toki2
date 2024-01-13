@@ -1,7 +1,10 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display},
+};
 
 use az_devops::RepoClient;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 #[derive(Debug, Deserialize)]
@@ -43,7 +46,7 @@ pub struct RepoKey {
 }
 
 impl Display for RepoKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}/{}/{}",
@@ -62,7 +65,31 @@ impl RepoKey {
     }
 }
 
-pub async fn query_repositories(
+#[derive(Debug, Serialize)]
+pub struct RepositoryDto {
+    id: i32,
+    organization: String,
+    project: String,
+    repo_name: String,
+}
+
+pub async fn query_repository_dtos(
+    pool: &PgPool,
+) -> Result<Vec<RepositoryDto>, Box<dyn std::error::Error>> {
+    let repos = sqlx::query_as!(
+        RepositoryDto,
+        r#"
+        SELECT id, organization, project, repo_name
+        FROM repositories
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(repos)
+}
+
+pub async fn query_repository_configs(
     pool: &PgPool,
 ) -> Result<Vec<RepositoryConfig>, Box<dyn std::error::Error>> {
     let repos = sqlx::query_as!(

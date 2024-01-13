@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 use az_devops::{PullRequest, RepoClient};
-use repository::{insert_repository, RepoKey};
+use repository::{insert_repository, query_repository_dtos, RepoKey, RepositoryDto};
 use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::{net::TcpListener, sync::Mutex};
@@ -17,7 +17,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 
 use crate::{
     config::read_config,
-    repository::{query_repositories, repo_configs_to_clients},
+    repository::{query_repository_configs, repo_configs_to_clients},
 };
 
 mod config;
@@ -49,7 +49,7 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
-    let repo_configs = query_repositories(&connection_pool)
+    let repo_configs = query_repository_configs(&connection_pool)
         .await
         .expect("Failed to query repos");
     tracing::info!(
@@ -68,6 +68,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/pull-requests", get(open_pull_requests))
+        .route("/repositories", get(get_repositories))
         .route("/repositories", post(add_repository))
         .with_state(AppState {
             db_pool: Arc::new(connection_pool),
@@ -102,27 +103,28 @@ async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-    let repos_map = app_state.repo_clients.lock().await;
-    let client = repos_map
-        .get(&RepoKey::new(
-            &query.organization,
-            &query.project,
-            &query.repo_name,
-        ))
-        .ok_or((
-            StatusCode::NOT_FOUND,
-            format!(
-                "Repository '{}' not found. Available repositories: [{}]",
-                query.repo_name,
-                repos_map
-                    .keys()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-        ))?
-        .clone();
-    drop(repos_map);
+    let client = {
+        let repos_map = app_state.repo_clients.lock().await;
+        repos_map
+            .get(&RepoKey::new(
+                &query.organization,
+                &query.project,
+                &query.repo_name,
+            ))
+            .ok_or((
+                StatusCode::NOT_FOUND,
+                format!(
+                    "Repository '{}' not found. Available repositories: [{}]",
+                    query.repo_name,
+                    repos_map
+                        .keys()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ),
+            ))?
+            .clone()
+    };
 
     let pull_requests = client
         .get_open_pull_requests()
@@ -148,6 +150,14 @@ async fn open_pull_requests(
     );
 
     Ok(Json(pull_requests))
+}
+
+async fn get_repositories(State(app_state): State<AppState>) -> Json<Vec<RepositoryDto>> {
+    let repos = query_repository_dtos(&app_state.db_pool)
+        .await
+        .expect("Failed to query repos");
+
+    Json(repos)
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,11 +216,13 @@ async fn add_repository(
         )
     })?;
 
-    app_state.repo_clients.lock().await.insert(
-        RepoKey::new(&body.organization, &body.project, &body.repo_name),
-        repo_client,
-    );
-    tracing::info!("Added new repository: {}", body.repo_name);
+    {
+        app_state.repo_clients.lock().await.insert(
+            RepoKey::new(&body.organization, &body.project, &body.repo_name),
+            repo_client,
+        );
+        tracing::info!("Added new repository: {}", body.repo_name);
+    }
 
     Ok(Json(AddRepositoryResponse { id }))
 }
