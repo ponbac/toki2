@@ -8,7 +8,7 @@ use axum::{
 };
 use az_devops::{PullRequest, RepoClient};
 use repository::insert_repository;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::{net::TcpListener, sync::Mutex};
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
@@ -153,6 +153,11 @@ struct AddRepositoryBody {
     token: String,
 }
 
+#[derive(Debug, Serialize)]
+struct AddRepositoryResponse {
+    id: i32,
+}
+
 #[instrument(
     name = "POST /repositories",
     skip(app_state, body), 
@@ -165,7 +170,7 @@ struct AddRepositoryBody {
 async fn add_repository(
     State(app_state): State<AppState>,
     Json(body): Json<AddRepositoryBody>,
-) -> Result<String, (StatusCode, String)> {
+) -> Result<Json<AddRepositoryResponse>, (StatusCode, String)> {
     let repo_client = RepoClient::new(
         &body.repo_name,
         &body.organization,
@@ -180,7 +185,7 @@ async fn add_repository(
         )
     })?;
 
-    let db_id = insert_repository(
+    let id = insert_repository(
         &app_state.db_pool,
         &body.organization,
         &body.project,
@@ -200,7 +205,12 @@ async fn add_repository(
         .lock()
         .await
         .insert(body.repo_name.to_lowercase(), repo_client);
-    tracing::info!("Added new repository: {}", body.repo_name);
+        tracing::info!("Added new repository: {}", body.repo_name);
 
-    Ok(db_id.to_string())
+    Ok(
+
+        Json(AddRepositoryResponse {
+                id,
+            }),
+    )
 }
