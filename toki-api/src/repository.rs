@@ -65,30 +65,6 @@ impl RepoKey {
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RepositoryDto {
-    id: i32,
-    organization: String,
-    project: String,
-    repo_name: String,
-}
-
-pub async fn query_repository_dtos(
-    pool: &PgPool,
-) -> Result<Vec<RepositoryDto>, Box<dyn std::error::Error>> {
-    let repos = sqlx::query_as!(
-        RepositoryDto,
-        r#"
-        SELECT id, organization, project, repo_name
-        FROM repositories
-        "#
-    )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(repos)
-}
 
 pub async fn query_repository_configs(
     pool: &PgPool,
@@ -106,36 +82,6 @@ pub async fn query_repository_configs(
     Ok(repos)
 }
 
-pub async fn insert_repository(
-    pool: &PgPool,
-    organization: &str,
-    project: &str,
-    repo_name: &str,
-    token: &str,
-) -> Result<i32, Box<dyn std::error::Error>> {
-    let repo_id = sqlx::query!(
-        r#"
-        INSERT INTO repositories (organization, project, repo_name, token)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id
-        "#,
-        organization,
-        project,
-        repo_name,
-        token
-    )
-    .fetch_one(pool)
-    .await?
-    .id;
-    tracing::info!(
-        "Added repository to DB: {}/{}/{}",
-        organization,
-        project,
-        repo_name
-    );
-
-    Ok(repo_id)
-}
 
 pub async fn repo_configs_to_clients(
     repo_configs: Vec<RepositoryConfig>,
