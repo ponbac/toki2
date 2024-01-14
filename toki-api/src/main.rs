@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use axum::{
     routing::{get, post},
