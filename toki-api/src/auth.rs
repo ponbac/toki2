@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect},
     routing::{get, post},
-    Form, Router,
+    Router,
 };
 use axum_login::tower_sessions::Session;
 use oauth2::CsrfToken;
@@ -39,7 +39,7 @@ mod post {
     pub async fn login(
         auth_session: AuthSession,
         session: Session,
-        Form(NextUrl { next }): Form<NextUrl>,
+        Query(NextUrl { next }): Query<NextUrl>,
     ) -> impl IntoResponse {
         let (auth_url, csrf_state) = auth_session.backend.authorize_url();
 
