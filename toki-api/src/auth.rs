@@ -47,7 +47,6 @@ mod post {
             .insert(CSRF_STATE_KEY, csrf_state.secret())
             .await
             .expect("Serialization should not fail.");
-
         session
             .insert(NEXT_URL_KEY, next)
             .await
@@ -72,8 +71,7 @@ mod get {
                     <title>Login</title>
                 </head>
                 <body>
-                    <form action="/login" method="post">
-                        <input type="hidden" name="next" value="{next}" />
+                    <form action="/login?next={next}" method="post">
                         <button type="submit">Login</button>
                     </form>
                 </body>
