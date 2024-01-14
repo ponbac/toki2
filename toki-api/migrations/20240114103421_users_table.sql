@@ -2,6 +2,8 @@
 CREATE TABLE users
 (
     id           SERIAL PRIMARY KEY,
-    username     TEXT NOT NULL UNIQUE,
+    email     TEXT NOT NULL UNIQUE,
+    full_name TEXT NOT NULL,
+    picture TEXT NOT NULL,
     access_token TEXT NOT NULL
 );

@@ -6,21 +6,21 @@ use axum::{
     Form, Router,
 };
 use axum_login::tower_sessions::Session;
+use oauth2::CsrfToken;
 use serde::Deserialize;
 
 pub const NEXT_URL_KEY: &str = "auth.next-url";
+pub const CSRF_STATE_KEY: &str = "oauth.csrf-state";
 
-// This allows us to extract the "next" field from the query string. We use this
-// to redirect after log in.
 #[derive(Debug, Deserialize)]
 pub struct NextUrl {
     next: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Credentials {
-    pub client_id: String,
-    pub client_secret: String,
+pub struct AuthzResp {
+    code: String,
+    state: CsrfToken,
 }
 
 pub fn router() -> Router<()> {
@@ -28,10 +28,11 @@ pub fn router() -> Router<()> {
         .route("/login", post(self::post::login))
         .route("/login", get(self::get::login))
         .route("/logout", get(self::get::logout))
+        .route("/oauth/callback", get(self::get::callback))
 }
 
 mod post {
-    use crate::{domain::AuthSession, oauth::CSRF_STATE_KEY};
+    use crate::domain::AuthSession;
 
     use super::*;
 
@@ -59,7 +60,7 @@ mod post {
 mod get {
     use axum::response::Html;
 
-    use crate::domain::AuthSession;
+    use crate::domain::{AuthSession, Credentials};
 
     use super::*;
 
@@ -81,6 +82,41 @@ mod get {
             next = next.unwrap_or_else(|| "/".to_string())
         )
         .into()
+    }
+
+    pub async fn callback(
+        mut auth_session: AuthSession,
+        session: Session,
+        Query(AuthzResp {
+            code,
+            state: new_state,
+        }): Query<AuthzResp>,
+    ) -> impl IntoResponse {
+        let Ok(Some(old_state)) = session.get(CSRF_STATE_KEY).await else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+
+        let creds = Credentials {
+            code,
+            old_state,
+            new_state,
+        };
+
+        let user = match auth_session.authenticate(creds).await {
+            Ok(Some(user)) => user,
+            Ok(None) => return (StatusCode::UNAUTHORIZED, "Invalid CSRF state!").into_response(),
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+
+        if auth_session.login(&user).await.is_err() {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+
+        if let Ok(Some(next)) = session.remove::<String>(NEXT_URL_KEY).await {
+            Redirect::to(&next).into_response()
+        } else {
+            Redirect::to("/").into_response()
+        }
     }
 
     pub async fn logout(mut auth_session: AuthSession) -> impl IntoResponse {

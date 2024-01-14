@@ -13,7 +13,9 @@ use sqlx::PgPool;
 #[derive(Clone, Serialize, Deserialize)]
 pub struct User {
     id: i64,
-    pub username: String,
+    pub email: String,
+    pub full_name: String,
+    pub picture: String,
     pub access_token: String,
 }
 
@@ -23,7 +25,9 @@ impl std::fmt::Debug for User {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("User")
             .field("id", &self.id)
-            .field("username", &self.username)
+            .field("email", &self.email)
+            .field("full_name", &self.full_name)
+            .field("picture", &self.picture)
             .field("access_token", &"[redacted]")
             .finish()
     }
@@ -50,7 +54,10 @@ pub struct Credentials {
 
 #[derive(Debug, Deserialize)]
 struct UserInfo {
-    login: String,
+    #[serde(rename = "name")]
+    full_name: String,
+    picture: String,
+    email: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -105,32 +112,35 @@ impl AuthnBackend for Backend {
             .map_err(Self::Error::OAuth2)?;
 
         // Use access token to request user info.
-        // let user_info = reqwest::Client::new()
-        //     .get("https://api.github.com/user")
-        //     .header(USER_AGENT.as_str(), "axum-login")
-        //     .header(
-        //         AUTHORIZATION.as_str(),
-        //         format!("Bearer {}", token_res.access_token().secret()),
-        //     )
-        //     .send()
-        //     .await
-        //     .map_err(Self::Error::Reqwest)?
-        //     .json::<UserInfo>()
-        //     .await
-        //     .map_err(Self::Error::Reqwest)?;
+        let user_info = reqwest::Client::new()
+            .get("https://graph.microsoft.com/oidc/userinfo")
+            .header(USER_AGENT.as_str(), "toki-login")
+            .header(
+                AUTHORIZATION.as_str(),
+                format!("Bearer {}", token_res.access_token().secret()),
+            )
+            .send()
+            .await
+            .map_err(Self::Error::Reqwest)?
+            .json::<UserInfo>()
+            .await
+            .map_err(Self::Error::Reqwest)?;
 
         // Persist user in our database so we can use `get_user`.
         let user = sqlx::query_as!(
             User,
             r#"
-            INSERT INTO users (username, access_token)
-            VALUES ($1, $2)
-            ON CONFLICT(username) DO UPDATE
-            SET access_token = EXCLUDED.access_token
+            INSERT INTO users (email, full_name, picture, access_token)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT(email) DO UPDATE
+            SET full_name = EXCLUDED.full_name,
+                picture = EXCLUDED.picture,
+                access_token = EXCLUDED.access_token
             RETURNING *
             "#,
-            // user_info.login,
-            "test_user",
+            user_info.email,
+            user_info.full_name,
+            user_info.picture,
             token_res.access_token().secret()
         )
         .fetch_one(&self.db)
@@ -154,7 +164,4 @@ impl AuthnBackend for Backend {
     }
 }
 
-// We use a type alias for convenience.
-//
-// Note that we've supplied our concrete backend here.
 pub type AuthSession = axum_login::AuthSession<Backend>;

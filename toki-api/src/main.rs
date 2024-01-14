@@ -6,6 +6,7 @@ use axum::{
 };
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
+    login_required,
     tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
     AuthManagerLayerBuilder,
 };
@@ -24,7 +25,6 @@ mod app_state;
 mod auth;
 mod config;
 mod domain;
-mod oauth;
 mod routes;
 
 #[tokio::main]
@@ -71,7 +71,7 @@ async fn main() {
         .map(ClientSecret::new)
         .expect("CLIENT_SECRET should be provided");
 
-    let auth_url = AuthUrl::new("https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/authorize?scope=api://6494e716-bbf2-4164-a1f0-cd682313085b/toki2".to_string())
+    let auth_url = AuthUrl::new("https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/authorize?scope=https://graph.microsoft.com/.default".to_string())
         .expect("Invalid authorization endpoint URL");
     let token_url = TokenUrl::new(
         "https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/token"
@@ -96,8 +96,8 @@ async fn main() {
         .route("/repositories", post(routes::add_repository))
         .route("/auth", get(auth_test))
         .with_state(AppState::new(connection_pool, repo_configs).await)
+        .route_layer(login_required!(Backend, login_url = "/login"))
         .merge(auth::router())
-        .merge(oauth::router())
         .layer(auth_layer)
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
 
@@ -112,7 +112,7 @@ async fn main() {
 
 async fn auth_test(auth_session: AuthSession) -> String {
     match auth_session.user {
-        Some(user) => format!("Hello, {}!", user.username),
+        Some(user) => format!("Hello, {}!", user.full_name),
         None => "Hello, anonymous!".to_string(),
     }
 }
