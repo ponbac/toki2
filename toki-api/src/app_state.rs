@@ -16,12 +16,15 @@ impl AppState {
     pub async fn new(db_pool: PgPool, repo_configs: Vec<RepoConfig>) -> Self {
         let mut repos = HashMap::new();
         for repo in repo_configs {
-            repos.insert(
-                repo.key(),
-                repo.to_client().await.unwrap_or_else(|_| {
-                    panic!("Failed to create client for repo '{}'", repo.key())
-                }),
-            );
+            let client = match repo.to_client().await {
+                Ok(client) => client,
+                Err(err) => {
+                    tracing::error!("Failed to create client for repo '{}': {}", repo.key(), err);
+                    continue;
+                }
+            };
+
+            repos.insert(repo.key(), client);
         }
 
         Self {

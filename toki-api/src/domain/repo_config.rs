@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use super::RepoKey;
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct RepoConfig {
     pub id: i32,
     pub organization: String,
@@ -31,5 +31,11 @@ impl RepoConfig {
             project: self.project.clone(),
             repo_name: self.repo_name.clone(),
         }
+    }
+}
+
+impl From<&RepoConfig> for RepoKey {
+    fn from(repo: &RepoConfig) -> Self {
+        repo.key()
     }
 }

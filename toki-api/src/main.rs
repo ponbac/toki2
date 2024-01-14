@@ -49,10 +49,7 @@ async fn main() {
         repo_configs.len(),
         repo_configs
             .iter()
-            .map(|repo| format!(
-                "{} ({}/{})",
-                repo.repo_name, repo.organization, repo.project
-            ))
+            .map(|repo| repo.key().to_string())
             .collect::<Vec<String>>()
             .join(", ")
     );
@@ -75,7 +72,7 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-pub async fn query_repository_configs(
+async fn query_repository_configs(
     pool: &PgPool,
 ) -> Result<Vec<RepoConfig>, Box<dyn std::error::Error>> {
     let repos = sqlx::query_as!(
