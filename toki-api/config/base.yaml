@@ -6,3 +6,8 @@ database:
   username: "postgres"
   password: "password"
   database_name: "toki"
+auth:
+  client_id: "provide through env"
+  client_secret: "provide through env"
+  auth_url: "https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/authorize?scope=https://graph.microsoft.com/.default"
+  token_url: "https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/token"

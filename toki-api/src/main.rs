@@ -64,21 +64,12 @@ async fn main() {
     );
 
     // Auth
-    let client_id = env::var("CLIENT_ID")
-        .map(ClientId::new)
-        .expect("CLIENT_ID should be provided.");
-    let client_secret = env::var("CLIENT_SECRET")
-        .map(ClientSecret::new)
-        .expect("CLIENT_SECRET should be provided");
-
-    let auth_url = AuthUrl::new("https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/authorize?scope=https://graph.microsoft.com/.default".to_string())
-        .expect("Invalid authorization endpoint URL");
-    let token_url = TokenUrl::new(
-        "https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/token"
-            .to_string(),
-    )
-    .expect("Invalid token endpoint URL");
-    let client = BasicClient::new(client_id, Some(client_secret), auth_url, Some(token_url));
+    let client = BasicClient::new(
+        ClientId::new(config.auth.client_id),
+        Some(ClientSecret::new(config.auth.client_secret)),
+        AuthUrl::new(config.auth.auth_url).expect("Invalid authorization endpoint URL"),
+        Some(TokenUrl::new(config.auth.token_url).expect("Invalid token endpoint URL")),
+    );
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(false)
