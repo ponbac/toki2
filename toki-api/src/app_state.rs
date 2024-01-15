@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use az_devops::RepoClient;
+use futures_util::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
 use tokio::sync::Mutex;
 
@@ -14,22 +15,33 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new(db_pool: PgPool, repo_configs: Vec<RepoConfig>) -> Self {
-        let mut repos = HashMap::new();
-        for repo in repo_configs {
-            let client = match repo.to_client().await {
-                Ok(client) => client,
-                Err(err) => {
-                    tracing::error!("Failed to create client for repo '{}': {}", repo.key(), err);
-                    continue;
+        let client_futures = repo_configs
+            .into_iter()
+            .map(|repo| async move {
+                match repo.to_client().await {
+                    Ok(client) => Some((repo.key(), client)),
+                    Err(err) => {
+                        tracing::error!(
+                            "Failed to create client for repo '{}': {}",
+                            repo.key(),
+                            err
+                        );
+                        None
+                    }
                 }
-            };
+            })
+            .collect::<FuturesUnordered<_>>();
 
-            repos.insert(repo.key(), client);
-        }
+        let clients: HashMap<_, _> = client_futures
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
 
         Self {
             db_pool: Arc::new(db_pool),
-            repo_clients: Arc::new(Mutex::new(repos)),
+            repo_clients: Arc::new(Mutex::new(clients)),
         }
     }
 
