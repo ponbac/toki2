@@ -19,7 +19,7 @@ use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::{app_state::AppState, config::read_config, domain::Backend};
+use crate::{app_state::AppState, config::read_config, domain::AuthBackend};
 
 mod app_state;
 mod auth;
@@ -76,7 +76,7 @@ async fn main() {
         .with_same_site(SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(TimeDuration::days(1)));
 
-    let backend = Backend::new(connection_pool.clone(), client);
+    let backend = AuthBackend::new(connection_pool.clone(), client);
     let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
     // Create the router and start the server
@@ -87,7 +87,7 @@ async fn main() {
         .route("/repositories", post(routes::add_repository))
         .route("/auth", get(auth_test))
         .with_state(AppState::new(connection_pool, repo_configs).await)
-        .route_layer(login_required!(Backend, login_url = "/login"))
+        .route_layer(login_required!(AuthBackend, login_url = "/login"))
         .merge(auth::router())
         .layer(auth_layer)
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
