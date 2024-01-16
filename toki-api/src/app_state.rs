@@ -7,7 +7,7 @@ use axum::{
 use az_devops::RepoClient;
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 use crate::domain::{RepoConfig, RepoKey};
 
