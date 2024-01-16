@@ -9,6 +9,7 @@ use strum::{Display, EnumString};
 pub struct Settings {
     pub application: ApplicationSettings,
     pub database: DatabaseSettings,
+    pub auth: AuthSettings,
 }
 
 #[serde_as]
@@ -29,6 +30,14 @@ pub struct DatabaseSettings {
     pub host: String,
     pub database_name: String,
     pub require_ssl: bool,
+}
+
+#[derive(Deserialize)]
+pub struct AuthSettings {
+    pub client_id: String,
+    pub client_secret: String,
+    pub auth_url: String,
+    pub token_url: String,
 }
 
 impl DatabaseSettings {
