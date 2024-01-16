@@ -1,11 +1,31 @@
 use std::{collections::HashMap, sync::Arc};
 
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use az_devops::RepoClient;
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
 use tokio::sync::Mutex;
 
 use crate::domain::{RepoConfig, RepoKey};
+
+#[derive(Debug, thiserror::Error)]
+pub enum AppStateError {
+    #[error("Repository client not found for: {0}")]
+    RepoClientNotFound(RepoKey),
+}
+
+impl IntoResponse for AppStateError {
+    fn into_response(self) -> Response {
+        let status = match self {
+            Self::RepoClientNotFound(_) => StatusCode::NOT_FOUND,
+        };
+
+        (status, self.to_string()).into_response()
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -45,14 +65,17 @@ impl AppState {
         }
     }
 
-    pub async fn get_repo_client(&self, key: impl Into<RepoKey>) -> Result<RepoClient, String> {
+    pub async fn get_repo_client(
+        &self,
+        key: impl Into<RepoKey>,
+    ) -> Result<RepoClient, AppStateError> {
         let repo_clients = self.repo_clients.lock().await;
         let key: RepoKey = key.into();
 
         repo_clients
             .get(&key)
             .cloned()
-            .ok_or_else(|| format!("Repository '{}' not found", key))
+            .ok_or(AppStateError::RepoClientNotFound(key))
     }
 
     pub async fn insert_repo_client(&self, key: impl Into<RepoKey>, client: RepoClient) {

@@ -1,13 +1,12 @@
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
     Json,
 };
 use az_devops::PullRequest;
 use serde::Deserialize;
 use tracing::instrument;
 
-use crate::{domain::RepoKey, AppState};
+use crate::{app_state::AppStateError, domain::RepoKey, AppState};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,11 +27,8 @@ impl From<&OpenPullRequestsQuery> for RepoKey {
 pub async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
-) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-    let client = app_state
-        .get_repo_client(&query)
-        .await
-        .map_err(|err| (StatusCode::NOT_FOUND, err))?;
+) -> Result<Json<Vec<PullRequest>>, AppStateError> {
+    let client = app_state.get_repo_client(&query).await?;
 
     let pull_requests = client
         .get_open_pull_requests()
