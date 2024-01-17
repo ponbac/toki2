@@ -86,8 +86,8 @@ async fn main() {
         .route("/repositories", get(routes::get_repositories))
         .route("/repositories", post(routes::add_repository))
         .route("/auth", get(auth_test))
-        .with_state(AppState::new(connection_pool, repo_configs).await)
         .route_layer(login_required!(AuthBackend, login_url = "/login"))
+        .with_state(AppState::new(connection_pool, repo_configs).await)
         .merge(auth::router())
         .layer(auth_layer)
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
