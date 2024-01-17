@@ -30,7 +30,7 @@ impl IntoResponse for AppStateError {
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: Arc<PgPool>,
-    repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
+    workers: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
 }
 
 impl AppState {
@@ -61,7 +61,7 @@ impl AppState {
 
         Self {
             db_pool: Arc::new(db_pool),
-            repo_clients: Arc::new(RwLock::new(clients)),
+            workers: Arc::new(RwLock::new(clients)),
         }
     }
 
@@ -69,7 +69,7 @@ impl AppState {
         &self,
         key: impl Into<RepoKey>,
     ) -> Result<RepoClient, AppStateError> {
-        let repo_clients = self.repo_clients.read().await;
+        let repo_clients = self.workers.read().await;
         let key: RepoKey = key.into();
 
         repo_clients
@@ -79,7 +79,7 @@ impl AppState {
     }
 
     pub async fn insert_repo_client(&self, key: impl Into<RepoKey>, client: RepoClient) {
-        let mut repo_clients = self.repo_clients.write().await;
+        let mut repo_clients = self.workers.write().await;
         let key: RepoKey = key.into();
 
         repo_clients.insert(key, client);

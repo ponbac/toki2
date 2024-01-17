@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 
 use super::identity::{Identity, IdentityWithVote};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequest {
     pub id: i32,

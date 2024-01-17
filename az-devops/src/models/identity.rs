@@ -2,7 +2,7 @@ use azure_devops_rust_api::git::models::{IdentityRef, IdentityRefWithVote};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub id: String,
@@ -11,7 +11,7 @@ pub struct Identity {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Vote {
     Approved,
     ApprovedWithSuggestions,
@@ -33,7 +33,7 @@ impl From<i64> for Vote {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityWithVote {
     pub identity: Identity,
