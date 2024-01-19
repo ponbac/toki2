@@ -30,8 +30,8 @@ impl IntoResponse for AppStateError {
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: Arc<PgPool>,
-    repos: Arc<RwLock<HashMap<RepoKey, RepoDiffer>>>,
-    // todo: need to separate out the repo clients from the repo differ
+    repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
+    differs: Arc<RwLock<HashMap<RepoKey, RepoDiffer>>>,
 }
 
 impl AppState {
@@ -40,7 +40,7 @@ impl AppState {
             .into_iter()
             .map(|repo| async move {
                 match repo.to_client().await {
-                    Ok(client) => Some((repo.key(), RepoDiffer::new(repo.key(), client))),
+                    Ok(client) => Some((repo.key(), client)),
                     Err(err) => {
                         tracing::error!(
                             "Failed to create client for repo '{}': {}",
@@ -60,9 +60,15 @@ impl AppState {
             .flatten()
             .collect();
 
+        let differs = clients
+            .iter()
+            .map(|(key, client)| (key.clone(), RepoDiffer::new(key.clone(), client.clone())))
+            .collect();
+
         Self {
             db_pool: Arc::new(db_pool),
-            repos: Arc::new(RwLock::new(clients)),
+            repo_clients: Arc::new(RwLock::new(clients)),
+            differs: Arc::new(RwLock::new(differs)),
         }
     }
 
@@ -70,29 +76,31 @@ impl AppState {
         &self,
         key: impl Into<RepoKey>,
     ) -> Result<RepoClient, AppStateError> {
-        let repo_clients = self.repos.read().await;
+        let repo_clients = self.repo_clients.read().await;
         let key: RepoKey = key.into();
 
         repo_clients
             .get(&key)
             .cloned()
             .ok_or(AppStateError::RepoClientNotFound(key))
-            .map(|differ| differ.az_client)
     }
 
-    pub async fn get_repo(&self, key: impl Into<RepoKey>) -> Result<&RepoDiffer, AppStateError> {
+    pub async fn get_differ(&self, key: impl Into<RepoKey>) -> Result<&RepoDiffer, AppStateError> {
         let key: RepoKey = key.into();
-        let repos = self.repos.write().await;
+        let repos = self.differs.read().await;
 
         repos
             .get(&key)
+            .clone()
             .ok_or(AppStateError::RepoClientNotFound(key))
     }
 
     pub async fn insert_repo(&self, key: impl Into<RepoKey>, client: RepoClient) {
         let key: RepoKey = key.into();
-        let mut repos = self.repos.write().await;
+        let mut clients = self.repo_clients.write().await;
+        let mut differs = self.differs.write().await;
 
-        repos.insert(key.clone(), RepoDiffer::new(key, client));
+        clients.insert(key.clone(), client.clone());
+        differs.insert(key.clone(), RepoDiffer::new(key, client));
     }
 }

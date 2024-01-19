@@ -77,7 +77,7 @@ pub async fn changed_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<ChangedPullRequestsQuery>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-    let mut repo = app_state.get_repo(&query).await.map_err(|err| {
+    let mut repo = app_state.get_differ(&query).await.map_err(|err| {
         tracing::error!("Requested repo not found: {}", err);
         (StatusCode::NOT_FOUND, err.to_string())
     })?;
