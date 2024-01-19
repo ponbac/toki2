@@ -9,7 +9,7 @@ use futures_util::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
 use tokio::sync::RwLock;
 
-use crate::domain::{RepoConfig, RepoKey};
+use crate::domain::{RepoConfig, RepoDiffer, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppStateError {
@@ -30,7 +30,8 @@ impl IntoResponse for AppStateError {
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: Arc<PgPool>,
-    workers: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
+    repos: Arc<RwLock<HashMap<RepoKey, RepoDiffer>>>,
+    // todo: need to separate out the repo clients from the repo differ
 }
 
 impl AppState {
@@ -39,7 +40,7 @@ impl AppState {
             .into_iter()
             .map(|repo| async move {
                 match repo.to_client().await {
-                    Ok(client) => Some((repo.key(), client)),
+                    Ok(client) => Some((repo.key(), RepoDiffer::new(repo.key(), client))),
                     Err(err) => {
                         tracing::error!(
                             "Failed to create client for repo '{}': {}",
@@ -61,7 +62,7 @@ impl AppState {
 
         Self {
             db_pool: Arc::new(db_pool),
-            workers: Arc::new(RwLock::new(clients)),
+            repos: Arc::new(RwLock::new(clients)),
         }
     }
 
@@ -69,19 +70,29 @@ impl AppState {
         &self,
         key: impl Into<RepoKey>,
     ) -> Result<RepoClient, AppStateError> {
-        let repo_clients = self.workers.read().await;
+        let repo_clients = self.repos.read().await;
         let key: RepoKey = key.into();
 
         repo_clients
             .get(&key)
             .cloned()
             .ok_or(AppStateError::RepoClientNotFound(key))
+            .map(|differ| differ.az_client)
     }
 
-    pub async fn insert_repo_client(&self, key: impl Into<RepoKey>, client: RepoClient) {
-        let mut repo_clients = self.workers.write().await;
+    pub async fn get_repo(&self, key: impl Into<RepoKey>) -> Result<&RepoDiffer, AppStateError> {
         let key: RepoKey = key.into();
+        let repos = self.repos.write().await;
 
-        repo_clients.insert(key, client);
+        repos
+            .get(&key)
+            .ok_or(AppStateError::RepoClientNotFound(key))
+    }
+
+    pub async fn insert_repo(&self, key: impl Into<RepoKey>, client: RepoClient) {
+        let key: RepoKey = key.into();
+        let mut repos = self.repos.write().await;
+
+        repos.insert(key.clone(), RepoDiffer::new(key, client));
     }
 }

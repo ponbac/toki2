@@ -1,5 +1,6 @@
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     Json,
 };
 use az_devops::PullRequest;
@@ -54,4 +55,46 @@ pub async fn open_pull_requests(
     );
 
     Ok(Json(pull_requests))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangedPullRequestsQuery {
+    organization: String,
+    project: String,
+    repo_name: String,
+}
+
+impl From<&ChangedPullRequestsQuery> for RepoKey {
+    fn from(query: &ChangedPullRequestsQuery) -> Self {
+        Self::new(&query.organization, &query.project, &query.repo_name)
+    }
+}
+
+// TODO: Global error type!
+#[instrument(name = "GET /changed-pull-requests", skip(app_state))]
+pub async fn changed_pull_requests(
+    State(app_state): State<AppState>,
+    Query(query): Query<ChangedPullRequestsQuery>,
+) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
+    let mut repo = app_state.get_repo(&query).await.map_err(|err| {
+        tracing::error!("Requested repo not found: {}", err);
+        (StatusCode::NOT_FOUND, err.to_string())
+    })?;
+    let changed_pull_requests = repo.changed_pull_requests().await.map_err(|err| {
+        tracing::error!("Failed to get changed pull requests: {}", err);
+        (StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+    })?;
+
+    tracing::debug!(
+        "Found {} changed pull requests: [{}]",
+        changed_pull_requests.len(),
+        changed_pull_requests
+            .iter()
+            .map(|pr| pr.title.clone())
+            .collect::<Vec<String>>()
+            .join(", ")
+    );
+
+    Ok(Json(changed_pull_requests))
 }
