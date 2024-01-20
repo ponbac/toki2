@@ -84,7 +84,7 @@ async fn main() {
         .route("/", get(|| async { "Hello, World!" }))
         .route("/pull-requests", get(routes::open_pull_requests))
         .route("/repositories", get(routes::get_repositories))
-        .route("/changed-pull-requests", get(routes::changed_pull_requests))
+        // .route("/changed-pull-requests", get(routes::changed_pull_requests))
         .route("/repositories", post(routes::add_repository))
         .route("/auth", get(auth_test))
         .route_layer(login_required!(AuthBackend, login_url = "/login"))

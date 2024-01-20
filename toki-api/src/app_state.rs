@@ -1,15 +1,16 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, thread};
 
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 use az_devops::RepoClient;
+use crossbeam::channel::{unbounded, Sender};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
-use crate::domain::{RepoConfig, RepoDiffer, RepoKey};
+use crate::domain::{RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppStateError {
@@ -31,7 +32,7 @@ impl IntoResponse for AppStateError {
 pub struct AppState {
     pub db_pool: Arc<PgPool>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
-    differs: Arc<RwLock<HashMap<RepoKey, RepoDiffer>>>,
+    differ_senders: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
 }
 
 impl AppState {
@@ -62,13 +63,24 @@ impl AppState {
 
         let differs = clients
             .iter()
-            .map(|(key, client)| (key.clone(), RepoDiffer::new(key.clone(), client.clone())))
-            .collect();
+            .map(|(key, client)| {
+                let (sender, reciever) = unbounded::<RepoDifferMessage>();
+
+                let mut differ = RepoDiffer::new(key.clone(), client.clone());
+                let key = key.clone();
+
+                thread::spawn(move || {
+                    differ.run(reciever);
+                });
+
+                (key, sender)
+            })
+            .collect::<HashMap<_, _>>();
 
         Self {
             db_pool: Arc::new(db_pool),
             repo_clients: Arc::new(RwLock::new(clients)),
-            differs: Arc::new(RwLock::new(differs)),
+            differ_senders: Arc::new(Mutex::new(differs)),
         }
     }
 
@@ -85,22 +97,19 @@ impl AppState {
             .ok_or(AppStateError::RepoClientNotFound(key))
     }
 
-    pub async fn get_differ(&self, key: impl Into<RepoKey>) -> Result<&RepoDiffer, AppStateError> {
-        let key: RepoKey = key.into();
-        let repos = self.differs.read().await;
-
-        repos
-            .get(&key)
-            .clone()
-            .ok_or(AppStateError::RepoClientNotFound(key))
-    }
-
     pub async fn insert_repo(&self, key: impl Into<RepoKey>, client: RepoClient) {
         let key: RepoKey = key.into();
-        let mut clients = self.repo_clients.write().await;
-        let mut differs = self.differs.write().await;
 
+        let mut clients = self.repo_clients.write().await;
         clients.insert(key.clone(), client.clone());
-        differs.insert(key.clone(), RepoDiffer::new(key, client));
+
+        let mut differs = self.differ_senders.lock().await;
+        let (sender, reciever) = unbounded::<RepoDifferMessage>();
+        let mut differ = RepoDiffer::new(key.clone(), client.clone());
+
+        thread::spawn(move || {
+            differ.run(reciever);
+        });
+        differs.insert(key, sender);
     }
 }

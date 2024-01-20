@@ -1,10 +1,12 @@
 use core::fmt;
+use std::time::Duration;
 
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 use az_devops::{PullRequest, RepoClient};
+use crossbeam::channel::Receiver;
 use time::OffsetDateTime;
 
 use super::RepoKey;
@@ -23,6 +25,11 @@ impl IntoResponse for RepoDifferError {
 
         (status, self.to_string()).into_response()
     }
+}
+
+pub enum RepoDifferMessage {
+    Start(Duration),
+    Stop,
 }
 
 #[derive(Clone)]
@@ -45,12 +52,40 @@ impl RepoDiffer {
 }
 
 impl RepoDiffer {
-    pub async fn changed_pull_requests(&mut self) -> Result<Vec<PullRequest>, RepoDifferError> {
+    pub async fn run(&mut self, reciever: Receiver<RepoDifferMessage>) {
+        let mut interval = None;
+
+        loop {
+            match reciever.recv() {
+                Ok(RepoDifferMessage::Start(duration)) => {
+                    if interval.is_none() {
+                        interval = Some(tokio::time::interval(duration));
+                    }
+                }
+                Ok(RepoDifferMessage::Stop) => {
+                    interval = None;
+                }
+                Err(_) => {
+                    tracing::error!("Failed to receive message");
+                    break;
+                }
+            }
+
+            if let Some(interval) = &mut interval {
+                interval.tick().await;
+                tracing::debug!("Ticked");
+                self.tick().await;
+            }
+        }
+    }
+
+    async fn tick(&mut self) {
         let pull_requests = self
             .az_client
             .get_open_pull_requests()
             .await
-            .map_err(|_| RepoDifferError::CouldNotFetchPullRequests(self.key.clone()))?;
+            .expect("Could not fetch pull requests");
+
         self.prev_pull_requests = Some(pull_requests.clone());
         self.last_updated = Some(OffsetDateTime::now_utc());
 
@@ -62,7 +97,15 @@ impl RepoDiffer {
             None => pull_requests,
         };
 
-        Ok(changed_pull_requests)
+        tracing::debug!(
+            "Found {} changed pull requests: [{}]",
+            changed_pull_requests.len(),
+            changed_pull_requests
+                .iter()
+                .map(|pr| pr.title.clone())
+                .collect::<Vec<String>>()
+                .join(", ")
+        );
     }
 }
 
