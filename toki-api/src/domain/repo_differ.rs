@@ -70,6 +70,7 @@ impl RepoDiffer {
                             interval = Some(tokio::time::interval(duration));
                         }
                         RepoDifferMessage::Stop => {
+                            tracing::debug!("Stopping differ {}", self.key);
                             interval = None;
                         }
                     }

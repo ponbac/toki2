@@ -86,6 +86,7 @@ async fn main() {
         .route("/repositories", get(routes::get_repositories))
         .route("/cached-pull-requests", get(routes::cached_pull_requests))
         .route("/start-differ", post(routes::start_differ))
+        .route("/stop-differ", post(routes::stop_differ))
         .route("/repositories", post(routes::add_repository))
         .route("/auth", get(auth_test))
         .route_layer(login_required!(AuthBackend, login_url = "/login"))

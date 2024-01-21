@@ -63,28 +63,14 @@ pub async fn open_pull_requests(
     Ok(Json(pull_requests))
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChangedPullRequestsQuery {
-    organization: String,
-    project: String,
-    repo_name: String,
-}
-
-impl From<&ChangedPullRequestsQuery> for RepoKey {
-    fn from(query: &ChangedPullRequestsQuery) -> Self {
-        Self::new(&query.organization, &query.project, &query.repo_name)
-    }
-}
-
 // TODO: Global error type!
 #[instrument(name = "GET /cached-pull-requests", skip(app_state))]
 pub async fn cached_pull_requests(
     State(app_state): State<AppState>,
-    Query(query): Query<ChangedPullRequestsQuery>,
+    Query(query): Query<RepoKey>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
     let cached_prs = app_state
-        .get_cached_pull_requests(&query)
+        .get_cached_pull_requests(query)
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
@@ -94,15 +80,33 @@ pub async fn cached_pull_requests(
 #[instrument(name = "POST /start-differ", skip(app_state))]
 pub async fn start_differ(
     State(app_state): State<AppState>,
-    Json(query): Json<ChangedPullRequestsQuery>,
+    Json(body): Json<RepoKey>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let sender = app_state
-        .get_differ_sender(&query)
+        .get_differ_sender(body)
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
     let _ = sender
         .send(RepoDifferMessage::Start(Duration::from_secs(30)))
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()));
+
+    Ok(StatusCode::OK)
+}
+
+#[instrument(name = "POST /stop-differ", skip(app_state))]
+pub async fn stop_differ(
+    State(app_state): State<AppState>,
+    Json(body): Json<RepoKey>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let sender = app_state
+        .get_differ_sender(body)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+    let _ = sender
+        .send(RepoDifferMessage::Stop)
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()));
 
