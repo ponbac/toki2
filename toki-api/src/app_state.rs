@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use az_devops::RepoClient;
+use az_devops::{PullRequest, RepoClient};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
 use tokio::sync::{
@@ -35,6 +35,7 @@ pub struct AppState {
     pub db_pool: Arc<PgPool>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
+    pr_cache: Arc<RwLock<HashMap<RepoKey, Vec<PullRequest>>>>,
 }
 
 impl AppState {
@@ -63,26 +64,26 @@ impl AppState {
             .flatten()
             .collect();
 
-        let differs = clients
+        let pr_cache = Arc::new(RwLock::new(HashMap::new()));
+        let differ_txs = clients
             .iter()
             .map(|(key, client)| {
+                let mut differ = RepoDiffer::new(key.clone(), client.clone(), pr_cache.clone());
+
                 let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
-
-                let mut differ = RepoDiffer::new(key.clone(), client.clone());
-                let key = key.clone();
-
                 tokio::spawn(async move {
                     differ.run(rx).await;
                 });
 
-                (key, tx)
+                (key.clone(), tx)
             })
             .collect::<HashMap<_, _>>();
 
         Self {
             db_pool: Arc::new(db_pool),
             repo_clients: Arc::new(RwLock::new(clients)),
-            differ_txs: Arc::new(Mutex::new(differs)),
+            differ_txs: Arc::new(Mutex::new(differ_txs)),
+            pr_cache,
         }
     }
 
@@ -112,6 +113,19 @@ impl AppState {
             .ok_or(AppStateError::RepoClientNotFound(key))
     }
 
+    pub async fn get_cached_pull_requests(
+        &self,
+        key: impl Into<RepoKey>,
+    ) -> Result<Vec<PullRequest>, AppStateError> {
+        let pr_cache = self.pr_cache.read().await;
+        let key: RepoKey = key.into();
+
+        pr_cache
+            .get(&key)
+            .cloned()
+            .ok_or(AppStateError::RepoClientNotFound(key))
+    }
+
     pub async fn insert_repo(&self, key: impl Into<RepoKey>, client: RepoClient) {
         let key: RepoKey = key.into();
 
@@ -120,7 +134,7 @@ impl AppState {
 
         let mut differs = self.differ_txs.lock().await;
         let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
-        let mut differ = RepoDiffer::new(key.clone(), client.clone());
+        let mut differ = RepoDiffer::new(key.clone(), client.clone(), self.pr_cache.clone());
 
         tokio::spawn(async move {
             differ.run(rx).await;

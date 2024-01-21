@@ -1,5 +1,5 @@
 use core::fmt;
-use std::time::Duration;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use axum::{
     http::StatusCode,
@@ -7,7 +7,7 @@ use axum::{
 };
 use az_devops::{PullRequest, RepoClient};
 use time::OffsetDateTime;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
 
 use super::RepoKey;
@@ -35,19 +35,25 @@ pub enum RepoDifferMessage {
 
 #[derive(Clone)]
 pub struct RepoDiffer {
-    pub key: RepoKey,
-    pub az_client: RepoClient,
-    pub prev_pull_requests: Option<Vec<PullRequest>>,
-    pub last_updated: Option<OffsetDateTime>,
+    key: RepoKey,
+    az_client: RepoClient,
+    prev_pull_requests: Option<Vec<PullRequest>>,
+    last_updated: Option<OffsetDateTime>,
+    pr_cache: Arc<RwLock<HashMap<RepoKey, Vec<PullRequest>>>>,
 }
 
 impl RepoDiffer {
-    pub fn new(key: RepoKey, az_client: RepoClient) -> Self {
+    pub fn new(
+        key: RepoKey,
+        az_client: RepoClient,
+        pr_cache: Arc<RwLock<HashMap<RepoKey, Vec<PullRequest>>>>,
+    ) -> Self {
         Self {
             key,
             az_client,
             prev_pull_requests: None,
             last_updated: None,
+            pr_cache,
         }
     }
 }
@@ -109,8 +115,10 @@ impl RepoDiffer {
                 .join(", ")
         );
 
-        self.prev_pull_requests = Some(pull_requests);
+        self.prev_pull_requests = Some(pull_requests.clone());
         self.last_updated = Some(OffsetDateTime::now_utc());
+        let mut pr_cache = self.pr_cache.write().await;
+        pr_cache.insert(self.key.clone(), pull_requests);
     }
 }
 

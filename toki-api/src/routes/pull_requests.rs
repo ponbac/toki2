@@ -78,30 +78,18 @@ impl From<&ChangedPullRequestsQuery> for RepoKey {
 }
 
 // TODO: Global error type!
-// #[instrument(name = "GET /changed-pull-requests", skip(app_state))]
-// pub async fn changed_pull_requests(
-//     State(app_state): State<AppState>,
-//     Query(query): Query<ChangedPullRequestsQuery>,
-// ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-//     let changed_pull_requests = app_state
-//         .with_differ(&query, |differ| {
-//             differ.prev_pull_requests.clone().unwrap_or_default()
-//         })
-//         .await
-//         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+#[instrument(name = "GET /cached-pull-requests", skip(app_state))]
+pub async fn cached_pull_requests(
+    State(app_state): State<AppState>,
+    Query(query): Query<ChangedPullRequestsQuery>,
+) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
+    let cached_prs = app_state
+        .get_cached_pull_requests(&query)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
-//     tracing::debug!(
-//         "Found {} changed pull requests: [{}]",
-//         changed_pull_requests.len(),
-//         changed_pull_requests
-//             .iter()
-//             .map(|pr| pr.title.clone())
-//             .collect::<Vec<String>>()
-//             .join(", ")
-//     );
-
-//     Ok(Json(changed_pull_requests))
-// }
+    Ok(Json(cached_prs))
+}
 
 #[instrument(name = "POST /start-differ", skip(app_state))]
 pub async fn start_differ(
