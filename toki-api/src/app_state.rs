@@ -34,8 +34,8 @@ impl IntoResponse for AppStateError {
 pub struct AppState {
     pub db_pool: Arc<PgPool>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
+    differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
-    pr_cache: Arc<RwLock<HashMap<RepoKey, Vec<PullRequest>>>>,
 }
 
 impl AppState {
@@ -64,11 +64,12 @@ impl AppState {
             .flatten()
             .collect();
 
-        let pr_cache = Arc::new(RwLock::new(HashMap::new()));
+        let mut differs = HashMap::new();
         let differ_txs = clients
             .iter()
             .map(|(key, client)| {
-                let mut differ = RepoDiffer::new(key.clone(), client.clone(), pr_cache.clone());
+                let differ = Arc::new(RepoDiffer::new(key.clone(), client.clone()));
+                differs.insert(key.clone(), differ.clone());
 
                 let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
                 tokio::spawn(async move {
@@ -83,7 +84,7 @@ impl AppState {
             db_pool: Arc::new(db_pool),
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
-            pr_cache,
+            differs: Arc::new(RwLock::new(differs)),
         }
     }
 
@@ -95,6 +96,19 @@ impl AppState {
         let key: RepoKey = key.into();
 
         repo_clients
+            .get(&key)
+            .cloned()
+            .ok_or(AppStateError::RepoClientNotFound(key))
+    }
+
+    pub async fn get_repo_differ(
+        &self,
+        key: impl Into<RepoKey>,
+    ) -> Result<Arc<RepoDiffer>, AppStateError> {
+        let differs = self.differs.read().await;
+        let key: RepoKey = key.into();
+
+        differs
             .get(&key)
             .cloned()
             .ok_or(AppStateError::RepoClientNotFound(key))
@@ -116,14 +130,17 @@ impl AppState {
     pub async fn get_cached_pull_requests(
         &self,
         key: impl Into<RepoKey>,
-    ) -> Result<Vec<PullRequest>, AppStateError> {
-        let pr_cache = self.pr_cache.read().await;
+    ) -> Result<Option<Vec<PullRequest>>, AppStateError> {
         let key: RepoKey = key.into();
 
-        pr_cache
+        let differs = self.differs.read().await;
+        let differ = differs
             .get(&key)
             .cloned()
-            .ok_or(AppStateError::RepoClientNotFound(key))
+            .ok_or(AppStateError::RepoClientNotFound(key))?;
+        let cached_pull_requests = differ.prev_pull_requests.read().await.clone();
+
+        Ok(cached_pull_requests)
     }
 
     pub async fn insert_repo(&self, key: impl Into<RepoKey>, client: RepoClient) {
@@ -132,13 +149,17 @@ impl AppState {
         let mut clients = self.repo_clients.write().await;
         clients.insert(key.clone(), client.clone());
 
-        let mut differs = self.differ_txs.lock().await;
+        let mut differ_txs = self.differ_txs.lock().await;
         let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
-        let mut differ = RepoDiffer::new(key.clone(), client.clone(), self.pr_cache.clone());
+        let differ = Arc::new(RepoDiffer::new(key.clone(), client.clone()));
+        self.differs
+            .write()
+            .await
+            .insert(key.clone(), differ.clone());
 
         tokio::spawn(async move {
             differ.run(rx).await;
         });
-        differs.insert(key, tx);
+        differ_txs.insert(key, tx);
     }
 }

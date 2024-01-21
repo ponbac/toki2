@@ -88,7 +88,7 @@ pub async fn cached_pull_requests(
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
-    Ok(Json(cached_prs))
+    Ok(Json(cached_prs.unwrap_or_default()))
 }
 
 #[instrument(name = "POST /start-differ", skip(app_state))]

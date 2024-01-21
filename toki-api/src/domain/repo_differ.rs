@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     http::StatusCode,
@@ -37,30 +37,24 @@ pub enum RepoDifferMessage {
 pub struct RepoDiffer {
     key: RepoKey,
     az_client: RepoClient,
-    prev_pull_requests: Option<Vec<PullRequest>>,
-    last_updated: Option<OffsetDateTime>,
-    pr_cache: Arc<RwLock<HashMap<RepoKey, Vec<PullRequest>>>>,
+    pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
+    pub last_updated: Arc<RwLock<Option<OffsetDateTime>>>,
 }
 
 impl RepoDiffer {
-    pub fn new(
-        key: RepoKey,
-        az_client: RepoClient,
-        pr_cache: Arc<RwLock<HashMap<RepoKey, Vec<PullRequest>>>>,
-    ) -> Self {
+    pub fn new(key: RepoKey, az_client: RepoClient) -> Self {
         Self {
             key,
             az_client,
-            prev_pull_requests: None,
-            last_updated: None,
-            pr_cache,
+            prev_pull_requests: Arc::new(RwLock::new(None)),
+            last_updated: Arc::new(RwLock::new(None)),
         }
     }
 }
 
 impl RepoDiffer {
     #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
-    pub async fn run(&mut self, mut receiver: mpsc::Receiver<RepoDifferMessage>) {
+    pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>) {
         let mut interval: Option<tokio::time::Interval> = None;
 
         loop {
@@ -89,20 +83,23 @@ impl RepoDiffer {
     }
 
     #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
-    async fn tick(&mut self) {
+    async fn tick(&self) {
         let pull_requests = self
             .az_client
             .get_open_pull_requests()
             .await
             .expect("Could not fetch pull requests");
 
-        let changed_pull_requests = match &self.prev_pull_requests {
-            Some(prev_pull_requests) => pull_requests
-                .clone()
-                .into_iter()
-                .filter(|pr| !prev_pull_requests.contains(pr))
-                .collect::<Vec<PullRequest>>(),
-            None => pull_requests.clone(),
+        let changed_pull_requests = {
+            let prev_pull_requests = self.prev_pull_requests.read().await;
+            match prev_pull_requests.clone() {
+                Some(prev_pull_requests) => pull_requests
+                    .clone()
+                    .into_iter()
+                    .filter(|pr| !prev_pull_requests.contains(pr))
+                    .collect::<Vec<PullRequest>>(),
+                None => pull_requests.clone(),
+            }
         };
 
         tracing::debug!(
@@ -115,10 +112,14 @@ impl RepoDiffer {
                 .join(", ")
         );
 
-        self.prev_pull_requests = Some(pull_requests.clone());
-        self.last_updated = Some(OffsetDateTime::now_utc());
-        let mut pr_cache = self.pr_cache.write().await;
-        pr_cache.insert(self.key.clone(), pull_requests);
+        self.prev_pull_requests
+            .write()
+            .await
+            .replace(pull_requests.clone());
+        self.last_updated
+            .write()
+            .await
+            .replace(OffsetDateTime::now_utc());
     }
 }
 
