@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -7,7 +9,11 @@ use az_devops::PullRequest;
 use serde::Deserialize;
 use tracing::instrument;
 
-use crate::{app_state::AppStateError, domain::RepoKey, AppState};
+use crate::{
+    app_state::AppStateError,
+    domain::{RepoDifferMessage, RepoKey},
+    AppState,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,3 +102,21 @@ impl From<&ChangedPullRequestsQuery> for RepoKey {
 
 //     Ok(Json(changed_pull_requests))
 // }
+
+#[instrument(name = "POST /start-differ", skip(app_state))]
+pub async fn start_differ(
+    State(app_state): State<AppState>,
+    Json(query): Json<ChangedPullRequestsQuery>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let sender = app_state
+        .get_differ_sender(&query)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+    let _ = sender
+        .send(RepoDifferMessage::Start(Duration::from_secs(30)))
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()));
+
+    Ok(StatusCode::OK)
+}

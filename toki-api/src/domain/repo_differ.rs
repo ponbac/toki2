@@ -6,8 +6,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use az_devops::{PullRequest, RepoClient};
-use crossbeam::channel::Receiver;
 use time::OffsetDateTime;
+use tokio::sync::mpsc;
+use tracing::instrument;
 
 use super::RepoKey;
 
@@ -52,33 +53,36 @@ impl RepoDiffer {
 }
 
 impl RepoDiffer {
-    pub async fn run(&mut self, reciever: Receiver<RepoDifferMessage>) {
-        let mut interval = None;
+    #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
+    pub async fn run(&mut self, mut receiver: mpsc::Receiver<RepoDifferMessage>) {
+        let mut interval: Option<tokio::time::Interval> = None;
 
         loop {
-            match reciever.recv() {
-                Ok(RepoDifferMessage::Start(duration)) => {
-                    if interval.is_none() {
-                        interval = Some(tokio::time::interval(duration));
+            tokio::select! {
+                Some(message) = receiver.recv() => {
+                    match message {
+                        RepoDifferMessage::Start(duration) => {
+                            tracing::debug!(
+                                "Starting differ {} with interval: {:?}",
+                                self.key,
+                                duration
+                            );
+                            interval = Some(tokio::time::interval(duration));
+                        }
+                        RepoDifferMessage::Stop => {
+                            interval = None;
+                        }
                     }
                 }
-                Ok(RepoDifferMessage::Stop) => {
-                    interval = None;
+                _ = interval_tick_or_sleep(&mut interval) => {
+                    tracing::debug!("Ticked");
+                    self.tick().await;
                 }
-                Err(_) => {
-                    tracing::error!("Failed to receive message");
-                    break;
-                }
-            }
-
-            if let Some(interval) = &mut interval {
-                interval.tick().await;
-                tracing::debug!("Ticked");
-                self.tick().await;
             }
         }
     }
 
+    #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
     async fn tick(&mut self) {
         let pull_requests = self
             .az_client
@@ -86,15 +90,13 @@ impl RepoDiffer {
             .await
             .expect("Could not fetch pull requests");
 
-        self.prev_pull_requests = Some(pull_requests.clone());
-        self.last_updated = Some(OffsetDateTime::now_utc());
-
         let changed_pull_requests = match &self.prev_pull_requests {
             Some(prev_pull_requests) => pull_requests
+                .clone()
                 .into_iter()
                 .filter(|pr| !prev_pull_requests.contains(pr))
                 .collect::<Vec<PullRequest>>(),
-            None => pull_requests,
+            None => pull_requests.clone(),
         };
 
         tracing::debug!(
@@ -106,6 +108,9 @@ impl RepoDiffer {
                 .collect::<Vec<String>>()
                 .join(", ")
         );
+
+        self.prev_pull_requests = Some(pull_requests);
+        self.last_updated = Some(OffsetDateTime::now_utc());
     }
 }
 
@@ -116,5 +121,14 @@ impl fmt::Debug for RepoDiffer {
             .field("prev_pull_requests", &self.prev_pull_requests)
             .field("last_updated", &self.last_updated)
             .finish()
+    }
+}
+
+async fn interval_tick_or_sleep(interval: &mut Option<tokio::time::Interval>) {
+    if let Some(interval) = interval {
+        interval.tick().await;
+    } else {
+        // Sleep for a very long time to mimic a pending future.
+        tokio::time::sleep(tokio::time::Duration::from_secs(86400)).await;
     }
 }
