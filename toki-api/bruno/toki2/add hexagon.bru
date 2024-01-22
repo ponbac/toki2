@@ -1,0 +1,29 @@
+meta {
+  name: add hexagon
+  type: http
+  seq: 5
+}
+
+post {
+  url: http://localhost:8000/repositories
+  body: json
+  auth: none
+}
+
+auth:basic {
+  username: 
+  password: 
+}
+
+auth:bearer {
+  token: 
+}
+
+body:json {
+  {
+    "organization": "ex-change-part",
+    "project": "Quote Manager",
+    "repoName": "hexagon",
+    "token": "XXX"
+  }
+}

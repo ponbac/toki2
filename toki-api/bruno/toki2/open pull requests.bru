@@ -1,0 +1,27 @@
+meta {
+  name: open pull requests
+  type: http
+  seq: 1
+}
+
+get {
+  url: http://localhost:8000/pull-requests?organization=ex-change-part&project=Quote Manager&repoName=hexagon
+  body: none
+  auth: none
+}
+
+query {
+  organization: ex-change-part
+  project: Quote Manager
+  repoName: hexagon
+  ~author: pontus.backman@spinit.se
+}
+
+auth:basic {
+  username: 
+  password: 
+}
+
+auth:bearer {
+  token: 
+}

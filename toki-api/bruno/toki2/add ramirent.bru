@@ -1,0 +1,29 @@
+meta {
+  name: add ramirent
+  type: http
+  seq: 6
+}
+
+post {
+  url: http://localhost:8000/repositories
+  body: json
+  auth: none
+}
+
+auth:basic {
+  username: 
+  password: 
+}
+
+auth:bearer {
+  token: 
+}
+
+body:json {
+  {
+    "organization": "Ramirent",
+    "project": "Ramirent IT",
+    "repoName": "SE-CustomerPortal",
+    "token": "XXX"
+  }
+}
