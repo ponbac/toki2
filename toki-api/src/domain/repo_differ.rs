@@ -28,6 +28,11 @@ impl IntoResponse for RepoDifferError {
     }
 }
 
+pub enum Status {
+    Running,
+    Stopped,
+}
+
 pub enum RepoDifferMessage {
     Start(Duration),
     ForceUpdate,
@@ -40,7 +45,7 @@ pub struct RepoDiffer {
     az_client: RepoClient,
     pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
     pub last_updated: Arc<RwLock<Option<OffsetDateTime>>>,
-    // todo: status?
+    pub status: Arc<RwLock<Status>>,
 }
 
 impl RepoDiffer {
@@ -50,6 +55,7 @@ impl RepoDiffer {
             az_client,
             prev_pull_requests: Arc::new(RwLock::new(None)),
             last_updated: Arc::new(RwLock::new(None)),
+            status: Arc::new(RwLock::new(Status::Stopped)),
         }
     }
 }
@@ -70,32 +76,38 @@ impl RepoDiffer {
                                 duration
                             );
                             interval = Some(tokio::time::interval(duration));
+                            if let Status::Stopped = *self.status.read().await {
+                                *self.status.write().await = Status::Running;
+                            }
                         }
                         RepoDifferMessage::ForceUpdate => {
                             tracing::debug!("Forcing update for differ {}", self.key);
-                            self.tick().await;
+                            let _ = self.tick().await;
                         }
                         RepoDifferMessage::Stop => {
                             tracing::debug!("Stopping differ {}", self.key);
                             interval = None;
+                            if let Status::Running = *self.status.read().await {
+                                *self.status.write().await = Status::Stopped;
+                            }
                         }
                     }
                 }
                 _ = interval_tick_or_sleep(&mut interval) => {
                     tracing::debug!("Ticked");
-                    self.tick().await;
+                    let _ = self.tick().await;
                 }
             }
         }
     }
 
     #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
-    async fn tick(&self) {
+    async fn tick(&self) -> Result<(), RepoDifferError> {
         let pull_requests = self
             .az_client
             .get_open_pull_requests()
             .await
-            .expect("Could not fetch pull requests");
+            .map_err(|_| RepoDifferError::CouldNotFetchPullRequests(self.key.clone()))?;
 
         let changed_pull_requests = {
             let prev_pull_requests = self.prev_pull_requests.read().await;
@@ -127,6 +139,8 @@ impl RepoDiffer {
             .write()
             .await
             .replace(OffsetDateTime::now_utc());
+
+        Ok(())
     }
 }
 
