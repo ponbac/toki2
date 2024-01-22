@@ -18,6 +18,7 @@ pub struct ApplicationSettings {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub port: u16,
     pub host: String,
+    pub disable_auth: bool,
 }
 
 #[serde_as]
