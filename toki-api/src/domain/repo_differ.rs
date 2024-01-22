@@ -30,6 +30,7 @@ impl IntoResponse for RepoDifferError {
 
 pub enum RepoDifferMessage {
     Start(Duration),
+    ForceUpdate,
     Stop,
 }
 
@@ -39,6 +40,7 @@ pub struct RepoDiffer {
     az_client: RepoClient,
     pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
     pub last_updated: Arc<RwLock<Option<OffsetDateTime>>>,
+    // todo: status?
 }
 
 impl RepoDiffer {
@@ -68,6 +70,10 @@ impl RepoDiffer {
                                 duration
                             );
                             interval = Some(tokio::time::interval(duration));
+                        }
+                        RepoDifferMessage::ForceUpdate => {
+                            tracing::debug!("Forcing update for differ {}", self.key);
+                            self.tick().await;
                         }
                         RepoDifferMessage::Stop => {
                             tracing::debug!("Stopping differ {}", self.key);
