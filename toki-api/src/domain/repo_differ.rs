@@ -28,6 +28,7 @@ impl IntoResponse for RepoDifferError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Status {
     Running,
     Stopped,
@@ -58,6 +59,10 @@ impl RepoDiffer {
             status: Arc::new(RwLock::new(Status::Stopped)),
         }
     }
+
+    async fn is_stopped(&self) -> bool {
+        *self.status.read().await == Status::Stopped
+    }
 }
 
 impl RepoDiffer {
@@ -76,7 +81,8 @@ impl RepoDiffer {
                                 duration
                             );
                             interval = Some(tokio::time::interval(duration));
-                            if let Status::Stopped = *self.status.read().await {
+
+                            if self.is_stopped().await {
                                 *self.status.write().await = Status::Running;
                             }
                         }
@@ -87,7 +93,8 @@ impl RepoDiffer {
                         RepoDifferMessage::Stop => {
                             tracing::debug!("Stopping differ {}", self.key);
                             interval = None;
-                            if let Status::Running = *self.status.read().await {
+
+                            if !self.is_stopped().await {
                                 *self.status.write().await = Status::Stopped;
                             }
                         }

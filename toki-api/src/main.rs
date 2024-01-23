@@ -80,7 +80,7 @@ async fn main() {
     let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
     // Create the router and start the server
-    let router = Router::new()
+    let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/pull-requests", get(routes::open_pull_requests))
         .route("/repositories", get(routes::get_repositories))
@@ -90,17 +90,16 @@ async fn main() {
         .route("/force-update", post(routes::force_update))
         .route("/repositories", post(routes::add_repository))
         .route("/auth", get(auth_test))
-        .with_state(AppState::new(connection_pool, repo_configs).await)
-        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
-
-    let app = if config.application.disable_auth {
-        router
+        .with_state(AppState::new(connection_pool, repo_configs).await);
+    let app_with_auth = if config.application.disable_auth {
+        app
     } else {
-        router
-            .route_layer(login_required!(AuthBackend, login_url = "/login"))
+        app.route_layer(login_required!(AuthBackend, login_url = "/login"))
             .merge(auth::router())
             .layer(auth_layer)
     };
+    let app_with_tracing =
+        app_with_auth.layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
 
     let socket_addr = format!("{}:{}", config.application.host, config.application.port)
         .parse::<SocketAddr>()
@@ -108,7 +107,7 @@ async fn main() {
 
     tracing::info!("Starting server at {}", socket_addr);
     let listener = TcpListener::bind(socket_addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app_with_tracing).await.unwrap();
 }
 
 async fn auth_test(auth_session: AuthSession) -> String {
