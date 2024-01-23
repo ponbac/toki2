@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use az_devops::{PullRequest, RepoClient};
+use serde::Serialize;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
@@ -28,8 +29,8 @@ impl IntoResponse for RepoDifferError {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Status {
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub enum RepoDifferStatus {
     Running,
     Stopped,
 }
@@ -42,11 +43,12 @@ pub enum RepoDifferMessage {
 
 #[derive(Clone)]
 pub struct RepoDiffer {
-    key: RepoKey,
+    pub key: RepoKey,
     az_client: RepoClient,
     pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
+    pub status: Arc<RwLock<RepoDifferStatus>>,
     pub last_updated: Arc<RwLock<Option<OffsetDateTime>>>,
-    pub status: Arc<RwLock<Status>>,
+    pub interval: Arc<RwLock<Option<Duration>>>,
 }
 
 impl RepoDiffer {
@@ -55,13 +57,14 @@ impl RepoDiffer {
             key,
             az_client,
             prev_pull_requests: Arc::new(RwLock::new(None)),
+            status: Arc::new(RwLock::new(RepoDifferStatus::Stopped)),
             last_updated: Arc::new(RwLock::new(None)),
-            status: Arc::new(RwLock::new(Status::Stopped)),
+            interval: Arc::new(RwLock::new(None)),
         }
     }
 
     async fn is_stopped(&self) -> bool {
-        *self.status.read().await == Status::Stopped
+        *self.status.read().await == RepoDifferStatus::Stopped
     }
 }
 
@@ -81,9 +84,10 @@ impl RepoDiffer {
                                 duration
                             );
                             interval = Some(tokio::time::interval(duration));
+                            self.interval.write().await.replace(duration);
 
                             if self.is_stopped().await {
-                                *self.status.write().await = Status::Running;
+                                *self.status.write().await = RepoDifferStatus::Running;
                             }
                         }
                         RepoDifferMessage::ForceUpdate => {
@@ -93,9 +97,10 @@ impl RepoDiffer {
                         RepoDifferMessage::Stop => {
                             tracing::debug!("Stopping differ {}", self.key);
                             interval = None;
+                            self.interval.write().await.take();
 
                             if !self.is_stopped().await {
-                                *self.status.write().await = Status::Stopped;
+                                *self.status.write().await = RepoDifferStatus::Stopped;
                             }
                         }
                     }

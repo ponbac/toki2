@@ -26,7 +26,7 @@ pub async fn create(
     let base_app = Router::new()
         .route("/", get(|| async { "Hello, little World!" }))
         .nest("/pull-requests", routes::pull_requests::router())
-        .nest("/differs", routes::differ::router())
+        .nest("/differs", routes::differs::router())
         .nest("/repositories", routes::repositories::router())
         .with_state(AppState::new(connection_pool.clone(), repo_configs).await);
 
