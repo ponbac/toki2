@@ -80,7 +80,7 @@ async fn main() {
     let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
     // Create the router and start the server
-    let app = Router::new()
+    let router = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
         .route("/pull-requests", get(routes::open_pull_requests))
         .route("/repositories", get(routes::get_repositories))
@@ -90,11 +90,17 @@ async fn main() {
         .route("/force-update", post(routes::force_update))
         .route("/repositories", post(routes::add_repository))
         .route("/auth", get(auth_test))
-        .route_layer(login_required!(AuthBackend, login_url = "/login"))
         .with_state(AppState::new(connection_pool, repo_configs).await)
-        .merge(auth::router())
-        .layer(auth_layer)
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()));
+
+    let app = if config.application.disable_auth {
+        router
+    } else {
+        router
+            .route_layer(login_required!(AuthBackend, login_url = "/login"))
+            .merge(auth::router())
+            .layer(auth_layer)
+    };
 
     let socket_addr = format!("{}:{}", config.application.host, config.application.port)
         .parse::<SocketAddr>()
