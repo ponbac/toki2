@@ -27,7 +27,7 @@ pub async fn create(
     config: Settings,
 ) -> Router<()> {
     let base_app = Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
+        .route("/", get(|| async { "Hello, little World!" }))
         .route("/pull-requests", get(routes::open_pull_requests))
         .route("/repositories", get(routes::get_repositories))
         .route("/cached-pull-requests", get(routes::cached_pull_requests))
@@ -35,7 +35,15 @@ pub async fn create(
         .route("/stop-differ", post(routes::stop_differ))
         .route("/force-update", post(routes::force_update))
         .route("/repositories", post(routes::add_repository))
-        .route("/auth", get(auth_test))
+        .route(
+            "/auth",
+            get(|auth_session: AuthSession| async {
+                match auth_session.user {
+                    Some(user) => format!("Hello, {}!", user.full_name),
+                    None => "Hello, anonymous!".to_string(),
+                }
+            }),
+        )
         .with_state(AppState::new(connection_pool.clone(), repo_configs).await);
 
     // If authentication is enabled, wrap the app with the auth middleware
@@ -70,11 +78,4 @@ fn new_auth_layer(
 
     let backend = AuthBackend::new(connection_pool, client);
     AuthManagerLayerBuilder::new(backend, session_layer).build()
-}
-
-async fn auth_test(auth_session: AuthSession) -> String {
-    match auth_session.user {
-        Some(user) => format!("Hello, {}!", user.full_name),
-        None => "Hello, anonymous!".to_string(),
-    }
 }
