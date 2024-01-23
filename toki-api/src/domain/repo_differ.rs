@@ -33,6 +33,7 @@ impl IntoResponse for RepoDifferError {
 pub enum RepoDifferStatus {
     Running,
     Stopped,
+    // todo: errored
 }
 
 pub enum RepoDifferMessage {
