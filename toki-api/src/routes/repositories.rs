@@ -1,4 +1,9 @@
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
 use az_devops::RepoClient;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -6,9 +11,15 @@ use tracing::instrument;
 
 use crate::{domain::RepoKey, AppState};
 
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/", get(get_repositories))
+        .route("/", post(add_repository))
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RepositoryDto {
+struct RepositoryDto {
     id: i32,
     organization: String,
     project: String,
@@ -16,7 +27,7 @@ pub struct RepositoryDto {
 }
 
 #[instrument(name = "GET /repositories", skip(app_state))]
-pub async fn get_repositories(State(app_state): State<AppState>) -> Json<Vec<RepositoryDto>> {
+async fn get_repositories(State(app_state): State<AppState>) -> Json<Vec<RepositoryDto>> {
     let repos = query_repository_dtos(&app_state.db_pool)
         .await
         .expect("Failed to query repos");
@@ -42,7 +53,7 @@ async fn query_repository_dtos(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AddRepositoryBody {
+struct AddRepositoryBody {
     organization: String,
     project: String,
     repo_name: String,
@@ -56,7 +67,7 @@ impl From<&AddRepositoryBody> for RepoKey {
 }
 
 #[derive(Debug, Serialize)]
-pub struct AddRepositoryResponse {
+struct AddRepositoryResponse {
     id: i32,
 }
 
@@ -69,7 +80,7 @@ pub struct AddRepositoryResponse {
         repo_name = %body.repo_name,
     )
 )]
-pub async fn add_repository(
+async fn add_repository(
     State(app_state): State<AppState>,
     Json(body): Json<AddRepositoryBody>,
 ) -> Result<Json<AddRepositoryResponse>, (StatusCode, String)> {

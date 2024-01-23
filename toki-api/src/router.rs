@@ -1,7 +1,4 @@
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::{routing::get, Router};
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
     login_required,
@@ -28,22 +25,9 @@ pub async fn create(
 ) -> Router<()> {
     let base_app = Router::new()
         .route("/", get(|| async { "Hello, little World!" }))
-        .route("/pull-requests", get(routes::open_pull_requests))
-        .route("/repositories", get(routes::get_repositories))
-        .route("/cached-pull-requests", get(routes::cached_pull_requests))
-        .route("/start-differ", post(routes::start_differ))
-        .route("/stop-differ", post(routes::stop_differ))
-        .route("/force-update", post(routes::force_update))
-        .route("/repositories", post(routes::add_repository))
-        .route(
-            "/auth",
-            get(|auth_session: AuthSession| async {
-                match auth_session.user {
-                    Some(user) => format!("Hello, {}!", user.full_name),
-                    None => "Hello, anonymous!".to_string(),
-                }
-            }),
-        )
+        .nest("/pull-requests", routes::pull_requests::router())
+        .nest("/differs", routes::differ::router())
+        .nest("/repositories", routes::repositories::router())
         .with_state(AppState::new(connection_pool.clone(), repo_configs).await);
 
     // If authentication is enabled, wrap the app with the auth middleware
@@ -52,11 +36,21 @@ pub async fn create(
     } else {
         let auth_layer = new_auth_layer(connection_pool.clone(), config.clone());
         base_app
+            .route(
+                "/auth",
+                get(|auth_session: AuthSession| async {
+                    match auth_session.user {
+                        Some(user) => format!("Hello, {}!", user.full_name),
+                        None => "Hello, anonymous!".to_string(),
+                    }
+                }),
+            )
             .route_layer(login_required!(AuthBackend, login_url = "/login"))
             .merge(auth::router())
             .layer(auth_layer)
     };
 
+    // Finally, wrap the app with tracing layer
     app_with_auth.layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
 }
 
