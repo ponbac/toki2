@@ -25,7 +25,7 @@ const hexagonRepoKey: RepoKey = {
 };
 
 export function Home() {
-  const { data: differs, refetch } = useQuery({
+  const { data: differs, refetch: refetchDiffers } = useQuery({
     queryKey: ["differs"],
     queryFn: () =>
       fetch("http://localhost:8000/differs").then((res) =>
@@ -34,12 +34,19 @@ export function Home() {
     refetchInterval: 30 * 1000,
   });
 
-  const { data: cachedPullRequests } = useQuery({
+  const { data: cachedPullRequests, refetch: refetchPrs } = useQuery({
     queryKey: ["cachedPullRequests"],
-    queryFn: () =>
-      fetch(
-        `http://localhost:8000/pull-requests/cached?organization=${hexagonRepoKey.organization}&project=${hexagonRepoKey.project}&repoName=${hexagonRepoKey.repoName}`,
-      ).then((res) => res.json()),
+    queryFn: async () => {
+      const searchParams = new URLSearchParams();
+      searchParams.set("organization", hexagonRepoKey.organization);
+      searchParams.set("project", hexagonRepoKey.project);
+      searchParams.set("repoName", hexagonRepoKey.repoName);
+
+      const res = await fetch(
+        `http://localhost:8000/pull-requests/cached?${searchParams.toString()}`,
+      );
+      return await res.json();
+    },
     refetchInterval: 30 * 1000,
   });
 
@@ -53,7 +60,10 @@ export function Home() {
         },
       }),
     onSuccess: () => {
-      refetch();
+      setTimeout(() => {
+        refetchDiffers();
+        refetchPrs();
+      }, 500);
     },
   });
 
@@ -67,7 +77,7 @@ export function Home() {
         },
       }),
     onSuccess: () => {
-      refetch();
+      refetchDiffers();
     },
   });
 
