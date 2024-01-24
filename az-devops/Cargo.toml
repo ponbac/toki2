@@ -15,6 +15,7 @@ azure_devops_rust_api = { version = "0.15.1", features = [
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 time = { version = "0.3.31", features = ["serde", "parsing"] }
+tracing = { version = "0.1.40", features = ["attributes"] }
 
 [dev-dependencies]
 dotenvy = "0.15.7"

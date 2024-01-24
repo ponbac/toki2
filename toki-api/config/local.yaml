@@ -1,4 +1,5 @@
 application:
   host: "127.0.0.1"
+  disable_auth: true
 database:
   require_ssl: false

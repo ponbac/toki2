@@ -1,6 +1,8 @@
 use axum::{
     extract::{Query, State},
-    Json,
+    http::StatusCode,
+    routing::get,
+    Json, Router,
 };
 use az_devops::PullRequest;
 use serde::Deserialize;
@@ -8,9 +10,15 @@ use tracing::instrument;
 
 use crate::{app_state::AppStateError, domain::RepoKey, AppState};
 
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/open", get(open_pull_requests))
+        .route("/cached", get(cached_pull_requests))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenPullRequestsQuery {
+struct OpenPullRequestsQuery {
     organization: String,
     project: String,
     repo_name: String,
@@ -24,7 +32,7 @@ impl From<&OpenPullRequestsQuery> for RepoKey {
 }
 
 #[instrument(name = "GET /pull-requests", skip(app_state))]
-pub async fn open_pull_requests(
+async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
 ) -> Result<Json<Vec<PullRequest>>, AppStateError> {
@@ -54,4 +62,18 @@ pub async fn open_pull_requests(
     );
 
     Ok(Json(pull_requests))
+}
+
+// TODO: Global error type!
+#[instrument(name = "GET /cached-pull-requests", skip(app_state))]
+async fn cached_pull_requests(
+    State(app_state): State<AppState>,
+    Query(query): Query<RepoKey>,
+) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
+    let cached_prs = app_state
+        .get_cached_pull_requests(query)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+    Ok(Json(cached_prs.unwrap_or_default()))
 }

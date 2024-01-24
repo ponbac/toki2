@@ -5,7 +5,7 @@ use serde_with::serde_as;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use strum::{Display, EnumString};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Settings {
     pub application: ApplicationSettings,
     pub database: DatabaseSettings,
@@ -13,15 +13,16 @@ pub struct Settings {
 }
 
 #[serde_as]
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ApplicationSettings {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub port: u16,
     pub host: String,
+    pub disable_auth: bool,
 }
 
 #[serde_as]
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: String,
@@ -32,7 +33,7 @@ pub struct DatabaseSettings {
     pub require_ssl: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct AuthSettings {
     pub client_id: String,
     pub client_secret: String,

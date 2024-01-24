@@ -1,6 +1,9 @@
 use std::fmt::{self, Display};
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RepoKey {
     pub organization: String,
     pub project: String,

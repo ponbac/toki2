@@ -1,0 +1,28 @@
+meta {
+  name: stop differ
+  type: http
+  seq: 9
+}
+
+post {
+  url: http://localhost:8000/differs/stop
+  body: json
+  auth: none
+}
+
+auth:basic {
+  username: 
+  password: 
+}
+
+auth:bearer {
+  token: 
+}
+
+body:json {
+  {
+    "organization": "ex-change-part",
+    "project": "Quote Manager",
+    "repoName": "hexagon"
+  }
+}

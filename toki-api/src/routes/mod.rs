@@ -1,5 +1,3 @@
-mod pull_requests;
-mod repositories;
-
-pub use pull_requests::*;
-pub use repositories::*;
+pub(crate) mod differs;
+pub(crate) mod pull_requests;
+pub(crate) mod repositories;

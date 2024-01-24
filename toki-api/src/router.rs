@@ -1,0 +1,75 @@
+use axum::{routing::get, Router};
+use axum_extra::extract::cookie::SameSite;
+use axum_login::{
+    login_required,
+    tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
+    AuthManagerLayer, AuthManagerLayerBuilder,
+};
+use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, TokenUrl};
+use sqlx::PgPool;
+use time::Duration;
+use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+
+use crate::{
+    app_state::AppState,
+    auth,
+    config::Settings,
+    domain::{AuthBackend, AuthSession, RepoConfig},
+    routes,
+};
+
+pub async fn create(
+    connection_pool: PgPool,
+    repo_configs: Vec<RepoConfig>,
+    config: Settings,
+) -> Router<()> {
+    let base_app = Router::new()
+        .route("/", get(|| async { "Hello, little World!" }))
+        .nest("/pull-requests", routes::pull_requests::router())
+        .nest("/differs", routes::differs::router())
+        .nest("/repositories", routes::repositories::router())
+        .with_state(AppState::new(connection_pool.clone(), repo_configs).await);
+
+    // If authentication is enabled, wrap the app with the auth middleware
+    let app_with_auth = if config.application.disable_auth {
+        base_app
+    } else {
+        let auth_layer = new_auth_layer(connection_pool.clone(), config.clone());
+        base_app
+            .route(
+                "/auth",
+                get(|auth_session: AuthSession| async {
+                    match auth_session.user {
+                        Some(user) => format!("Hello, {}!", user.full_name),
+                        None => "Hello, anonymous!".to_string(),
+                    }
+                }),
+            )
+            .route_layer(login_required!(AuthBackend, login_url = "/login"))
+            .merge(auth::router())
+            .layer(auth_layer)
+    };
+
+    // Finally, wrap the app with tracing layer
+    app_with_auth.layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
+}
+
+fn new_auth_layer(
+    connection_pool: PgPool,
+    config: Settings,
+) -> AuthManagerLayer<AuthBackend, MemoryStore> {
+    let client = BasicClient::new(
+        ClientId::new(config.auth.client_id),
+        Some(ClientSecret::new(config.auth.client_secret)),
+        AuthUrl::new(config.auth.auth_url).expect("Invalid authorization endpoint URL"),
+        Some(TokenUrl::new(config.auth.token_url).expect("Invalid token endpoint URL")),
+    );
+    let session_store = MemoryStore::default();
+    let session_layer = SessionManagerLayer::new(session_store)
+        .with_secure(false)
+        .with_same_site(SameSite::Lax)
+        .with_expiry(Expiry::OnInactivity(Duration::days(1)));
+
+    let backend = AuthBackend::new(connection_pool, client);
+    AuthManagerLayerBuilder::new(backend, session_layer).build()
+}
