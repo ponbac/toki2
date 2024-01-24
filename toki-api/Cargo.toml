@@ -29,7 +29,7 @@ futures-util = { version = "0.3.30", default-features = false, features = [
     "std",
 ] }
 tower = { version = "0.4.13", features = ["util"] }
-tower-http = { version = "0.5.0", features = ["trace"] }
+tower-http = { version = "0.5.0", features = ["trace", "cors"] }
 strum = { version = "0.25.0", features = ["derive"] }
 sqlx = { version = "0.7.3", features = [
     "postgres",

@@ -1,4 +1,4 @@
-use axum::{routing::get, Router};
+use axum::{http::Method, routing::get, Router};
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
     login_required,
@@ -8,7 +8,10 @@ use axum_login::{
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, TokenUrl};
 use sqlx::PgPool;
 use time::Duration;
-use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tower_http::{
+    cors::{Any, CorsLayer},
+    trace::{DefaultMakeSpan, TraceLayer},
+};
 
 use crate::{
     app_state::AppState,
@@ -50,8 +53,14 @@ pub async fn create(
             .layer(auth_layer)
     };
 
-    // Finally, wrap the app with tracing layer
-    app_with_auth.layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
+    // Finally, wrap the app with tracing layer and CORS
+    let cors = CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_headers(Any)
+        .allow_origin(Any);
+    app_with_auth
+        .layer(cors)
+        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
 }
 
 fn new_auth_layer(
