@@ -1,3 +1,4 @@
+import { createFileRoute } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,7 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogIn } from "lucide-react";
 
-export function Login() {
+export const Route = createFileRoute("/login")({
+  component: LoginComponent,
+});
+
+function LoginComponent() {
   return (
     <main className="flex h-screen items-center justify-center">
       <Card className="max-w-sm">
