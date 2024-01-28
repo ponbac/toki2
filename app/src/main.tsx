@@ -20,7 +20,7 @@ export type RouterContext = {
   queryClient: QueryClient;
 };
 
-const router = createRouter({
+export const router = createRouter({
   routeTree,
   notFoundRoute,
   context: {

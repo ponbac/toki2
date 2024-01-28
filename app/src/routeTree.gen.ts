@@ -4,7 +4,9 @@
 
 import { Route as rootRoute } from "./routes/__root"
 import { Route as LoginImport } from "./routes/login"
+import { Route as ProtectedRouteImport } from "./routes/_protected/route"
 import { Route as IndexImport } from "./routes/index"
+import { Route as ProtectedAuthTestImport } from "./routes/_protected/auth-test"
 
 // Create/Update Routes
 
@@ -13,9 +15,19 @@ const LoginRoute = LoginImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const ProtectedRouteRoute = ProtectedRouteImport.update({
+  id: "/_protected",
+  getParentRoute: () => rootRoute,
+} as any)
+
 const IndexRoute = IndexImport.update({
   path: "/",
   getParentRoute: () => rootRoute,
+} as any)
+
+const ProtectedAuthTestRoute = ProtectedAuthTestImport.update({
+  path: "/auth-test",
+  getParentRoute: () => ProtectedRouteRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -26,13 +38,25 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
+    "/_protected": {
+      preLoaderRoute: typeof ProtectedRouteImport
+      parentRoute: typeof rootRoute
+    }
     "/login": {
       preLoaderRoute: typeof LoginImport
       parentRoute: typeof rootRoute
+    }
+    "/_protected/auth-test": {
+      preLoaderRoute: typeof ProtectedAuthTestImport
+      parentRoute: typeof ProtectedRouteImport
     }
   }
 }
 
 // Create and export the route tree
 
-export const routeTree = rootRoute.addChildren([IndexRoute, LoginRoute])
+export const routeTree = rootRoute.addChildren([
+  IndexRoute,
+  ProtectedRouteRoute.addChildren([ProtectedAuthTestRoute]),
+  LoginRoute,
+])

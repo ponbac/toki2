@@ -11,12 +11,24 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogIn } from "lucide-react";
+import { router } from "@/main";
+
+type LoginSearchParams = {
+  redirect?: string;
+};
 
 export const Route = createFileRoute("/login")({
   component: LoginComponent,
+  validateSearch: (search: Record<string, unknown>): LoginSearchParams => {
+    return {
+      redirect: (search.redirect as string) || undefined,
+    };
+  },
 });
 
 function LoginComponent() {
+  const { redirect } = Route.useSearch();
+
   return (
     <main className="flex h-screen items-center justify-center">
       <Card className="max-w-sm">
@@ -49,7 +61,7 @@ function LoginComponent() {
           <Button
             onClick={() => {
               localStorage.setItem("isAuthenticated", "true");
-              window.location.reload();
+              router.history.push(redirect || "/");
             }}
           >
             <LogIn className="mr-2 h-4 w-4" />
