@@ -4,9 +4,9 @@
 
 import { Route as rootRoute } from "./routes/__root"
 import { Route as LoginImport } from "./routes/login"
-import { Route as ProtectedRouteImport } from "./routes/_protected/route"
+import { Route as LayoutRouteImport } from "./routes/_layout/route"
 import { Route as IndexImport } from "./routes/index"
-import { Route as ProtectedAuthTestImport } from "./routes/_protected/auth-test"
+import { Route as LayoutAuthTestImport } from "./routes/_layout/auth-test"
 
 // Create/Update Routes
 
@@ -15,8 +15,8 @@ const LoginRoute = LoginImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const ProtectedRouteRoute = ProtectedRouteImport.update({
-  id: "/_protected",
+const LayoutRouteRoute = LayoutRouteImport.update({
+  id: "/_layout",
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -25,9 +25,9 @@ const IndexRoute = IndexImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const ProtectedAuthTestRoute = ProtectedAuthTestImport.update({
+const LayoutAuthTestRoute = LayoutAuthTestImport.update({
   path: "/auth-test",
-  getParentRoute: () => ProtectedRouteRoute,
+  getParentRoute: () => LayoutRouteRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -38,17 +38,17 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
-    "/_protected": {
-      preLoaderRoute: typeof ProtectedRouteImport
+    "/_layout": {
+      preLoaderRoute: typeof LayoutRouteImport
       parentRoute: typeof rootRoute
     }
     "/login": {
       preLoaderRoute: typeof LoginImport
       parentRoute: typeof rootRoute
     }
-    "/_protected/auth-test": {
-      preLoaderRoute: typeof ProtectedAuthTestImport
-      parentRoute: typeof ProtectedRouteImport
+    "/_layout/auth-test": {
+      preLoaderRoute: typeof LayoutAuthTestImport
+      parentRoute: typeof LayoutRouteImport
     }
   }
 }
@@ -57,6 +57,6 @@ declare module "@tanstack/react-router" {
 
 export const routeTree = rootRoute.addChildren([
   IndexRoute,
-  ProtectedRouteRoute.addChildren([ProtectedAuthTestRoute]),
+  LayoutRouteRoute.addChildren([LayoutAuthTestRoute]),
   LoginRoute,
 ])
