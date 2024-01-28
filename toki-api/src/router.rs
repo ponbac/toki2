@@ -47,7 +47,7 @@ pub async fn create(
                     }
                 }),
             )
-            .route_layer(login_required!(AuthBackend, login_url = "/login"))
+            .route_layer(login_required!(AuthBackend))
             .merge(auth::router())
             .layer(auth_layer)
     };
@@ -60,7 +60,7 @@ pub async fn create(
     app_with_auth
         .with_state(
             AppState::new(
-                config.application.app_url.clone(),
+                config.application.app_url,
                 connection_pool.clone(),
                 repo_configs,
             )
@@ -82,7 +82,7 @@ fn new_auth_layer(
     );
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false)
+        .with_secure(false) // todo: explore production values
         .with_same_site(SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(Duration::days(1)));
 

@@ -1,25 +1,11 @@
-import { router } from "@/main";
 import { queryOptions } from "@tanstack/react-query";
+import { api } from "./api";
 
 export const queries = {
   differs: () =>
     queryOptions({
       queryKey: ["differs"],
-      queryFn: async () => {
-        const response = await fetch("http://localhost:8000/differs", {
-          credentials: "include",
-        });
-        console.log(response);
-
-        if (response.redirected || response.status !== 200) {
-          router.history.push(
-            `/login?next=${router.history.location.pathname}`,
-          );
-          return Promise.reject("Unauthorized");
-        }
-
-        return response.json() as Promise<Differ[]>;
-      },
+      queryFn: async () => api.get("differs").json<Array<Differ>>(),
       refetchInterval: 30 * 1000,
     }),
 };
