@@ -9,7 +9,7 @@ use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, TokenUrl};
 use sqlx::PgPool;
 use time::Duration;
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::CorsLayer,
     trace::{DefaultMakeSpan, TraceLayer},
 };
 
@@ -30,8 +30,7 @@ pub async fn create(
         .route("/", get(|| async { "Hello, little World!" }))
         .nest("/pull-requests", routes::pull_requests::router())
         .nest("/differs", routes::differs::router())
-        .nest("/repositories", routes::repositories::router())
-        .with_state(AppState::new(connection_pool.clone(), repo_configs).await);
+        .nest("/repositories", routes::repositories::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
@@ -53,12 +52,20 @@ pub async fn create(
             .layer(auth_layer)
     };
 
-    // Finally, wrap the app with tracing layer and CORS
+    // Finally, wrap the app with tracing layer, state and CORS
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::DELETE])
-        .allow_headers(Any)
-        .allow_origin(Any);
+        .allow_credentials(true)
+        .allow_origin([config.application.app_url.parse().unwrap()]);
     app_with_auth
+        .with_state(
+            AppState::new(
+                config.application.app_url.clone(),
+                connection_pool.clone(),
+                repo_configs,
+            )
+            .await,
+        )
         .layer(cors)
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
 }

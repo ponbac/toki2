@@ -1,5 +1,6 @@
 application:
   host: "127.0.0.1"
-  disable_auth: true
+  app_url: "http://localhost:5173"
+  disable_auth: false
 database:
   require_ssl: false

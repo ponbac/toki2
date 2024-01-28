@@ -11,23 +11,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogIn } from "lucide-react";
-import { router } from "@/main";
 
 type LoginSearchParams = {
-  redirect?: string;
+  next?: string;
 };
 
 export const Route = createFileRoute("/login")({
   component: LoginComponent,
   validateSearch: (search: Record<string, unknown>): LoginSearchParams => {
     return {
-      redirect: (search.redirect as string) || undefined,
+      next: (search.next as string) || undefined,
     };
   },
 });
 
 function LoginComponent() {
-  const { redirect } = Route.useSearch();
+  const { next } = Route.useSearch();
 
   return (
     <main className="flex h-screen items-center justify-center">
@@ -59,9 +58,17 @@ function LoginComponent() {
         </CardContent>
         <CardFooter className="flex-row-reverse">
           <Button
-            onClick={() => {
-              localStorage.setItem("isAuthenticated", "true");
-              router.history.push(redirect || "/");
+            onClick={async () => {
+              const resp = await fetch(
+                `http://localhost:8000/login?next=${next || "/"}`,
+                {
+                  method: "POST",
+                  credentials: "include",
+                },
+              );
+
+              const authUrl = await resp.text();
+              window.location.href = authUrl;
             }}
           >
             <LogIn className="mr-2 h-4 w-4" />

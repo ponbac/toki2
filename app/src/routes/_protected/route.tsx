@@ -6,7 +6,7 @@ export const Route = createFileRoute("/_protected")({
       throw redirect({
         to: "/login",
         search: {
-          redirect: location.href,
+          next: location.href,
         },
       });
     }
@@ -14,5 +14,5 @@ export const Route = createFileRoute("/_protected")({
 });
 
 function isAuthenticated() {
-  return localStorage.getItem("isAuthenticated") === "true";
+  return true;
 }
