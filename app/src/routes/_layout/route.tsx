@@ -1,3 +1,4 @@
+import { SideNavWrapper } from "@/components/side-nav";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_layout")({
@@ -6,9 +7,19 @@ export const Route = createFileRoute("/_layout")({
 
 function LayoutComponent() {
   return (
-    <div className="flex min-h-screen flex-row">
-      <div className="flex h-screen flex-col bg-slate-500">Wabbado!</div>
+    <SideNavWrapper
+      accounts={[
+        {
+          email: "root@ponbac.xyz",
+          label: "Root",
+          icon: "👑",
+        },
+      ]}
+      navCollapsedSize={3}
+      defaultCollapsed={false}
+      className="flex h-full min-h-screen w-full flex-col"
+    >
       <Outlet />
-    </div>
+    </SideNavWrapper>
   );
 }

@@ -40,7 +40,7 @@ function AuthTestComponent() {
   });
 
   return (
-    <main className="flex w-full flex-col items-center justify-center gap-4">
+    <main className="flex min-h-screen w-full flex-col items-center justify-center gap-4">
       <h1 className="text-4xl font-bold">You are authenticated!</h1>
       <Button
         onClick={() => {
