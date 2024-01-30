@@ -8,6 +8,21 @@ export const queries = {
       queryFn: async () => api.get("differs").json<Array<Differ>>(),
       refetchInterval: 30 * 1000,
     }),
+  cachedPullRequests: (repoKey: RepoKey) =>
+    queryOptions({
+      queryKey: ["cachedPullRequests", repoKey],
+      queryFn: async () =>
+        api
+          .get("pull-requests/cached", { searchParams: repoKey })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .json<Array<any>>(),
+    }),
+};
+
+export type RepoKey = {
+  organization: string;
+  project: string;
+  repoName: string;
 };
 
 type Differ = {

@@ -34,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { ScrollArea } from "./ui/scroll-area";
 
 export function SideNavWrapper({
   accounts,
@@ -65,7 +66,7 @@ export function SideNavWrapper({
             sizes,
           )}`;
         }}
-        className="h-full min-h-screen items-stretch"
+        className="sticky top-0 h-full max-h-screen min-h-screen items-stretch"
       >
         <ResizablePanel
           defaultSize={defaultLayout[0]}
@@ -183,7 +184,7 @@ export function SideNavWrapper({
           minSize={30}
           className={className}
         >
-          {children}
+          <ScrollArea className="h-screen">{children}</ScrollArea>
         </ResizablePanel>
       </ResizablePanelGroup>
     </TooltipProvider>
@@ -212,7 +213,7 @@ export function Nav({ links, isCollapsed }: NavProps) {
             <Tooltip key={index} delayDuration={0}>
               <TooltipTrigger asChild>
                 <Link
-                  href="#"
+                  to="/prs"
                   className={cn(
                     buttonVariants({ variant: link.variant, size: "icon" }),
                     "h-9 w-9",

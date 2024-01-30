@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { queries } from "@/lib/queries";
+import { RepoKey, queries } from "@/lib/queries";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -9,12 +9,6 @@ export const Route = createFileRoute("/_layout/auth-test")({
     context.queryClient.ensureQueryData(queries.differs()),
   component: AuthTestComponent,
 });
-
-type RepoKey = {
-  organization: string;
-  project: string;
-  repoName: string;
-};
 
 function AuthTestComponent() {
   const { data, refetch } = useSuspenseQuery(queries.differs());
