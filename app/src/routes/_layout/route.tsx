@@ -15,7 +15,7 @@ function LayoutComponent() {
           icon: "👑",
         },
       ]}
-      navCollapsedSize={3}
+      navCollapsedSize={2}
       defaultCollapsed={false}
       className="flex h-full min-h-screen w-full flex-col"
     >
