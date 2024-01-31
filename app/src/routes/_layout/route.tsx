@@ -16,7 +16,7 @@ function LayoutComponent() {
         },
       ]}
       navCollapsedSize={2}
-      defaultCollapsed={false}
+      defaultCollapsed={true}
       className="flex h-full min-h-screen w-full flex-col"
     >
       <Outlet />

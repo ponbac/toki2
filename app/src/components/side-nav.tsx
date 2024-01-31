@@ -1,17 +1,5 @@
 import * as React from "react";
-import {
-  AlertCircle,
-  Archive,
-  ArchiveX,
-  File,
-  Inbox,
-  LucideIcon,
-  MessagesSquare,
-  Send,
-  ShoppingCart,
-  Trash2,
-  Users2,
-} from "lucide-react";
+import { File, Inbox, LucideIcon, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -35,10 +23,42 @@ import {
   SelectValue,
 } from "./ui/select";
 import { ScrollArea } from "./ui/scroll-area";
+import { routeTree } from "@/routeTree.gen";
+
+type LinkDestination = Parameters<typeof Link<typeof routeTree>>[0]["to"];
+const MENU_ITEMS: Array<{
+  title: string;
+  label?: string;
+  icon: LucideIcon;
+  variant: "default" | "ghost";
+  to: LinkDestination;
+}> = [
+  {
+    title: "Inbox",
+    label: "128",
+    icon: Inbox,
+    variant: "default",
+    to: "/",
+  },
+  {
+    title: "Drafts",
+    label: "9",
+    icon: File,
+    variant: "ghost",
+    to: "/prs",
+  },
+  {
+    title: "Sent",
+    label: "",
+    icon: Send,
+    variant: "ghost",
+    to: "/auth-test",
+  },
+];
 
 export function SideNavWrapper({
   accounts,
-  defaultLayout = [265, 440],
+  defaultLayout = [3, 440],
   defaultCollapsed = false,
   navCollapsedSize,
   children,
@@ -100,83 +120,7 @@ export function SideNavWrapper({
             <AccountSwitcher isCollapsed={isCollapsed} accounts={accounts} />
           </div>
           <Separator />
-          <Nav
-            isCollapsed={isCollapsed}
-            links={[
-              {
-                title: "Inbox",
-                label: "128",
-                icon: Inbox,
-                variant: "default",
-              },
-              {
-                title: "Drafts",
-                label: "9",
-                icon: File,
-                variant: "ghost",
-              },
-              {
-                title: "Sent",
-                label: "",
-                icon: Send,
-                variant: "ghost",
-              },
-              {
-                title: "Junk",
-                label: "23",
-                icon: ArchiveX,
-                variant: "ghost",
-              },
-              {
-                title: "Trash",
-                label: "",
-                icon: Trash2,
-                variant: "ghost",
-              },
-              {
-                title: "Archive",
-                label: "",
-                icon: Archive,
-                variant: "ghost",
-              },
-            ]}
-          />
-          <Separator />
-          <Nav
-            isCollapsed={isCollapsed}
-            links={[
-              {
-                title: "Social",
-                label: "972",
-                icon: Users2,
-                variant: "ghost",
-              },
-              {
-                title: "Updates",
-                label: "342",
-                icon: AlertCircle,
-                variant: "ghost",
-              },
-              {
-                title: "Forums",
-                label: "128",
-                icon: MessagesSquare,
-                variant: "ghost",
-              },
-              {
-                title: "Shopping",
-                label: "8",
-                icon: ShoppingCart,
-                variant: "ghost",
-              },
-              {
-                title: "Promotions",
-                label: "21",
-                icon: Archive,
-                variant: "ghost",
-              },
-            ]}
-          />
+          <Nav isCollapsed={isCollapsed} links={MENU_ITEMS} />
         </ResizablePanel>
         <ResizableHandle withHandle />
         <ResizablePanel
@@ -191,17 +135,19 @@ export function SideNavWrapper({
   );
 }
 
-interface NavProps {
+export function Nav({
+  links,
+  isCollapsed,
+}: {
   isCollapsed: boolean;
   links: {
     title: string;
     label?: string;
     icon: LucideIcon;
     variant: "default" | "ghost";
+    to: LinkDestination;
   }[];
-}
-
-export function Nav({ links, isCollapsed }: NavProps) {
+}) {
   return (
     <div
       data-collapsed={isCollapsed}
@@ -213,7 +159,10 @@ export function Nav({ links, isCollapsed }: NavProps) {
             key={index}
             title={link.title}
             label={link.label}
-            link={link}
+            link={{
+              icon: link.icon,
+              to: link.to,
+            }}
             isCollapsed={isCollapsed}
           />
         ))}
@@ -232,6 +181,7 @@ function NavLink({
   label?: string;
   link: {
     icon: LucideIcon;
+    to: LinkDestination;
   };
   isCollapsed: boolean;
 }) {
@@ -239,7 +189,7 @@ function NavLink({
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>
         <Link
-          to="/prs"
+          to={link.to}
           className={cn("h-9 w-9")}
           activeProps={{
             className: cn(
@@ -264,7 +214,7 @@ function NavLink({
     </Tooltip>
   ) : (
     <Link
-      to="/prs"
+      to={link.to}
       activeProps={{
         className: cn(
           buttonVariants({ variant: "default", size: "sm" }),
@@ -286,19 +236,17 @@ function NavLink({
   );
 }
 
-interface AccountSwitcherProps {
+export function AccountSwitcher({
+  isCollapsed,
+  accounts,
+}: {
   isCollapsed: boolean;
   accounts: {
     label: string;
     email: string;
     icon: React.ReactNode;
   }[];
-}
-
-export function AccountSwitcher({
-  isCollapsed,
-  accounts,
-}: AccountSwitcherProps) {
+}) {
   const [selectedAccount, setSelectedAccount] = React.useState<string>(
     accounts[0].email,
   );
