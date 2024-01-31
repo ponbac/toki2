@@ -26,13 +26,7 @@ import { ScrollArea } from "./ui/scroll-area";
 import { routeTree } from "@/routeTree.gen";
 
 type LinkDestination = Parameters<typeof Link<typeof routeTree>>[0]["to"];
-const MENU_ITEMS: Array<{
-  title: string;
-  label?: string;
-  icon: LucideIcon;
-  variant: "default" | "ghost";
-  to: LinkDestination;
-}> = [
+const MENU_ITEMS = [
   {
     title: "Inbox",
     label: "128",
@@ -54,7 +48,15 @@ const MENU_ITEMS: Array<{
     variant: "ghost",
     to: "/auth-test",
   },
-];
+] as const satisfies readonly {
+  title: string;
+  label?: string;
+  icon: LucideIcon;
+  variant: "default" | "ghost";
+  to: LinkDestination;
+}[];
+
+type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 
 export function SideNavWrapper({
   accounts,
@@ -140,12 +142,12 @@ export function Nav({
   isCollapsed,
 }: {
   isCollapsed: boolean;
-  links: {
+  links: readonly {
     title: string;
     label?: string;
     icon: LucideIcon;
     variant: "default" | "ghost";
-    to: LinkDestination;
+    to: UsedLink;
   }[];
 }) {
   return (
@@ -181,7 +183,7 @@ function NavLink({
   label?: string;
   link: {
     icon: LucideIcon;
-    to: LinkDestination;
+    to: UsedLink;
   };
   isCollapsed: boolean;
 }) {
