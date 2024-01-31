@@ -1,4 +1,6 @@
 import "./index.css";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { routeTree } from "./routeTree.gen";
