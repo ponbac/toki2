@@ -25,7 +25,6 @@ function PrComponent() {
     }),
     select: (data) => data.find((pr) => pr.id === +prId),
   });
-  console.log(data);
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center gap-4 p-8">
