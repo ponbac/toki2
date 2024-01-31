@@ -5,7 +5,7 @@
 import { Route as rootRoute } from "./routes/__root"
 import { Route as LoginImport } from "./routes/login"
 import { Route as LayoutRouteImport } from "./routes/_layout/route"
-import { Route as IndexImport } from "./routes/index"
+import { Route as LayoutIndexImport } from "./routes/_layout/index"
 import { Route as LayoutAuthTestImport } from "./routes/_layout/auth-test"
 import { Route as LayoutPrsIndexImport } from "./routes/_layout/prs/index"
 
@@ -21,9 +21,9 @@ const LayoutRouteRoute = LayoutRouteImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const IndexRoute = IndexImport.update({
+const LayoutIndexRoute = LayoutIndexImport.update({
   path: "/",
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => LayoutRouteRoute,
 } as any)
 
 const LayoutAuthTestRoute = LayoutAuthTestImport.update({
@@ -40,10 +40,6 @@ const LayoutPrsIndexRoute = LayoutPrsIndexImport.update({
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    "/": {
-      preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
-    }
     "/_layout": {
       preLoaderRoute: typeof LayoutRouteImport
       parentRoute: typeof rootRoute
@@ -56,6 +52,10 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutAuthTestImport
       parentRoute: typeof LayoutRouteImport
     }
+    "/_layout/": {
+      preLoaderRoute: typeof LayoutIndexImport
+      parentRoute: typeof LayoutRouteImport
+    }
     "/_layout/prs/": {
       preLoaderRoute: typeof LayoutPrsIndexImport
       parentRoute: typeof LayoutRouteImport
@@ -66,7 +66,10 @@ declare module "@tanstack/react-router" {
 // Create and export the route tree
 
 export const routeTree = rootRoute.addChildren([
-  IndexRoute,
-  LayoutRouteRoute.addChildren([LayoutAuthTestRoute, LayoutPrsIndexRoute]),
+  LayoutRouteRoute.addChildren([
+    LayoutAuthTestRoute,
+    LayoutIndexRoute,
+    LayoutPrsIndexRoute,
+  ]),
   LoginRoute,
 ])
