@@ -25,7 +25,8 @@ async fn main() {
             EnvFilter::builder()
                 .with_default_directive(LevelFilter::DEBUG.into())
                 .from_env_lossy()
-                .add_directive("hyper=info".parse().unwrap()),
+                .add_directive("hyper=info".parse().unwrap())
+                .add_directive("azure_core::policies::transport=info".parse().unwrap()),
         )
         .init();
 
