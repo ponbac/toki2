@@ -1,7 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { RepoKey, queries } from "@/lib/queries";
-import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_layout/auth-test")({
@@ -11,6 +15,7 @@ export const Route = createFileRoute("/_layout/auth-test")({
 });
 
 function AuthTestComponent() {
+  const queryClient = useQueryClient();
   const { data, refetch } = useSuspenseQuery(queries.differs());
 
   const { mutate: startDiffer } = useMutation({
@@ -20,6 +25,13 @@ function AuthTestComponent() {
       }),
     onSuccess: () => {
       refetch();
+      queryClient.invalidateQueries(
+        queries.cachedPullRequests({
+          organization: "ex-change-part",
+          project: "Quote Manager",
+          repoName: "hexagon",
+        }),
+      );
     },
   });
 

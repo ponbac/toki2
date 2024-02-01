@@ -73,7 +73,11 @@ async fn cached_pull_requests(
     let cached_prs = app_state
         .get_cached_pull_requests(query)
         .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+        .map(|mut prs| {
+            prs.sort_by_key(|pr| pr.created_at);
+            prs
+        });
 
     Ok(Json(cached_prs.unwrap_or_default()))
 }
