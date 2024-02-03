@@ -1,8 +1,8 @@
-import { queries } from "@/lib/queries";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { DataTable } from "./-components/data-table";
 import { pullRequestColumns } from "./-components/columns";
+import { queries } from "@/lib/api/queries/queries";
 
 export const Route = createFileRoute("/_layout/prs/")({
   loader: ({ context }) =>

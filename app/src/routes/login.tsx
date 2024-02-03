@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { LogIn } from "lucide-react";
-import { login } from "@/lib/api";
+import { login } from "@/lib/api/api";
 
 type LoginSearchParams = {
   next?: string;

@@ -1,49 +1,20 @@
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
-import { RepoKey, queries } from "@/lib/queries";
-import {
-  useMutation,
-  useQueryClient,
-  useSuspenseQuery,
-} from "@tanstack/react-query";
+import { mutations } from "@/lib/api/mutations/mutations";
+import { queries } from "@/lib/api/queries/queries";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/_layout/auth-test")({
+export const Route = createFileRoute("/_layout/repositories")({
   loader: ({ context }) =>
     context.queryClient.ensureQueryData(queries.differs()),
-  component: AuthTestComponent,
+  component: RepositoriesComponent,
 });
 
-function AuthTestComponent() {
-  const queryClient = useQueryClient();
-  const { data, refetch } = useSuspenseQuery(queries.differs());
+function RepositoriesComponent() {
+  const { data } = useSuspenseQuery(queries.differs());
 
-  const { mutate: startDiffer } = useMutation({
-    mutationFn: (repoKey: RepoKey) =>
-      api.post("differs/start", {
-        json: repoKey,
-      }),
-    onSuccess: () => {
-      refetch();
-      queryClient.invalidateQueries(
-        queries.cachedPullRequests({
-          organization: "ex-change-part",
-          project: "Quote Manager",
-          repoName: "hexagon",
-        }),
-      );
-    },
-  });
-
-  const { mutate: stopDiffer } = useMutation({
-    mutationFn: (repoKey: RepoKey) =>
-      api.post("differs/stop", {
-        json: repoKey,
-      }),
-    onSuccess: () => {
-      refetch();
-    },
-  });
+  const { mutate: startDiffer } = mutations.useStartDiffers();
+  const { mutate: stopDiffer } = mutations.useStopDiffers();
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center gap-4">

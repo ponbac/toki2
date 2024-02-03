@@ -11,8 +11,8 @@ use serde::Deserialize;
 
 use crate::app_state::AppState;
 
-pub const NEXT_URL_KEY: &str = "auth.next-url";
-pub const CSRF_STATE_KEY: &str = "oauth.csrf-state";
+const NEXT_URL_KEY: &str = "auth.next-url";
+const CSRF_STATE_KEY: &str = "oauth.csrf-state";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -22,12 +22,12 @@ pub fn router() -> Router<AppState> {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct NextUrl {
+struct NextUrl {
     next: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AuthzResp {
+struct AuthzResp {
     code: String,
     state: CsrfToken,
 }

@@ -1,4 +1,4 @@
-import { queries } from "@/lib/queries";
+import { queries } from "@/lib/api/queries/queries";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 

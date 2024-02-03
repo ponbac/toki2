@@ -1,5 +1,5 @@
 import * as React from "react";
-import { File, Inbox, LucideIcon, Send, Activity } from "lucide-react";
+import { File, Inbox, LucideIcon, FolderGit2, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -49,11 +49,11 @@ const MENU_ITEMS = [
     to: "/prs/commits",
   },
   {
-    title: "Sent",
+    title: "Repositories",
     label: "",
-    icon: Send,
+    icon: FolderGit2,
     variant: "ghost",
-    to: "/auth-test",
+    to: "/repositories",
   },
 ] as const satisfies readonly {
   title: string;

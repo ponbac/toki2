@@ -15,7 +15,7 @@ use tower_http::{
 
 use crate::{
     app_state::AppState,
-    auth::{self, AuthBackend, AuthSession},
+    auth::{self, AuthBackend},
     config::Settings,
     domain::RepoConfig,
     routes,
@@ -38,15 +38,6 @@ pub async fn create(
     } else {
         let auth_layer = new_auth_layer(connection_pool.clone(), config.clone());
         base_app
-            .route(
-                "/auth",
-                get(|auth_session: AuthSession| async {
-                    match auth_session.user {
-                        Some(user) => format!("Hello, {}!", user.full_name),
-                        None => "Hello, anonymous!".to_string(),
-                    }
-                }),
-            )
             .route_layer(login_required!(AuthBackend))
             .merge(auth::router())
             .layer(auth_layer)
