@@ -15,9 +15,9 @@ use tower_http::{
 
 use crate::{
     app_state::AppState,
-    auth,
+    auth::{self, AuthBackend, AuthSession},
     config::Settings,
-    domain::{AuthBackend, AuthSession, RepoConfig},
+    domain::RepoConfig,
     routes,
 };
 

@@ -14,6 +14,13 @@ use crate::app_state::AppState;
 pub const NEXT_URL_KEY: &str = "auth.next-url";
 pub const CSRF_STATE_KEY: &str = "oauth.csrf-state";
 
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/login", post(self::post::login))
+        .route("/logout", get(self::post::logout))
+        .route("/oauth/callback", get(self::get::callback))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct NextUrl {
     next: Option<String>,
@@ -25,15 +32,8 @@ pub struct AuthzResp {
     state: CsrfToken,
 }
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/login", post(self::post::login))
-        .route("/logout", get(self::post::logout))
-        .route("/oauth/callback", get(self::get::callback))
-}
-
 mod post {
-    use crate::domain::AuthSession;
+    use crate::auth::backend::AuthSession;
 
     use super::*;
 
@@ -68,7 +68,7 @@ mod post {
 mod get {
     use axum::extract::State;
 
-    use crate::domain::{AuthSession, Credentials};
+    use crate::auth::backend::{AuthSession, Credentials};
 
     use super::*;
 
