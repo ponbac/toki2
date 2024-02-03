@@ -4,7 +4,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use az_devops::PullRequest;
+use az_devops::{GitCommitRef, PullRequest};
 use serde::Deserialize;
 use tracing::instrument;
 
@@ -14,6 +14,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/open", get(open_pull_requests))
         .route("/cached", get(cached_pull_requests))
+        .route("/most-recent-commits", get(most_recent_commits))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,4 +81,43 @@ async fn cached_pull_requests(
         });
 
     Ok(Json(cached_prs.unwrap_or_default()))
+}
+
+#[instrument(name = "GET /most-recent-commits", skip(app_state))]
+async fn most_recent_commits(
+    State(app_state): State<AppState>,
+    Query(query): Query<RepoKey>,
+) -> Result<Json<Vec<GitCommitRef>>, (StatusCode, String)> {
+    let cached_prs = app_state
+        .get_cached_pull_requests(query.clone())
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+        .map(|mut prs| {
+            prs.sort_by_key(|pr| pr.created_at);
+            prs
+        });
+
+    let client = app_state.get_repo_client(query).await.map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to get repository client: {}", err),
+        )
+    })?;
+    let mut commits = vec![];
+    if let Some(prs) = cached_prs {
+        for pr in prs {
+            let pr_commits = pr.commits(&client).await.map_err(|err| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to get commits in pull request: {}", err),
+                )
+            })?;
+            commits.extend(pr_commits);
+        }
+    }
+
+    commits.sort_by_key(|commit| commit.author.as_ref().unwrap().date);
+    commits.reverse();
+
+    Ok(Json(commits))
 }

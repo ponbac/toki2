@@ -1,5 +1,5 @@
 import * as React from "react";
-import { File, Inbox, LucideIcon, Send } from "lucide-react";
+import { File, Inbox, LucideIcon, Send, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
@@ -40,6 +40,13 @@ const MENU_ITEMS = [
     icon: File,
     variant: "ghost",
     to: "/prs",
+  },
+  {
+    title: "Commits",
+    label: "",
+    icon: Activity,
+    variant: "ghost",
+    to: "/prs/commits",
   },
   {
     title: "Sent",
@@ -193,6 +200,7 @@ function NavLink({
         <Link
           to={link.to}
           className={cn("h-9 w-9")}
+          activeOptions={{ exact: true }}
           activeProps={{
             className: cn(
               buttonVariants({ variant: "default", size: "icon" }),
@@ -217,6 +225,7 @@ function NavLink({
   ) : (
     <Link
       to={link.to}
+      activeOptions={{ exact: true }}
       activeProps={{
         className: cn(
           buttonVariants({ variant: "default", size: "sm" }),

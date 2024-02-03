@@ -8,6 +8,7 @@ import { Route as LayoutRouteImport } from "./routes/_layout/route"
 import { Route as LayoutIndexImport } from "./routes/_layout/index"
 import { Route as LayoutAuthTestImport } from "./routes/_layout/auth-test"
 import { Route as LayoutPrsIndexImport } from "./routes/_layout/prs/index"
+import { Route as LayoutPrsCommitsRouteImport } from "./routes/_layout/prs/commits/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
 
 // Create/Update Routes
@@ -34,6 +35,11 @@ const LayoutAuthTestRoute = LayoutAuthTestImport.update({
 
 const LayoutPrsIndexRoute = LayoutPrsIndexImport.update({
   path: "/prs/",
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
+
+const LayoutPrsCommitsRouteRoute = LayoutPrsCommitsRouteImport.update({
+  path: "/prs/commits",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
@@ -66,6 +72,10 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutPrsPrIdRouteImport
       parentRoute: typeof LayoutRouteImport
     }
+    "/_layout/prs/commits": {
+      preLoaderRoute: typeof LayoutPrsCommitsRouteImport
+      parentRoute: typeof LayoutRouteImport
+    }
     "/_layout/prs/": {
       preLoaderRoute: typeof LayoutPrsIndexImport
       parentRoute: typeof LayoutRouteImport
@@ -80,6 +90,7 @@ export const routeTree = rootRoute.addChildren([
     LayoutAuthTestRoute,
     LayoutIndexRoute,
     LayoutPrsPrIdRouteRoute,
+    LayoutPrsCommitsRouteRoute,
     LayoutPrsIndexRoute,
   ]),
   LoginRoute,
