@@ -1,5 +1,7 @@
+import { LoadingSpinner } from "@/components/loading-spinner";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
+import { Suspense } from "react";
 
 export const Route = createFileRoute("/_layout")({
   component: LayoutComponent,
@@ -19,7 +21,17 @@ function LayoutComponent() {
       defaultCollapsed={true}
       className="flex h-full min-h-screen w-full flex-col"
     >
-      <Outlet />
+      <Suspense fallback={<FullscreenLoading />}>
+        <Outlet />
+      </Suspense>
     </SideNavWrapper>
+  );
+}
+
+function FullscreenLoading() {
+  return (
+    <div className="flex min-h-screen w-full items-center justify-center">
+      <LoadingSpinner className="size-8" />
+    </div>
   );
 }
