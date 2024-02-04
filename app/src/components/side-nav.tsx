@@ -200,7 +200,7 @@ function NavLink({
         <Link
           to={link.to}
           className={cn("h-9 w-9")}
-          activeOptions={{ exact: true }}
+          activeOptions={{ exact: true, includeSearch: false }}
           activeProps={{
             className: cn(
               buttonVariants({ variant: "default", size: "icon" }),
@@ -225,7 +225,7 @@ function NavLink({
   ) : (
     <Link
       to={link.to}
-      activeOptions={{ exact: true }}
+      activeOptions={{ exact: true, includeSearch: false }}
       activeProps={{
         className: cn(
           buttonVariants({ variant: "default", size: "sm" }),

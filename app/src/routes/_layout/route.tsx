@@ -21,7 +21,7 @@ function LayoutComponent() {
         ]}
         navCollapsedSize={2}
         defaultCollapsed={true}
-        className="flex h-full min-h-screen w-full flex-col"
+        className="flex h-full min-h-screen w-full flex-col py-8"
       >
         <Suspense fallback={<FullscreenLoading />}>
           <Outlet />

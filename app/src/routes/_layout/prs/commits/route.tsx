@@ -3,14 +3,6 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_layout/prs/commits")({
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData(
-      queries.mostRecentCommits({
-        organization: "ex-change-part",
-        project: "Quote Manager",
-        repoName: "hexagon",
-      }),
-    ),
   component: CommitsComponent,
 });
 
