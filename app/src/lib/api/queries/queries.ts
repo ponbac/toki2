@@ -8,7 +8,7 @@ export const queries = {
   ...commitsQueries,
 };
 
-export type RepoKey = {
+export type RepoKey<T = object> = T & {
   organization: string;
   project: string;
   repoName: string;

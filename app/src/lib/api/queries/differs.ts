@@ -6,7 +6,6 @@ export const differsQueries = {
     queryOptions({
       queryKey: ["differs"],
       queryFn: async () => api.get("differs").json<Array<Differ>>(),
-      refetchInterval: 30 * 1000,
     }),
 };
 
