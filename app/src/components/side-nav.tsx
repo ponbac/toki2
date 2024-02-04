@@ -1,12 +1,7 @@
 import * as React from "react";
 import { File, Inbox, LucideIcon, FolderGit2, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "./ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -87,60 +82,57 @@ export function SideNavWrapper({
   const [isCollapsed, setIsCollapsed] = React.useState(defaultCollapsed);
 
   return (
-    <TooltipProvider delayDuration={0}>
-      <ResizablePanelGroup
-        direction="horizontal"
-        onLayout={(sizes: number[]) => {
-          document.cookie = `react-resizable-panels:layout=${JSON.stringify(
-            sizes,
+    <ResizablePanelGroup
+      direction="horizontal"
+      onLayout={(sizes: number[]) => {
+        document.cookie = `react-resizable-panels:layout=${JSON.stringify(
+          sizes,
+        )}`;
+      }}
+      className="sticky top-0 h-full max-h-screen min-h-screen items-stretch"
+    >
+      <ResizablePanel
+        defaultSize={defaultLayout[0]}
+        collapsedSize={navCollapsedSize}
+        collapsible={true}
+        minSize={8}
+        maxSize={12}
+        onCollapse={() => {
+          setIsCollapsed(true);
+          document.cookie = `react-resizable-panels:collapsed=${JSON.stringify(
+            true,
           )}`;
         }}
-        className="sticky top-0 h-full max-h-screen min-h-screen items-stretch"
+        onExpand={() => {
+          setIsCollapsed(false);
+          document.cookie = `react-resizable-panels:collapsed=${JSON.stringify(
+            false,
+          )}`;
+        }}
+        className={cn(
+          isCollapsed && "min-w-[50px] transition-all duration-300 ease-in-out",
+        )}
       >
-        <ResizablePanel
-          defaultSize={defaultLayout[0]}
-          collapsedSize={navCollapsedSize}
-          collapsible={true}
-          minSize={8}
-          maxSize={12}
-          onCollapse={() => {
-            setIsCollapsed(true);
-            document.cookie = `react-resizable-panels:collapsed=${JSON.stringify(
-              true,
-            )}`;
-          }}
-          onExpand={() => {
-            setIsCollapsed(false);
-            document.cookie = `react-resizable-panels:collapsed=${JSON.stringify(
-              false,
-            )}`;
-          }}
+        <div
           className={cn(
-            isCollapsed &&
-              "min-w-[50px] transition-all duration-300 ease-in-out",
+            "flex h-[52px] items-center justify-center",
+            isCollapsed ? "h-[52px]" : "px-2",
           )}
         >
-          <div
-            className={cn(
-              "flex h-[52px] items-center justify-center",
-              isCollapsed ? "h-[52px]" : "px-2",
-            )}
-          >
-            <AccountSwitcher isCollapsed={isCollapsed} accounts={accounts} />
-          </div>
-          <Separator />
-          <Nav isCollapsed={isCollapsed} links={MENU_ITEMS} />
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel
-          defaultSize={defaultLayout[1]}
-          minSize={30}
-          className={className}
-        >
-          <ScrollArea className="h-screen">{children}</ScrollArea>
-        </ResizablePanel>
-      </ResizablePanelGroup>
-    </TooltipProvider>
+          <AccountSwitcher isCollapsed={isCollapsed} accounts={accounts} />
+        </div>
+        <Separator />
+        <Nav isCollapsed={isCollapsed} links={MENU_ITEMS} />
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel
+        defaultSize={defaultLayout[1]}
+        minSize={30}
+        className={className}
+      >
+        <ScrollArea className="h-screen">{children}</ScrollArea>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   );
 }
 

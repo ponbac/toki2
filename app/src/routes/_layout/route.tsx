@@ -1,6 +1,7 @@
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
 
@@ -10,7 +11,7 @@ export const Route = createFileRoute("/_layout")({
 
 function LayoutComponent() {
   return (
-    <>
+    <TooltipProvider delayDuration={0}>
       <SideNavWrapper
         accounts={[
           {
@@ -28,7 +29,7 @@ function LayoutComponent() {
         </Suspense>
       </SideNavWrapper>
       <Toaster />
-    </>
+    </TooltipProvider>
   );
 }
 

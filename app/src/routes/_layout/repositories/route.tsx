@@ -8,6 +8,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { mutations } from "@/lib/api/mutations/mutations";
 import { Differ } from "@/lib/api/queries/differs";
 import { queries } from "@/lib/api/queries/queries";
@@ -77,23 +82,32 @@ function RepositoriesComponent() {
                   <CardTitle>{differ.repoName}</CardTitle>
                   <CardDescription>{`${differ.organization}/${differ.project}`}</CardDescription>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="group size-8"
-                  onClick={() =>
-                    followRepository({
-                      ...differ,
-                      follow: !differ.followed,
-                    })
-                  }
-                >
-                  {differ.followed ? (
-                    <Unplug size="1.25rem" />
-                  ) : (
-                    <Heart size="1.25rem" />
-                  )}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="group size-8"
+                      onClick={() =>
+                        followRepository({
+                          ...differ,
+                          follow: !differ.followed,
+                        })
+                      }
+                    >
+                      {differ.followed ? (
+                        <Unplug size="1.25rem" />
+                      ) : (
+                        <Heart size="1.25rem" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="">
+                    {differ.followed
+                      ? "Unfollow repository"
+                      : "Follow repository"}
+                  </TooltipContent>
+                </Tooltip>
               </CardHeader>
               <CardContent>
                 <CardDescription>
