@@ -1,4 +1,4 @@
-use axum::{routing::get, Router};
+use axum::{http::Method, routing::get, Router};
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
     login_required,
@@ -8,13 +8,16 @@ use axum_login::{
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, TokenUrl};
 use sqlx::PgPool;
 use time::Duration;
-use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    trace::{DefaultMakeSpan, TraceLayer},
+};
 
 use crate::{
     app_state::AppState,
-    auth,
+    auth::{self, AuthBackend},
     config::Settings,
-    domain::{AuthBackend, AuthSession, RepoConfig},
+    domain::RepoConfig,
     routes,
 };
 
@@ -27,8 +30,7 @@ pub async fn create(
         .route("/", get(|| async { "Hello, little World!" }))
         .nest("/pull-requests", routes::pull_requests::router())
         .nest("/differs", routes::differs::router())
-        .nest("/repositories", routes::repositories::router())
-        .with_state(AppState::new(connection_pool.clone(), repo_configs).await);
+        .nest("/repositories", routes::repositories::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
@@ -36,22 +38,28 @@ pub async fn create(
     } else {
         let auth_layer = new_auth_layer(connection_pool.clone(), config.clone());
         base_app
-            .route(
-                "/auth",
-                get(|auth_session: AuthSession| async {
-                    match auth_session.user {
-                        Some(user) => format!("Hello, {}!", user.full_name),
-                        None => "Hello, anonymous!".to_string(),
-                    }
-                }),
-            )
-            .route_layer(login_required!(AuthBackend, login_url = "/login"))
+            .route_layer(login_required!(AuthBackend))
             .merge(auth::router())
             .layer(auth_layer)
     };
 
-    // Finally, wrap the app with tracing layer
-    app_with_auth.layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
+    // Finally, wrap the app with tracing layer, state and CORS
+    let cors = CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_headers(["content-type".parse().unwrap()])
+        .allow_credentials(true)
+        .allow_origin([config.application.app_url.parse().unwrap()]);
+    app_with_auth
+        .with_state(
+            AppState::new(
+                config.application.app_url,
+                connection_pool.clone(),
+                repo_configs,
+            )
+            .await,
+        )
+        .layer(cors)
+        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
 }
 
 fn new_auth_layer(
@@ -66,7 +74,7 @@ fn new_auth_layer(
     );
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false)
+        .with_secure(false) // todo: explore production values
         .with_same_site(SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(Duration::days(1)));
 

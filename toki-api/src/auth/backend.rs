@@ -12,7 +12,7 @@ use reqwest::{
 use serde::Deserialize;
 use sqlx::PgPool;
 
-use super::User;
+use crate::domain::User;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Credentials {

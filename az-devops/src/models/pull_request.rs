@@ -1,9 +1,13 @@
+use std::error::Error;
+
 use azure_devops_rust_api::git::models::{
     git_pull_request::{MergeFailureType, MergeStatus, Status},
-    GitPullRequest, GitPullRequestCompletionOptions,
+    GitCommitRef, GitPullRequest, GitPullRequestCompletionOptions,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+
+use crate::RepoClient;
 
 use super::identity::{Identity, IdentityWithVote};
 
@@ -30,6 +34,31 @@ pub struct PullRequest {
     pub merge_failure_message: Option<String>,
     pub reviewers: Vec<IdentityWithVote>,
     pub url: String,
+}
+
+impl PullRequest {
+    pub async fn threads(&self, client: &RepoClient) -> Result<Vec<crate::Thread>, Box<dyn Error>> {
+        client.get_threads_in_pull_request(self.id).await
+    }
+
+    pub async fn commits(&self, client: &RepoClient) -> Result<Vec<GitCommitRef>, Box<dyn Error>> {
+        client.get_commits_in_pull_request(self.id).await
+    }
+
+    pub async fn work_items(
+        &self,
+        client: &RepoClient,
+    ) -> Result<Vec<crate::WorkItem>, Box<dyn Error>> {
+        let ids = client
+            .get_work_item_ids_in_pull_request(self.id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get work item ids in pull request: {}", e);
+                e
+            })?;
+
+        client.get_work_items(ids).await
+    }
 }
 
 impl From<GitPullRequest> for PullRequest {

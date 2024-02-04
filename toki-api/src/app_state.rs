@@ -32,6 +32,7 @@ impl IntoResponse for AppStateError {
 
 #[derive(Clone)]
 pub struct AppState {
+    pub app_url: String,
     pub db_pool: Arc<PgPool>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
@@ -39,7 +40,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn new(db_pool: PgPool, repo_configs: Vec<RepoConfig>) -> Self {
+    pub async fn new(app_url: String, db_pool: PgPool, repo_configs: Vec<RepoConfig>) -> Self {
         let client_futures = repo_configs
             .into_iter()
             .map(|repo| async move {
@@ -81,6 +82,7 @@ impl AppState {
             .collect::<HashMap<_, _>>();
 
         Self {
+            app_url,
             db_pool: Arc::new(db_pool),
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
