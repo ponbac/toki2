@@ -6,12 +6,14 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use time::OffsetDateTime;
 use tracing::instrument;
 
 use crate::{
     app_state::AppState,
+    auth::AuthSession,
     domain::{RepoDifferMessage, RepoDifferStatus, RepoKey},
 };
 
@@ -32,12 +34,20 @@ struct Differ {
     #[serde(with = "time::serde::rfc3339::option")]
     last_updated: Option<OffsetDateTime>,
     refresh_interval: Option<Duration>,
+    followed: bool,
 }
 
-#[instrument(name = "get_differs", skip(app_state))]
-async fn get_differs(State(app_state): State<AppState>) -> Json<Vec<Differ>> {
-    let differs = app_state.get_repo_differs().await;
+#[instrument(name = "get_differs", skip(auth_session, app_state))]
+async fn get_differs(
+    auth_session: AuthSession,
+    State(app_state): State<AppState>,
+) -> Json<Vec<Differ>> {
+    let user_id = auth_session.user.expect("user not found").id;
+    let followed_repos = query_followed_by_user(&app_state.db_pool, user_id)
+        .await
+        .expect("Failed to query followed repos");
 
+    let differs = app_state.get_repo_differs().await;
     let mut differ_dtos = Vec::new();
     for differ in differs {
         let differ = differ.clone();
@@ -48,14 +58,34 @@ async fn get_differs(State(app_state): State<AppState>) -> Json<Vec<Differ>> {
         let refresh_interval = *differ.interval.read().await;
 
         differ_dtos.push(Differ {
-            key,
+            key: key.clone(),
             status,
             last_updated,
             refresh_interval,
+            followed: followed_repos.contains(&key),
         });
     }
 
     Json(differ_dtos)
+}
+
+async fn query_followed_by_user(
+    pool: &PgPool,
+    user_id: i32,
+) -> Result<Vec<RepoKey>, Box<dyn std::error::Error>> {
+    sqlx::query_as!(
+        RepoKey,
+        r#"
+        SELECT organization, project, repo_name
+        FROM user_repositories
+        JOIN repositories ON user_repositories.repository_id = repositories.id
+        WHERE user_id = $1
+        "#,
+        user_id
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
 }
 
 #[instrument(name = "start_differ", skip(app_state))]

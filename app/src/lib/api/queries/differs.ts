@@ -13,6 +13,7 @@ export type Differ = {
   organization: string;
   project: string;
   repoName: string;
+  followed: boolean;
   status: "Running" | "Stopped";
   lastUpdated: string | null;
   refreshInterval: {

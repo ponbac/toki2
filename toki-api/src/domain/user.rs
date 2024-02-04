@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct User {
-    pub id: i64,
+    pub id: i32,
     pub email: String,
     pub full_name: String,
     pub picture: String,
@@ -28,7 +28,7 @@ impl AuthUser for User {
     type Id = i64;
 
     fn id(&self) -> Self::Id {
-        self.id
+        self.id.into()
     }
 
     fn session_auth_hash(&self) -> &[u8] {

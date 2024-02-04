@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { queries } from "../queries/queries";
+import { RepoKey, queries } from "../queries/queries";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { z } from "zod";
 
-export const repositoriesMutations = { useAddRepository };
+export const repositoriesMutations = { useAddRepository, useFollowRepository };
 
 function useAddRepository(options?: DefaultMutationOptions<AddRepositoryBody>) {
   const queryClient = useQueryClient();
@@ -19,6 +19,46 @@ function useAddRepository(options?: DefaultMutationOptions<AddRepositoryBody>) {
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries(queries.differs());
       options?.onSuccess?.(data, vars, ctx);
+    },
+  });
+}
+
+type FollowRepositoryBody = RepoKey & { follow: boolean };
+
+function useFollowRepository(
+  options?: DefaultMutationOptions<FollowRepositoryBody>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["followRepository"],
+    mutationFn: (body: FollowRepositoryBody) =>
+      api.post("repositories/follow", {
+        json: body,
+      }),
+    ...options,
+    onMutate: (vars) => {
+      queryClient.setQueryData(queries.differs().queryKey, (old) => {
+        if (!old) return old;
+
+        const idx = old.findIndex(
+          (d) =>
+            d.organization === vars.organization &&
+            d.project === vars.project &&
+            d.repoName === vars.repoName,
+        );
+        if (idx === -1) return old;
+        return [
+          ...old.slice(0, idx),
+          { ...old[idx], followed: vars.follow },
+          ...old.slice(idx + 1),
+        ];
+      });
+      options?.onMutate?.(vars);
+    },
+    onSettled: (data, err, vars, ctx) => {
+      queryClient.invalidateQueries(queries.differs());
+      options?.onSettled?.(data, err, vars, ctx);
     },
   });
 }

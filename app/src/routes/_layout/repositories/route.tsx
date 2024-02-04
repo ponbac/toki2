@@ -20,7 +20,14 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import dayjs from "dayjs";
-import { PauseCircle, PlayCircle, Plus, SearchCode } from "lucide-react";
+import {
+  Heart,
+  PauseCircle,
+  PlayCircle,
+  Plus,
+  SearchCode,
+  Unplug,
+} from "lucide-react";
 import { useRef } from "react";
 import { z } from "zod";
 
@@ -43,10 +50,11 @@ function RepositoriesComponent() {
     refetchInterval: 15 * 1000,
   });
 
-  const { mutate: startDiffer, isPending: isStarting } =
+  const { mutate: startDiffer, isPending: startingPending } =
     mutations.useStartDiffers();
-  const { mutate: stopDiffer, isPending: isStopping } =
+  const { mutate: stopDiffer, isPending: stoppingPending } =
     mutations.useStopDiffers();
+  const { mutate: followRepository } = mutations.useFollowRepository();
 
   const filteredData = data.filter((differ) =>
     toRepoKeyString(differ)
@@ -64,9 +72,28 @@ function RepositoriesComponent() {
               key={`${toRepoKeyString(differ)}-${dataUpdatedAt}`}
               className="flex w-[25rem] flex-col justify-between"
             >
-              <CardHeader>
-                <CardTitle>{differ.repoName}</CardTitle>
-                <CardDescription>{`${differ.organization}/${differ.project}`}</CardDescription>
+              <CardHeader className="flex w-full flex-row items-start justify-between">
+                <div className="flex flex-col gap-1">
+                  <CardTitle>{differ.repoName}</CardTitle>
+                  <CardDescription>{`${differ.organization}/${differ.project}`}</CardDescription>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="group size-8"
+                  onClick={() =>
+                    followRepository({
+                      ...differ,
+                      follow: !differ.followed,
+                    })
+                  }
+                >
+                  {differ.followed ? (
+                    <Unplug size="1.25rem" />
+                  ) : (
+                    <Heart size="1.25rem" />
+                  )}
+                </Button>
               </CardHeader>
               <CardContent>
                 <CardDescription>
@@ -82,7 +109,7 @@ function RepositoriesComponent() {
               </CardContent>
               <CardFooter className="flex flex-row-reverse gap-2">
                 <FooterButton
-                  disabled={differ.status === "Running" || isStarting}
+                  disabled={differ.status === "Running" || startingPending}
                   onClick={() => startDiffer(differ)}
                 >
                   <PlayCircle size="1.25rem" />
@@ -90,7 +117,7 @@ function RepositoriesComponent() {
                 </FooterButton>
                 <FooterButton
                   variant="outline"
-                  disabled={differ.status === "Stopped" || isStopping}
+                  disabled={differ.status === "Stopped" || stoppingPending}
                   onClick={() => stopDiffer(differ)}
                 >
                   <PauseCircle size="1.25rem" />
