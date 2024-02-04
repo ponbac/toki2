@@ -34,6 +34,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { useRef } from "react";
+import { toast } from "sonner";
 import { z } from "zod";
 
 const repositoriesSearchSchema = z.object({
@@ -59,7 +60,15 @@ function RepositoriesComponent() {
     mutations.useStartDiffers();
   const { mutate: stopDiffer, isPending: stoppingPending } =
     mutations.useStopDiffers();
-  const { mutate: followRepository } = mutations.useFollowRepository();
+  const { mutate: followRepository } = mutations.useFollowRepository({
+    onSuccess: (_, vars) => {
+      toast.success(
+        vars.follow
+          ? `You are now following ${vars.repoName}.`
+          : `You are no longer following ${vars.repoName}.`,
+      );
+    },
+  });
 
   const filteredData = data.filter((differ) =>
     toRepoKeyString(differ)
@@ -102,7 +111,7 @@ function RepositoriesComponent() {
                       )}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent className="">
+                  <TooltipContent>
                     {differ.followed
                       ? "Unfollow repository"
                       : "Follow repository"}
