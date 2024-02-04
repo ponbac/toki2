@@ -130,7 +130,7 @@ export function SideNavWrapper({
         minSize={30}
         className={className}
       >
-        <ScrollArea className="h-screen">{children}</ScrollArea>
+        <ScrollArea className="h-screen py-8">{children}</ScrollArea>
       </ResizablePanel>
     </ResizablePanelGroup>
   );

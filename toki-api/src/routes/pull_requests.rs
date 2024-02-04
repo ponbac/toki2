@@ -6,9 +6,10 @@ use axum::{
 };
 use az_devops::{GitCommitRef, PullRequest};
 use serde::Deserialize;
+use sqlx::PgPool;
 use tracing::instrument;
 
-use crate::{app_state::AppStateError, domain::RepoKey, AppState};
+use crate::{app_state::AppStateError, auth::AuthSession, domain::RepoKey, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -66,21 +67,49 @@ async fn open_pull_requests(
 }
 
 // TODO: Global error type!
-#[instrument(name = "GET /cached-pull-requests", skip(app_state))]
+#[instrument(name = "GET /cached-pull-requests", skip(auth_session, app_state))]
 async fn cached_pull_requests(
+    auth_session: AuthSession,
     State(app_state): State<AppState>,
     Query(query): Query<RepoKey>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-    let cached_prs = app_state
-        .get_cached_pull_requests(query)
+    let user_id = auth_session.user.expect("user not found").id;
+    let followed_repos = query_followed_by_user(&app_state.db_pool, user_id)
         .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-        .map(|mut prs| {
-            prs.sort_by_key(|pr| pr.created_at);
-            prs
-        });
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
-    Ok(Json(cached_prs.unwrap_or_default()))
+    let mut followed_prs = vec![];
+    for repo in followed_repos {
+        let cached_prs = app_state
+            .get_cached_pull_requests(repo.clone())
+            .await
+            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        if let Some(prs) = cached_prs {
+            followed_prs.extend(prs);
+        }
+    }
+    followed_prs.sort_by_key(|pr| pr.created_at);
+
+    Ok(Json(followed_prs))
+}
+
+async fn query_followed_by_user(
+    pool: &PgPool,
+    user_id: i32,
+) -> Result<Vec<RepoKey>, Box<dyn std::error::Error>> {
+    sqlx::query_as!(
+        RepoKey,
+        r#"
+        SELECT organization, project, repo_name
+        FROM user_repositories
+        JOIN repositories ON user_repositories.repository_id = repositories.id
+        WHERE user_id = $1
+        "#,
+        user_id
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
 }
 
 #[instrument(name = "GET /most-recent-commits", skip(app_state))]
