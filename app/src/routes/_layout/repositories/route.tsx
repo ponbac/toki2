@@ -141,7 +141,13 @@ function TopBar() {
 
   return (
     <div className="flex w-full flex-col gap-2">
-      <h1 className="text-2xl font-bold">Repositories</h1>
+      <div>
+        <h1 className="text-2xl font-bold">Repositories</h1>
+        <h2 className="text-muted-foreground">
+          Follow the repositories you want to keep an eye on by clicking the
+          heart.
+        </h2>
+      </div>
       <div className="flex gap-4">
         <div className="relative flex w-full items-center">
           <SearchCode
