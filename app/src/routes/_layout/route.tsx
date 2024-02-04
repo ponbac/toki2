@@ -1,5 +1,6 @@
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { SideNavWrapper } from "@/components/side-nav";
+import { Toaster } from "@/components/ui/sonner";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
 
@@ -9,22 +10,25 @@ export const Route = createFileRoute("/_layout")({
 
 function LayoutComponent() {
   return (
-    <SideNavWrapper
-      accounts={[
-        {
-          email: "root@ponbac.xyz",
-          label: "Root",
-          icon: "👑",
-        },
-      ]}
-      navCollapsedSize={2}
-      defaultCollapsed={true}
-      className="flex h-full min-h-screen w-full flex-col"
-    >
-      <Suspense fallback={<FullscreenLoading />}>
-        <Outlet />
-      </Suspense>
-    </SideNavWrapper>
+    <>
+      <SideNavWrapper
+        accounts={[
+          {
+            email: "root@ponbac.xyz",
+            label: "Root",
+            icon: "👑",
+          },
+        ]}
+        navCollapsedSize={2}
+        defaultCollapsed={true}
+        className="flex h-full min-h-screen w-full flex-col"
+      >
+        <Suspense fallback={<FullscreenLoading />}>
+          <Outlet />
+        </Suspense>
+      </SideNavWrapper>
+      <Toaster />
+    </>
   );
 }
 

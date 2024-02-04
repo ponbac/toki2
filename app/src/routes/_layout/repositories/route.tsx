@@ -12,7 +12,7 @@ import { Differ } from "@/lib/api/queries/differs";
 import { queries } from "@/lib/api/queries/queries";
 import { cn, toRepoKeyString } from "@/lib/utils";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import { PauseCircle, PlayCircle } from "lucide-react";
 
@@ -35,6 +35,7 @@ function RepositoriesComponent() {
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-center gap-4">
+      <Link to="/repositories/add">Add</Link>
       <div className="grid grid-cols-3 gap-4">
         {data.map((differ) => (
           <Card
@@ -79,6 +80,7 @@ function RepositoriesComponent() {
           </Card>
         ))}
       </div>
+      <Outlet />
     </main>
   );
 }

@@ -1,5 +1,6 @@
 import { MutationOptions } from "@tanstack/react-query";
 import { differsMutations } from "./differs";
+import { repositoriesMutations } from "./repositories";
 
 export type DefaultMutationOptions<
   TVars = void,
@@ -13,4 +14,5 @@ export type DefaultMutationOptions<
 
 export const mutations = {
   ...differsMutations,
+  ...repositoriesMutations,
 };

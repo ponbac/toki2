@@ -67,7 +67,7 @@ type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 
 export function SideNavWrapper({
   accounts,
-  defaultLayout = [3, 440],
+  defaultLayout = [3, 97],
   defaultCollapsed = false,
   navCollapsedSize,
   children,
