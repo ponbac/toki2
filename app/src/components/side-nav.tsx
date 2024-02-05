@@ -1,5 +1,11 @@
 import * as React from "react";
-import { File, Inbox, LucideIcon, FolderGit2, Activity } from "lucide-react";
+import {
+  LucideIcon,
+  FolderGit2,
+  Activity,
+  Home,
+  GitPullRequest,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -23,16 +29,16 @@ import { routeTree } from "@/routeTree.gen";
 type LinkDestination = Parameters<typeof Link<typeof routeTree>>[0]["to"];
 const MENU_ITEMS = [
   {
-    title: "Inbox",
-    label: "128",
-    icon: Inbox,
+    title: "Home",
+    label: "",
+    icon: Home,
     variant: "default",
     to: "/",
   },
   {
-    title: "Drafts",
-    label: "9",
-    icon: File,
+    title: "Pull requests",
+    label: "",
+    icon: GitPullRequest,
     variant: "ghost",
     to: "/prs",
   },
@@ -130,7 +136,7 @@ export function SideNavWrapper({
         minSize={30}
         className={className}
       >
-        <ScrollArea className="h-screen py-8">{children}</ScrollArea>
+        <ScrollArea className="h-screen">{children}</ScrollArea>
       </ResizablePanel>
     </ResizablePanelGroup>
   );
