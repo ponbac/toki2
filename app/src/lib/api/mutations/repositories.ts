@@ -58,6 +58,7 @@ function useFollowRepository(
     },
     onSettled: (data, err, vars, ctx) => {
       queryClient.invalidateQueries(queries.differs());
+      queryClient.invalidateQueries(queries.cachedPullRequests());
       options?.onSettled?.(data, err, vars, ctx);
     },
   });

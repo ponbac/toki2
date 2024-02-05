@@ -71,7 +71,6 @@ async fn open_pull_requests(
 async fn cached_pull_requests(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-    Query(query): Query<RepoKey>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
     let user_id = auth_session.user.expect("user not found").id;
     let followed_repos = query_followed_by_user(&app_state.db_pool, user_id)

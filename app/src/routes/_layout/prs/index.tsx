@@ -6,24 +6,12 @@ import { queries } from "@/lib/api/queries/queries";
 
 export const Route = createFileRoute("/_layout/prs/")({
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(
-      queries.cachedPullRequests({
-        organization: "ex-change-part",
-        project: "Quote Manager",
-        repoName: "hexagon",
-      }),
-    ),
+    context.queryClient.ensureQueryData(queries.cachedPullRequests()),
   component: PrsComponent,
 });
 
 function PrsComponent() {
-  const { data } = useSuspenseQuery(
-    queries.cachedPullRequests({
-      organization: "ex-change-part",
-      project: "Quote Manager",
-      repoName: "hexagon",
-    }),
-  );
+  const { data } = useSuspenseQuery(queries.cachedPullRequests());
 
   const navigate = useNavigate();
 

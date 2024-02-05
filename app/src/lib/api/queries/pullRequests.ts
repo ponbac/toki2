@@ -1,14 +1,13 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
-import { RepoKey } from "./queries";
 
 export const pullRequestsQueries = {
-  cachedPullRequests: (repoKey: RepoKey) =>
+  cachedPullRequests: () =>
     queryOptions({
-      queryKey: ["cachedPullRequests", repoKey],
+      queryKey: ["cachedPullRequests"],
       queryFn: async () =>
         api
-          .get("pull-requests/cached", { searchParams: repoKey })
+          .get("pull-requests/cached")
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .json<Array<any>>(),
     }),

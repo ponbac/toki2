@@ -17,6 +17,7 @@ function useStartDiffers(options?: DefaultMutationOptions<RepoKey>) {
     ...options,
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries(queries.differs());
+      queryClient.invalidateQueries(queries.cachedPullRequests());
       options?.onSuccess?.(data, vars, ctx);
     },
   });
