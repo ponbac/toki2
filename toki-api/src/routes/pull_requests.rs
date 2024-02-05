@@ -1,3 +1,5 @@
+use std::cmp;
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -87,7 +89,7 @@ async fn cached_pull_requests(
             followed_prs.extend(prs);
         }
     }
-    followed_prs.sort_by_key(|pr| pr.created_at);
+    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.created_at));
 
     Ok(Json(followed_prs))
 }
