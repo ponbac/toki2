@@ -12,6 +12,7 @@ mod app_state;
 mod auth;
 mod config;
 mod domain;
+mod repositories;
 mod router;
 mod routes;
 
