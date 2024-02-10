@@ -57,7 +57,7 @@ async fn follow_repository(
     let user_repo = app_state.user_repo.clone();
 
     user_repo
-        .follow_repository(user_id, repo_key, body.follow)
+        .follow_repository(user_id, &repo_key, body.follow)
         .await
         .map_err(|err| {
             (
@@ -124,7 +124,7 @@ async fn add_repository(
         body.token.clone(),
     );
     let id = repository_repo
-        .upsert_repository(new_repo)
+        .upsert_repository(&new_repo)
         .await
         .map_err(|err| {
             (

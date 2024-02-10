@@ -6,7 +6,7 @@ use super::repo_error::RepositoryError;
 
 pub trait RepoRepository {
     async fn get_repositories(&self) -> Result<Vec<Repository>, RepositoryError>;
-    async fn upsert_repository(&self, repository: NewRepository) -> Result<i32, RepositoryError>;
+    async fn upsert_repository(&self, repository: &NewRepository) -> Result<i32, RepositoryError>;
 }
 
 pub struct RepoRepositoryImpl {
@@ -34,7 +34,7 @@ impl RepoRepository for RepoRepositoryImpl {
         Ok(repos)
     }
 
-    async fn upsert_repository(&self, repository: NewRepository) -> Result<i32, RepositoryError> {
+    async fn upsert_repository(&self, repository: &NewRepository) -> Result<i32, RepositoryError> {
         let id = sqlx::query!(
             r#"
             INSERT INTO repositories (organization, project, repo_name, token)

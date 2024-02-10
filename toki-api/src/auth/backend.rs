@@ -107,7 +107,7 @@ impl AuthnBackend for AuthBackend {
             token_res.access_token().secret().to_string(),
         );
 
-        let user = user_repo.upsert_user(new_user).await?;
+        let user = user_repo.upsert_user(&new_user).await?;
 
         Ok(Some(user))
     }
