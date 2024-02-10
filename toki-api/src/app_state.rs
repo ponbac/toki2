@@ -12,7 +12,10 @@ use tokio::sync::{
     Mutex, RwLock,
 };
 
-use crate::domain::{RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey};
+use crate::{
+    domain::{RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey},
+    repositories::{RepoRepositoryImpl, UserRepositoryImpl},
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppStateError {
@@ -34,6 +37,8 @@ impl IntoResponse for AppStateError {
 pub struct AppState {
     pub app_url: String,
     pub db_pool: Arc<PgPool>,
+    pub user_repo: Arc<UserRepositoryImpl>,
+    pub repository_repo: Arc<RepoRepositoryImpl>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
@@ -83,7 +88,9 @@ impl AppState {
 
         Self {
             app_url,
-            db_pool: Arc::new(db_pool),
+            db_pool: Arc::new(db_pool.clone()),
+            user_repo: Arc::new(UserRepositoryImpl::new(db_pool.clone())),
+            repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
             differs: Arc::new(RwLock::new(differs)),

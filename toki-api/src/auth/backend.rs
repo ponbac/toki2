@@ -12,7 +12,10 @@ use reqwest::{
 use serde::Deserialize;
 use sqlx::PgPool;
 
-use crate::domain::User;
+use crate::{
+    domain::User,
+    repositories::{NewUser, RepositoryError, UserRepository, UserRepositoryImpl},
+};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Credentials {
@@ -32,7 +35,7 @@ struct UserInfo {
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
     #[error(transparent)]
-    Sqlx(sqlx::Error),
+    Sqlx(#[from] RepositoryError),
 
     #[error(transparent)]
     Reqwest(reqwest::Error),
@@ -96,40 +99,24 @@ impl AuthnBackend for AuthBackend {
             .map_err(Self::Error::Reqwest)?;
 
         // Persist user in our database so we can use `get_user`.
-        let user = sqlx::query_as!(
-            User,
-            r#"
-            INSERT INTO users (email, full_name, picture, access_token)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT(email) DO UPDATE
-            SET full_name = EXCLUDED.full_name,
-                picture = EXCLUDED.picture,
-                access_token = EXCLUDED.access_token
-            RETURNING *
-            "#,
+        let user_repo = UserRepositoryImpl::new(self.db.clone());
+        let new_user = NewUser::new(
             user_info.email,
             user_info.full_name,
             user_info.picture,
-            token_res.access_token().secret()
-        )
-        .fetch_one(&self.db)
-        .await
-        .map_err(Self::Error::Sqlx)?;
+            token_res.access_token().secret().to_string(),
+        );
+
+        let user = user_repo.upsert_user(new_user).await?;
 
         Ok(Some(user))
     }
 
     async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
-        Ok(sqlx::query_as!(
-            User,
-            r#"
-            SELECT * FROM users WHERE id = $1
-            "#,
-            *user_id as i32
-        )
-        .fetch_optional(&self.db)
-        .await
-        .map_err(Self::Error::Sqlx)?)
+        let user_repo = UserRepositoryImpl::new(self.db.clone());
+        let user = user_repo.get_user(*user_id as i32).await?;
+
+        Ok(Some(user))
     }
 }
 

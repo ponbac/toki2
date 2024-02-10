@@ -1,10 +1,12 @@
 use sqlx::PgPool;
 
-use crate::domain::RepoKey;
+use crate::domain::{RepoKey, User};
 
 use super::repo_error::RepositoryError;
 
 pub trait UserRepository {
+    async fn get_user(&self, id: i32) -> Result<User, RepositoryError>;
+    async fn upsert_user(&self, user: NewUser) -> Result<User, RepositoryError>;
     async fn followed_repositories(&self, id: i32) -> Result<Vec<RepoKey>, RepositoryError>;
     async fn follow_repository(
         &self,
@@ -18,7 +20,52 @@ pub struct UserRepositoryImpl {
     pool: PgPool,
 }
 
+impl UserRepositoryImpl {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
 impl UserRepository for UserRepositoryImpl {
+    async fn get_user(&self, id: i32) -> Result<User, RepositoryError> {
+        let user = sqlx::query_as!(
+            User,
+            r#"
+            SELECT id, email, full_name, picture, access_token
+            FROM users
+            WHERE id = $1
+            "#,
+            id
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(user)
+    }
+
+    async fn upsert_user(&self, user: NewUser) -> Result<User, RepositoryError> {
+        let user = sqlx::query_as!(
+            User,
+            r#"
+            INSERT INTO users (email, full_name, picture, access_token)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT(email) DO UPDATE
+            SET full_name = EXCLUDED.full_name,
+                picture = EXCLUDED.picture,
+                access_token = EXCLUDED.access_token
+            RETURNING *
+            "#,
+            user.email,
+            user.full_name,
+            user.picture,
+            user.access_token
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(user)
+    }
+
     async fn followed_repositories(&self, id: i32) -> Result<Vec<RepoKey>, RepositoryError> {
         let repos = sqlx::query_as!(
             RepoKey,
@@ -82,5 +129,23 @@ impl UserRepository for UserRepositoryImpl {
         }
 
         Ok(())
+    }
+}
+
+pub struct NewUser {
+    email: String,
+    full_name: String,
+    picture: String,
+    access_token: String,
+}
+
+impl NewUser {
+    pub fn new(email: String, full_name: String, picture: String, access_token: String) -> Self {
+        Self {
+            email,
+            full_name,
+            picture,
+            access_token,
+        }
     }
 }

@@ -7,7 +7,6 @@ use axum::{
     Json, Router,
 };
 use serde::Serialize;
-use sqlx::PgPool;
 use time::OffsetDateTime;
 use tracing::instrument;
 
@@ -15,6 +14,7 @@ use crate::{
     app_state::AppState,
     auth::AuthSession,
     domain::{RepoDifferMessage, RepoDifferStatus, RepoKey},
+    repositories::UserRepository,
 };
 
 pub fn router() -> Router<AppState> {
@@ -43,7 +43,9 @@ async fn get_differs(
     State(app_state): State<AppState>,
 ) -> Json<Vec<Differ>> {
     let user_id = auth_session.user.expect("user not found").id;
-    let followed_repos = query_followed_by_user(&app_state.db_pool, user_id)
+    let user_repo = app_state.user_repo.clone();
+    let followed_repos = user_repo
+        .followed_repositories(user_id)
         .await
         .expect("Failed to query followed repos");
 
@@ -67,25 +69,6 @@ async fn get_differs(
     }
 
     Json(differ_dtos)
-}
-
-async fn query_followed_by_user(
-    pool: &PgPool,
-    user_id: i32,
-) -> Result<Vec<RepoKey>, Box<dyn std::error::Error>> {
-    sqlx::query_as!(
-        RepoKey,
-        r#"
-        SELECT organization, project, repo_name
-        FROM user_repositories
-        JOIN repositories ON user_repositories.repository_id = repositories.id
-        WHERE user_id = $1
-        "#,
-        user_id
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(Into::into)
 }
 
 #[instrument(name = "start_differ", skip(app_state))]

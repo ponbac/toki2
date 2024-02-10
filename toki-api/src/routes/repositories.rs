@@ -6,10 +6,14 @@ use axum::{
 };
 use az_devops::RepoClient;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use tracing::instrument;
 
-use crate::{auth::AuthSession, domain::RepoKey, AppState};
+use crate::{
+    auth::AuthSession,
+    domain::{RepoKey, Repository},
+    repositories::{NewRepository, RepoRepository, UserRepository},
+    AppState,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -18,59 +22,15 @@ pub fn router() -> Router<AppState> {
         .route("/follow", post(follow_repository))
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RepositoryDto {
-    id: i32,
-    organization: String,
-    project: String,
-    repo_name: String,
-}
-
 #[instrument(name = "GET /repositories", skip(app_state))]
-async fn get_repositories(State(app_state): State<AppState>) -> Json<Vec<RepositoryDto>> {
-    let repos = query_repository_dtos(&app_state.db_pool)
+async fn get_repositories(State(app_state): State<AppState>) -> Json<Vec<Repository>> {
+    let repository_repo = app_state.repository_repo.clone();
+    let repos = repository_repo
+        .get_repositories()
         .await
         .expect("Failed to query repos");
 
     Json(repos)
-}
-
-async fn query_repository_dtos(
-    pool: &PgPool,
-) -> Result<Vec<RepositoryDto>, Box<dyn std::error::Error>> {
-    let repos = sqlx::query_as!(
-        RepositoryDto,
-        r#"
-        SELECT id, organization, project, repo_name
-        FROM repositories
-        "#
-    )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(repos)
-}
-
-async fn query_repository(
-    pool: &PgPool,
-    key: RepoKey,
-) -> Result<Option<RepositoryDto>, Box<dyn std::error::Error>> {
-    let repo = sqlx::query_as!(
-        RepositoryDto,
-        r#"
-        SELECT id, organization, project, repo_name
-        FROM repositories
-        WHERE organization = $1 AND project = $2 AND repo_name = $3
-        "#,
-        key.organization,
-        key.project,
-        key.repo_name
-    )
-    .fetch_optional(pool)
-    .await?;
-
-    Ok(repo)
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,69 +54,19 @@ async fn follow_repository(
     let user_id = auth_session.user.expect("user not found").id;
 
     let repo_key = RepoKey::new(&body.organization, &body.project, &body.repo_name);
-    let repository_id = match query_repository(&app_state.db_pool, repo_key).await {
-        Ok(Some(repo)) => repo.id,
-        Ok(None) => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                format!(
-                    "Repository not found: {}/{}/{}",
-                    body.organization, body.project, body.repo_name
-                ),
-            ))
-        }
-        Err(err) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to query repository: {}", err),
-            ))
-        }
-    };
+    let user_repo = app_state.user_repo.clone();
 
-    insert_follow(&app_state.db_pool, user_id, repository_id, body.follow)
+    user_repo
+        .follow_repository(user_id, repo_key, body.follow)
         .await
         .map_err(|err| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to insert follow: {}", err),
+                format!("Failed to follow repository: {}", err),
             )
         })?;
 
     Ok(Json(()))
-}
-
-async fn insert_follow(
-    pool: &PgPool,
-    user_id: i32,
-    repository_id: i32,
-    follow: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if follow {
-        sqlx::query!(
-            r#"
-            INSERT INTO user_repositories (user_id, repository_id)
-            VALUES ($1, $2)
-            ON CONFLICT (user_id, repository_id) DO NOTHING
-            "#,
-            user_id,
-            repository_id
-        )
-        .execute(pool)
-        .await?;
-    } else {
-        sqlx::query!(
-            r#"
-            DELETE FROM user_repositories
-            WHERE user_id = $1 AND repository_id = $2
-            "#,
-            user_id,
-            repository_id
-        )
-        .execute(pool)
-        .await?;
-    }
-
-    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,58 +116,26 @@ async fn add_repository(
         )
     })?;
 
-    let id = insert_repository(
-        &app_state.db_pool,
-        &body.organization,
-        &body.project,
-        &body.repo_name,
-        &body.token,
-    )
-    .await
-    .map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to insert repository: {}", err),
-        )
-    })?;
+    let repository_repo = app_state.repository_repo.clone();
+    let new_repo = NewRepository::new(
+        body.organization.clone(),
+        body.project.clone(),
+        body.repo_name.clone(),
+        body.token.clone(),
+    );
+    let id = repository_repo
+        .upsert_repository(new_repo)
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to insert repository: {}", err),
+            )
+        })?;
 
     let key = RepoKey::from(&body);
     app_state.insert_repo(key.clone(), repo_client).await;
     tracing::info!("Added new repository: {}", key);
 
     Ok(Json(AddRepositoryResponse { id }))
-}
-
-async fn insert_repository(
-    pool: &PgPool,
-    organization: &str,
-    project: &str,
-    repo_name: &str,
-    token: &str,
-) -> Result<i32, Box<dyn std::error::Error>> {
-    let repo_id = sqlx::query!(
-        r#"
-        INSERT INTO repositories (organization, project, repo_name, token)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (project, repo_name, organization) 
-        DO UPDATE SET
-        token = EXCLUDED.token
-        RETURNING id
-        "#,
-        organization,
-        project,
-        repo_name,
-        token
-    )
-    .fetch_one(pool)
-    .await?
-    .id;
-    tracing::info!(
-        "Added repository to DB: {}/{}/{}",
-        organization,
-        project,
-        repo_name
-    );
-
-    Ok(repo_id)
 }
