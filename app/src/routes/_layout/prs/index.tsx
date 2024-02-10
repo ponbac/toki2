@@ -21,7 +21,7 @@ function PrsComponent() {
         <div className="w-full">
           <h1 className="text-2xl font-bold">Pull requests</h1>
           <h2 className="text-muted-foreground">
-            Open pull requests in your followed repositories is shown here.
+            Open pull requests in your followed repositories are shown here.
           </h2>
         </div>
         <DataTable
