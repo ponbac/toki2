@@ -1,3 +1,4 @@
+import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
@@ -29,6 +30,7 @@ function LayoutComponent() {
         </Suspense>
       </SideNavWrapper>
       <Toaster />
+      <CmdK />
     </TooltipProvider>
   );
 }

@@ -77,7 +77,7 @@ function RepositoriesComponent() {
   );
 
   return (
-    <main className="flex w-full items-center justify-center py-8">
+    <main className="flex w-full items-center justify-center p-8">
       <div className="flex min-w-[77rem] flex-col items-center justify-center gap-4">
         <TopBar />
         <div className="grid grid-cols-3 gap-4">
