@@ -9,11 +9,12 @@ import {
 } from "./ui/command";
 import { useQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
+import { useNavigate } from "@tanstack/react-router";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(true);
 
-  const { data: pullRequests } = useQuery(queries.cachedPullRequests());
+  const close = () => setOpen(false);
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -32,9 +33,7 @@ export function CmdK() {
       <CommandInput placeholder="Type a command or search..." />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
-        <CommandGroup heading="Pull requests">
-          {pullRequests?.map((pr) => <PRCommandItem key={pr.id} pr={pr} />)}
-        </CommandGroup>
+        <PRCommandGroup close={close} />
         <CommandGroup heading="Suggestions">
           <CommandItem>Calendar</CommandItem>
           <CommandItem>Search Emoji</CommandItem>
@@ -45,17 +44,33 @@ export function CmdK() {
   );
 }
 
-function PRCommandItem(props: { pr: any }) {
+function PRCommandGroup(props: { close: () => void }) {
+  const navigate = useNavigate();
+
+  const { data: pullRequests } = useQuery(queries.cachedPullRequests());
+
   return (
-    <CommandItem value={props.pr.id} onSelect={(pr) => console.log(pr)}>
-      <div className="flex flex-row items-center justify-between gap-2">
-        <span>{props.pr.title}</span>
-        <img
-          src={props.pr.createdBy.avatarUrl}
-          alt={props.pr.createdBy.displayName}
-          className="h-6 w-6 rounded-full"
-        />
-      </div>
-    </CommandItem>
+    <CommandGroup heading="Pull requests">
+      {pullRequests?.map((pr) => (
+        <CommandItem
+          onSelect={() => {
+            navigate({
+              to: "/prs/$prId",
+              params: { prId: pr.id },
+            });
+            props.close();
+          }}
+        >
+          <div className="flex flex-row items-center justify-between gap-2">
+            <span>{pr.title}</span>
+            <img
+              src={pr.createdBy.avatarUrl}
+              alt={pr.createdBy.displayName}
+              className="h-6 w-6 rounded-full"
+            />
+          </div>
+        </CommandItem>
+      ))}
+    </CommandGroup>
   );
 }
