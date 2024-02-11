@@ -54,9 +54,11 @@ fn blocked_by(
         .iter()
         .filter(|t| t.status != Some(ThreadStatus::Closed))
         .filter_map(|t| {
-            t.comments
-                .iter()
-                .find(|c| c.is_deleted != Some(true) && c.comment_type != Some(CommentType::System))
+            t.comments.iter().find(|c| {
+                c.is_deleted != Some(true)
+                    && c.comment_type != Some(CommentType::System)
+                    && c.author.display_name != "Azure Pipelines Test Service"
+            })
         })
         .map(|c| c.author.clone())
         .map(IdentityWithVote::from)
