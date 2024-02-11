@@ -1,4 +1,4 @@
-use az_devops::{IdentityWithVote, ThreadStatus, Vote};
+use az_devops::{CommentType, IdentityWithVote, ThreadStatus, Vote};
 use serde::{Deserialize, Serialize};
 
 use super::RepoKey;
@@ -53,7 +53,11 @@ fn blocked_by(
     let unresolved_thread_authors = threads
         .iter()
         .filter(|t| t.status != Some(ThreadStatus::Closed))
-        .filter_map(|t| t.comments.iter().find(|c| c.is_deleted != Some(true)))
+        .filter_map(|t| {
+            t.comments
+                .iter()
+                .find(|c| c.is_deleted != Some(true) && c.comment_type != Some(CommentType::System))
+        })
         .map(|c| c.author.clone())
         .map(IdentityWithVote::from)
         .collect::<Vec<_>>();
