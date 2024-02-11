@@ -7,6 +7,7 @@ export const pullRequestsQueries = {
       queryKey: ["cachedPullRequests"],
       queryFn: async () =>
         api.get("pull-requests/cached").json<Array<PullRequest>>(),
+      refetchInterval: 120 * 1000,
     }),
 };
 
@@ -20,10 +21,10 @@ export type PullRequest = {
   sourceBranch: string;
   targetBranch: string;
   status: Status;
-  createdBy: CreatedBy;
+  createdBy: User;
   createdAt: Date;
   closedAt: null;
-  autoCompleteSetBy: CreatedBy | null;
+  autoCompleteSetBy: User | null;
   completionOptions: CompletionOptions | null;
   isDraft: boolean;
   mergeStatus: MergeStatus | null;
@@ -37,7 +38,7 @@ export type PullRequest = {
   workItems: WorkItem[];
 };
 
-export type CreatedBy = {
+export type User = {
   id: string;
   displayName: string;
   uniqueName: string;
@@ -80,7 +81,7 @@ export type MergeFailureType =
   | "objectTooLarge";
 
 export type Reviewer = {
-  identity: CreatedBy;
+  identity: User;
   vote: Vote;
   hasDeclined: boolean;
   isRequired: boolean | null;
@@ -107,7 +108,7 @@ export type Thread = {
 
 export type Comment = {
   id: number;
-  author: CreatedBy;
+  author: User;
   content: string;
   commentType: CommentType | null;
   isDeleted: null;
@@ -124,8 +125,8 @@ export type WorkItem = {
   itemType: string;
   createdAt: Date;
   changedAt: Date;
-  assignedTo: CreatedBy;
-  createdBy: CreatedBy;
+  assignedTo: User;
+  createdBy: User;
   relations: Relation[];
 };
 

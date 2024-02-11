@@ -10,6 +10,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
 import { useNavigate } from "@tanstack/react-router";
+import { AzureAvatar } from "./azure-avatar";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(true);
@@ -31,7 +32,7 @@ export function CmdK() {
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput placeholder="Type a command or search..." />
-      <CommandList>
+      <CommandList className="max-w-2xl">
         <CommandEmpty>No results found.</CommandEmpty>
         <PRCommandGroup close={close} />
         <CommandGroup heading="Suggestions">
@@ -61,13 +62,9 @@ function PRCommandGroup(props: { close: () => void }) {
             props.close();
           }}
         >
-          <div className="flex flex-row items-center justify-between gap-2">
-            <span>{pr.title}</span>
-            <img
-              src={pr.createdBy.avatarUrl}
-              alt={pr.createdBy.displayName}
-              className="h-6 w-6 rounded-full"
-            />
+          <div className="flex w-full flex-row items-center justify-between gap-2 truncate">
+            <span className="truncate">{pr.title}</span>
+            <AzureAvatar user={pr.createdBy} />
           </div>
         </CommandItem>
       ))}

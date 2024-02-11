@@ -11,7 +11,10 @@ export const Route = createFileRoute("/_layout/prs/")({
 });
 
 function PrsComponent() {
-  const { data } = useSuspenseQuery(queries.cachedPullRequests());
+  const { data } = useSuspenseQuery({
+    ...queries.cachedPullRequests(),
+    refetchInterval: 60 * 1000,
+  });
 
   const navigate = useNavigate();
 
@@ -30,7 +33,7 @@ function PrsComponent() {
           onRowClick={(row) =>
             navigate({
               to: `/prs/$prId`,
-              params: { prId: row.id },
+              params: { prId: `${row.id}` },
             })
           }
         />

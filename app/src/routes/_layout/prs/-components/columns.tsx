@@ -1,3 +1,4 @@
+import { AzureAvatar } from "@/components/azure-avatar";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
@@ -6,6 +7,11 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
   {
     accessorKey: "id",
     header: "ID",
+    cell: ({ row }) => `!${row.original.id}`,
+  },
+  {
+    accessorKey: "repoName",
+    header: "Repository",
   },
   {
     accessorKey: "title",
@@ -18,11 +24,7 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
       return (
         <div className="flex flex-row items-center justify-between gap-2">
           <span>{row.original.createdBy.displayName}</span>
-          <img
-            src={row.original.createdBy.avatarUrl}
-            alt={row.original.createdBy.displayName}
-            className="h-6 w-6 rounded-full"
-          />
+          <AzureAvatar user={row.original.createdBy} />
         </div>
       );
     },
