@@ -103,12 +103,12 @@ function PRCommandGroup(props: { close: () => void }) {
               <span className="truncate">{pr.title}</span>
             </div>
             <div className="flex flex-row items-center gap-2">
-              <div>
+              <div className="flex flex-row items-center gap-1">
                 {pr.workItems.map((wi) => (
                   <span className="text-muted-foreground">#{wi.id}</span>
                 ))}
               </div>
-              <AzureAvatar user={pr.createdBy} />
+              <AzureAvatar user={pr.createdBy} disableTooltip />
             </div>
           </div>
         </CommandItem>

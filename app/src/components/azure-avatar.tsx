@@ -5,22 +5,32 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export function AzureAvatar({
   user,
+  disableTooltip,
   className,
 }: {
   user: User;
+  disableTooltip?: boolean;
   className?: string;
 }) {
-  return (
+  return disableTooltip ? (
+    <AvatarComponent user={user} className={className} />
+  ) : (
     <Tooltip>
       <TooltipTrigger>
-        <Avatar className={cn("size-6", className)}>
-          <AvatarImage src={user.avatarUrl} alt={user.displayName} />
-          <AvatarFallback>{user.displayName[0].toUpperCase()}</AvatarFallback>
-        </Avatar>
+        <AvatarComponent user={user} className={className} />
       </TooltipTrigger>
       <TooltipContent>
         <div className="text-sm font-medium">{user.displayName}</div>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function AvatarComponent(props: { user: User; className?: string }) {
+  return (
+    <Avatar className={cn("size-6", props.className)}>
+      <AvatarImage src={props.user.avatarUrl} alt={props.user.displayName} />
+      <AvatarFallback>{props.user.displayName[0].toUpperCase()}</AvatarFallback>
+    </Avatar>
   );
 }
