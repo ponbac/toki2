@@ -22,9 +22,22 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     header: "Author",
     cell: ({ row }) => {
       return (
-        <div className="flex flex-row items-center justify-between gap-2">
-          <span>{row.original.createdBy.displayName}</span>
+        <div className="flex flex-row items-center gap-2">
           <AzureAvatar user={row.original.createdBy} />
+          <span>{row.original.createdBy.displayName}</span>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: "workItems",
+    header: "Work Items",
+    cell: ({ row }) => {
+      return (
+        <div className="flex flex-row items-center gap-2">
+          {row.original.workItems.map((wi) => (
+            <span>#{wi.id}</span>
+          ))}
         </div>
       );
     },

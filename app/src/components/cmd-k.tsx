@@ -11,9 +11,15 @@ import { useQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
 import { useNavigate } from "@tanstack/react-router";
 import { AzureAvatar } from "./azure-avatar";
+import {
+  Activity,
+  FolderGit2,
+  GitPullRequestIcon,
+  HomeIcon,
+} from "lucide-react";
 
 export function CmdK() {
-  const [open, setOpen] = React.useState(true);
+  const [open, setOpen] = React.useState(false);
 
   const close = () => setOpen(false);
 
@@ -34,14 +40,42 @@ export function CmdK() {
       <CommandInput placeholder="Type a command or search..." />
       <CommandList className="max-w-2xl">
         <CommandEmpty>No results found.</CommandEmpty>
+        <PagesCommandGroup close={close} />
         <PRCommandGroup close={close} />
-        <CommandGroup heading="Suggestions">
-          <CommandItem>Calendar</CommandItem>
-          <CommandItem>Search Emoji</CommandItem>
-          <CommandItem>Calculator</CommandItem>
-        </CommandGroup>
       </CommandList>
     </CommandDialog>
+  );
+}
+
+const PAGES = [
+  { title: "Home", to: "/", icon: HomeIcon },
+  { title: "Pull requests", to: "/prs", icon: GitPullRequestIcon },
+  { title: "Commits", to: "/prs/commits", icon: Activity },
+  { title: "Repositories", to: "/repositories", icon: FolderGit2 },
+] as const;
+
+function PagesCommandGroup(props: { close: () => void }) {
+  const navigate = useNavigate();
+
+  return (
+    <CommandGroup heading="Pages">
+      {PAGES.map((page) => (
+        <CommandItem
+          key={page.to}
+          onSelect={() => {
+            navigate({
+              to: page.to,
+            });
+            props.close();
+          }}
+        >
+          <div className="flex flex-row items-center gap-2">
+            <page.icon className="h-1 w-1" />
+            {page.title}
+          </div>
+        </CommandItem>
+      ))}
+    </CommandGroup>
   );
 }
 
@@ -54,6 +88,7 @@ function PRCommandGroup(props: { close: () => void }) {
     <CommandGroup heading="Pull requests">
       {pullRequests?.map((pr) => (
         <CommandItem
+          key={`${pr.id}-${pr.title}`}
           onSelect={() => {
             navigate({
               to: "/prs/$prId",
@@ -63,8 +98,18 @@ function PRCommandGroup(props: { close: () => void }) {
           }}
         >
           <div className="flex w-full flex-row items-center justify-between gap-2 truncate">
-            <span className="truncate">{pr.title}</span>
-            <AzureAvatar user={pr.createdBy} />
+            <div className="flex flex-row items-center gap-2">
+              <span className="text-muted-foreground">!{pr.id}</span>
+              <span className="truncate">{pr.title}</span>
+            </div>
+            <div className="flex flex-row items-center gap-2">
+              <div>
+                {pr.workItems.map((wi) => (
+                  <span className="text-muted-foreground">#{wi.id}</span>
+                ))}
+              </div>
+              <AzureAvatar user={pr.createdBy} />
+            </div>
           </div>
         </CommandItem>
       ))}
