@@ -36,6 +36,7 @@ export type PullRequest = {
   threads: Thread[];
   commits: Commit[];
   workItems: WorkItem[];
+  blockedBy: Reviewer[];
 };
 
 export type User = {

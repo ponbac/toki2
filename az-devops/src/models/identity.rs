@@ -74,3 +74,15 @@ impl From<IdentityRefWithVote> for IdentityWithVote {
         }
     }
 }
+
+impl From<Identity> for IdentityWithVote {
+    fn from(identity: Identity) -> Self {
+        Self {
+            identity,
+            vote: None,
+            has_declined: None,
+            is_required: None,
+            is_flagged: None,
+        }
+    }
+}

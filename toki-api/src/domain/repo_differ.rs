@@ -145,15 +145,9 @@ impl RepoDiffer {
                 .await
                 .map_err(|_| RepoDifferError::FetchWorkItems)?;
 
-            complete_pull_requests.push(PullRequest {
-                organization: self.key.organization.clone(),
-                project: self.key.project.clone(),
-                repo_name: self.key.repo_name.clone(),
-                pull_request_base: pr,
-                threads,
-                commits,
-                work_items,
-            });
+            complete_pull_requests.push(PullRequest::new(
+                &self.key, pr, threads, commits, work_items,
+            ));
         }
 
         let changed_pull_requests = {
