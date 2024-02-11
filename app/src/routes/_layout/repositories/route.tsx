@@ -56,10 +56,8 @@ function RepositoriesComponent() {
     refetchInterval: 15 * 1000,
   });
 
-  const { mutate: startDiffer, isPending: startingPending } =
-    mutations.useStartDiffers();
-  const { mutate: stopDiffer, isPending: stoppingPending } =
-    mutations.useStopDiffers();
+  const { mutate: startDiffer } = mutations.useStartDiffers();
+  const { mutate: stopDiffer } = mutations.useStopDiffers();
   const { mutate: followRepository } = mutations.useFollowRepository({
     onSuccess: (_, vars) => {
       toast.success(
@@ -120,7 +118,14 @@ function RepositoriesComponent() {
               </CardHeader>
               <CardContent>
                 <CardDescription>
-                  Status: <span className="font-semibold">{differ.status}</span>
+                  Status:{" "}
+                  <span
+                    className={cn("font-semibold", {
+                      "text-destructive": differ.status === "Errored",
+                    })}
+                  >
+                    {differ.status}
+                  </span>
                 </CardDescription>
                 <CardDescription>
                   Fetch Interval:{" "}
@@ -132,7 +137,7 @@ function RepositoriesComponent() {
               </CardContent>
               <CardFooter className="flex flex-row-reverse gap-2">
                 <FooterButton
-                  disabled={differ.status === "Running" || startingPending}
+                  disabled={differ.status === "Running"}
                   onClick={() => startDiffer(differ)}
                 >
                   <PlayCircle size="1.25rem" />
@@ -140,7 +145,7 @@ function RepositoriesComponent() {
                 </FooterButton>
                 <FooterButton
                   variant="outline"
-                  disabled={differ.status === "Stopped" || stoppingPending}
+                  disabled={differ.status === "Stopped"}
                   onClick={() => stopDiffer(differ)}
                 >
                   <PauseCircle size="1.25rem" />

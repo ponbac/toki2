@@ -109,7 +109,7 @@ export type Comment = {
   id: number;
   author: CreatedBy;
   content: string;
-  commentType: CommentType;
+  commentType: CommentType | null;
   isDeleted: null;
   publishedAt: Date;
 };

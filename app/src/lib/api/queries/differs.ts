@@ -14,7 +14,7 @@ export type Differ = {
   project: string;
   repoName: string;
   followed: boolean;
-  status: "Running" | "Stopped";
+  status: "Running" | "Stopped" | "Errored";
   lastUpdated: string | null;
   refreshInterval: {
     secs: number;

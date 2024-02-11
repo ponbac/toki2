@@ -37,7 +37,7 @@ impl IntoResponse for RepoDifferError {
 pub enum RepoDifferStatus {
     Running,
     Stopped,
-    // todo: errored
+    Errored,
 }
 
 pub enum RepoDifferMessage {
@@ -115,6 +115,7 @@ impl RepoDiffer {
                     let res = self.tick().await;
                     if let Err(err) = res {
                         tracing::error!("Error ticking for {}: {:?}", self.key, err);
+                        *self.status.write().await = RepoDifferStatus::Errored;
                     }
                 }
             }

@@ -56,7 +56,7 @@ function PRCommandGroup(props: { close: () => void }) {
           onSelect={() => {
             navigate({
               to: "/prs/$prId",
-              params: { prId: pr.id },
+              params: { prId: pr.id.toString() },
             });
             props.close();
           }}
