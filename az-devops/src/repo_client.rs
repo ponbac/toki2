@@ -240,7 +240,7 @@ mod tests {
 
         let test_pr = pull_requests
             .iter()
-            .find(|pr| pr.title == "[FE] Edit subgroups")
+            .find(|pr| pr.title == "Make export of sell prices more robust")
             .unwrap();
 
         let work_item_ids = repo_client

@@ -82,7 +82,7 @@ async fn start_differ(
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
     let _ = sender
-        .send(RepoDifferMessage::Start(Duration::from_secs(30)))
+        .send(RepoDifferMessage::Start(Duration::from_secs(300)))
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()));
 

@@ -76,7 +76,7 @@ fn new_auth_layer(
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(false) // todo: explore production values
         .with_same_site(SameSite::Lax)
-        .with_expiry(Expiry::OnInactivity(Duration::days(1)));
+        .with_expiry(Expiry::OnInactivity(Duration::days(7)));
 
     let backend = AuthBackend::new(connection_pool, client);
     AuthManagerLayerBuilder::new(backend, session_layer).build()

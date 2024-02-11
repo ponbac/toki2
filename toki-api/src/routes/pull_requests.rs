@@ -6,12 +6,15 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use az_devops::{GitCommitRef, PullRequest};
+use az_devops::GitCommitRef;
 use serde::Deserialize;
 use tracing::instrument;
 
 use crate::{
-    app_state::AppStateError, auth::AuthSession, domain::RepoKey, repositories::UserRepository,
+    app_state::AppStateError,
+    auth::AuthSession,
+    domain::{PullRequest, RepoKey},
+    repositories::UserRepository,
     AppState,
 };
 
@@ -41,7 +44,7 @@ impl From<&OpenPullRequestsQuery> for RepoKey {
 async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
-) -> Result<Json<Vec<PullRequest>>, AppStateError> {
+) -> Result<Json<Vec<az_devops::PullRequest>>, AppStateError> {
     let client = app_state.get_repo_client(&query).await?;
 
     let pull_requests = client
@@ -56,7 +59,7 @@ async fn open_pull_requests(
                 true
             }
         })
-        .collect::<Vec<PullRequest>>();
+        .collect::<Vec<az_devops::PullRequest>>();
     tracing::debug!(
         "Found {} open pull requests: [{}]",
         pull_requests.len(),
@@ -93,7 +96,7 @@ async fn cached_pull_requests(
             followed_prs.extend(prs);
         }
     }
-    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.created_at));
+    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
 
     Ok(Json(followed_prs))
 }
@@ -108,31 +111,17 @@ async fn most_recent_commits(
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
         .map(|mut prs| {
-            prs.sort_by_key(|pr| pr.created_at);
+            prs.sort_by_key(|pr| pr.pull_request_base.created_at);
             prs
         });
 
-    let client = app_state.get_repo_client(query).await.map_err(|err| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to get repository client: {}", err),
-        )
-    })?;
     let mut commits = vec![];
     if let Some(prs) = cached_prs {
         for pr in prs {
-            let pr_commits = pr.commits(&client).await.map_err(|err| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to get commits in pull request: {}", err),
-                )
-            })?;
-            commits.extend(pr_commits);
+            commits.extend(pr.commits);
         }
     }
-
-    commits.sort_by_key(|commit| commit.author.as_ref().unwrap().date);
-    commits.reverse();
+    commits.sort_by_key(|commit| cmp::Reverse(commit.author.as_ref().unwrap().date));
 
     Ok(Json(commits))
 }

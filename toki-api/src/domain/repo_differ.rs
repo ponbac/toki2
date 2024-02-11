@@ -5,25 +5,29 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use az_devops::{PullRequest, RepoClient};
+use az_devops::RepoClient;
 use serde::Serialize;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
 
-use super::RepoKey;
+use super::{PullRequest, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoDifferError {
-    #[error("Could not fetch pull requests for repo '{0}'")]
-    CouldNotFetchPullRequests(RepoKey),
+    #[error("Could not fetch pull requests for repo")]
+    FetchPullRequests,
+    #[error("Could not fetch threads for pull request")]
+    FetchThreads,
+    #[error("Could not fetch commits for pull request")]
+    FetchCommits,
+    #[error("Could not fetch work items for pull request")]
+    FetchWorkItems,
 }
 
 impl IntoResponse for RepoDifferError {
     fn into_response(self) -> Response {
-        let status = match self {
-            Self::CouldNotFetchPullRequests(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
+        let status = StatusCode::INTERNAL_SERVER_ERROR;
 
         (status, self.to_string()).into_response()
     }
@@ -108,7 +112,10 @@ impl RepoDiffer {
                 }
                 _ = interval_tick_or_sleep(&mut interval) => {
                     tracing::debug!("Ticked");
-                    let _ = self.tick().await;
+                    let res = self.tick().await;
+                    if let Err(err) = res {
+                        tracing::error!("Error ticking for {}: {:?}", self.key, err);
+                    }
                 }
             }
         }
@@ -116,21 +123,47 @@ impl RepoDiffer {
 
     #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
     async fn tick(&self) -> Result<(), RepoDifferError> {
-        let pull_requests = self
+        let base_pull_requests = self
             .az_client
             .get_open_pull_requests()
             .await
-            .map_err(|_| RepoDifferError::CouldNotFetchPullRequests(self.key.clone()))?;
+            .map_err(|_| RepoDifferError::FetchPullRequests)?;
+
+        let mut complete_pull_requests = Vec::new();
+        for pr in base_pull_requests {
+            let threads = pr
+                .threads(&self.az_client)
+                .await
+                .map_err(|_| RepoDifferError::FetchThreads)?;
+            let commits = pr
+                .commits(&self.az_client)
+                .await
+                .map_err(|_| RepoDifferError::FetchCommits)?;
+            let work_items = pr
+                .work_items(&self.az_client)
+                .await
+                .map_err(|_| RepoDifferError::FetchWorkItems)?;
+
+            complete_pull_requests.push(PullRequest {
+                organization: self.key.organization.clone(),
+                project: self.key.project.clone(),
+                repo_name: self.key.repo_name.clone(),
+                pull_request_base: pr,
+                threads,
+                commits,
+                work_items,
+            });
+        }
 
         let changed_pull_requests = {
             let prev_pull_requests = self.prev_pull_requests.read().await;
             match prev_pull_requests.clone() {
-                Some(prev_pull_requests) => pull_requests
+                Some(prev_pull_requests) => complete_pull_requests
                     .clone()
                     .into_iter()
                     .filter(|pr| !prev_pull_requests.contains(pr))
                     .collect::<Vec<PullRequest>>(),
-                None => pull_requests.clone(),
+                None => complete_pull_requests.clone(),
             }
         };
 
@@ -139,7 +172,7 @@ impl RepoDiffer {
             changed_pull_requests.len(),
             changed_pull_requests
                 .iter()
-                .map(|pr| pr.title.clone())
+                .map(|pr| pr.pull_request_base.title.clone())
                 .collect::<Vec<String>>()
                 .join(", ")
         );
@@ -147,7 +180,7 @@ impl RepoDiffer {
         self.prev_pull_requests
             .write()
             .await
-            .replace(pull_requests.clone());
+            .replace(complete_pull_requests);
         self.last_updated
             .write()
             .await

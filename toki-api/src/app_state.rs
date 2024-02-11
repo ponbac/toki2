@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use az_devops::{PullRequest, RepoClient};
+use az_devops::RepoClient;
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
 use tokio::sync::{
@@ -13,7 +13,7 @@ use tokio::sync::{
 };
 
 use crate::{
-    domain::{RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey},
+    domain::{PullRequest, RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey},
     repositories::{RepoRepositoryImpl, UserRepositoryImpl},
 };
 

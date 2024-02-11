@@ -1,17 +1,8 @@
+import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
 
-export type TablePullRequest = {
-  id: string;
-  title: string;
-  createdAt: string;
-  createdBy: {
-    displayName: string;
-    avatarUrl: string;
-  };
-};
-
-export const pullRequestColumns: ColumnDef<TablePullRequest>[] = [
+export const pullRequestColumns: ColumnDef<PullRequest>[] = [
   {
     accessorKey: "id",
     header: "ID",

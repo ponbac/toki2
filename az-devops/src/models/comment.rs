@@ -4,12 +4,12 @@ use time::OffsetDateTime;
 
 use crate::Identity;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Comment {
     pub id: i64,
     pub author: Identity,
-    pub content: String,
+    pub content: Option<String>,
     pub comment_type: CommentType,
     pub is_deleted: Option<bool>,
     #[serde(with = "time::serde::rfc3339")]
@@ -22,7 +22,7 @@ impl From<AzureComment> for Comment {
         Self {
             id: comment.id.unwrap(),
             author: comment.author.unwrap().into(),
-            content: comment.content.unwrap(),
+            content: comment.content,
             comment_type: comment.comment_type.unwrap(),
             is_deleted: comment.is_deleted,
             published_at: comment.published_date.unwrap(),

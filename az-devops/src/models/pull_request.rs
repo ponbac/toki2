@@ -57,6 +57,10 @@ impl PullRequest {
                 e
             })?;
 
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+
         client.get_work_items(ids).await
     }
 }

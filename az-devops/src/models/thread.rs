@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 
 use super::comment::Comment;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Thread {
     pub id: i32,
