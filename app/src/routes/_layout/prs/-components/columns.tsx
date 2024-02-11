@@ -43,6 +43,33 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     },
   },
   {
+    accessorKey: "blockedBy",
+    header: "Votes",
+    cell: ({ row }) => {
+      const approvedBy = row.original.reviewers.filter(
+        (reviewer) => reviewer.vote === "Approved",
+      );
+      const blockedBy = row.original.blockedBy;
+
+      return (
+        <div className="flex flex-row items-center gap-2">
+          {approvedBy.map((reviewer) => (
+            <AzureAvatar
+              user={reviewer.identity}
+              className="border-2 border-green-600"
+            />
+          ))}
+          {blockedBy.map((reviewer) => (
+            <AzureAvatar
+              user={reviewer.identity}
+              className="border-2 border-red-600"
+            />
+          ))}
+        </div>
+      );
+    },
+  },
+  {
     header: "Created At",
     accessorFn: (row) => dayjs(row.createdAt).format("YYYY-MM-DD HH:mm"),
   },

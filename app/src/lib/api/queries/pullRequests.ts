@@ -83,10 +83,10 @@ export type MergeFailureType =
 
 export type Reviewer = {
   identity: User;
-  vote: Vote;
-  hasDeclined: boolean;
+  vote: Vote | null;
+  hasDeclined: boolean | null;
   isRequired: boolean | null;
-  isFlagged: boolean;
+  isFlagged: boolean | null;
 };
 
 export type Vote =
