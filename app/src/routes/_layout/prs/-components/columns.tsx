@@ -1,4 +1,6 @@
 import { AzureAvatar } from "@/components/azure-avatar";
+import { PRLink } from "@/components/pr-link";
+import { WorkItemLink } from "@/components/work-item-link";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
@@ -7,7 +9,7 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
   {
     accessorKey: "id",
     header: "ID",
-    cell: ({ row }) => `!${row.original.id}`,
+    cell: ({ row }) => <PRLink data={row.original} />,
   },
   {
     accessorKey: "repoName",
@@ -16,6 +18,15 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
   {
     accessorKey: "title",
     header: "Title",
+    cell: ({ row }) => {
+      const initialChars = row.original.title.slice(0, 60);
+      return (
+        <span>
+          {initialChars.trimEnd()}
+          {initialChars.length < row.original.title.length ? "..." : ""}
+        </span>
+      );
+    },
   },
   {
     accessorKey: "createdBy.displayName",
@@ -36,7 +47,12 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
       return (
         <div className="flex flex-row items-center gap-2">
           {row.original.workItems.map((wi) => (
-            <span>#{wi.id}</span>
+            <WorkItemLink
+              data={{
+                ...row.original,
+                id: wi.id,
+              }}
+            />
           ))}
         </div>
       );

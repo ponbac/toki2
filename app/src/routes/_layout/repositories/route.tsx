@@ -85,8 +85,8 @@ function RepositoriesComponent() {
               className="flex w-[25rem] flex-col justify-between"
             >
               <CardHeader className="flex w-full flex-row items-start justify-between">
-                <div className="flex flex-col gap-1">
-                  <CardTitle>{differ.repoName}</CardTitle>
+                <div className="flex flex-col gap-1 overflow-hidden">
+                  <CardTitle className="truncate">{differ.repoName}</CardTitle>
                   <CardDescription>{`${differ.organization}/${differ.project}`}</CardDescription>
                 </div>
                 <Tooltip>
