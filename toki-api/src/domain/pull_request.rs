@@ -52,7 +52,7 @@ fn blocked_by(
         .collect::<Vec<_>>();
     let unresolved_thread_authors = threads
         .iter()
-        .filter(|t| t.status != Some(ThreadStatus::Closed))
+        .filter(|t| t.status == Some(ThreadStatus::Active))
         .filter_map(|t| {
             t.comments.iter().find(|c| {
                 c.is_deleted != Some(true)
