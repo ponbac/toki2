@@ -15,13 +15,15 @@ import {
 } from "@/components/ui/table";
 import { Link } from "@tanstack/react-router";
 
-interface DataTableProps<TData, TValue> {
+type DataWithId = { id: string | number };
+
+interface DataTableProps<TData extends DataWithId, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   onRowClick?: (row: TData) => void;
 }
 
-export function DataTable<TData, TValue>({
+export function DataTable<TData extends DataWithId, TValue>({
   columns,
   data,
   onRowClick,
