@@ -17,6 +17,7 @@ import {
   GitPullRequestIcon,
   HomeIcon,
 } from "lucide-react";
+import { PullRequest } from "@/lib/api/queries/pullRequests";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -89,6 +90,7 @@ function PRCommandGroup(props: { close: () => void }) {
       {pullRequests?.map((pr) => (
         <CommandItem
           key={`${pr.id}-${pr.title}`}
+          value={pullRequestValue(pr)}
           onSelect={() => {
             navigate({
               to: "/prs/$prId",
@@ -115,4 +117,8 @@ function PRCommandGroup(props: { close: () => void }) {
       ))}
     </CommandGroup>
   );
+}
+
+function pullRequestValue(pr: PullRequest) {
+  return `${pr.id} ${pr.title} ${pr.createdBy.displayName} ${pr.workItems.map((wi) => `#${wi.id}`).join(" ")}`;
 }
