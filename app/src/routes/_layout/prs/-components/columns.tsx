@@ -46,10 +46,10 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     accessorKey: "blockedBy",
     header: "Votes",
     cell: ({ row }) => {
-      const approvedBy = row.original.reviewers.filter(
-        (reviewer) => reviewer.vote === "Approved",
-      );
       const blockedBy = row.original.blockedBy;
+      const approvedBy = row.original.reviewers
+        .filter((reviewer) => reviewer.vote === "Approved")
+        .filter((r) => !blockedBy.find((b) => b.identity.id === r.identity.id));
 
       return (
         <div className="flex flex-row items-center gap-2">
