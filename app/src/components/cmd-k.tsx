@@ -18,7 +18,6 @@ import {
   HomeIcon,
 } from "lucide-react";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
-import { toRepoKeyString } from "@/lib/utils";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -121,5 +120,5 @@ function PRCommandGroup(props: { close: () => void }) {
 }
 
 function pullRequestValue(pr: PullRequest) {
-  return `${pr.id} ${pr.title} ${toRepoKeyString(pr)} ${pr.createdBy.displayName} ${pr.workItems.map((wi) => `#${wi.id}`).join(" ")}`;
+  return `${pr.id} ${pr.title} ${pr.repoName} ${pr.createdBy.displayName} ${pr.workItems.map((wi) => `#${wi.id}`).join(" ")}`;
 }
