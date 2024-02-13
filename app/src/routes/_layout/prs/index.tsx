@@ -35,7 +35,7 @@ function PrsComponent() {
 
   return (
     <main className="flex w-full items-center justify-center p-8">
-      <div className="flex w-[90rem] flex-col items-center justify-center gap-4">
+      <div className="flex w-[85%] max-w-[95rem] flex-col items-center justify-center gap-4">
         <TopBar />
         <DataTable
           data={filteredData}
