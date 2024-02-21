@@ -32,7 +32,7 @@ function LoginComponent() {
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
           <CardDescription>
-            Currently, only Azure AD is supported.
+            Only Azure AD is currently supported.
           </CardDescription>
         </CardHeader>
         <CardFooter>
