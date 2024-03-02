@@ -18,6 +18,7 @@ import {
   HomeIcon,
 } from "lucide-react";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -100,14 +101,19 @@ function PRCommandGroup(props: { close: () => void }) {
           }}
         >
           <div className="flex w-full flex-row items-center justify-between gap-2 truncate">
-            <div className="flex flex-row items-center gap-2">
+            <div className="flex max-w-[75%] flex-row items-center gap-2">
               <span className="text-muted-foreground">!{pr.id}</span>
               <span className="truncate">{pr.title}</span>
             </div>
             <div className="flex flex-row items-center gap-2">
               <div className="flex flex-row items-center gap-1">
                 {pr.workItems.map((wi) => (
-                  <span className="text-muted-foreground">#{wi.id}</span>
+                  <Tooltip>
+                    <TooltipTrigger className="text-muted-foreground">
+                      #{wi.id}
+                    </TooltipTrigger>
+                    <TooltipContent side="left">{wi.title}</TooltipContent>
+                  </Tooltip>
                 ))}
               </div>
               <AzureAvatar user={pr.createdBy} disableTooltip />

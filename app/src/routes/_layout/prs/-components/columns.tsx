@@ -48,6 +48,7 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
         <div className="flex flex-row items-center gap-2">
           {row.original.workItems.map((wi) => (
             <WorkItemLink
+              tooltip={wi.title}
               data={{
                 ...row.original,
                 id: wi.id,
