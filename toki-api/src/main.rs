@@ -1,7 +1,10 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{env, net::SocketAddr, time::Duration};
 
 use domain::RepoConfig;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    PgPool,
+};
 use tokio::net::TcpListener;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -19,7 +22,9 @@ mod routes;
 #[tokio::main]
 async fn main() {
     // Load environment variables and initialize tracing
+    #[cfg(debug_assertions)]
     dotenvy::from_filename("./toki-api/.env.local").ok();
+
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(
@@ -33,11 +38,19 @@ async fn main() {
 
     // Read the configuration and connect to the database
     let config = read_config().expect("Failed to read configuration");
-    let connection_pool = PgPoolOptions::new()
+    let mut connection_pool_result = PgPoolOptions::new()
         .acquire_timeout(Duration::from_secs(5))
         .connect_with(config.database.with_db())
-        .await
-        .expect("Failed to connect to database");
+        .await;
+    if let Err(err) = connection_pool_result {
+        tracing::error!("Failed to connect to database: {}", err);
+        tracing::error!("Config: {:?}", config.database);
+
+        let pg_connect_options: PgConnectOptions =
+            env::var("DATABASE_URL").unwrap().parse().unwrap();
+        connection_pool_result = PgPoolOptions::new().connect_with(pg_connect_options).await;
+    }
+    let connection_pool = connection_pool_result.expect("Failed to connect to database");
 
     // Run migrations
     sqlx::migrate!("./migrations")

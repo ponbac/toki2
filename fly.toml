@@ -22,6 +22,7 @@ cpu_kind = 'shared'
 cpus = 1
 
 [env]
+APP_ENVIRONMENT = 'production'
 TOKI_DATABASE__USERNAME = 'toki2'
 TOKI_DATABASE__HOST = "toki-pg.flycast"
 TOKI_DATABASE__PORT = "5432"

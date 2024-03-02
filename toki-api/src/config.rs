@@ -23,7 +23,7 @@ pub struct ApplicationSettings {
 }
 
 #[serde_as]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: String,

@@ -2,7 +2,8 @@ import { router } from "@/main";
 import ky from "ky";
 
 export const api = ky.create({
-  prefixUrl: "http://localhost:8080/",
+  // prefixUrl: "http://localhost:8080/",
+  prefixUrl: "https://toki2.fly.dev",
   credentials: "include",
   hooks: {
     afterResponse: [
