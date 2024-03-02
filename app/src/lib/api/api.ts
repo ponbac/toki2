@@ -2,7 +2,7 @@ import { router } from "@/main";
 import ky from "ky";
 
 export const api = ky.create({
-  prefixUrl: "http://localhost:8000/",
+  prefixUrl: "http://localhost:8080/",
   credentials: "include",
   hooks: {
     afterResponse: [

@@ -39,6 +39,12 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
+    // Run migrations
+    sqlx::migrate!("./migrations")
+        .run(&connection_pool)
+        .await
+        .expect("Failed to run migrations");
+
     // Fetch all repositories from the database
     let repo_configs = query_repository_configs(&connection_pool)
         .await

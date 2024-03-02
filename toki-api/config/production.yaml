@@ -2,4 +2,4 @@ application:
   host: "0.0.0.0"
   disable_auth: false
 database:
-  require_ssl: true
+  require_ssl: false

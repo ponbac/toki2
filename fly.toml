@@ -1,0 +1,28 @@
+# fly.toml app configuration file generated for toki2 on 2024-03-02T14:50:15+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'toki2'
+primary_region = 'arn'
+
+[build]
+
+[http_service]
+internal_port = 8080
+force_https = true
+auto_stop_machines = true
+auto_start_machines = true
+min_machines_running = 0
+processes = ['app']
+
+[[vm]]
+memory = '1gb'
+cpu_kind = 'shared'
+cpus = 1
+
+[env]
+TOKI_DATABASE__USERNAME = 'toki2'
+TOKI_DATABASE__HOST = "toki-pg.flycast"
+TOKI_DATABASE__PORT = "5432"
+TOKI_DATABASE__DATABASE_NAME = "toki2"
