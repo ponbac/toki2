@@ -34,7 +34,7 @@ export const router = createRouter({
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ThemeProvider defaultTheme="light" storageKey="ui-theme">
+    <ThemeProvider storageKey="ui-theme">
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
         {/* <TanStackRouterDevtools router={router} /> */}
