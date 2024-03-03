@@ -1,6 +1,6 @@
 application:
   host: "0.0.0.0"
-  app_url: "http://localhost:5173"
+  app_url: "https://toki2.ponbac.xyz"
   disable_auth: false
 database:
   require_ssl: false
