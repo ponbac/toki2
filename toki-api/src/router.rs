@@ -5,7 +5,8 @@ use axum_login::{
     tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
     AuthManagerLayer, AuthManagerLayerBuilder,
 };
-use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, TokenUrl};
+use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
+use reqwest::Url;
 use sqlx::PgPool;
 use time::Duration;
 use tower_http::{
@@ -66,12 +67,15 @@ fn new_auth_layer(
     connection_pool: PgPool,
     config: Settings,
 ) -> AuthManagerLayer<AuthBackend, MemoryStore> {
-    let client = BasicClient::new(
+    let mut client = BasicClient::new(
         ClientId::new(config.auth.client_id),
         Some(ClientSecret::new(config.auth.client_secret)),
         AuthUrl::new(config.auth.auth_url).expect("Invalid authorization endpoint URL"),
         Some(TokenUrl::new(config.auth.token_url).expect("Invalid token endpoint URL")),
     );
+    let redirect_uri = Url::parse("http://localhost:8080/oauth/callback").unwrap();
+    client = client.set_redirect_uri(RedirectUrl::from_url(redirect_uri));
+
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(false) // todo: explore production values
