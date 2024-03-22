@@ -16,7 +16,7 @@ const pullRequestsSearchSchema = z.object({
 export const Route = createFileRoute("/_layout/prs/")({
   loader: ({ context }) =>
     context.queryClient.ensureQueryData(queries.cachedPullRequests()),
-  validateSearch: (search) => pullRequestsSearchSchema.parse(search),
+  validateSearch: pullRequestsSearchSchema,
   component: PrsComponent,
 });
 

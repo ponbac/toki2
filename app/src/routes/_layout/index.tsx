@@ -1,9 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_layout/")({
-  component: IndexComponent,
+  loader: () => {
+    throw redirect({
+      to: "/prs",
+    });
+  },
 });
-
-function IndexComponent() {
-  return <div>Index!</div>;
-}

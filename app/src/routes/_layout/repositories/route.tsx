@@ -44,7 +44,7 @@ const repositoriesSearchSchema = z.object({
 export const Route = createFileRoute("/_layout/repositories")({
   loader: ({ context }) =>
     context.queryClient.ensureQueryData(queries.differs()),
-  validateSearch: (search) => repositoriesSearchSchema.parse(search),
+  validateSearch: repositoriesSearchSchema,
   component: RepositoriesComponent,
 });
 
