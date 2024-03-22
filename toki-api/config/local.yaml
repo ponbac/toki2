@@ -4,3 +4,5 @@ application:
   disable_auth: false
 database:
   require_ssl: false
+auth:
+  redirect_url: "http://localhost:8080/oauth/callback"

@@ -3,4 +3,6 @@ application:
   app_url: "https://toki2.ponbac.xyz"
   disable_auth: false
 database:
-  require_ssl: false
+  require_ssl: true
+auth:
+  redirect_url: "https://toki2-api.ponbac.xyz/oauth/callback"

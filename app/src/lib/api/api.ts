@@ -1,9 +1,13 @@
 import { router } from "@/main";
 import ky from "ky";
 
+const API_URL =
+  import.meta.env.MODE === "development"
+    ? "http://localhost:8080"
+    : "https://toki2-api.ponbac.xyz";
+
 export const api = ky.create({
-  prefixUrl: "http://localhost:8080/",
-  // prefixUrl: "https://toki2-api.ponbac.xyz",
+  prefixUrl: API_URL,
   credentials: "include",
   hooks: {
     afterResponse: [
