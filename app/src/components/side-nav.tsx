@@ -1,11 +1,5 @@
 import * as React from "react";
-import {
-  LucideIcon,
-  FolderGit2,
-  Activity,
-  Home,
-  GitPullRequest,
-} from "lucide-react";
+import { LucideIcon, FolderGit2, Activity, GitPullRequest } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -28,13 +22,6 @@ import { routeTree } from "@/routeTree.gen";
 
 type LinkDestination = Parameters<typeof Link<typeof routeTree>>[0]["to"];
 const MENU_ITEMS = [
-  {
-    title: "Home",
-    label: "",
-    icon: Home,
-    variant: "default",
-    to: "/",
-  },
   {
     title: "Pull requests",
     label: "",
