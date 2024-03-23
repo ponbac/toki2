@@ -44,6 +44,7 @@ function PrsComponent() {
             navigate({
               to: `/prs/$prId`,
               params: { prId: `${row.id}` },
+              search: { searchString },
             })
           }
         />
