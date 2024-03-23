@@ -10,12 +10,14 @@ type LinkData = {
 type PRLinkProps<T extends LinkData> = {
   data: T;
   className?: string;
+  children?: React.ReactNode;
 };
 
 // https://dev.azure.com/ex-change-part/Quote%20Manager/_git/hexagon/pullrequest/1542
 export function PRLink<T extends LinkData>({
   data,
   className,
+  children,
 }: PRLinkProps<T>) {
   return (
     <a
@@ -25,7 +27,7 @@ export function PRLink<T extends LinkData>({
       className={cn("hover:underline", className)}
       onClick={(e) => e.stopPropagation()}
     >
-      !{data.id}
+      {children ? children : `!${data.id}`}
     </a>
   );
 }

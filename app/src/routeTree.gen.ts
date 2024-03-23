@@ -15,7 +15,7 @@ import { Route as LoginImport } from "./routes/login"
 import { Route as LayoutRouteImport } from "./routes/_layout/route"
 import { Route as LayoutIndexImport } from "./routes/_layout/index"
 import { Route as LayoutRepositoriesRouteImport } from "./routes/_layout/repositories/route"
-import { Route as LayoutPrsIndexImport } from "./routes/_layout/prs/index"
+import { Route as LayoutPrsRouteImport } from "./routes/_layout/prs/route"
 import { Route as LayoutRepositoriesAddRouteImport } from "./routes/_layout/repositories/add/route"
 import { Route as LayoutPrsCommitsRouteImport } from "./routes/_layout/prs/commits/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
@@ -42,8 +42,8 @@ const LayoutRepositoriesRouteRoute = LayoutRepositoriesRouteImport.update({
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
-const LayoutPrsIndexRoute = LayoutPrsIndexImport.update({
-  path: "/prs/",
+const LayoutPrsRouteRoute = LayoutPrsRouteImport.update({
+  path: "/prs",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
@@ -55,13 +55,13 @@ const LayoutRepositoriesAddRouteRoute = LayoutRepositoriesAddRouteImport.update(
 )
 
 const LayoutPrsCommitsRouteRoute = LayoutPrsCommitsRouteImport.update({
-  path: "/prs/commits",
-  getParentRoute: () => LayoutRouteRoute,
+  path: "/commits",
+  getParentRoute: () => LayoutPrsRouteRoute,
 } as any)
 
 const LayoutPrsPrIdRouteRoute = LayoutPrsPrIdRouteImport.update({
-  path: "/prs/$prId",
-  getParentRoute: () => LayoutRouteRoute,
+  path: "/$prId",
+  getParentRoute: () => LayoutPrsRouteRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -76,6 +76,10 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LoginImport
       parentRoute: typeof rootRoute
     }
+    "/_layout/prs": {
+      preLoaderRoute: typeof LayoutPrsRouteImport
+      parentRoute: typeof LayoutRouteImport
+    }
     "/_layout/repositories": {
       preLoaderRoute: typeof LayoutRepositoriesRouteImport
       parentRoute: typeof LayoutRouteImport
@@ -86,19 +90,15 @@ declare module "@tanstack/react-router" {
     }
     "/_layout/prs/$prId": {
       preLoaderRoute: typeof LayoutPrsPrIdRouteImport
-      parentRoute: typeof LayoutRouteImport
+      parentRoute: typeof LayoutPrsRouteImport
     }
     "/_layout/prs/commits": {
       preLoaderRoute: typeof LayoutPrsCommitsRouteImport
-      parentRoute: typeof LayoutRouteImport
+      parentRoute: typeof LayoutPrsRouteImport
     }
     "/_layout/repositories/add": {
       preLoaderRoute: typeof LayoutRepositoriesAddRouteImport
       parentRoute: typeof LayoutRepositoriesRouteImport
-    }
-    "/_layout/prs/": {
-      preLoaderRoute: typeof LayoutPrsIndexImport
-      parentRoute: typeof LayoutRouteImport
     }
   }
 }
@@ -107,11 +107,12 @@ declare module "@tanstack/react-router" {
 
 export const routeTree = rootRoute.addChildren([
   LayoutRouteRoute.addChildren([
+    LayoutPrsRouteRoute.addChildren([
+      LayoutPrsPrIdRouteRoute,
+      LayoutPrsCommitsRouteRoute,
+    ]),
     LayoutRepositoriesRouteRoute.addChildren([LayoutRepositoriesAddRouteRoute]),
     LayoutIndexRoute,
-    LayoutPrsPrIdRouteRoute,
-    LayoutPrsCommitsRouteRoute,
-    LayoutPrsIndexRoute,
   ]),
   LoginRoute,
 ])

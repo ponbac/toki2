@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { DataTable } from "./-components/data-table";
 import { pullRequestColumns } from "./-components/columns";
 import { queries } from "@/lib/api/queries/queries";
@@ -13,7 +13,7 @@ const pullRequestsSearchSchema = z.object({
   searchString: z.string().optional().catch(""),
 });
 
-export const Route = createFileRoute("/_layout/prs/")({
+export const Route = createFileRoute("/_layout/prs")({
   loader: ({ context }) =>
     context.queryClient.ensureQueryData(queries.cachedPullRequests()),
   validateSearch: pullRequestsSearchSchema,
@@ -48,6 +48,7 @@ function PrsComponent() {
           }
         />
       </div>
+      <Outlet />
     </main>
   );
 }

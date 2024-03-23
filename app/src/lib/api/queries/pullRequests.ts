@@ -98,10 +98,19 @@ export type Vote =
 
 export type Status = "active" | "abandoned" | "completed" | "all" | "notSet";
 
+export type ThreadStatus =
+  | "unknown"
+  | "active"
+  | "fixed"
+  | "wontFix"
+  | "closed"
+  | "byDesign"
+  | "pending";
+
 export type Thread = {
   id: number;
   comments: Comment[];
-  status: null | string;
+  status: ThreadStatus | null;
   isDeleted: boolean;
   lastUpdatedAt: Date;
   publishedAt: Date;
