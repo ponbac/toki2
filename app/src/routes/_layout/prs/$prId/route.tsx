@@ -48,7 +48,6 @@ function PRDetailsDialog() {
     select: (data) => data.find((pr) => pr.id === +prId),
   });
 
-  const hasWorkItem = !!pr?.workItems.length;
   const copyTimeReportTextToClipboard = (mode: "review" | "develop") => {
     let text = "";
     const workItem = pr?.workItems.at(0);
@@ -93,7 +92,6 @@ function PRDetailsDialog() {
             size="sm"
             className="flex gap-2"
             onClick={() => copyTimeReportTextToClipboard("review")}
-            disabled={!hasWorkItem}
           >
             <MessageCircleCodeIcon className="size-4" />
             Review
@@ -104,7 +102,6 @@ function PRDetailsDialog() {
             size="sm"
             className="flex gap-2"
             onClick={() => copyTimeReportTextToClipboard("develop")}
-            disabled={!hasWorkItem}
           >
             <CodeXmlIcon className="size-4" />
             Develop
