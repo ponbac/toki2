@@ -19,6 +19,7 @@ import {
 } from "./ui/select";
 import { ScrollArea } from "./ui/scroll-area";
 import { routeTree } from "@/routeTree.gen";
+import { ThemeToggle } from "./theme-toggle";
 
 type LinkDestination = Parameters<typeof Link<typeof routeTree>>[0]["to"];
 const MENU_ITEMS = [
@@ -160,6 +161,7 @@ export function Nav({
             isCollapsed={isCollapsed}
           />
         ))}
+        <ThemeToggle />
       </nav>
     </div>
   );

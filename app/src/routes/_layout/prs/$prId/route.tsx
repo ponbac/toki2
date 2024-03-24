@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import Markdown from "react-markdown";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const pullRequestsSearchSchema = z.object({
   searchString: z.string().optional().catch(""),
@@ -132,34 +134,43 @@ function Header(props: { pullRequest: PullRequest }) {
 
 function Threads(props: { threads: Array<PullRequestThread> }) {
   return (
-    <div className="flex max-h-[60vh] flex-col gap-4 overflow-auto">
-      {props.threads
-        .filter((t) => t.status !== null)
-        .map((thread) => (
-          <Thread key={thread.id} thread={thread} />
-        ))}
-    </div>
+    <ScrollArea className="max-h-[60vh]">
+      <div className="flex flex-col gap-4">
+        {props.threads
+          .filter((t) => t.status !== null)
+          .map((thread) => (
+            <Thread key={thread.id} thread={thread} />
+          ))}
+      </div>
+    </ScrollArea>
   );
 }
 
 function Thread(props: { thread: PullRequestThread }) {
   return (
     <Card className="flex flex-col gap-2 p-2">
-      {props.thread.comments.map((comment) => (
-        <div key={comment.id} className="flex flex-row gap-2">
-          <AzureAvatar
-            user={comment.author}
-            className="size-6"
-            disableTooltip
-          />
-          <h1>
-            {comment.author.displayName}{" "}
-            <span className="text-sm text-muted-foreground">
-              {dayjs(comment.publishedAt).format("YYYY-MM-DD HH:mm")}
-            </span>
-          </h1>
-        </div>
-      ))}
+      {props.thread.comments
+        .filter((c) => !c.isDeleted)
+        .map((comment) => (
+          <>
+            <div key={comment.id} className="flex flex-row gap-2">
+              <AzureAvatar
+                user={comment.author}
+                className="size-6"
+                disableTooltip
+              />
+              <h1>
+                {comment.author.displayName}{" "}
+                <span className="text-sm text-muted-foreground">
+                  {dayjs(comment.publishedAt).format("YYYY-MM-DD HH:mm")}
+                </span>
+              </h1>
+            </div>
+            <article className="prose dark:prose-invert">
+              <Markdown>{comment.content}</Markdown>
+            </article>
+          </>
+        ))}
     </Card>
   );
 }
