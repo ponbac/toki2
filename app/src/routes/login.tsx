@@ -8,7 +8,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { LogIn } from "lucide-react";
-import { login } from "@/lib/api/api";
+import { api } from "@/lib/api/api";
+import { useMutation } from "@tanstack/react-query";
 
 type LoginSearchParams = {
   next?: string;
@@ -26,6 +27,14 @@ export const Route = createFileRoute("/login")({
 function LoginComponent() {
   const { next } = Route.useSearch();
 
+  const { mutate: login, isPending } = useMutation({
+    mutationFn: (next?: string) =>
+      api.post("login", { searchParams: next ? { next } : undefined }).text(),
+    onSuccess: (authUrl) => {
+      window.location.href = authUrl;
+    },
+  });
+
   return (
     <main className="flex h-screen items-center justify-center">
       <Card className="min-w-[25rem] max-w-sm">
@@ -36,7 +45,11 @@ function LoginComponent() {
           </CardDescription>
         </CardHeader>
         <CardFooter>
-          <Button className="w-full" onClick={() => login(next)}>
+          <Button
+            className="w-full"
+            onClick={() => login(next)}
+            disabled={isPending}
+          >
             <LogIn className="mr-2 h-4 w-4" />
             Sign in with Azure
           </Button>

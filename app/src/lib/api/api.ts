@@ -23,17 +23,3 @@ export const api = ky.create({
     ],
   },
 });
-
-export const login = async (next?: string) => {
-  const authUrl = await api
-    .post("login", {
-      searchParams: next
-        ? {
-            next,
-          }
-        : undefined,
-    })
-    .text();
-
-  window.location.href = authUrl;
-};
