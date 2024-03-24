@@ -27,21 +27,21 @@
     "@radix-ui/react-tooltip": "^1.0.7",
     "@tanstack/react-query": "^5.28.6",
     "@tanstack/react-query-devtools": "^5.28.6",
-    "@tanstack/react-router": "1.22.2",
+    "@tanstack/react-router": "1.22.3",
     "@tanstack/react-table": "^8.15.0",
-    "@tanstack/router-devtools": "^1.22.2",
+    "@tanstack/router-devtools": "^1.22.3",
     "@tanstack/router-vite-plugin": "^1.20.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "cmdk": "0.2.1",
     "dayjs": "^1.11.10",
     "framer-motion": "^11.0.20",
-    "ky": "^1.2.2",
-    "lucide-react": "^0.362.0",
+    "ky": "^1.2.3",
+    "lucide-react": "^0.363.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.51.1",
-    "react-resizable-panels": "^2.0.13",
+    "react-resizable-panels": "^2.0.14",
     "sonner": "^1.4.41",
     "tailwind-merge": "^2.2.2",
     "tailwindcss-animate": "^1.0.7",
@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.30",
-    "@types/react": "^18.2.67",
+    "@types/react": "^18.2.69",
     "@types/react-dom": "^18.2.22",
     "@typescript-eslint/eslint-plugin": "^7.3.1",
     "@typescript-eslint/parser": "^7.3.1",
@@ -65,6 +65,6 @@
     "prettier-plugin-tailwindcss": "^0.5.12",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.4.3",
-    "vite": "^5.2.3"
+    "vite": "^5.2.5"
   }
 }
