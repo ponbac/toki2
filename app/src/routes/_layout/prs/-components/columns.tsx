@@ -48,6 +48,7 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
         <div className="flex flex-row items-center gap-2">
           {row.original.workItems.map((wi) => (
             <WorkItemLink
+              key={wi.id}
               tooltip={wi.title}
               data={{
                 ...row.original,
@@ -72,12 +73,14 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
         <div className="flex flex-row items-center gap-2">
           {approvedBy.map((reviewer) => (
             <AzureAvatar
+              key={reviewer.identity.id}
               user={reviewer.identity}
               className="border-2 border-green-600"
             />
           ))}
           {blockedBy.map((reviewer) => (
             <AzureAvatar
+              key={reviewer.identity.id}
               user={reviewer.identity}
               className="border-2 border-red-600"
             />

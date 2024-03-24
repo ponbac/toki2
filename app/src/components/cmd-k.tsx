@@ -102,7 +102,7 @@ function PRCommandGroup(props: { close: () => void }) {
             <div className="flex flex-row items-center gap-2">
               <div className="flex flex-row items-center gap-1">
                 {pr.workItems.map((wi) => (
-                  <Tooltip>
+                  <Tooltip key={wi.id}>
                     <TooltipTrigger className="text-muted-foreground">
                       #{wi.id}
                     </TooltipTrigger>
