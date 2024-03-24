@@ -2,7 +2,6 @@ import { AzureAvatar } from "@/components/azure-avatar";
 import BranchLink from "@/components/branch-link";
 import { PRLink } from "@/components/pr-link";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +13,7 @@ import {
 import {
   PullRequest,
   Thread as PullRequestThread,
+  User,
 } from "@/lib/api/queries/pullRequests";
 import { queries } from "@/lib/api/queries/queries";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -28,6 +28,13 @@ import { toast } from "sonner";
 import { z } from "zod";
 import Markdown from "react-markdown";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import React from "react";
 
 const pullRequestsSearchSchema = z.object({
   searchString: z.string().optional().catch(""),
@@ -86,8 +93,8 @@ function PRDetailsDialog() {
     >
       <DialogContent className="max-w-5xl">
         <Header pullRequest={pr} />
-        <Threads threads={pr.threads} />
-        <DialogFooter>
+        <Threads pullRequest={pr} />
+        <DialogFooter className="pt-2">
           <Button
             autoFocus
             variant="outline"
@@ -132,45 +139,118 @@ function Header(props: { pullRequest: PullRequest }) {
   );
 }
 
-function Threads(props: { threads: Array<PullRequestThread> }) {
+function Threads(props: { pullRequest: PullRequest }) {
+  const [showResolved, setShowResolved] = React.useState(false);
+
+  const threads = props.pullRequest.threads;
+  const allUsers = props.pullRequest.reviewers.map((r) => r.identity);
+
+  const activeThreads = threads.filter((t) => t.status === "active");
+  const resolvedThreads = threads.filter(
+    (t) =>
+      (t.status === "closed" || t.status === "fixed" || t.status === null) &&
+      t.comments.at(0)?.commentType !== "system",
+  );
+
   return (
-    <ScrollArea className="max-h-[60vh]">
-      <div className="flex flex-col gap-4">
-        {props.threads
-          .filter((t) => t.status !== null)
-          .map((thread) => (
-            <Thread key={thread.id} thread={thread} />
-          ))}
+    <ScrollArea className="max-h-[60vh] max-w-5xl">
+      <div className="flex flex-col">
+        {activeThreads.map((thread) => (
+          <Thread key={thread.id} thread={thread} users={allUsers} />
+        ))}
+        {resolvedThreads.length > 0 && (
+          <div className="flex w-full flex-col items-center pt-2">
+            <Button
+              variant="link"
+              size="sm"
+              className="flex w-full gap-2"
+              onClick={() => setShowResolved(!showResolved)}
+            >
+              {showResolved ? "Hide" : "Show"} resolved threads{" "}
+              {!showResolved ? `(${resolvedThreads.length} hidden)` : ""}
+            </Button>
+            {showResolved &&
+              resolvedThreads.map((thread) => (
+                <Thread key={thread.id} thread={thread} users={allUsers} />
+              ))}
+          </div>
+        )}
       </div>
     </ScrollArea>
   );
 }
 
-function Thread(props: { thread: PullRequestThread }) {
+function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
+  const nonDeletedComments = props.thread.comments
+    .filter((c) => !c.isDeleted)
+    .map((c) => ({
+      ...c,
+      content: replaceMentionsWithUsernames(c.content, props.users),
+    }));
+
+  const firstComment = nonDeletedComments.at(0);
+
+  if (!firstComment) {
+    return null;
+  }
+
   return (
-    <Card className="flex flex-col gap-2 p-2">
-      {props.thread.comments
-        .filter((c) => !c.isDeleted)
-        .map((comment) => (
-          <>
-            <div key={comment.id} className="flex flex-row gap-2">
+    <Accordion type="single" collapsible className="w-full">
+      <AccordionItem value={firstComment.id.toString()}>
+        <AccordionTrigger>
+          <div className="flex max-w-[58rem] flex-col">
+            <div className="flex flex-row items-center gap-2">
               <AzureAvatar
-                user={comment.author}
+                user={firstComment.author}
                 className="size-6"
                 disableTooltip
               />
               <h1>
-                {comment.author.displayName}{" "}
+                {firstComment.author.displayName}{" "}
                 <span className="text-sm text-muted-foreground">
-                  {dayjs(comment.publishedAt).format("YYYY-MM-DD HH:mm")}
+                  {dayjs(firstComment.publishedAt).format("YYYY-MM-DD HH:mm")}
                 </span>
               </h1>
             </div>
-            <article className="prose dark:prose-invert">
-              <Markdown>{comment.content}</Markdown>
+            <article className="prose-sm dark:prose-invert truncate text-left">
+              <Markdown>{firstComment.content.split("\n").at(0)}</Markdown>
             </article>
-          </>
-        ))}
-    </Card>
+          </div>
+        </AccordionTrigger>
+        <AccordionContent className="flex flex-col gap-4">
+          {nonDeletedComments.map((comment) => (
+            <div key={comment.id} className="flex flex-col gap-2">
+              <div
+                key={comment.id}
+                className="flex flex-row items-center gap-2"
+              >
+                <AzureAvatar
+                  user={comment.author}
+                  className="size-6"
+                  disableTooltip
+                />
+                <h1>
+                  {comment.author.displayName}{" "}
+                  <span className="text-sm text-muted-foreground">
+                    {dayjs(comment.publishedAt).format("YYYY-MM-DD HH:mm")}
+                  </span>
+                </h1>
+              </div>
+              <article className="prose dark:prose-invert max-w-[80ch]">
+                <Markdown>{comment.content}</Markdown>
+              </article>
+            </div>
+          ))}
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
   );
+}
+
+// @<23770AE1-E35F-613D-91B9-9BCC85CC5CE8> replace these mentions with display names
+function replaceMentionsWithUsernames(text: string, users: Array<User>) {
+  return text.replace(/@<([A-F0-9-]+)>/g, (match, userId) => {
+    const user = users.find((u) => u.id.toUpperCase() === userId);
+    return user ? `*@${user.displayName}*` : match;
+  });
 }
