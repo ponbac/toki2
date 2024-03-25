@@ -52,11 +52,12 @@ async fn main() {
     }
     let connection_pool = connection_pool_result.expect("Failed to connect to database");
 
+    // TODO: Uncomment this, figure out Fly.io errors...
     // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&connection_pool)
-        .await
-        .expect("Failed to run migrations");
+    // sqlx::migrate!("./migrations")
+    //     .run(&connection_pool)
+    //     .await
+    //     .expect("Failed to run migrations");
 
     // Fetch all repositories from the database
     let repo_configs = query_repository_configs(&connection_pool)

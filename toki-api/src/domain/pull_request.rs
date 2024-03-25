@@ -64,12 +64,15 @@ fn blocked_by(
         .map(IdentityWithVote::from)
         .collect::<Vec<_>>();
 
-    // add unresolved_thread_authors to rejected_or_waiting if they are not already there
+    // add unresolved_thread_authors to rejected_or_waiting if they are not already there and not approved with suggestions
     let mut blocking_authors = rejected_or_waiting;
     for author in unresolved_thread_authors {
         if !blocking_authors
             .iter()
             .any(|r| r.identity.id == author.identity.id)
+            && !pr.reviewers.iter().any(|r| {
+                r.identity.id == author.identity.id && r.vote == Some(Vote::ApprovedWithSuggestions)
+            })
         {
             blocking_authors.push(author);
         }
