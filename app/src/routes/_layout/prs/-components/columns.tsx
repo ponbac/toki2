@@ -66,7 +66,11 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     cell: ({ row }) => {
       const blockedBy = row.original.blockedBy;
       const approvedBy = row.original.reviewers
-        .filter((reviewer) => reviewer.vote === "Approved")
+        .filter(
+          (reviewer) =>
+            reviewer.vote === "Approved" ||
+            reviewer.vote === "ApprovedWithSuggestions",
+        )
         .filter((r) => !blockedBy.find((b) => b.identity.id === r.identity.id));
 
       return (
