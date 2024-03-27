@@ -1,4 +1,5 @@
 self.addEventListener("push", (event) => {
+  console.log("recieved push data", event.data.text());
   const data = event.data.json();
   const { title, body, icon } = data;
 

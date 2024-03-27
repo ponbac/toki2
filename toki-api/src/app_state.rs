@@ -11,6 +11,7 @@ use tokio::sync::{
     mpsc::{self, Sender},
     Mutex, RwLock,
 };
+use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
     domain::{PullRequest, RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey},
@@ -21,12 +22,15 @@ use crate::{
 pub enum AppStateError {
     #[error("Repository client not found for: {0}")]
     RepoClientNotFound(RepoKey),
+    #[error("Failed to send notification: {0}")]
+    WebPushError(#[from] web_push::WebPushError),
 }
 
 impl IntoResponse for AppStateError {
     fn into_response(self) -> Response {
         let status = match self {
             Self::RepoClientNotFound(_) => StatusCode::NOT_FOUND,
+            Self::WebPushError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status, self.to_string()).into_response()
@@ -42,6 +46,7 @@ pub struct AppState {
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
+    web_push_client: IsahcWebPushClient,
 }
 
 impl AppState {
@@ -94,6 +99,7 @@ impl AppState {
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
             differs: Arc::new(RwLock::new(differs)),
+            web_push_client: IsahcWebPushClient::new().expect("Could not create web push client"),
         }
     }
 
@@ -163,5 +169,12 @@ impl AppState {
             differ.run(rx).await;
         });
         differ_txs.insert(key, tx);
+    }
+
+    pub async fn push_notification(&self, message: WebPushMessage) -> Result<(), AppStateError> {
+        self.web_push_client.send(message).await.map_err(|e| {
+            tracing::error!("Failed to send notification: {:?}", e);
+            AppStateError::WebPushError(e)
+        })
     }
 }

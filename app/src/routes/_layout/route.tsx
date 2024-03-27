@@ -97,7 +97,7 @@ function sendSubscriptionToServer(subscription: PushSubscription) {
       if (!response.ok) {
         throw new Error("Bad status code from server.");
       }
-      return response.json();
+      // return response.json();
     })
     .then((responseData) => {
       console.log("Subscription sent to server:", responseData);
