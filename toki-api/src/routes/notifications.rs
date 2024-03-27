@@ -38,6 +38,12 @@ struct PushNotification {
     icon: Option<String>,
 }
 
+impl From<PushNotification> for Vec<u8> {
+    fn from(notification: PushNotification) -> Self {
+        serde_json::to_vec(&notification).expect("Could not serialize notification")
+    }
+}
+
 #[instrument(name = "subscribe", skip(app_state))]
 async fn subscribe(
     State(app_state): State<AppState>,
@@ -55,17 +61,15 @@ async fn subscribe(
     .build()
     .expect("Could not build VAPID signature");
 
-    let content = PushNotification {
+    let content: Vec<u8> = PushNotification {
         title: "Hello, World!".to_string(),
         body: "This is a test notification".to_string(),
         icon: None,
-    };
-    let serialized_content = serde_json::to_string(&content)
-        .expect("Could not serialize content")
-        .into_bytes();
+    }
+    .into();
 
     let mut builder = WebPushMessageBuilder::new(&sub_info);
-    builder.set_payload(ContentEncoding::Aes128Gcm, &serialized_content);
+    builder.set_payload(ContentEncoding::Aes128Gcm, &content);
     builder.set_vapid_signature(sig_builder);
     let message = builder.build().expect("Could not build web push message");
 
