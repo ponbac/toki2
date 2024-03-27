@@ -13,7 +13,7 @@ pub struct PushNotification {
 
 impl From<&PushNotification> for Vec<u8> {
     fn from(notification: &PushNotification) -> Self {
-        serde_json::to_vec(&notification).expect("Could not serialize notification")
+        serde_json::to_vec(notification).expect("Could not serialize notification")
     }
 }
 
