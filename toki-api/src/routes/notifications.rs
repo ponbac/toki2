@@ -13,7 +13,7 @@ pub fn router() -> Router<AppState> {
         .route("/test-push", post(test_push))
 }
 
-#[instrument(name = "subscribe", skip(app_state))]
+#[instrument(name = "subscribe", skip(auth_session, app_state))]
 async fn subscribe(
     auth_session: AuthSession,
     State(app_state): State<AppState>,

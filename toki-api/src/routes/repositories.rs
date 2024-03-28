@@ -42,10 +42,7 @@ struct FollowRepositoryBody {
     follow: bool,
 }
 
-#[instrument(
-    name = "POST /repositories/follow",
-    skip(auth_session, app_state, body)
-)]
+#[instrument(name = "POST /repositories/follow", skip(auth_session, app_state))]
 async fn follow_repository(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
