@@ -1,4 +1,6 @@
-use azure_devops_rust_api::git::models::{comment_thread::Status, CommentThread};
+use azure_devops_rust_api::git::models::{
+    comment::CommentType, comment_thread::Status, CommentThread,
+};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -27,5 +29,13 @@ impl From<CommentThread> for Thread {
             last_updated_at: thread.last_updated_date.unwrap(),
             published_at: thread.published_date.unwrap(),
         }
+    }
+}
+
+impl Thread {
+    pub fn is_system_thread(&self) -> bool {
+        self.comments
+            .first()
+            .map_or(false, |c| c.comment_type != Some(CommentType::System))
     }
 }

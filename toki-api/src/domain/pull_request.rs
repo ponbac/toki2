@@ -1,4 +1,6 @@
-use az_devops::{CommentType, IdentityWithVote, ThreadStatus, Vote};
+use core::fmt;
+
+use az_devops::{CommentType, Identity, IdentityWithVote, ThreadStatus, Vote};
 use serde::{Deserialize, Serialize};
 
 use super::RepoKey;
@@ -36,6 +38,56 @@ impl PullRequest {
             commits,
             work_items,
             blocked_by,
+        }
+    }
+
+    pub fn changelog(&self, new: Option<&Self>) -> Vec<PRChangeEvent> {
+        let new_pr = match new {
+            Some(other) => other,
+            None => return vec![PRChangeEvent::PullRequestClosed],
+        };
+
+        let new_threads = new_pr
+            .threads
+            .iter()
+            .filter(|t| !self.threads.iter().any(|ot| ot.id == t.id) && !t.is_system_thread())
+            .map(|thread| PRChangeEvent::ThreadAdded(thread.clone()));
+        let updated_threads = new_pr
+            .threads
+            .iter()
+            .filter(|t| {
+                let old_thread = self.threads.iter().find(|ot| ot.id == t.id);
+
+                let status_changed = old_thread.map_or(false, |ot| ot.status != t.status);
+                let has_new_comment =
+                    old_thread.map_or(false, |ot| t.comments.len() > ot.comments.len());
+
+                status_changed || has_new_comment
+            })
+            .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
+
+        new_threads.chain(updated_threads).collect()
+    }
+}
+
+pub enum PRChangeEvent {
+    PullRequestClosed,
+    ThreadAdded(az_devops::Thread),
+    ThreadUpdated(az_devops::Thread),
+}
+
+impl fmt::Display for PRChangeEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PRChangeEvent::PullRequestClosed => {
+                write!(f, "PullRequestClosed")
+            }
+            PRChangeEvent::ThreadAdded(thread) => {
+                write!(f, "ThreadAdded({})", thread.id)
+            }
+            PRChangeEvent::ThreadUpdated(thread) => {
+                write!(f, "ThreadUpdated({})", thread.id)
+            }
         }
     }
 }

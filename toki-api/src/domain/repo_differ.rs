@@ -11,7 +11,7 @@ use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
 
-use super::{PullRequest, RepoKey};
+use super::{PRChangeEvent, PullRequest, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoDifferError {
@@ -150,24 +150,29 @@ impl RepoDiffer {
             ));
         }
 
-        let changed_pull_requests = {
+        let change_events = {
             let prev_pull_requests = self.prev_pull_requests.read().await;
             match prev_pull_requests.clone() {
                 Some(prev_pull_requests) => complete_pull_requests
-                    .clone()
-                    .into_iter()
-                    .filter(|pr| !prev_pull_requests.contains(pr))
-                    .collect::<Vec<PullRequest>>(),
-                None => complete_pull_requests.clone(),
+                    .iter()
+                    .flat_map(|pr| {
+                        pr.changelog(
+                            prev_pull_requests
+                                .iter()
+                                .find(|p| p.pull_request_base.id == pr.pull_request_base.id),
+                        )
+                    })
+                    .collect::<Vec<PRChangeEvent>>(),
+                None => Vec::new(),
             }
         };
 
         tracing::debug!(
             "Found {} changed pull requests: [{}]",
-            changed_pull_requests.len(),
-            changed_pull_requests
+            change_events.len(),
+            change_events
                 .iter()
-                .map(|pr| pr.pull_request_base.title.clone())
+                .map(|event| event.to_string())
                 .collect::<Vec<String>>()
                 .join(", ")
         );
