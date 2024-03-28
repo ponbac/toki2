@@ -15,7 +15,7 @@ use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
     domain::{PullRequest, RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey},
-    repositories::{RepoRepositoryImpl, UserRepositoryImpl},
+    repositories::{PushSubscriptionRepositoryImpl, RepoRepositoryImpl, UserRepositoryImpl},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -43,6 +43,7 @@ pub struct AppState {
     pub db_pool: Arc<PgPool>,
     pub user_repo: Arc<UserRepositoryImpl>,
     pub repository_repo: Arc<RepoRepositoryImpl>,
+    pub push_subscriptions_repo: Arc<PushSubscriptionRepositoryImpl>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
@@ -96,6 +97,7 @@ impl AppState {
             db_pool: Arc::new(db_pool.clone()),
             user_repo: Arc::new(UserRepositoryImpl::new(db_pool.clone())),
             repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),
+            push_subscriptions_repo: Arc::new(PushSubscriptionRepositoryImpl::new(db_pool.clone())),
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
             differs: Arc::new(RwLock::new(differs)),
