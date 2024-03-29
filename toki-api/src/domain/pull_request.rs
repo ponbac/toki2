@@ -41,10 +41,10 @@ impl PullRequest {
         }
     }
 
-    pub fn changelog(&self, new: Option<&Self>) -> Vec<PRChangeEvent> {
+    pub fn changelog(&self, new: Option<&Self>) -> (Self, Vec<PRChangeEvent>) {
         let new_pr = match new {
             Some(new) => new,
-            None => return vec![PRChangeEvent::PullRequestClosed],
+            None => return (self.clone(), vec![PRChangeEvent::PullRequestClosed]),
         };
 
         let new_threads = new_pr
@@ -67,7 +67,7 @@ impl PullRequest {
             })
             .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
 
-        new_threads.chain(updated_threads).collect()
+        (new_pr.clone(), new_threads.chain(updated_threads).collect())
     }
 }
 
