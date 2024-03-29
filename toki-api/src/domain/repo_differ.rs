@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use az_devops::RepoClient;
+use az_devops::{RepoClient, Thread};
 use serde::Serialize;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
@@ -153,13 +153,13 @@ impl RepoDiffer {
         let change_events = {
             let prev_pull_requests = self.prev_pull_requests.read().await;
             match prev_pull_requests.clone() {
-                Some(prev_pull_requests) => complete_pull_requests
+                Some(prev_pull_requests) => prev_pull_requests
                     .iter()
-                    .flat_map(|pr| {
-                        pr.changelog(
-                            prev_pull_requests
+                    .flat_map(|prev_pr| {
+                        prev_pr.changelog(
+                            complete_pull_requests
                                 .iter()
-                                .find(|p| p.pull_request_base.id == pr.pull_request_base.id),
+                                .find(|p| p.pull_request_base.id == prev_pr.pull_request_base.id),
                         )
                     })
                     .collect::<Vec<PRChangeEvent>>(),

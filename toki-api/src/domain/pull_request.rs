@@ -1,6 +1,6 @@
 use core::fmt;
 
-use az_devops::{CommentType, Identity, IdentityWithVote, ThreadStatus, Vote};
+use az_devops::{CommentType, IdentityWithVote, ThreadStatus, Vote};
 use serde::{Deserialize, Serialize};
 
 use super::RepoKey;
@@ -43,7 +43,7 @@ impl PullRequest {
 
     pub fn changelog(&self, new: Option<&Self>) -> Vec<PRChangeEvent> {
         let new_pr = match new {
-            Some(other) => other,
+            Some(new) => new,
             None => return vec![PRChangeEvent::PullRequestClosed],
         };
 
@@ -52,6 +52,7 @@ impl PullRequest {
             .iter()
             .filter(|t| !self.threads.iter().any(|ot| ot.id == t.id) && !t.is_system_thread())
             .map(|thread| PRChangeEvent::ThreadAdded(thread.clone()));
+
         let updated_threads = new_pr
             .threads
             .iter()
