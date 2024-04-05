@@ -71,6 +71,7 @@ impl PullRequest {
     }
 }
 
+#[derive(Debug)]
 pub enum PRChangeEvent {
     PullRequestClosed,
     ThreadAdded(az_devops::Thread),

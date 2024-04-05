@@ -8,6 +8,7 @@ mod repo_key;
 mod repository;
 mod user;
 
+pub use notification_handler::*;
 pub use pull_request::*;
 pub use push_notification::*;
 pub use push_subscription::*;

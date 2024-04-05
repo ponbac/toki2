@@ -12,7 +12,7 @@ use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
 
-use super::{PRChangeEvent, PullRequest, RepoKey};
+use super::{NotificationHandler, PRChangeEvent, PullRequest, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoDifferError {
@@ -52,6 +52,7 @@ pub enum RepoDifferMessage {
 pub struct RepoDiffer {
     pub key: RepoKey,
     az_client: RepoClient,
+    notification_handler: Arc<NotificationHandler>,
     pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
     pub status: Arc<RwLock<RepoDifferStatus>>,
     pub last_updated: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -59,10 +60,15 @@ pub struct RepoDiffer {
 }
 
 impl RepoDiffer {
-    pub fn new(key: RepoKey, az_client: RepoClient) -> Self {
+    pub fn new(
+        key: RepoKey,
+        az_client: RepoClient,
+        notification_handler: Arc<NotificationHandler>,
+    ) -> Self {
         Self {
             key,
             az_client,
+            notification_handler,
             prev_pull_requests: Arc::new(RwLock::new(None)),
             status: Arc::new(RwLock::new(RepoDifferStatus::Stopped)),
             last_updated: Arc::new(RwLock::new(None)),
@@ -126,6 +132,7 @@ impl RepoDiffer {
                                     .collect::<Vec<String>>()
                                     .join(", ")
                             );
+                            self.notification_handler.notify_affected_users(change_events).await;
                         }
                         Err(err) => {
                             tracing::error!("Error ticking for {}: {:?}", self.key, err);
