@@ -1,3 +1,4 @@
+mod notification_handler;
 mod pull_request;
 mod push_notification;
 mod push_subscription;

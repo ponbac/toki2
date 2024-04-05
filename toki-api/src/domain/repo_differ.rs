@@ -7,6 +7,7 @@ use axum::{
 };
 use az_devops::RepoClient;
 use serde::Serialize;
+use sqlx::PgPool;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
@@ -40,6 +41,7 @@ pub enum RepoDifferStatus {
     Errored,
 }
 
+#[derive(Debug, Clone)]
 pub enum RepoDifferMessage {
     Start(Duration),
     ForceUpdate,
@@ -75,7 +77,7 @@ impl RepoDiffer {
 
 impl RepoDiffer {
     #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
-    pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>) {
+    pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>, db_pool: Arc<PgPool>) {
         let mut interval: Option<tokio::time::Interval> = None;
 
         loop {

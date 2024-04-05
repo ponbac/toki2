@@ -84,8 +84,9 @@ impl AppState {
                 differs.insert(key.clone(), differ.clone());
 
                 let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
+                let arced_db_pool = Arc::new(db_pool.clone());
                 tokio::spawn(async move {
-                    differ.run(rx).await;
+                    differ.run(rx, arced_db_pool.clone()).await;
                 });
 
                 (key.clone(), tx)
@@ -167,8 +168,9 @@ impl AppState {
             .await
             .insert(key.clone(), differ.clone());
 
+        let db_pool = self.db_pool.clone();
         tokio::spawn(async move {
-            differ.run(rx).await;
+            differ.run(rx, db_pool.clone()).await;
         });
         differ_txs.insert(key, tx);
     }
