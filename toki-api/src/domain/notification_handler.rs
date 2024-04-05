@@ -38,10 +38,7 @@ impl NotificationHandler {
                     .to_web_push_message(&subscriber.as_subscription_info())
                     .expect("Failed to create web push message");
 
-                self.web_push_client
-                    .send(message)
-                    .await
-                    .expect("Failed to send notification");
+                let _ = self.web_push_client.send(message).await;
             }
         }
     }
