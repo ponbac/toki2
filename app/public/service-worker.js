@@ -7,6 +7,7 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(title, {
       body,
       icon,
+      data: data.url,
     }),
   );
 });
@@ -14,5 +15,5 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   // eslint-disable-next-line no-undef
-  event.waitUntil(clients.openWindow(event.notification.data.url || "/"));
+  event.waitUntil(clients.openWindow(event.notification.data || "/"));
 });
