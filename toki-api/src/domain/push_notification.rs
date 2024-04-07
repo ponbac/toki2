@@ -4,10 +4,11 @@ use web_push::{
     WebPushMessageBuilder, URL_SAFE,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 pub struct PushNotification {
     title: String,
     body: String,
+    url: Option<String>,
     icon: Option<String>,
 }
 
@@ -18,10 +19,11 @@ impl From<&PushNotification> for Vec<u8> {
 }
 
 impl PushNotification {
-    pub fn new(title: &str, body: &str, icon: Option<&str>) -> Self {
+    pub fn new(title: &str, body: &str, url: Option<&str>, icon: Option<&str>) -> Self {
         PushNotification {
             title: title.to_string(),
             body: body.to_string(),
+            url: url.map(|s| s.to_string()),
             icon: icon.map(|s| s.to_string()),
         }
     }

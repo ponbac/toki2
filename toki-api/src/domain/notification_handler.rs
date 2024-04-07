@@ -28,7 +28,7 @@ impl NotificationHandler {
         for subscriber in push_subscriptions {
             for diff in &diffs {
                 for event in &diff.changes {
-                    let message = event.to_web_push_message(&subscriber, &diff.pr);
+                    let message = event.to_web_push_message(&subscriber, &diff.pr, &diff.url);
                     let _ = self.web_push_client.send(message).await;
                 }
             }

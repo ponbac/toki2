@@ -241,7 +241,12 @@ async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, (Sta
             )
         })?;
 
-    let content = PushNotification::new("Hello, World!", "This is a test notification", None);
+    let content = PushNotification::new(
+        "Hello, World!",
+        "This is a test notification",
+        Some("https://ponbac.xyz"),
+        None,
+    );
     for subscriber in subscribers {
         let push_message = content
             .to_web_push_message(&subscriber.as_subscription_info())

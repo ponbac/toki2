@@ -30,16 +30,19 @@ impl PRChangeEvent {
         &self,
         sub: &PushSubscription,
         pr: &az_devops::PullRequest,
+        url: &str,
     ) -> web_push::WebPushMessage {
         let notification = match self {
             PRChangeEvent::PullRequestClosed => PushNotification::new(
                 format!("{}: Pull Request Closed", pr.title).as_str(),
                 format!("!{} has been closed", pr.id).as_str(),
+                Some(url),
                 None,
             ),
             PRChangeEvent::ThreadAdded(thread) => PushNotification::new(
                 format!("{}: New Thread", pr.title).as_str(),
                 format!("{} has created a new thread", thread.author().display_name).as_str(),
+                Some(url),
                 None,
             ),
             PRChangeEvent::ThreadUpdated(thread) => PushNotification::new(
@@ -49,6 +52,7 @@ impl PRChangeEvent {
                     thread.most_recent_comment().author.display_name
                 )
                 .as_str(),
+                Some(url),
                 None,
             ),
         };

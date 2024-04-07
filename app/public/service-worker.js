@@ -14,5 +14,5 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   // eslint-disable-next-line no-undef
-  event.waitUntil(clients.openWindow("/"));
+  event.waitUntil(clients.openWindow(event.notification.data.url || "/"));
 });
