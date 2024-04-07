@@ -1,4 +1,5 @@
 mod notification_handler;
+mod pr_change_event;
 mod pull_request;
 mod push_notification;
 mod push_subscription;
@@ -9,6 +10,7 @@ mod repository;
 mod user;
 
 pub use notification_handler::*;
+pub use pr_change_event::*;
 pub use pull_request::*;
 pub use push_notification::*;
 pub use push_subscription::*;

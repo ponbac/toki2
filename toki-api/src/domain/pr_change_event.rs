@@ -1,0 +1,60 @@
+use std::fmt;
+
+use super::{PushNotification, PushSubscription};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PRChangeEvent {
+    PullRequestClosed,
+    ThreadAdded(az_devops::Thread),
+    ThreadUpdated(az_devops::Thread),
+}
+
+impl fmt::Display for PRChangeEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PRChangeEvent::PullRequestClosed => {
+                write!(f, "PullRequestClosed")
+            }
+            PRChangeEvent::ThreadAdded(thread) => {
+                write!(f, "ThreadAdded({})", thread.id)
+            }
+            PRChangeEvent::ThreadUpdated(thread) => {
+                write!(f, "ThreadUpdated({})", thread.id)
+            }
+        }
+    }
+}
+
+impl PRChangeEvent {
+    pub fn to_web_push_message(
+        &self,
+        sub: &PushSubscription,
+        pr: &az_devops::PullRequest,
+    ) -> web_push::WebPushMessage {
+        let notification = match self {
+            PRChangeEvent::PullRequestClosed => PushNotification::new(
+                format!("{}: Pull Request Closed", pr.title).as_str(),
+                format!("!{} has been closed", pr.id).as_str(),
+                None,
+            ),
+            PRChangeEvent::ThreadAdded(thread) => PushNotification::new(
+                format!("{}: New Thread", pr.title).as_str(),
+                format!("{} has created a new thread", thread.author().display_name).as_str(),
+                None,
+            ),
+            PRChangeEvent::ThreadUpdated(thread) => PushNotification::new(
+                format!("{}: Thread Updated", pr.title).as_str(),
+                format!(
+                    "{} has replied in a thread you are a part of",
+                    thread.most_recent_comment().author.display_name
+                )
+                .as_str(),
+                None,
+            ),
+        };
+
+        notification
+            .to_web_push_message(&sub.as_subscription_info())
+            .expect("Failed to create web push message")
+    }
+}

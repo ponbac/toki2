@@ -12,7 +12,7 @@ use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
 
-use super::{NotificationHandler, PRChangeEvent, PullRequest, RepoKey};
+use super::{NotificationHandler, PullRequest, PullRequestDiff, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoDifferError {
@@ -123,15 +123,6 @@ impl RepoDiffer {
                     let change_events = self.tick().await;
                     match change_events {
                         Ok(change_events) => {
-                            tracing::debug!(
-                                "Found {} changed pull requests: [{}]",
-                                change_events.len(),
-                                change_events
-                                    .iter()
-                                    .flat_map(|event| event.1.iter().map(|e| e.to_string()).collect::<Vec<String>>())
-                                    .collect::<Vec<String>>()
-                                    .join(", ")
-                            );
                             self.notification_handler.notify_affected_users(change_events).await;
                         }
                         Err(err) => {
@@ -145,7 +136,7 @@ impl RepoDiffer {
     }
 
     #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
-    async fn tick(&self) -> Result<Vec<(PullRequest, Vec<PRChangeEvent>)>, RepoDifferError> {
+    async fn tick(&self) -> Result<Vec<PullRequestDiff>, RepoDifferError> {
         let base_pull_requests = self
             .az_client
             .get_open_pull_requests()
@@ -184,7 +175,7 @@ impl RepoDiffer {
                                 .find(|p| p.pull_request_base.id == prev_pr.pull_request_base.id),
                         )
                     })
-                    .collect::<Vec<(PullRequest, Vec<PRChangeEvent>)>>(),
+                    .collect::<Vec<PullRequestDiff>>(),
                 None => Vec::new(),
             }
         };

@@ -4,6 +4,8 @@ use azure_devops_rust_api::git::models::{
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use crate::Identity;
+
 use super::comment::Comment;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -37,5 +39,19 @@ impl Thread {
         self.comments
             .first()
             .map_or(false, |c| c.comment_type != Some(CommentType::System))
+    }
+
+    pub fn author(&self) -> &Identity {
+        &self
+            .comments
+            .first()
+            .expect("Thread has no comments, should this be possible!?")
+            .author
+    }
+
+    pub fn most_recent_comment(&self) -> &Comment {
+        self.comments
+            .last()
+            .expect("Thread has no comments, should this be possible!?")
     }
 }

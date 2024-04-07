@@ -1,9 +1,7 @@
-use core::fmt;
-
 use az_devops::{CommentType, IdentityWithVote, ThreadStatus, Vote};
 use serde::{Deserialize, Serialize};
 
-use super::RepoKey;
+use super::{PRChangeEvent, RepoKey};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -41,10 +39,10 @@ impl PullRequest {
         }
     }
 
-    pub fn changelog(&self, new: Option<&Self>) -> (Self, Vec<PRChangeEvent>) {
+    pub fn changelog(&self, new: Option<&Self>) -> PullRequestDiff {
         let new_pr = match new {
             Some(new) => new,
-            None => return (self.clone(), vec![PRChangeEvent::PullRequestClosed]),
+            None => return (self.clone(), vec![PRChangeEvent::PullRequestClosed]).into(),
         };
 
         let new_threads = new_pr
@@ -67,30 +65,28 @@ impl PullRequest {
             })
             .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
 
-        (new_pr.clone(), new_threads.chain(updated_threads).collect())
+        (new_pr.clone(), new_threads.chain(updated_threads).collect()).into()
     }
 }
 
-#[derive(Debug)]
-pub enum PRChangeEvent {
-    PullRequestClosed,
-    ThreadAdded(az_devops::Thread),
-    ThreadUpdated(az_devops::Thread),
+#[derive(Debug, Clone)]
+pub struct PullRequestDiff {
+    pub pr: az_devops::PullRequest,
+    pub changes: Vec<PRChangeEvent>,
 }
 
-impl fmt::Display for PRChangeEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PRChangeEvent::PullRequestClosed => {
-                write!(f, "PullRequestClosed")
-            }
-            PRChangeEvent::ThreadAdded(thread) => {
-                write!(f, "ThreadAdded({})", thread.id)
-            }
-            PRChangeEvent::ThreadUpdated(thread) => {
-                write!(f, "ThreadUpdated({})", thread.id)
-            }
+impl PullRequestDiff {
+    pub fn new(pr: PullRequest, changes: Vec<PRChangeEvent>) -> Self {
+        Self {
+            pr: pr.pull_request_base,
+            changes,
         }
+    }
+}
+
+impl From<(PullRequest, Vec<PRChangeEvent>)> for PullRequestDiff {
+    fn from((pr, changes): (PullRequest, Vec<PRChangeEvent>)) -> Self {
+        Self::new(pr, changes)
     }
 }
 

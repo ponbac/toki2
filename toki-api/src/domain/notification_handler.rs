@@ -1,12 +1,9 @@
 use sqlx::PgPool;
 use web_push::{IsahcWebPushClient, WebPushClient};
 
-use crate::{
-    domain::PushNotification,
-    repositories::{PushSubscriptionRepository, PushSubscriptionRepositoryImpl},
-};
+use crate::repositories::{PushSubscriptionRepository, PushSubscriptionRepositoryImpl};
 
-use super::{PRChangeEvent, PullRequest};
+use super::PullRequestDiff;
 
 pub struct NotificationHandler {
     push_subscriptions_repo: PushSubscriptionRepositoryImpl,
@@ -21,9 +18,7 @@ impl NotificationHandler {
         }
     }
 
-    pub async fn notify_affected_users(&self, events: Vec<(PullRequest, Vec<PRChangeEvent>)>) {
-        println!("Handling events: {:?}", events);
-
+    pub async fn notify_affected_users(&self, diffs: Vec<PullRequestDiff>) {
         let push_subscriptions = self
             .push_subscriptions_repo
             .get_push_subscriptions()
@@ -31,14 +26,11 @@ impl NotificationHandler {
             .unwrap();
 
         for subscriber in push_subscriptions {
-            for (pr, changes) in &events {
-                let content =
-                    PushNotification::new(&pr.pull_request_base.title, "Has an event!", None);
-                let message = content
-                    .to_web_push_message(&subscriber.as_subscription_info())
-                    .expect("Failed to create web push message");
-
-                let _ = self.web_push_client.send(message).await;
+            for diff in &diffs {
+                for event in &diff.changes {
+                    let message = event.to_web_push_message(&subscriber, &diff.pr);
+                    let _ = self.web_push_client.send(message).await;
+                }
             }
         }
     }
