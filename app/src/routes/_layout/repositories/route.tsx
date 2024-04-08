@@ -87,10 +87,10 @@ function RepositoriesComponent() {
               >
                 <CardHeader className="flex w-full flex-row items-start justify-between">
                   <div className="flex flex-col gap-1 overflow-hidden">
-                    <CardTitle className="truncate">
+                    <CardTitle className="truncate leading-6">
                       {differ.repoName}
                     </CardTitle>
-                    <CardDescription>{`${differ.organization}/${differ.project}`}</CardDescription>
+                    <CardDescription className="leading-4">{`${differ.organization}/${differ.project}`}</CardDescription>
                   </div>
                   <Tooltip>
                     <TooltipTrigger asChild>
