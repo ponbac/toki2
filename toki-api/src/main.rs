@@ -44,20 +44,24 @@ async fn main() {
         .await;
     if let Err(err) = connection_pool_result {
         tracing::error!("Failed to connect to database: {}", err);
-        tracing::error!("Config: {:?}", config.database);
+        // tracing::error!("Config: {:?}", config.database);
 
-        let pg_connect_options: PgConnectOptions =
-            env::var("DATABASE_URL").unwrap().parse().unwrap();
+        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL not set");
+        // tracing::info!(
+        //     "Trying to connect to database using DATABASE_URL: {}",
+        //     db_url
+        // );
+        let pg_connect_options: PgConnectOptions = db_url.parse().unwrap();
         connection_pool_result = PgPoolOptions::new().connect_with(pg_connect_options).await;
     }
     let connection_pool = connection_pool_result.expect("Failed to connect to database");
 
     // TODO: Uncomment this, figure out Fly.io errors...
     // Run migrations
-    // sqlx::migrate!("./migrations")
-    //     .run(&connection_pool)
-    //     .await
-    //     .expect("Failed to run migrations");
+    sqlx::migrate!("./migrations")
+        .run(&connection_pool)
+        .await
+        .expect("Failed to run migrations");
 
     // Fetch all repositories from the database
     let repo_configs = query_repository_configs(&connection_pool)
