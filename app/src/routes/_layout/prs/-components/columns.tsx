@@ -4,6 +4,7 @@ import { WorkItemLink } from "@/components/work-item-link";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
+import { ReactNode } from "react";
 
 export const pullRequestColumns: ColumnDef<PullRequest>[] = [
   {
@@ -21,7 +22,7 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     cell: ({ row }) => {
       const initialChars = row.original.title.slice(0, 60);
       return (
-        <span>
+        <span className="text-nowrap">
           {initialChars.trimEnd()}
           {initialChars.length < row.original.title.length ? "..." : ""}
         </span>
@@ -33,9 +34,11 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     header: "Author",
     cell: ({ row }) => {
       return (
-        <div className="flex flex-row items-center gap-2">
+        <div className="flex flex-row items-center justify-center gap-2 xl:justify-start">
           <AzureAvatar user={row.original.createdBy} />
-          <span>{row.original.createdBy.displayName}</span>
+          <span className="hidden xl:block text-nowrap">
+            {row.original.createdBy.displayName}
+          </span>
         </div>
       );
     },
@@ -96,5 +99,8 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
   {
     header: "Created At",
     accessorFn: (row) => dayjs(row.createdAt).format("YYYY-MM-DD HH:mm"),
+    cell: ({ getValue }) => (
+      <span className="text-nowrap">{getValue() as ReactNode}</span>
+    ),
   },
 ];
