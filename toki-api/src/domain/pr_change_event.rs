@@ -32,7 +32,13 @@ impl PRChangeEvent {
         pr: &az_devops::PullRequest,
         url: &str,
     ) -> web_push::WebPushMessage {
-        let notification = match self {
+        self.to_push_notification(pr, url)
+            .to_web_push_message(&sub.as_subscription_info())
+            .expect("Failed to create web push message")
+    }
+
+    fn to_push_notification(&self, pr: &az_devops::PullRequest, url: &str) -> PushNotification {
+        match self {
             PRChangeEvent::PullRequestClosed => PushNotification::new(
                 format!("{}: Pull Request Closed", pr.title).as_str(),
                 format!("!{} has been closed", pr.id).as_str(),
@@ -55,10 +61,6 @@ impl PRChangeEvent {
                 Some(url),
                 None,
             ),
-        };
-
-        notification
-            .to_web_push_message(&sub.as_subscription_info())
-            .expect("Failed to create web push message")
+        }
     }
 }
