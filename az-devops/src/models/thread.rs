@@ -1,6 +1,10 @@
-use azure_devops_rust_api::git::models::{comment_thread::Status, CommentThread};
+use azure_devops_rust_api::git::models::{
+    comment::CommentType, comment_thread::Status, CommentThread,
+};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+
+use crate::Identity;
 
 use super::comment::Comment;
 
@@ -27,5 +31,27 @@ impl From<CommentThread> for Thread {
             last_updated_at: thread.last_updated_date.unwrap(),
             published_at: thread.published_date.unwrap(),
         }
+    }
+}
+
+impl Thread {
+    pub fn is_system_thread(&self) -> bool {
+        self.comments
+            .first()
+            .map_or(false, |c| c.comment_type != Some(CommentType::System))
+    }
+
+    pub fn author(&self) -> &Identity {
+        &self
+            .comments
+            .first()
+            .expect("Thread has no comments, should this be possible!?")
+            .author
+    }
+
+    pub fn most_recent_comment(&self) -> &Comment {
+        self.comments
+            .last()
+            .expect("Thread has no comments, should this be possible!?")
     }
 }

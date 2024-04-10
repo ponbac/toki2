@@ -7,22 +7,23 @@ use axum::{
 };
 use az_devops::RepoClient;
 use serde::Serialize;
+use sqlx::PgPool;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
 
-use super::{PullRequest, RepoKey};
+use super::{NotificationHandler, PullRequest, PullRequestDiff, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoDifferError {
     #[error("Could not fetch pull requests for repo")]
-    FetchPullRequests,
+    PullRequests,
     #[error("Could not fetch threads for pull request")]
-    FetchThreads,
+    Threads,
     #[error("Could not fetch commits for pull request")]
-    FetchCommits,
+    Commits,
     #[error("Could not fetch work items for pull request")]
-    FetchWorkItems,
+    WorkItems,
 }
 
 impl IntoResponse for RepoDifferError {
@@ -40,6 +41,7 @@ pub enum RepoDifferStatus {
     Errored,
 }
 
+#[derive(Debug, Clone)]
 pub enum RepoDifferMessage {
     Start(Duration),
     ForceUpdate,
@@ -50,6 +52,7 @@ pub enum RepoDifferMessage {
 pub struct RepoDiffer {
     pub key: RepoKey,
     az_client: RepoClient,
+    notification_handler: Arc<NotificationHandler>,
     pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
     pub status: Arc<RwLock<RepoDifferStatus>>,
     pub last_updated: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -57,10 +60,15 @@ pub struct RepoDiffer {
 }
 
 impl RepoDiffer {
-    pub fn new(key: RepoKey, az_client: RepoClient) -> Self {
+    pub fn new(
+        key: RepoKey,
+        az_client: RepoClient,
+        notification_handler: Arc<NotificationHandler>,
+    ) -> Self {
         Self {
             key,
             az_client,
+            notification_handler,
             prev_pull_requests: Arc::new(RwLock::new(None)),
             status: Arc::new(RwLock::new(RepoDifferStatus::Stopped)),
             last_updated: Arc::new(RwLock::new(None)),
@@ -75,7 +83,7 @@ impl RepoDiffer {
 
 impl RepoDiffer {
     #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
-    pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>) {
+    pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>, db_pool: Arc<PgPool>) {
         let mut interval: Option<tokio::time::Interval> = None;
 
         loop {
@@ -112,10 +120,15 @@ impl RepoDiffer {
                 }
                 _ = interval_tick_or_sleep(&mut interval) => {
                     tracing::debug!("Ticked");
-                    let res = self.tick().await;
-                    if let Err(err) = res {
-                        tracing::error!("Error ticking for {}: {:?}", self.key, err);
-                        *self.status.write().await = RepoDifferStatus::Errored;
+                    let change_events = self.tick().await;
+                    match change_events {
+                        Ok(change_events) => {
+                            self.notification_handler.notify_affected_users(change_events).await;
+                        }
+                        Err(err) => {
+                            tracing::error!("Error ticking for {}: {:?}", self.key, err);
+                            *self.status.write().await = RepoDifferStatus::Errored;
+                        }
                     }
                 }
             }
@@ -123,54 +136,49 @@ impl RepoDiffer {
     }
 
     #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
-    async fn tick(&self) -> Result<(), RepoDifferError> {
+    async fn tick(&self) -> Result<Vec<PullRequestDiff>, RepoDifferError> {
         let base_pull_requests = self
             .az_client
             .get_open_pull_requests()
             .await
-            .map_err(|_| RepoDifferError::FetchPullRequests)?;
+            .map_err(|_| RepoDifferError::PullRequests)?;
 
         let mut complete_pull_requests = Vec::new();
         for pr in base_pull_requests {
             let threads = pr
                 .threads(&self.az_client)
                 .await
-                .map_err(|_| RepoDifferError::FetchThreads)?;
+                .map_err(|_| RepoDifferError::Threads)?;
             let commits = pr
                 .commits(&self.az_client)
                 .await
-                .map_err(|_| RepoDifferError::FetchCommits)?;
+                .map_err(|_| RepoDifferError::Commits)?;
             let work_items = pr
                 .work_items(&self.az_client)
                 .await
-                .map_err(|_| RepoDifferError::FetchWorkItems)?;
+                .map_err(|_| RepoDifferError::WorkItems)?;
 
             complete_pull_requests.push(PullRequest::new(
                 &self.key, pr, threads, commits, work_items,
             ));
         }
 
-        let changed_pull_requests = {
+        let change_events = {
             let prev_pull_requests = self.prev_pull_requests.read().await;
             match prev_pull_requests.clone() {
-                Some(prev_pull_requests) => complete_pull_requests
-                    .clone()
-                    .into_iter()
-                    .filter(|pr| !prev_pull_requests.contains(pr))
-                    .collect::<Vec<PullRequest>>(),
-                None => complete_pull_requests.clone(),
+                Some(prev_pull_requests) => prev_pull_requests
+                    .iter()
+                    .map(|prev_pr| {
+                        prev_pr.changelog(
+                            complete_pull_requests
+                                .iter()
+                                .find(|p| p.pull_request_base.id == prev_pr.pull_request_base.id),
+                        )
+                    })
+                    .collect::<Vec<PullRequestDiff>>(),
+                None => Vec::new(),
             }
         };
-
-        tracing::debug!(
-            "Found {} changed pull requests: [{}]",
-            changed_pull_requests.len(),
-            changed_pull_requests
-                .iter()
-                .map(|pr| pr.pull_request_base.title.clone())
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
 
         self.prev_pull_requests
             .write()
@@ -181,7 +189,7 @@ impl RepoDiffer {
             .await
             .replace(OffsetDateTime::now_utc());
 
-        Ok(())
+        Ok(change_events)
     }
 }
 

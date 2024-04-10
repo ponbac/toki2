@@ -30,7 +30,8 @@ pub async fn create(
         .route("/", get(|| async { "Hello, little World!" }))
         .nest("/pull-requests", routes::pull_requests::router())
         .nest("/differs", routes::differs::router())
-        .nest("/repositories", routes::repositories::router());
+        .nest("/repositories", routes::repositories::router())
+        .nest("/notifications", routes::notifications::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {

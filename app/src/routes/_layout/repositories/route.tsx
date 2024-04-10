@@ -76,84 +76,90 @@ function RepositoriesComponent() {
 
   return (
     <main className="flex w-full items-center justify-center p-8">
-      <div className="flex min-w-[77rem] flex-col items-center justify-center gap-4">
+      <div className="flex flex-col items-center justify-center gap-4">
         <TopBar />
-        <div className="grid grid-cols-3 gap-4">
-          {filteredData.map((differ) => (
-            <Card
-              key={`${toRepoKeyString(differ)}-${dataUpdatedAt}`}
-              className="flex w-[25rem] flex-col justify-between"
-            >
-              <CardHeader className="flex w-full flex-row items-start justify-between">
-                <div className="flex flex-col gap-1 overflow-hidden">
-                  <CardTitle className="truncate">{differ.repoName}</CardTitle>
-                  <CardDescription>{`${differ.organization}/${differ.project}`}</CardDescription>
-                </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="group size-8"
-                      onClick={() =>
-                        followRepository({
-                          ...differ,
-                          follow: !differ.followed,
-                        })
-                      }
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredData.length > 0 ? (
+            filteredData.map((differ) => (
+              <Card
+                key={`${toRepoKeyString(differ)}-${dataUpdatedAt}`}
+                className="flex w-[25rem] flex-col justify-between"
+              >
+                <CardHeader className="flex w-full flex-row items-start justify-between">
+                  <div className="flex flex-col gap-1 overflow-hidden">
+                    <CardTitle className="truncate leading-6">
+                      {differ.repoName}
+                    </CardTitle>
+                    <CardDescription className="leading-4">{`${differ.organization}/${differ.project}`}</CardDescription>
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="group size-8"
+                        onClick={() =>
+                          followRepository({
+                            ...differ,
+                            follow: !differ.followed,
+                          })
+                        }
+                      >
+                        {differ.followed ? (
+                          <Unplug size="1.25rem" />
+                        ) : (
+                          <Heart size="1.25rem" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {differ.followed
+                        ? "Unfollow repository"
+                        : "Follow repository"}
+                    </TooltipContent>
+                  </Tooltip>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription>
+                    Status:{" "}
+                    <span
+                      className={cn("font-semibold", {
+                        "text-destructive": differ.status === "Errored",
+                      })}
                     >
-                      {differ.followed ? (
-                        <Unplug size="1.25rem" />
-                      ) : (
-                        <Heart size="1.25rem" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {differ.followed
-                      ? "Unfollow repository"
-                      : "Follow repository"}
-                  </TooltipContent>
-                </Tooltip>
-              </CardHeader>
-              <CardContent>
-                <CardDescription>
-                  Status:{" "}
-                  <span
-                    className={cn("font-semibold", {
-                      "text-destructive": differ.status === "Errored",
-                    })}
+                      {differ.status}
+                    </span>
+                  </CardDescription>
+                  <CardDescription>
+                    Fetch Interval:{" "}
+                    {differ.refreshInterval
+                      ? `${differ.refreshInterval.secs} seconds`
+                      : "None"}
+                  </CardDescription>
+                  <LastUpdated differ={differ} />
+                </CardContent>
+                <CardFooter className="flex flex-row-reverse gap-2">
+                  <FooterButton
+                    disabled={differ.status === "Running"}
+                    onClick={() => startDiffer(differ)}
                   >
-                    {differ.status}
-                  </span>
-                </CardDescription>
-                <CardDescription>
-                  Fetch Interval:{" "}
-                  {differ.refreshInterval
-                    ? `${differ.refreshInterval.secs} seconds`
-                    : "None"}
-                </CardDescription>
-                <LastUpdated differ={differ} />
-              </CardContent>
-              <CardFooter className="flex flex-row-reverse gap-2">
-                <FooterButton
-                  disabled={differ.status === "Running"}
-                  onClick={() => startDiffer(differ)}
-                >
-                  <PlayCircle size="1.25rem" />
-                  Start
-                </FooterButton>
-                <FooterButton
-                  variant="outline"
-                  disabled={differ.status === "Stopped"}
-                  onClick={() => stopDiffer(differ)}
-                >
-                  <PauseCircle size="1.25rem" />
-                  Stop
-                </FooterButton>
-              </CardFooter>
-            </Card>
-          ))}
+                    <PlayCircle size="1.25rem" />
+                    Start
+                  </FooterButton>
+                  <FooterButton
+                    variant="outline"
+                    disabled={differ.status === "Stopped"}
+                    onClick={() => stopDiffer(differ)}
+                  >
+                    <PauseCircle size="1.25rem" />
+                    Stop
+                  </FooterButton>
+                </CardFooter>
+              </Card>
+            ))
+          ) : (
+            <Card className="w-[25rem] opacity-0" />
+          )}
         </div>
       </div>
       <Outlet />
