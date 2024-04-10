@@ -29,7 +29,23 @@ impl NotificationHandler {
             for diff in &diffs {
                 for event in &diff.changes {
                     let message = event.to_web_push_message(&subscriber, &diff.pr, &diff.url);
-                    let _ = self.web_push_client.send(message).await;
+                    match self.web_push_client.send(message).await {
+                        Ok(_) => {
+                            tracing::info!(
+                                "Successfully sent notification to {} for {}",
+                                subscriber.endpoint,
+                                event
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to send notification to {} for {}: {}",
+                                subscriber.endpoint,
+                                event,
+                                e
+                            );
+                        }
+                    }
                 }
             }
         }
