@@ -1,3 +1,4 @@
+import { TailwindIndicator } from "@/components/tailwind-indicator";
 import { RouterContext } from "@/main";
 import { Outlet, createRootRouteWithContext } from "@tanstack/react-router";
 import React, { Suspense } from "react";
@@ -16,6 +17,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   component: () => (
     <>
       <Outlet />
+      <TailwindIndicator />
       <Suspense>
         <TanStackRouterDevtools />
       </Suspense>

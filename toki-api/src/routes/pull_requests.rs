@@ -91,9 +91,12 @@ async fn cached_pull_requests(
         let cached_prs = app_state
             .get_cached_pull_requests(repo.clone())
             .await
-            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+            .unwrap_or(None);
+
         if let Some(prs) = cached_prs {
             followed_prs.extend(prs);
+        } else {
+            tracing::debug!("No cached PRs found for repo: {}", repo);
         }
     }
     followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
