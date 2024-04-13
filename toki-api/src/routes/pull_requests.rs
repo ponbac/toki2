@@ -88,10 +88,13 @@ async fn cached_pull_requests(
 
     let mut followed_prs = vec![];
     for repo in followed_repos {
-        let cached_prs = app_state
-            .get_cached_pull_requests(repo.clone())
-            .await
-            .unwrap_or(None);
+        let cached_prs = match app_state.get_cached_pull_requests(repo.clone()).await {
+            Ok(prs) => prs,
+            Err(_) => {
+                tracing::debug!("Error fetching cached PRs for repo: {}", repo);
+                continue;
+            }
+        };
 
         if let Some(prs) = cached_prs {
             followed_prs.extend(prs);
