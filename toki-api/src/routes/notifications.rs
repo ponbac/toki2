@@ -27,13 +27,13 @@ pub fn router() -> Router<AppState> {
         .route("/ws", get(ws_handler))
 }
 
-#[instrument(name = "ws_handler", skip(auth_session, ws, user_agent, app_state))]
+#[instrument(name = "ws_handler", skip(auth_session, ws, user_agent, _app_state))]
 async fn ws_handler(
     auth_session: AuthSession,
     ws: WebSocketUpgrade,
     user_agent: Option<TypedHeader<headers::UserAgent>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(app_state): State<AppState>,
+    State(_app_state): State<AppState>,
 ) -> impl IntoResponse {
     let user_id = auth_session.user.expect("user not found").id;
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
