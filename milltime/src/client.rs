@@ -1,18 +1,23 @@
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 
+use crate::{
+    domain::{self, RawUserCalendar, TimePeriodInfo},
+    MilltimeURL,
+};
+
 use super::Credentials;
 
-pub struct Client {
+pub struct MilltimeClient {
     credentials: Credentials,
 }
 
-impl Client {
+impl MilltimeClient {
     pub fn new(credentials: Credentials) -> Self {
         Self { credentials }
     }
 
-    pub async fn fetch<T: DeserializeOwned>(
+    async fn fetch<T: DeserializeOwned>(
         &self,
         url: impl AsRef<str>,
     ) -> Result<T, MilltimeFetchError> {
@@ -34,6 +39,48 @@ impl Client {
         })?;
 
         Ok(resp_data)
+    }
+
+    pub async fn fetch_time_period_info(
+        &self,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> Result<TimePeriodInfo, MilltimeFetchError> {
+        let url = crate::MilltimeURL::new()
+            .append_path("/data/store/TimeInfo")
+            .with_date_filter(&from, &to);
+
+        let response: MilltimeRowResponse<domain::TimePeriodInfo> = self.fetch(url).await?;
+        let result_row = response.only_row()?;
+
+        Ok(domain::TimePeriodInfo {
+            from: Some(from),
+            to: Some(to),
+            ..result_row
+        })
+    }
+
+    pub async fn fetch_user_calendar(
+        &self,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> Result<domain::UserCalendar, MilltimeFetchError> {
+        let url = MilltimeURL::new()
+            .append_path("/data/store/UserCalendar")
+            .with_date_filter(&from, &to);
+
+        let response: MilltimeRowResponse<domain::RawUserCalendar> = self.fetch(url).await?;
+        let raw_result = response.only_row()?;
+
+        let transformed_weeks = raw_result
+            .weeks
+            .into_iter()
+            .map(domain::Week::from)
+            .collect();
+
+        Ok(domain::UserCalendar {
+            weeks: transformed_weeks,
+        })
     }
 }
 
