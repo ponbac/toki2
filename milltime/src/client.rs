@@ -64,6 +64,8 @@ impl MilltimeClient {
         let resp = client
             .post(url.as_ref())
             .header("Cookie", self.credentials.as_cookie_header())
+            .header("X-Csrf-Token", self.credentials.csrf_token.clone())
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
             .json(&payload)
             .send()
             .await
