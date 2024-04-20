@@ -86,7 +86,7 @@ impl MilltimeClient {
         &self,
         date_filter: DateFilter,
     ) -> Result<domain::TimePeriodInfo, MilltimeFetchError> {
-        let url = MilltimeURL::new()
+        let url = MilltimeURL::from_env()
             .append_path("/data/store/TimeInfo")
             .with_filter(&date_filter);
 
@@ -103,7 +103,7 @@ impl MilltimeClient {
         &self,
         date_filter: DateFilter,
     ) -> Result<domain::UserCalendar, MilltimeFetchError> {
-        let url = MilltimeURL::new()
+        let url = MilltimeURL::from_env()
             .append_path("/data/store/UserCalendar")
             .with_filter(&date_filter);
 
@@ -128,7 +128,7 @@ impl MilltimeClient {
     ) -> Result<(), MilltimeFetchError> {
         let payload: TimerRegistrationPayload = start_timer_options.into();
         let reg_timer_url_filter: TimerRegistrationFilter = (&payload).into();
-        let url = MilltimeURL::new()
+        let url = MilltimeURL::from_env()
             .append_path("/data/store/TimerRegistration")
             .with_filter(&reg_timer_url_filter);
 

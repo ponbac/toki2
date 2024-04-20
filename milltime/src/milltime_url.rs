@@ -11,15 +11,9 @@ impl AsRef<str> for MilltimeURL {
     }
 }
 
-impl Default for MilltimeURL {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl MilltimeURL {
     /// Creates a new MilltimeURL from the environment variable `MILLTIME_URL`.
-    pub fn new() -> Self {
+    pub fn from_env() -> Self {
         Self(env::var("MILLTIME_URL").expect("MILLTIME_URL must be set in env"))
     }
 
