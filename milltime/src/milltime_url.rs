@@ -1,6 +1,6 @@
 use std::env;
 
-use chrono::NaiveDate;
+use crate::DateFilter;
 
 #[derive(Debug)]
 pub struct MilltimeURL(String);
@@ -25,23 +25,25 @@ impl MilltimeURL {
 
     /// Append the given path to the URL.
     pub fn append_path(&self, path: &str) -> Self {
-        match self.0.chars().last() {
-            Some('/') => Self(format!("{}{}", self.0, path)),
-            _ => Self(format!("{}/{}", self.0, path)),
-        }
+        let trimmed_url = self.0.trim_end_matches('/');
+        let trimmed_path = path.trim_start_matches('/');
+        Self(format!("{}/{}", trimmed_url, trimmed_path))
     }
 
     /// Adds query parameter `filter` to the URL, containing a from and to date.
-    pub fn with_date_filter(&self, from: &NaiveDate, to: &NaiveDate) -> Self {
-        let filter_value = format!(
-            "[[\"fromDate\",\"=\",\"{}\"],[\"toDate\",\"=\",\"{}\"]]",
-            from, to
-        );
-
+    pub fn with_date_filter(&self, date_filter: &DateFilter) -> Self {
         if self.0.contains('?') {
-            Self(format!("{}&filter={}", self.0, filter_value))
+            Self(format!(
+                "{}&filter={}",
+                self.0,
+                date_filter.as_milltime_filter()
+            ))
         } else {
-            Self(format!("{}?filter={}", self.0, filter_value))
+            Self(format!(
+                "{}?filter={}",
+                self.0,
+                date_filter.as_milltime_filter()
+            ))
         }
     }
 }

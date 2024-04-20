@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all(serialize = "camelCase", deserialize = "PascalCase"))]
 pub struct TimePeriodInfo {
-    pub from: Option<NaiveDate>,
-    pub to: Option<NaiveDate>,
+    #[serde(default)]
+    pub from: NaiveDate,
+    #[serde(default)]
+    pub to: NaiveDate,
     pub flex_time_previous_period: Option<f64>,
     pub flex_time_period: f64,
     #[serde(rename(deserialize = "FlexTimeCurrent"))]

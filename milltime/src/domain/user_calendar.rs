@@ -84,7 +84,7 @@ pub struct TimeEntry {
     pub project_name: String,
     pub activity_name: String,
     pub hours: f64,
-    pub note: String,
+    pub note: Option<String>,
 }
 
 impl From<RawProjectregistration> for TimeEntry {
@@ -147,7 +147,7 @@ pub struct RawProjectregistration {
     pub projectregistrationid: String,
     pub projtimehh: f64,
     pub projtimemm: i64,
-    pub usernote: String,
+    pub usernote: Option<String>,
     pub customernames: String,
 }
 

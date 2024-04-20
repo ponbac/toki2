@@ -10,37 +10,47 @@ pub use client::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::env;
+    use tokio::sync::OnceCell;
 
-    async fn get_credentials() -> Credentials {
+    use super::*;
+    use std::{env, error::Error};
+
+    async fn get_credentials() -> Result<Credentials, Box<dyn Error>> {
         dotenvy::from_filename("./milltime/.env.local").ok();
         let username = env::var("MILLTIME_USERNAME").expect("MILLTIME_USERNAME must be set");
         let password = env::var("MILLTIME_PASSWORD").expect("MILLTIME_PASSWORD must be set");
 
-        Credentials::new(&username, &password).await.unwrap()
+        Credentials::new(&username, &password).await
     }
 
-    async fn get_client() -> MilltimeClient {
-        let credentials = get_credentials().await;
-        MilltimeClient::new(credentials)
+    static CLIENT: OnceCell<MilltimeClient> = OnceCell::const_new();
+
+    async fn initialize_client() -> &'static MilltimeClient {
+        CLIENT
+            .get_or_init(|| async {
+                let credentials = get_credentials()
+                    .await
+                    .expect("Failed to get credentials, login problem?");
+                MilltimeClient::new(credentials)
+            })
+            .await
     }
 
     #[tokio::test]
-    async fn test_create_credentials() {
-        let credentials = get_credentials().await;
+    async fn test_fetch_time_period_info() {
+        let client = initialize_client().await;
+        let date_filter: DateFilter = "2024-01-01,2024-12-31".parse().unwrap();
+        let time_period_info = client.fetch_time_period_info(date_filter).await.unwrap();
 
-        assert_eq!(credentials.csrf_token.len(), 16);
-        assert!(credentials.valid_until.is_some());
+        assert_eq!(time_period_info.from.to_string(), "2024-01-01".to_string());
     }
 
-    // #[tokio::test]
-    // async fn test_fetch() {
-    //     let client = get_client().await;
-    //     let url = MilltimeURL::new().
-    //     let response: MilltimeRowResponse<period_info::Period> = client.fetch(url).await.unwrap();
+    #[tokio::test]
+    async fn test_fetch_user_calendar() {
+        let client = initialize_client().await;
+        let date_filter: DateFilter = "2024-04-01,2024-04-30".parse().unwrap();
+        let user_calendar = client.fetch_user_calendar(date_filter).await.unwrap();
 
-    //     assert_eq!(response.success, true);
-    //     assert!(response.rows.len() > 0);
-    // }
+        assert_eq!(user_calendar.weeks.len(), 5);
+    }
 }

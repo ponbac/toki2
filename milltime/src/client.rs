@@ -1,8 +1,10 @@
+use std::str::FromStr;
+
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 
 use crate::{
-    domain::{self, RawUserCalendar, TimePeriodInfo},
+    domain::{self},
     MilltimeURL,
 };
 
@@ -41,38 +43,49 @@ impl MilltimeClient {
         Ok(resp_data)
     }
 
+    async fn fetch_single_row<T: DeserializeOwned>(
+        &self,
+        url: impl AsRef<str>,
+    ) -> Result<T, MilltimeFetchError> {
+        let response: MilltimeRowResponse<T> = self.fetch(url).await?;
+        match response.success {
+            true => response.only_row(),
+            false => Err(MilltimeFetchError::Other(
+                "milltime responded with success=false".to_string(),
+            )),
+        }
+    }
+
     pub async fn fetch_time_period_info(
         &self,
-        from: chrono::NaiveDate,
-        to: chrono::NaiveDate,
-    ) -> Result<TimePeriodInfo, MilltimeFetchError> {
-        let url = crate::MilltimeURL::new()
+        date_filter: DateFilter,
+    ) -> Result<domain::TimePeriodInfo, MilltimeFetchError> {
+        let url = MilltimeURL::new()
             .append_path("/data/store/TimeInfo")
-            .with_date_filter(&from, &to);
+            .with_date_filter(&date_filter);
 
-        let response: MilltimeRowResponse<domain::TimePeriodInfo> = self.fetch(url).await?;
-        let result_row = response.only_row()?;
+        let time_period_info = self.fetch_single_row::<domain::TimePeriodInfo>(url).await?;
 
         Ok(domain::TimePeriodInfo {
-            from: Some(from),
-            to: Some(to),
-            ..result_row
+            from: date_filter.from,
+            to: date_filter.to,
+            ..time_period_info
         })
     }
 
     pub async fn fetch_user_calendar(
         &self,
-        from: chrono::NaiveDate,
-        to: chrono::NaiveDate,
+        date_filter: DateFilter,
     ) -> Result<domain::UserCalendar, MilltimeFetchError> {
         let url = MilltimeURL::new()
             .append_path("/data/store/UserCalendar")
-            .with_date_filter(&from, &to);
+            .with_date_filter(&date_filter);
 
-        let response: MilltimeRowResponse<domain::RawUserCalendar> = self.fetch(url).await?;
-        let raw_result = response.only_row()?;
+        let raw_calendar = self
+            .fetch_single_row::<domain::RawUserCalendar>(url)
+            .await?;
 
-        let transformed_weeks = raw_result
+        let transformed_weeks = raw_calendar
             .weeks
             .into_iter()
             .map(domain::Week::from)
@@ -114,5 +127,35 @@ impl<T> MilltimeRowResponse<T> {
                 self.rows.len()
             )))
         }
+    }
+}
+
+pub struct DateFilter {
+    pub from: chrono::NaiveDate,
+    pub to: chrono::NaiveDate,
+}
+
+impl DateFilter {
+    pub fn new(from: chrono::NaiveDate, to: chrono::NaiveDate) -> Self {
+        Self { from, to }
+    }
+
+    pub fn as_milltime_filter(&self) -> String {
+        format!(
+            "[[\"fromDate\",\"=\",\"{}\"],[\"toDate\",\"=\",\"{}\"]]",
+            self.from, self.to
+        )
+    }
+}
+
+impl FromStr for DateFilter {
+    type Err = chrono::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(',').collect();
+        let from = chrono::NaiveDate::parse_from_str(parts[0], "%Y-%m-%d")?;
+        let to = chrono::NaiveDate::parse_from_str(parts[1], "%Y-%m-%d")?;
+
+        Ok(Self { from, to })
     }
 }
