@@ -1,6 +1,6 @@
 use std::env;
 
-use crate::DateFilter;
+use crate::domain::MilltimeFilter;
 
 #[derive(Debug)]
 pub struct MilltimeURL(String);
@@ -30,20 +30,11 @@ impl MilltimeURL {
         Self(format!("{}/{}", trimmed_url, trimmed_path))
     }
 
-    /// Adds query parameter `filter` to the URL, containing a from and to date.
-    pub fn with_date_filter(&self, date_filter: &DateFilter) -> Self {
+    pub fn with_filter(&self, filter: &impl MilltimeFilter) -> Self {
         if self.0.contains('?') {
-            Self(format!(
-                "{}&filter={}",
-                self.0,
-                date_filter.as_milltime_filter()
-            ))
+            Self(format!("{}&filter={}", self.0, filter.as_milltime_filter()))
         } else {
-            Self(format!(
-                "{}?filter={}",
-                self.0,
-                date_filter.as_milltime_filter()
-            ))
+            Self(format!("{}?filter={}", self.0, filter.as_milltime_filter()))
         }
     }
 }

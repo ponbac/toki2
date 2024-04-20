@@ -11,6 +11,8 @@ pub use domain::{Day, TimeEntry, TimePeriodInfo, UserCalendar, Week};
 mod tests {
     use tokio::sync::OnceCell;
 
+    use crate::domain::{DateFilter, StartTimerOptions};
+
     use super::*;
     use std::{env, error::Error};
 
@@ -51,5 +53,21 @@ mod tests {
         let user_calendar = client.fetch_user_calendar(date_filter).await.unwrap();
 
         assert_eq!(user_calendar.weeks.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_start_timer() {
+        let client = initialize_client().await;
+        let options: StartTimerOptions = StartTimerOptions {
+            activity: "201201111420550010".to_string(),
+            activity_name: "Systemutveckling".to_string(),
+            project_id: "300000000000241970".to_string(),
+            project_name: "Ex-Change Parts - Quote Manager".to_string(),
+            user_id: "104".to_string(),
+            reg_day: "2024-04-20".to_string(),
+            week_number: 16,
+        };
+
+        client.start_timer(options).await.unwrap();
     }
 }

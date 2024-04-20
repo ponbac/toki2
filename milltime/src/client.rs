@@ -1,9 +1,10 @@
-use std::str::FromStr;
-
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 
-use crate::{domain, milltime_url::MilltimeURL};
+use crate::{
+    domain::{self, DateFilter, TimerRegistrationFilter, TimerRegistrationPayload},
+    milltime_url::MilltimeURL,
+};
 
 use super::Credentials;
 
@@ -53,13 +54,39 @@ impl MilltimeClient {
         }
     }
 
+    async fn post<T: DeserializeOwned>(
+        &self,
+        url: impl AsRef<str>,
+        payload: impl serde::Serialize,
+    ) -> Result<T, MilltimeFetchError> {
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .post(url.as_ref())
+            .header("Cookie", self.credentials.as_cookie_header())
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
+
+        if resp.status() == 401 || resp.status() == 403 {
+            return Err(MilltimeFetchError::Unauthorized);
+        }
+
+        let resp_data = resp.json::<T>().await.map_err(|e| {
+            MilltimeFetchError::ParsingError(format!("Failed to parse response as JSON: {}", e))
+        })?;
+
+        Ok(resp_data)
+    }
+
     pub async fn fetch_time_period_info(
         &self,
         date_filter: DateFilter,
     ) -> Result<domain::TimePeriodInfo, MilltimeFetchError> {
         let url = MilltimeURL::new()
             .append_path("/data/store/TimeInfo")
-            .with_date_filter(&date_filter);
+            .with_filter(&date_filter);
 
         let time_period_info = self.fetch_single_row::<domain::TimePeriodInfo>(url).await?;
 
@@ -76,7 +103,7 @@ impl MilltimeClient {
     ) -> Result<domain::UserCalendar, MilltimeFetchError> {
         let url = MilltimeURL::new()
             .append_path("/data/store/UserCalendar")
-            .with_date_filter(&date_filter);
+            .with_filter(&date_filter);
 
         let raw_calendar = self
             .fetch_single_row::<domain::RawUserCalendar>(url)
@@ -91,6 +118,21 @@ impl MilltimeClient {
         Ok(domain::UserCalendar {
             weeks: transformed_weeks,
         })
+    }
+
+    pub async fn start_timer(
+        &self,
+        start_timer_options: domain::StartTimerOptions,
+    ) -> Result<(), MilltimeFetchError> {
+        let payload: TimerRegistrationPayload = start_timer_options.into();
+        let reg_timer_url_filter: TimerRegistrationFilter = (&payload).into();
+        let url = MilltimeURL::new()
+            .append_path("/data/store/TimerRegistration")
+            .with_filter(&reg_timer_url_filter);
+
+        let _response = self.post::<serde_json::Value>(url, payload).await?;
+
+        Ok(())
     }
 }
 
@@ -124,35 +166,5 @@ impl<T> MilltimeRowResponse<T> {
                 self.rows.len()
             )))
         }
-    }
-}
-
-pub struct DateFilter {
-    pub from: chrono::NaiveDate,
-    pub to: chrono::NaiveDate,
-}
-
-impl DateFilter {
-    pub fn new(from: chrono::NaiveDate, to: chrono::NaiveDate) -> Self {
-        Self { from, to }
-    }
-
-    pub fn as_milltime_filter(&self) -> String {
-        format!(
-            "[[\"fromDate\",\"=\",\"{}\"],[\"toDate\",\"=\",\"{}\"]]",
-            self.from, self.to
-        )
-    }
-}
-
-impl FromStr for DateFilter {
-    type Err = chrono::ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(',').collect();
-        let from = chrono::NaiveDate::parse_from_str(parts[0], "%Y-%m-%d")?;
-        let to = chrono::NaiveDate::parse_from_str(parts[1], "%Y-%m-%d")?;
-
-        Ok(Self { from, to })
     }
 }
