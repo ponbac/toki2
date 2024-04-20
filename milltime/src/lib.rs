@@ -1,12 +1,11 @@
 mod auth;
 mod client;
-pub mod domain;
+mod domain;
 mod milltime_url;
-
-pub(crate) use milltime_url::*;
 
 pub use auth::*;
 pub use client::*;
+pub use domain::{Day, TimeEntry, TimePeriodInfo, UserCalendar, Week};
 
 #[cfg(test)]
 mod tests {

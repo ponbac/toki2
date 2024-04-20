@@ -3,10 +3,7 @@ use std::str::FromStr;
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 
-use crate::{
-    domain::{self},
-    MilltimeURL,
-};
+use crate::{domain, milltime_url::MilltimeURL};
 
 use super::Credentials;
 
