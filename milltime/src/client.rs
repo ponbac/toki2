@@ -20,7 +20,7 @@ impl MilltimeClient {
         Self { credentials }
     }
 
-    async fn fetch<T: DeserializeOwned>(
+    async fn get<T: DeserializeOwned>(
         &self,
         url: impl AsRef<str>,
     ) -> Result<T, MilltimeFetchError> {
@@ -28,7 +28,7 @@ impl MilltimeClient {
 
         let resp = client
             .get(url.as_ref())
-            .header("Cookie", self.credentials.as_cookie_header())
+            .milltime_headers(&self.credentials)
             .send()
             .await
             .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
@@ -44,11 +44,11 @@ impl MilltimeClient {
         Ok(resp_data)
     }
 
-    async fn fetch_single_row<T: DeserializeOwned>(
+    async fn get_single_row<T: DeserializeOwned>(
         &self,
         url: impl AsRef<str>,
     ) -> Result<T, MilltimeFetchError> {
-        let response: MilltimeRowResponse<T> = self.fetch(url).await?;
+        let response: MilltimeRowResponse<T> = self.get(url).await?;
         match response.success {
             true => response.only_row(),
             false => Err(MilltimeFetchError::Other(
@@ -66,9 +66,7 @@ impl MilltimeClient {
 
         let resp = client
             .post(url.as_ref())
-            .header("Cookie", self.credentials.as_cookie_header())
-            .header("X-Csrf-Token", self.credentials.csrf_token.clone())
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .milltime_headers(&self.credentials)
             .json(&payload)
             .send()
             .await
@@ -91,10 +89,8 @@ impl MilltimeClient {
         payload: Option<impl serde::Serialize>,
     ) -> Result<T, MilltimeFetchError> {
         let mut client = reqwest::Client::new()
-        .put(url.as_ref())
-        .header("Cookie", self.credentials.as_cookie_header())
-        .header("X-Csrf-Token", self.credentials.csrf_token.clone())
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+            .put(url.as_ref())
+            .milltime_headers(&self.credentials);
 
         if let Some(payload) = payload {
             client = client.json(&payload);
@@ -124,9 +120,7 @@ impl MilltimeClient {
 
         let resp = client
             .delete(url.as_ref())
-            .header("Cookie", self.credentials.as_cookie_header())
-            .header("X-Csrf-Token", self.credentials.csrf_token.clone())
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .milltime_headers(&self.credentials)
             .send()
             .await
             .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
@@ -150,7 +144,7 @@ impl MilltimeClient {
             .append_path("/data/store/TimeInfo")
             .with_filter(&date_filter);
 
-        let time_period_info = self.fetch_single_row::<domain::TimePeriodInfo>(url).await?;
+        let time_period_info = self.get_single_row::<domain::TimePeriodInfo>(url).await?;
 
         Ok(domain::TimePeriodInfo {
             from: date_filter.from,
@@ -167,9 +161,7 @@ impl MilltimeClient {
             .append_path("/data/store/UserCalendar")
             .with_filter(&date_filter);
 
-        let raw_calendar = self
-            .fetch_single_row::<domain::RawUserCalendar>(url)
-            .await?;
+        let raw_calendar = self.get_single_row::<domain::RawUserCalendar>(url).await?;
 
         let transformed_weeks = raw_calendar
             .weeks
@@ -191,7 +183,7 @@ impl MilltimeClient {
             .with_filter(&search_filter);
 
         let project_search = self
-            .fetch::<MilltimeRowResponse<domain::ProjectSearchItem>>(url)
+            .get::<MilltimeRowResponse<domain::ProjectSearchItem>>(url)
             .await?;
 
         Ok(project_search.rows)
@@ -205,7 +197,7 @@ impl MilltimeClient {
             .append_path("/data/store/ProjectPhaseActivity")
             .with_filter(&activity_filter);
 
-        let root = self.fetch_single_row::<domain::ActivitiesRoot>(url).await?;
+        let root = self.get_single_row::<domain::ActivitiesRoot>(url).await?;
 
         Ok(root.activities)
     }
@@ -214,7 +206,7 @@ impl MilltimeClient {
         let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
 
         let timer = self
-            .fetch_single_row::<domain::TimerRegistration>(url)
+            .get_single_row::<domain::TimerRegistration>(url)
             .await?;
 
         Ok(timer)
@@ -263,6 +255,21 @@ impl MilltimeClient {
                 "milltime responded with success=false".to_string(),
             )),
         }
+    }
+}
+
+trait ReqwestBuilderExt
+where
+    Self: Sized,
+{
+    fn milltime_headers(self, credentials: &Credentials) -> Self;
+}
+
+impl ReqwestBuilderExt for reqwest::RequestBuilder {
+    fn milltime_headers(self, credentials: &Credentials) -> Self {
+        self.header("Cookie", credentials.as_cookie_header())
+            .header("X-Csrf-Token", credentials.csrf_token.clone())
+            .header("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     }
 }
 
