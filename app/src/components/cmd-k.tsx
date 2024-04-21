@@ -120,5 +120,5 @@ function PRCommandGroup(props: { close: () => void }) {
 }
 
 function pullRequestValue(pr: PullRequest) {
-  return `${pr.id} ${pr.title} ${pr.repoName} ${pr.createdBy.displayName} ${pr.workItems.map((wi) => `#${wi.id}`).join(" ")}`;
+  return `!${pr.id} ${pr.title} ${pr.repoName} ${pr.createdBy.displayName} ${pr.workItems.map((wi) => `#${wi.id}`).join(" ")}`;
 }
