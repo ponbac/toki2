@@ -2,7 +2,10 @@ use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 
 use crate::{
-    domain::{self, DateFilter, TimerRegistrationFilter, TimerRegistrationPayload},
+    domain::{
+        self, ActivityFilter, DateFilter, ProjectSearchFilter, ProjectSearchItem,
+        TimerRegistrationFilter, TimerRegistrationPayload,
+    },
     milltime_url::MilltimeURL,
 };
 
@@ -120,6 +123,34 @@ impl MilltimeClient {
         Ok(domain::UserCalendar {
             weeks: transformed_weeks,
         })
+    }
+
+    pub async fn fetch_project_search(
+        &self,
+        search_filter: ProjectSearchFilter,
+    ) -> Result<Vec<domain::ProjectSearchItem>, MilltimeFetchError> {
+        let url = MilltimeURL::from_env()
+            .append_path("/data/store/ProjectSearchMT")
+            .with_filter(&search_filter);
+
+        let project_search = self
+            .fetch::<MilltimeRowResponse<domain::ProjectSearchItem>>(url)
+            .await?;
+
+        Ok(project_search.rows)
+    }
+
+    pub async fn fetch_activities(
+        &self,
+        activity_filter: ActivityFilter,
+    ) -> Result<Vec<domain::Activity>, MilltimeFetchError> {
+        let url = MilltimeURL::from_env()
+            .append_path("/data/store/ProjectPhaseActivity")
+            .with_filter(&activity_filter);
+
+        let root = self.fetch_single_row::<domain::ActivitiesRoot>(url).await?;
+
+        Ok(root.activities)
     }
 
     pub async fn start_timer(

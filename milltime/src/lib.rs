@@ -11,7 +11,7 @@ pub use domain::{Day, TimeEntry, TimePeriodInfo, UserCalendar, Week};
 mod tests {
     use tokio::sync::OnceCell;
 
-    use crate::domain::{DateFilter, StartTimerOptions};
+    use crate::domain::{ActivityFilter, DateFilter, ProjectSearchFilter, StartTimerOptions};
 
     use super::*;
     use std::{env, error::Error};
@@ -53,6 +53,32 @@ mod tests {
         let user_calendar = client.fetch_user_calendar(date_filter).await.unwrap();
 
         assert_eq!(user_calendar.weeks.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_project_search() {
+        let client = initialize_client().await;
+        let search_filter = ProjectSearchFilter::new("Overview".to_string());
+        let project_search = client.fetch_project_search(search_filter).await.unwrap();
+
+        println!("{:#?}", project_search);
+
+        assert!(!project_search.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_activities() {
+        let client = initialize_client().await;
+        let activity_filter = ActivityFilter::new(
+            "300000000000241970".to_string(),
+            "2024-04-15".to_string(),
+            "2024-04-21".to_string(),
+        );
+        let activities = client.fetch_activities(activity_filter).await.unwrap();
+
+        println!("{:#?}", activities);
+
+        assert!(!activities.is_empty());
     }
 
     #[tokio::test]
