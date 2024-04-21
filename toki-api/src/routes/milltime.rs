@@ -1,4 +1,9 @@
-use axum::{debug_handler, http::StatusCode, routing::post, Json, Router};
+use axum::{
+    extract::Path,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
 use axum_extra::extract::{cookie::Cookie, CookieJar};
 use serde::Deserialize;
 use tracing::instrument;
@@ -8,6 +13,8 @@ use crate::app_state::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/authenticate", post(authenticate))
+        .route("/projects", get(list_projects))
+        .route("/activities/:project_id", get(list_activities))
         .route("/timer", post(start_timer))
 }
 
@@ -19,7 +26,6 @@ struct AuthenticatePayload {
 }
 
 #[instrument(name = "authenticate")]
-#[debug_handler]
 async fn authenticate(
     jar: CookieJar,
     Json(body): Json<AuthenticatePayload>,
@@ -34,6 +40,41 @@ async fn authenticate(
         }
         Err(_) => Err((StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())),
     }
+}
+
+#[instrument(name = "list_projects")]
+async fn list_projects(
+    jar: CookieJar,
+) -> Result<Json<Vec<milltime::ProjectSearchItem>>, (StatusCode, String)> {
+    let milltime_client = jar.into_milltime_client().await;
+
+    let search_filter = milltime::ProjectSearchFilter::new("Overview".to_string());
+    let projects = milltime_client
+        .fetch_project_search(search_filter)
+        .await
+        .unwrap();
+
+    Ok(Json(projects))
+}
+
+#[instrument(name = "list_activities")]
+async fn list_activities(
+    Path(project_id): Path<String>,
+    jar: CookieJar,
+) -> Result<Json<Vec<milltime::Activity>>, (StatusCode, String)> {
+    let milltime_client = jar.into_milltime_client().await;
+
+    let activity_filter = milltime::ActivityFilter::new(
+        project_id,
+        "2024-04-15".to_string(),
+        "2024-04-21".to_string(),
+    );
+    let activities = milltime_client
+        .fetch_activities(activity_filter)
+        .await
+        .unwrap();
+
+    Ok(Json(activities))
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,13 +95,7 @@ async fn start_timer(
     jar: CookieJar,
     Json(body): Json<StartTimerPayload>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let user = jar.get("mt_user").expect("User cookie not found");
-    let pass = jar.get("mt_password").expect("Password cookie not found");
-
-    let credentials = milltime::Credentials::new(user.value(), pass.value())
-        .await
-        .expect("Invalid credentials");
-    let milltime_client = milltime::MilltimeClient::new(credentials);
+    let milltime_client = jar.into_milltime_client().await;
 
     let start_timer_options = milltime::StartTimerOptions::new(
         body.activity.clone(),
@@ -79,4 +114,20 @@ async fn start_timer(
         .unwrap();
 
     Ok(StatusCode::OK)
+}
+
+trait CookieJarExt {
+    async fn into_milltime_client(self) -> milltime::MilltimeClient;
+}
+
+impl CookieJarExt for CookieJar {
+    async fn into_milltime_client(self) -> milltime::MilltimeClient {
+        let user = self.get("mt_user").expect("User cookie not found");
+        let pass = self.get("mt_password").expect("Password cookie not found");
+
+        let credentials = milltime::Credentials::new(user.value(), pass.value())
+            .await
+            .expect("Invalid credentials");
+        milltime::MilltimeClient::new(credentials)
+    }
 }
