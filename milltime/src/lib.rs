@@ -82,6 +82,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fetch_timer() {
+        let client = initialize_client().await;
+        let timer_result = client.fetch_timer().await;
+
+        match timer_result {
+            Ok(timer) => {
+                println!("{:#?}", timer);
+            }
+            Err(e) => {
+                println!("{:?}", e);
+                panic!("Failed to fetch timer");
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn test_start_timer() {
         let client = initialize_client().await;
         let options: StartTimerOptions = StartTimerOptions {
@@ -90,10 +106,23 @@ mod tests {
             project_id: "300000000000241970".to_string(),
             project_name: "Ex-Change Parts - Quote Manager".to_string(),
             user_id: "104".to_string(),
+            user_note: Some("Testing".to_string()),
             reg_day: "2024-04-20".to_string(),
             week_number: 16,
         };
 
         client.start_timer(options).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_stop_timer() {
+        let client = initialize_client().await;
+        client.stop_timer().await.expect("Failed to stop timer")
+    }
+
+    #[tokio::test]
+    async fn test_save_timer() {
+        let client = initialize_client().await;
+        client.save_timer().await.expect("Failed to save timer")
     }
 }

@@ -3,8 +3,8 @@ use thiserror::Error;
 
 use crate::{
     domain::{
-        self, ActivityFilter, DateFilter, ProjectSearchFilter, ProjectSearchItem,
-        TimerRegistrationFilter, TimerRegistrationPayload,
+        self, ActivityFilter, DateFilter, ProjectSearchFilter, TimerRegistrationFilter,
+        TimerRegistrationPayload,
     },
     milltime_url::MilltimeURL,
 };
@@ -70,6 +70,63 @@ impl MilltimeClient {
             .header("X-Csrf-Token", self.credentials.csrf_token.clone())
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
             .json(&payload)
+            .send()
+            .await
+            .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
+
+        if resp.status() == 401 || resp.status() == 403 {
+            return Err(MilltimeFetchError::Unauthorized);
+        }
+
+        let resp_data = resp.json::<T>().await.map_err(|e| {
+            MilltimeFetchError::ParsingError(format!("Failed to parse response as JSON: {}", e))
+        })?;
+
+        Ok(resp_data)
+    }
+
+    async fn put<T: DeserializeOwned>(
+        &self,
+        url: impl AsRef<str>,
+        payload: Option<impl serde::Serialize>,
+    ) -> Result<T, MilltimeFetchError> {
+        let mut client = reqwest::Client::new()
+        .put(url.as_ref())
+        .header("Cookie", self.credentials.as_cookie_header())
+        .header("X-Csrf-Token", self.credentials.csrf_token.clone())
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+
+        if let Some(payload) = payload {
+            client = client.json(&payload);
+        }
+
+        let resp = client
+            .send()
+            .await
+            .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
+
+        if resp.status() == 401 || resp.status() == 403 {
+            return Err(MilltimeFetchError::Unauthorized);
+        }
+
+        let resp_data = resp.json::<T>().await.map_err(|e| {
+            MilltimeFetchError::ParsingError(format!("Failed to parse response as JSON: {}", e))
+        })?;
+
+        Ok(resp_data)
+    }
+
+    async fn delete<T: DeserializeOwned>(
+        &self,
+        url: impl AsRef<str>,
+    ) -> Result<T, MilltimeFetchError> {
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .delete(url.as_ref())
+            .header("Cookie", self.credentials.as_cookie_header())
+            .header("X-Csrf-Token", self.credentials.csrf_token.clone())
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
             .send()
             .await
             .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
@@ -153,6 +210,16 @@ impl MilltimeClient {
         Ok(root.activities)
     }
 
+    pub async fn fetch_timer(&self) -> Result<domain::TimerRegistration, MilltimeFetchError> {
+        let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
+
+        let timer = self
+            .fetch_single_row::<domain::TimerRegistration>(url)
+            .await?;
+
+        Ok(timer)
+    }
+
     pub async fn start_timer(
         &self,
         start_timer_options: domain::StartTimerOptions,
@@ -166,6 +233,36 @@ impl MilltimeClient {
         let _response = self.post::<serde_json::Value>(url, payload).await?;
 
         Ok(())
+    }
+
+    pub async fn stop_timer(&self) -> Result<(), MilltimeFetchError> {
+        let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
+
+        let response = self
+            .delete::<MilltimeRowResponse<serde_json::Value>>(url)
+            .await?;
+
+        match response.success {
+            true => Ok(()),
+            false => Err(MilltimeFetchError::Other(
+                "milltime responded with success=false".to_string(),
+            )),
+        }
+    }
+
+    pub async fn save_timer(&self) -> Result<(), MilltimeFetchError> {
+        let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
+
+        let result = self
+            .put::<MilltimeRowResponse<serde_json::Value>>(url, None::<serde_json::Value>)
+            .await?;
+
+        match result.success {
+            true => Ok(()),
+            false => Err(MilltimeFetchError::Other(
+                "milltime responded with success=false".to_string(),
+            )),
+        }
     }
 }
 
