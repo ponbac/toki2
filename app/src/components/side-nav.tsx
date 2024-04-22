@@ -28,7 +28,7 @@ const MENU_ITEMS = [
     label: "",
     icon: GitPullRequest,
     variant: "ghost",
-    to: "/prs",
+    to: "/prs/",
   },
   {
     title: "Commits",
@@ -42,7 +42,7 @@ const MENU_ITEMS = [
     label: "",
     icon: FolderGit2,
     variant: "ghost",
-    to: "/repositories",
+    to: "/repositories/",
   },
 ] as const satisfies readonly {
   title: string;
