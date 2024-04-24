@@ -80,7 +80,7 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
                   }}
                 />
               ))}
-              <Tooltip disableHoverableContent={false}>
+              <Tooltip>
                 <TooltipTrigger>
                   <span className="text-nowrap hover:underline">
                     +{row.original.workItems.length - nWorkItemsToShow}
