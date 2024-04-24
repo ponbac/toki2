@@ -38,7 +38,7 @@ async fn authenticate(
                 .add(Cookie::new("mt_password", body.password.clone()));
             Ok((jar, StatusCode::OK))
         }
-        Err(_) => Err((StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())),
+        Err(_) => Err((StatusCode::BAD_REQUEST, "Invalid credentials".to_string())),
     }
 }
 
