@@ -10,6 +10,7 @@ type LinkData = {
 
 type WorkItemLinkProps<T extends LinkData> = {
   data: T;
+  text?: string;
   tooltip?: string;
   className?: string;
 };
@@ -17,6 +18,7 @@ type WorkItemLinkProps<T extends LinkData> = {
 // https://dev.azure.com/ex-change-part/Quote%20Manager/hexagon/_workitems/edit/1489
 export function WorkItemLink<T extends LinkData>({
   data,
+  text,
   tooltip,
   className,
 }: WorkItemLinkProps<T>) {
@@ -30,6 +32,7 @@ export function WorkItemLink<T extends LinkData>({
         onClick={(e) => e.stopPropagation()}
       >
         #{data.id}
+        {text && ` - ${text}`}
       </a>
     </ConditionalTooltip>
   );
