@@ -1,5 +1,10 @@
 import { AzureAvatar } from "@/components/azure-avatar";
 import { PRLink } from "@/components/pr-link";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { WorkItemLink } from "@/components/work-item-link";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
@@ -36,7 +41,7 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
       return (
         <div className="flex flex-row items-center justify-center gap-2 xl:justify-start">
           <AzureAvatar user={row.original.createdBy} />
-          <span className="hidden xl:block text-nowrap">
+          <span className="hidden text-nowrap xl:block">
             {row.original.createdBy.displayName}
           </span>
         </div>
@@ -47,18 +52,59 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     accessorKey: "workItems",
     header: "Work Items",
     cell: ({ row }) => {
+      const nWorkItemsToShow = 2;
+
       return (
-        <div className="flex flex-row items-center gap-2">
-          {row.original.workItems.map((wi) => (
-            <WorkItemLink
-              key={wi.id}
-              tooltip={wi.title}
-              data={{
-                ...row.original,
-                id: wi.id,
-              }}
-            />
-          ))}
+        <div className="flex flex-row items-center gap-1">
+          {row.original.workItems.length < 3 ? (
+            row.original.workItems.map((wi) => (
+              <WorkItemLink
+                key={wi.id}
+                tooltip={wi.title}
+                data={{
+                  ...row.original,
+                  id: wi.id,
+                }}
+              />
+            ))
+          ) : (
+            // map the first two work items, then ... with tooltip showing the rest
+            <>
+              {row.original.workItems.slice(0, nWorkItemsToShow).map((wi) => (
+                <WorkItemLink
+                  key={wi.id}
+                  tooltip={wi.title}
+                  data={{
+                    ...row.original,
+                    id: wi.id,
+                  }}
+                />
+              ))}
+              <Tooltip disableHoverableContent={false}>
+                <TooltipTrigger>
+                  <span className="text-nowrap hover:underline">
+                    +{row.original.workItems.length - nWorkItemsToShow}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <div className="flex flex-col gap-1">
+                    {row.original.workItems
+                      .slice(nWorkItemsToShow)
+                      .map((wi) => (
+                        <WorkItemLink
+                          key={wi.id}
+                          text={wi.title}
+                          data={{
+                            ...row.original,
+                            id: wi.id,
+                          }}
+                        />
+                      ))}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </>
+          )}
         </div>
       );
     },
