@@ -1,7 +1,7 @@
 use axum::{
     extract::Path,
     http::StatusCode,
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use axum_extra::extract::{cookie::Cookie, CookieJar};
@@ -16,6 +16,8 @@ pub fn router() -> Router<AppState> {
         .route("/projects", get(list_projects))
         .route("/activities/:project_id", get(list_activities))
         .route("/timer", post(start_timer))
+        .route("/timer", delete(stop_timer))
+        .route("/timer", put(save_timer))
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +114,24 @@ async fn start_timer(
         .start_timer(start_timer_options)
         .await
         .unwrap();
+
+    Ok(StatusCode::OK)
+}
+
+#[instrument(name = "stop_timer")]
+async fn stop_timer(jar: CookieJar) -> Result<StatusCode, (StatusCode, String)> {
+    let milltime_client = jar.into_milltime_client().await;
+
+    milltime_client.stop_timer().await.unwrap();
+
+    Ok(StatusCode::OK)
+}
+
+#[instrument(name = "save_timer")]
+async fn save_timer(jar: CookieJar) -> Result<StatusCode, (StatusCode, String)> {
+    let milltime_client = jar.into_milltime_client().await;
+
+    milltime_client.save_timer().await.unwrap();
 
     Ok(StatusCode::OK)
 }
