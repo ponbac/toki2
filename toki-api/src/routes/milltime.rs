@@ -14,7 +14,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/authenticate", post(authenticate))
         .route("/projects", get(list_projects))
-        .route("/activities/:project_id", get(list_activities))
+        .route("/projects/:project_id/activities", get(list_activities))
         .route("/timer", post(start_timer))
         .route("/timer", delete(stop_timer))
         .route("/timer", put(save_timer))

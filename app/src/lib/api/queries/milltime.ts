@@ -8,6 +8,14 @@ export const milltimeQueries = {
       queryFn: async () =>
         api.get("milltime/projects").json<Array<ProjectSearchItem>>(),
     }),
+  listActivities: (projectId: string) =>
+    queryOptions({
+      queryKey: ["milltime", "activities", projectId],
+      queryFn: async () =>
+        api
+          .get(`milltime/projects/${projectId}/activities`)
+          .json<Array<Activity>>(),
+    }),
 };
 
 export type ProjectSearchItem = {
@@ -22,4 +30,24 @@ export type ProjectSearchItem = {
   customer_names: string;
   is_member: boolean;
   is_leader: boolean;
+};
+
+export type Activity = {
+  userId: string;
+  projectId: string;
+  activity: string;
+  activityName: string;
+  variationId: unknown;
+  absenceType: unknown;
+  phaseId: string;
+  phaseName: string;
+  requireNote: boolean | null;
+  phaseOrder: number;
+  isFavorite: boolean;
+  projPlanDescription: unknown;
+  planningTaskId: unknown;
+  planningTaskName: unknown;
+  name: string;
+  timeDistributionType: unknown;
+  planningType: number;
 };
