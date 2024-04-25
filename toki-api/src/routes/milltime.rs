@@ -54,7 +54,10 @@ async fn list_projects(
     let projects = milltime_client
         .fetch_project_search(search_filter)
         .await
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .filter(|project| project.is_member)
+        .collect();
 
     Ok(Json(projects))
 }

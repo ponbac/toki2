@@ -36,8 +36,7 @@ function MilltimeComponent() {
 
   const { data: projects } = useQuery({
     ...milltimeQueries.listProjects(),
-    // enabled: isAuthenticated,
-    enabled: false,
+    enabled: isAuthenticated,
   });
 
   return (
