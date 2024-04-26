@@ -10,6 +10,7 @@ import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
 import { ReactNode } from "react";
+import { CopySlashIcon, PickaxeIcon } from "lucide-react";
 
 export const pullRequestColumns: ColumnDef<PullRequest>[] = [
   {
@@ -27,10 +28,22 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     cell: ({ row }) => {
       const initialChars = row.original.title.slice(0, 60);
       return (
-        <span className="text-nowrap">
-          {initialChars.trimEnd()}
-          {initialChars.length < row.original.title.length ? "..." : ""}
-        </span>
+        <div className="flex flex-row items-center gap-2">
+          <span className="text-nowrap">
+            {initialChars.trimEnd()}
+            {initialChars.length < row.original.title.length ? "..." : ""}
+          </span>
+          {row.original.isDraft && (
+            <StatusIcon tooltip="Draft">
+              <PickaxeIcon className="size-5 text-blue-400" />
+            </StatusIcon>
+          )}
+          {row.original.mergeStatus === "conflicts" && (
+            <StatusIcon tooltip="Merge conflicts">
+              <CopySlashIcon className="size-5 text-red-400" />
+            </StatusIcon>
+          )}
+        </div>
       );
     },
   },
@@ -150,3 +163,14 @@ export const pullRequestColumns: ColumnDef<PullRequest>[] = [
     ),
   },
 ];
+
+function StatusIcon(props: { tooltip: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger>{props.children}</TooltipTrigger>
+      <TooltipContent>
+        <span>{props.tooltip}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
