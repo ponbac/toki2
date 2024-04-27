@@ -1,3 +1,4 @@
+use crate::repositories::RepoRepository;
 use std::time::Duration;
 
 use axum::{
@@ -35,17 +36,17 @@ struct Differ {
     last_updated: Option<OffsetDateTime>,
     refresh_interval: Option<Duration>,
     followed: bool,
+    is_invalid: bool,
 }
 
-#[instrument(name = "get_differs", skip(auth_session, app_state))]
+#[instrument(name = "get_differs", skip(user, app_state))]
 async fn get_differs(
-    auth_session: AuthSession,
+    AuthSession { user, .. }: AuthSession,
     State(app_state): State<AppState>,
 ) -> Json<Vec<Differ>> {
-    let user_id = auth_session.user.expect("user not found").id;
     let user_repo = app_state.user_repo.clone();
     let followed_repos = user_repo
-        .followed_repositories(user_id)
+        .followed_repositories(user.expect("user should not be None").id)
         .await
         .expect("Failed to query followed repos");
 
@@ -65,7 +66,28 @@ async fn get_differs(
             last_updated,
             refresh_interval,
             followed: followed_repos.contains(&key),
+            is_invalid: false,
         });
+    }
+
+    let repositories_repo = app_state.repository_repo.clone();
+    let all_repos = repositories_repo
+        .get_repositories()
+        .await
+        .expect("Failed to query all repos");
+    // add repos not found in differs, meaning no client is created for them
+    for repo in all_repos {
+        let key = RepoKey::new(&repo.organization, &repo.project, &repo.repo_name);
+        if !differ_dtos.iter().any(|d| d.key == key) {
+            differ_dtos.push(Differ {
+                key: key.clone(),
+                status: RepoDifferStatus::Errored,
+                last_updated: None,
+                refresh_interval: None,
+                followed: followed_repos.contains(&key),
+                is_invalid: true,
+            });
+        }
     }
 
     Json(differ_dtos)

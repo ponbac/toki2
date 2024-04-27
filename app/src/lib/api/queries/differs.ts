@@ -20,4 +20,5 @@ export type Differ = {
     secs: number;
     nanos: number;
   } | null;
+  isInvalid: boolean;
 };

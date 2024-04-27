@@ -83,7 +83,10 @@ function RepositoriesComponent() {
             filteredData.map((differ) => (
               <Card
                 key={`${toRepoKeyString(differ)}-${dataUpdatedAt}`}
-                className="flex w-[25rem] flex-col justify-between"
+                className={cn(
+                  "flex h-56 w-[25rem] flex-col justify-between",
+                  differ.isInvalid && "border border-destructive",
+                )}
               >
                 <CardHeader className="flex w-full flex-row items-start justify-between">
                   <div className="flex flex-col gap-1 overflow-hidden">
@@ -130,17 +133,26 @@ function RepositoriesComponent() {
                       {differ.status}
                     </span>
                   </CardDescription>
-                  <CardDescription>
-                    Fetch Interval:{" "}
-                    {differ.refreshInterval
-                      ? `${differ.refreshInterval.secs} seconds`
-                      : "None"}
-                  </CardDescription>
-                  <LastUpdated differ={differ} />
+                  {differ.isInvalid ? (
+                    <CardDescription>
+                      Could not create an Azure DevOps connection. Add the
+                      repository to Toki again with a new PAT.
+                    </CardDescription>
+                  ) : (
+                    <>
+                      <CardDescription>
+                        Fetch Interval:{" "}
+                        {differ.refreshInterval
+                          ? `${differ.refreshInterval.secs} seconds`
+                          : "None"}
+                      </CardDescription>
+                      <LastUpdated differ={differ} />
+                    </>
+                  )}
                 </CardContent>
                 <CardFooter className="flex flex-row-reverse gap-2">
                   <FooterButton
-                    disabled={differ.status === "Running"}
+                    disabled={differ.status === "Running" || differ.isInvalid}
                     onClick={() => startDiffer(differ)}
                   >
                     <PlayCircle size="1.25rem" />
@@ -148,7 +160,7 @@ function RepositoriesComponent() {
                   </FooterButton>
                   <FooterButton
                     variant="outline"
-                    disabled={differ.status === "Stopped"}
+                    disabled={differ.status === "Stopped" || differ.isInvalid}
                     onClick={() => stopDiffer(differ)}
                   >
                     <PauseCircle size="1.25rem" />
