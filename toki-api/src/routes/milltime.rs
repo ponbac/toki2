@@ -27,7 +27,7 @@ struct AuthenticatePayload {
     password: String,
 }
 
-#[instrument(name = "authenticate")]
+#[instrument(name = "authenticate", skip(jar))]
 async fn authenticate(
     jar: CookieJar,
     Json(body): Json<AuthenticatePayload>,
@@ -49,7 +49,7 @@ async fn authenticate(
     }
 }
 
-#[instrument(name = "list_projects")]
+#[instrument(name = "list_projects", skip(jar))]
 async fn list_projects(
     jar: CookieJar,
 ) -> Result<Json<Vec<milltime::ProjectSearchItem>>, (StatusCode, String)> {
@@ -67,7 +67,7 @@ async fn list_projects(
     Ok(Json(projects))
 }
 
-#[instrument(name = "list_activities")]
+#[instrument(name = "list_activities", skip(jar))]
 async fn list_activities(
     Path(project_id): Path<String>,
     jar: CookieJar,
@@ -100,7 +100,7 @@ struct StartTimerPayload {
     week_number: i64,
 }
 
-#[instrument(name = "start_timer")]
+#[instrument(name = "start_timer", skip(jar))]
 async fn start_timer(
     jar: CookieJar,
     Json(body): Json<StartTimerPayload>,
@@ -126,7 +126,7 @@ async fn start_timer(
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "stop_timer")]
+#[instrument(name = "stop_timer", skip(jar))]
 async fn stop_timer(jar: CookieJar) -> Result<StatusCode, (StatusCode, String)> {
     let milltime_client = jar.into_milltime_client().await;
 
@@ -135,7 +135,7 @@ async fn stop_timer(jar: CookieJar) -> Result<StatusCode, (StatusCode, String)> 
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "save_timer")]
+#[instrument(name = "save_timer", skip(jar))]
 async fn save_timer(jar: CookieJar) -> Result<StatusCode, (StatusCode, String)> {
     let milltime_client = jar.into_milltime_client().await;
 
@@ -151,7 +151,10 @@ trait CookieJarExt {
 impl CookieJarExt for CookieJar {
     async fn into_milltime_client(self) -> milltime::MilltimeClient {
         let credentials = match self.clone().try_into() {
-            Ok(c) => c,
+            Ok(c) => {
+                tracing::debug!("using existing milltime credentials");
+                c
+            }
             Err(_) => {
                 let user = self.get("mt_user").expect("User cookie not found");
                 let pass = self.get("mt_password").expect("Password cookie not found");
