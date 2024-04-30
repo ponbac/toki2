@@ -111,6 +111,7 @@ impl Credentials {
                 format!("{COOKIE_PREFIX}_CSRFToken"),
                 self.csrf_token.clone(),
             ))
+            .expires(self.valid_until.map(|t| t.into()))
             .same_site(SameSite::Lax)
             .path("/")
             .secure(true)
@@ -120,6 +121,7 @@ impl Credentials {
                 format!("{COOKIE_PREFIX}_milltimeinstanceid"),
                 "000224.1".to_string(),
             ))
+            .expires(self.valid_until.map(|t| t.into()))
             .same_site(SameSite::Lax)
             .path("/")
             .secure(false)

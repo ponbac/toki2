@@ -40,7 +40,7 @@ async fn authenticate(
                 .add(Cookie::new("mt_password", body.password.clone()));
             // TODO: real domain
             // for cookie in creds.auth_cookies(".ponbac.xyz") {
-            for cookie in creds.auth_cookies("127.0.0.1") {
+            for cookie in creds.auth_cookies("localhost") {
                 jar = jar.add(cookie);
             }
             Ok((jar, StatusCode::OK))
