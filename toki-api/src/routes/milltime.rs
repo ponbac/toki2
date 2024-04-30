@@ -34,10 +34,15 @@ async fn authenticate(
 ) -> Result<(CookieJar, StatusCode), (StatusCode, String)> {
     let credentials = milltime::Credentials::new(&body.username, &body.password).await;
     match credentials {
-        Ok(_creds) => {
-            let jar = jar
+        Ok(creds) => {
+            let mut jar = jar
                 .add(Cookie::new("mt_user", body.username.clone()))
                 .add(Cookie::new("mt_password", body.password.clone()));
+            // TODO: real domain
+            // for cookie in creds.auth_cookies(".ponbac.xyz") {
+            for cookie in creds.auth_cookies("127.0.0.1") {
+                jar = jar.add(cookie);
+            }
             Ok((jar, StatusCode::OK))
         }
         Err(_) => Err((StatusCode::BAD_REQUEST, "Invalid credentials".to_string())),
@@ -145,12 +150,17 @@ trait CookieJarExt {
 
 impl CookieJarExt for CookieJar {
     async fn into_milltime_client(self) -> milltime::MilltimeClient {
-        let user = self.get("mt_user").expect("User cookie not found");
-        let pass = self.get("mt_password").expect("Password cookie not found");
+        let credentials = match self.clone().try_into() {
+            Ok(c) => c,
+            Err(_) => {
+                let user = self.get("mt_user").expect("User cookie not found");
+                let pass = self.get("mt_password").expect("Password cookie not found");
+                milltime::Credentials::new(user.value(), pass.value())
+                    .await
+                    .expect("Invalid credentials")
+            }
+        };
 
-        let credentials = milltime::Credentials::new(user.value(), pass.value())
-            .await
-            .expect("Invalid credentials");
         milltime::MilltimeClient::new(credentials)
     }
 }

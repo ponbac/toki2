@@ -27,23 +27,25 @@ pub enum IntoCredentialsError {
     ExpiredSessionId,
 }
 
+static COOKIE_PREFIX: &str = "mt";
+
 impl TryFrom<CookieJar> for Credentials {
     type Error = IntoCredentialsError;
 
     fn try_from(jar: CookieJar) -> Result<Credentials, Self::Error> {
         let milltime_credentials = Credentials {
             username: None,
-            csrf_token: if let Some(c) = jar.get("CSRFToken") {
+            csrf_token: if let Some(c) = jar.get(&format!("{COOKIE_PREFIX}_CSRFToken")) {
                 c.value().to_string()
             } else {
                 return Err(IntoCredentialsError::MissingCSRFToken);
             },
-            session_id: if let Some(c) = jar.get("milltimesessionid") {
+            session_id: if let Some(c) = jar.get(&format!("{COOKIE_PREFIX}_milltimesessionid")) {
                 c.value().to_string()
             } else {
                 return Err(IntoCredentialsError::MissingSessionId);
             },
-            valid_until: if let Some(c) = jar.get("milltimesessionid") {
+            valid_until: if let Some(c) = jar.get(&format!("{COOKIE_PREFIX}_milltimesessionid")) {
                 c.expires_datetime().map(|t| t.into())
             } else {
                 None
@@ -103,38 +105,36 @@ impl Credentials {
         })
     }
 
-    pub fn auth_cookies(&self) -> Vec<Cookie<'static>> {
-        // TODO: TEMP!
-        // check if APP_ENVIRONMENT is set to production
-        let in_production = env::var("APP_ENVIRONMENT")
-            .map(|s| s == "production")
-            .unwrap_or(false);
-        let domain = if in_production {
-            ".ponbac.xyz"
-        } else {
-            "127.0.0.1"
-        };
-
+    pub fn auth_cookies(&self, domain: &'static str) -> Vec<Cookie<'static>> {
         vec![
-            Cookie::build(("CSRFToken", self.csrf_token.clone()))
-                .same_site(SameSite::Lax)
-                .path("/")
-                .secure(true)
-                .domain(domain)
-                .build(),
-            Cookie::build(("milltimeinstanceid", "000224.1".to_string()))
-                .same_site(SameSite::Lax)
-                .path("/")
-                .secure(false)
-                .domain(domain)
-                .build(),
-            Cookie::build(("milltimesessionid", self.session_id.clone()))
-                .expires(self.valid_until.map(|t| t.into()))
-                .same_site(SameSite::Lax)
-                .path("/")
-                .secure(true)
-                .domain(domain)
-                .build(),
+            Cookie::build((
+                format!("{COOKIE_PREFIX}_CSRFToken"),
+                self.csrf_token.clone(),
+            ))
+            .same_site(SameSite::Lax)
+            .path("/")
+            .secure(true)
+            .domain(domain)
+            .build(),
+            Cookie::build((
+                format!("{COOKIE_PREFIX}_milltimeinstanceid"),
+                "000224.1".to_string(),
+            ))
+            .same_site(SameSite::Lax)
+            .path("/")
+            .secure(false)
+            .domain(domain)
+            .build(),
+            Cookie::build((
+                format!("{COOKIE_PREFIX}_milltimesessionid"),
+                self.session_id.clone(),
+            ))
+            .expires(self.valid_until.map(|t| t.into()))
+            .same_site(SameSite::Lax)
+            .path("/")
+            .secure(true)
+            .domain(domain)
+            .build(),
         ]
     }
 
