@@ -1,5 +1,6 @@
 use axum::{
-    extract::Path,
+    debug_handler,
+    extract::{Path, State},
     http::StatusCode,
     routing::{delete, get, post, put},
     Json, Router,
@@ -27,20 +28,22 @@ struct AuthenticatePayload {
     password: String,
 }
 
-#[instrument(name = "authenticate", skip(jar))]
+#[instrument(name = "authenticate", skip(jar, app_state))]
+#[debug_handler]
 async fn authenticate(
+    State(app_state): State<AppState>,
     jar: CookieJar,
     Json(body): Json<AuthenticatePayload>,
 ) -> Result<(CookieJar, StatusCode), (StatusCode, String)> {
     let credentials = milltime::Credentials::new(&body.username, &body.password).await;
     match credentials {
         Ok(creds) => {
+            let AppState { app_url, .. } = app_state;
+            let domain = app_url.host_str().unwrap_or("localhost").to_string();
             let mut jar = jar
                 .add(Cookie::new("mt_user", body.username.clone()))
                 .add(Cookie::new("mt_password", body.password.clone()));
-            // TODO: real domain
-            // for cookie in creds.auth_cookies(".ponbac.xyz") {
-            for cookie in creds.auth_cookies("localhost") {
+            for cookie in creds.auth_cookies(domain) {
                 jar = jar.add(cookie);
             }
             Ok((jar, StatusCode::OK))

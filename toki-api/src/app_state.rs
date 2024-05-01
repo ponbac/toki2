@@ -11,6 +11,7 @@ use tokio::sync::{
     mpsc::{self, Sender},
     Mutex, RwLock,
 };
+use url::Url;
 use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
@@ -41,7 +42,7 @@ impl IntoResponse for AppStateError {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub app_url: String,
+    pub app_url: Url,
     pub db_pool: Arc<PgPool>,
     pub user_repo: Arc<UserRepositoryImpl>,
     pub repository_repo: Arc<RepoRepositoryImpl>,
@@ -107,7 +108,7 @@ impl AppState {
             .collect::<HashMap<_, _>>();
 
         Self {
-            app_url,
+            app_url: Url::parse(&app_url).expect("Invalid app URL"),
             db_pool: Arc::new(db_pool.clone()),
             user_repo: Arc::new(UserRepositoryImpl::new(db_pool.clone())),
             repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),

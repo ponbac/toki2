@@ -105,7 +105,7 @@ impl Credentials {
         })
     }
 
-    pub fn auth_cookies(&self, domain: &'static str) -> Vec<Cookie<'static>> {
+    pub fn auth_cookies(&self, domain: String) -> Vec<Cookie<'static>> {
         vec![
             Cookie::build((
                 format!("{COOKIE_PREFIX}_CSRFToken"),
@@ -115,7 +115,7 @@ impl Credentials {
             .same_site(SameSite::Lax)
             .path("/")
             .secure(true)
-            .domain(domain)
+            .domain(domain.clone())
             .build(),
             Cookie::build((
                 format!("{COOKIE_PREFIX}_milltimeinstanceid"),
@@ -125,7 +125,7 @@ impl Credentials {
             .same_site(SameSite::Lax)
             .path("/")
             .secure(false)
-            .domain(domain)
+            .domain(domain.clone())
             .build(),
             Cookie::build((
                 format!("{COOKIE_PREFIX}_milltimesessionid"),
