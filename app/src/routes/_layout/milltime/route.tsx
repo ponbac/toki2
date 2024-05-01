@@ -1,6 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { milltimeQueries } from "@/lib/api/queries/milltime";
-import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -16,6 +14,8 @@ import {
   useMilltimeIsAuthenticated,
   useMilltimeIsAuthenticating,
 } from "@/hooks/useMilltimeContext";
+import { useMilltimeData } from "@/hooks/useMilltimeData";
+import React from "react";
 
 export const Route = createFileRoute("/_layout/milltime")({
   component: MilltimeComponent,
@@ -26,9 +26,10 @@ function MilltimeComponent() {
   const isAuthenticated = useMilltimeIsAuthenticated();
   const isAuthenticating = useMilltimeIsAuthenticating();
 
-  const { data: projects } = useQuery({
-    ...milltimeQueries.listProjects(),
-    enabled: isAuthenticated,
+  const [activeProjectId, setActiveProjectId] = React.useState<string>();
+
+  const { projects, activities } = useMilltimeData({
+    projectId: activeProjectId,
   });
 
   return (
@@ -85,7 +86,15 @@ function MilltimeComponent() {
       )}
       <ul>
         {projects?.map((project) => (
-          <li key={project.id}>{project.project_name}</li>
+          <li
+            key={project.id}
+            onClick={() => setActiveProjectId(project.project_id)}
+          >
+            {project.project_name}
+          </li>
+        ))}
+        {activities?.map((activity) => (
+          <li key={activity.projectId}>{activity.activityName}</li>
         ))}
       </ul>
     </div>
