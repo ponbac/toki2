@@ -38,8 +38,11 @@ async fn authenticate(
     let credentials = milltime::Credentials::new(&body.username, &body.password).await;
     match credentials {
         Ok(creds) => {
-            let AppState { app_url, .. } = app_state;
-            let domain = app_url.host_str().unwrap_or("localhost").to_string();
+            let domain = app_state
+                .app_url
+                .host_str()
+                .unwrap_or("localhost")
+                .to_string();
             let mut jar = jar
                 .add(Cookie::new("mt_user", body.username.clone()))
                 .add(Cookie::new("mt_password", body.password.clone()));
