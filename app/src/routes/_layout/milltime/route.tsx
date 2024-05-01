@@ -1,5 +1,3 @@
-import React from "react";
-import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { createFileRoute } from "@tanstack/react-router";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
@@ -13,26 +11,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  useMilltimeActions,
+  useMilltimeIsAuthenticated,
+  useMilltimeIsAuthenticating,
+} from "@/hooks/useMilltimeContext";
 
 export const Route = createFileRoute("/_layout/milltime")({
   component: MilltimeComponent,
 });
 
 function MilltimeComponent() {
-  const [isAuthenticated, setIsAuthenticated] = React.useState(() =>
-    isMilltimeCookiesPresent(),
-  );
-
-  const { mutate: authenticate, isPending: isAuthenticating } =
-    milltimeMutations.useAuthenticate({
-      onSuccess: () => {
-        setIsAuthenticated(true);
-      },
-      onError: () => {
-        setIsAuthenticated(false);
-        clearMilltimeCookies();
-      },
-    });
+  const { authenticate } = useMilltimeActions();
+  const isAuthenticated = useMilltimeIsAuthenticated();
+  const isAuthenticating = useMilltimeIsAuthenticating();
 
   const { data: projects } = useQuery({
     ...milltimeQueries.listProjects(),
@@ -98,14 +90,4 @@ function MilltimeComponent() {
       </ul>
     </div>
   );
-}
-
-function isMilltimeCookiesPresent() {
-  return document.cookie.includes("mt_user");
-}
-
-function clearMilltimeCookies() {
-  document.cookie = "mt_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  document.cookie =
-    "mt_password=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
 }
