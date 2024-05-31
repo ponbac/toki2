@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename(serialize = "camelCase"))]
+#[serde(rename_all(serialize = "camelCase"))]
 pub struct ProjectSearchItem {
     pub id: i64,
     #[serde(rename(deserialize = "userid"))]

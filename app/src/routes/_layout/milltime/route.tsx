@@ -86,9 +86,9 @@ function MilltimeComponent() {
         {projects?.map((project) => (
           <li
             key={project.id}
-            onClick={() => setActiveProjectId(project.project_id)}
+            onClick={() => setActiveProjectId(project.projectId)}
           >
-            {project.project_name}
+            {project.projectName}
           </li>
         ))}
         {activities?.map((activity) => (

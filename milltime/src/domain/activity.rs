@@ -9,7 +9,7 @@ pub struct ActivitiesRoot {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename(serialize = "camelCase"))]
+#[serde(rename_all(serialize = "camelCase"))]
 pub struct Activity {
     #[serde(rename(deserialize = "userid"))]
     pub user_id: String,

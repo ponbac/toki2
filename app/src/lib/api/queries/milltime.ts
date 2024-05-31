@@ -20,16 +20,16 @@ export const milltimeQueries = {
 
 export type ProjectSearchItem = {
   id: number;
-  user_id: string;
-  project_id: string;
-  project_name: string;
-  project_nr: unknown;
-  leader_name: string;
-  planning_type: number;
-  is_favorite: boolean;
-  customer_names: string;
-  is_member: boolean;
-  is_leader: boolean;
+  userId: string;
+  projectId: string;
+  projectName: string;
+  projectNr: unknown;
+  leaderName: string;
+  planningType: number;
+  isFavorite: boolean;
+  customerNames: string;
+  isMember: boolean;
+  isLeader: boolean;
 };
 
 export type Activity = {
