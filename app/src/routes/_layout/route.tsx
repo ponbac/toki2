@@ -1,5 +1,6 @@
 import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
+import { MilltimeTimer } from "@/components/milltime-timer";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -33,6 +34,7 @@ function LayoutComponent() {
         </SideNavWrapper>
         <Toaster />
         <CmdK />
+        <MilltimeTimer />
       </MilltimeStoreProvider>
     </TooltipProvider>
   );

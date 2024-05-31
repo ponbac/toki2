@@ -5,9 +5,11 @@ import { type StoreApi, create, useStore } from "zustand";
 type MilltimeStore = {
   isAuthenticated: boolean;
   isAuthenticating: boolean;
+  timerVisible: boolean;
   actions: {
     authenticate: (credentials: { username: string; password: string }) => void;
     reset: () => void;
+    setTimerVisible: (visible: boolean) => void;
   };
 };
 
@@ -26,6 +28,7 @@ export const MilltimeStoreProvider = ({
     create<MilltimeStore>()((set) => ({
       isAuthenticated: isMilltimeCookiesPresent(),
       isAuthenticating: false,
+      timerVisible: false,
       actions: {
         authenticate: (credentials) => {
           set({ isAuthenticating: true });
@@ -52,6 +55,9 @@ export const MilltimeStoreProvider = ({
           set({ isAuthenticated: false, isAuthenticating: false });
           clearMilltimeCookies();
         },
+        setTimerVisible: (visible) => {
+          set({ timerVisible: visible });
+        },
       },
     })),
   );
@@ -77,15 +83,21 @@ export const useMilltimeIsAuthenticated = () =>
   useMilltimeStore((state) => state.isAuthenticated);
 export const useMilltimeIsAuthenticating = () =>
   useMilltimeStore((state) => state.isAuthenticating);
+export const useMilltimeIsTimerVisible = () =>
+  useMilltimeStore((state) => state.timerVisible);
 export const useMilltimeActions = () =>
   useMilltimeStore((state) => state.actions);
 
 function isMilltimeCookiesPresent() {
-  return document.cookie.includes("mt_user");
+  return document.cookie.includes("mt_milltimesessionid");
 }
 
 function clearMilltimeCookies() {
   document.cookie = "mt_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   document.cookie =
     "mt_password=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  document.cookie =
+    "mt_milltimesessionid=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+  document.cookie =
+    "mt_CSRFToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
 }

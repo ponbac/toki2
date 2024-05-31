@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   useMilltimeActions,
-  useMilltimeIsAuthenticated,
   useMilltimeIsAuthenticating,
 } from "@/hooks/useMilltimeContext";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
@@ -22,13 +21,12 @@ export const Route = createFileRoute("/_layout/milltime")({
 });
 
 function MilltimeComponent() {
-  const { authenticate } = useMilltimeActions();
-  const isAuthenticated = useMilltimeIsAuthenticated();
+  const { authenticate, setTimerVisible } = useMilltimeActions();
   const isAuthenticating = useMilltimeIsAuthenticating();
 
   const [activeProjectId, setActiveProjectId] = React.useState<string>();
 
-  const { projects, activities } = useMilltimeData({
+  const { projects, activities, isAuthenticated } = useMilltimeData({
     projectId: activeProjectId,
   });
 
@@ -97,6 +95,7 @@ function MilltimeComponent() {
           <li key={activity.projectId}>{activity.activityName}</li>
         ))}
       </ul>
+      <Button onClick={() => setTimerVisible(true)}>Open Timer</Button>
     </div>
   );
 }
