@@ -50,7 +50,13 @@ export const MilltimeTimerDialog = (props: {
   });
 
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+    <Dialog
+      open={props.open}
+      onOpenChange={(open) => {
+        props.onOpenChange(open);
+        resetForm();
+      }}
+    >
       <DialogContent>
         <form
           className="flex flex-col gap-4"
@@ -127,6 +133,7 @@ export const MilltimeTimerDialog = (props: {
               variant="default"
               size="sm"
               className="flex gap-2"
+              disabled={!projectId || !activityId}
             >
               <PlayCircleIcon className="size-5" />
               Start
