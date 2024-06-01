@@ -47,7 +47,7 @@ pub struct TimerRegistration {
     #[serde(rename(deserialize = "requirenote"))]
     pub require_note: Value,
     #[serde(rename(deserialize = "favoritetype"))]
-    pub favorite_type: i64,
+    pub favorite_type: Option<i64>,
     #[serde(rename(deserialize = "projectnr"))]
     pub project_nr: Value,
     #[serde(rename(deserialize = "hours"))]
@@ -215,7 +215,7 @@ pub struct TimerProjectRegistration {
     #[serde(rename(deserialize = "requirenote"))]
     pub require_note: Value,
     #[serde(rename(deserialize = "favoritetype"))]
-    pub favorite_type: i64,
+    pub favorite_type: Option<i64>,
     #[serde(rename(deserialize = "projectnr"))]
     pub project_nr: Value,
     pub hours: i64,

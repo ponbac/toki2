@@ -30,7 +30,7 @@ export const MilltimeTimer = () => {
     <>
       <div
         className={cn(
-          "fixed right-4 top-4 w-[300px] rounded-lg bg-white p-4 shadow-lg dark:bg-gray-900",
+          "fixed right-4 top-4 w-[340px] rounded-lg bg-white p-4 shadow-lg dark:bg-gray-900",
           {
             "w-fit px-2 py-1": isMinimized,
           },
@@ -47,7 +47,9 @@ export const MilltimeTimer = () => {
                   },
                 )}
               >
-                {timer?.hours}:{timer?.minutes}:{timer?.seconds}
+                {String(timer?.hours ?? 0).padStart(2, "0")}:
+                {String(timer?.minutes ?? 0).padStart(2, "0")}:
+                {String(timer?.seconds ?? 0).padStart(2, "0")}
               </div>
               <div
                 className={cn("flex items-center space-x-2", {
@@ -98,6 +100,8 @@ export const MilltimeTimer = () => {
               <Input
                 type="text"
                 placeholder="Add a note..."
+                value={timer?.userNote}
+                disabled
                 className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50"
               />
             </div>
