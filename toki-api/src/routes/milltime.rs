@@ -16,6 +16,7 @@ pub fn router() -> Router<AppState> {
         .route("/authenticate", post(authenticate))
         .route("/projects", get(list_projects))
         .route("/projects/:project_id/activities", get(list_activities))
+        .route("/timer", get(get_timer))
         .route("/timer", post(start_timer))
         .route("/timer", delete(stop_timer))
         .route("/timer", put(save_timer))
@@ -91,6 +92,17 @@ async fn list_activities(
         .unwrap();
 
     Ok(Json(activities))
+}
+
+#[instrument(name = "get_timer", skip(jar))]
+async fn get_timer(
+    jar: CookieJar,
+) -> Result<Json<milltime::TimerRegistration>, (StatusCode, String)> {
+    let milltime_client = jar.into_milltime_client().await;
+
+    let timer = milltime_client.fetch_timer().await.unwrap();
+
+    Ok(Json(timer))
 }
 
 #[derive(Debug, Deserialize)]

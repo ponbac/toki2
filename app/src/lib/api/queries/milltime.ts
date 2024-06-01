@@ -16,6 +16,41 @@ export const milltimeQueries = {
           .get(`milltime/projects/${projectId}/activities`)
           .json<Array<Activity>>(),
     }),
+  getTimer: () =>
+    queryOptions({
+      queryKey: ["milltime", "timer"],
+      queryFn: async () => api.get("milltime/timer").json<Timer>(),
+    }),
+};
+
+export type Timer = {
+  timerRegistrationId: string;
+  projectRegistrationId: string;
+  userId: string;
+  projectId: string;
+  activity: string;
+  phaseId: string;
+  planningTaskId: unknown;
+  startTime: string;
+  userNote: string;
+  ticketData: unknown;
+  internalNote: unknown;
+  typeOf: unknown;
+  attendanceLogId: string;
+  variationId: unknown;
+  projTimeHh: unknown;
+  projTimeMm: unknown;
+  difference: string;
+  projectName: string;
+  activityName: string;
+  attributeValue: unknown;
+  requireNote: unknown;
+  favoriteType: number;
+  projectNr: unknown;
+  hours: number;
+  seconds: number;
+  minutes: number;
+  projectRegistration: unknown;
 };
 
 export type ProjectSearchItem = {
