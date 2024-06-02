@@ -1,8 +1,9 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { z } from "zod";
 import { useMilltimeActions } from "@/hooks/useMilltimeContext";
+import { milltimeQueries } from "../queries/milltime";
 
 export const milltimeMutations = {
   useAuthenticate,
@@ -23,6 +24,7 @@ function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
 }
 
 function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
+  const queryClient = useQueryClient();
   const { reset } = useMilltimeActions();
   return useMutation({
     mutationKey: ["milltime", "startTimer"],
@@ -31,6 +33,12 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
         json: body,
       }),
     ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.getTimer().queryKey,
+      });
+      options?.onSuccess?.(data, v, c);
+    },
     onError: (e, v, c) => {
       reset();
       options?.onError?.(e, v, c);
@@ -39,11 +47,18 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
 }
 
 function useStopTimer(options?: DefaultMutationOptions<void>) {
+  const queryClient = useQueryClient();
   const { reset } = useMilltimeActions();
   return useMutation({
     mutationKey: ["milltime", "stopTimer"],
     mutationFn: () => api.delete("milltime/timer"),
     ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.getTimer().queryKey,
+      });
+      options?.onSuccess?.(data, v, c);
+    },
     onError: (e, v, c) => {
       reset();
       options?.onError?.(e, v, c);
@@ -52,11 +67,18 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
 }
 
 function useSaveTimer(options?: DefaultMutationOptions<void>) {
+  const queryClient = useQueryClient();
   const { reset } = useMilltimeActions();
   return useMutation({
     mutationKey: ["milltime", "saveTimer"],
     mutationFn: () => api.put("milltime/timer"),
     ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.getTimer().queryKey,
+      });
+      options?.onSuccess?.(data, v, c);
+    },
     onError: (e, v, c) => {
       reset();
       options?.onError?.(e, v, c);
