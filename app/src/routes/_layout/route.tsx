@@ -1,10 +1,15 @@
 import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { MilltimeTimer } from "@/components/milltime-timer";
+import { MilltimeTimerDialog } from "@/components/milltime-timer-dialog";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { MilltimeStoreProvider } from "@/hooks/useMilltimeContext";
+import {
+  MilltimeStoreProvider,
+  useMilltimeActions,
+  useMilltimeNewTimerDialogOpen,
+} from "@/hooks/useMilltimeContext";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
 
@@ -34,9 +39,24 @@ function LayoutComponent() {
         </SideNavWrapper>
         <Toaster />
         <CmdK />
-        <MilltimeTimer />
+        <MilltimeTimerProvider />
       </MilltimeStoreProvider>
     </TooltipProvider>
+  );
+}
+
+function MilltimeTimerProvider() {
+  const newTimerDialogOpen = useMilltimeNewTimerDialogOpen();
+  const { setNewTimerDialogOpen } = useMilltimeActions();
+
+  return (
+    <>
+      <MilltimeTimer />
+      <MilltimeTimerDialog
+        open={newTimerDialogOpen}
+        onOpenChange={setNewTimerDialogOpen}
+      />
+    </>
   );
 }
 

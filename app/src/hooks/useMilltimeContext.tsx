@@ -1,15 +1,24 @@
+/* eslint-disable react-refresh/only-export-components */
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import React from "react";
 import { type StoreApi, create, useStore } from "zustand";
 
+type Timer = {
+  visible: boolean;
+  state: "running" | "stopped" | undefined;
+  timeSeconds: number | null;
+};
+
 type MilltimeStore = {
   isAuthenticated: boolean;
   isAuthenticating: boolean;
-  timerVisible: boolean;
+  timer: Timer;
+  newTimerDialogOpen: boolean;
   actions: {
     authenticate: (credentials: { username: string; password: string }) => void;
     reset: () => void;
-    setTimerVisible: (visible: boolean) => void;
+    setTimer: (timer: Partial<Timer>) => void;
+    setNewTimerDialogOpen: (open: boolean) => void;
   };
 };
 
@@ -28,7 +37,12 @@ export const MilltimeStoreProvider = ({
     create<MilltimeStore>()((set) => ({
       isAuthenticated: isMilltimeCookiesPresent(),
       isAuthenticating: false,
-      timerVisible: false,
+      timer: {
+        visible: false,
+        state: undefined,
+        timeSeconds: null,
+      },
+      newTimerDialogOpen: false,
       actions: {
         authenticate: (credentials) => {
           set({ isAuthenticating: true });
@@ -52,11 +66,26 @@ export const MilltimeStoreProvider = ({
           );
         },
         reset: () => {
-          set({ isAuthenticated: false, isAuthenticating: false });
+          set({
+            isAuthenticated: false,
+            isAuthenticating: false,
+            timer: {
+              visible: false,
+              state: undefined,
+              timeSeconds: null,
+            },
+          });
           clearMilltimeCookies();
         },
-        setTimerVisible: (visible) => {
-          set({ timerVisible: visible });
+        setTimer: (timer) =>
+          set((state) => ({
+            timer: {
+              ...state.timer,
+              ...timer,
+            },
+          })),
+        setNewTimerDialogOpen: (open) => {
+          set({ newTimerDialogOpen: open });
         },
       },
     })),
@@ -83,8 +112,9 @@ export const useMilltimeIsAuthenticated = () =>
   useMilltimeStore((state) => state.isAuthenticated);
 export const useMilltimeIsAuthenticating = () =>
   useMilltimeStore((state) => state.isAuthenticating);
-export const useMilltimeIsTimerVisible = () =>
-  useMilltimeStore((state) => state.timerVisible);
+export const useMilltimeTimer = () => useMilltimeStore((state) => state.timer);
+export const useMilltimeNewTimerDialogOpen = () =>
+  useMilltimeStore((state) => state.newTimerDialogOpen);
 export const useMilltimeActions = () =>
   useMilltimeStore((state) => state.actions);
 

@@ -1,4 +1,3 @@
-import { useMilltimeIsTimerVisible } from "@/hooks/useMilltimeContext";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
 import { MilltimeTimerDialog } from "./milltime-timer-dialog";
 import React from "react";
@@ -13,26 +12,79 @@ import { Input } from "./ui/input";
 import { cn } from "@/lib/utils";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
+import {
+  useMilltimeActions,
+  useMilltimeTimer,
+} from "@/hooks/useMilltimeContext";
 
 export const MilltimeTimer = () => {
   const { isAuthenticated } = useMilltimeData();
-  const visible = useMilltimeIsTimerVisible();
+  const { setTimer } = useMilltimeActions();
+  const { visible, timeSeconds, state: timerState } = useMilltimeTimer();
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [isMinimized, setIsMinimized] = React.useState(false);
 
-  const { data: timer } = useQuery({
+  const { data: timer, error: timerFetchError } = useQuery({
     ...milltimeQueries.getTimer(),
-    refetchInterval: 5000,
+    enabled: timerState === "running" || timerState === undefined,
+    refetchInterval: 60 * 1000,
   });
 
-  return !visible ? (
+  // Sync local timer with fetched timer
+  React.useEffect(() => {
+    if (timer) {
+      const totalSeconds =
+        timer.seconds + timer.minutes * 60 + timer.hours * 3600;
+
+      setTimer({
+        visible: true,
+        state: "running",
+        timeSeconds: totalSeconds,
+      });
+    }
+  }, [timer?.seconds, timer?.minutes, timer?.hours, timer, setTimer]);
+
+  // Make it tick
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (timerState === "running") {
+      interval = setInterval(() => {
+        setTimer({
+          timeSeconds: (timeSeconds ?? 0) + 1,
+        });
+      }, 1000);
+
+      return () => clearInterval(interval!);
+    } else {
+      if (interval) {
+        clearInterval(interval);
+      }
+    }
+  }, [timeSeconds, timerState, setTimer]);
+
+  // If the timer could not be fetched, it is probably not active
+  React.useEffect(() => {
+    if (timerFetchError) {
+      setTimer({
+        visible: false,
+        state: "stopped",
+        timeSeconds: null,
+      });
+    }
+  }, [timerFetchError, setTimer]);
+
+  const { hours, minutes, seconds } = secondsToHoursMinutesSeconds(
+    timeSeconds ?? 0,
+  );
+
+  return visible ? (
     <>
       <div
         className={cn(
           "fixed right-4 top-4 w-[340px] rounded-lg bg-white p-4 shadow-lg dark:bg-gray-900",
           {
-            "w-fit px-2 py-1": isMinimized,
+            "w-fit min-w-[170px] px-2 py-1": isMinimized,
           },
         )}
       >
@@ -47,9 +99,7 @@ export const MilltimeTimer = () => {
                   },
                 )}
               >
-                {String(timer?.hours ?? 0).padStart(2, "0")}:
-                {String(timer?.minutes ?? 0).padStart(2, "0")}:
-                {String(timer?.seconds ?? 0).padStart(2, "0")}
+                {hours}:{minutes}:{seconds}
               </div>
               <div
                 className={cn("flex items-center space-x-2", {
@@ -116,3 +166,15 @@ export const MilltimeTimer = () => {
     </>
   ) : null;
 };
+
+function secondsToHoursMinutesSeconds(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+
+  return {
+    hours: String(hours).padStart(2, "0"),
+    minutes: String(minutes).padStart(2, "0"),
+    seconds: String(remainingSeconds).padStart(2, "0"),
+  };
+}

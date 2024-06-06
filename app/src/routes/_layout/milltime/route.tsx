@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_layout/milltime")({
 });
 
 function MilltimeComponent() {
-  const { authenticate, setTimerVisible } = useMilltimeActions();
+  const { authenticate, setNewTimerDialogOpen } = useMilltimeActions();
   const isAuthenticating = useMilltimeIsAuthenticating();
 
   const [activeProjectId, setActiveProjectId] = React.useState<string>();
@@ -95,7 +95,7 @@ function MilltimeComponent() {
           <li key={activity.projectId}>{activity.activityName}</li>
         ))}
       </ul>
-      <Button onClick={() => setTimerVisible(true)}>Open Timer</Button>
+      <Button onClick={() => setNewTimerDialogOpen(true)}>New Timer</Button>
     </div>
   );
 }

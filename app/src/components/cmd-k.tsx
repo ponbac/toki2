@@ -11,9 +11,15 @@ import { useQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
 import { useNavigate } from "@tanstack/react-router";
 import { AzureAvatar } from "./azure-avatar";
-import { Activity, FolderGit2, GitPullRequestIcon } from "lucide-react";
+import {
+  Activity,
+  FolderGit2,
+  GitPullRequestIcon,
+  TimerIcon,
+} from "lucide-react";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { useMilltimeActions } from "@/hooks/useMilltimeContext";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -38,6 +44,7 @@ export function CmdK() {
       <CommandList className="max-w-2xl">
         <CommandEmpty>No results found.</CommandEmpty>
         <PagesCommandGroup close={close} />
+        <ActionsCommandGroup close={close} />
         <PRCommandGroup close={close} />
       </CommandList>
     </CommandDialog>
@@ -71,6 +78,26 @@ function PagesCommandGroup(props: { close: () => void }) {
           </div>
         </CommandItem>
       ))}
+    </CommandGroup>
+  );
+}
+
+function ActionsCommandGroup(props: { close: () => void }) {
+  const { setNewTimerDialogOpen } = useMilltimeActions();
+
+  return (
+    <CommandGroup heading="Actions">
+      <CommandItem
+        onSelect={() => {
+          setNewTimerDialogOpen(true);
+          props.close();
+        }}
+      >
+        <div className="flex flex-row items-center gap-2">
+          <TimerIcon className="h-1 w-1" />
+          Start a new timer
+        </div>
+      </CommandItem>
     </CommandGroup>
   );
 }

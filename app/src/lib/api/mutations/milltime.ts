@@ -25,7 +25,8 @@ function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
 
 function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
   const queryClient = useQueryClient();
-  const { reset } = useMilltimeActions();
+  const { reset, setTimer } = useMilltimeActions();
+
   return useMutation({
     mutationKey: ["milltime", "startTimer"],
     mutationFn: (body: StartTimerPayload) =>
@@ -37,6 +38,12 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.getTimer().queryKey,
       });
+      setTimer({
+        state: "running",
+        visible: true,
+        timeSeconds: 0,
+      });
+
       options?.onSuccess?.(data, v, c);
     },
     onError: (e, v, c) => {
@@ -48,7 +55,8 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
 
 function useStopTimer(options?: DefaultMutationOptions<void>) {
   const queryClient = useQueryClient();
-  const { reset } = useMilltimeActions();
+  const { reset, setTimer } = useMilltimeActions();
+
   return useMutation({
     mutationKey: ["milltime", "stopTimer"],
     mutationFn: () => api.delete("milltime/timer"),
@@ -57,6 +65,11 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.getTimer().queryKey,
       });
+      setTimer({
+        state: "stopped",
+        timeSeconds: null,
+      });
+
       options?.onSuccess?.(data, v, c);
     },
     onError: (e, v, c) => {
@@ -68,7 +81,8 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
 
 function useSaveTimer(options?: DefaultMutationOptions<void>) {
   const queryClient = useQueryClient();
-  const { reset } = useMilltimeActions();
+  const { reset, setTimer } = useMilltimeActions();
+
   return useMutation({
     mutationKey: ["milltime", "saveTimer"],
     mutationFn: () => api.put("milltime/timer"),
@@ -77,6 +91,12 @@ function useSaveTimer(options?: DefaultMutationOptions<void>) {
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.getTimer().queryKey,
       });
+      setTimer({
+        visible: false,
+        state: "stopped",
+        timeSeconds: null,
+      });
+
       options?.onSuccess?.(data, v, c);
     },
     onError: (e, v, c) => {
