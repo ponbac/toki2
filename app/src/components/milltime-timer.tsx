@@ -82,14 +82,14 @@ export const MilltimeTimer = () => {
     <>
       <div
         className={cn(
-          "fixed right-4 top-4 w-[340px] rounded-lg bg-white p-4 shadow-lg dark:bg-gray-900",
+          "fixed right-4 top-4 w-[360px] rounded-lg bg-white p-4 shadow-lg dark:bg-gray-900",
           {
             "w-fit min-w-[170px] px-2 py-1": isMinimized,
           },
         )}
       >
         {isAuthenticated ? (
-          <div className="flex flex-col items-center justify-between space-y-4">
+          <div className="flex flex-col items-center justify-between space-y-1">
             <div className="flex w-full items-center justify-between gap-2">
               <div
                 className={cn(
@@ -143,17 +143,27 @@ export const MilltimeTimer = () => {
               </div>
             </div>
             <div
-              className={cn("w-full", {
+              className={cn("flex w-full flex-col gap-2", {
                 hidden: isMinimized,
               })}
             >
-              <Input
-                type="text"
-                placeholder="Add a note..."
-                value={timer?.userNote}
-                disabled
-                className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50"
-              />
+              <div className="flex w-full flex-col">
+                <h2 className="text-sm">{timer?.projectName}</h2>
+                <h3 className="text-xs">{timer?.activityName}</h3>
+              </div>
+              <div
+                className={cn("w-full", {
+                  hidden: isMinimized,
+                })}
+              >
+                <Input
+                  type="text"
+                  placeholder="Add a note..."
+                  value={timer?.userNote}
+                  disabled
+                  className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50"
+                />
+              </div>
             </div>
           </div>
         ) : (
