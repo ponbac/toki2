@@ -1,4 +1,3 @@
-import { useMilltimeData } from "@/hooks/useMilltimeData";
 import React from "react";
 import { Button } from "./ui/button";
 import {
@@ -18,7 +17,6 @@ import {
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 
 export const MilltimeTimer = () => {
-  const { isAuthenticated } = useMilltimeData();
   const { setTimer } = useMilltimeActions();
   const { visible, timeSeconds, state: timerState } = useMilltimeTimer();
 
@@ -92,95 +90,89 @@ export const MilltimeTimer = () => {
           },
         )}
       >
-        {isAuthenticated ? (
-          <div className="flex flex-col items-center justify-between space-y-1">
-            <div className="flex w-full items-center justify-between gap-2">
-              <div
-                className={cn(
-                  "text-4xl font-bold tracking-tighter text-gray-900 dark:text-gray-50",
-                  {
-                    "text-2xl": isMinimized,
-                  },
-                )}
-              >
-                {hours}:{minutes}:{seconds}
-              </div>
-              <div
-                className={cn("flex items-center space-x-2", {
-                  hidden: isMinimized,
-                })}
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => saveTimer()}
-                  disabled={isSavingTimer || isStoppingTimer}
-                >
-                  <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                  <span className="sr-only">Save</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => stopTimer()}
-                  disabled={isSavingTimer || isStoppingTimer}
-                >
-                  <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                  <span className="sr-only">Delete</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsMinimized(true)}
-                >
-                  <Minimize2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                  <span className="sr-only">Minimize</span>
-                </Button>
-              </div>
-              <div
-                className={cn("hidden", {
-                  flex: isMinimized,
-                })}
-              >
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsMinimized(false)}
-                >
-                  <Maximize2Icon className="size-4 text-gray-500 dark:text-gray-400" />
-                  <span className="sr-only">Maximize</span>
-                </Button>
-              </div>
+        <div className="flex flex-col items-center justify-between space-y-1">
+          <div className="flex w-full items-center justify-between gap-2">
+            <div
+              className={cn(
+                "text-4xl font-bold tracking-tighter text-gray-900 dark:text-gray-50",
+                {
+                  "text-2xl": isMinimized,
+                },
+              )}
+            >
+              {hours}:{minutes}:{seconds}
             </div>
             <div
-              className={cn("flex w-full flex-col gap-2", {
+              className={cn("flex items-center space-x-2", {
                 hidden: isMinimized,
               })}
             >
-              <div className="flex w-full flex-col">
-                <h2 className="text-sm">{timer?.projectName}</h2>
-                <h3 className="text-xs">{timer?.activityName}</h3>
-              </div>
-              <div
-                className={cn("w-full", {
-                  hidden: isMinimized,
-                })}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => saveTimer()}
+                disabled={isSavingTimer || isStoppingTimer}
               >
-                <Input
-                  type="text"
-                  placeholder="Add a note..."
-                  value={timer?.userNote}
-                  disabled
-                  className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50"
-                />
-              </div>
+                <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                <span className="sr-only">Save</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => stopTimer()}
+                disabled={isSavingTimer || isStoppingTimer}
+              >
+                <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                <span className="sr-only">Delete</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsMinimized(true)}
+              >
+                <Minimize2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                <span className="sr-only">Minimize</span>
+              </Button>
+            </div>
+            <div
+              className={cn("hidden", {
+                flex: isMinimized,
+              })}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsMinimized(false)}
+              >
+                <Maximize2Icon className="size-4 text-gray-500 dark:text-gray-400" />
+                <span className="sr-only">Maximize</span>
+              </Button>
             </div>
           </div>
-        ) : (
-          <h1 className="text-balance">
-            You need to be authenticated to Milltime to use the timer.
-          </h1>
-        )}
+          <div
+            className={cn("flex w-full flex-col gap-2", {
+              hidden: isMinimized,
+            })}
+          >
+            <div className="flex w-full flex-col">
+              <h2 className="text-sm">{timer?.projectName}</h2>
+              <h3 className="text-xs">{timer?.activityName}</h3>
+            </div>
+            <div
+              className={cn("w-full", {
+                hidden: isMinimized,
+              })}
+            >
+              <Input
+                type="text"
+                placeholder="Add a note..."
+                value={timer?.userNote}
+                disabled
+                className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50"
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </>
   ) : null;
