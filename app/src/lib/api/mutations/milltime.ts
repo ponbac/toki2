@@ -66,6 +66,7 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
         queryKey: milltimeQueries.getTimer().queryKey,
       });
       setTimer({
+        visible: false,
         state: "stopped",
         timeSeconds: null,
       });

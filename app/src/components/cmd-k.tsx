@@ -86,15 +86,20 @@ function PagesCommandGroup(props: { close: () => void }) {
 }
 
 function ActionsCommandGroup(props: { close: () => void }) {
-  const { setNewTimerDialogOpen } = useMilltimeActions();
+  const { setNewTimerDialogOpen, setLoginDialogOpen } = useMilltimeActions();
   const isAuthenticatedToMilltime = useMilltimeIsAuthenticated();
 
   return (
     <CommandGroup heading="Actions">
       <CommandItem
         onSelect={() => {
-          setNewTimerDialogOpen(true);
-          props.close();
+          if (isAuthenticatedToMilltime) {
+            setNewTimerDialogOpen(true);
+            props.close();
+          } else {
+            setLoginDialogOpen(true);
+            props.close();
+          }
         }}
       >
         <div className="flex flex-row items-center gap-2">
