@@ -1,12 +1,11 @@
 import { useMilltimeData } from "@/hooks/useMilltimeData";
-import { MilltimeTimerDialog } from "./milltime-timer-dialog";
 import React from "react";
 import { Button } from "./ui/button";
 import {
   Maximize2Icon,
   Minimize2Icon,
-  PauseIcon,
-  PlayIcon,
+  SaveIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { Input } from "./ui/input";
 import { cn } from "@/lib/utils";
@@ -16,13 +15,13 @@ import {
   useMilltimeActions,
   useMilltimeTimer,
 } from "@/hooks/useMilltimeContext";
+import { milltimeMutations } from "@/lib/api/mutations/milltime";
 
 export const MilltimeTimer = () => {
   const { isAuthenticated } = useMilltimeData();
   const { setTimer } = useMilltimeActions();
   const { visible, timeSeconds, state: timerState } = useMilltimeTimer();
 
-  const [dialogOpen, setDialogOpen] = React.useState(false);
   const [isMinimized, setIsMinimized] = React.useState(false);
 
   const { data: timer, error: timerFetchError } = useQuery({
@@ -30,6 +29,11 @@ export const MilltimeTimer = () => {
     enabled: timerState === "running" || timerState === undefined,
     refetchInterval: 60 * 1000,
   });
+
+  const { mutate: stopTimer, isPending: isStoppingTimer } =
+    milltimeMutations.useStopTimer();
+  const { mutate: saveTimer, isPending: isSavingTimer } =
+    milltimeMutations.useSaveTimer();
 
   // Sync local timer with fetched timer
   React.useEffect(() => {
@@ -109,14 +113,20 @@ export const MilltimeTimer = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setDialogOpen(true)}
+                  onClick={() => saveTimer()}
+                  disabled={isSavingTimer || isStoppingTimer}
                 >
-                  <PlayIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                  <span className="sr-only">Start</span>
+                  <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                  <span className="sr-only">Save</span>
                 </Button>
-                <Button variant="ghost" size="icon">
-                  <PauseIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                  <span className="sr-only">Stop</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => stopTimer()}
+                  disabled={isSavingTimer || isStoppingTimer}
+                >
+                  <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                  <span className="sr-only">Delete</span>
                 </Button>
                 <Button
                   variant="ghost"
@@ -172,7 +182,6 @@ export const MilltimeTimer = () => {
           </h1>
         )}
       </div>
-      <MilltimeTimerDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </>
   ) : null;
 };
