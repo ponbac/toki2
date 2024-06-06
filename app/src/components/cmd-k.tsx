@@ -19,7 +19,10 @@ import {
 } from "lucide-react";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import { useMilltimeActions } from "@/hooks/useMilltimeContext";
+import {
+  useMilltimeActions,
+  useMilltimeIsAuthenticated,
+} from "@/hooks/useMilltimeContext";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -84,6 +87,7 @@ function PagesCommandGroup(props: { close: () => void }) {
 
 function ActionsCommandGroup(props: { close: () => void }) {
   const { setNewTimerDialogOpen } = useMilltimeActions();
+  const isAuthenticatedToMilltime = useMilltimeIsAuthenticated();
 
   return (
     <CommandGroup heading="Actions">
