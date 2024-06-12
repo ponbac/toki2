@@ -75,7 +75,6 @@ export const MilltimeTimerDialog = (props: {
               activityName: activity.activityName,
               projectId: project.projectId,
               projectName: project.projectName,
-              userId: "104", // TODO: Get from auth!
               userNote: note,
               regDay: dayjs().format("YYYY-MM-DD"),
               weekNumber: getWeekNumber(new Date()),

@@ -44,6 +44,7 @@ async fn authenticate(
                 .host_str()
                 .unwrap_or("localhost")
                 .to_string();
+            // TODO: use secure cookies!
             let mut jar = jar
                 .add(Cookie::new("mt_user", body.username.clone()))
                 .add(Cookie::new("mt_password", body.password.clone()));
@@ -112,7 +113,6 @@ struct StartTimerPayload {
     activity_name: String,
     project_id: String,
     project_name: String,
-    user_id: String,
     user_note: Option<String>,
     reg_day: String,
     week_number: i64,
@@ -130,7 +130,7 @@ async fn start_timer(
         body.activity_name.clone(),
         body.project_id.clone(),
         body.project_name.clone(),
-        body.user_id.clone(),
+        milltime_client.user_id().to_string(),
         body.user_note.clone(),
         body.reg_day.clone(),
         body.week_number,

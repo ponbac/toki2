@@ -93,6 +93,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
     <CommandGroup heading="Actions">
       <CommandItem
         onSelect={() => {
+          // TODO: should probably extract this to some kind of guard hook
           if (isAuthenticatedToMilltime) {
             setNewTimerDialogOpen(true);
             props.close();

@@ -1,9 +1,10 @@
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use axum_extra::extract::CookieJar;
+use base64::prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::multipart::Form;
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
 use std::time::SystemTime;
@@ -14,6 +15,7 @@ pub struct Credentials {
     pub username: Option<String>,
     pub csrf_token: String,
     pub session_id: String,
+    pub user_id: String,
     pub valid_until: Option<SystemTime>,
 }
 
@@ -42,6 +44,13 @@ impl TryFrom<CookieJar> for Credentials {
             },
             session_id: if let Some(c) = jar.get(&format!("{COOKIE_PREFIX}_milltimesessionid")) {
                 c.value().to_string()
+            } else {
+                return Err(IntoCredentialsError::MissingSessionId);
+            },
+            user_id: if let Some(c) = jar.get(&format!("{COOKIE_PREFIX}_milltimesessionid")) {
+                let (_, jwt_payload) =
+                    decode_session_id(c.value()).expect("Failed to decode session id");
+                jwt_payload.userid
             } else {
                 return Err(IntoCredentialsError::MissingSessionId);
             },
@@ -95,12 +104,14 @@ impl Credentials {
             .find(|c| c.name() == "milltimesessionid")
             .ok_or("milltimesessionid cookie not found")?;
         let session_id = session_id_cookie.value().to_string();
+        let (_, jwt_payload) = decode_session_id(&session_id)?;
         let valid_until = session_id_cookie.expires();
 
         Ok(Credentials {
             username: Some(username.to_string()),
             csrf_token,
             session_id,
+            user_id: jwt_payload.userid,
             valid_until,
         })
     }
@@ -172,4 +183,50 @@ async fn get_csrf_token() -> Result<String, Box<dyn Error>> {
     }
 
     Err("CSRFToken cookie not found".into())
+}
+
+fn decode_session_id(session_id: &str) -> Result<(JWTHeader, JWTPayload), Box<dyn Error>> {
+    let parts = session_id.split('.').take(2).collect::<Vec<&str>>();
+
+    let decoded_jwt_header = BASE64_STANDARD_NO_PAD.decode(parts[0])?;
+    let decoded_jwt_payload = BASE64_STANDARD_NO_PAD.decode(parts[1])?;
+    let jwt_header: JWTHeader = serde_json::from_slice(&decoded_jwt_header)?;
+    let jwt_payload: JWTPayload = serde_json::from_slice(&decoded_jwt_payload)?;
+
+    Ok((jwt_header, jwt_payload))
+}
+
+#[derive(Deserialize)]
+struct JWTHeader {
+    alg: String,
+    sub: String,
+    typ: String,
+}
+
+#[derive(Deserialize)]
+struct JWTPayload {
+    exp: u64,
+    iat: u64,
+    instancedb: String,
+    instanceid: String,
+    instancename: String,
+    ruserid: String,
+    sid: String,
+    sub: String,
+    userid: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_session_id() {
+        let session_id = "eyJhbGciOiJIUzUxMiIsInN1YiI6IjEwNCIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MjA3OTYwOTcsImlhdCI6MTcxODIwNDA5NywiaW5zdGFuY2VkYiI6Im1pbGx0aW1lX3NwaW5pdCIsImluc3RhbmNlaWQiOiIwMDAyMjQuMSIsImluc3RhbmNlbmFtZSI6IlNwaW5pdCIsInJ1c2VyaWQiOiIxMDQiLCJzaWQiOiIzNjRhZWI2MzY0ZjgzYjY5YWIyOWM2YjBkZTJhNTMyNjQxYjEiLCJzdWIiOiIxMDQiLCJ1c2VyaWQiOiIxMDQifQ.NPtN42xmLJF6wKZskup3sxN81jNkXuYDatrgCl0gIhOsvSv-cKpQcIesbxTKlCgrFqoqBy27iB5eOjJoR_rDkg";
+        let (jwt_header, jwt_payload) = decode_session_id(session_id).unwrap();
+
+        assert_eq!(jwt_header.alg, "HS512");
+        assert_eq!(jwt_header.sub, "104");
+        assert_eq!(jwt_payload.userid, "104");
+    }
 }

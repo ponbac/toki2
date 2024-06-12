@@ -119,7 +119,6 @@ export type StartTimerPayload = {
   activityName: string;
   projectId: string;
   projectName: string;
-  userId: string;
   userNote?: string;
   regDay: string;
   weekNumber: number;

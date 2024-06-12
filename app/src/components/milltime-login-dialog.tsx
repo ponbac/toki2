@@ -15,6 +15,7 @@ import {
   useMilltimeIsAuthenticating,
 } from "@/hooks/useMilltimeContext";
 import { Label } from "./ui/label";
+import { toast } from "sonner";
 
 export const MilltimeLoginDialog = (props: {
   open: boolean;
@@ -34,7 +35,12 @@ export const MilltimeLoginDialog = (props: {
         username,
         password,
       },
-      () => props.onOpenChange(false),
+      () => {
+        props.onOpenChange(false);
+        toast.success(
+          "Authenticated with Milltime, you can now access all Milltime features.",
+        );
+      },
     );
   };
 
@@ -50,7 +56,7 @@ export const MilltimeLoginDialog = (props: {
               You need to authenticate with Milltime to continue.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-4">
             <div className="grid gap-2">
               <Label htmlFor="username">Username</Label>
               <Input

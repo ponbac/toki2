@@ -20,6 +20,10 @@ impl MilltimeClient {
         Self { credentials }
     }
 
+    pub fn user_id(&self) -> &str {
+        &self.credentials.user_id
+    }
+
     async fn get<T: DeserializeOwned>(
         &self,
         url: impl AsRef<str>,
@@ -222,9 +226,15 @@ impl MilltimeClient {
             .append_path("/data/store/TimerRegistration")
             .with_filter(&reg_timer_url_filter);
 
-        let _response = self.post::<serde_json::Value>(url, payload).await?;
-
-        Ok(())
+        match self
+            .post::<MilltimeRowResponse<serde_json::Value>>(url, payload)
+            .await?
+        {
+            MilltimeRowResponse { success: true, .. } => Ok(()),
+            MilltimeRowResponse { success: false, .. } => Err(MilltimeFetchError::Other(
+                "milltime responded with success=false".to_string(),
+            )),
+        }
     }
 
     pub async fn stop_timer(&self) -> Result<(), MilltimeFetchError> {
