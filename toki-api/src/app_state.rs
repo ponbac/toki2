@@ -200,4 +200,8 @@ impl AppState {
             AppStateError::WebPushError(e)
         })
     }
+
+    pub fn host_domain(&self) -> String {
+        self.app_url.host_str().unwrap_or("localhost").to_string()
+    }
 }
