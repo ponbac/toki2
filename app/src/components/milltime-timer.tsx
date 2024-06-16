@@ -4,8 +4,10 @@ import {
   CalendarClockIcon,
   Maximize2Icon,
   Minimize2Icon,
+  PiggyBankIcon,
   SaveIcon,
   Trash2Icon,
+  WatchIcon,
 } from "lucide-react";
 import { Input } from "./ui/input";
 import { cn } from "@/lib/utils";
@@ -17,6 +19,7 @@ import {
 } from "@/hooks/useMilltimeContext";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export const MilltimeTimer = () => {
   const { setTimer } = useMilltimeActions();
@@ -174,7 +177,12 @@ export const MilltimeTimer = () => {
               />
             </div>
           </div>
-          <TimeSummary className="pt-2" timerHours={Number.parseInt(hours)} />
+          <TimeSummary
+            className="pt-2"
+            timerHours={Number.parseInt(hours)}
+            timerMinutes={Number.parseInt(minutes)}
+            timerSeconds={Number.parseInt(seconds)}
+          />
         </div>
       </div>
     </>
@@ -184,7 +192,7 @@ export const MilltimeTimer = () => {
 function secondsToHoursMinutesSeconds(seconds: number) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  const remainingSeconds = seconds % 60;
+  const remainingSeconds = Math.floor(seconds % 60);
 
   return {
     hours: String(hours).padStart(2, "0"),
@@ -193,7 +201,12 @@ function secondsToHoursMinutesSeconds(seconds: number) {
   };
 }
 
-function TimeSummary(props: { className?: string; timerHours: number }) {
+function TimeSummary(props: {
+  className?: string;
+  timerHours: number;
+  timerMinutes: number;
+  timerSeconds: number;
+}) {
   const { data: timeInfo } = useQuery({
     ...milltimeQueries.timeInfo({
       from: dayjs()
@@ -207,30 +220,73 @@ function TimeSummary(props: { className?: string; timerHours: number }) {
         .add(1, "day")
         .format("YYYY-MM-DD"),
     }),
+    staleTime: 5 * 60 * 1000,
   });
 
-  if (!timeInfo) {
+  const { data: timeInfoToday } = useQuery({
+    ...milltimeQueries.timeInfo({
+      from: dayjs().format("YYYY-MM-DD"),
+      to: dayjs().format("YYYY-MM-DD"),
+    }),
+    staleTime: 60 * 1000,
+  });
+
+  if (!timeInfo || !timeInfoToday) {
     return null;
   }
 
-  const timeLeft = timeInfo?.periodTimeLeft - (props.timerHours ?? 0);
+  const timeLeft = Math.floor(
+    timeInfo.periodTimeLeft - (props.timerHours + props.timerMinutes / 60),
+  );
+  const flexTimeTotal = Math.floor(
+    timeInfo.flexTimeCurrent + props.timerHours + props.timerMinutes / 60,
+  );
+
+  const {
+    hours: timeTodayHours,
+    minutes: timeTodayMinutes,
+    seconds: timeTodaySeconds,
+  } = secondsToHoursMinutesSeconds(
+    timeInfoToday.workedPeriodWithAbsenceTime * 3600 +
+      props.timerHours * 3600 +
+      props.timerMinutes * 60 +
+      props.timerSeconds,
+  );
 
   return (
     <div
       className={cn("flex w-full flex-row justify-between", props.className)}
     >
-      <div className="flex flex-row items-center gap-2">
-        <CalendarClockIcon size={20} />
-        <p className="text-sm">{timeLeft.toFixed(0)}h</p>
-      </div>
-      <div className="flex flex-row items-center gap-2">
-        <CalendarClockIcon size={20} />
-        <p className="text-sm">{timeLeft.toFixed(0)}h</p>
-      </div>
-      <div className="flex flex-row items-center gap-2">
-        <CalendarClockIcon size={20} />
-        <p className="text-sm">{timeLeft.toFixed(0)}h</p>
-      </div>
+      <SummaryIcon
+        icon={<CalendarClockIcon size={20} />}
+        tooltip="Hours left to work this week"
+      >
+        {timeLeft}h
+      </SummaryIcon>
+      <SummaryIcon icon={<WatchIcon size={20} />} tooltip="Time worked today">
+        {timeTodayHours}:{timeTodayMinutes}:{timeTodaySeconds}
+      </SummaryIcon>
+      <SummaryIcon icon={<PiggyBankIcon size={20} />} tooltip="Total flex">
+        {flexTimeTotal}h
+      </SummaryIcon>
     </div>
+  );
+}
+
+function SummaryIcon(props: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  tooltip: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger className="cursor-default">
+        <div className="flex flex-row items-center gap-2">
+          {props.icon}
+          <p className="text-sm">{props.children}</p>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>{props.tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
