@@ -1,6 +1,7 @@
 application:
   host: "127.0.0.1"
   app_url: "http://localhost:5173"
+  api_url: "http://localhost:8080"
   disable_auth: false
 database:
   require_ssl: false

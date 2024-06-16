@@ -19,6 +19,7 @@ pub struct ApplicationSettings {
     pub port: u16,
     pub host: String,
     pub app_url: String,
+    pub api_url: String,
     pub disable_auth: bool,
 }
 

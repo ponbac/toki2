@@ -55,6 +55,7 @@ pub async fn create(
         .with_state(
             AppState::new(
                 config.application.app_url,
+                config.application.api_url,
                 connection_pool.clone(),
                 repo_configs,
             )

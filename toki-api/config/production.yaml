@@ -1,6 +1,7 @@
 application:
   host: "0.0.0.0"
   app_url: "https://toki2.ponbac.xyz"
+  api_url: "https://toki2-api.ponbac.xyz"
   disable_auth: false
 database:
   require_ssl: true
