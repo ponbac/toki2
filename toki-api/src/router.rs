@@ -56,6 +56,7 @@ pub async fn create(
             AppState::new(
                 config.application.app_url,
                 config.application.api_url,
+                config.application.cookie_domain,
                 connection_pool.clone(),
                 repo_configs,
             )

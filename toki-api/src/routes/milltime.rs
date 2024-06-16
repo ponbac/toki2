@@ -42,11 +42,11 @@ async fn authenticate(
     let credentials = milltime::Credentials::new(&body.username, &body.password).await;
     match credentials {
         Ok(creds) => {
-            let domain = app_state.host_domain();
+            let domain = app_state.cookie_domain;
             let mut jar = jar
                 .add(
                     Cookie::build(("mt_user", body.username.clone()))
-                        // .domain(domain.clone())
+                        .domain(domain.clone())
                         .path("/")
                         .secure(true)
                         .http_only(true)
@@ -54,7 +54,7 @@ async fn authenticate(
                 )
                 .add(
                     Cookie::build(("mt_password", body.password.clone()))
-                        // .domain(domain.clone())
+                        .domain(domain.clone())
                         .path("/")
                         .secure(true)
                         .http_only(true)
@@ -73,7 +73,7 @@ async fn list_projects(
     State(app_state): State<AppState>,
     jar: CookieJar,
 ) -> CookieJarResult<Json<Vec<milltime::ProjectSearchItem>>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let search_filter = milltime::ProjectSearchFilter::new("Overview".to_string());
     let projects = milltime_client
@@ -93,7 +93,7 @@ async fn list_activities(
     State(app_state): State<AppState>,
     jar: CookieJar,
 ) -> CookieJarResult<Json<Vec<milltime::Activity>>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let activity_filter = milltime::ActivityFilter::new(
         project_id,
@@ -120,7 +120,7 @@ async fn get_time_info(
     State(app_state): State<AppState>,
     Query(date_filter): Query<DateFilterQuery>,
 ) -> CookieJarResult<Json<milltime::TimeInfo>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let date_filter: milltime::DateFilter = format!("{},{}", date_filter.from, date_filter.to)
         .parse()
@@ -143,7 +143,7 @@ async fn get_timer(
     jar: CookieJar,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<Json<milltime::TimerRegistration>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let timer = milltime_client
         .fetch_timer()
@@ -171,7 +171,7 @@ async fn start_timer(
     State(app_state): State<AppState>,
     Json(body): Json<StartTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let start_timer_options = milltime::StartTimerOptions::new(
         body.activity.clone(),
@@ -197,7 +197,7 @@ async fn stop_timer(
     jar: CookieJar,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<StatusCode> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     milltime_client.stop_timer().await.unwrap();
 
@@ -209,7 +209,7 @@ async fn save_timer(
     jar: CookieJar,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<StatusCode> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     milltime_client.save_timer().await.unwrap();
 

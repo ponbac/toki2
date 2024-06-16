@@ -44,6 +44,7 @@ impl IntoResponse for AppStateError {
 pub struct AppState {
     pub app_url: Url,
     pub api_url: Url,
+    pub cookie_domain: String,
     pub db_pool: Arc<PgPool>,
     pub user_repo: Arc<UserRepositoryImpl>,
     pub repository_repo: Arc<RepoRepositoryImpl>,
@@ -59,6 +60,7 @@ impl AppState {
     pub async fn new(
         app_url: String,
         api_url: String,
+        cookie_domain: String,
         db_pool: PgPool,
         repo_configs: Vec<RepoConfig>,
     ) -> Self {
@@ -116,6 +118,7 @@ impl AppState {
         Self {
             app_url: Url::parse(&app_url).expect("Invalid app URL"),
             api_url: Url::parse(&api_url).expect("Invalid API URL"),
+            cookie_domain,
             db_pool: Arc::new(db_pool.clone()),
             user_repo: Arc::new(UserRepositoryImpl::new(db_pool.clone())),
             repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),
@@ -209,9 +212,6 @@ impl AppState {
     }
 
     pub fn host_domain(&self) -> String {
-        self.api_url
-            .host_str()
-            .unwrap_or("localhost")
-            .to_string()
+        self.api_url.host_str().unwrap_or("localhost").to_string()
     }
 }

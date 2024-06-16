@@ -20,6 +20,7 @@ pub struct ApplicationSettings {
     pub host: String,
     pub app_url: String,
     pub api_url: String,
+    pub cookie_domain: String,
     pub disable_auth: bool,
 }
 

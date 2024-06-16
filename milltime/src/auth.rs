@@ -126,7 +126,7 @@ impl Credentials {
             .same_site(SameSite::Lax)
             .path("/")
             .secure(true)
-            // .domain(domain.clone())
+            .domain(domain.clone())
             .build(),
             Cookie::build((
                 format!("{COOKIE_PREFIX}_milltimeinstanceid"),
@@ -136,7 +136,7 @@ impl Credentials {
             .same_site(SameSite::Lax)
             .path("/")
             .secure(false)
-            // .domain(domain.clone())
+            .domain(domain.clone())
             .build(),
             Cookie::build((
                 format!("{COOKIE_PREFIX}_milltimesessionid"),
@@ -146,7 +146,7 @@ impl Credentials {
             .same_site(SameSite::Lax)
             .path("/")
             .secure(true)
-            // .domain(domain)
+            .domain(domain)
             .build(),
         ]
     }
