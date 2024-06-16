@@ -46,7 +46,7 @@ async fn authenticate(
             let mut jar = jar
                 .add(
                     Cookie::build(("mt_user", body.username.clone()))
-                        .domain(domain.clone())
+                        // .domain(domain.clone())
                         .path("/")
                         .secure(true)
                         .http_only(true)
@@ -54,7 +54,7 @@ async fn authenticate(
                 )
                 .add(
                     Cookie::build(("mt_password", body.password.clone()))
-                        .domain(domain.clone())
+                        // .domain(domain.clone())
                         .path("/")
                         .secure(true)
                         .http_only(true)

@@ -212,7 +212,6 @@ impl AppState {
         self.api_url
             .host_str()
             .unwrap_or("localhost")
-            .trim_start_matches('.')
             .to_string()
     }
 }
