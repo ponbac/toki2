@@ -177,29 +177,19 @@ export const MilltimeTimer = () => {
               />
             </div>
           </div>
-          <TimeSummary
-            className="pt-2"
-            timerHours={Number.parseInt(hours)}
-            timerMinutes={Number.parseInt(minutes)}
-            timerSeconds={Number.parseInt(seconds)}
-          />
+          {!isMinimized && (
+            <TimeSummary
+              className="pt-2"
+              timerHours={Number.parseInt(hours)}
+              timerMinutes={Number.parseInt(minutes)}
+              timerSeconds={Number.parseInt(seconds)}
+            />
+          )}
         </div>
       </div>
     </>
   ) : null;
 };
-
-function secondsToHoursMinutesSeconds(seconds: number) {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainingSeconds = Math.floor(seconds % 60);
-
-  return {
-    hours: String(hours).padStart(2, "0"),
-    minutes: String(minutes).padStart(2, "0"),
-    seconds: String(remainingSeconds).padStart(2, "0"),
-  };
-}
 
 function TimeSummary(props: {
   className?: string;
@@ -289,4 +279,16 @@ function SummaryIcon(props: {
       <TooltipContent>{props.tooltip}</TooltipContent>
     </Tooltip>
   );
+}
+
+function secondsToHoursMinutesSeconds(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+
+  return {
+    hours: String(hours).padStart(2, "0"),
+    minutes: String(minutes).padStart(2, "0"),
+    seconds: String(remainingSeconds).padStart(2, "0"),
+  };
 }
