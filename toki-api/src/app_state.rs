@@ -209,6 +209,10 @@ impl AppState {
     }
 
     pub fn host_domain(&self) -> String {
-        self.api_url.host_str().unwrap_or("localhost").to_string()
+        self.api_url
+            .host_str()
+            .unwrap_or("localhost")
+            .trim_start_matches('.')
+            .to_string()
     }
 }
