@@ -31,7 +31,8 @@ pub async fn create(
         .nest("/pull-requests", routes::pull_requests::router())
         .nest("/differs", routes::differs::router())
         .nest("/repositories", routes::repositories::router())
-        .nest("/notifications", routes::notifications::router());
+        .nest("/notifications", routes::notifications::router())
+        .nest("/milltime", routes::milltime::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
@@ -46,7 +47,7 @@ pub async fn create(
 
     // Finally, wrap the app with tracing layer, state and CORS
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers(["content-type".parse().unwrap()])
         .allow_credentials(true)
         .allow_origin([config.application.app_url.parse().unwrap()]);

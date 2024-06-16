@@ -1,5 +1,11 @@
 import * as React from "react";
-import { LucideIcon, FolderGit2, Activity, GitPullRequest } from "lucide-react";
+import {
+  LucideIcon,
+  FolderGit2,
+  Activity,
+  GitPullRequest,
+  AlarmClock,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -28,7 +34,7 @@ const MENU_ITEMS = [
     label: "",
     icon: GitPullRequest,
     variant: "ghost",
-    to: "/prs",
+    to: "/prs/",
   },
   {
     title: "Commits",
@@ -42,7 +48,14 @@ const MENU_ITEMS = [
     label: "",
     icon: FolderGit2,
     variant: "ghost",
-    to: "/repositories",
+    to: "/repositories/",
+  },
+  {
+    title: "Milltime",
+    label: "",
+    icon: AlarmClock,
+    variant: "ghost",
+    to: "/milltime",
   },
 ] as const satisfies readonly {
   title: string;

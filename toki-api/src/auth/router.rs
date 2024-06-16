@@ -102,8 +102,11 @@ mod get {
         }
 
         if let Ok(Some(next)) = session.remove::<String>(NEXT_URL_KEY).await {
-            Redirect::to(format!("{}/{}", app_state.app_url.trim_end_matches('/'), next).as_str())
-                .into_response()
+            let dest = app_state.app_url.join(next.as_str());
+            match dest {
+                Ok(url) => Redirect::to(url.as_str()).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
         } else {
             Redirect::to(app_state.app_url.as_str()).into_response()
         }
