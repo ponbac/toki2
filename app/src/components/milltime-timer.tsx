@@ -1,6 +1,7 @@
 import React from "react";
 import { Button } from "./ui/button";
 import {
+  CalendarClockIcon,
   Maximize2Icon,
   Minimize2Icon,
   SaveIcon,
@@ -15,6 +16,7 @@ import {
   useMilltimeTimer,
 } from "@/hooks/useMilltimeContext";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import dayjs from "dayjs";
 
 export const MilltimeTimer = () => {
   const { setTimer } = useMilltimeActions();
@@ -172,6 +174,7 @@ export const MilltimeTimer = () => {
               />
             </div>
           </div>
+          <TimeSummary className="pt-2" timerHours={Number.parseInt(hours)} />
         </div>
       </div>
     </>
@@ -188,4 +191,46 @@ function secondsToHoursMinutesSeconds(seconds: number) {
     minutes: String(minutes).padStart(2, "0"),
     seconds: String(remainingSeconds).padStart(2, "0"),
   };
+}
+
+function TimeSummary(props: { className?: string; timerHours: number }) {
+  const { data: timeInfo } = useQuery({
+    ...milltimeQueries.timeInfo({
+      from: dayjs()
+        .subtract(1, "day")
+        .startOf("week")
+        .add(1, "day")
+        .format("YYYY-MM-DD"),
+      to: dayjs()
+        .subtract(1, "day")
+        .endOf("week")
+        .add(1, "day")
+        .format("YYYY-MM-DD"),
+    }),
+  });
+
+  if (!timeInfo) {
+    return null;
+  }
+
+  const timeLeft = timeInfo?.periodTimeLeft - (props.timerHours ?? 0);
+
+  return (
+    <div
+      className={cn("flex w-full flex-row justify-between", props.className)}
+    >
+      <div className="flex flex-row items-center gap-2">
+        <CalendarClockIcon size={20} />
+        <p className="text-sm">{timeLeft.toFixed(0)}h</p>
+      </div>
+      <div className="flex flex-row items-center gap-2">
+        <CalendarClockIcon size={20} />
+        <p className="text-sm">{timeLeft.toFixed(0)}h</p>
+      </div>
+      <div className="flex flex-row items-center gap-2">
+        <CalendarClockIcon size={20} />
+        <p className="text-sm">{timeLeft.toFixed(0)}h</p>
+      </div>
+    </div>
+  );
 }

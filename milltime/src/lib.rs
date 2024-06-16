@@ -82,6 +82,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fetch_time_info() {
+        let client = initialize_client().await;
+        let date_filter: DateFilter = "2024-04-15,2024-04-21".parse().unwrap();
+        let time_info = client.fetch_time_info(date_filter).await.unwrap();
+
+        println!("{:#?}", time_info);
+    }
+
+    #[tokio::test]
     async fn test_fetch_timer() {
         let client = initialize_client().await;
         let timer_result = client.fetch_timer().await;

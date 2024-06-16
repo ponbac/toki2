@@ -206,6 +206,19 @@ impl MilltimeClient {
         Ok(root.activities)
     }
 
+    pub async fn fetch_time_info(
+        &self,
+        date_filter: DateFilter,
+    ) -> Result<domain::TimeInfo, MilltimeFetchError> {
+        let url = MilltimeURL::from_env()
+            .append_path("/data/store/TimeInfo")
+            .with_filter(&date_filter);
+
+        let time_info = self.get_single_row::<domain::TimeInfo>(url).await?;
+
+        Ok(time_info)
+    }
+
     pub async fn fetch_timer(&self) -> Result<domain::TimerRegistration, MilltimeFetchError> {
         let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
 

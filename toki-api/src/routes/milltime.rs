@@ -1,6 +1,6 @@
 use axum::{
     debug_handler,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{delete, get, post, put},
     Json, Router,
@@ -16,6 +16,7 @@ pub fn router() -> Router<AppState> {
         .route("/authenticate", post(authenticate))
         .route("/projects", get(list_projects))
         .route("/projects/:project_id/activities", get(list_activities))
+        .route("/time-info", get(get_time_info))
         .route("/timer", get(get_timer))
         .route("/timer", post(start_timer))
         .route("/timer", delete(stop_timer))
@@ -72,7 +73,7 @@ async fn list_projects(
     State(app_state): State<AppState>,
     jar: CookieJar,
 ) -> CookieJarResult<Json<Vec<milltime::ProjectSearchItem>>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
 
     let search_filter = milltime::ProjectSearchFilter::new("Overview".to_string());
     let projects = milltime_client
@@ -92,7 +93,7 @@ async fn list_activities(
     State(app_state): State<AppState>,
     jar: CookieJar,
 ) -> CookieJarResult<Json<Vec<milltime::Activity>>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
 
     let activity_filter = milltime::ActivityFilter::new(
         project_id,
@@ -107,14 +108,47 @@ async fn list_activities(
     Ok((jar, Json(activities)))
 }
 
+#[derive(Debug, Deserialize)]
+struct DateFilterQuery {
+    from: String,
+    to: String,
+}
+
+#[instrument(name = "get_time_info", skip(jar, app_state))]
+async fn get_time_info(
+    jar: CookieJar,
+    State(app_state): State<AppState>,
+    Query(date_filter): Query<DateFilterQuery>,
+) -> CookieJarResult<Json<milltime::TimeInfo>> {
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
+
+    let date_filter: milltime::DateFilter = format!("{},{}", date_filter.from, date_filter.to)
+        .parse()
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "could not parse date range".to_string(),
+            )
+        })?;
+    let time_info = milltime_client
+        .fetch_time_info(date_filter)
+        .await
+        .map_err(|_| (StatusCode::OK, "".to_string()))?;
+
+    Ok((jar, Json(time_info)))
+}
+
 #[instrument(name = "get_timer", skip(jar, app_state))]
 async fn get_timer(
     jar: CookieJar,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<Json<milltime::TimerRegistration>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
 
-    let timer = milltime_client.fetch_timer().await.unwrap();
+    let timer = milltime_client
+        .fetch_timer()
+        .await
+        .map_err(|_| (StatusCode::OK, "".to_string()))?;
 
     Ok((jar, Json(timer)))
 }
@@ -137,7 +171,7 @@ async fn start_timer(
     State(app_state): State<AppState>,
     Json(body): Json<StartTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
 
     let start_timer_options = milltime::StartTimerOptions::new(
         body.activity.clone(),
@@ -163,7 +197,7 @@ async fn stop_timer(
     jar: CookieJar,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<StatusCode> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
 
     milltime_client.stop_timer().await.unwrap();
 
@@ -175,31 +209,46 @@ async fn save_timer(
     jar: CookieJar,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<StatusCode> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await;
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.host_domain()).await?;
 
     milltime_client.save_timer().await.unwrap();
 
     Ok((jar, StatusCode::OK))
 }
 
-trait MilltimeCookieJarExt {
-    async fn into_milltime_client(self, domain: &str) -> (milltime::MilltimeClient, Self);
+trait MilltimeCookieJarExt: std::marker::Sized {
+    async fn into_milltime_client(
+        self,
+        domain: &str,
+    ) -> Result<(milltime::MilltimeClient, Self), (StatusCode, String)>;
     fn with_milltime_credentials(self, credentials: &milltime::Credentials, domain: &str) -> Self;
 }
 
 impl MilltimeCookieJarExt for CookieJar {
-    async fn into_milltime_client(self, domain: &str) -> (milltime::MilltimeClient, Self) {
+    async fn into_milltime_client(
+        self,
+        domain: &str,
+    ) -> Result<(milltime::MilltimeClient, Self), (StatusCode, String)> {
         let (credentials, jar) = match self.clone().try_into() {
             Ok(c) => {
                 tracing::debug!("using existing milltime credentials");
                 (c, self)
             }
             Err(_) => {
-                let user = self.get("mt_user").expect("User cookie not found");
-                let pass = self.get("mt_password").expect("Password cookie not found");
+                let user = self.get("mt_user").ok_or((
+                    StatusCode::UNAUTHORIZED,
+                    "missing mt_user cookie".to_string(),
+                ))?;
+                let pass = self.get("mt_password").ok_or((
+                    StatusCode::UNAUTHORIZED,
+                    "missing mt_password cookie".to_string(),
+                ))?;
                 let creds = milltime::Credentials::new(user.value(), pass.value())
                     .await
-                    .expect("Invalid credentials");
+                    .map_err(|e| {
+                        tracing::error!("failed to create milltime credentials: {:?}", e);
+                        (StatusCode::UNAUTHORIZED, e.to_string())
+                    })?;
                 let jar = self.with_milltime_credentials(&creds, domain);
 
                 tracing::debug!("created new milltime credentials");
@@ -207,7 +256,7 @@ impl MilltimeCookieJarExt for CookieJar {
             }
         };
 
-        (milltime::MilltimeClient::new(credentials), jar)
+        Ok((milltime::MilltimeClient::new(credentials), jar))
     }
 
     fn with_milltime_credentials(self, credentials: &milltime::Credentials, domain: &str) -> Self {

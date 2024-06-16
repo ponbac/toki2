@@ -9,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   MilltimeStoreProvider,
   useMilltimeActions,
+  useMilltimeIsAuthenticated,
   useMilltimeLoginDialogOpen,
   useMilltimeNewTimerDialogOpen,
 } from "@/hooks/useMilltimeContext";
@@ -48,22 +49,25 @@ function LayoutComponent() {
 }
 
 function MilltimeTimerProvider() {
+  const isAuthenticated = useMilltimeIsAuthenticated();
+
   const newTimerDialogOpen = useMilltimeNewTimerDialogOpen();
   const loginDialogOpen = useMilltimeLoginDialogOpen();
   const { setNewTimerDialogOpen, setLoginDialogOpen } = useMilltimeActions();
 
-  return (
+  return isAuthenticated ? (
     <>
       <MilltimeTimer />
       <MilltimeTimerDialog
         open={newTimerDialogOpen}
         onOpenChange={setNewTimerDialogOpen}
       />
-      <MilltimeLoginDialog
-        open={loginDialogOpen}
-        onOpenChange={setLoginDialogOpen}
-      />
     </>
+  ) : (
+    <MilltimeLoginDialog
+      open={loginDialogOpen}
+      onOpenChange={setLoginDialogOpen}
+    />
   );
 }
 

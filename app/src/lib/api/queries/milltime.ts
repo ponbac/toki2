@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
+import dayjs from "dayjs";
 
 export const milltimeQueries = {
   listProjects: () =>
@@ -16,11 +17,43 @@ export const milltimeQueries = {
           .get(`milltime/projects/${projectId}/activities`)
           .json<Array<Activity>>(),
     }),
+  timeInfo: (query?: { from: string; to: string }) =>
+    queryOptions({
+      queryKey: ["milltime", "time-info", query?.from, query?.to],
+      queryFn: async () => {
+        return api
+          .get("milltime/time-info", {
+            searchParams: query ?? {
+              from: dayjs().startOf("month").format("YYYY-MM-DD"),
+              to: dayjs().endOf("month").format("YYYY-MM-DD"),
+            },
+          })
+          .json<TimeInfo>();
+      },
+    }),
   getTimer: () =>
     queryOptions({
       queryKey: ["milltime", "timer"],
       queryFn: async () => api.get("milltime/timer").json<Timer>(),
     }),
+};
+
+export type TimeInfo = {
+  overtimes: Array<{
+    key: string;
+    value: number;
+    label: string;
+  }>;
+  flexTimePreviousPeriod: number | null;
+  flexTimePeriod: number;
+  flexTimeCurrent: number;
+  flexWithdrawal: number;
+  scheduledPeriodTime: number;
+  workedPeriodTime: number;
+  absencePeriodTime: number;
+  workedPeriodWithAbsenceTime: number;
+  periodTimeLeft: number;
+  mtinfoDetailRow: unknown[];
 };
 
 export type Timer = {

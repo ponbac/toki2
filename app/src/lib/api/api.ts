@@ -11,8 +11,8 @@ export const api = ky.create({
   credentials: "include",
   hooks: {
     afterResponse: [
-      (_, __, response) => {
-        if (response.status === 401) {
+      (request, __, response) => {
+        if (response.status === 401 && !request.url.includes("/milltime")) {
           router.history.push(
             `/login?next=${router.history.location.pathname}`,
           );
