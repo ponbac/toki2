@@ -92,6 +92,9 @@ function useSaveTimer(options?: DefaultMutationOptions<void>) {
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.getTimer().queryKey,
       });
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timeInfo().queryKey.slice(0, 2),
+      });
       setTimer({
         visible: false,
         state: "stopped",
