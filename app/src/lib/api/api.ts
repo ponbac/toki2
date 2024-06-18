@@ -16,8 +16,6 @@ export const api = ky.create({
           router.history.push(
             `/login?next=${router.history.location.pathname}`,
           );
-
-          return new Response(null, { status: 302 });
         }
 
         return response;
