@@ -15,7 +15,7 @@ import {
 } from "./ui/resizable";
 import { Separator } from "./ui/separator";
 import { buttonVariants } from "./ui/button";
-import { Link } from "@tanstack/react-router";
+import { Link, LinkProps } from "@tanstack/react-router";
 import {
   Select,
   SelectContent,
@@ -24,17 +24,17 @@ import {
   SelectValue,
 } from "./ui/select";
 import { ScrollArea } from "./ui/scroll-area";
-import { routeTree } from "@/routeTree.gen";
 import { ThemeToggle } from "./theme-toggle";
+import { router } from "@/main";
 
-type LinkDestination = Parameters<typeof Link<typeof routeTree>>[0]["to"];
+type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
   {
     title: "Pull requests",
     label: "",
     icon: GitPullRequest,
     variant: "ghost",
-    to: "/prs/",
+    to: "/prs",
   },
   {
     title: "Commits",
@@ -48,7 +48,7 @@ const MENU_ITEMS = [
     label: "",
     icon: FolderGit2,
     variant: "ghost",
-    to: "/repositories/",
+    to: "/repositories",
   },
   {
     title: "Milltime",
