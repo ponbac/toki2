@@ -13,7 +13,7 @@ export const api = ky.create({
     afterResponse: [
       (request, __, response) => {
         if (response.status === 401 && !request.url.includes("/milltime")) {
-          router.history.push(
+          window.location.replace(
             `/login?next=${router.history.location.pathname}`,
           );
         }
