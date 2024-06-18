@@ -37,6 +37,8 @@ async fn main() {
         .init();
 
     // Read the configuration and connect to the database
+    env::var("MILLTIME_URL").expect("MILLTIME_URL not set");
+    env::var("MT_CRYPTO_KEY").expect("MT_CRYPTO_KEY not set");
     let config = read_config().expect("Failed to read configuration");
     let mut connection_pool_result = PgPoolOptions::new()
         .acquire_timeout(Duration::from_secs(5))
