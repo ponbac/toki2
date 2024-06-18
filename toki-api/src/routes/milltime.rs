@@ -1,3 +1,5 @@
+use std::ops::Add;
+
 use axum::{
     debug_handler,
     extract::{Path, Query, State},
@@ -7,9 +9,10 @@ use axum::{
 };
 use axum_extra::extract::{cookie::Cookie, CookieJar};
 use serde::Deserialize;
+use time::{Duration, OffsetDateTime};
 use tracing::instrument;
 
-use crate::app_state::AppState;
+use crate::{app_state::AppState, domain::MilltimePassword};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -38,26 +41,29 @@ async fn authenticate(
     State(app_state): State<AppState>,
     jar: CookieJar,
     Json(body): Json<AuthenticatePayload>,
-) -> Result<(CookieJar, StatusCode), (StatusCode, String)> {
+) -> CookieJarResult<StatusCode> {
     let credentials = milltime::Credentials::new(&body.username, &body.password).await;
     match credentials {
         Ok(creds) => {
             let domain = app_state.cookie_domain;
+            let encrypted_password = MilltimePassword::new(body.password.clone()).to_encrypted();
             let mut jar = jar
                 .add(
-                    Cookie::build(("mt_user", body.username.clone()))
+                    Cookie::build(("mt_user", body.username))
                         .domain(domain.clone())
                         .path("/")
                         .secure(true)
-                        .http_only(true)
+                        .http_only(false)
+                        .expires(OffsetDateTime::now_utc().add(Duration::days(30)))
                         .build(),
                 )
                 .add(
-                    Cookie::build(("mt_password", body.password.clone()))
+                    Cookie::build(("mt_password", encrypted_password))
                         .domain(domain.clone())
                         .path("/")
                         .secure(true)
                         .http_only(true)
+                        .expires(OffsetDateTime::now_utc().add(Duration::days(30)))
                         .build(),
                 );
             jar = jar.with_milltime_credentials(&creds, &domain);
@@ -243,7 +249,8 @@ impl MilltimeCookieJarExt for CookieJar {
                     StatusCode::UNAUTHORIZED,
                     "missing mt_password cookie".to_string(),
                 ))?;
-                let creds = milltime::Credentials::new(user.value(), pass.value())
+                let decrypted_pass = MilltimePassword::from_encrypted(pass.value().to_string());
+                let creds = milltime::Credentials::new(user.value(), decrypted_pass.as_ref())
                     .await
                     .map_err(|e| {
                         tracing::error!("failed to create milltime credentials: {:?}", e);

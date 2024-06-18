@@ -1,3 +1,4 @@
+mod milltime_password;
 mod notification_handler;
 mod pr_change_event;
 mod pull_request;
@@ -9,6 +10,7 @@ mod repo_key;
 mod repository;
 mod user;
 
+pub use milltime_password::*;
 pub use notification_handler::*;
 pub use pr_change_event::*;
 pub use pull_request::*;

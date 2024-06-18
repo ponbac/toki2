@@ -131,7 +131,10 @@ export const useMilltimeActions = () =>
   useMilltimeStore((state) => state.actions);
 
 function isMilltimeCookiesPresent() {
-  return document.cookie.includes("mt_milltimesessionid");
+  return (
+    document.cookie.includes("mt_milltimesessionid") ||
+    document.cookie.includes("mt_user")
+  );
 }
 
 function clearMilltimeCookies() {
