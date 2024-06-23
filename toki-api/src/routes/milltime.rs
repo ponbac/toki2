@@ -115,6 +115,23 @@ async fn list_activities(
     Ok((jar, Json(activities)))
 }
 
+#[instrument(name = "get_timer_history", skip(auth_session, app_state))]
+async fn get_timer_history(
+    auth_session: AuthSession,
+    State(app_state): State<AppState>,
+) -> Result<Json<Vec<repositories::MilltimeTimer>>, (StatusCode, String)> {
+    let user = auth_session.user.expect("user not found");
+    let timers = app_state.milltime_repo.get_timer_history(&user.id).await;
+
+    match timers {
+        Ok(timers) => Ok(Json(timers)),
+        Err(e) => {
+            tracing::error!("failed to fetch timer history: {:?}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, "".to_string()))
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct DateFilterQuery {
     from: String,
@@ -222,6 +239,7 @@ async fn start_timer(
         start_time: time::OffsetDateTime::now_utc(),
         project_id: body.project_id.clone(),
         activity_id: body.activity.clone(),
+        note: body.user_note.clone().unwrap_or_default(),
     };
 
     if let Err(e) = app_state.milltime_repo.create_timer(&new_timer).await {

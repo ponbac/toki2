@@ -7,6 +7,7 @@ CREATE TABLE timer_history
     end_time TIMESTAMPTZ,
     project_id TEXT NOT NULL,
     activity_id TEXT NOT NULL,
+    note TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 );
