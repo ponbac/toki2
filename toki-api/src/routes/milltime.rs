@@ -1,3 +1,4 @@
+use crate::{auth, repositories::MilltimeRepository};
 use std::ops::Add;
 
 use axum::{
@@ -12,7 +13,7 @@ use serde::Deserialize;
 use time::{Duration, OffsetDateTime};
 use tracing::instrument;
 
-use crate::{app_state::AppState, domain::MilltimePassword};
+use crate::{app_state::AppState, auth::AuthSession, domain::MilltimePassword, repositories};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -147,16 +148,39 @@ async fn get_time_info(
 #[instrument(name = "get_timer", skip(jar, app_state))]
 async fn get_timer(
     jar: CookieJar,
+    auth_session: AuthSession,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<Json<milltime::TimerRegistration>> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    let timer = milltime_client
-        .fetch_timer()
-        .await
-        .map_err(|_| (StatusCode::OK, "".to_string()))?;
+    let mt_timer = milltime_client.fetch_timer().await;
 
-    Ok((jar, Json(timer)))
+    let milltime_repo = app_state.milltime_repo.clone();
+    let user = auth_session.user.expect("user not found");
+    let active_timer = milltime_repo.active_timer(&user.id).await;
+
+    match (mt_timer, active_timer) {
+        (Ok(mt_timer), Ok(Some(_))) => Ok((jar, Json(mt_timer))),
+        (Ok(mt_timer), Ok(None)) => {
+            tracing::warn!("milltime timer found but no active timer in db");
+            Ok((jar, Json(mt_timer)))
+        }
+        (Ok(mt_timer), Err(e)) => {
+            tracing::error!("failed to fetch single active timer in db: {:?}", e);
+            Ok((jar, Json(mt_timer)))
+        }
+        (Err(e), Ok(Some(_))) => {
+            tracing::error!("failed to fetch milltime timer, but found in db: {:?}", e);
+            app_state
+                .milltime_repo
+                .delete_active_timer(&user.id)
+                .await
+                .unwrap();
+
+            Err((StatusCode::OK, "".to_string()))
+        }
+        _ => Err((StatusCode::OK, "".to_string())),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,6 +198,7 @@ struct StartTimerPayload {
 #[instrument(name = "start_timer", skip(jar, app_state))]
 async fn start_timer(
     jar: CookieJar,
+    auth_session: AuthSession,
     State(app_state): State<AppState>,
     Json(body): Json<StartTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
@@ -195,17 +220,37 @@ async fn start_timer(
         .await
         .unwrap();
 
+    let milltime_repo = app_state.milltime_repo.clone();
+    let user = auth_session.user.expect("user not found");
+    let new_timer = repositories::NewMilltimeTimer {
+        user_id: user.id,
+        start_time: time::OffsetDateTime::now_utc(),
+        project_id: body.project_id.clone(),
+        activity_id: body.activity.clone(),
+    };
+
+    if let Err(e) = milltime_repo.create_timer(&new_timer).await {
+        tracing::error!("failed to create timer: {:?}", e);
+    }
+
     Ok((jar, StatusCode::OK))
 }
 
 #[instrument(name = "stop_timer", skip(jar, app_state))]
 async fn stop_timer(
     jar: CookieJar,
+    auth_session: AuthSession,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     milltime_client.stop_timer().await.unwrap();
+
+    let milltime_repo = app_state.milltime_repo.clone();
+    let user = auth_session.user.expect("user not found");
+    if let Err(e) = milltime_repo.delete_active_timer(&user.id).await {
+        tracing::error!("failed to delete active timer: {:?}", e);
+    }
 
     Ok((jar, StatusCode::OK))
 }
@@ -213,11 +258,19 @@ async fn stop_timer(
 #[instrument(name = "save_timer", skip(jar, app_state))]
 async fn save_timer(
     jar: CookieJar,
+    auth_session: AuthSession,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     milltime_client.save_timer().await.unwrap();
+
+    let milltime_repo = app_state.milltime_repo.clone();
+    let user = auth_session.user.expect("user not found");
+    let end_time = time::OffsetDateTime::now_utc();
+    if let Err(e) = milltime_repo.save_active_timer(&user.id, &end_time).await {
+        tracing::error!("failed to save active timer: {:?}", e);
+    }
 
     Ok((jar, StatusCode::OK))
 }
