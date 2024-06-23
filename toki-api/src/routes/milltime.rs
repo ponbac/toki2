@@ -166,16 +166,12 @@ async fn get_timer(
             Ok((jar, Json(mt_timer)))
         }
         (Ok(mt_timer), Err(e)) => {
-            tracing::error!("failed to fetch single active timer in db: {:?}", e);
+            tracing::warn!("failed to fetch single active timer in db: {:?}", e);
             Ok((jar, Json(mt_timer)))
         }
         (Err(e), Ok(Some(_))) => {
-            tracing::error!("failed to fetch milltime timer, but found in db: {:?}", e);
-            app_state
-                .milltime_repo
-                .delete_active_timer(&user.id)
-                .await
-                .unwrap();
+            tracing::warn!("failed to fetch milltime timer, but found in db: {:?}", e);
+            milltime_repo.delete_active_timer(&user.id).await.unwrap();
 
             Err((StatusCode::OK, "".to_string()))
         }
@@ -220,7 +216,6 @@ async fn start_timer(
         .await
         .unwrap();
 
-    let milltime_repo = app_state.milltime_repo.clone();
     let user = auth_session.user.expect("user not found");
     let new_timer = repositories::NewMilltimeTimer {
         user_id: user.id,
@@ -229,7 +224,7 @@ async fn start_timer(
         activity_id: body.activity.clone(),
     };
 
-    if let Err(e) = milltime_repo.create_timer(&new_timer).await {
+    if let Err(e) = app_state.milltime_repo.create_timer(&new_timer).await {
         tracing::error!("failed to create timer: {:?}", e);
     }
 
@@ -246,9 +241,8 @@ async fn stop_timer(
 
     milltime_client.stop_timer().await.unwrap();
 
-    let milltime_repo = app_state.milltime_repo.clone();
     let user = auth_session.user.expect("user not found");
-    if let Err(e) = milltime_repo.delete_active_timer(&user.id).await {
+    if let Err(e) = app_state.milltime_repo.delete_active_timer(&user.id).await {
         tracing::error!("failed to delete active timer: {:?}", e);
     }
 
@@ -265,10 +259,13 @@ async fn save_timer(
 
     milltime_client.save_timer().await.unwrap();
 
-    let milltime_repo = app_state.milltime_repo.clone();
     let user = auth_session.user.expect("user not found");
     let end_time = time::OffsetDateTime::now_utc();
-    if let Err(e) = milltime_repo.save_active_timer(&user.id, &end_time).await {
+    if let Err(e) = app_state
+        .milltime_repo
+        .save_active_timer(&user.id, &end_time)
+        .await
+    {
         tracing::error!("failed to save active timer: {:?}", e);
     }
 
