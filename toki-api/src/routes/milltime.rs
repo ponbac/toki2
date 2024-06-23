@@ -145,7 +145,7 @@ async fn get_time_info(
     Ok((jar, Json(time_info)))
 }
 
-#[instrument(name = "get_timer", skip(jar, app_state))]
+#[instrument(name = "get_timer", skip(jar, app_state, auth_session))]
 async fn get_timer(
     jar: CookieJar,
     auth_session: AuthSession,
@@ -195,7 +195,7 @@ struct StartTimerPayload {
     week_number: i64,
 }
 
-#[instrument(name = "start_timer", skip(jar, app_state))]
+#[instrument(name = "start_timer", skip(jar, app_state, auth_session))]
 async fn start_timer(
     jar: CookieJar,
     auth_session: AuthSession,
@@ -236,7 +236,7 @@ async fn start_timer(
     Ok((jar, StatusCode::OK))
 }
 
-#[instrument(name = "stop_timer", skip(jar, app_state))]
+#[instrument(name = "stop_timer", skip(jar, app_state, auth_session))]
 async fn stop_timer(
     jar: CookieJar,
     auth_session: AuthSession,
@@ -255,7 +255,7 @@ async fn stop_timer(
     Ok((jar, StatusCode::OK))
 }
 
-#[instrument(name = "save_timer", skip(jar, app_state))]
+#[instrument(name = "save_timer", skip(jar, app_state, auth_session))]
 async fn save_timer(
     jar: CookieJar,
     auth_session: AuthSession,
