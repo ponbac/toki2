@@ -20,6 +20,7 @@ pub fn router() -> Router<AppState> {
         .route("/authenticate", post(authenticate))
         .route("/projects", get(list_projects))
         .route("/projects/:project_id/activities", get(list_activities))
+        .route("/timer-history", get(get_timer_history))
         .route("/time-info", get(get_time_info))
         .route("/timer", get(get_timer))
         .route("/timer", post(start_timer))

@@ -22,6 +22,8 @@ import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
 import { getWeekNumber } from "@/lib/utils";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
 
 export const MilltimeTimerDialog = (props: {
   open: boolean;
@@ -34,6 +36,14 @@ export const MilltimeTimerDialog = (props: {
   const { projects, activities } = useMilltimeData({
     projectId: projectId,
   });
+
+  const { data: timerHistory } = useQuery(milltimeQueries.timerHistory());
+
+  const joinedTimerHistory = timerHistory?.map((timer) => ({
+    project: projects?.find((p) => p.projectId === timer.projectId),
+    activity: activities?.find((a) => a.activity === timer.activityId),
+    note: timer.note,
+  }));
 
   const resetForm = () => {
     setProjectId("");
@@ -125,6 +135,25 @@ export const MilltimeTimerDialog = (props: {
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
+            <div>
+              <h2 className="text-lg font-semibold">Recent timers</h2>
+              <div className="flex flex-col gap-2">
+                {joinedTimerHistory?.map((timer, index) => (
+                  <div key={index} className="flex flex-col gap-1">
+                    <div>
+                      <span className="font-semibold">
+                        {timer.project?.projectName}
+                      </span>{" "}
+                      -{" "}
+                      <span className="font-semibold">
+                        {timer.activity?.activityName}
+                      </span>
+                    </div>
+                    <div>{timer.note}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button
