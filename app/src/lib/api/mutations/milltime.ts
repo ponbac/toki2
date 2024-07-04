@@ -36,7 +36,7 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
-        queryKey: milltimeQueries.getTimer().queryKey,
+        queryKey: milltimeQueries.timerBaseKey,
       });
       setTimer({
         state: "running",
@@ -63,7 +63,7 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
-        queryKey: milltimeQueries.getTimer().queryKey,
+        queryKey: milltimeQueries.timerBaseKey,
       });
       setTimer({
         visible: false,
@@ -90,7 +90,7 @@ function useSaveTimer(options?: DefaultMutationOptions<void>) {
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
-        queryKey: milltimeQueries.getTimer().queryKey,
+        queryKey: milltimeQueries.timerBaseKey,
       });
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.timeInfo().queryKey.slice(0, 2),

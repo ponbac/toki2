@@ -34,7 +34,9 @@ pub struct MilltimeTimer {
     pub start_time: time::OffsetDateTime,
     pub end_time: Option<time::OffsetDateTime>,
     pub project_id: String,
+    pub project_name: String,
     pub activity_id: String,
+    pub activity_name: String,
     pub note: String,
     pub created_at: time::OffsetDateTime,
 }
@@ -43,7 +45,9 @@ pub struct NewMilltimeTimer {
     pub user_id: i32,
     pub start_time: time::OffsetDateTime,
     pub project_id: String,
+    pub project_name: String,
     pub activity_id: String,
+    pub activity_name: String,
     pub note: String,
 }
 
@@ -55,7 +59,7 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         let timers = sqlx::query_as!(
             MilltimeTimer,
             r#"
-            SELECT id, user_id, start_time, end_time, project_id, activity_id, note, created_at
+            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at
             FROM timer_history
             WHERE user_id = $1
             "#,
@@ -71,7 +75,7 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         let single_timer = sqlx::query_as!(
             MilltimeTimer,
             r#"
-            SELECT id, user_id, start_time, end_time, project_id, activity_id, note, created_at
+            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at
             FROM timer_history
             WHERE user_id = $1 AND end_time IS NULL
             "#,
@@ -118,14 +122,16 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
     async fn create_timer(&self, timer: &NewMilltimeTimer) -> Result<i32, RepositoryError> {
         let id = sqlx::query!(
             r#"
-            INSERT INTO timer_history (user_id, start_time, project_id, activity_id, note)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO timer_history (user_id, start_time, project_id, project_name, activity_id, activity_name, note)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id
             "#,
             timer.user_id,
             timer.start_time,
             timer.project_id,
+            timer.project_name,
             timer.activity_id,
+            timer.activity_name,
             timer.note
         )
         .fetch_one(&self.pool)

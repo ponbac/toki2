@@ -17,9 +17,15 @@ export const milltimeQueries = {
           .get(`milltime/projects/${projectId}/activities`)
           .json<Array<Activity>>(),
     }),
+  timerBaseKey: ["milltime", "timer"],
+  getTimer: () =>
+    queryOptions({
+      queryKey: [...milltimeQueries.timerBaseKey],
+      queryFn: async () => api.get("milltime/timer").json<Timer>(),
+    }),
   timerHistory: () =>
     queryOptions({
-      queryKey: ["milltime", "timer-history"],
+      queryKey: [...milltimeQueries.timerBaseKey, "history"],
       queryFn: async () =>
         api.get("milltime/timer-history").json<Array<TimerHistory>>(),
     }),
@@ -37,11 +43,6 @@ export const milltimeQueries = {
           .json<TimeInfo>();
       },
     }),
-  getTimer: () =>
-    queryOptions({
-      queryKey: ["milltime", "timer"],
-      queryFn: async () => api.get("milltime/timer").json<Timer>(),
-    }),
 };
 
 export type TimerHistory = {
@@ -50,7 +51,9 @@ export type TimerHistory = {
   startTime: string;
   endTime: string | null;
   projectId: string;
+  projectName: string;
   activityId: string;
+  activityName: string;
   note: string;
   createdAt: string;
 };

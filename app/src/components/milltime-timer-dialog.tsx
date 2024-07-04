@@ -37,13 +37,10 @@ export const MilltimeTimerDialog = (props: {
     projectId: projectId,
   });
 
-  const { data: timerHistory } = useQuery(milltimeQueries.timerHistory());
-
-  const joinedTimerHistory = timerHistory?.map((timer) => ({
-    project: projects?.find((p) => p.projectId === timer.projectId),
-    activity: activities?.find((a) => a.activity === timer.activityId),
-    note: timer.note,
-  }));
+  const selectedProject = projects?.find(
+    (p) => p.projectId.toString() === projectId,
+  );
+  const selectedActivity = activities?.find((a) => a.activity === activityId);
 
   const resetForm = () => {
     setProjectId("");
@@ -100,7 +97,10 @@ export const MilltimeTimerDialog = (props: {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
-            <Select onValueChange={(v) => setProjectId(v)}>
+            <Select
+              value={selectedProject?.projectId.toString() ?? ""}
+              onValueChange={(v) => setProjectId(v)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Project" />
               </SelectTrigger>
@@ -116,6 +116,8 @@ export const MilltimeTimerDialog = (props: {
               </SelectContent>
             </Select>
             <Select
+              key={activities?.length}
+              value={selectedActivity?.activity ?? ""}
               onValueChange={(v) => setActivityId(v)}
               disabled={!projectId}
             >
@@ -135,25 +137,14 @@ export const MilltimeTimerDialog = (props: {
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
-            <div>
-              <h2 className="text-lg font-semibold">Recent timers</h2>
-              <div className="flex flex-col gap-2">
-                {joinedTimerHistory?.map((timer, index) => (
-                  <div key={index} className="flex flex-col gap-1">
-                    <div>
-                      <span className="font-semibold">
-                        {timer.project?.projectName}
-                      </span>{" "}
-                      -{" "}
-                      <span className="font-semibold">
-                        {timer.activity?.activityName}
-                      </span>
-                    </div>
-                    <div>{timer.note}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+
+            <TimerHistory
+              onHistoryClick={(projectId, activityId, note) => {
+                setProjectId(projectId);
+                setActivityId(activityId);
+                setNote(note);
+              }}
+            />
           </div>
           <DialogFooter>
             <Button
@@ -172,3 +163,43 @@ export const MilltimeTimerDialog = (props: {
     </Dialog>
   );
 };
+
+function TimerHistory(props: {
+  onHistoryClick: (projectId: string, activityId: string, note: string) => void;
+}) {
+  const { data: timerHistory } = useQuery(milltimeQueries.timerHistory());
+
+  if (!timerHistory?.length) {
+    return null;
+  }
+
+  return (
+    <div>
+      <h2 className="text-base font-semibold">Recent timers</h2>
+      <div className="flex flex-col gap-2">
+        {timerHistory?.map((timer, index) => (
+          <div
+            key={index}
+            className="flex cursor-pointer flex-row gap-1 hover:underline"
+            onClick={() =>
+              props.onHistoryClick(
+                timer.projectId,
+                timer.activityId,
+                timer.note,
+              )
+            }
+          >
+            <div>
+              <span className="text-sm font-semibold">{timer.projectName}</span>{" "}
+              -{" "}
+              <span className="text-sm font-semibold">
+                {timer.activityName}
+              </span>
+            </div>
+            <div>{timer.note}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

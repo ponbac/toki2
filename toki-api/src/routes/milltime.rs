@@ -1,4 +1,4 @@
-use crate::{auth, repositories::MilltimeRepository};
+use crate::repositories::MilltimeRepository;
 use std::ops::Add;
 
 use axum::{
@@ -9,6 +9,7 @@ use axum::{
     Json, Router,
 };
 use axum_extra::extract::{cookie::Cookie, CookieJar};
+use milltime::MilltimeFetchError;
 use serde::Deserialize;
 use time::{Duration, OffsetDateTime};
 use tracing::instrument;
@@ -189,7 +190,12 @@ async fn get_timer(
         }
         (Err(e), Ok(Some(_))) => {
             tracing::warn!("failed to fetch milltime timer, but found in db: {:?}", e);
-            milltime_repo.delete_active_timer(&user.id).await.unwrap();
+            match e {
+                MilltimeFetchError::ResponseError(_) => {
+                    tracing::warn!("response error, not deleting active timer");
+                }
+                _ => milltime_repo.delete_active_timer(&user.id).await.unwrap(),
+            }
 
             Err((StatusCode::OK, "".to_string()))
         }
@@ -239,7 +245,9 @@ async fn start_timer(
         user_id: user.id,
         start_time: time::OffsetDateTime::now_utc(),
         project_id: body.project_id.clone(),
+        project_name: body.project_name.clone(),
         activity_id: body.activity.clone(),
+        activity_name: body.activity_name.clone(),
         note: body.user_note.clone().unwrap_or_default(),
     };
 
