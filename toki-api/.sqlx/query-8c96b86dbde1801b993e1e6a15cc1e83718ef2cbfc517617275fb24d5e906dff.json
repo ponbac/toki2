@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at\n            FROM timer_history\n            WHERE user_id = $1 AND end_time IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "end_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "project_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "project_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "activity_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "activity_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8c96b86dbde1801b993e1e6a15cc1e83718ef2cbfc517617275fb24d5e906dff"
+}
