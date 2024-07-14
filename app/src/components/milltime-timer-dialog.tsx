@@ -175,12 +175,12 @@ function TimerHistory(props: {
 
   return (
     <div>
-      <h2 className="text-base font-semibold">Recent timers</h2>
+      <h2 className="text-base font-semibold">History</h2>
       <div className="flex flex-col gap-2">
         {timerHistory?.map((timer, index) => (
           <div
             key={index}
-            className="flex cursor-pointer flex-row gap-1 hover:underline"
+            className="flex cursor-pointer flex-row items-center gap-1 hover:underline"
             onClick={() =>
               props.onHistoryClick(
                 timer.projectId,
@@ -196,7 +196,7 @@ function TimerHistory(props: {
                 {timer.activityName}
               </span>
             </div>
-            <div>{timer.note}</div>
+            <div className="text-sm">{timer.note}</div>
           </div>
         ))}
       </div>
