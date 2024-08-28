@@ -82,6 +82,9 @@ impl RepoDiffer {
 }
 
 impl RepoDiffer {
+    const MAX_RETRIES: usize = 3;
+    const RETRY_DELAY: Duration = Duration::from_secs(5);
+
     #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
     pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>, db_pool: Arc<PgPool>) {
         let mut interval: Option<tokio::time::Interval> = None;
@@ -104,6 +107,7 @@ impl RepoDiffer {
                             }
                         }
                         RepoDifferMessage::ForceUpdate => {
+                            // TODO: timeout
                             tracing::debug!("Forcing update for differ {}", self.key);
                             let _ = self.tick().await;
                         }
@@ -120,15 +124,35 @@ impl RepoDiffer {
                 }
                 _ = interval_tick_or_sleep(&mut interval) => {
                     tracing::debug!("Ticked");
-                    let change_events = self.tick().await;
-                    match change_events {
-                        Ok(change_events) => {
-                            self.notification_handler.notify_affected_users(change_events).await;
+                    let mut retries = 0;
+                    let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+
+                    while retries < Self::MAX_RETRIES {
+                        match tokio::time::timeout(Duration::from_secs(60), self.tick()).await {
+                            Ok(Ok(change_events)) => {
+                                self.notification_handler.notify_affected_users(change_events).await;
+                                break;
+                            }
+                            Ok(Err(err)) => {
+                                tracing::error!("Error ticking for {}: {:?}", self.key, err);
+                                last_error = Some(Box::new(err));
+                            }
+                            Err(_) => {
+                                tracing::error!("Tick operation timed out for {}", self.key);
+                                last_error = Some(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, "Tick operation timed out")));
+                            }
                         }
-                        Err(err) => {
-                            tracing::error!("Error ticking for {}: {:?}", self.key, err);
-                            *self.status.write().await = RepoDifferStatus::Errored;
+
+                        retries += 1;
+                        if retries < Self::MAX_RETRIES {
+                            tracing::warn!("Retrying tick operation for {} (attempt {}/{})", self.key, retries + 1, Self::MAX_RETRIES);
+                            tokio::time::sleep(Self::RETRY_DELAY).await;
                         }
+                    }
+
+                    if retries == Self::MAX_RETRIES {
+                        tracing::error!("All retry attempts failed for {}. Last error: {:?}", self.key, last_error);
+                        *self.status.write().await = RepoDifferStatus::Errored;
                     }
                 }
             }
