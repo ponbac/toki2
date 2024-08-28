@@ -307,6 +307,7 @@ dependencies = [
 name = "az-devops"
 version = "0.1.0"
 dependencies = [
+ "azure_core 0.20.0",
  "azure_devops_rust_api",
  "dotenvy",
  "serde",
@@ -344,12 +345,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "azure_core"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34ce3de4b65b1ee2667c81d1fc692949049502a4cf9c38118d811d6d79a7eaef"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "dyn-clone",
+ "futures",
+ "getrandom 0.2.11",
+ "http-types",
+ "once_cell",
+ "paste",
+ "pin-project",
+ "rand 0.8.5",
+ "rustc_version",
+ "serde",
+ "serde_json",
+ "time",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "azure_devops_rust_api"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3ff40027e0c003557ebf6cabf6b55907b7ae1f532a8080ed9a420171195d30b"
 dependencies = [
- "azure_core",
+ "azure_core 0.18.0",
  "base64 0.21.5",
  "bytes",
  "futures",

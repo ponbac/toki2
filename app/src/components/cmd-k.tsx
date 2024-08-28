@@ -23,7 +23,6 @@ import {
   useMilltimeActions,
   useMilltimeIsAuthenticated,
 } from "@/hooks/useMilltimeContext";
-import { pullRequestUrl } from "@/lib/utils";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -130,14 +129,6 @@ function PRCommandGroup(props: { close: () => void }) {
               params: { prId: pr.id.toString() },
             });
             props.close();
-          }}
-          onKeyDown={(e) => {
-            // TODO: this does not work!
-            if (e.ctrlKey && e.key === "Enter") {
-              e.preventDefault();
-              window.open(pullRequestUrl(pr), "_blank");
-              props.close();
-            }
           }}
         >
           <div className="flex w-full flex-row items-center justify-between gap-2 truncate">

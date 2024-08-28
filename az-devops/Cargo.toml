@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+azure_core = "0.20.0"
 azure_devops_rust_api = { version = "0.15.1", features = [
     "git",
     "pipelines",
