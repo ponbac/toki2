@@ -1,12 +1,5 @@
-import { cn } from "@/lib/utils";
+import { cn, LinkData, workItemUrl } from "@/lib/utils";
 import { ConditionalTooltip } from "./ui/tooltip";
-
-type LinkData = {
-  organization: string;
-  project: string;
-  repoName: string;
-  id: number;
-};
 
 type WorkItemLinkProps<T extends LinkData> = {
   data: T;
@@ -25,7 +18,7 @@ export function WorkItemLink<T extends LinkData>({
   return (
     <ConditionalTooltip condition={!!tooltip} content={tooltip}>
       <a
-        href={`https://dev.azure.com/${data.organization}/${data.project}/${data.repoName}/_workitems/edit/${data.id}`}
+        href={workItemUrl(data)}
         target="_blank"
         rel="noreferrer"
         className={cn("hover:underline", className)}

@@ -31,3 +31,18 @@ export function getWeekNumber(date: Date) {
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
+
+export type LinkData = {
+  organization: string;
+  project: string;
+  repoName: string;
+  id: number;
+};
+
+export function pullRequestUrl<T extends LinkData>(pr: T) {
+  return `https://dev.azure.com/${pr.organization}/${pr.project}/_git/${pr.repoName}/pullrequest/${pr.id}`;
+}
+
+export function workItemUrl<T extends LinkData>(wi: T) {
+  return `https://dev.azure.com/${wi.organization}/${wi.project}/${wi.repoName}/_workitems/edit/${wi.id}`;
+}

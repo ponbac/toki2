@@ -1,11 +1,4 @@
-import { cn } from "@/lib/utils";
-
-type LinkData = {
-  organization: string;
-  project: string;
-  repoName: string;
-  id: number;
-};
+import { cn, LinkData, pullRequestUrl } from "@/lib/utils";
 
 type PRLinkProps<T extends LinkData> = {
   data: T;
@@ -21,7 +14,7 @@ export function PRLink<T extends LinkData>({
 }: PRLinkProps<T>) {
   return (
     <a
-      href={`https://dev.azure.com/${data.organization}/${data.project}/_git/${data.repoName}/pullrequest/${data.id}`}
+      href={pullRequestUrl(data)}
       target="_blank"
       rel="noreferrer"
       className={cn("hover:underline", className)}
