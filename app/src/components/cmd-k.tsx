@@ -132,6 +132,7 @@ function PRCommandGroup(props: { close: () => void }) {
             props.close();
           }}
           onKeyDown={(e) => {
+            // TODO: this does not work!
             if (e.ctrlKey && e.key === "Enter") {
               e.preventDefault();
               window.open(pullRequestUrl(pr), "_blank");
