@@ -31,13 +31,16 @@ impl MilltimeRepositoryImpl {
 pub struct MilltimeTimer {
     pub id: i32,
     pub user_id: i32,
+    #[serde(with = "time::serde::rfc3339")]
     pub start_time: time::OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     pub end_time: Option<time::OffsetDateTime>,
     pub project_id: String,
     pub project_name: String,
     pub activity_id: String,
     pub activity_name: String,
     pub note: String,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: time::OffsetDateTime,
 }
 
