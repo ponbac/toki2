@@ -167,7 +167,20 @@ export const MilltimeTimerDialog = (props: {
 function TimerHistory(props: {
   onHistoryClick: (projectId: string, activityId: string, note: string) => void;
 }) {
-  const { data: timerHistory } = useQuery(milltimeQueries.timerHistory());
+  const { data: timerHistory } = useQuery({
+    ...milltimeQueries.timerHistory(),
+    select: (data) =>
+      data.filter(
+        (timer, index, self) =>
+          index ===
+          self.findIndex(
+            (t) =>
+              t.projectId === timer.projectId &&
+              t.activityId === timer.activityId &&
+              t.note === timer.note,
+          ),
+      ),
+  });
 
   if (!timerHistory?.length) {
     return null;
