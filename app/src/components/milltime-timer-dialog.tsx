@@ -171,6 +171,7 @@ function TimerHistory(props: {
     ...milltimeQueries.timerHistory(),
     select: (data) =>
       data
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .filter(
           (timer, index, self) =>
             index ===
@@ -180,8 +181,7 @@ function TimerHistory(props: {
                 t.activityId === timer.activityId &&
                 t.note === timer.note,
             ),
-        )
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        ),
   });
 
   if (!timerHistory?.length) {
