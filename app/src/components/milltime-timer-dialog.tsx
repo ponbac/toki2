@@ -170,16 +170,18 @@ function TimerHistory(props: {
   const { data: timerHistory } = useQuery({
     ...milltimeQueries.timerHistory(),
     select: (data) =>
-      data.filter(
-        (timer, index, self) =>
-          index ===
-          self.findIndex(
-            (t) =>
-              t.projectId === timer.projectId &&
-              t.activityId === timer.activityId &&
-              t.note === timer.note,
-          ),
-      ),
+      data
+        .filter(
+          (timer, index, self) =>
+            index ===
+            self.findIndex(
+              (t) =>
+                t.projectId === timer.projectId &&
+                t.activityId === timer.activityId &&
+                t.note === timer.note,
+            ),
+        )
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   });
 
   if (!timerHistory?.length) {
