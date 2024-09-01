@@ -4,47 +4,85 @@
 
 @layer base {
   :root {
+    /* White */
     --background: 0 0% 100%;
+    /* Very dark gray */
     --foreground: 20 14.3% 4.1%;
+    /* White */
     --card: 0 0% 100%;
+    /* Very dark gray */
     --card-foreground: 20 14.3% 4.1%;
+    /* White */
     --popover: 0 0% 100%;
+    /* Very dark gray */
     --popover-foreground: 20 14.3% 4.1%;
+    /* Orange */
     --primary: 24.6 95% 53.1%;
+    /* Very light grayish yellow */
     --primary-foreground: 60 9.1% 97.8%;
+    /* Very light grayish yellow */
     --secondary: 60 4.8% 95.9%;
+    /* Very dark grayish orange */
     --secondary-foreground: 24 9.8% 10%;
+    /* Very light grayish yellow */
     --muted: 60 4.8% 95.9%;
+    /* Dark grayish orange */
     --muted-foreground: 25 5.3% 44.7%;
+    /* Very light grayish yellow */
     --accent: 60 4.8% 95.9%;
+    /* Very dark grayish orange */
     --accent-foreground: 24 9.8% 10%;
+    /* Bright red */
     --destructive: 0 84.2% 60.2%;
+    /* Very light grayish yellow */
     --destructive-foreground: 60 9.1% 97.8%;
+    /* Very light gray */
     --border: 20 5.9% 90%;
+    /* Very light gray */
     --input: 20 5.9% 90%;
+    /* Orange */
     --ring: 24.6 95% 53.1%;
     --radius: 0.5rem;
   }
 
   .dark {
+    /* Very dark gray */
     --background: 20 14.3% 4.1%;
+    /* Very light grayish yellow */
     --foreground: 60 9.1% 97.8%;
+    /* Very dark gray */
     --card: 20 14.3% 4.1%;
+    /* Very light grayish yellow */
     --card-foreground: 60 9.1% 97.8%;
+    /* Very dark gray */
     --popover: 20 14.3% 4.1%;
+    /* Very light grayish yellow */
     --popover-foreground: 60 9.1% 97.8%;
+    /* Dark orange */
     --primary: 20.5 90.2% 48.2%;
+    /* Very light grayish yellow */
     --primary-foreground: 60 9.1% 97.8%;
+    /* Very dark grayish orange */
     --secondary: 12 6.5% 15.1%;
+    /* Very light grayish yellow */
     --secondary-foreground: 60 9.1% 97.8%;
+    /* Very dark grayish orange */
     --muted: 12 6.5% 15.1%;
+    /* Light grayish orange */
     --muted-foreground: 24 5.4% 63.9%;
+    /* Very dark grayish orange */
     --accent: 12 6.5% 15.1%;
+    /* Very light grayish yellow */
     --accent-foreground: 60 9.1% 97.8%;
+    /* Dark red */
     --destructive: 0 72.2% 50.6%;
+    /* Very light grayish yellow */
     --destructive-foreground: 60 9.1% 97.8%;
+    /* Very dark grayish orange */
     --border: 12 6.5% 15.1%;
+    /* Very dark grayish orange */
     --input: 12 6.5% 15.1%;
+    /* Dark orange */
     --ring: 20.5 90.2% 48.2%;
   }
 }
