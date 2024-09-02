@@ -10,12 +10,7 @@ import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
 import { ReactNode } from "react";
-import {
-  CopySlashIcon,
-  MessageCircleQuestionIcon,
-  PickaxeIcon,
-  UserXIcon,
-} from "lucide-react";
+import { CopySlashIcon, PickaxeIcon, UserXIcon } from "lucide-react";
 import { User } from "@/lib/api/queries/user";
 import { cn } from "@/lib/utils";
 
