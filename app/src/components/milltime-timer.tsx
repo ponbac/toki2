@@ -20,6 +20,7 @@ import {
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { toast } from "sonner";
 
 export const MilltimeTimer = () => {
   const { setTimer } = useMilltimeActions();
@@ -36,7 +37,11 @@ export const MilltimeTimer = () => {
   const { mutate: stopTimer, isPending: isStoppingTimer } =
     milltimeMutations.useStopTimer();
   const { mutate: saveTimer, isPending: isSavingTimer } =
-    milltimeMutations.useSaveTimer();
+    milltimeMutations.useSaveTimer({
+      onSuccess: () => {
+        toast.success("Timer successfully saved to Milltime");
+      },
+    });
 
   // Sync local timer with fetched timer
   React.useEffect(() => {

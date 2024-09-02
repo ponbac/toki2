@@ -24,6 +24,7 @@ import { getWeekNumber } from "@/lib/utils";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
+import { ScrollArea } from "./ui/scroll-area";
 
 export const MilltimeTimerDialog = (props: {
   open: boolean;
@@ -199,10 +200,21 @@ function TimerHistory(props: {
         <HistoryIcon className="size-4" />
         <h2 className="text-sm font-semibold">Recent Timers</h2>
       </div>
-      <div className="flex max-h-40 flex-col gap-2 overflow-y-auto">
-        {timerHistory?.map((timer, index) => (
+      <ScrollArea className="flex max-h-72 flex-col gap-2">
+        {[
+          ...timerHistory,
+          ...timerHistory,
+          ...timerHistory,
+          ...timerHistory,
+          ...timerHistory,
+          ...timerHistory,
+          ...timerHistory,
+          ...timerHistory,
+          ...timerHistory,
+          ...timerHistory,
+        ]?.map((timer, index) => (
           <div
-            className="group flex cursor-pointer flex-col rounded-md"
+            className="group flex cursor-pointer flex-col rounded-md py-1"
             key={index}
             onClick={() =>
               props.onHistoryClick(
@@ -221,13 +233,13 @@ function TimerHistory(props: {
               </span>
             </div>
             {timer.note && (
-              <div className="mt-1 truncate text-xs text-muted-foreground transition-colors group-hover:text-primary/80">
+              <div className="mt-1 truncate text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
                 {timer.note}
               </div>
             )}
           </div>
         ))}
-      </div>
+      </ScrollArea>
     </div>
   );
 }
