@@ -277,14 +277,16 @@ async fn stop_timer(
 }
 
 #[instrument(name = "save_timer", skip(jar, app_state, auth_session))]
+#[debug_handler]
 async fn save_timer(
     jar: CookieJar,
     auth_session: AuthSession,
     State(app_state): State<AppState>,
+    Json(body): Json<milltime::SaveTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    milltime_client.save_timer().await.unwrap();
+    milltime_client.save_timer(body).await.unwrap();
 
     let user = auth_session.user.expect("user not found");
     let end_time = time::OffsetDateTime::now_utc();

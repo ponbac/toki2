@@ -80,13 +80,16 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
   });
 }
 
-function useSaveTimer(options?: DefaultMutationOptions<void>) {
+function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
   const queryClient = useQueryClient();
   const { reset, setTimer } = useMilltimeActions();
 
   return useMutation({
     mutationKey: ["milltime", "saveTimer"],
-    mutationFn: () => api.put("milltime/timer"),
+    mutationFn: (body: SaveTimerPayload) =>
+      api.put("milltime/timer", {
+        json: body,
+      }),
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
@@ -125,4 +128,8 @@ export type StartTimerPayload = {
   userNote?: string;
   regDay: string;
   weekNumber: number;
+};
+
+export type SaveTimerPayload = {
+  userNote?: string;
 };

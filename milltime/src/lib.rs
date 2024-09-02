@@ -132,6 +132,12 @@ mod tests {
     #[tokio::test]
     async fn test_save_timer() {
         let client = initialize_client().await;
-        client.save_timer().await.expect("Failed to save timer")
+        let payload = SaveTimerPayload {
+            user_note: Some("Testing note".to_string()),
+        };
+        client
+            .save_timer(payload)
+            .await
+            .expect("Failed to save timer")
     }
 }

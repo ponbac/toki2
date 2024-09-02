@@ -168,6 +168,12 @@ impl From<StartTimerOptions> for TimerRegistrationPayload {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SaveTimerPayload {
+    #[serde(rename(serialize = "usernote"))]
+    pub user_note: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PayloadTicket {}
 

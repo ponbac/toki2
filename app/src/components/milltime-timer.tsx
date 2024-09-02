@@ -115,7 +115,11 @@ export const MilltimeTimer = () => {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => saveTimer()}
+                onClick={() =>
+                  saveTimer({
+                    userNote: timer?.userNote,
+                  })
+                }
                 disabled={isSavingTimer || isStoppingTimer}
               >
                 <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
