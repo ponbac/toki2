@@ -201,20 +201,9 @@ function TimerHistory(props: {
         <h2 className="text-sm font-semibold">Recent Timers</h2>
       </div>
       <ScrollArea className="flex max-h-72 flex-col gap-2">
-        {[
-          ...timerHistory,
-          ...timerHistory,
-          ...timerHistory,
-          ...timerHistory,
-          ...timerHistory,
-          ...timerHistory,
-          ...timerHistory,
-          ...timerHistory,
-          ...timerHistory,
-          ...timerHistory,
-        ]?.map((timer, index) => (
-          <div
-            className="group flex cursor-pointer flex-col rounded-md py-1"
+        {timerHistory?.map((timer, index) => (
+          <button
+            className="group flex w-full cursor-pointer flex-col rounded-md py-1"
             key={index}
             onClick={() =>
               props.onHistoryClick(
@@ -224,7 +213,7 @@ function TimerHistory(props: {
               )
             }
           >
-            <div className="flex items-center justify-between">
+            <div className="flex w-full items-center justify-between">
               <span className="text-sm font-medium transition-colors group-hover:text-primary">
                 {timer.projectName}
               </span>
@@ -237,7 +226,7 @@ function TimerHistory(props: {
                 {timer.note}
               </div>
             )}
-          </div>
+          </button>
         ))}
       </ScrollArea>
     </div>
