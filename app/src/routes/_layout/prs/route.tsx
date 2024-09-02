@@ -14,8 +14,10 @@ const pullRequestsSearchSchema = z.object({
 });
 
 export const Route = createFileRoute("/_layout/prs")({
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData(queries.cachedPullRequests()),
+  loader: ({ context }) => {
+    context.queryClient.ensureQueryData(queries.me());
+    context.queryClient.ensureQueryData(queries.cachedPullRequests());
+  },
   shouldReload: false,
   validateSearch: pullRequestsSearchSchema,
   component: PrsComponent,
@@ -24,14 +26,16 @@ export const Route = createFileRoute("/_layout/prs")({
 function PrsComponent() {
   const navigate = useNavigate();
   const { searchString } = Route.useSearch();
-  const { data } = useSuspenseQuery({
+
+  const { data: user } = useSuspenseQuery(queries.me());
+  const { data: cachedPullRequests } = useSuspenseQuery({
     ...queries.cachedPullRequests(),
     refetchInterval: 60 * 1000,
   });
 
   const filteredData = useMemo(
-    () => filterPullRequests(data ?? [], searchString ?? ""),
-    [data, searchString],
+    () => filterPullRequests(cachedPullRequests ?? [], searchString ?? ""),
+    [cachedPullRequests, searchString],
   );
 
   return (
@@ -40,7 +44,7 @@ function PrsComponent() {
         <TopBar />
         <DataTable
           data={filteredData}
-          columns={pullRequestColumns}
+          columns={pullRequestColumns(user)}
           onRowClick={(row) =>
             navigate({
               to: `/prs/$prId`,

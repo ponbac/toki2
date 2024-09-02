@@ -4,6 +4,7 @@ use axum_login::AuthUser;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: i32,
     pub email: String,

@@ -16,6 +16,7 @@ const CSRF_STATE_KEY: &str = "oauth.csrf-state";
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/me", get(self::get::me))
         .route("/login", post(self::post::login))
         .route("/logout", get(self::post::logout))
         .route("/oauth/callback", get(self::get::callback))
@@ -66,11 +67,23 @@ mod post {
 }
 
 mod get {
-    use axum::extract::State;
+    use axum::{extract::State, Json};
 
-    use crate::auth::backend::{AuthSession, Credentials};
+    use crate::{
+        auth::backend::{AuthSession, Credentials},
+        domain::User,
+    };
 
     use super::*;
+
+    pub async fn me(auth_session: AuthSession) -> Result<Json<User>, StatusCode> {
+        let user = match auth_session.user {
+            Some(user) => user,
+            None => return Err(StatusCode::UNAUTHORIZED),
+        };
+
+        Ok(Json(user))
+    }
 
     pub async fn callback(
         mut auth_session: AuthSession,
