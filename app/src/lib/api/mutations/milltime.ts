@@ -10,6 +10,7 @@ export const milltimeMutations = {
   useStartTimer,
   useStopTimer,
   useSaveTimer,
+  useEditTimer,
 };
 
 function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
@@ -113,6 +114,25 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
   });
 }
 
+function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["milltime", "editTimer"],
+    mutationFn: (body: EditTimerPayload) =>
+      api.put("milltime/update-timer", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timerBaseKey,
+      });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
 export const authenticateSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
@@ -132,4 +152,8 @@ export type StartTimerPayload = {
 
 export type SaveTimerPayload = {
   userNote?: string;
+};
+
+export type EditTimerPayload = {
+  userNote: string;
 };

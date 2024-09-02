@@ -176,6 +176,13 @@ pub struct SaveTimerPayload {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EditTimerPayload {
+    #[serde(rename(serialize = "usernote"))]
+    pub user_note: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PayloadTicket {}
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

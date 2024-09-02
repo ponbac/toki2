@@ -7,6 +7,7 @@ use crate::{
         TimerRegistrationPayload,
     },
     milltime_url::MilltimeURL,
+    UpdateTimerFilter,
 };
 
 use super::Credentials;
@@ -273,6 +274,27 @@ impl MilltimeClient {
 
         let result = self
             .put::<MilltimeRowResponse<serde_json::Value>>(url, Some(save_timer_payload))
+            .await?;
+
+        match result.success {
+            true => Ok(()),
+            false => Err(MilltimeFetchError::Other(
+                "milltime responded with success=false".to_string(),
+            )),
+        }
+    }
+
+    pub async fn edit_timer(
+        &self,
+        edit_timer_payload: domain::EditTimerPayload,
+    ) -> Result<(), MilltimeFetchError> {
+        let update_timer_filter = UpdateTimerFilter::new(edit_timer_payload.user_note.clone());
+        let url = MilltimeURL::from_env()
+            .append_path("/data/store/TimerRegistration")
+            .with_filter(&update_timer_filter);
+
+        let result = self
+            .put::<MilltimeRowResponse<serde_json::Value>>(url, Some(edit_timer_payload))
             .await?;
 
         match result.success {

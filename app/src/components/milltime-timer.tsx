@@ -27,6 +27,7 @@ export const MilltimeTimer = () => {
   const { visible, timeSeconds, state: timerState } = useMilltimeTimer();
 
   const [isMinimized, setIsMinimized] = React.useState(false);
+  const [userNote, setUserNote] = React.useState("");
 
   const { data: timer, error: timerFetchError } = useQuery({
     ...milltimeQueries.getTimer(),
@@ -42,6 +43,14 @@ export const MilltimeTimer = () => {
         toast.success("Timer successfully saved to Milltime");
       },
     });
+  const { mutate: editTimer } = milltimeMutations.useEditTimer({
+    onSuccess: () => {
+      toast.success("Timer successfully updated");
+    },
+    onError: () => {
+      toast.error(`Failed to update timer, try refreshing the page`);
+    },
+  });
 
   // Sync local timer with fetched timer
   React.useEffect(() => {
@@ -54,6 +63,7 @@ export const MilltimeTimer = () => {
         state: "running",
         timeSeconds: totalSeconds,
       });
+      setUserNote(timer.userNote || "");
     }
   }, [timer?.seconds, timer?.minutes, timer?.hours, timer, setTimer]);
 
@@ -180,9 +190,12 @@ export const MilltimeTimer = () => {
               <Input
                 type="text"
                 placeholder="Add a note..."
-                value={timer?.userNote}
-                disabled
-                className="w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50"
+                value={userNote}
+                onChange={(e) => setUserNote(e.target.value)}
+                onBlur={() => editTimer({ userNote })}
+                className={cn(
+                  "w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50",
+                )}
               />
             </div>
           </div>

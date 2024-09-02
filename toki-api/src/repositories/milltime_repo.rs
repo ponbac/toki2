@@ -8,6 +8,7 @@ pub trait MilltimeRepository {
         -> Result<Vec<MilltimeTimer>, RepositoryError>;
     async fn active_timer(&self, user_id: &i32) -> Result<Option<MilltimeTimer>, RepositoryError>;
     async fn create_timer(&self, repository: &NewMilltimeTimer) -> Result<i32, RepositoryError>;
+    async fn update_timer(&self, repository: &UpdateMilltimeTimer) -> Result<(), RepositoryError>;
     async fn save_active_timer(
         &self,
         user_id: &i32,
@@ -52,6 +53,11 @@ pub struct NewMilltimeTimer {
     pub activity_id: String,
     pub activity_name: String,
     pub note: String,
+}
+
+pub struct UpdateMilltimeTimer {
+    pub user_id: i32,
+    pub user_note: String,
 }
 
 impl MilltimeRepository for MilltimeRepositoryImpl {
@@ -157,6 +163,22 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
             "#,
             end_time,
             user_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_timer(&self, timer: &UpdateMilltimeTimer) -> Result<(), RepositoryError> {
+        sqlx::query!(
+            r#"
+            UPDATE timer_history
+            SET note = $1
+            WHERE user_id = $2 AND end_time IS NULL
+            "#,
+            timer.user_note,
+            timer.user_id
         )
         .execute(&self.pool)
         .await?;
