@@ -5,12 +5,22 @@ import { pullRequestColumns } from "./-components/columns";
 import { queries } from "@/lib/api/queries/queries";
 import { z } from "zod";
 import { useMemo, useRef } from "react";
-import { SearchCode } from "lucide-react";
+import {
+  SearchCode,
+  UserIcon,
+  ShieldAlertIcon,
+  NotebookPenIcon,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
+import { Button } from "@/components/ui/button";
+import { User } from "@/lib/api/queries/user";
 
 const pullRequestsSearchSchema = z.object({
   searchString: z.string().optional().catch(""),
+  filterAuthor: z.boolean().optional().catch(false),
+  filterReviewer: z.boolean().optional().catch(false),
+  filterBlocking: z.boolean().optional().catch(false),
 });
 
 export const Route = createFileRoute("/_layout/prs")({
@@ -25,7 +35,8 @@ export const Route = createFileRoute("/_layout/prs")({
 
 function PrsComponent() {
   const navigate = useNavigate();
-  const { searchString } = Route.useSearch();
+  const { searchString, filterAuthor, filterReviewer, filterBlocking } =
+    Route.useSearch();
 
   const { data: user } = useSuspenseQuery(queries.me());
   const { data: cachedPullRequests } = useSuspenseQuery({
@@ -34,8 +45,23 @@ function PrsComponent() {
   });
 
   const filteredData = useMemo(
-    () => filterPullRequests(cachedPullRequests ?? [], searchString ?? ""),
-    [cachedPullRequests, searchString],
+    () =>
+      filterPullRequests(
+        cachedPullRequests ?? [],
+        searchString ?? "",
+        user,
+        filterAuthor ?? false,
+        filterReviewer ?? false,
+        filterBlocking ?? false,
+      ),
+    [
+      cachedPullRequests,
+      searchString,
+      user,
+      filterAuthor,
+      filterReviewer,
+      filterBlocking,
+    ],
   );
 
   return (
@@ -61,9 +87,27 @@ function PrsComponent() {
 
 function TopBar() {
   const navigate = useNavigate({ from: Route.fullPath });
-  const { searchString } = Route.useSearch();
+  const { searchString, filterAuthor, filterReviewer, filterBlocking } =
+    Route.useSearch();
 
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const toggleFilter = (filter: "author" | "reviewer" | "blocking") => {
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        [filter === "author"
+          ? "filterAuthor"
+          : filter === "reviewer"
+            ? "filterReviewer"
+            : "filterBlocking"]: !(filter === "author"
+          ? prev.filterAuthor
+          : filter === "reviewer"
+            ? prev.filterReviewer
+            : prev.filterBlocking),
+      }),
+    });
+  };
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -95,16 +139,74 @@ function TopBar() {
             className="pl-8"
           />
         </div>
+        <Button
+          variant={filterAuthor ? "default" : "outline"}
+          onClick={() => toggleFilter("author")}
+          className="flex items-center gap-2"
+        >
+          <UserIcon className="size-4" />
+          My PRs
+        </Button>
+        <Button
+          variant={filterReviewer ? "default" : "outline"}
+          onClick={() => toggleFilter("reviewer")}
+          className="flex items-center gap-2"
+        >
+          <NotebookPenIcon className="size-4" />
+          Reviews
+        </Button>
+        <Button
+          variant={filterBlocking ? "default" : "outline"}
+          onClick={() => toggleFilter("blocking")}
+          className="flex items-center gap-2"
+        >
+          <ShieldAlertIcon className="size-4" />
+          Blocking
+        </Button>
       </div>
     </div>
   );
 }
 
-function filterPullRequests(data: Array<PullRequest>, searchString: string) {
-  if (!searchString) return data;
+function filterPullRequests(
+  data: Array<PullRequest>,
+  searchString: string,
+  user: User | undefined,
+  filterAuthor: boolean,
+  filterReviewer: boolean,
+  filterBlocking: boolean,
+) {
+  let filteredData = data;
+
+  if (filterAuthor && user) {
+    filteredData = filteredData.filter(
+      (pr) => pr.createdBy.uniqueName === user.email,
+    );
+  }
+
+  if (filterReviewer && user) {
+    filteredData = filteredData.filter((pr) =>
+      pr.reviewers.some(
+        (reviewer) =>
+          reviewer.identity.uniqueName === user.email &&
+          !pr.isDraft &&
+          pr.createdBy.uniqueName !== user.email,
+      ),
+    );
+  }
+
+  if (filterBlocking && user) {
+    filteredData = filteredData.filter((pr) =>
+      pr.blockedBy.some(
+        (blocker) => blocker.identity.uniqueName === user.email,
+      ),
+    );
+  }
+
+  if (!searchString) return filteredData;
 
   const lowerCaseSearchString = searchString.toLowerCase();
-  return data.filter(
+  return filteredData.filter(
     (pr) =>
       pr.title.toLowerCase().includes(lowerCaseSearchString) ||
       pr.repoName.toLowerCase().includes(lowerCaseSearchString) ||
