@@ -34,7 +34,7 @@ export function pullRequestColumns(
         const title = row.original.title;
         const isTruncated = (length: number) => title.length > length;
 
-        const twoXLLimit = 80;
+        const twoXLLimit = 75;
         const smallLimit = 45;
 
         return (
