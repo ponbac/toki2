@@ -25,7 +25,6 @@ import {
   MessageCircleCodeIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
 import Markdown from "react-markdown";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -36,14 +35,9 @@ import {
 } from "@/components/ui/accordion";
 import React from "react";
 
-const pullRequestsSearchSchema = z.object({
-  searchString: z.string().optional().catch(""),
-});
-
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
     context.queryClient.ensureQueryData(queries.cachedPullRequests()),
-  validateSearch: pullRequestsSearchSchema,
   component: PRDetailsDialog,
 });
 
@@ -212,7 +206,7 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
                 </span>
               </h1>
             </div>
-            <article className="prose-sm dark:prose-invert truncate text-left">
+            <article className="prose-sm truncate text-left dark:prose-invert">
               <Markdown>{firstComment.content.split("\n").at(0)}</Markdown>
             </article>
           </div>
@@ -236,7 +230,7 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
                   </span>
                 </h1>
               </div>
-              <article className="prose dark:prose-invert max-w-[80ch]">
+              <article className="prose max-w-[80ch] dark:prose-invert">
                 <Markdown>{comment.content}</Markdown>
               </article>
             </div>

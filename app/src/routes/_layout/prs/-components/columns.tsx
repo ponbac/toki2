@@ -57,9 +57,9 @@ export function pullRequestColumns(
       header: "Author",
       cell: ({ row }) => {
         return (
-          <div className="flex flex-row items-center justify-center gap-2 xl:justify-start">
+          <div className="flex flex-row items-center justify-center gap-2 2xl:justify-start">
             <AzureAvatar user={row.original.createdBy} />
-            <span className="hidden text-nowrap xl:block">
+            <span className="hidden text-nowrap 2xl:block">
               {row.original.createdBy.displayName}
             </span>
           </div>
@@ -196,10 +196,18 @@ export function pullRequestColumns(
     },
     {
       header: "Created At",
-      accessorFn: (row) => dayjs(row.createdAt).format("YYYY-MM-DD HH:mm"),
-      cell: ({ getValue }) => (
-        <span className="text-nowrap">{getValue() as ReactNode}</span>
-      ),
+      accessorFn: (row) => dayjs(row.createdAt),
+      cell: ({ getValue }) => {
+        const date = getValue() as dayjs.Dayjs;
+        return (
+          <span className="text-nowrap">
+            <span className="hidden 2xl:inline">
+              {date.format("YYYY-MM-DD HH:mm")}
+            </span>
+            <span className="2xl:hidden">{date.format("D/M HH:mm")}</span>
+          </span>
+        );
+      },
     },
   ];
 }
