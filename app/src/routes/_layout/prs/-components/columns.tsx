@@ -31,13 +31,42 @@ export function pullRequestColumns(
       accessorKey: "title",
       header: "Title",
       cell: ({ row }) => {
-        const initialChars = row.original.title.slice(0, 60);
+        const title = row.original.title;
+        const isTruncated = (length: number) => title.length > length;
+
+        const twoXLLimit = 80;
+        const smallLimit = 45;
+
         return (
           <div className="flex flex-row items-center gap-2">
-            <span className="text-nowrap">
-              {initialChars.trimEnd()}
-              {initialChars.length < row.original.title.length ? "..." : ""}
-            </span>
+            <div className="hidden 2xl:block">
+              {isTruncated(twoXLLimit) ? (
+                <Tooltip>
+                  <TooltipTrigger>
+                    <span className="text-nowrap">
+                      {title.slice(0, twoXLLimit).trimEnd()}...
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{title}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <span className="text-nowrap">{title}</span>
+              )}
+            </div>
+            <div className="block 2xl:hidden">
+              {isTruncated(smallLimit) ? (
+                <Tooltip>
+                  <TooltipTrigger>
+                    <span className="text-nowrap">
+                      {title.slice(0, smallLimit).trimEnd()}...
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{title}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <span className="text-nowrap">{title}</span>
+              )}
+            </div>
             {row.original.isDraft && (
               <StatusIcon tooltip="Draft">
                 <PickaxeIcon className="size-5 text-blue-400" />
