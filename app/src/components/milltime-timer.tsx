@@ -39,11 +39,16 @@ export const MilltimeTimer = () => {
   });
 
   const { mutate: stopTimer, isPending: isStoppingTimer } =
-    milltimeMutations.useStopTimer();
+    milltimeMutations.useStopTimer({
+      onSuccess: () => {
+        document.title = "Toki2";
+      },
+    });
   const { mutate: saveTimer, isPending: isSavingTimer } =
     milltimeMutations.useSaveTimer({
       onSuccess: () => {
         toast.success("Timer successfully saved to Milltime");
+        document.title = "Toki2";
       },
     });
   const { mutate: editTimer } = milltimeMutations.useEditTimer({
