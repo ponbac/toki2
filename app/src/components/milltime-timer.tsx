@@ -25,6 +25,9 @@ import { toast } from "sonner";
 export const MilltimeTimer = () => {
   const { setTimer } = useMilltimeActions();
   const { visible, timeSeconds, state: timerState } = useMilltimeTimer();
+  const { hours, minutes, seconds } = secondsToHoursMinutesSeconds(
+    timeSeconds ?? 0,
+  );
 
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [userNote, setUserNote] = React.useState("");
@@ -75,15 +78,26 @@ export const MilltimeTimer = () => {
         setTimer({
           timeSeconds: (timeSeconds ?? 0) + 1,
         });
+        document.title = `${hours}:${minutes}:${String(parseInt(seconds) + 1).padStart(2, "0")} - ${timer?.userNote}, ${timer?.projectName}`;
       }, 1000);
 
       return () => clearInterval(interval!);
     } else {
       if (interval) {
         clearInterval(interval);
+        document.title = "Toki2";
       }
     }
-  }, [timeSeconds, timerState, setTimer]);
+  }, [
+    timeSeconds,
+    timerState,
+    setTimer,
+    hours,
+    minutes,
+    seconds,
+    timer?.userNote,
+    timer?.projectName,
+  ]);
 
   // If the timer could not be fetched, it is probably not active
   React.useEffect(() => {
@@ -95,10 +109,6 @@ export const MilltimeTimer = () => {
       });
     }
   }, [timerFetchError, setTimer]);
-
-  const { hours, minutes, seconds } = secondsToHoursMinutesSeconds(
-    timeSeconds ?? 0,
-  );
 
   return visible ? (
     <>
@@ -192,7 +202,9 @@ export const MilltimeTimer = () => {
                 placeholder="Add a note..."
                 value={userNote}
                 onChange={(e) => setUserNote(e.target.value)}
-                onBlur={() => editTimer({ userNote })}
+                onBlur={() =>
+                  userNote !== timer?.userNote && editTimer({ userNote })
+                }
                 className={cn(
                   "w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50",
                 )}
