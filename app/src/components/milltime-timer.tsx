@@ -78,7 +78,7 @@ export const MilltimeTimer = () => {
         setTimer({
           timeSeconds: (timeSeconds ?? 0) + 1,
         });
-        document.title = `${hours}:${minutes}:${String(parseInt(seconds) + 1).padStart(2, "0")} - ${timer?.userNote}, ${timer?.projectName}`;
+        document.title = `${hours !== "00" ? `${hours}:` : ""}${minutes}:${String(parseInt(seconds) + 1).padStart(2, "0")} - ${timer?.userNote}, ${timer?.projectName}`;
       }, 1000);
 
       return () => clearInterval(interval!);
