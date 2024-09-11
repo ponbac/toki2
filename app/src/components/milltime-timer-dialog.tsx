@@ -31,7 +31,7 @@ export const MilltimeTimerDialog = (props: {
   onOpenChange: (open: boolean) => void;
 }) => {
   const [projectId, setProjectId] = React.useState("");
-  const [activityId, setActivityId] = React.useState("");
+  const [activityName, setActivityName] = React.useState("");
   const [note, setNote] = React.useState("");
 
   const { projects, activities } = useMilltimeData({
@@ -41,11 +41,13 @@ export const MilltimeTimerDialog = (props: {
   const selectedProject = projects?.find(
     (p) => p.projectId.toString() === projectId,
   );
-  const selectedActivity = activities?.find((a) => a.activity === activityId);
+  const selectedActivity = activities?.find(
+    (a) => a.activityName === activityName,
+  );
 
   const resetForm = () => {
     setProjectId("");
-    setActivityId("");
+    setActivityName("");
     setNote("");
   };
 
@@ -73,7 +75,9 @@ export const MilltimeTimerDialog = (props: {
             const project = projects?.find(
               (p) => p.projectId.toString() === projectId,
             );
-            const activity = activities?.find((a) => a.activity === activityId);
+            const activity = activities?.find(
+              (a) => a.activityName === activityName,
+            );
             if (!project || !activity) {
               return;
             }
@@ -120,7 +124,7 @@ export const MilltimeTimerDialog = (props: {
               <Select
                 key={activities?.length}
                 value={selectedActivity?.activity ?? ""}
-                onValueChange={(v) => setActivityId(v)}
+                onValueChange={(v) => setActivityName(v)}
                 disabled={!projectId}
               >
                 <SelectTrigger>
@@ -150,10 +154,7 @@ export const MilltimeTimerDialog = (props: {
                     ?.find((p) => p.projectName === projectName)
                     ?.projectId.toString() ?? "",
                 );
-                setActivityId(
-                  activities?.find((a) => a.activityName === activityName)
-                    ?.activity ?? "",
-                );
+                setActivityName(activityName);
                 setNote(note);
               }}
             />
@@ -164,7 +165,7 @@ export const MilltimeTimerDialog = (props: {
               variant="default"
               size="sm"
               className="flex gap-2"
-              disabled={!projectId || !activityId}
+              disabled={!projectId || !activityName}
             >
               <PlayCircleIcon className="size-5" />
               Start
