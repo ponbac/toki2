@@ -99,18 +99,29 @@ function TopBar() {
 
   const toggleFilter = (filter: "author" | "reviewer" | "blocking") => {
     navigate({
-      search: (prev) => ({
-        ...prev,
-        [filter === "author"
-          ? "filterAuthor"
-          : filter === "reviewer"
-            ? "filterReviewer"
-            : "filterBlocking"]: !(filter === "author"
-          ? prev.filterAuthor
-          : filter === "reviewer"
-            ? prev.filterReviewer
-            : prev.filterBlocking),
-      }),
+      search: (prev) => {
+        const newSearch: Record<string, boolean | undefined> = {
+          filterAuthor: undefined,
+          filterReviewer: undefined,
+          filterBlocking: undefined,
+        };
+
+        // TODO: this is ugly!
+        if (
+          prev[
+            `filter${filter.charAt(0).toUpperCase() + filter.slice(1)}` as keyof typeof prev
+          ] !== true
+        ) {
+          newSearch[
+            `filter${filter.charAt(0).toUpperCase() + filter.slice(1)}` as keyof typeof newSearch
+          ] = true;
+        }
+
+        return {
+          ...prev,
+          ...newSearch,
+        };
+      },
     });
   };
 
