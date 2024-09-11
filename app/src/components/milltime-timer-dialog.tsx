@@ -67,7 +67,7 @@ export const MilltimeTimerDialog = (props: {
         resetForm();
       }}
     >
-      <DialogContent>
+      <DialogContent className="w-full max-w-2xl">
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {
@@ -223,7 +223,7 @@ function TimerHistory(props: {
               </span>
             </div>
             {timeEntry.note && (
-              <div className="mt-1 truncate text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
+              <div className="mt-1 max-w-[55ch] truncate text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
                 {timeEntry.note}
               </div>
             )}
