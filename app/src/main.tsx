@@ -56,7 +56,7 @@ ReactDOM.createRoot(document.getElementById("app")!).render(
     <ThemeProvider storageKey="ui-theme">
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
-        <ReactQueryDevtools />
+        <ReactQueryDevtools buttonPosition="top-right" />
       </QueryClientProvider>
     </ThemeProvider>
   </React.StrictMode>,
