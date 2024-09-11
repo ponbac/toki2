@@ -1,9 +1,12 @@
+use std::cmp;
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,
     Json,
 };
 use axum_extra::extract::CookieJar;
+use itertools::Itertools;
 use serde::Deserialize;
 use tracing::instrument;
 
@@ -39,4 +42,45 @@ pub async fn get_time_info(
         .map_err(|_| (StatusCode::OK, "".to_string()))?;
 
     Ok((jar, Json(time_info)))
+}
+
+#[instrument(name = "get_time_entries", skip(jar, app_state))]
+pub async fn get_time_entries(
+    jar: CookieJar,
+    State(app_state): State<AppState>,
+    Query(date_filter): Query<DateFilterQuery>,
+) -> CookieJarResult<Json<Vec<milltime::TimeEntry>>> {
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+
+    let date_filter: milltime::DateFilter = format!("{},{}", date_filter.from, date_filter.to)
+        .parse()
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                "could not parse date range".to_string(),
+            )
+        })?;
+
+    let user_calendar = milltime_client
+        .fetch_user_calendar(date_filter)
+        .await
+        .map_err(|_| (StatusCode::OK, "".to_string()))?;
+
+    let time_entries = user_calendar
+        .weeks
+        .into_iter()
+        .flat_map(|week| week.days)
+        .sorted_by_key(|day| cmp::Reverse(day.date))
+        .flat_map(|day| day.time_entries)
+        .unique_by(|time_entry| {
+            format!(
+                "{}-{}-{}",
+                time_entry.project_name,
+                time_entry.activity_name,
+                time_entry.note.as_ref().unwrap_or(&"".to_string())
+            )
+        })
+        .collect();
+
+    Ok((jar, Json(time_entries)))
 }

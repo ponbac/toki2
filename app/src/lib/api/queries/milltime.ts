@@ -43,6 +43,20 @@ export const milltimeQueries = {
           .json<TimeInfo>();
       },
     }),
+  timeEntries: (query?: { from: string; to: string }) =>
+    queryOptions({
+      queryKey: ["milltime", "time-entries", query?.from, query?.to],
+      queryFn: async () => {
+        return api
+          .get("milltime/time-entries", {
+            searchParams: query ?? {
+              from: dayjs().startOf("month").format("YYYY-MM-DD"),
+              to: dayjs().endOf("month").format("YYYY-MM-DD"),
+            },
+          })
+          .json<Array<TimeEntry>>();
+      },
+    }),
 };
 
 export type TimerHistory = {
@@ -138,4 +152,11 @@ export type Activity = {
   name: string;
   timeDistributionType: unknown;
   planningType: number;
+};
+
+export type TimeEntry = {
+  projectName: string;
+  activityName: string;
+  hours: number;
+  note: string | null;
 };

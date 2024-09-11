@@ -21,6 +21,7 @@ pub fn router() -> Router<AppState> {
             get(projects::list_activities),
         )
         .route("/time-info", get(calendar::get_time_info))
+        .route("/time-entries", get(calendar::get_time_entries))
         .route("/timer-history", get(timer::get_timer_history))
         .route("/timer", get(timer::get_timer))
         .route("/timer", post(timer::start_timer))

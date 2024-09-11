@@ -144,9 +144,16 @@ export const MilltimeTimerDialog = (props: {
               />
             </div>
             <TimerHistory
-              onHistoryClick={(projectId, activityId, note) => {
-                setProjectId(projectId);
-                setActivityId(activityId);
+              onHistoryClick={(projectName, activityName, note) => {
+                setProjectId(
+                  projects
+                    ?.find((p) => p.projectName === projectName)
+                    ?.projectId.toString() ?? "",
+                );
+                setActivityId(
+                  activities?.find((a) => a.activityName === activityName)
+                    ?.activity ?? "",
+                );
                 setNote(note);
               }}
             />
@@ -170,27 +177,20 @@ export const MilltimeTimerDialog = (props: {
 };
 
 function TimerHistory(props: {
-  onHistoryClick: (projectId: string, activityId: string, note: string) => void;
+  onHistoryClick: (
+    projectName: string,
+    activityName: string,
+    note: string,
+  ) => void;
 }) {
-  // TODO: this should be done in the backend
-  const { data: timerHistory } = useQuery({
-    ...milltimeQueries.timerHistory(),
-    select: (data) =>
-      data
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .filter(
-          (timer, index, self) =>
-            index ===
-            self.findIndex(
-              (t) =>
-                t.projectId === timer.projectId &&
-                t.activityId === timer.activityId &&
-                t.note === timer.note,
-            ),
-        ),
+  const { data: timeEntries } = useQuery({
+    ...milltimeQueries.timeEntries({
+      from: dayjs().startOf("month").format("YYYY-MM-DD"),
+      to: dayjs().endOf("month").format("YYYY-MM-DD"),
+    }),
   });
 
-  if (!timerHistory?.length) {
+  if (!timeEntries?.length) {
     return null;
   }
 
@@ -200,30 +200,30 @@ function TimerHistory(props: {
         <HistoryIcon className="size-4" />
         <h2 className="text-sm font-semibold">Recent Timers</h2>
       </div>
-      <ScrollArea className="flex max-h-72 flex-col gap-2">
-        {timerHistory?.map((timer, index) => (
+      <ScrollArea className="flex max-h-72 w-full flex-col gap-2">
+        {timeEntries?.map((timeEntry, index) => (
           <button
             className="group flex w-full cursor-pointer flex-col rounded-md py-1"
             key={index}
             onClick={() =>
               props.onHistoryClick(
-                timer.projectId,
-                timer.activityId,
-                timer.note,
+                timeEntry.projectName,
+                timeEntry.activityName,
+                timeEntry.note ?? "",
               )
             }
           >
             <div className="flex w-full items-center justify-between">
               <span className="text-sm font-medium transition-colors group-hover:text-primary">
-                {timer.projectName}
+                {timeEntry.projectName}
               </span>
               <span className="text-xs text-muted-foreground transition-colors group-hover:text-primary/80">
-                {timer.activityName}
+                {timeEntry.activityName}
               </span>
             </div>
-            {timer.note && (
+            {timeEntry.note && (
               <div className="mt-1 truncate text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
-                {timer.note}
+                {timeEntry.note}
               </div>
             )}
           </button>

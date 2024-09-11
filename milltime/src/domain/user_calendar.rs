@@ -80,6 +80,7 @@ impl From<RawDay> for Day {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all(serialize = "camelCase"))]
 pub struct TimeEntry {
     pub project_name: String,
     pub activity_name: String,
