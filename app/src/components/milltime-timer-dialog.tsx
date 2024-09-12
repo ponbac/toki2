@@ -123,7 +123,7 @@ export const MilltimeTimerDialog = (props: {
               </Select>
               <Select
                 key={activities?.length}
-                value={selectedActivity?.activity ?? ""}
+                value={selectedActivity?.activityName ?? ""}
                 onValueChange={(v) => setActivityName(v)}
                 disabled={!projectId}
               >
@@ -134,7 +134,7 @@ export const MilltimeTimerDialog = (props: {
                   {activities?.map((activity) => (
                     <SelectItem
                       key={activity.activity}
-                      value={activity.activity}
+                      value={activity.activityName}
                     >
                       {activity.activityName}
                     </SelectItem>
@@ -221,6 +221,7 @@ function TimerHistory(props: {
             className="absolute left-2 top-1/2 size-4 -translate-y-1/2 transform cursor-pointer"
           />
           <Input
+            autoFocus
             ref={inputRef}
             placeholder="Search entries..."
             value={searchTerm ?? ""}

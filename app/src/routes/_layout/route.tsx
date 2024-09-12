@@ -40,7 +40,7 @@ function LayoutComponent() {
             <Outlet />
           </Suspense>
         </SideNavWrapper>
-        <Toaster />
+        <Toaster position="top-right" />
         <CmdK />
         <MilltimeTimerProvider />
       </MilltimeStoreProvider>
