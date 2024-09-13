@@ -156,7 +156,7 @@ pub async fn edit_timer(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    milltime_client.edit_timer(body.clone()).await.unwrap();
+    milltime_client.edit_timer(&body).await.unwrap();
 
     let user = auth_session.user.expect("user not found");
     let update_timer = repositories::UpdateMilltimeTimer {

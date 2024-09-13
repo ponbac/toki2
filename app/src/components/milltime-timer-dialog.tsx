@@ -51,13 +51,29 @@ export const MilltimeTimerDialog = (props: {
     setNote("");
   };
 
-  const { mutate: startTimer } = milltimeMutations.useStartTimer({
+  const { mutate: startTimerMutate } = milltimeMutations.useStartTimer({
     onSuccess: () => {
       toast.success("Timer started!");
       props.onOpenChange(false);
       resetForm();
     },
   });
+
+  const startTimer = () => {
+    if (!selectedProject || !selectedActivity) {
+      return;
+    }
+
+    startTimerMutate({
+      activity: selectedActivity.activity,
+      activityName: selectedActivity.activityName,
+      projectId: selectedProject.projectId,
+      projectName: selectedProject.projectName,
+      userNote: note,
+      regDay: dayjs().format("YYYY-MM-DD"),
+      weekNumber: getWeekNumber(new Date()),
+    });
+  };
 
   return (
     <Dialog
@@ -72,25 +88,7 @@ export const MilltimeTimerDialog = (props: {
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            const project = projects?.find(
-              (p) => p.projectId.toString() === projectId,
-            );
-            const activity = activities?.find(
-              (a) => a.activityName === activityName,
-            );
-            if (!project || !activity) {
-              return;
-            }
-
-            startTimer({
-              activity: activity.activity,
-              activityName: activity.activityName,
-              projectId: project.projectId,
-              projectName: project.projectName,
-              userNote: note,
-              regDay: dayjs().format("YYYY-MM-DD"),
-              weekNumber: getWeekNumber(new Date()),
-            });
+            startTimer();
           }}
         >
           <DialogHeader>
@@ -149,13 +147,22 @@ export const MilltimeTimerDialog = (props: {
             </div>
             <TimerHistory
               onHistoryClick={(projectName, activityName, note) => {
-                setProjectId(
-                  projects
-                    ?.find((p) => p.projectName === projectName)
-                    ?.projectId.toString() ?? "",
-                );
-                setActivityName(activityName);
-                setNote(note);
+                // already selected? start timer
+                if (
+                  projectName === selectedProject?.projectName &&
+                  activityName === selectedActivity?.activityName &&
+                  note === note
+                ) {
+                  startTimer();
+                } else {
+                  setProjectId(
+                    projects
+                      ?.find((p) => p.projectName === projectName)
+                      ?.projectId.toString() ?? "",
+                  );
+                  setActivityName(activityName);
+                  setNote(note);
+                }
               }}
             />
           </div>
@@ -236,6 +243,7 @@ function TimerHistory(props: {
       <ScrollArea className="flex max-h-72 w-full flex-col gap-2">
         {filteredEntries.map((timeEntry, index) => (
           <button
+            type="button"
             className="group flex w-full cursor-pointer flex-col rounded-md py-1"
             key={index}
             onClick={() =>

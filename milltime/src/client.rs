@@ -286,7 +286,7 @@ impl MilltimeClient {
 
     pub async fn edit_timer(
         &self,
-        edit_timer_payload: domain::EditTimerPayload,
+        edit_timer_payload: &domain::EditTimerPayload,
     ) -> Result<(), MilltimeFetchError> {
         let update_timer_filter = UpdateTimerFilter::new(edit_timer_payload.user_note.clone());
         let url = MilltimeURL::from_env()
