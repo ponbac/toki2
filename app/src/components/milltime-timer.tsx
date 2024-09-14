@@ -108,8 +108,8 @@ export const MilltimeTimer = () => {
     } else {
       if (interval) {
         clearInterval(interval);
-        document.title = "Toki2";
       }
+      document.title = "Toki2";
     }
   }, [
     timerState,

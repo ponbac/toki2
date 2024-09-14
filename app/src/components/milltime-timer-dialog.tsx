@@ -21,7 +21,6 @@ import { Input } from "./ui/input";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
 import { getWeekNumber } from "@/lib/utils";
-import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { ScrollArea } from "./ui/scroll-area";
@@ -53,7 +52,6 @@ export const MilltimeTimerDialog = (props: {
 
   const { mutate: startTimerMutate } = milltimeMutations.useStartTimer({
     onSuccess: () => {
-      toast.success("Timer started!");
       props.onOpenChange(false);
       resetForm();
     },
