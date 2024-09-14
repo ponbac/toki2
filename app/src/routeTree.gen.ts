@@ -168,22 +168,149 @@ declare module "@tanstack/react-router" {
 
 // Create and export the route tree
 
-export const routeTree = rootRoute.addChildren({
-  LayoutRouteRoute: LayoutRouteRoute.addChildren({
-    LayoutMilltimeRouteRoute,
-    LayoutPrsRouteRoute: LayoutPrsRouteRoute.addChildren({
-      LayoutPrsPrIdRouteRoute,
-      LayoutPrsCommitsRouteRoute,
-      LayoutPrsIndexRoute,
-    }),
-    LayoutRepositoriesRouteRoute: LayoutRepositoriesRouteRoute.addChildren({
-      LayoutRepositoriesAddRouteRoute,
-      LayoutRepositoriesIndexRoute,
-    }),
-    LayoutIndexRoute,
-  }),
-  LoginRoute,
-})
+interface LayoutPrsRouteRouteChildren {
+  LayoutPrsPrIdRouteRoute: typeof LayoutPrsPrIdRouteRoute
+  LayoutPrsCommitsRouteRoute: typeof LayoutPrsCommitsRouteRoute
+  LayoutPrsIndexRoute: typeof LayoutPrsIndexRoute
+}
+
+const LayoutPrsRouteRouteChildren: LayoutPrsRouteRouteChildren = {
+  LayoutPrsPrIdRouteRoute: LayoutPrsPrIdRouteRoute,
+  LayoutPrsCommitsRouteRoute: LayoutPrsCommitsRouteRoute,
+  LayoutPrsIndexRoute: LayoutPrsIndexRoute,
+}
+
+const LayoutPrsRouteRouteWithChildren = LayoutPrsRouteRoute._addFileChildren(
+  LayoutPrsRouteRouteChildren,
+)
+
+interface LayoutRepositoriesRouteRouteChildren {
+  LayoutRepositoriesAddRouteRoute: typeof LayoutRepositoriesAddRouteRoute
+  LayoutRepositoriesIndexRoute: typeof LayoutRepositoriesIndexRoute
+}
+
+const LayoutRepositoriesRouteRouteChildren: LayoutRepositoriesRouteRouteChildren =
+  {
+    LayoutRepositoriesAddRouteRoute: LayoutRepositoriesAddRouteRoute,
+    LayoutRepositoriesIndexRoute: LayoutRepositoriesIndexRoute,
+  }
+
+const LayoutRepositoriesRouteRouteWithChildren =
+  LayoutRepositoriesRouteRoute._addFileChildren(
+    LayoutRepositoriesRouteRouteChildren,
+  )
+
+interface LayoutRouteRouteChildren {
+  LayoutMilltimeRouteRoute: typeof LayoutMilltimeRouteRoute
+  LayoutPrsRouteRoute: typeof LayoutPrsRouteRouteWithChildren
+  LayoutRepositoriesRouteRoute: typeof LayoutRepositoriesRouteRouteWithChildren
+  LayoutIndexRoute: typeof LayoutIndexRoute
+}
+
+const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
+  LayoutMilltimeRouteRoute: LayoutMilltimeRouteRoute,
+  LayoutPrsRouteRoute: LayoutPrsRouteRouteWithChildren,
+  LayoutRepositoriesRouteRoute: LayoutRepositoriesRouteRouteWithChildren,
+  LayoutIndexRoute: LayoutIndexRoute,
+}
+
+const LayoutRouteRouteWithChildren = LayoutRouteRoute._addFileChildren(
+  LayoutRouteRouteChildren,
+)
+
+export interface FileRoutesByFullPath {
+  "": typeof LayoutRouteRouteWithChildren
+  "/login": typeof LoginRoute
+  "/milltime": typeof LayoutMilltimeRouteRoute
+  "/prs": typeof LayoutPrsRouteRouteWithChildren
+  "/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
+  "/": typeof LayoutIndexRoute
+  "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
+  "/prs/commits": typeof LayoutPrsCommitsRouteRoute
+  "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
+  "/prs/": typeof LayoutPrsIndexRoute
+  "/repositories/": typeof LayoutRepositoriesIndexRoute
+}
+
+export interface FileRoutesByTo {
+  "/login": typeof LoginRoute
+  "/milltime": typeof LayoutMilltimeRouteRoute
+  "/": typeof LayoutIndexRoute
+  "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
+  "/prs/commits": typeof LayoutPrsCommitsRouteRoute
+  "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
+  "/prs": typeof LayoutPrsIndexRoute
+  "/repositories": typeof LayoutRepositoriesIndexRoute
+}
+
+export interface FileRoutesById {
+  __root__: typeof rootRoute
+  "/_layout": typeof LayoutRouteRouteWithChildren
+  "/login": typeof LoginRoute
+  "/_layout/milltime": typeof LayoutMilltimeRouteRoute
+  "/_layout/prs": typeof LayoutPrsRouteRouteWithChildren
+  "/_layout/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
+  "/_layout/": typeof LayoutIndexRoute
+  "/_layout/prs/$prId": typeof LayoutPrsPrIdRouteRoute
+  "/_layout/prs/commits": typeof LayoutPrsCommitsRouteRoute
+  "/_layout/repositories/add": typeof LayoutRepositoriesAddRouteRoute
+  "/_layout/prs/": typeof LayoutPrsIndexRoute
+  "/_layout/repositories/": typeof LayoutRepositoriesIndexRoute
+}
+
+export interface FileRouteTypes {
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths:
+    | ""
+    | "/login"
+    | "/milltime"
+    | "/prs"
+    | "/repositories"
+    | "/"
+    | "/prs/$prId"
+    | "/prs/commits"
+    | "/repositories/add"
+    | "/prs/"
+    | "/repositories/"
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | "/login"
+    | "/milltime"
+    | "/"
+    | "/prs/$prId"
+    | "/prs/commits"
+    | "/repositories/add"
+    | "/prs"
+    | "/repositories"
+  id:
+    | "__root__"
+    | "/_layout"
+    | "/login"
+    | "/_layout/milltime"
+    | "/_layout/prs"
+    | "/_layout/repositories"
+    | "/_layout/"
+    | "/_layout/prs/$prId"
+    | "/_layout/prs/commits"
+    | "/_layout/repositories/add"
+    | "/_layout/prs/"
+    | "/_layout/repositories/"
+  fileRoutesById: FileRoutesById
+}
+
+export interface RootRouteChildren {
+  LayoutRouteRoute: typeof LayoutRouteRouteWithChildren
+  LoginRoute: typeof LoginRoute
+}
+
+const rootRouteChildren: RootRouteChildren = {
+  LayoutRouteRoute: LayoutRouteRouteWithChildren,
+  LoginRoute: LoginRoute,
+}
+
+export const routeTree = rootRoute
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()
 
 /* prettier-ignore-end */
 

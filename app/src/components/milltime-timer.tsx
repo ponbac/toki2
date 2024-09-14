@@ -60,11 +60,17 @@ export const MilltimeTimer = () => {
     },
   });
 
+  // Store the start time
+  const startTimeRef = React.useRef<Date | null>(null);
+
   // Sync local timer with fetched timer
   React.useEffect(() => {
     if (timer) {
       const totalSeconds =
         timer.seconds + timer.minutes * 60 + timer.hours * 3600;
+
+      // Set the start time
+      startTimeRef.current = dayjs().subtract(totalSeconds, "second").toDate();
 
       setTimer({
         visible: true,
@@ -73,18 +79,30 @@ export const MilltimeTimer = () => {
       });
       setUserNote(timer.userNote || "");
     }
-  }, [timer?.seconds, timer?.minutes, timer?.hours, timer, setTimer]);
+  }, [timer, setTimer]);
 
   // Make it tick
   React.useEffect(() => {
+    const updateTimer = () => {
+      if (startTimeRef.current) {
+        const now = dayjs();
+        const elapsedSeconds = now.diff(startTimeRef.current, "second");
+
+        setTimer({
+          timeSeconds: elapsedSeconds,
+        });
+
+        const { hours, minutes, seconds } =
+          secondsToHoursMinutesSeconds(elapsedSeconds);
+        document.title = `${hours}:${minutes}:${seconds} - ${timer?.userNote}`;
+      }
+    };
+
+    updateTimer(); // Update immediately on mount
+
     let interval: NodeJS.Timeout | null = null;
     if (timerState === "running") {
-      interval = setInterval(() => {
-        setTimer({
-          timeSeconds: (timeSeconds ?? 0) + 1,
-        });
-        document.title = `${hours !== "00" ? `${hours}:` : ""}${minutes}:${String(parseInt(seconds) + 1).padStart(2, "0")} - ${timer?.userNote}, ${timer?.projectName}`;
-      }, 1000);
+      interval = setInterval(updateTimer, 1000);
 
       return () => clearInterval(interval!);
     } else {
@@ -93,16 +111,7 @@ export const MilltimeTimer = () => {
         document.title = "Toki2";
       }
     }
-  }, [
-    timeSeconds,
-    timerState,
-    setTimer,
-    hours,
-    minutes,
-    seconds,
-    timer?.userNote,
-    timer?.projectName,
-  ]);
+  }, [timerState, setTimer, timer?.userNote]);
 
   // If the timer could not be fetched, it is probably not active
   React.useEffect(() => {

@@ -150,7 +150,7 @@ mod tests {
         };
 
         client
-            .edit_timer(payload)
+            .edit_timer(&payload)
             .await
             .expect("Failed to edit timer");
     }
