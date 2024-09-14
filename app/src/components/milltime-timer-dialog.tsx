@@ -20,7 +20,7 @@ import {
 import { Input } from "./ui/input";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
-import { getWeekNumber } from "@/lib/utils";
+import { cn, getWeekNumber } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { ScrollArea } from "./ui/scroll-area";
@@ -243,7 +243,10 @@ function TimerHistory(props: {
           : filteredEntries.map((timeEntry, index) => (
               <button
                 type="button"
-                className="group flex w-full cursor-pointer flex-col rounded-md py-1"
+                className={cn(
+                  "group flex w-full cursor-pointer flex-col rounded-md py-1",
+                  "transition-colors focus:bg-accent/50 focus:text-primary focus:outline-none",
+                )}
                 key={index}
                 onClick={() =>
                   props.onHistoryClick(
