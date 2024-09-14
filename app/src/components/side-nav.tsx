@@ -24,7 +24,6 @@ import {
   SelectValue,
 } from "./ui/select";
 import { ScrollArea } from "./ui/scroll-area";
-import { ThemeToggle } from "./theme-toggle";
 import { router } from "@/main";
 
 type LinkDestination = LinkProps<typeof router>["to"];
@@ -174,7 +173,6 @@ export function Nav({
             isCollapsed={isCollapsed}
           />
         ))}
-        <ThemeToggle />
       </nav>
     </div>
   );

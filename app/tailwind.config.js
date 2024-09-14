@@ -1,7 +1,7 @@
 import { fontFamily as _fontFamily } from "tailwindcss/defaultTheme";
 
 /** @type {import('tailwindcss').Config} */
-export const darkMode = ["class"];
+export const darkMode = "selector";
 export const content = [
   "./pages/**/*.{ts,tsx}",
   "./components/**/*.{ts,tsx}",
@@ -78,4 +78,7 @@ export const theme = {
   },
 };
 // eslint-disable-next-line no-undef
-export const plugins = [require("tailwindcss-animate"), require("@tailwindcss/typography")];
+export const plugins = [
+  require("tailwindcss-animate"),
+  require("@tailwindcss/typography"),
+];
