@@ -8,11 +8,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "./ui/resizable";
 import { Separator } from "./ui/separator";
 import { buttonVariants } from "./ui/button";
 import { Link, LinkProps } from "@tanstack/react-router";
@@ -68,77 +63,28 @@ type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 
 export function SideNavWrapper({
   accounts,
-  defaultLayout = [3, 97],
-  defaultCollapsed = false,
-  navCollapsedSize,
   children,
-  className,
 }: {
-  accounts: {
+  accounts: Array<{
     label: string;
     email: string;
     icon: React.ReactNode;
-  }[];
-  defaultLayout?: number[];
-  defaultCollapsed?: boolean;
-  navCollapsedSize: number;
+  }>;
   children: React.ReactNode;
-  className?: string;
 }) {
-  const [isCollapsed, setIsCollapsed] = React.useState(defaultCollapsed);
-
   return (
-    <ResizablePanelGroup
-      direction="horizontal"
-      onLayout={(sizes: number[]) => {
-        document.cookie = `react-resizable-panels:layout=${JSON.stringify(
-          sizes,
-        )}`;
-      }}
-      className="sticky top-0 h-full max-h-screen min-h-screen items-stretch"
-    >
-      <ResizablePanel
-        defaultSize={defaultLayout[0]}
-        collapsedSize={navCollapsedSize}
-        collapsible={true}
-        minSize={8}
-        maxSize={12}
-        onCollapse={() => {
-          setIsCollapsed(true);
-          document.cookie = `react-resizable-panels:collapsed=${JSON.stringify(
-            true,
-          )}`;
-        }}
-        onExpand={() => {
-          setIsCollapsed(false);
-          document.cookie = `react-resizable-panels:collapsed=${JSON.stringify(
-            false,
-          )}`;
-        }}
-        className={cn(
-          isCollapsed && "min-w-[50px] transition-all duration-300 ease-in-out",
-        )}
-      >
-        <div
-          className={cn(
-            "flex h-[52px] items-center justify-center",
-            isCollapsed ? "h-[52px]" : "px-2",
-          )}
-        >
-          <AccountSwitcher isCollapsed={isCollapsed} accounts={accounts} />
+    <div className="flex">
+      <div className="fixed left-0 top-0 flex h-full w-14 flex-col items-stretch border-r">
+        <div className="flex h-[52px] items-center justify-center">
+          <AccountSwitcher isCollapsed={true} accounts={accounts} />
         </div>
         <Separator />
-        <Nav isCollapsed={isCollapsed} links={MENU_ITEMS} />
-      </ResizablePanel>
-      <ResizableHandle withHandle />
-      <ResizablePanel
-        defaultSize={defaultLayout[1]}
-        minSize={30}
-        className={className}
-      >
+        <Nav isCollapsed={true} links={MENU_ITEMS} />
+      </div>
+      <div className="ml-16 flex-1">
         <ScrollArea className="h-screen">{children}</ScrollArea>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+      </div>
+    </div>
   );
 }
 

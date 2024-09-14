@@ -32,9 +32,6 @@ function LayoutComponent() {
               icon: "👑",
             },
           ]}
-          navCollapsedSize={2}
-          defaultCollapsed={true}
-          className="flex h-full min-h-screen w-full flex-col"
         >
           <Suspense fallback={<FullscreenLoading />}>
             <Outlet />
