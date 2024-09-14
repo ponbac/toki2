@@ -94,7 +94,7 @@ export const MilltimeTimer = () => {
 
         const { hours, minutes, seconds } =
           secondsToHoursMinutesSeconds(elapsedSeconds);
-        document.title = `${hours}:${minutes}:${seconds} - ${timer?.userNote}`;
+        document.title = `${hours}:${minutes}:${seconds} - ${timer?.userNote} (${timer?.projectName} - ${timer?.activityName})`;
       }
     };
 
@@ -111,7 +111,13 @@ export const MilltimeTimer = () => {
         document.title = "Toki2";
       }
     }
-  }, [timerState, setTimer, timer?.userNote]);
+  }, [
+    timerState,
+    setTimer,
+    timer?.userNote,
+    timer?.projectName,
+    timer?.activityName,
+  ]);
 
   // If the timer could not be fetched, it is probably not active
   React.useEffect(() => {
