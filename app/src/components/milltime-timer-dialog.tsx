@@ -24,6 +24,7 @@ import { getWeekNumber } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { ScrollArea } from "./ui/scroll-area";
+import { Skeleton } from "./ui/skeleton";
 
 export const MilltimeTimerDialog = (props: {
   open: boolean;
@@ -192,7 +193,7 @@ function TimerHistory(props: {
   const [searchTerm, setSearchTerm] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  const { data: timeEntries } = useQuery({
+  const { data: timeEntries, isLoading } = useQuery({
     ...milltimeQueries.timeEntries({
       from: dayjs().subtract(14, "days").format("YYYY-MM-DD"),
       to: dayjs().add(1, "day").format("YYYY-MM-DD"),
@@ -208,10 +209,6 @@ function TimerHistory(props: {
         .includes(searchTerm.toLowerCase()),
     );
   }, [timeEntries, searchTerm]);
-
-  if (!timeEntries?.length) {
-    return null;
-  }
 
   return (
     <div className="mt-4">
@@ -239,35 +236,51 @@ function TimerHistory(props: {
         </div>
       </div>
       <ScrollArea className="flex max-h-72 w-full flex-col gap-2">
-        {filteredEntries.map((timeEntry, index) => (
-          <button
-            type="button"
-            className="group flex w-full cursor-pointer flex-col rounded-md py-1"
-            key={index}
-            onClick={() =>
-              props.onHistoryClick(
-                timeEntry.projectName,
-                timeEntry.activityName,
-                timeEntry.note ?? "",
-              )
-            }
-          >
-            <div className="flex w-full items-center justify-between">
-              <span className="text-sm font-medium transition-colors group-hover:text-primary">
-                {timeEntry.projectName}
-              </span>
-              <span className="text-xs text-muted-foreground transition-colors group-hover:text-primary/80">
-                {timeEntry.activityName}
-              </span>
-            </div>
-            {timeEntry.note && (
-              <div className="mt-1 max-w-[55ch] truncate text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
-                {timeEntry.note}
-              </div>
-            )}
-          </button>
-        ))}
+        {isLoading
+          ? Array.from({ length: 10 }).map((_, index) => (
+              <HistoryEntrySkeleton key={index} />
+            ))
+          : filteredEntries.map((timeEntry, index) => (
+              <button
+                type="button"
+                className="group flex w-full cursor-pointer flex-col rounded-md py-1"
+                key={index}
+                onClick={() =>
+                  props.onHistoryClick(
+                    timeEntry.projectName,
+                    timeEntry.activityName,
+                    timeEntry.note ?? "",
+                  )
+                }
+              >
+                <div className="flex w-full items-center justify-between">
+                  <span className="text-sm font-medium transition-colors group-hover:text-primary">
+                    {timeEntry.projectName}
+                  </span>
+                  <span className="text-xs text-muted-foreground transition-colors group-hover:text-primary/80">
+                    {timeEntry.activityName}
+                  </span>
+                </div>
+                {timeEntry.note && (
+                  <div className="mt-1 max-w-[55ch] truncate text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
+                    {timeEntry.note}
+                  </div>
+                )}
+              </button>
+            ))}
       </ScrollArea>
+    </div>
+  );
+}
+
+function HistoryEntrySkeleton() {
+  return (
+    <div className="group flex w-full cursor-pointer flex-col rounded-md py-1">
+      <div className="flex w-full items-center justify-between">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-3 w-20" />
+      </div>
+      <Skeleton className="mt-1 h-3 w-60" />
     </div>
   );
 }
