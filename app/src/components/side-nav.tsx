@@ -25,35 +25,30 @@ type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
   {
     title: "Pull requests",
-    label: "",
     icon: GitPullRequest,
     variant: "ghost",
     to: "/prs",
   },
   {
     title: "Commits",
-    label: "",
     icon: Activity,
     variant: "ghost",
     to: "/prs/commits",
   },
   {
     title: "Repositories",
-    label: "",
     icon: FolderGit2,
     variant: "ghost",
     to: "/repositories",
   },
   {
     title: "Milltime",
-    label: "",
     icon: AlarmClock,
     variant: "ghost",
     to: "/milltime",
   },
 ] as const satisfies readonly {
   title: string;
-  label?: string;
   icon: LucideIcon;
   variant: "default" | "ghost";
   to: LinkDestination;
