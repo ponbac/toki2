@@ -7,7 +7,6 @@ import { DateRangeSelector } from "./date-range-selector";
 import { ExportButton } from "./export-button";
 import { SearchBar } from "./search-bar";
 import { Summary } from "./summary";
-import { ThemeToggle } from "./theme-toggle";
 import { TimeEntriesList } from "./time-entries-list";
 
 export function TimeTrackerComponent() {
@@ -15,15 +14,13 @@ export function TimeTrackerComponent() {
     start: new Date(),
     end: new Date(),
   });
-  const [darkMode, setDarkMode] = useState(false);
 
   return (
-    <div className={`min-h-screen ${darkMode ? "dark" : ""}`}>
+    <div className={`min-h-screen`}>
       <div className="">
         <div className="container mx-auto px-4 py-8">
           <header className="mb-8 flex items-center justify-between">
             <h1 className="text-3xl font-bold">Time Tracker</h1>
-            <ThemeToggle darkMode={darkMode} setDarkMode={setDarkMode} />
           </header>
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
             <div className="lg:col-span-2">
