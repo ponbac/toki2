@@ -43,7 +43,6 @@ function MilltimeComponent() {
 
   return (
     <div>
-      <h1>Milltime</h1>
       {!isAuthenticated && (
         <form
           onSubmit={(e) => {
