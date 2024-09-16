@@ -17,7 +17,6 @@ import { useMilltimeData } from "@/hooks/useMilltimeData";
 import React from "react";
 import { AddEntryButton } from "@/routes/_layout/milltime/-components/add-entry-button";
 import { DataVisualization } from "@/routes/_layout/milltime/-components/data-visualization";
-import { ExportButton } from "@/routes/_layout/milltime/-components/export-button";
 import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar";
 import { Summary } from "@/routes/_layout/milltime/-components/summary";
 import { TimeEntriesList } from "./-components/time-entries-list";
@@ -96,19 +95,18 @@ function MilltimeComponent() {
         <div className="">
           <div className="container mx-auto px-4 py-8">
             <header className="mb-8 flex items-center justify-between">
-              <h1 className="text-3xl font-bold">Time Tracker</h1>
+              <h1 className="text-3xl font-bold">Milltime</h1>
             </header>
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               <div className="lg:col-span-2">
-                <DateRangeSelector onRangeChange={setDateRange} />
                 <div className="mt-4 flex items-center justify-between">
+                  <DateRangeSelector onRangeChange={setDateRange} />
                   <SearchBar />
-                  <ExportButton />
                 </div>
                 <TimeEntriesList dateRange={dateRange} />
                 <AddEntryButton />
               </div>
-              <div>
+              <div className="flex flex-col gap-4">
                 <Summary dateRange={dateRange} />
                 <DataVisualization dateRange={dateRange} />
               </div>
