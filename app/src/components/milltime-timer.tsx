@@ -279,9 +279,7 @@ function TimeSummary(props: {
     return null;
   }
 
-  const timeLeft = Math.floor(
-    timeInfo.periodTimeLeft - (props.timerHours + props.timerMinutes / 60),
-  );
+  const timeLeft = timeInfo.periodTimeLeft - (props.timerHours + props.timerMinutes / 60);
   const flexTimeTotal = Math.floor(
     timeInfo.flexTimeCurrent + props.timerHours + props.timerMinutes / 60,
   );
@@ -305,7 +303,7 @@ function TimeSummary(props: {
         icon={<CalendarClockIcon size={20} />}
         tooltip="Hours left to work this week"
       >
-        {timeLeft}h
+        {formatHoursMinutes(timeLeft)}
       </SummaryIcon>
       <SummaryIcon icon={<WatchIcon size={20} />} tooltip="Time worked today">
         {timeTodayHours}:{timeTodayMinutes}:{timeTodaySeconds}
@@ -333,6 +331,12 @@ function SummaryIcon(props: {
       <TooltipContent>{props.tooltip}</TooltipContent>
     </Tooltip>
   );
+}
+
+function formatHoursMinutes(hours: number) {
+  const hrs = Math.floor(hours);
+  const mins = Math.floor((hours - hrs) * 60);
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
 function secondsToHoursMinutesSeconds(seconds: number) {
