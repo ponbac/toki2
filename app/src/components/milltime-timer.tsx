@@ -279,7 +279,8 @@ function TimeSummary(props: {
     return null;
   }
 
-  const timeLeft = timeInfo.periodTimeLeft - (props.timerHours + props.timerMinutes / 60);
+  const timeLeft =
+    timeInfo.periodTimeLeft - (props.timerHours + props.timerMinutes / 60);
   const flexTimeTotal = Math.floor(
     timeInfo.flexTimeCurrent + props.timerHours + props.timerMinutes / 60,
   );
@@ -308,7 +309,11 @@ function TimeSummary(props: {
       <SummaryIcon icon={<WatchIcon size={20} />} tooltip="Time worked today">
         {timeTodayHours}:{timeTodayMinutes}:{timeTodaySeconds}
       </SummaryIcon>
-      <SummaryIcon icon={<PiggyBankIcon size={20} />} tooltip="Total flex">
+      <SummaryIcon
+        icon={<PiggyBankIcon size={20} />}
+        tooltip="Total flex"
+        className={cn(flexTimeTotal < 0 ? "text-red-500" : "text-green-600")}
+      >
         {flexTimeTotal}h
       </SummaryIcon>
     </div>
@@ -319,10 +324,11 @@ function SummaryIcon(props: {
   icon: React.ReactNode;
   children: React.ReactNode;
   tooltip: string;
+  className?: string;
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger className="cursor-default">
+      <TooltipTrigger className={cn("cursor-default", props.className)}>
         <div className="flex flex-row items-center gap-2">
           {props.icon}
           <p className="text-sm">{props.children}</p>
@@ -336,7 +342,7 @@ function SummaryIcon(props: {
 function formatHoursMinutes(hours: number) {
   const hrs = Math.floor(hours);
   const mins = Math.floor((hours - hrs) * 60);
-  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 }
 
 function secondsToHoursMinutesSeconds(seconds: number) {
