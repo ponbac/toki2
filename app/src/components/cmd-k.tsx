@@ -22,7 +22,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
   useMilltimeActions,
   useMilltimeIsAuthenticated,
+  useMilltimeTimer,
 } from "@/hooks/useMilltimeContext";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
+import { toast } from "sonner";
+import { milltimeMutations } from "@/lib/api/mutations/milltime";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -86,28 +90,58 @@ function PagesCommandGroup(props: { close: () => void }) {
 }
 
 function ActionsCommandGroup(props: { close: () => void }) {
+  const { state: timerState } = useMilltimeTimer();
   const { setNewTimerDialogOpen, setLoginDialogOpen } = useMilltimeActions();
   const isAuthenticatedToMilltime = useMilltimeIsAuthenticated();
 
+  // TODO: should probably handle the fetched timer and saveTimer in a centralized place
+  const { data: timer } = useQuery({
+    ...milltimeQueries.getTimer(),
+    enabled: false,
+  });
+
+  const { mutate: saveTimer } = milltimeMutations.useSaveTimer({
+    onSuccess: () => {
+      toast.success("Timer successfully saved to Milltime");
+      document.title = "Toki2";
+    },
+  });
+
   return (
     <CommandGroup heading="Actions">
-      <CommandItem
-        onSelect={() => {
-          // TODO: should probably extract this to some kind of guard hook
-          if (isAuthenticatedToMilltime) {
-            setNewTimerDialogOpen(true);
+      {timerState !== "running" ? (
+        <CommandItem
+          onSelect={() => {
+            // TODO: should probably extract this to some kind of guard hook
+            if (isAuthenticatedToMilltime) {
+              setNewTimerDialogOpen(true);
+              props.close();
+            } else {
+              setLoginDialogOpen(true);
+              props.close();
+            }
+          }}
+        >
+          <div className="flex flex-row items-center gap-2">
+            <TimerIcon className="h-1 w-1" />
+            Start a new timer
+          </div>
+        </CommandItem>
+      ) : (
+        <CommandItem
+          onSelect={() => {
+            saveTimer({
+              userNote: timer?.userNote,
+            });
             props.close();
-          } else {
-            setLoginDialogOpen(true);
-            props.close();
-          }
-        }}
-      >
-        <div className="flex flex-row items-center gap-2">
-          <TimerIcon className="h-1 w-1" />
-          Start a new timer
-        </div>
-      </CommandItem>
+          }}
+        >
+          <div className="flex flex-row items-center gap-2">
+            <TimerIcon className="h-1 w-1" />
+            Save current timer
+          </div>
+        </CommandItem>
+      )}
     </CommandGroup>
   );
 }
