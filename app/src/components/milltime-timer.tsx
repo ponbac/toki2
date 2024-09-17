@@ -134,7 +134,7 @@ export const MilltimeTimer = () => {
     <>
       <div
         className={cn(
-          "fixed bottom-4 right-4 w-[360px] rounded-lg bg-white p-4 shadow-lg dark:bg-gray-900/95",
+          "fixed bottom-4 left-1/2 w-[360px] -translate-x-1/2 rounded-lg bg-gray-900/95 p-4 shadow-lg md:left-auto md:right-4 md:translate-x-0",
           {
             "w-fit min-w-[170px] px-2 py-1": isMinimized,
           },
