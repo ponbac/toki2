@@ -25,6 +25,7 @@ impl RepoClient {
         project: &str,
         pat: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        // might need to disable retries or set a timeout (https://docs.rs/azure_devops_rust_api/latest/azure_devops_rust_api/git/struct.ClientBuilder.html, https://docs.rs/azure_core/0.20.0/azure_core/struct.TimeoutPolicy.html)
         let credential = Credential::from_pat(pat.to_owned());
         let git_client = git::ClientBuilder::new(credential.clone()).build();
         let work_item_client = wit::ClientBuilder::new(credential).build();
