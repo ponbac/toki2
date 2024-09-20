@@ -197,6 +197,7 @@ function TimerHistory(props: {
     ...milltimeQueries.timeEntries({
       from: dayjs().subtract(14, "days").format("YYYY-MM-DD"),
       to: dayjs().add(1, "day").format("YYYY-MM-DD"),
+      unique: true,
     }),
   });
 

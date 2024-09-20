@@ -44,15 +44,22 @@ pub async fn get_time_info(
     Ok((jar, Json(time_info)))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TimeEntriesQuery {
+    from: String,
+    to: String,
+    unique: Option<bool>,
+}
+
 #[instrument(name = "get_time_entries", skip(jar, app_state))]
 pub async fn get_time_entries(
     jar: CookieJar,
     State(app_state): State<AppState>,
-    Query(date_filter): Query<DateFilterQuery>,
+    Query(query): Query<TimeEntriesQuery>,
 ) -> CookieJarResult<Json<Vec<milltime::TimeEntry>>> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    let date_filter: milltime::DateFilter = format!("{},{}", date_filter.from, date_filter.to)
+    let date_filter: milltime::DateFilter = format!("{},{}", query.from, query.to)
         .parse()
         .map_err(|_| {
             (
@@ -66,21 +73,26 @@ pub async fn get_time_entries(
         .await
         .map_err(|_| (StatusCode::OK, "".to_string()))?;
 
-    let time_entries = user_calendar
+    let time_entries_iter = user_calendar
         .weeks
         .into_iter()
         .flat_map(|week| week.days)
         .sorted_by_key(|day| cmp::Reverse(day.date))
-        .flat_map(|day| day.time_entries)
-        .unique_by(|time_entry| {
-            format!(
-                "{}-{}-{}",
-                time_entry.project_name,
-                time_entry.activity_name,
-                time_entry.note.as_ref().unwrap_or(&"".to_string())
-            )
-        })
-        .collect();
+        .flat_map(|day| day.time_entries);
+    let time_entries: Vec<milltime::TimeEntry> = if query.unique.unwrap_or(false) {
+        time_entries_iter
+            .unique_by(|time_entry| {
+                format!(
+                    "{}-{}-{}",
+                    time_entry.project_name,
+                    time_entry.activity_name,
+                    time_entry.note.as_ref().unwrap_or(&"".to_string())
+                )
+            })
+            .collect()
+    } else {
+        time_entries_iter.collect()
+    };
 
     Ok((jar, Json(time_entries)))
 }

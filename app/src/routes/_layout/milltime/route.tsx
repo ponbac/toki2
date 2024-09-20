@@ -15,24 +15,41 @@ import {
 } from "@/hooks/useMilltimeContext";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
 import React from "react";
+import { AddEntryButton } from "@/routes/_layout/milltime/-components/add-entry-button";
+import { DataVisualization } from "@/routes/_layout/milltime/-components/data-visualization";
+import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar";
+import { Summary } from "@/routes/_layout/milltime/-components/summary";
+import { TimeEntriesList } from "./-components/time-entries-list";
+import { DateRangeSelector } from "./-components/date-range-selector";
+import { useQuery } from "@tanstack/react-query";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
+import dayjs from "dayjs";
 
 export const Route = createFileRoute("/_layout/milltime")({
   component: MilltimeComponent,
 });
 
 function MilltimeComponent() {
-  const { authenticate, setNewTimerDialogOpen } = useMilltimeActions();
+  const { authenticate } = useMilltimeActions();
   const isAuthenticating = useMilltimeIsAuthenticating();
 
-  const [activeProjectId, setActiveProjectId] = React.useState<string>();
+  const [dateRange, setDateRange] = React.useState({
+    start: new Date(),
+    end: new Date(),
+  });
 
-  const { projects, activities, isAuthenticated } = useMilltimeData({
-    projectId: activeProjectId,
+  const { isAuthenticated } = useMilltimeData();
+
+  const { data: timeEntries } = useQuery({
+    ...milltimeQueries.timeEntries({
+      // fucking americans...
+      from: dayjs().startOf("week").add(1, "day").format("YYYY-MM-DD"),
+      to: dayjs().endOf("week").add(1, "day").format("YYYY-MM-DD"),
+    }),
   });
 
   return (
     <div>
-      <h1>Milltime</h1>
       {!isAuthenticated && (
         <form
           onSubmit={(e) => {
@@ -82,20 +99,27 @@ function MilltimeComponent() {
           </Card>
         </form>
       )}
-      <ul>
-        {projects?.map((project) => (
-          <li
-            key={project.id}
-            onClick={() => setActiveProjectId(project.projectId)}
-          >
-            {project.projectName}
-          </li>
-        ))}
-        {activities?.map((activity) => (
-          <li key={activity.projectId}>{activity.activityName}</li>
-        ))}
-      </ul>
-      <Button onClick={() => setNewTimerDialogOpen(true)}>New Timer</Button>
+      <div className={`min-h-screen`}>
+        <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
+          <header className="mb-8 flex items-center justify-between">
+            <h1 className="text-3xl font-bold">Milltime</h1>
+          </header>
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <div className="mt-4 flex items-center justify-between">
+                <DateRangeSelector onRangeChange={setDateRange} />
+                <SearchBar />
+              </div>
+              <TimeEntriesList timeEntries={timeEntries ?? []} />
+              <AddEntryButton />
+            </div>
+            <div className="flex flex-col gap-4">
+              <Summary timeEntries={timeEntries ?? []} />
+              <DataVisualization timeEntries={timeEntries ?? []} />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
