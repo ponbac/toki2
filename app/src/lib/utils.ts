@@ -46,3 +46,15 @@ export function pullRequestUrl<T extends LinkData>(pr: T) {
 export function workItemUrl<T extends LinkData>(wi: T) {
   return `https://dev.azure.com/${wi.organization}/${wi.project}/${wi.repoName}/_workitems/edit/${wi.id}`;
 }
+
+export function formatHoursAsHoursMinutes(hours: number | string) {
+  const hoursNum = typeof hours === "string" ? parseFloat(hours) : hours;
+  const wholeHours = Math.floor(hoursNum);
+  const minutes = Math.round((hoursNum - wholeHours) * 60);
+
+  if (wholeHours > 0) {
+    return `${wholeHours}h ${minutes}m`;
+  } else {
+    return `${minutes}m`;
+  }
+}

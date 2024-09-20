@@ -1,5 +1,4 @@
-import { useState, useMemo } from "react";
-import { DateRange } from "react-day-picker";
+import { useMemo } from "react";
 import { format } from "date-fns";
 import {
   Card,
@@ -8,60 +7,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { TimeEntry } from "@/lib/api/queries/milltime";
+import { formatHoursAsHoursMinutes } from "@/lib/utils";
 
-type TimeEntry = {
-  id: number;
-  date: Date;
-  duration: number;
-  project: string;
-  activity: string;
-  note: string;
-};
-
-type TimeEntriesListProps = {
-  dateRange: DateRange;
-};
-
-export function TimeEntriesList({ dateRange }: TimeEntriesListProps) {
-  const [entries, setEntries] = useState<TimeEntry[]>([
-    // Sample data
-    {
-      id: 1,
-      date: new Date(2023, 4, 15),
-      duration: 120,
-      project: "Project A",
-      activity: "Development",
-      note: "Implemented new feature",
-    },
-    {
-      id: 2,
-      date: new Date(2023, 4, 15),
-      duration: 60,
-      project: "Project B",
-      activity: "Meeting",
-      note: "Client call",
-    },
-    {
-      id: 3,
-      date: new Date(2023, 4, 16),
-      duration: 90,
-      project: "Project A",
-      activity: "Planning",
-      note: "Sprint planning",
-    },
-    {
-      id: 4,
-      date: new Date(2023, 4, 17),
-      duration: 180,
-      project: "Project C",
-      activity: "Development",
-      note: "Bug fixes",
-    },
-  ]);
-
+export function TimeEntriesList(props: { timeEntries: Array<TimeEntry> }) {
   const groupedEntries = useMemo(() => {
     const groups: { [key: string]: TimeEntry[] } = {};
-    entries.forEach((entry) => {
+    props.timeEntries.forEach((entry) => {
       const dateKey = format(entry.date, "yyyy-MM-dd");
       if (!groups[dateKey]) {
         groups[dateKey] = [];
@@ -71,13 +23,7 @@ export function TimeEntriesList({ dateRange }: TimeEntriesListProps) {
     return Object.entries(groups).sort(
       ([a], [b]) => new Date(b).getTime() - new Date(a).getTime(),
     );
-  }, [entries]);
-
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
-  };
+  }, [props.timeEntries]);
 
   return (
     <div className="mt-8 space-y-8">
@@ -91,13 +37,13 @@ export function TimeEntriesList({ dateRange }: TimeEntriesListProps) {
           </h2>
           <div className="space-y-4">
             {dayEntries.map((entry) => (
-              <Card key={entry.id}>
+              <Card key={entry.registrationId}>
                 <CardHeader>
                   <CardTitle>
-                    {entry.project} - {entry.activity}
+                    {entry.projectName} - {entry.activityName}
                   </CardTitle>
                   <CardDescription>
-                    {formatDuration(entry.duration)}
+                    {formatHoursAsHoursMinutes(entry.hours)}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

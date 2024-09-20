@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DateRange } from "react-day-picker";
+import { TimeEntry } from "@/lib/api/queries/milltime";
+import { useMemo } from "react";
 import {
   PieChart,
   Pie,
@@ -11,25 +12,52 @@ import {
   YAxis,
   Tooltip,
 } from "recharts";
+import { format, parseISO } from "date-fns";
+import { formatHoursAsHoursMinutes } from "@/lib/utils";
 
 type SummaryProps = {
-  dateRange: DateRange;
+  timeEntries: Array<TimeEntry>;
 };
 
-export function Summary({ dateRange }: SummaryProps) {
-  // Sample data - replace with actual data
-  const totalHours = 40;
-  const projectData = [
-    { name: "Project A", value: 25 },
-    { name: "Project B", value: 15 },
-  ];
-  const dailyData = [
-    { name: "Mon", hours: 8 },
-    { name: "Tue", hours: 7 },
-    { name: "Wed", hours: 9 },
-    { name: "Thu", hours: 8 },
-    { name: "Fri", hours: 8 },
-  ];
+export function Summary({ timeEntries }: SummaryProps) {
+  const totalHours = useMemo(
+    () => timeEntries.reduce((sum, entry) => sum + entry.hours, 0),
+    [timeEntries],
+  );
+
+  const projectData = useMemo(() => {
+    const projectHours = timeEntries.reduce(
+      (acc, entry) => {
+        acc[entry.projectName] = (acc[entry.projectName] || 0) + entry.hours;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    return Object.entries(projectHours).map(([name, value]) => ({
+      name,
+      value,
+    }));
+  }, [timeEntries]);
+
+  const dailyData = useMemo(() => {
+    const dailyHours = timeEntries.reduce(
+      (acc, entry) => {
+        const date = parseISO(entry.date);
+        const day = format(date, "EEE");
+        if (!acc[day]) {
+          acc[day] = { date, hours: 0 };
+        }
+        acc[day].hours += entry.hours;
+        return acc;
+      },
+      {} as Record<string, { date: Date; hours: number }>,
+    );
+
+    return Object.values(dailyHours)
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .map(({ date, hours }) => ({ name: format(date, "EEE"), hours }));
+  }, [timeEntries]);
 
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
 
@@ -39,7 +67,9 @@ export function Summary({ dateRange }: SummaryProps) {
         <CardTitle>Summary</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="mb-4 text-2xl font-bold">Total Hours: {totalHours}</p>
+        <p className="mb-4 text-2xl font-bold">
+          Total Hours: {totalHours.toFixed(2)}
+        </p>
 
         <h3 className="mb-2 text-lg font-semibold">Project Breakdown</h3>
         <div className="h-64">
@@ -73,7 +103,9 @@ export function Summary({ dateRange }: SummaryProps) {
             <BarChart data={dailyData}>
               <XAxis dataKey="name" />
               <YAxis />
-              <Tooltip />
+              <Tooltip
+                formatter={(value) => formatHoursAsHoursMinutes(value)}
+              />
               <Bar dataKey="hours" fill="#8884d8" />
             </BarChart>
           </ResponsiveContainer>

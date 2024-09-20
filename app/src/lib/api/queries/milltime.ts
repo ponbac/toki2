@@ -43,7 +43,7 @@ export const milltimeQueries = {
           .json<TimeInfo>();
       },
     }),
-  timeEntries: (query?: { from: string; to: string }) =>
+  timeEntries: (query?: { from: string; to: string; unique?: boolean }) =>
     queryOptions({
       queryKey: ["milltime", "time-entries", query?.from, query?.to],
       queryFn: async () => {
@@ -155,8 +155,11 @@ export type Activity = {
 };
 
 export type TimeEntry = {
+  registrationId: string;
+  projectId: string;
   projectName: string;
   activityName: string;
+  date: string;
   hours: number;
   note: string | null;
 };

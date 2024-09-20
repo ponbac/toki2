@@ -1,7 +1,8 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DateRange } from "react-day-picker";
+import { TimeEntry } from "@/lib/api/queries/milltime";
+import { useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -11,20 +12,42 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { format, startOfWeek, addDays } from "date-fns";
 
 type DataVisualizationProps = {
-  dateRange: DateRange;
+  timeEntries: Array<TimeEntry>;
 };
 
-export function DataVisualization({ dateRange }: DataVisualizationProps) {
-  // Sample data - replace with actual data
-  const data = [
-    { name: "Mon", Development: 4, Meeting: 2, Planning: 2 },
-    { name: "Tue", Development: 3, Meeting: 1, Planning: 3 },
-    { name: "Wed", Development: 5, Meeting: 3, Planning: 1 },
-    { name: "Thu", Development: 4, Meeting: 2, Planning: 2 },
-    { name: "Fri", Development: 3, Meeting: 2, Planning: 3 },
-  ];
+export function DataVisualization({ timeEntries }: DataVisualizationProps) {
+  const data = useMemo(() => {
+    const weekStart = startOfWeek(new Date());
+    const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    
+    const activityData = weekDays.map((day) => {
+      const dayEntries = timeEntries.filter((entry) => 
+        format(entry.date, 'yyyy-MM-dd') === format(day, 'yyyy-MM-dd')
+      );
+      
+      const activities = dayEntries.reduce((acc, entry) => {
+        acc[entry.activityName] = (acc[entry.activityName] || 0) + entry.hours;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      return {
+        name: format(day, 'EEE'),
+        ...activities,
+      };
+    });
+
+    return activityData;
+  }, [timeEntries]);
+
+  const activities = useMemo(() => 
+    Array.from(new Set(timeEntries.map(entry => entry.activityName))),
+    [timeEntries]
+  );
+
+  const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#a4de6c'];
 
   return (
     <Card>
@@ -38,27 +61,16 @@ export function DataVisualization({ dateRange }: DataVisualizationProps) {
             <XAxis dataKey="name" />
             <YAxis />
             <Tooltip />
-            <Area
-              type="monotone"
-              dataKey="Development"
-              stackId="1"
-              stroke="#8884d8"
-              fill="#8884d8"
-            />
-            <Area
-              type="monotone"
-              dataKey="Meeting"
-              stackId="1"
-              stroke="#82ca9d"
-              fill="#82ca9d"
-            />
-            <Area
-              type="monotone"
-              dataKey="Planning"
-              stackId="1"
-              stroke="#ffc658"
-              fill="#ffc658"
-            />
+            {activities.map((activity, index) => (
+              <Area
+                key={activity}
+                type="monotone"
+                dataKey={activity}
+                stackId="1"
+                stroke={colors[index % colors.length]}
+                fill={colors[index % colors.length]}
+              />
+            ))}
           </AreaChart>
         </ResponsiveContainer>
       </CardContent>
