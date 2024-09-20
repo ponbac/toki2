@@ -104,7 +104,9 @@ export function Summary({ timeEntries }: SummaryProps) {
               <XAxis dataKey="name" />
               <YAxis />
               <Tooltip
-                formatter={(value) => formatHoursAsHoursMinutes(value)}
+                formatter={(value) =>
+                  formatHoursAsHoursMinutes(value as number)
+                }
               />
               <Bar dataKey="hours" fill="#8884d8" />
             </BarChart>

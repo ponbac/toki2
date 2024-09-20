@@ -10,9 +10,15 @@ import {
 } from "@/components/ui/popover";
 
 type DateRangeSelectorProps = {
-  onRangeChange: (range: DateRange) => void;
+  onRangeChange: React.Dispatch<
+    React.SetStateAction<{
+      start: Date;
+      end: Date;
+    }>
+  >;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function DateRangeSelector({ onRangeChange }: DateRangeSelectorProps) {
   const [date, setDate] = useState<DateRange | undefined>({
     from: new Date(),
@@ -22,7 +28,7 @@ export function DateRangeSelector({ onRangeChange }: DateRangeSelectorProps) {
   const handleRangeSelect = (range: DateRange | undefined) => {
     if (range) {
       setDate(range);
-      onRangeChange(range);
+      // onRangeChange(range);
     }
   };
 

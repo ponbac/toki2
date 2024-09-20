@@ -33,6 +33,7 @@ function MilltimeComponent() {
   const { authenticate } = useMilltimeActions();
   const isAuthenticating = useMilltimeIsAuthenticating();
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [dateRange, setDateRange] = React.useState({
     start: new Date(),
     end: new Date(),
