@@ -14,7 +14,6 @@ import {
   useMilltimeIsAuthenticating,
 } from "@/hooks/useMilltimeContext";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
-import React from "react";
 import { AddEntryButton } from "@/routes/_layout/milltime/-components/add-entry-button";
 import { DataVisualization } from "@/routes/_layout/milltime/-components/data-visualization";
 import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar";
@@ -32,12 +31,6 @@ export const Route = createFileRoute("/_layout/milltime")({
 function MilltimeComponent() {
   const { authenticate } = useMilltimeActions();
   const isAuthenticating = useMilltimeIsAuthenticating();
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [dateRange, setDateRange] = React.useState({
-    start: new Date(),
-    end: new Date(),
-  });
 
   const { isAuthenticated } = useMilltimeData();
 
@@ -108,7 +101,7 @@ function MilltimeComponent() {
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <div className="mt-4 flex items-center justify-between">
-                <DateRangeSelector onRangeChange={setDateRange} />
+                <DateRangeSelector />
                 <SearchBar />
               </div>
               <TimeEntriesList timeEntries={timeEntries ?? []} />

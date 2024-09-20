@@ -9,17 +9,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-type DateRangeSelectorProps = {
-  onRangeChange: React.Dispatch<
-    React.SetStateAction<{
-      start: Date;
-      end: Date;
-    }>
-  >;
-};
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function DateRangeSelector({ onRangeChange }: DateRangeSelectorProps) {
+export function DateRangeSelector() {
   const [date, setDate] = useState<DateRange | undefined>({
     from: new Date(),
     to: new Date(),
