@@ -78,6 +78,7 @@ export function DateRangeSelector(props: {
             selected={dateRange}
             onSelect={handleRangeSelect}
             numberOfMonths={2}
+            weekStartsOn={1}
           />
         </PopoverContent>
       </Popover>
