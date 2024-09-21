@@ -42,8 +42,26 @@ impl MilltimeClient {
             return Err(MilltimeFetchError::Unauthorized);
         }
 
-        let resp_data = resp.json::<T>().await.map_err(|e| {
-            MilltimeFetchError::ParsingError(format!("Failed to parse response as JSON: {}", e))
+        let resp_text = resp.text().await.map_err(|e| {
+            MilltimeFetchError::ParsingError(format!("Failed to get response text: {}", e))
+        })?;
+
+        let resp_data = serde_json::from_str::<T>(&resp_text).map_err(|e| {
+            let error_position = resp_text
+                .lines()
+                .take(e.line() - 1)
+                .map(|line| line.len() + 1) // +1 for newline character
+                .sum::<usize>()
+                + e.column();
+
+            let start = error_position.saturating_sub(50);
+            let end = usize::min(error_position + 50, resp_text.len());
+            let error_context = resp_text[start..end].to_string();
+
+            MilltimeFetchError::ParsingError(format!(
+                "Failed to parse response as JSON: {}. Context: {}",
+                e, error_context
+            ))
         })?;
 
         Ok(resp_data)

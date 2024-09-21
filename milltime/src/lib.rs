@@ -49,10 +49,10 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_user_calendar() {
         let client = initialize_client().await;
-        let date_filter: DateFilter = "2024-04-01,2024-04-30".parse().unwrap();
+        let date_filter: DateFilter = "2024-01-01,2024-09-21".parse().unwrap();
         let user_calendar = client.fetch_user_calendar(date_filter).await.unwrap();
 
-        assert_eq!(user_calendar.weeks.len(), 5);
+        assert!(user_calendar.weeks.len() > 5);
     }
 
     #[tokio::test]

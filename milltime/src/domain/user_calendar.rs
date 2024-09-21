@@ -27,7 +27,7 @@ impl From<RawWeek> for Week {
                 .iter()
                 .fold(0.0, |acc, raw_project_registration| {
                     acc + raw_project_registration.projtimehh
-                        + (raw_project_registration.projtimemm as f64 / 60.0)
+                        + (raw_project_registration.projtimemm.unwrap_or(0) as f64 / 60.0)
                 })
         });
 
@@ -61,7 +61,7 @@ impl From<RawDay> for Day {
                 .iter()
                 .fold(0.0, |acc, raw_project_registration| {
                     acc + raw_project_registration.projtimehh
-                        + (raw_project_registration.projtimemm as f64 / 60.0)
+                        + (raw_project_registration.projtimemm.unwrap_or(0) as f64 / 60.0)
                 });
 
         let time_entries = raw_day
@@ -101,7 +101,7 @@ impl From<RawProjectRegistration> for TimeEntry {
             date: NaiveDate::parse_from_str(&raw_project_registration.regday, "%Y-%m-%d")
                 .unwrap_or_default(),
             hours: raw_project_registration.projtimehh
-                + (raw_project_registration.projtimemm as f64 / 60.0),
+                + (raw_project_registration.projtimemm.unwrap_or(0) as f64 / 60.0),
             note: raw_project_registration.usernote,
         }
     }
@@ -154,7 +154,7 @@ pub struct RawProjectRegistration {
     pub activity: String,
     pub projectregistrationid: String,
     pub projtimehh: f64,
-    pub projtimemm: i64,
+    pub projtimemm: Option<i64>,
     pub usernote: Option<String>,
     pub customernames: String,
 }

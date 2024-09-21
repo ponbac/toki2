@@ -1,4 +1,4 @@
-import { DateRange, DayPicker } from "react-day-picker";
+import { DateRange } from "react-day-picker";
 import { format, parseISO } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Calendar } from "@/components/ui/calendar";
 
 export function DateRangeSelector(props: {
   dateRange: { from: string; to: string };
@@ -27,12 +29,16 @@ export function DateRangeSelector(props: {
   };
 
   return (
-    <div className="flex items-center space-x-4">
+    <div className="grid gap-2">
       <Popover>
         <PopoverTrigger asChild>
           <Button
+            id="date"
             variant="outline"
-            className="w-[300px] justify-start text-left font-normal"
+            className={cn(
+              "w-[300px] justify-start text-left font-normal",
+              !dateRange.from && "text-muted-foreground"
+            )}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
             {dateRange.from ? (
@@ -50,8 +56,10 @@ export function DateRangeSelector(props: {
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
-          <DayPicker
+          <Calendar
+            initialFocus
             mode="range"
+            defaultMonth={dateRange.from}
             selected={dateRange}
             onSelect={handleRangeSelect}
             numberOfMonths={2}

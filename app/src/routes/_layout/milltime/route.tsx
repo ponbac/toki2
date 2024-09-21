@@ -57,11 +57,13 @@ function MilltimeComponent() {
   });
 
   const filteredTimeEntries = React.useMemo(() => {
-    return timeEntries?.filter((entry) =>
-      `${entry.note} ${entry.projectName} ${entry.activityName}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-    );
+    return timeEntries?.length
+      ? timeEntries.filter((entry) =>
+          `${entry.note} ${entry.projectName} ${entry.activityName}`
+            .toLowerCase()
+            .includes(search.toLowerCase()),
+        )
+      : [];
   }, [timeEntries, search]);
 
   return (

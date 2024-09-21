@@ -71,7 +71,7 @@ pub async fn get_time_entries(
     let user_calendar = milltime_client
         .fetch_user_calendar(date_filter)
         .await
-        .map_err(|_| (StatusCode::OK, "".to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let time_entries_iter = user_calendar
         .weeks
