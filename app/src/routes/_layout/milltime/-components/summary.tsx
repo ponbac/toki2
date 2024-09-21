@@ -35,10 +35,21 @@ export function Summary({ timeEntries }: SummaryProps) {
       {} as Record<string, number>,
     );
 
-    return Object.entries(projectHours).map(([name, value]) => ({
-      name,
-      value,
-    }));
+    const totalHours = Object.values(projectHours).reduce(
+      (sum, hours) => sum + hours,
+      0,
+    );
+    const threshold = totalHours * 0.01; // at least 1% of total hours
+
+    return (
+      Object.entries(projectHours)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        .filter(([_, hours]) => hours >= threshold)
+        .map(([name, value]) => ({
+          name,
+          value,
+        }))
+    );
   }, [timeEntries]);
 
   const dailyData = useMemo(() => {
@@ -76,7 +87,7 @@ export function Summary({ timeEntries }: SummaryProps) {
     "#32CD32", // Lime Green
     "#FF4500", // Orange Red
     "#9370DB", // Medium Purple
-    "#00CED1"  // Dark Turquoise
+    "#00CED1", // Dark Turquoise
   ];
 
   return (
