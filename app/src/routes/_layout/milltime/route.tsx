@@ -15,7 +15,6 @@ import {
 } from "@/hooks/useMilltimeContext";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
 import { AddEntryButton } from "@/routes/_layout/milltime/-components/add-entry-button";
-import { DataVisualization } from "@/routes/_layout/milltime/-components/data-visualization";
 import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar";
 import { Summary } from "@/routes/_layout/milltime/-components/summary";
 import { TimeEntriesList } from "./-components/time-entries-list";
@@ -23,24 +22,47 @@ import { DateRangeSelector } from "./-components/date-range-selector";
 import { useQuery } from "@tanstack/react-query";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import dayjs from "dayjs";
+import React from "react";
+import { atomWithStorage } from "jotai/utils";
+import { useAtom } from "jotai/react";
+import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
 
 export const Route = createFileRoute("/_layout/milltime")({
   component: MilltimeComponent,
 });
 
+const mergeSameDayPersistedAtom = atomWithStorage(
+  "milltime-mergeSameDay",
+  false,
+);
+
 function MilltimeComponent() {
   const { authenticate } = useMilltimeActions();
   const isAuthenticating = useMilltimeIsAuthenticating();
-
   const { isAuthenticated } = useMilltimeData();
+
+  const [dateRange, setDateRange] = React.useState({
+    from: dayjs().startOf("week").add(1, "day").format("YYYY-MM-DD"),
+    to: dayjs().endOf("week").add(1, "day").format("YYYY-MM-DD"),
+  });
+  const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
+  const [search, setSearch] = React.useState("");
 
   const { data: timeEntries } = useQuery({
     ...milltimeQueries.timeEntries({
       // fucking americans...
-      from: dayjs().startOf("week").add(1, "day").format("YYYY-MM-DD"),
-      to: dayjs().endOf("week").add(1, "day").format("YYYY-MM-DD"),
+      from: dateRange.from,
+      to: dateRange.to,
     }),
   });
+
+  const filteredTimeEntries = React.useMemo(() => {
+    return timeEntries?.filter((entry) =>
+      `${entry.note} ${entry.projectName} ${entry.activityName}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+    );
+  }, [timeEntries, search]);
 
   return (
     <div>
@@ -101,15 +123,26 @@ function MilltimeComponent() {
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <div className="mt-4 flex items-center justify-between">
-                <DateRangeSelector />
-                <SearchBar />
+                <DateRangeSelector
+                  dateRange={dateRange}
+                  setDateRange={setDateRange}
+                />
+                <div className="flex flex-row items-center gap-4">
+                  <MergeEntriesSwitch
+                    mergeSameDay={mergeSameDay}
+                    setMergeSameDay={setMergeSameDay}
+                  />
+                  <SearchBar search={search} setSearch={setSearch} />
+                </div>
               </div>
-              <TimeEntriesList timeEntries={timeEntries ?? []} />
+              <TimeEntriesList
+                timeEntries={filteredTimeEntries ?? []}
+                mergeSameDay={mergeSameDay}
+              />
               <AddEntryButton />
             </div>
             <div className="flex flex-col gap-4">
               <Summary timeEntries={timeEntries ?? []} />
-              <DataVisualization timeEntries={timeEntries ?? []} />
             </div>
           </div>
         </div>

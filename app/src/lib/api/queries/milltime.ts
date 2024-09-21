@@ -45,7 +45,7 @@ export const milltimeQueries = {
     }),
   timeEntries: (query?: { from: string; to: string; unique?: boolean }) =>
     queryOptions({
-      queryKey: ["milltime", "time-entries", query?.from, query?.to],
+      queryKey: ["milltime", "time-entries", query?.from, query?.to, query?.unique],
       queryFn: async () => {
         return api
           .get("milltime/time-entries", {

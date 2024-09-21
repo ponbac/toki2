@@ -10,9 +10,12 @@ import {
 import { TimeEntry } from "@/lib/api/queries/milltime";
 import { formatHoursAsHoursMinutes } from "@/lib/utils";
 
-export function TimeEntriesList(props: { timeEntries: Array<TimeEntry> }) {
+export function TimeEntriesList(props: {
+  timeEntries: Array<TimeEntry>;
+  mergeSameDay: boolean;
+}) {
   const groupedEntries = useMemo(() => {
-    const groups: { [key: string]: TimeEntry[] } = {};
+    let groups: { [key: string]: TimeEntry[] } = {};
     props.timeEntries.forEach((entry) => {
       const dateKey = format(entry.date, "yyyy-MM-dd");
       if (!groups[dateKey]) {
@@ -20,10 +23,27 @@ export function TimeEntriesList(props: { timeEntries: Array<TimeEntry> }) {
       }
       groups[dateKey].push(entry);
     });
+
+    if (props.mergeSameDay) {
+      const mergedEntries: { [key: string]: TimeEntry[] } = {};
+      Object.entries(groups).forEach(([dateKey, dayEntries]) => {
+        const mergedByProjectActivityAndNote: { [key: string]: TimeEntry } = {};
+        dayEntries.forEach((entry) => {
+          const key = `${entry.projectName}-${entry.activityName}-${entry.note}`;
+          if (!mergedByProjectActivityAndNote[key]) {
+            mergedByProjectActivityAndNote[key] = { ...entry, hours: 0 };
+          }
+          mergedByProjectActivityAndNote[key].hours += entry.hours;
+        });
+        mergedEntries[dateKey] = Object.values(mergedByProjectActivityAndNote);
+      });
+      groups = mergedEntries;
+    }
+
     return Object.entries(groups).sort(
       ([a], [b]) => new Date(b).getTime() - new Date(a).getTime(),
     );
-  }, [props.timeEntries]);
+  }, [props.timeEntries, props.mergeSameDay]);
 
   return (
     <div className="mt-8 space-y-8">
@@ -38,7 +58,7 @@ export function TimeEntriesList(props: { timeEntries: Array<TimeEntry> }) {
           <div className="space-y-4">
             {dayEntries.map((entry) => (
               <Card key={entry.registrationId}>
-                <CardHeader>
+                <CardHeader className="pb-2">
                   <CardTitle>
                     {entry.projectName} - {entry.activityName}
                   </CardTitle>

@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  TooltipProps,
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { formatHoursAsHoursMinutes } from "@/lib/utils";
@@ -56,10 +57,27 @@ export function Summary({ timeEntries }: SummaryProps) {
 
     return Object.values(dailyHours)
       .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .map(({ date, hours }) => ({ name: format(date, "EEE"), hours }));
+      .map(({ date, hours }) => ({
+        name: format(date, "EEE"),
+        hoursUpTo8: Math.min(hours, 8),
+        hoursAbove8: Math.max(hours - 8, 0),
+      }));
   }, [timeEntries]);
 
-  const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
+  const COLORS = [
+    "#FF6B6B", // Coral Red
+    "#4ECDC4", // Medium Turquoise
+    "#FFA500", // Orange
+    "#8A2BE2", // Blue Violet
+    "#20B2AA", // Light Sea Green
+    "#F7B731", // Saffron
+    "#FF1493", // Deep Pink
+    "#1E90FF", // Dodger Blue
+    "#32CD32", // Lime Green
+    "#FF4500", // Orange Red
+    "#9370DB", // Medium Purple
+    "#00CED1"  // Dark Turquoise
+  ];
 
   return (
     <Card className="">
@@ -93,6 +111,9 @@ export function Summary({ timeEntries }: SummaryProps) {
                   />
                 ))}
               </Pie>
+              <Tooltip
+                content={<ProjectBreakdownTooltip totalHours={totalHours} />}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -103,16 +124,68 @@ export function Summary({ timeEntries }: SummaryProps) {
             <BarChart data={dailyData}>
               <XAxis dataKey="name" />
               <YAxis />
-              <Tooltip
-                formatter={(value) =>
-                  formatHoursAsHoursMinutes(value as number)
-                }
+              <Tooltip content={<DailyHoursTooltip />} />
+              <Bar
+                dataKey="hoursUpTo8"
+                stackId="a"
+                className="fill-primary/90"
               />
-              <Bar dataKey="hours" fill="#8884d8" />
+              <Bar
+                dataKey="hoursAbove8"
+                stackId="a"
+                className="fill-primary/70"
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </CardContent>
     </Card>
   );
+}
+
+function ProjectBreakdownTooltip({
+  totalHours,
+  ...props
+}: TooltipProps<number, string> & { totalHours: number }) {
+  if (props.active && props.payload && props.payload.length) {
+    const { name, value } = props.payload[0];
+    const percent = ((value as number) / totalHours) * 100;
+
+    return (
+      <div className="flex flex-col items-center justify-center rounded-md border border-border bg-background p-2">
+        <p className="label">
+          <span className="font-semibold">{name}</span>
+        </p>
+        <p className="label">
+          <span className="text-muted-foreground">Time: </span>
+          {formatHoursAsHoursMinutes(value as number)}
+        </p>
+        <p className="label">
+          <span className="text-muted-foreground">Percentage: </span>
+          {percent.toFixed(1)}%
+        </p>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function DailyHoursTooltip(props: TooltipProps<number, string>) {
+  if (props.active && props.payload && props.payload.length) {
+    const totalHours = props.payload.reduce(
+      (sum, entry) => sum + (entry.value as number),
+      0,
+    );
+    return (
+      <div className="flex flex-col items-center justify-center rounded-md border border-border bg-background p-2">
+        <p className="label">
+          <span className="text-muted-foreground">{props.label}: </span>
+          {formatHoursAsHoursMinutes(totalHours)}
+        </p>
+      </div>
+    );
+  }
+
+  return null;
 }

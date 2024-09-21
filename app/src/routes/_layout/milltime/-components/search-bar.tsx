@@ -4,7 +4,10 @@ import { SearchIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useRef } from "react";
 
-export function SearchBar() {
+export function SearchBar(props: {
+  search: string;
+  setSearch: (search: string) => void;
+}) {
   const ref = useRef<HTMLInputElement>(null);
 
   return (
@@ -18,6 +21,8 @@ export function SearchBar() {
         type="text"
         placeholder="Search entries..."
         className="w-64 pl-8"
+        value={props.search}
+        onChange={(e) => props.setSearch(e.target.value)}
       />
     </div>
   );
