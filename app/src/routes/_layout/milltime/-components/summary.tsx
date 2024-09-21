@@ -13,7 +13,7 @@ import {
   Tooltip,
   TooltipProps,
 } from "recharts";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, getISODay } from "date-fns"; // Added getISODay
 import { formatHoursAsHoursMinutes } from "@/lib/utils";
 
 type SummaryProps = {
@@ -57,21 +57,28 @@ export function Summary({ timeEntries }: SummaryProps) {
       (acc, entry) => {
         const date = parseISO(entry.date);
         const day = format(date, "EEE");
+        const dayIndex = getISODay(date); // Monday = 1, Sunday = 7
         if (!acc[day]) {
-          acc[day] = { date, hours: 0 };
+          acc[day] = { date, dayIndex, hours: 0 };
         }
         acc[day].hours += entry.hours;
         return acc;
       },
-      {} as Record<string, { date: Date; hours: number }>,
+      {} as Record<string, { date: Date; dayIndex: number; hours: number }>,
     );
 
     return Object.values(dailyHours)
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .map(({ date, hours }) => ({
+      .map(({ date, hours, dayIndex }) => ({
         name: format(date, "EEE"),
         hoursUpTo8: Math.min(hours, 8),
         hoursAbove8: Math.max(hours - 8, 0),
+        dayIndex, // Include dayIndex for sorting
+      }))
+      .sort((a, b) => a.dayIndex - b.dayIndex) // Sort by ISO day number
+      .map(({ name, hoursUpTo8, hoursAbove8 }) => ({
+        name,
+        hoursUpTo8,
+        hoursAbove8,
       }));
   }, [timeEntries]);
 
