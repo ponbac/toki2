@@ -97,13 +97,13 @@ export function Summary({ timeEntries }: SummaryProps) {
     "#4ECDC4", // Medium Turquoise
     "#FFA500", // Orange
     "#8A2BE2", // Blue Violet
-    "#20B2AA", // Light Sea Green
     "#F7B731", // Saffron
     "#FF1493", // Deep Pink
     "#1E90FF", // Dodger Blue
     "#32CD32", // Lime Green
     "#FF4500", // Orange Red
     "#9370DB", // Medium Purple
+    "#FFD700", // Gold
     "#00CED1", // Dark Turquoise
   ];
 
