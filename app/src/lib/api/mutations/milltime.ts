@@ -14,6 +14,8 @@ export const milltimeMutations = {
 };
 
 function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationKey: ["milltime", "authenticate"],
     mutationFn: (body: AuthenticateBody) =>
@@ -21,6 +23,12 @@ function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
         json: body,
       }),
     ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: ["milltime"],
+      });
+      options?.onSuccess?.(data, v, c);
+    },
   });
 }
 

@@ -42,8 +42,8 @@ function MilltimeComponent() {
   const { isAuthenticated } = useMilltimeData();
 
   const [dateRange, setDateRange] = React.useState({
-    from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'),
-    to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'),
+    from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+    to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
   });
   const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
   const [search, setSearch] = React.useState("");
@@ -68,8 +68,9 @@ function MilltimeComponent() {
 
   return (
     <div>
-      {!isAuthenticated && (
+      {!isAuthenticated ? (
         <form
+          className="flex min-h-screen items-center justify-center"
           onSubmit={(e) => {
             e.preventDefault();
             const formData = new FormData(e.target as HTMLFormElement);
@@ -116,39 +117,40 @@ function MilltimeComponent() {
             </CardContent>
           </Card>
         </form>
-      )}
-      <div className={`min-h-screen`}>
-        <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
-          <header className="mb-8 flex items-center justify-between">
-            <h1 className="text-3xl font-bold">Milltime</h1>
-          </header>
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <div className="mt-4 flex items-center justify-between">
-                <DateRangeSelector
-                  dateRange={dateRange}
-                  setDateRange={setDateRange}
-                />
-                <div className="flex flex-row items-center gap-4">
-                  <MergeEntriesSwitch
-                    mergeSameDay={mergeSameDay}
-                    setMergeSameDay={setMergeSameDay}
+      ) : (
+        <div className={`min-h-screen`}>
+          <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
+            <header className="mb-8 flex items-center justify-between">
+              <h1 className="text-3xl font-bold">Milltime</h1>
+            </header>
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <div className="mt-4 flex items-center justify-between">
+                  <DateRangeSelector
+                    dateRange={dateRange}
+                    setDateRange={setDateRange}
                   />
-                  <SearchBar search={search} setSearch={setSearch} />
+                  <div className="flex flex-row items-center gap-4">
+                    <MergeEntriesSwitch
+                      mergeSameDay={mergeSameDay}
+                      setMergeSameDay={setMergeSameDay}
+                    />
+                    <SearchBar search={search} setSearch={setSearch} />
+                  </div>
                 </div>
+                <TimeEntriesList
+                  timeEntries={filteredTimeEntries ?? []}
+                  mergeSameDay={mergeSameDay}
+                />
+                <AddEntryButton />
               </div>
-              <TimeEntriesList
-                timeEntries={filteredTimeEntries ?? []}
-                mergeSameDay={mergeSameDay}
-              />
-              <AddEntryButton />
-            </div>
-            <div className="flex flex-col gap-4">
-              <Summary timeEntries={timeEntries ?? []} />
+              <div className="flex flex-col gap-4">
+                <Summary timeEntries={timeEntries ?? []} />
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
