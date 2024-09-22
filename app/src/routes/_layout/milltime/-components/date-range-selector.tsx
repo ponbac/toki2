@@ -45,11 +45,7 @@ export function DateRangeSelector(props: {
     }
   };
 
-  const thisWeekSelected =
-    format(dateRange.from, "yyyy-MM-dd") ===
-      format(thisWeekRange.from, "yyyy-MM-dd") &&
-    format(dateRange.to, "yyyy-MM-dd") ===
-      format(thisWeekRange.to, "yyyy-MM-dd");
+  const thisWeekSelected = rangeIsEqual(dateRange, thisWeekRange);
 
   return (
     <div className="flex flex-row items-center gap-2">
