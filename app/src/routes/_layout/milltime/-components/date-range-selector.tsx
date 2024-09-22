@@ -117,11 +117,11 @@ export function DateRangeSelector(props: {
 }
 
 type PresetRange =
-  | "thisWeek"
-  | "thisMonth"
-  | "thisYear"
-  | "last30Days"
-  | "last365Days";
+  | "This Week"
+  | "This Month"
+  | "This Year"
+  | "Last 30 Days"
+  | "Last 365 Days";
 
 function PresetRangeButtons(props: {
   currentDateRange: { from: Date; to: Date };
@@ -129,41 +129,33 @@ function PresetRangeButtons(props: {
 }) {
   const today = new Date();
   const ranges: Record<PresetRange, { from: Date; to: Date }> = {
-    thisWeek: {
+    "This Week": {
       from: startOfWeek(today, { weekStartsOn: 1 }),
       to: today,
     },
-    thisMonth: {
+    "This Month": {
       from: startOfMonth(today),
       to: today,
     },
-    thisYear: {
+    "This Year": {
       from: startOfYear(today),
       to: today,
     },
-    last30Days: {
+    "Last 30 Days": {
       from: subDays(today, 30),
       to: today,
     },
-    last365Days: {
+    "Last 365 Days": {
       from: subDays(today, 365),
       to: today,
     },
   };
 
-  const selectedPreset = rangeIsEqual(props.currentDateRange, ranges.thisWeek)
-    ? "thisWeek"
-    : rangeIsEqual(props.currentDateRange, ranges.thisMonth)
-      ? "thisMonth"
-      : rangeIsEqual(props.currentDateRange, ranges.thisYear)
-        ? "thisYear"
-        : rangeIsEqual(props.currentDateRange, ranges.last30Days)
-          ? "last30Days"
-          : rangeIsEqual(props.currentDateRange, ranges.last365Days)
-            ? "last365Days"
-            : null;
+  const selectedPreset = Object.keys(ranges).find((key) =>
+    rangeIsEqual(props.currentDateRange, ranges[key as PresetRange]),
+  ) as PresetRange | undefined;
 
-  const handlePresetRange = (preset: PresetRange) => {
+  const handlePresetRangeClick = (preset: PresetRange) => {
     const range = ranges[preset];
     props.setDateRange({
       from: format(range.from, "yyyy-MM-dd"),
@@ -173,52 +165,33 @@ function PresetRangeButtons(props: {
 
   return (
     <div className="flex flex-row justify-center gap-4 px-2 pt-2">
-      <Button
-        size="sm"
-        variant="outline"
-        className="text-xs"
-        onClick={() => handlePresetRange("thisWeek")}
-        disabled={selectedPreset === "thisWeek"}
-      >
-        This Week
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="text-xs"
-        onClick={() => handlePresetRange("thisMonth")}
-        disabled={selectedPreset === "thisMonth"}
-      >
-        This Month
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="text-xs"
-        onClick={() => handlePresetRange("thisYear")}
-        disabled={selectedPreset === "thisYear"}
-      >
-        This Year
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="text-xs"
-        onClick={() => handlePresetRange("last30Days")}
-        disabled={selectedPreset === "last30Days"}
-      >
-        Last 30 Days
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="text-xs"
-        onClick={() => handlePresetRange("last365Days")}
-        disabled={selectedPreset === "last365Days"}
-      >
-        Last 365 Days
-      </Button>
+      {Object.keys(ranges).map((preset) => (
+        <PresetRangeButton
+          key={preset}
+          preset={preset as PresetRange}
+          selected={selectedPreset === preset}
+          onClick={() => handlePresetRangeClick(preset as PresetRange)}
+        />
+      ))}
     </div>
+  );
+}
+
+function PresetRangeButton(props: {
+  preset: PresetRange;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="text-xs"
+      onClick={props.onClick}
+      disabled={props.selected}
+    >
+      {props.preset}
+    </Button>
   );
 }
 
