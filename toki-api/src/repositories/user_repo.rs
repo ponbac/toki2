@@ -63,8 +63,7 @@ impl UserRepository for UserRepositoryImpl {
             ON CONFLICT(email) DO UPDATE
             SET full_name = EXCLUDED.full_name,
                 picture = EXCLUDED.picture,
-                access_token = EXCLUDED.access_token,
-                roles = EXCLUDED.roles
+                access_token = EXCLUDED.access_token
             RETURNING id, email, full_name, picture, access_token, roles
             "#,
             user.email,
