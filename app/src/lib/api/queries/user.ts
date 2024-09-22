@@ -9,10 +9,13 @@ export const userQueries = {
     }),
 };
 
+export type Role = "Admin" | "User";
+
 export type User = {
   id: number;
   email: string;
   fullName: string;
   picture: string;
   accessToken: string;
+  roles: Role[];
 };

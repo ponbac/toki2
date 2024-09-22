@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 
-use crate::domain::{RepoKey, User};
+use crate::domain::{RepoKey, Role, User};
 
 use super::repo_error::RepositoryError;
 
@@ -28,10 +28,10 @@ impl UserRepositoryImpl {
 
 impl UserRepository for UserRepositoryImpl {
     async fn get_user(&self, id: i32) -> Result<User, RepositoryError> {
-        let user = sqlx::query_as!(
-            User,
+        let db_user = sqlx::query_as!(
+            DbUser,
             r#"
-            SELECT id, email, full_name, picture, access_token
+            SELECT id, email, full_name, picture, access_token, roles
             FROM users
             WHERE id = $1
             "#,
@@ -40,28 +40,50 @@ impl UserRepository for UserRepositoryImpl {
         .fetch_one(&self.pool)
         .await?;
 
+        let user = User {
+            id: db_user.id,
+            email: db_user.email,
+            full_name: db_user.full_name,
+            picture: db_user.picture,
+            access_token: db_user.access_token,
+            roles: db_user.roles.into_iter().map(Role::from).collect(),
+        };
+
         Ok(user)
     }
 
     async fn upsert_user(&self, user: &NewUser) -> Result<User, RepositoryError> {
-        let user = sqlx::query_as!(
-            User,
+        let role_strings: Vec<String> = user.roles.iter().map(|role| role.to_string()).collect();
+
+        let db_user = sqlx::query_as!(
+            DbUser,
             r#"
-            INSERT INTO users (email, full_name, picture, access_token)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO users (email, full_name, picture, access_token, roles)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT(email) DO UPDATE
             SET full_name = EXCLUDED.full_name,
                 picture = EXCLUDED.picture,
-                access_token = EXCLUDED.access_token
-            RETURNING *
+                access_token = EXCLUDED.access_token,
+                roles = EXCLUDED.roles
+            RETURNING id, email, full_name, picture, access_token, roles
             "#,
             user.email,
             user.full_name,
             user.picture,
-            user.access_token
+            user.access_token,
+            &role_strings // Convert Vec<Role> to Vec<String>
         )
         .fetch_one(&self.pool)
         .await?;
+
+        let user = User {
+            id: db_user.id,
+            email: db_user.email,
+            full_name: db_user.full_name,
+            picture: db_user.picture,
+            access_token: db_user.access_token,
+            roles: db_user.roles.into_iter().map(Role::from).collect(),
+        };
 
         Ok(user)
     }
@@ -137,6 +159,7 @@ pub struct NewUser {
     full_name: String,
     picture: String,
     access_token: String,
+    roles: Vec<Role>,
 }
 
 impl NewUser {
@@ -146,6 +169,16 @@ impl NewUser {
             full_name,
             picture,
             access_token,
+            roles: vec![Role::User],
         }
     }
+}
+
+struct DbUser {
+    id: i32,
+    email: String,
+    full_name: String,
+    picture: String,
+    access_token: String,
+    roles: Vec<String>,
 }

@@ -1,4 +1,4 @@
-use crate::repositories::RepoRepository;
+use crate::{auth::AuthBackend, domain::Role, repositories::RepoRepository};
 use std::time::Duration;
 
 use axum::{
@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum_login::permission_required;
 use serde::Serialize;
 use time::OffsetDateTime;
 use tracing::instrument;
@@ -20,10 +21,11 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/", get(get_differs))
         .route("/start", post(start_differ))
         .route("/stop", post(stop_differ))
         .route("/force", post(force_update))
+        .route_layer(permission_required!(AuthBackend, Role::Admin))
+        .route("/", get(get_differs))
 }
 
 #[derive(Debug, Serialize)]
