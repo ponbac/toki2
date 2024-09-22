@@ -21,7 +21,7 @@ import { TimeEntriesList } from "./-components/time-entries-list";
 import { DateRangeSelector } from "./-components/date-range-selector";
 import { useQuery } from "@tanstack/react-query";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
-import dayjs from "dayjs";
+import { startOfWeek, endOfWeek, format } from "date-fns";
 import React from "react";
 import { atomWithStorage } from "jotai/utils";
 import { useAtom } from "jotai/react";
@@ -42,8 +42,8 @@ function MilltimeComponent() {
   const { isAuthenticated } = useMilltimeData();
 
   const [dateRange, setDateRange] = React.useState({
-    from: dayjs().startOf("week").add(1, "day").format("YYYY-MM-DD"),
-    to: dayjs().endOf("week").add(1, "day").format("YYYY-MM-DD"),
+    from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'),
+    to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'),
   });
   const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
   const [search, setSearch] = React.useState("");
