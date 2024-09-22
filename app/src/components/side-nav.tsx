@@ -2,9 +2,8 @@ import * as React from "react";
 import {
   LucideIcon,
   FolderGit2,
-  Activity,
   GitPullRequest,
-  AlarmClock,
+  TimerIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -30,22 +29,16 @@ const MENU_ITEMS = [
     to: "/prs",
   },
   {
-    title: "Commits",
-    icon: Activity,
+    title: "Milltime",
+    icon: TimerIcon,
     variant: "ghost",
-    to: "/prs/commits",
+    to: "/milltime",
   },
   {
     title: "Repositories",
     icon: FolderGit2,
     variant: "ghost",
     to: "/repositories",
-  },
-  {
-    title: "Milltime",
-    icon: AlarmClock,
-    variant: "ghost",
-    to: "/milltime",
   },
 ] as const satisfies readonly {
   title: string;

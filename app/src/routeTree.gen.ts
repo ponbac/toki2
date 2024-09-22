@@ -20,7 +20,6 @@ import { Route as LayoutMilltimeRouteImport } from "./routes/_layout/milltime/ro
 import { Route as LayoutRepositoriesIndexImport } from "./routes/_layout/repositories/index"
 import { Route as LayoutPrsIndexImport } from "./routes/_layout/prs/index"
 import { Route as LayoutRepositoriesAddRouteImport } from "./routes/_layout/repositories/add/route"
-import { Route as LayoutPrsCommitsRouteImport } from "./routes/_layout/prs/commits/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
 
 // Create/Update Routes
@@ -71,11 +70,6 @@ const LayoutRepositoriesAddRouteRoute = LayoutRepositoriesAddRouteImport.update(
     getParentRoute: () => LayoutRepositoriesRouteRoute,
   } as any,
 )
-
-const LayoutPrsCommitsRouteRoute = LayoutPrsCommitsRouteImport.update({
-  path: "/commits",
-  getParentRoute: () => LayoutPrsRouteRoute,
-} as any)
 
 const LayoutPrsPrIdRouteRoute = LayoutPrsPrIdRouteImport.update({
   path: "/$prId",
@@ -135,13 +129,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutPrsPrIdRouteImport
       parentRoute: typeof LayoutPrsRouteImport
     }
-    "/_layout/prs/commits": {
-      id: "/_layout/prs/commits"
-      path: "/commits"
-      fullPath: "/prs/commits"
-      preLoaderRoute: typeof LayoutPrsCommitsRouteImport
-      parentRoute: typeof LayoutPrsRouteImport
-    }
     "/_layout/repositories/add": {
       id: "/_layout/repositories/add"
       path: "/add"
@@ -170,13 +157,11 @@ declare module "@tanstack/react-router" {
 
 interface LayoutPrsRouteRouteChildren {
   LayoutPrsPrIdRouteRoute: typeof LayoutPrsPrIdRouteRoute
-  LayoutPrsCommitsRouteRoute: typeof LayoutPrsCommitsRouteRoute
   LayoutPrsIndexRoute: typeof LayoutPrsIndexRoute
 }
 
 const LayoutPrsRouteRouteChildren: LayoutPrsRouteRouteChildren = {
   LayoutPrsPrIdRouteRoute: LayoutPrsPrIdRouteRoute,
-  LayoutPrsCommitsRouteRoute: LayoutPrsCommitsRouteRoute,
   LayoutPrsIndexRoute: LayoutPrsIndexRoute,
 }
 
@@ -226,7 +211,6 @@ export interface FileRoutesByFullPath {
   "/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
-  "/prs/commits": typeof LayoutPrsCommitsRouteRoute
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
   "/prs/": typeof LayoutPrsIndexRoute
   "/repositories/": typeof LayoutRepositoriesIndexRoute
@@ -237,7 +221,6 @@ export interface FileRoutesByTo {
   "/milltime": typeof LayoutMilltimeRouteRoute
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
-  "/prs/commits": typeof LayoutPrsCommitsRouteRoute
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
   "/prs": typeof LayoutPrsIndexRoute
   "/repositories": typeof LayoutRepositoriesIndexRoute
@@ -252,7 +235,6 @@ export interface FileRoutesById {
   "/_layout/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
   "/_layout/": typeof LayoutIndexRoute
   "/_layout/prs/$prId": typeof LayoutPrsPrIdRouteRoute
-  "/_layout/prs/commits": typeof LayoutPrsCommitsRouteRoute
   "/_layout/repositories/add": typeof LayoutRepositoriesAddRouteRoute
   "/_layout/prs/": typeof LayoutPrsIndexRoute
   "/_layout/repositories/": typeof LayoutRepositoriesIndexRoute
@@ -268,7 +250,6 @@ export interface FileRouteTypes {
     | "/repositories"
     | "/"
     | "/prs/$prId"
-    | "/prs/commits"
     | "/repositories/add"
     | "/prs/"
     | "/repositories/"
@@ -278,7 +259,6 @@ export interface FileRouteTypes {
     | "/milltime"
     | "/"
     | "/prs/$prId"
-    | "/prs/commits"
     | "/repositories/add"
     | "/prs"
     | "/repositories"
@@ -291,7 +271,6 @@ export interface FileRouteTypes {
     | "/_layout/repositories"
     | "/_layout/"
     | "/_layout/prs/$prId"
-    | "/_layout/prs/commits"
     | "/_layout/repositories/add"
     | "/_layout/prs/"
     | "/_layout/repositories/"
@@ -345,7 +324,6 @@ export const routeTree = rootRoute
       "parent": "/_layout",
       "children": [
         "/_layout/prs/$prId",
-        "/_layout/prs/commits",
         "/_layout/prs/"
       ]
     },
@@ -363,10 +341,6 @@ export const routeTree = rootRoute
     },
     "/_layout/prs/$prId": {
       "filePath": "_layout/prs/$prId/route.tsx",
-      "parent": "/_layout/prs"
-    },
-    "/_layout/prs/commits": {
-      "filePath": "_layout/prs/commits/route.tsx",
       "parent": "/_layout/prs"
     },
     "/_layout/repositories/add": {

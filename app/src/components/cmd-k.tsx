@@ -11,12 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
 import { useNavigate } from "@tanstack/react-router";
 import { AzureAvatar } from "./azure-avatar";
-import {
-  Activity,
-  FolderGit2,
-  GitPullRequestIcon,
-  TimerIcon,
-} from "lucide-react";
+import { FolderGit2, GitPullRequestIcon, TimerIcon } from "lucide-react";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -60,7 +55,7 @@ export function CmdK() {
 
 const PAGES = [
   { title: "Pull requests", to: "/prs", icon: GitPullRequestIcon },
-  { title: "Commits", to: "/prs/commits", icon: Activity },
+  { title: "Milltime", to: "/milltime", icon: TimerIcon },
   { title: "Repositories", to: "/repositories", icon: FolderGit2 },
 ] as const;
 
