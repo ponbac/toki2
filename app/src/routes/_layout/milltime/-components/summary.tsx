@@ -1,4 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { TimeEntry } from "@/lib/api/queries/milltime";
 import { useMemo } from "react";
 import {
@@ -25,6 +31,10 @@ export function Summary({ timeEntries }: SummaryProps) {
     () => timeEntries.reduce((sum, entry) => sum + entry.hours, 0),
     [timeEntries],
   );
+
+  const nUniqueProjects = useMemo(() => {
+    return new Set(timeEntries.map((entry) => entry.projectName)).size;
+  }, [timeEntries]);
 
   const projectData = useMemo(() => {
     const projectHours = timeEntries.reduce(
@@ -100,13 +110,22 @@ export function Summary({ timeEntries }: SummaryProps) {
   return (
     <Card className="">
       <CardHeader>
-        <CardTitle>Summary</CardTitle>
+        <CardTitle className="text-2xl">
+          Summary{" "}
+          <span className="text-muted-foreground">
+            ({totalHours.toFixed(2)} hours)
+          </span>
+        </CardTitle>
+        <CardDescription>
+          {timeEntries.length} entries{" "}
+          {nUniqueProjects === 0
+            ? ""
+            : nUniqueProjects > 1
+              ? `over ${nUniqueProjects} different projects`
+              : "in one project"}
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="mb-4 text-2xl font-bold">
-          Total Hours: {totalHours.toFixed(2)}
-        </p>
-
         <h3 className="mb-2 text-lg font-semibold">Project Breakdown</h3>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">

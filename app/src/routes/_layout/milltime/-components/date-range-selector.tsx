@@ -1,5 +1,13 @@
 import { DateRange } from "react-day-picker";
-import { format, parseISO, startOfWeek, endOfWeek } from "date-fns";
+import {
+  format,
+  parseISO,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  startOfYear,
+  subDays,
+} from "date-fns";
 import { CalendarIcon, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,6 +79,10 @@ export function DateRangeSelector(props: {
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
+          <PresetRangeButtons
+            currentDateRange={dateRange}
+            setDateRange={props.setDateRange}
+          />
           <Calendar
             initialFocus
             mode="range"
@@ -101,5 +113,121 @@ export function DateRangeSelector(props: {
         </Tooltip>
       )}
     </div>
+  );
+}
+
+type PresetRange =
+  | "thisWeek"
+  | "thisMonth"
+  | "thisYear"
+  | "last30Days"
+  | "last365Days";
+
+function PresetRangeButtons(props: {
+  currentDateRange: { from: Date; to: Date };
+  setDateRange: (dateRange: { from: string; to: string }) => void;
+}) {
+  const today = new Date();
+  const ranges: Record<PresetRange, { from: Date; to: Date }> = {
+    thisWeek: {
+      from: startOfWeek(today, { weekStartsOn: 1 }),
+      to: today,
+    },
+    thisMonth: {
+      from: startOfMonth(today),
+      to: today,
+    },
+    thisYear: {
+      from: startOfYear(today),
+      to: today,
+    },
+    last30Days: {
+      from: subDays(today, 30),
+      to: today,
+    },
+    last365Days: {
+      from: subDays(today, 365),
+      to: today,
+    },
+  };
+
+  const selectedPreset = rangeIsEqual(props.currentDateRange, ranges.thisWeek)
+    ? "thisWeek"
+    : rangeIsEqual(props.currentDateRange, ranges.thisMonth)
+      ? "thisMonth"
+      : rangeIsEqual(props.currentDateRange, ranges.thisYear)
+        ? "thisYear"
+        : rangeIsEqual(props.currentDateRange, ranges.last30Days)
+          ? "last30Days"
+          : rangeIsEqual(props.currentDateRange, ranges.last365Days)
+            ? "last365Days"
+            : null;
+
+  const handlePresetRange = (preset: PresetRange) => {
+    const range = ranges[preset];
+    props.setDateRange({
+      from: format(range.from, "yyyy-MM-dd"),
+      to: format(range.to, "yyyy-MM-dd"),
+    });
+  };
+
+  return (
+    <div className="flex flex-row justify-center gap-4 px-2 pt-2">
+      <Button
+        size="sm"
+        variant="outline"
+        className="text-xs"
+        onClick={() => handlePresetRange("thisWeek")}
+        disabled={selectedPreset === "thisWeek"}
+      >
+        This Week
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="text-xs"
+        onClick={() => handlePresetRange("thisMonth")}
+        disabled={selectedPreset === "thisMonth"}
+      >
+        This Month
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="text-xs"
+        onClick={() => handlePresetRange("thisYear")}
+        disabled={selectedPreset === "thisYear"}
+      >
+        This Year
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="text-xs"
+        onClick={() => handlePresetRange("last30Days")}
+        disabled={selectedPreset === "last30Days"}
+      >
+        Last 30 Days
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="text-xs"
+        onClick={() => handlePresetRange("last365Days")}
+        disabled={selectedPreset === "last365Days"}
+      >
+        Last 365 Days
+      </Button>
+    </div>
+  );
+}
+
+function rangeIsEqual(
+  range1: { from: Date; to: Date },
+  range2: { from: Date; to: Date },
+) {
+  return (
+    format(range1.from, "yyyy-MM-dd") === format(range2.from, "yyyy-MM-dd") &&
+    format(range1.to, "yyyy-MM-dd") === format(range2.to, "yyyy-MM-dd")
   );
 }
