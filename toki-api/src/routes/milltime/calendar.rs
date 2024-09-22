@@ -12,7 +12,7 @@ use tracing::instrument;
 
 use crate::app_state::AppState;
 
-use super::{CookieJarResult, MilltimeCookieJarExt};
+use super::{CookieJarResult, ErrorResponse, MilltimeCookieJarExt, MilltimeError};
 
 #[derive(Debug, Deserialize)]
 pub struct DateFilterQuery {
@@ -30,16 +30,19 @@ pub async fn get_time_info(
 
     let date_filter: milltime::DateFilter = format!("{},{}", date_filter.from, date_filter.to)
         .parse()
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                "could not parse date range".to_string(),
-            )
+        .map_err(|_| ErrorResponse {
+            status: StatusCode::BAD_REQUEST,
+            error: MilltimeError::DateParseError,
+            message: "could not parse date range".to_string(),
         })?;
     let time_info = milltime_client
         .fetch_time_info(date_filter)
         .await
-        .map_err(|_| (StatusCode::OK, "".to_string()))?;
+        .map_err(|_| ErrorResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: MilltimeError::FetchError,
+            message: "failed to fetch time info from milltime".to_string(),
+        })?;
 
     Ok((jar, Json(time_info)))
 }
@@ -61,17 +64,20 @@ pub async fn get_time_entries(
 
     let date_filter: milltime::DateFilter = format!("{},{}", query.from, query.to)
         .parse()
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                "could not parse date range".to_string(),
-            )
+        .map_err(|_| ErrorResponse {
+            status: StatusCode::BAD_REQUEST,
+            error: MilltimeError::DateParseError,
+            message: "could not parse date range".to_string(),
         })?;
 
     let user_calendar = milltime_client
         .fetch_user_calendar(date_filter)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|_| ErrorResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: MilltimeError::FetchError,
+            message: "failed to fetch user calendar from milltime".to_string(),
+        })?;
 
     let time_entries_iter = user_calendar
         .weeks

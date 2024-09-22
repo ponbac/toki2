@@ -10,7 +10,7 @@ use tracing::instrument;
 
 use crate::{app_state::AppState, domain::MilltimePassword};
 
-use super::{CookieJarResult, MilltimeCookieJarExt};
+use super::{CookieJarResult, ErrorResponse, MilltimeCookieJarExt, MilltimeError};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +53,10 @@ pub async fn authenticate(
 
             Ok((jar, StatusCode::OK))
         }
-        Err(_) => Err((StatusCode::BAD_REQUEST, "Invalid credentials".to_string())),
+        Err(_) => Err(ErrorResponse {
+            status: StatusCode::BAD_REQUEST,
+            error: MilltimeError::MilltimeAuthenticationFailed,
+            message: "Invalid credentials".to_string(),
+        }),
     }
 }

@@ -1,4 +1,7 @@
-use crate::repositories::MilltimeRepository;
+use crate::{
+    repositories::MilltimeRepository,
+    routes::milltime::{ErrorResponse, MilltimeError},
+};
 
 use axum::{debug_handler, extract::State, http::StatusCode, Json};
 use axum_extra::extract::CookieJar;
@@ -43,9 +46,17 @@ pub async fn get_timer(
                 _ => milltime_repo.delete_active_timer(&user.id).await.unwrap(),
             }
 
-            Err((StatusCode::OK, "".to_string()))
+            Err(ErrorResponse {
+                status: StatusCode::NOT_FOUND,
+                error: MilltimeError::TimerError,
+                message: "timer found in db but not on milltime".to_string(),
+            })
         }
-        _ => Err((StatusCode::OK, "".to_string())),
+        _ => Err(ErrorResponse {
+            status: StatusCode::NOT_FOUND,
+            error: MilltimeError::TimerError,
+            message: "timer not found in db or on milltime".to_string(),
+        }),
     }
 }
 

@@ -4,11 +4,13 @@ mod projects;
 mod timer;
 
 use axum::{
+    response::IntoResponse,
     routing::{delete, get, post, put},
-    Router,
+    Json, Router,
 };
 use axum_extra::extract::CookieJar;
 use reqwest::StatusCode;
+use serde::Serialize;
 
 use crate::{app_state::AppState, domain::MilltimePassword};
 
@@ -30,13 +32,36 @@ pub fn router() -> Router<AppState> {
         .route("/update-timer", put(timer::edit_timer))
 }
 
-type CookieJarResult<T> = Result<(CookieJar, T), (StatusCode, String)>;
+#[derive(Debug, thiserror::Error, Serialize, strum::Display)]
+enum MilltimeError {
+    MilltimeAuthenticationFailed,
+    TimerError,
+    DateParseError,
+    FetchError,
+}
+
+#[derive(Debug, Serialize)]
+struct ErrorResponse {
+    #[serde(skip)]
+    status: StatusCode,
+    error: MilltimeError,
+    message: String,
+}
+
+impl IntoResponse for ErrorResponse {
+    fn into_response(self) -> axum::response::Response {
+        let body = Json(&self);
+        (self.status, body).into_response()
+    }
+}
+
+type CookieJarResult<T> = Result<(CookieJar, T), ErrorResponse>;
 
 trait MilltimeCookieJarExt: std::marker::Sized {
     async fn into_milltime_client(
         self,
         domain: &str,
-    ) -> Result<(milltime::MilltimeClient, Self), (StatusCode, String)>;
+    ) -> Result<(milltime::MilltimeClient, Self), ErrorResponse>;
     fn with_milltime_credentials(self, credentials: &milltime::Credentials, domain: &str) -> Self;
 }
 
@@ -44,27 +69,33 @@ impl MilltimeCookieJarExt for CookieJar {
     async fn into_milltime_client(
         self,
         domain: &str,
-    ) -> Result<(milltime::MilltimeClient, Self), (StatusCode, String)> {
+    ) -> Result<(milltime::MilltimeClient, Self), ErrorResponse> {
         let (credentials, jar) = match self.clone().try_into() {
             Ok(c) => {
                 tracing::debug!("using existing milltime credentials");
                 (c, self)
             }
             Err(_) => {
-                let user = self.get("mt_user").ok_or((
-                    StatusCode::UNAUTHORIZED,
-                    "missing mt_user cookie".to_string(),
-                ))?;
-                let pass = self.get("mt_password").ok_or((
-                    StatusCode::UNAUTHORIZED,
-                    "missing mt_password cookie".to_string(),
-                ))?;
+                let user = self.get("mt_user").ok_or(ErrorResponse {
+                    status: StatusCode::UNAUTHORIZED,
+                    error: MilltimeError::MilltimeAuthenticationFailed,
+                    message: "missing mt_user cookie".to_string(),
+                })?;
+                let pass = self.get("mt_password").ok_or(ErrorResponse {
+                    status: StatusCode::UNAUTHORIZED,
+                    error: MilltimeError::MilltimeAuthenticationFailed,
+                    message: "missing mt_password cookie".to_string(),
+                })?;
                 let decrypted_pass = MilltimePassword::from_encrypted(pass.value().to_string());
                 let creds = milltime::Credentials::new(user.value(), decrypted_pass.as_ref())
                     .await
                     .map_err(|e| {
                         tracing::error!("failed to create milltime credentials: {:?}", e);
-                        (StatusCode::UNAUTHORIZED, e.to_string())
+                        ErrorResponse {
+                            status: StatusCode::UNAUTHORIZED,
+                            error: MilltimeError::MilltimeAuthenticationFailed,
+                            message: e.to_string(),
+                        }
                     })?;
                 let jar = self.with_milltime_credentials(&creds, domain);
 

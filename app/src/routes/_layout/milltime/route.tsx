@@ -49,7 +49,6 @@ function MilltimeComponent() {
 
   const { data: timeEntries } = useQuery({
     ...milltimeQueries.timeEntries({
-      // fucking americans...
       from: dateRange.from,
       to: dateRange.to,
     }),
