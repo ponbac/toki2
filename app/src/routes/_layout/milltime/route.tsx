@@ -14,7 +14,6 @@ import {
   useMilltimeIsAuthenticating,
 } from "@/hooks/useMilltimeContext";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
-import { AddEntryButton } from "@/routes/_layout/milltime/-components/add-entry-button";
 import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar";
 import { Summary } from "@/routes/_layout/milltime/-components/summary";
 import { TimeEntriesList } from "./-components/time-entries-list";
@@ -142,7 +141,6 @@ function MilltimeComponent() {
                   timeEntries={filteredTimeEntries ?? []}
                   mergeSameDay={mergeSameDay}
                 />
-                <AddEntryButton />
               </div>
               <div className="flex flex-col gap-4">
                 <Summary timeEntries={timeEntries ?? []} />
