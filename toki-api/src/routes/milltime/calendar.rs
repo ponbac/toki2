@@ -71,7 +71,7 @@ pub async fn get_time_entries(
         })?;
 
     let user_calendar = milltime_client
-        .fetch_user_calendar(date_filter)
+        .fetch_user_calendar(&date_filter)
         .await
         .map_err(|_| ErrorResponse {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -83,6 +83,7 @@ pub async fn get_time_entries(
         .weeks
         .into_iter()
         .flat_map(|week| week.days)
+        .filter(|day| day.date >= date_filter.from && day.date <= date_filter.to) // Milltime returns entire weeks, even if the range is in the middle of the week
         .sorted_by_key(|day| cmp::Reverse(day.date))
         .flat_map(|day| day.time_entries);
     let time_entries: Vec<milltime::TimeEntry> = if query.unique.unwrap_or(false) {

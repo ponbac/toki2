@@ -178,11 +178,11 @@ impl MilltimeClient {
 
     pub async fn fetch_user_calendar(
         &self,
-        date_filter: DateFilter,
+        date_filter: &DateFilter,
     ) -> Result<domain::UserCalendar, MilltimeFetchError> {
         let url = MilltimeURL::from_env()
             .append_path("/data/store/UserCalendar")
-            .with_filter(&date_filter);
+            .with_filter(date_filter);
 
         let raw_calendar = self.get_single_row::<domain::RawUserCalendar>(url).await?;
 
