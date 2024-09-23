@@ -21,12 +21,7 @@ export const milltimeQueries = {
   getTimer: () =>
     queryOptions({
       queryKey: [...milltimeQueries.timerBaseKey],
-      queryFn: async () =>
-        api
-          .get("milltime/timer", {
-            retry: 0,
-          })
-          .json<Timer>(),
+      queryFn: async () => api.get("milltime/timer").json<Timer>(),
     }),
   timerHistory: () =>
     queryOptions({

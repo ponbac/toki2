@@ -26,6 +26,7 @@ export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 export const api = ky.create({
   prefixUrl: API_URL,
   credentials: "include",
+  retry: 0,
   hooks: {
     afterResponse: [
       async (_, __, response) => {
