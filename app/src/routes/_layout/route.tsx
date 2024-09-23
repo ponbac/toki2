@@ -24,15 +24,7 @@ function LayoutComponent() {
   return (
     <TooltipProvider delayDuration={0}>
       <MilltimeStoreProvider>
-        <SideNavWrapper
-          accounts={[
-            {
-              email: "root@ponbac.xyz",
-              label: "Root",
-              icon: "👑",
-            },
-          ]}
-        >
+        <SideNavWrapper>
           <Suspense fallback={<FullscreenLoading />}>
             <Outlet />
           </Suspense>
