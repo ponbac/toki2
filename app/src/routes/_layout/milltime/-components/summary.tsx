@@ -117,7 +117,7 @@ export function Summary({ timeEntries }: SummaryProps) {
           </span>
         </CardTitle>
         <CardDescription>
-          {timeEntries.length} entries{" "}
+          {timeEntries.length} {timeEntries.length === 1 ? "entry" : "entries"}{" "}
           {nUniqueProjects === 0
             ? ""
             : nUniqueProjects > 1

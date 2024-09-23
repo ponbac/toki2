@@ -27,6 +27,17 @@ import { useAtom } from "jotai/react";
 import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
 
 export const Route = createFileRoute("/_layout/milltime")({
+  loader: ({ context }) => {
+    context.queryClient.ensureQueryData(
+      milltimeQueries.timeEntries({
+        from: format(
+          startOfWeek(new Date(), { weekStartsOn: 1 }),
+          "yyyy-MM-dd",
+        ),
+        to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      }),
+    );
+  },
   component: MilltimeComponent,
 });
 
