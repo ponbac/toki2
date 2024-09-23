@@ -10,15 +10,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Separator } from "./ui/separator";
 import { buttonVariants } from "./ui/button";
 import { Link, LinkProps } from "@tanstack/react-router";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
 import { ScrollArea } from "./ui/scroll-area";
 import { router } from "@/main";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { useQuery } from "@tanstack/react-query";
+import { userQueries } from "@/lib/api/queries/user";
 
 type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
@@ -49,22 +45,12 @@ const MENU_ITEMS = [
 
 type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 
-export function SideNavWrapper({
-  accounts,
-  children,
-}: {
-  accounts: Array<{
-    label: string;
-    email: string;
-    icon: React.ReactNode;
-  }>;
-  children: React.ReactNode;
-}) {
+export function SideNavWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex">
       <div className="fixed left-0 top-0 flex h-full w-14 flex-col items-stretch border-r">
         <div className="flex h-[52px] items-center justify-center">
-          <AccountSwitcher isCollapsed={true} accounts={accounts} />
+          <AvatarMenu />
         </div>
         <Separator />
         <Nav isCollapsed={true} links={MENU_ITEMS} />
@@ -179,51 +165,26 @@ function NavLink({
   );
 }
 
-export function AccountSwitcher({
-  isCollapsed,
-  accounts,
-}: {
-  isCollapsed: boolean;
-  accounts: {
-    label: string;
-    email: string;
-    icon: React.ReactNode;
-  }[];
-}) {
-  const [selectedAccount, setSelectedAccount] = React.useState<string>(
-    accounts[0].email,
-  );
+function AvatarMenu() {
+  const { data: me } = useQuery({
+    ...userQueries.me(),
+    staleTime: Infinity,
+  });
+
+  const avatarNumber = Math.floor(Math.random() * 649 + 1);
+  const avatarUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${avatarNumber}.png`;
+
+  const initials = me?.fullName
+    ?.split(" ")
+    .map((n) => n[0])
+    .join("");
 
   return (
-    <Select defaultValue={selectedAccount} onValueChange={setSelectedAccount}>
-      <SelectTrigger
-        className={cn(
-          "flex items-center gap-2 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0",
-          isCollapsed &&
-            "flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden",
-        )}
-        aria-label="Select account"
-      >
-        <SelectValue placeholder="Select an account">
-          {accounts.find((account) => account.email === selectedAccount)?.icon}
-          <span className={cn("ml-2", isCollapsed && "hidden")}>
-            {
-              accounts.find((account) => account.email === selectedAccount)
-                ?.label
-            }
-          </span>
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        {accounts.map((account) => (
-          <SelectItem key={account.email} value={account.email}>
-            <div className="flex items-center gap-3 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 [&_svg]:text-foreground">
-              {account.icon}
-              {account.email}
-            </div>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div>
+      <Avatar className="size-10 bg-accent">
+        <AvatarImage src={avatarUrl} />
+        <AvatarFallback>{initials}</AvatarFallback>
+      </Avatar>
+    </div>
   );
 }
