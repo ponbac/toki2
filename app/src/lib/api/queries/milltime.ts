@@ -24,7 +24,7 @@ export const milltimeQueries = {
       queryFn: async () =>
         api
           .get("milltime/timer", {
-            retry: 1,
+            retry: 0,
           })
           .json<Timer>(),
     }),

@@ -36,6 +36,7 @@ export const MilltimeTimer = () => {
     ...milltimeQueries.getTimer(),
     enabled: timerState === "running" || timerState === undefined,
     refetchInterval: 60 * 1000,
+    retry: 1,
   });
 
   const { mutate: stopTimer, isPending: isStoppingTimer } =
