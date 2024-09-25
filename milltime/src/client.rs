@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -67,7 +67,7 @@ impl MilltimeClient {
         Ok(resp_data)
     }
 
-    async fn get_single_row<T: DeserializeOwned>(
+    async fn get_single_row<T: DeserializeOwned + Serialize>(
         &self,
         url: impl AsRef<str>,
     ) -> Result<T, MilltimeFetchError> {
@@ -349,20 +349,21 @@ pub enum MilltimeFetchError {
 
 /// This is a generic response from Milltime. It contains a list of rows and a boolean indicating
 /// whether the request was successful.
-#[derive(Debug, Deserialize)]
-pub struct MilltimeRowResponse<T> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MilltimeRowResponse<T: Serialize> {
     pub rows: Vec<T>,
     pub success: bool,
 }
 
-impl<T> MilltimeRowResponse<T> {
+impl<T: Serialize> MilltimeRowResponse<T> {
     pub fn only_row(self) -> Result<T, MilltimeFetchError> {
         if self.rows.len() == 1 {
             Ok(self.rows.into_iter().next().unwrap())
         } else {
             Err(MilltimeFetchError::ParsingError(format!(
-                "Expected exactly one row, got {}",
-                self.rows.len()
+                "Expected exactly one row, got {}. Response: {}",
+                self.rows.len(),
+                serde_json::to_string(&self).unwrap()
             )))
         }
     }
