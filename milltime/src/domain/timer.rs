@@ -176,6 +176,75 @@ pub struct SaveTimerPayload {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SaveTimerResponse {
+    #[serde(rename(deserialize = "projectregistration"))]
+    pub project_registration: ProjectRegistration,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectRegistration {
+    #[serde(rename(deserialize = "absencetype"))]
+    pub absence_type: Option<Value>,
+    #[serde(rename(deserialize = "attestlevel"))]
+    pub attest_level: Option<Value>,
+    #[serde(rename(deserialize = "activityname"))]
+    pub activity_name: String,
+    #[serde(rename(deserialize = "requirenote"))]
+    pub require_note: Option<Value>,
+    #[serde(rename(deserialize = "userid"))]
+    pub user_id: String,
+    #[serde(rename(deserialize = "favoritetype"))]
+    pub favorite_type: Option<Value>,
+    #[serde(rename(deserialize = "regday"))]
+    pub reg_day: String,
+    #[serde(rename(deserialize = "projectid"))]
+    pub project_id: String,
+    #[serde(rename(deserialize = "projectname"))]
+    pub project_name: String,
+    pub activity: String,
+    #[serde(rename(deserialize = "phaseid"))]
+    pub phase_id: String,
+    #[serde(rename(deserialize = "phasename"))]
+    pub phase_name: String,
+    #[serde(rename(deserialize = "planningtaskid"))]
+    pub planning_task_id: Option<Value>,
+    #[serde(rename(deserialize = "projectregistrationid"))]
+    pub project_registration_id: String,
+    #[serde(rename(deserialize = "projtimehh"))]
+    pub proj_time_hh: f64,
+    #[serde(rename(deserialize = "projtimemm"))]
+    pub proj_time_mm: i64,
+    #[serde(rename(deserialize = "variationid"))]
+    pub variation_id: Option<Value>,
+    #[serde(rename(deserialize = "billtimehh"))]
+    pub bill_time_hh: Option<Value>,
+    #[serde(rename(deserialize = "billtimemm"))]
+    pub bill_time_mm: Option<Value>,
+    #[serde(rename(deserialize = "projectnr"))]
+    pub project_nr: Option<Value>,
+    #[serde(rename(deserialize = "usernote"))]
+    pub user_note: String,
+    #[serde(rename(deserialize = "internalnote"))]
+    pub internal_note: String,
+    #[serde(rename(deserialize = "projplandescription"))]
+    pub proj_plan_description: Option<Value>,
+    #[serde(rename(deserialize = "reportnr"))]
+    pub report_nr: Option<Value>,
+    #[serde(rename(deserialize = "planningtaskname"))]
+    pub planning_task_name: Option<Value>,
+    #[serde(rename(deserialize = "planningtype"))]
+    pub planning_type: i64,
+    #[serde(rename(deserialize = "cancreatedrivelog"))]
+    pub can_create_drive_log: bool,
+    #[serde(rename(deserialize = "timedistributiontype"))]
+    pub time_distribution_type: String,
+    #[serde(rename(deserialize = "customernames"))]
+    pub customer_names: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EditTimerPayload {
     #[serde(rename(serialize = "usernote"))]
     pub user_note: String,

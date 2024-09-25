@@ -168,4 +168,6 @@ export type TimeEntry = {
   date: string;
   hours: number;
   note: string | null;
+  startTime: string | null;
+  endTime: string | null;
 };

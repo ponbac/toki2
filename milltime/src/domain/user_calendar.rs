@@ -79,7 +79,7 @@ impl From<RawDay> for Day {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all(serialize = "camelCase"))]
 pub struct TimeEntry {
     pub registration_id: String,

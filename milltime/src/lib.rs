@@ -50,7 +50,7 @@ mod tests {
     async fn test_fetch_user_calendar() {
         let client = initialize_client().await;
         let date_filter: DateFilter = "2024-01-01,2024-09-21".parse().unwrap();
-        let user_calendar = client.fetch_user_calendar(date_filter).await.unwrap();
+        let user_calendar = client.fetch_user_calendar(&date_filter).await.unwrap();
 
         assert!(user_calendar.weeks.len() > 5);
     }
@@ -116,7 +116,7 @@ mod tests {
             project_name: "Ex-Change Parts - Quote Manager".to_string(),
             user_id: "104".to_string(),
             user_note: Some("Testing".to_string()),
-            reg_day: "2024-04-20".to_string(),
+            reg_day: "2024-09-25".to_string(),
             week_number: 16,
         };
 
@@ -136,10 +136,12 @@ mod tests {
             user_note: Some("Testing note".to_string()),
         };
 
-        client
+        let reg_id = client
             .save_timer(payload)
             .await
-            .expect("Failed to save timer")
+            .expect("Failed to save timer");
+
+        println!("{:#?}", reg_id);
     }
 
     #[tokio::test]

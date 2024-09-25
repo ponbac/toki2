@@ -7,10 +7,10 @@ use axum::{
 };
 use axum_extra::extract::CookieJar;
 use itertools::Itertools;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use crate::app_state::AppState;
+use crate::{app_state::AppState, auth::AuthSession, repositories::MilltimeRepository};
 
 use super::{CookieJarResult, ErrorResponse, MilltimeCookieJarExt, MilltimeError};
 
@@ -54,12 +54,24 @@ pub struct TimeEntriesQuery {
     unique: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtendedTimeEntry {
+    #[serde(flatten)]
+    time_entry: milltime::TimeEntry,
+    #[serde(with = "time::serde::rfc3339::option")]
+    start_time: Option<time::OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    end_time: Option<time::OffsetDateTime>,
+}
+
 #[instrument(name = "get_time_entries", skip(jar, app_state))]
 pub async fn get_time_entries(
     jar: CookieJar,
+    auth_session: AuthSession,
     State(app_state): State<AppState>,
     Query(query): Query<TimeEntriesQuery>,
-) -> CookieJarResult<Json<Vec<milltime::TimeEntry>>> {
+) -> CookieJarResult<Json<Vec<ExtendedTimeEntry>>> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let date_filter: milltime::DateFilter = format!("{},{}", query.from, query.to)
@@ -100,6 +112,36 @@ pub async fn get_time_entries(
     } else {
         time_entries_iter.collect()
     };
+
+    let timer_repo = app_state.milltime_repo.clone();
+    let user = auth_session.user.expect("user not found");
+    let timer_history = timer_repo.get_timer_history(&user.id).await.map_err(|e| {
+        tracing::error!("failed to get timer history: {:?}", e);
+        ErrorResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: MilltimeError::FetchError,
+            message: "failed to fetch timer history from database".to_string(),
+        }
+    })?;
+
+    let time_entries = time_entries
+        .into_iter()
+        .map(|time_entry| {
+            let start_time = timer_history
+                .iter()
+                .find(|timer| timer.registration_id == Some(time_entry.registration_id.clone()))
+                .map(|timer| timer.start_time);
+            let end_time = timer_history
+                .iter()
+                .find(|timer| timer.registration_id == Some(time_entry.registration_id.clone()))
+                .and_then(|timer| timer.end_time);
+            ExtendedTimeEntry {
+                time_entry,
+                start_time,
+                end_time,
+            }
+        })
+        .collect();
 
     Ok((jar, Json(time_entries)))
 }

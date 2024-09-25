@@ -40,6 +40,15 @@ export function TimeEntriesList(props: {
       groups = mergedEntries;
     }
 
+    // Sort entries within each day
+    Object.values(groups).forEach((dayEntries) => {
+      dayEntries.sort((a, b) => {
+        const aTime = a.endTime ? new Date(a.endTime).getTime() : 0;
+        const bTime = b.endTime ? new Date(b.endTime).getTime() : 0;
+        return bTime - aTime;
+      });
+    });
+
     return Object.entries(groups).sort(
       ([a], [b]) => new Date(b).getTime() - new Date(a).getTime(),
     );
@@ -58,14 +67,27 @@ export function TimeEntriesList(props: {
           <div className="space-y-4">
             {dayEntries.map((entry) => (
               <Card key={entry.registrationId}>
-                <CardHeader className="pb-2">
-                  <CardTitle>
-                    {entry.projectName} - {entry.activityName}
-                  </CardTitle>
-                  <CardDescription>
-                    {formatHoursAsHoursMinutes(entry.hours)}
-                  </CardDescription>
-                </CardHeader>
+                <div className="flex items-center justify-between gap-2">
+                  <CardHeader className="pb-2">
+                    <CardTitle>
+                      {entry.projectName} - {entry.activityName}
+                    </CardTitle>
+                    <CardDescription>
+                      {formatHoursAsHoursMinutes(entry.hours)}
+                    </CardDescription>
+                  </CardHeader>
+                  {!!entry.endTime && (
+                    <div className="flex flex-row gap-2 pr-4">
+                      <p className="text-base text-muted-foreground">
+                        {entry.startTime &&
+                          format(new Date(entry.startTime), "HH:mm")}{" "}
+                        -{" "}
+                        {entry.endTime &&
+                          format(new Date(entry.endTime), "HH:mm")}
+                      </p>
+                    </div>
+                  )}
+                </div>
                 <CardContent>
                   <p className="font-mono text-base">{entry.note}</p>
                 </CardContent>
