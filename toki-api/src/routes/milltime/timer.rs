@@ -143,13 +143,13 @@ pub async fn save_timer(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    milltime_client.save_timer(body).await.unwrap();
+    let registration_id = milltime_client.save_timer(body).await.unwrap();
 
     let user = auth_session.user.expect("user not found");
     let end_time = time::OffsetDateTime::now_utc();
     if let Err(e) = app_state
         .milltime_repo
-        .save_active_timer(&user.id, &end_time)
+        .save_active_timer(&user.id, &end_time, &registration_id)
         .await
     {
         tracing::error!("failed to save active timer: {:?}", e);

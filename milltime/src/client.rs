@@ -287,19 +287,15 @@ impl MilltimeClient {
     pub async fn save_timer(
         &self,
         save_timer_payload: domain::SaveTimerPayload,
-    ) -> Result<(), MilltimeFetchError> {
+    ) -> Result<String, MilltimeFetchError> {
         let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
 
         let result = self
-            .put::<MilltimeRowResponse<serde_json::Value>>(url, Some(save_timer_payload))
+            .put::<MilltimeRowResponse<domain::TimerRegistration>>(url, Some(save_timer_payload))
             .await?;
 
-        match result.success {
-            true => Ok(()),
-            false => Err(MilltimeFetchError::Other(
-                "milltime responded with success=false".to_string(),
-            )),
-        }
+        let registration_id = result.only_row()?.project_registration_id;
+        Ok(registration_id)
     }
 
     pub async fn edit_timer(
