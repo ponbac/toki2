@@ -31,7 +31,12 @@ export function TimeEntriesList(props: {
         dayEntries.forEach((entry) => {
           const key = `${entry.projectName}-${entry.activityName}-${entry.note}`;
           if (!mergedByProjectActivityAndNote[key]) {
-            mergedByProjectActivityAndNote[key] = { ...entry, hours: 0 };
+            mergedByProjectActivityAndNote[key] = {
+              ...entry,
+              hours: 0,
+              startTime: null,
+              endTime: null,
+            };
           }
           mergedByProjectActivityAndNote[key].hours += entry.hours;
         });
