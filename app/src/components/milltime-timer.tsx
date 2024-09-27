@@ -10,7 +10,7 @@ import {
   WatchIcon,
 } from "lucide-react";
 import { Input } from "./ui/input";
-import { cn } from "@/lib/utils";
+import { cn, formatHoursMinutes } from "@/lib/utils";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -338,18 +338,6 @@ function SummaryIcon(props: {
       <TooltipContent>{props.tooltip}</TooltipContent>
     </Tooltip>
   );
-}
-
-function formatHoursMinutes(hours: number) {
-  const isNegative = hours < 0;
-  const absHours = Math.abs(hours);
-  const hrs = Math.floor(absHours);
-  const mins = Math.round((absHours - hrs) * 60);
-
-  const formattedHrs = String(hrs).padStart(2, "0");
-  const formattedMins = String(mins).padStart(2, "0");
-
-  return `${isNegative ? "-" : ""}${formattedHrs}:${formattedMins}`;
 }
 
 function secondsToHoursMinutesSeconds(seconds: number) {

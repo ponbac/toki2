@@ -1,0 +1,96 @@
+import { useQuery } from "@tanstack/react-query";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { formatHoursMinutes } from "@/lib/utils";
+import { endOfWeek, format, startOfWeek } from "date-fns";
+import { Progress } from "@/components/ui/progress";
+import { CalendarClockIcon, PiggyBankIcon } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+export const TimeStats = () => {
+  // Fetch time information
+  const {
+    data: timeInfo,
+    isLoading,
+    error,
+  } = useQuery({
+    ...milltimeQueries.timeInfo({
+      from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+    }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  if (error || !timeInfo) {
+    return <div>Error loading time statistics.</div>;
+  }
+
+  const workedHours = Math.floor(timeInfo.workedPeriodTime);
+  const percentageCompleted =
+    (timeInfo.workedPeriodTime / timeInfo.scheduledPeriodTime) * 100;
+  console.log(percentageCompleted);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>This Week</CardTitle>
+        <CardDescription>
+          You have worked {workedHours} {workedHours === 1 ? "hour" : "hours"}{" "}
+          this week.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        <div className="flex flex-row justify-around">
+          <Tooltip>
+            <TooltipTrigger className="cursor-default">
+              <div className="flex items-center gap-2">
+                <CalendarClockIcon size={26} />
+                <div className="flex flex-col items-center justify-center">
+                  <p className="text-lg">
+                    {formatHoursMinutes(timeInfo.periodTimeLeft)}
+                  </p>
+                </div>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>Hours left to work this week</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger className="cursor-default">
+              <div className="flex items-center gap-2">
+                <PiggyBankIcon size={26} />
+                <div className="flex flex-col items-center justify-center">
+                  <p className="text-lg">
+                    {formatHoursMinutes(timeInfo.flexTimeCurrent)}
+                  </p>
+                </div>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>Total flex time</TooltipContent>
+          </Tooltip>
+        </div>
+        <div className="relative h-6 w-full">
+          <Progress value={percentageCompleted} className="h-full w-full" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-sm font-medium">
+              {percentageCompleted.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};

@@ -58,3 +58,15 @@ export function formatHoursAsHoursMinutes(hours: number | string) {
     return `${minutes}m`;
   }
 }
+
+export function formatHoursMinutes(hours: number) {
+  const isNegative = hours < 0;
+  const absHours = Math.abs(hours);
+  const hrs = Math.floor(absHours);
+  const mins = Math.round((absHours - hrs) * 60);
+
+  const formattedHrs = String(hrs).padStart(2, "0");
+  const formattedMins = String(mins).padStart(2, "0");
+
+  return `${isNegative ? "-" : ""}${formattedHrs}:${formattedMins}`;
+}

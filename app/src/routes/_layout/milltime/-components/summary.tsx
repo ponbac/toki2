@@ -123,6 +123,7 @@ export function Summary({ timeEntries }: SummaryProps) {
             : nUniqueProjects > 1
               ? `over ${nUniqueProjects} different projects`
               : "in one project"}
+          .
         </CardDescription>
       </CardHeader>
       <CardContent>

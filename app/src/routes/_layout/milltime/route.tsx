@@ -25,6 +25,7 @@ import React from "react";
 import { atomWithStorage } from "jotai/utils";
 import { useAtom } from "jotai/react";
 import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
+import { TimeStats } from "./-components/time-stats";
 
 export const Route = createFileRoute("/_layout/milltime")({
   loader: ({ context }) => {
@@ -153,6 +154,7 @@ function MilltimeComponent() {
                 />
               </div>
               <div className="flex flex-col gap-4">
+                <TimeStats />
                 <Summary timeEntries={timeEntries ?? []} />
               </div>
             </div>
