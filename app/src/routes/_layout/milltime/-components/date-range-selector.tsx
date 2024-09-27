@@ -7,6 +7,7 @@ import {
   startOfMonth,
   startOfYear,
   subDays,
+  endOfMonth,
 } from "date-fns";
 import { CalendarIcon, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -127,11 +128,11 @@ function PresetRangeButtons(props: {
   const ranges: Record<PresetRange, { from: Date; to: Date }> = {
     "This Week": {
       from: startOfWeek(today, { weekStartsOn: 1 }),
-      to: today,
+      to: endOfWeek(today, { weekStartsOn: 1 }),
     },
     "This Month": {
       from: startOfMonth(today),
-      to: today,
+      to: endOfMonth(today),
     },
     "This Year": {
       from: startOfYear(today),
