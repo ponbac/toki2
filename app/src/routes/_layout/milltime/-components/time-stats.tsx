@@ -71,7 +71,11 @@ export const TimeStats = () => {
           </Tooltip>
         </div>
         <div className="relative h-6 w-full">
-          <Progress value={percentageCompleted} className="h-full w-full" />
+          <Progress
+            key={percentageCompleted}
+            value={percentageCompleted}
+            className="h-full w-full"
+          />
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-sm font-medium">
               {percentageCompleted.toFixed(1)}%
