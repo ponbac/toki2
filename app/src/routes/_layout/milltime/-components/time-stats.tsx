@@ -19,11 +19,7 @@ import {
 
 export const TimeStats = () => {
   // Fetch time information
-  const {
-    data: timeInfo,
-    isLoading,
-    error,
-  } = useQuery({
+  const { data: timeInfo } = useQuery({
     ...milltimeQueries.timeInfo({
       from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
       to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
@@ -31,18 +27,10 @@ export const TimeStats = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-
-  if (error || !timeInfo) {
-    return <div>Error loading time statistics.</div>;
-  }
-
-  const workedHours = Math.floor(timeInfo.workedPeriodTime);
-  const percentageCompleted =
-    (timeInfo.workedPeriodTime / timeInfo.scheduledPeriodTime) * 100;
-  console.log(percentageCompleted);
+  const workedHours = timeInfo ? Math.floor(timeInfo.workedPeriodTime) : 0;
+  const percentageCompleted = timeInfo
+    ? (timeInfo.workedPeriodTime / timeInfo.scheduledPeriodTime) * 100
+    : 0;
 
   return (
     <Card>
@@ -61,7 +49,7 @@ export const TimeStats = () => {
                 <CalendarClockIcon size={26} />
                 <div className="flex flex-col items-center justify-center">
                   <p className="text-lg">
-                    {formatHoursMinutes(timeInfo.periodTimeLeft)}
+                    {formatHoursMinutes(timeInfo?.periodTimeLeft ?? 0)}
                   </p>
                 </div>
               </div>
@@ -74,7 +62,7 @@ export const TimeStats = () => {
                 <PiggyBankIcon size={26} />
                 <div className="flex flex-col items-center justify-center">
                   <p className="text-lg">
-                    {formatHoursMinutes(timeInfo.flexTimeCurrent)}
+                    {formatHoursMinutes(timeInfo?.flexTimeCurrent ?? 0)}
                   </p>
                 </div>
               </div>
