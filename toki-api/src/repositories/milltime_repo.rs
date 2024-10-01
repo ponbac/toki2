@@ -1,5 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use strum::{Display, EnumString};
 
 use super::repo_error::RepositoryError;
 
@@ -28,9 +29,28 @@ impl MilltimeRepositoryImpl {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, EnumString, Display)]
+pub enum TimerType {
+    #[strum(ascii_case_insensitive, serialize = "milltime")]
+    Milltime,
+    #[strum(ascii_case_insensitive, serialize = "standalone")]
+    Standalone,
+}
+
+impl From<String> for TimerType {
+    fn from(value: String) -> Self {
+        match value.to_lowercase().as_str() {
+            "milltime" => TimerType::Milltime,
+            "standalone" => TimerType::Standalone,
+            _ => panic!("Invalid timer type"),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MilltimeTimer {
+    pub timer_type: TimerType,
     pub id: i32,
     pub registration_id: Option<String>,
     pub user_id: i32,
@@ -49,6 +69,7 @@ pub struct MilltimeTimer {
 
 pub struct NewMilltimeTimer {
     pub user_id: i32,
+    pub timer_type: TimerType,
     pub start_time: time::OffsetDateTime,
     pub project_id: String,
     pub project_name: String,
@@ -70,7 +91,7 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         let timers = sqlx::query_as!(
             MilltimeTimer,
             r#"
-            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id
+            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id, timer_type
             FROM timer_history
             WHERE user_id = $1
             "#,
@@ -86,7 +107,7 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         let single_timer = sqlx::query_as!(
             MilltimeTimer,
             r#"
-            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id
+            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id, timer_type
             FROM timer_history
             WHERE user_id = $1 AND end_time IS NULL
             "#,
@@ -133,8 +154,8 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
     async fn create_timer(&self, timer: &NewMilltimeTimer) -> Result<i32, RepositoryError> {
         let id = sqlx::query!(
             r#"
-            INSERT INTO timer_history (user_id, start_time, project_id, project_name, activity_id, activity_name, note)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO timer_history (user_id, start_time, project_id, project_name, activity_id, activity_name, note, timer_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id
             "#,
             timer.user_id,
@@ -143,7 +164,8 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
             timer.project_name,
             timer.activity_id,
             timer.activity_name,
-            timer.note
+            timer.note,
+            timer.timer_type.to_string()
         )
         .fetch_one(&self.pool)
         .await?
