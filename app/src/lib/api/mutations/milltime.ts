@@ -159,6 +159,7 @@ export type StartTimerPayload = {
   userNote?: string;
   regDay: string;
   weekNumber: number;
+  inputTime?: string;
   projTime?: string;
 };
 

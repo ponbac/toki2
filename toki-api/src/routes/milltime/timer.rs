@@ -70,6 +70,7 @@ pub struct StartTimerPayload {
     user_note: Option<String>,
     reg_day: String,
     week_number: i64,
+    input_time: Option<String>,
     proj_time: Option<String>,
 }
 
@@ -91,6 +92,7 @@ pub async fn start_timer(
         body.user_note.clone(),
         body.reg_day.clone(),
         body.week_number,
+        body.input_time,
         body.proj_time,
     );
 

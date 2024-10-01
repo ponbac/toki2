@@ -116,8 +116,9 @@ mod tests {
             project_name: "Ex-Change Parts - Quote Manager".to_string(),
             user_id: "104".to_string(),
             user_note: Some("Testing".to_string()),
-            reg_day: "2024-09-25".to_string(),
+            reg_day: "2024-10-01".to_string(),
             week_number: 16,
+            input_time: None,
             proj_time: None,
         };
 
