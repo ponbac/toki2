@@ -98,6 +98,7 @@ impl TimerRegistrationPayload {
         user_note: Option<String>,
         reg_day: String,
         week_number: i64,
+        proj_time: Option<String>,
     ) -> Self {
         Self {
             activity,
@@ -110,7 +111,7 @@ impl TimerRegistrationPayload {
             week_number,
             inputtime: "00:00".to_string(),
             phaseid: "Default".to_string(),
-            projtime: "00:00".to_string(),
+            projtime: proj_time.unwrap_or("00:00".to_string()),
             timedistributiontype: "NORMALTIME".to_string(),
             ..Self::default()
         }
@@ -126,6 +127,7 @@ pub struct StartTimerOptions {
     pub user_note: Option<String>,
     pub reg_day: String,
     pub week_number: i64,
+    pub proj_time: Option<String>,
 }
 
 impl StartTimerOptions {
@@ -138,6 +140,7 @@ impl StartTimerOptions {
         user_note: Option<String>,
         reg_day: String,
         week_number: i64,
+        proj_time: Option<String>,
     ) -> Self {
         Self {
             activity,
@@ -148,6 +151,7 @@ impl StartTimerOptions {
             user_note,
             reg_day,
             week_number,
+            proj_time,
         }
     }
 }
@@ -163,6 +167,7 @@ impl From<StartTimerOptions> for TimerRegistrationPayload {
             start_timer_options.user_note,
             start_timer_options.reg_day,
             start_timer_options.week_number,
+            start_timer_options.proj_time,
         )
     }
 }

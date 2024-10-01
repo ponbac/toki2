@@ -25,9 +25,9 @@ pub async fn get_timer(
 
     let milltime_repo = app_state.milltime_repo.clone();
     let user = auth_session.user.expect("user not found");
-    let active_timer = milltime_repo.active_timer(&user.id).await;
+    let db_timer = milltime_repo.active_timer(&user.id).await;
 
-    match (mt_timer, active_timer) {
+    match (mt_timer, db_timer) {
         (Ok(mt_timer), Ok(Some(_))) => Ok((jar, Json(mt_timer))),
         (Ok(mt_timer), Ok(None)) => {
             tracing::warn!("milltime timer found but no active timer in db");
@@ -70,6 +70,7 @@ pub struct StartTimerPayload {
     user_note: Option<String>,
     reg_day: String,
     week_number: i64,
+    proj_time: Option<String>,
 }
 
 #[instrument(name = "start_timer", skip(jar, app_state, auth_session))]
@@ -90,6 +91,7 @@ pub async fn start_timer(
         body.user_note.clone(),
         body.reg_day.clone(),
         body.week_number,
+        body.proj_time,
     );
 
     milltime_client

@@ -118,6 +118,7 @@ mod tests {
             user_note: Some("Testing".to_string()),
             reg_day: "2024-09-25".to_string(),
             week_number: 16,
+            proj_time: None,
         };
 
         client.start_timer(options).await.unwrap();
