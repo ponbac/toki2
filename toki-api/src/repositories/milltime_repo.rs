@@ -13,6 +13,7 @@ pub trait MilltimeRepository {
         &self,
         user_id: &i32,
         end_time: &time::OffsetDateTime,
+        registration_id: &str,
     ) -> Result<(), RepositoryError>;
     async fn delete_active_timer(&self, user_id: &i32) -> Result<(), RepositoryError>;
 }
@@ -31,6 +32,7 @@ impl MilltimeRepositoryImpl {
 #[serde(rename_all = "camelCase")]
 pub struct MilltimeTimer {
     pub id: i32,
+    pub registration_id: Option<String>,
     pub user_id: i32,
     #[serde(with = "time::serde::rfc3339")]
     pub start_time: time::OffsetDateTime,
@@ -68,7 +70,7 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         let timers = sqlx::query_as!(
             MilltimeTimer,
             r#"
-            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at
+            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id
             FROM timer_history
             WHERE user_id = $1
             "#,
@@ -84,7 +86,7 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         let single_timer = sqlx::query_as!(
             MilltimeTimer,
             r#"
-            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at
+            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id
             FROM timer_history
             WHERE user_id = $1 AND end_time IS NULL
             "#,
@@ -154,14 +156,16 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         &self,
         user_id: &i32,
         end_time: &time::OffsetDateTime,
+        registration_id: &str,
     ) -> Result<(), RepositoryError> {
         sqlx::query!(
             r#"
             UPDATE timer_history
-            SET end_time = $1
-            WHERE user_id = $2 AND end_time IS NULL
+            SET end_time = $1, registration_id = $2
+            WHERE user_id = $3 AND end_time IS NULL
             "#,
             end_time,
+            registration_id,
             user_id
         )
         .execute(&self.pool)

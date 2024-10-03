@@ -14,6 +14,8 @@ export const milltimeMutations = {
 };
 
 function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationKey: ["milltime", "authenticate"],
     mutationFn: (body: AuthenticateBody) =>
@@ -21,6 +23,12 @@ function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
         json: body,
       }),
     ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: ["milltime"],
+      });
+      options?.onSuccess?.(data, v, c);
+    },
   });
 }
 
@@ -99,6 +107,9 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.timeInfo().queryKey.slice(0, 2),
       });
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timeEntries().queryKey.slice(0, 2),
+      });
       setTimer({
         visible: false,
         state: "stopped",
@@ -148,6 +159,8 @@ export type StartTimerPayload = {
   userNote?: string;
   regDay: string;
   weekNumber: number;
+  inputTime?: string;
+  projTime?: string;
 };
 
 export type SaveTimerPayload = {

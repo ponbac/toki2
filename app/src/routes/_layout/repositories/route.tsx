@@ -42,8 +42,10 @@ const repositoriesSearchSchema = z.object({
 });
 
 export const Route = createFileRoute("/_layout/repositories")({
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData(queries.differs()),
+  loader: ({ context }) => {
+    context.queryClient.ensureQueryData(queries.me());
+    context.queryClient.ensureQueryData(queries.differs());
+  },
   validateSearch: repositoriesSearchSchema,
   component: RepositoriesComponent,
 });
@@ -51,6 +53,10 @@ export const Route = createFileRoute("/_layout/repositories")({
 function RepositoriesComponent() {
   const { searchString } = Route.useSearch();
 
+  const { data: isAdmin } = useSuspenseQuery({
+    ...queries.me(),
+    select: (data) => data.roles.includes("Admin"),
+  });
   const { data, dataUpdatedAt } = useSuspenseQuery({
     ...queries.differs(),
     refetchInterval: 15 * 1000,
@@ -86,6 +92,7 @@ function RepositoriesComponent() {
                 className={cn(
                   "flex h-56 w-[25rem] flex-col justify-between",
                   differ.isInvalid && "border border-destructive",
+                  !isAdmin && "h-44",
                 )}
               >
                 <CardHeader className="flex w-full flex-row items-start justify-between">
@@ -150,23 +157,25 @@ function RepositoriesComponent() {
                     </>
                   )}
                 </CardContent>
-                <CardFooter className="flex flex-row-reverse gap-2">
-                  <FooterButton
-                    disabled={differ.status === "Running" || differ.isInvalid}
-                    onClick={() => startDiffer(differ)}
-                  >
-                    <PlayCircle size="1.25rem" />
-                    Start
-                  </FooterButton>
-                  <FooterButton
-                    variant="outline"
-                    disabled={differ.status === "Stopped" || differ.isInvalid}
-                    onClick={() => stopDiffer(differ)}
-                  >
-                    <PauseCircle size="1.25rem" />
-                    Stop
-                  </FooterButton>
-                </CardFooter>
+                {isAdmin && (
+                  <CardFooter className="flex flex-row-reverse gap-2">
+                    <FooterButton
+                      disabled={differ.status === "Running" || differ.isInvalid}
+                      onClick={() => startDiffer(differ)}
+                    >
+                      <PlayCircle size="1.25rem" />
+                      Start
+                    </FooterButton>
+                    <FooterButton
+                      variant="outline"
+                      disabled={differ.status === "Stopped" || differ.isInvalid}
+                      onClick={() => stopDiffer(differ)}
+                    >
+                      <PauseCircle size="1.25rem" />
+                      Stop
+                    </FooterButton>
+                  </CardFooter>
+                )}
               </Card>
             ))
           ) : (

@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -42,14 +42,32 @@ impl MilltimeClient {
             return Err(MilltimeFetchError::Unauthorized);
         }
 
-        let resp_data = resp.json::<T>().await.map_err(|e| {
-            MilltimeFetchError::ParsingError(format!("Failed to parse response as JSON: {}", e))
+        let resp_text = resp.text().await.map_err(|e| {
+            MilltimeFetchError::ParsingError(format!("Failed to get response text: {}", e))
+        })?;
+
+        let resp_data = serde_json::from_str::<T>(&resp_text).map_err(|e| {
+            let error_position = resp_text
+                .lines()
+                .take(e.line() - 1)
+                .map(|line| line.len() + 1) // +1 for newline character
+                .sum::<usize>()
+                + e.column();
+
+            let start = error_position.saturating_sub(50);
+            let end = usize::min(error_position + 50, resp_text.len());
+            let error_context = resp_text[start..end].to_string();
+
+            MilltimeFetchError::ParsingError(format!(
+                "Failed to parse response as JSON: {}. Context: {}",
+                e, error_context
+            ))
         })?;
 
         Ok(resp_data)
     }
 
-    async fn get_single_row<T: DeserializeOwned>(
+    async fn get_single_row<T: DeserializeOwned + Serialize>(
         &self,
         url: impl AsRef<str>,
     ) -> Result<T, MilltimeFetchError> {
@@ -160,11 +178,11 @@ impl MilltimeClient {
 
     pub async fn fetch_user_calendar(
         &self,
-        date_filter: DateFilter,
+        date_filter: &DateFilter,
     ) -> Result<domain::UserCalendar, MilltimeFetchError> {
         let url = MilltimeURL::from_env()
             .append_path("/data/store/UserCalendar")
-            .with_filter(&date_filter);
+            .with_filter(date_filter);
 
         let raw_calendar = self.get_single_row::<domain::RawUserCalendar>(url).await?;
 
@@ -269,19 +287,15 @@ impl MilltimeClient {
     pub async fn save_timer(
         &self,
         save_timer_payload: domain::SaveTimerPayload,
-    ) -> Result<(), MilltimeFetchError> {
+    ) -> Result<domain::ProjectRegistration, MilltimeFetchError> {
         let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
 
         let result = self
-            .put::<MilltimeRowResponse<serde_json::Value>>(url, Some(save_timer_payload))
+            .put::<MilltimeRowResponse<domain::SaveTimerResponse>>(url, Some(save_timer_payload))
             .await?;
 
-        match result.success {
-            true => Ok(()),
-            false => Err(MilltimeFetchError::Other(
-                "milltime responded with success=false".to_string(),
-            )),
-        }
+        let registration = result.only_row()?.project_registration;
+        Ok(registration)
     }
 
     pub async fn edit_timer(
@@ -335,20 +349,21 @@ pub enum MilltimeFetchError {
 
 /// This is a generic response from Milltime. It contains a list of rows and a boolean indicating
 /// whether the request was successful.
-#[derive(Debug, Deserialize)]
-pub struct MilltimeRowResponse<T> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MilltimeRowResponse<T: Serialize> {
     pub rows: Vec<T>,
     pub success: bool,
 }
 
-impl<T> MilltimeRowResponse<T> {
+impl<T: Serialize> MilltimeRowResponse<T> {
     pub fn only_row(self) -> Result<T, MilltimeFetchError> {
         if self.rows.len() == 1 {
             Ok(self.rows.into_iter().next().unwrap())
         } else {
             Err(MilltimeFetchError::ParsingError(format!(
-                "Expected exactly one row, got {}",
-                self.rows.len()
+                "Expected exactly one row, got {}. Response: {}",
+                self.rows.len(),
+                serde_json::to_string(&self).unwrap()
             )))
         }
     }

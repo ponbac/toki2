@@ -1,5 +1,7 @@
+use std::collections::HashSet;
+
 use async_trait::async_trait;
-use axum_login::{AuthnBackend, UserId};
+use axum_login::{AuthnBackend, AuthzBackend, UserId};
 use oauth2::{
     basic::{BasicClient, BasicRequestTokenError},
     reqwest::{async_http_client, AsyncHttpClientError},
@@ -13,7 +15,7 @@ use serde::Deserialize;
 use sqlx::PgPool;
 
 use crate::{
-    domain::User,
+    domain::{Role, User},
     repositories::{NewUser, RepositoryError, UserRepository, UserRepositoryImpl},
 };
 
@@ -117,6 +119,19 @@ impl AuthnBackend for AuthBackend {
         let user = user_repo.get_user(*user_id as i32).await?;
 
         Ok(Some(user))
+    }
+}
+
+#[async_trait]
+impl AuthzBackend for AuthBackend {
+    type Permission = Role;
+
+    async fn get_user_permissions(
+        &self,
+        user: &Self::User,
+    ) -> Result<HashSet<Self::Permission>, Self::Error> {
+        let perms = user.roles.iter().cloned().collect();
+        Ok(perms)
     }
 }
 

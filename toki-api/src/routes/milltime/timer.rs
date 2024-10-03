@@ -1,4 +1,7 @@
-use crate::repositories::MilltimeRepository;
+use crate::{
+    repositories::MilltimeRepository,
+    routes::milltime::{ErrorResponse, MilltimeError},
+};
 
 use axum::{debug_handler, extract::State, http::StatusCode, Json};
 use axum_extra::extract::CookieJar;
@@ -22,9 +25,9 @@ pub async fn get_timer(
 
     let milltime_repo = app_state.milltime_repo.clone();
     let user = auth_session.user.expect("user not found");
-    let active_timer = milltime_repo.active_timer(&user.id).await;
+    let db_timer = milltime_repo.active_timer(&user.id).await;
 
-    match (mt_timer, active_timer) {
+    match (mt_timer, db_timer) {
         (Ok(mt_timer), Ok(Some(_))) => Ok((jar, Json(mt_timer))),
         (Ok(mt_timer), Ok(None)) => {
             tracing::warn!("milltime timer found but no active timer in db");
@@ -43,9 +46,17 @@ pub async fn get_timer(
                 _ => milltime_repo.delete_active_timer(&user.id).await.unwrap(),
             }
 
-            Err((StatusCode::OK, "".to_string()))
+            Err(ErrorResponse {
+                status: StatusCode::NOT_FOUND,
+                error: MilltimeError::TimerError,
+                message: "timer found in db but not on milltime".to_string(),
+            })
         }
-        _ => Err((StatusCode::OK, "".to_string())),
+        _ => Err(ErrorResponse {
+            status: StatusCode::NOT_FOUND,
+            error: MilltimeError::TimerError,
+            message: "timer not found in db or on milltime".to_string(),
+        }),
     }
 }
 
@@ -59,6 +70,8 @@ pub struct StartTimerPayload {
     user_note: Option<String>,
     reg_day: String,
     week_number: i64,
+    input_time: Option<String>,
+    proj_time: Option<String>,
 }
 
 #[instrument(name = "start_timer", skip(jar, app_state, auth_session))]
@@ -79,6 +92,8 @@ pub async fn start_timer(
         body.user_note.clone(),
         body.reg_day.clone(),
         body.week_number,
+        body.input_time,
+        body.proj_time,
     );
 
     milltime_client
@@ -132,13 +147,13 @@ pub async fn save_timer(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    milltime_client.save_timer(body).await.unwrap();
+    let registration = milltime_client.save_timer(body).await.unwrap();
 
     let user = auth_session.user.expect("user not found");
     let end_time = time::OffsetDateTime::now_utc();
     if let Err(e) = app_state
         .milltime_repo
-        .save_active_timer(&user.id, &end_time)
+        .save_active_timer(&user.id, &end_time, &registration.project_registration_id)
         .await
     {
         tracing::error!("failed to save active timer: {:?}", e);

@@ -27,7 +27,7 @@ impl From<RawWeek> for Week {
                 .iter()
                 .fold(0.0, |acc, raw_project_registration| {
                     acc + raw_project_registration.projtimehh
-                        + (raw_project_registration.projtimemm as f64 / 60.0)
+                        + (raw_project_registration.projtimemm.unwrap_or(0) as f64 / 60.0)
                 })
         });
 
@@ -61,7 +61,7 @@ impl From<RawDay> for Day {
                 .iter()
                 .fold(0.0, |acc, raw_project_registration| {
                     acc + raw_project_registration.projtimehh
-                        + (raw_project_registration.projtimemm as f64 / 60.0)
+                        + (raw_project_registration.projtimemm.unwrap_or(0) as f64 / 60.0)
                 });
 
         let time_entries = raw_day
@@ -79,22 +79,29 @@ impl From<RawDay> for Day {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all(serialize = "camelCase"))]
 pub struct TimeEntry {
+    pub registration_id: String,
+    pub project_id: String,
     pub project_name: String,
     pub activity_name: String,
+    pub date: NaiveDate,
     pub hours: f64,
     pub note: Option<String>,
 }
 
-impl From<RawProjectregistration> for TimeEntry {
-    fn from(raw_project_registration: RawProjectregistration) -> Self {
+impl From<RawProjectRegistration> for TimeEntry {
+    fn from(raw_project_registration: RawProjectRegistration) -> Self {
         TimeEntry {
+            registration_id: raw_project_registration.projectregistrationid,
+            project_id: raw_project_registration.projectid,
             project_name: raw_project_registration.projectname,
             activity_name: raw_project_registration.activityname,
+            date: NaiveDate::parse_from_str(&raw_project_registration.regday, "%Y-%m-%d")
+                .unwrap_or_default(),
             hours: raw_project_registration.projtimehh
-                + (raw_project_registration.projtimemm as f64 / 60.0),
+                + (raw_project_registration.projtimemm.unwrap_or(0) as f64 / 60.0),
             note: raw_project_registration.usernote,
         }
     }
@@ -130,13 +137,13 @@ pub struct RawDay {
     pub month: i64,
     pub attestlevel: i64,
     pub weeklyattestlevel: i64,
-    pub projectregistrations: Vec<RawProjectregistration>,
-    pub flexdiff: RawFlexdiff,
+    pub projectregistrations: Vec<RawProjectRegistration>,
+    pub flexdiff: RawFlexDiff,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RawProjectregistration {
+pub struct RawProjectRegistration {
     pub attestlevel: Option<i64>,
     pub activityname: String,
     pub userid: String,
@@ -147,14 +154,14 @@ pub struct RawProjectregistration {
     pub activity: String,
     pub projectregistrationid: String,
     pub projtimehh: f64,
-    pub projtimemm: i64,
+    pub projtimemm: Option<i64>,
     pub usernote: Option<String>,
     pub customernames: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RawFlexdiff {
+pub struct RawFlexDiff {
     pub hh: Option<f64>,
     pub mm: Option<i64>,
 }

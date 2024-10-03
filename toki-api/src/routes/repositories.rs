@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::{
     extract::State,
     http::StatusCode,
@@ -10,7 +12,7 @@ use tracing::instrument;
 
 use crate::{
     auth::AuthSession,
-    domain::{RepoKey, Repository},
+    domain::{RepoDifferMessage, RepoKey, Repository},
     repositories::{NewRepository, RepoRepository, UserRepository},
     AppState,
 };
@@ -133,6 +135,15 @@ async fn add_repository(
     let key = RepoKey::from(&body);
     app_state.insert_repo(key.clone(), repo_client).await;
     tracing::info!("Added new repository: {}", key);
+
+    // start differ
+    tokio::spawn(async move {
+        let sender = app_state.get_differ_sender(key).await.unwrap();
+        sender
+            .send(RepoDifferMessage::Start(Duration::from_secs(300)))
+            .await
+            .unwrap();
+    });
 
     Ok(Json(AddRepositoryResponse { id }))
 }

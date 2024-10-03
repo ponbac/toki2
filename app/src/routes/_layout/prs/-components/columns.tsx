@@ -9,10 +9,10 @@ import { WorkItemLink } from "@/components/work-item-link";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
-import { ReactNode } from "react";
 import { CopySlashIcon, PickaxeIcon, UserXIcon } from "lucide-react";
 import { User } from "@/lib/api/queries/user";
 import { cn } from "@/lib/utils";
+import { StatusIcon } from "./status-icon";
 
 export function pullRequestColumns(
   user: User | undefined,
@@ -239,15 +239,4 @@ export function pullRequestColumns(
       },
     },
   ];
-}
-
-function StatusIcon(props: { tooltip: string; children: ReactNode }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger>{props.children}</TooltipTrigger>
-      <TooltipContent>
-        <span>{props.tooltip}</span>
-      </TooltipContent>
-    </Tooltip>
-  );
 }

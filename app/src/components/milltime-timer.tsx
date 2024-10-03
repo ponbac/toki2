@@ -10,7 +10,7 @@ import {
   WatchIcon,
 } from "lucide-react";
 import { Input } from "./ui/input";
-import { cn } from "@/lib/utils";
+import { cn, formatHoursMinutes } from "@/lib/utils";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -36,6 +36,7 @@ export const MilltimeTimer = () => {
     ...milltimeQueries.getTimer(),
     enabled: timerState === "running" || timerState === undefined,
     refetchInterval: 60 * 1000,
+    retry: 1,
   });
 
   const { mutate: stopTimer, isPending: isStoppingTimer } =
@@ -337,12 +338,6 @@ function SummaryIcon(props: {
       <TooltipContent>{props.tooltip}</TooltipContent>
     </Tooltip>
   );
-}
-
-function formatHoursMinutes(hours: number) {
-  const hrs = Math.floor(hours);
-  const mins = Math.floor((hours - hrs) * 60);
-  return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
 }
 
 function secondsToHoursMinutesSeconds(seconds: number) {
