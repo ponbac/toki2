@@ -140,6 +140,7 @@ function TopBar() {
             className="absolute left-2 top-1/2 size-4 -translate-y-1/2 transform cursor-pointer"
           />
           <Input
+            autoFocus
             ref={inputRef}
             placeholder="Search pull requests..."
             value={searchString ?? ""}
