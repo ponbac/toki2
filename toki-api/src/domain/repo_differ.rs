@@ -127,11 +127,11 @@ impl RepoDiffer {
                     let mut retries = 0;
                     let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
 
-                    while retries < Self::MAX_RETRIES {
+                    'retry_loop: while retries < Self::MAX_RETRIES {
                         match tokio::time::timeout(Duration::from_secs(60), self.tick()).await {
                             Ok(Ok(change_events)) => {
                                 self.notification_handler.notify_affected_users(change_events).await;
-                                break;
+                                break 'retry_loop;
                             }
                             Ok(Err(err)) => {
                                 tracing::error!("Error ticking for {}: {:?}", self.key, err);
