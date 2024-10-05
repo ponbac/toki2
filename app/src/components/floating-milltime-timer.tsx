@@ -3,6 +3,7 @@ import { match } from "ts-pattern";
 import { Button } from "./ui/button";
 import {
   CalendarClockIcon,
+  EditIcon,
   Maximize2Icon,
   Minimize2Icon,
   PiggyBankIcon,
@@ -27,6 +28,7 @@ import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
+import { TimerEditDialog } from "./timer-edit-dialog";
 
 export const FloatingMilltimeTimer = () => {
   const { setTimer } = useMilltimeActions();
@@ -35,6 +37,7 @@ export const FloatingMilltimeTimer = () => {
     timeSeconds ?? 0,
   );
 
+  const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [userNote, setUserNote] = React.useState("");
 
@@ -158,7 +161,7 @@ export const FloatingMilltimeTimer = () => {
     <>
       <div
         className={cn(
-          "fixed bottom-4 left-1/2 w-[360px] -translate-x-1/2 rounded-lg bg-gray-900/95 p-4 shadow-lg md:left-auto md:right-4 md:translate-x-0",
+          "fixed bottom-4 left-1/2 w-[400px] -translate-x-1/2 rounded-lg bg-gray-900/95 p-4 shadow-lg md:left-auto md:right-4 md:translate-x-0",
           {
             "w-fit min-w-[170px] px-2 py-1": isMinimized,
           },
@@ -181,22 +184,36 @@ export const FloatingMilltimeTimer = () => {
                 hidden: isMinimized,
               })}
             >
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() =>
-                  saveTimer({
-                    timerType: timer?.timerType ?? ("Unreachable" as TimerType),
-                    userNote: timer?.note,
-                  })
-                }
-                disabled={
-                  isSavingTimer || isStoppingTimer || (timeSeconds ?? 0) < 60
-                }
-              >
-                <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                <span className="sr-only">Save</span>
-              </Button>
+              {timer?.activityName && timer.projectName ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() =>
+                    saveTimer({
+                      timerType:
+                        timer?.timerType ?? ("Unreachable" as TimerType),
+                      userNote: timer?.note,
+                    })
+                  }
+                  disabled={
+                    isSavingTimer || isStoppingTimer || (timeSeconds ?? 0) < 60
+                  }
+                >
+                  <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                  <span className="sr-only">Save</span>
+                </Button>
+              ) : null}
+              {timer?.timerType === "Standalone" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsEditDialogOpen(true)}
+                  disabled={isSavingTimer || isStoppingTimer}
+                >
+                  <EditIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                  <span className="sr-only">Edit</span>
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -254,9 +271,11 @@ export const FloatingMilltimeTimer = () => {
                 value={userNote}
                 onChange={(e) => setUserNote(e.target.value)}
                 onBlur={() =>
-                  userNote !== timer?.note && timer?.timerType === "Standalone"
-                    ? editStandaloneTimer({ userNote })
-                    : editTimer({ userNote })
+                  userNote !== timer?.note
+                    ? timer?.timerType === "Standalone"
+                      ? editStandaloneTimer({ userNote })
+                      : editTimer({ userNote })
+                    : undefined
                 }
                 className={cn(
                   "w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50",
@@ -274,6 +293,12 @@ export const FloatingMilltimeTimer = () => {
           )}
         </div>
       </div>
+      <TimerEditDialog
+        key={`${isEditDialogOpen}`}
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        timer={timer as DatabaseTimer}
+      />
     </>
   ) : null;
 };

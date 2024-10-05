@@ -4,6 +4,7 @@ import {
   useMilltimeActions,
   useMilltimeIsAuthenticated,
 } from "./useMilltimeContext";
+import { useMemo } from "react";
 
 export const useMilltimeData = (options?: {
   projectId?: string;
@@ -26,9 +27,15 @@ export const useMilltimeData = (options?: {
     reset();
   }
 
-  return {
-    projects,
-    activities,
-    isAuthenticated,
-  };
+  const result = useMemo(() => {
+    console.log("projects", projects);
+    console.log("activities", activities);
+    return {
+      projects,
+      activities,
+      isAuthenticated,
+    };
+  }, [options?.projectId, projects, activities, isAuthenticated]);
+
+  return result;
 };

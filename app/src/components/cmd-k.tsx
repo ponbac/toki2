@@ -24,7 +24,7 @@ import {
   useMilltimeIsAuthenticated,
   useMilltimeTimer,
 } from "@/hooks/useMilltimeContext";
-import { milltimeQueries } from "@/lib/api/queries/milltime";
+import { milltimeQueries, TimerType } from "@/lib/api/queries/milltime";
 import { toast } from "sonner";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 
@@ -147,8 +147,10 @@ function ActionsCommandGroup(props: { close: () => void }) {
         </>
       ) : (
         <CommandItem
+          disabled={!timer?.activityName || !timer?.projectName}
           onSelect={() => {
             saveTimer({
+              timerType: timer?.timerType ?? ("Unreachable" as TimerType),
               userNote: timer?.note,
             });
             props.close();

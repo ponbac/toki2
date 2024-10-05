@@ -244,4 +244,8 @@ export type EditTimerPayload = {
 
 export type EditStandaloneTimerPayload = {
   userNote: string;
+  projectId?: string;
+  projectName?: string;
+  activityId?: string;
+  activityName?: string;
 };

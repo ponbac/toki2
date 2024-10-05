@@ -263,7 +263,7 @@ pub async fn save_timer(
     Ok((jar, StatusCode::OK))
 }
 
-#[instrument(name = "save_standalone_timer", skip(app_state, auth_session))]
+#[instrument(name = "save_standalone_timer", skip(app_state, auth_session, jar))]
 pub async fn save_standalone_timer(
     jar: CookieJar,
     auth_session: AuthSession,
@@ -298,7 +298,7 @@ pub async fn save_standalone_timer(
     let week_number = time::OffsetDateTime::now_utc().iso_week();
 
     let payload = milltime::ProjectRegistrationPayload::new(
-        user.id.to_string(),
+        milltime_client.user_id().to_string(),
         active_timer.project_id,
         active_timer.project_name,
         active_timer.activity_id,
@@ -309,7 +309,19 @@ pub async fn save_standalone_timer(
         body.user_note.unwrap_or(active_timer.note),
     );
 
-    milltime_client.new_project_registration(&payload).await?;
+    // TODO: get project_registration_id from milltime
+    let registration = milltime_client.new_project_registration(&payload).await?;
+
+    let end_time = time::OffsetDateTime::now_utc();
+    app_state
+        .milltime_repo
+        .save_active_timer(&user.id, &end_time, "")
+        .await
+        .map_err(|e| ErrorResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: MilltimeError::DatabaseError,
+            message: format!("failed to save active timer to db: {:?}", e),
+        })?;
 
     Ok((jar, StatusCode::OK))
 }
@@ -329,6 +341,10 @@ pub async fn edit_timer(
     let update_timer = repositories::UpdateMilltimeTimer {
         user_id: user.id,
         user_note: body.user_note,
+        project_id: None,
+        project_name: None,
+        activity_id: None,
+        activity_name: None,
     };
     if let Err(e) = app_state.milltime_repo.update_timer(&update_timer).await {
         tracing::error!("failed to update timer: {:?}", e);
@@ -341,6 +357,10 @@ pub async fn edit_timer(
 #[serde(rename_all = "camelCase")]
 pub struct EditStandaloneTimerPayload {
     user_note: Option<String>,
+    project_id: Option<String>,
+    project_name: Option<String>,
+    activity_id: Option<String>,
+    activity_name: Option<String>,
 }
 
 #[instrument(name = "edit_standalone_timer", skip(app_state, auth_session))]
@@ -354,6 +374,10 @@ pub async fn edit_standalone_timer(
     let update_timer = repositories::UpdateMilltimeTimer {
         user_id: user.id,
         user_note: body.user_note.unwrap_or_default(),
+        project_id: body.project_id,
+        project_name: body.project_name,
+        activity_id: body.activity_id,
+        activity_name: body.activity_name,
     };
 
     if let Err(e) = app_state.milltime_repo.update_timer(&update_timer).await {
