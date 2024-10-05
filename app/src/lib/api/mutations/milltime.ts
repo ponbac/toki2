@@ -8,6 +8,7 @@ import { milltimeQueries } from "../queries/milltime";
 export const milltimeMutations = {
   useAuthenticate,
   useStartTimer,
+  useStartStandaloneTimer,
   useStopTimer,
   useSaveTimer,
   useEditTimer,
@@ -48,8 +49,8 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
         queryKey: milltimeQueries.timerBaseKey,
       });
       setTimer({
-        state: "running",
         visible: true,
+        state: "running",
         timeSeconds: 0,
       });
 
@@ -58,6 +59,34 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
     onError: (e, v, c) => {
       reset();
       options?.onError?.(e, v, c);
+    },
+  });
+}
+
+function useStartStandaloneTimer(
+  options?: DefaultMutationOptions<StartStandaloneTimerPayload>,
+) {
+  const queryClient = useQueryClient();
+  const { setTimer } = useMilltimeActions();
+
+  return useMutation({
+    mutationKey: ["milltime", "startStandaloneTimer"],
+    mutationFn: (body: StartStandaloneTimerPayload) =>
+      api.post("milltime/timer/standalone", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timerBaseKey,
+      });
+      setTimer({
+        visible: true,
+        state: "running",
+        timeSeconds: 0,
+      });
+
+      options?.onSuccess?.(data, v, c);
     },
   });
 }
@@ -163,6 +192,9 @@ export type StartTimerPayload = {
   projTime?: string;
 };
 
+export type StartStandaloneTimerPayload = {
+  userNote?: string;
+};
 export type SaveTimerPayload = {
   userNote?: string;
 };

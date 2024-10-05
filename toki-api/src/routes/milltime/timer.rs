@@ -1,5 +1,5 @@
 use crate::{
-    repositories::MilltimeRepository,
+    repositories::{MilltimeRepository, TimerType},
     routes::milltime::{ErrorResponse, MilltimeError},
 };
 
@@ -81,6 +81,16 @@ pub async fn start_timer(
     State(app_state): State<AppState>,
     Json(body): Json<StartTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
+    // check if user has active timer, if so, return error
+    let user = auth_session.user.expect("user not found");
+    if let Ok(Some(_)) = app_state.milltime_repo.active_timer(&user.id).await {
+        return Err(ErrorResponse {
+            status: StatusCode::CONFLICT,
+            error: MilltimeError::TimerError,
+            message: "user already has an active timer".to_string(),
+        });
+    }
+
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let start_timer_options = milltime::StartTimerOptions::new(
@@ -98,7 +108,6 @@ pub async fn start_timer(
 
     milltime_client.start_timer(start_timer_options).await?;
 
-    let user = auth_session.user.expect("user not found");
     let new_timer = repositories::NewMilltimeTimer {
         user_id: user.id,
         start_time: time::OffsetDateTime::now_utc(),
@@ -107,6 +116,7 @@ pub async fn start_timer(
         activity_id: body.activity.clone(),
         activity_name: body.activity_name.clone(),
         note: body.user_note.clone().unwrap_or_default(),
+        timer_type: TimerType::Milltime,
     };
 
     if let Err(e) = app_state.milltime_repo.create_timer(&new_timer).await {
@@ -114,6 +124,53 @@ pub async fn start_timer(
     }
 
     Ok((jar, StatusCode::OK))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartStandaloneTimerPayload {
+    user_note: Option<String>,
+}
+
+#[instrument(name = "start_standalone_timer", skip(app_state, auth_session))]
+pub async fn start_standalone_timer(
+    auth_session: AuthSession,
+    State(app_state): State<AppState>,
+    Json(body): Json<StartStandaloneTimerPayload>,
+) -> Result<StatusCode, ErrorResponse> {
+    let user = auth_session.user.expect("user not found");
+
+    // check if user has active timer, if so, return error
+    if let Ok(Some(_)) = app_state.milltime_repo.active_timer(&user.id).await {
+        return Err(ErrorResponse {
+            status: StatusCode::CONFLICT,
+            error: MilltimeError::TimerError,
+            message: "user already has an active timer".to_string(),
+        });
+    }
+
+    let new_timer = repositories::NewMilltimeTimer {
+        user_id: user.id,
+        start_time: time::OffsetDateTime::now_utc(),
+        project_id: "".to_string(),
+        project_name: "".to_string(),
+        activity_id: "".to_string(),
+        activity_name: "".to_string(),
+        note: body.user_note.clone().unwrap_or_default(),
+        timer_type: TimerType::Standalone,
+    };
+
+    match app_state.milltime_repo.create_timer(&new_timer).await {
+        Ok(_) => Ok(StatusCode::OK),
+        Err(e) => {
+            tracing::error!("failed to create standalone timer: {:?}", e);
+            Err(ErrorResponse {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                error: MilltimeError::DatabaseError,
+                message: "failed to save standalone timer to db".to_string(),
+            })
+        }
+    }
 }
 
 #[instrument(name = "stop_timer", skip(jar, app_state, auth_session))]
