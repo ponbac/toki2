@@ -20,8 +20,7 @@ pub async fn list_projects(
     let search_filter = milltime::ProjectSearchFilter::new("Overview".to_string());
     let projects = milltime_client
         .fetch_project_search(search_filter)
-        .await
-        .unwrap()
+        .await?
         .into_iter()
         .filter(|project| project.is_member)
         .collect();
@@ -42,10 +41,7 @@ pub async fn list_activities(
         "2024-04-15".to_string(),
         "2024-04-21".to_string(),
     );
-    let activities = milltime_client
-        .fetch_activities(activity_filter)
-        .await
-        .unwrap();
+    let activities = milltime_client.fetch_activities(activity_filter).await?;
 
     Ok((jar, Json(activities)))
 }

@@ -96,10 +96,7 @@ pub async fn start_timer(
         body.proj_time,
     );
 
-    milltime_client
-        .start_timer(start_timer_options)
-        .await
-        .unwrap();
+    milltime_client.start_timer(start_timer_options).await?;
 
     let user = auth_session.user.expect("user not found");
     let new_timer = repositories::NewMilltimeTimer {
@@ -127,7 +124,7 @@ pub async fn stop_timer(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    milltime_client.stop_timer().await.unwrap();
+    milltime_client.stop_timer().await?;
 
     let user = auth_session.user.expect("user not found");
     if let Err(e) = app_state.milltime_repo.delete_active_timer(&user.id).await {
@@ -147,7 +144,7 @@ pub async fn save_timer(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    let registration = milltime_client.save_timer(body).await.unwrap();
+    let registration = milltime_client.save_timer(body).await?;
 
     let user = auth_session.user.expect("user not found");
     let end_time = time::OffsetDateTime::now_utc();
@@ -171,7 +168,7 @@ pub async fn edit_timer(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    milltime_client.edit_timer(&body).await.unwrap();
+    milltime_client.edit_timer(&body).await?;
 
     let user = auth_session.user.expect("user not found");
     let update_timer = repositories::UpdateMilltimeTimer {
