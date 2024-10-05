@@ -151,7 +151,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
           onSelect={() => {
             saveTimer({
               timerType: timer?.timerType ?? ("Unreachable" as TimerType),
-              userNote: timer?.note,
+              userNote: timer?.note ?? "",
             });
             props.close();
           }}
