@@ -31,11 +31,9 @@ export const TimerEditDialog = (props: {
   onOpenChange: (open: boolean) => void;
   timer: DatabaseTimer;
 }) => {
-  const [projectId, setProjectId] = React.useState(props.timer.projectId);
-  const [activityName, setActivityName] = React.useState(
-    props.timer.activityName,
-  );
-  const [note, setNote] = React.useState(props.timer.note);
+  const [projectId, setProjectId] = React.useState<string | undefined>();
+  const [activityName, setActivityName] = React.useState<string | undefined>();
+  const [note, setNote] = React.useState<string | undefined>();
 
   const { projects, activities } = useMilltimeData({
     projectId: projectId,
@@ -65,7 +63,7 @@ export const TimerEditDialog = (props: {
         projectName: selectedProject?.projectName ?? "",
         activityId: selectedActivity?.activity ?? "",
         activityName: activityName,
-        userNote: note,
+        userNote: note ?? "",
       },
       {
         onSuccess: () => {
@@ -78,7 +76,7 @@ export const TimerEditDialog = (props: {
   React.useEffect(() => {
     setProjectId(props.timer.projectId);
     setActivityName(props.timer.activityName);
-    setNote(props.timer.note);
+    setNote(props.timer.note ?? "");
   }, [props.timer]);
 
   // TODO: should skeleton while loading...
