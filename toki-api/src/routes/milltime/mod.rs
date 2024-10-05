@@ -48,6 +48,23 @@ struct ErrorResponse {
     message: String,
 }
 
+impl From<milltime::MilltimeFetchError> for ErrorResponse {
+    fn from(error: milltime::MilltimeFetchError) -> Self {
+        match error {
+            milltime::MilltimeFetchError::Unauthorized => ErrorResponse {
+                status: StatusCode::UNAUTHORIZED,
+                error: MilltimeError::MilltimeAuthenticationFailed,
+                message: "Unauthorized".to_string(),
+            },
+            _ => ErrorResponse {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                error: MilltimeError::FetchError,
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
 impl IntoResponse for ErrorResponse {
     fn into_response(self) -> axum::response::Response {
         let body = Json(&self);

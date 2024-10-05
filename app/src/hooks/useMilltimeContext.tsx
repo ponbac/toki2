@@ -137,7 +137,7 @@ function isMilltimeCookiesPresent() {
   );
 }
 
-function clearMilltimeCookies() {
+export function clearMilltimeCookies() {
   document.cookie = "mt_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
   document.cookie =
     "mt_password=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";

@@ -35,14 +35,7 @@ pub async fn get_time_info(
             error: MilltimeError::DateParseError,
             message: "could not parse date range".to_string(),
         })?;
-    let time_info = milltime_client
-        .fetch_time_info(date_filter)
-        .await
-        .map_err(|_| ErrorResponse {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            error: MilltimeError::FetchError,
-            message: "failed to fetch time info from milltime".to_string(),
-        })?;
+    let time_info = milltime_client.fetch_time_info(date_filter).await?;
 
     Ok((jar, Json(time_info)))
 }
@@ -82,14 +75,7 @@ pub async fn get_time_entries(
             message: "could not parse date range".to_string(),
         })?;
 
-    let user_calendar = milltime_client
-        .fetch_user_calendar(&date_filter)
-        .await
-        .map_err(|_| ErrorResponse {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            error: MilltimeError::FetchError,
-            message: "failed to fetch user calendar from milltime".to_string(),
-        })?;
+    let user_calendar = milltime_client.fetch_user_calendar(&date_filter).await?;
 
     let time_entries_iter = user_calendar
         .weeks
