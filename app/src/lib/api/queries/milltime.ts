@@ -20,14 +20,15 @@ export const milltimeQueries = {
   timerBaseKey: ["milltime", "timer"],
   getTimer: () =>
     queryOptions({
-      queryKey: [...milltimeQueries.timerBaseKey],
-      queryFn: async () => api.get("milltime/timer").json<Timer>(),
+      queryKey: [...milltimeQueries.timerBaseKey, "get"],
+      queryFn: async () =>
+        api.get("milltime/timer").json<MilltimeTimer | DatabaseTimer>(),
     }),
   timerHistory: () =>
     queryOptions({
       queryKey: [...milltimeQueries.timerBaseKey, "history"],
       queryFn: async () =>
-        api.get("milltime/timer-history").json<Array<TimerHistory>>(),
+        api.get("milltime/timer-history").json<Array<DatabaseTimer>>(),
     }),
   timeInfo: (query?: { from: string; to: string }) =>
     queryOptions({
@@ -65,7 +66,9 @@ export const milltimeQueries = {
     }),
 };
 
-export type TimerHistory = {
+export type TimerType = "Milltime" | "Standalone";
+
+export type DatabaseTimer = {
   id: number;
   userId: number;
   startTime: string;
@@ -76,6 +79,7 @@ export type TimerHistory = {
   activityName: string;
   note: string;
   createdAt: string;
+  timerType: TimerType;
 };
 
 export type TimeInfo = {
@@ -96,7 +100,7 @@ export type TimeInfo = {
   mtinfoDetailRow: unknown[];
 };
 
-export type Timer = {
+export type MilltimeTimer = {
   timerRegistrationId: string;
   projectRegistrationId: string;
   userId: string;
@@ -105,7 +109,7 @@ export type Timer = {
   phaseId: string;
   planningTaskId: unknown;
   startTime: string;
-  userNote: string;
+  note: string;
   ticketData: unknown;
   internalNote: unknown;
   typeOf: unknown;
@@ -124,6 +128,7 @@ export type Timer = {
   seconds: number;
   minutes: number;
   projectRegistration: unknown;
+  timerType: TimerType;
 };
 
 export type ProjectSearchItem = {

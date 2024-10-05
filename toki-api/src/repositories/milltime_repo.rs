@@ -29,7 +29,7 @@ impl MilltimeRepositoryImpl {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, EnumString, Display)]
+#[derive(Debug, Serialize, Deserialize, EnumString, Display, PartialEq, Eq)]
 pub enum TimerType {
     #[strum(ascii_case_insensitive, serialize = "milltime")]
     Milltime,

@@ -6,19 +6,44 @@ use crate::{
 use axum::{debug_handler, extract::State, http::StatusCode, Json};
 use axum_extra::extract::CookieJar;
 use milltime::MilltimeFetchError;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 use crate::{app_state::AppState, auth::AuthSession, repositories};
 
 use super::{CookieJarResult, MilltimeCookieJarExt};
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MilltimeTimerWrapper {
+    #[serde(flatten)]
+    timer: milltime::TimerRegistration,
+    timer_type: TimerType,
+}
+
+impl From<milltime::TimerRegistration> for MilltimeTimerWrapper {
+    fn from(timer: milltime::TimerRegistration) -> Self {
+        Self {
+            timer,
+            timer_type: TimerType::Milltime,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum TokiTimer {
+    Milltime(MilltimeTimerWrapper),
+    Standalone(repositories::MilltimeTimer),
+}
+
+#[debug_handler]
 #[instrument(name = "get_timer", skip(jar, app_state, auth_session))]
 pub async fn get_timer(
     jar: CookieJar,
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-) -> CookieJarResult<Json<milltime::TimerRegistration>> {
+) -> CookieJarResult<Json<TokiTimer>> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let mt_timer = milltime_client.fetch_timer().await;
@@ -28,29 +53,32 @@ pub async fn get_timer(
     let db_timer = milltime_repo.active_timer(&user.id).await;
 
     match (mt_timer, db_timer) {
-        (Ok(mt_timer), Ok(Some(_))) => Ok((jar, Json(mt_timer))),
+        (Ok(mt_timer), Ok(Some(_))) => Ok((jar, Json(TokiTimer::Milltime(mt_timer.into())))),
         (Ok(mt_timer), Ok(None)) => {
             tracing::warn!("milltime timer found but no active timer in db");
-            Ok((jar, Json(mt_timer)))
+            Ok((jar, Json(TokiTimer::Milltime(mt_timer.into()))))
         }
         (Ok(mt_timer), Err(e)) => {
             tracing::warn!("failed to fetch single active timer in db: {:?}", e);
-            Ok((jar, Json(mt_timer)))
+            Ok((jar, Json(TokiTimer::Milltime(mt_timer.into()))))
         }
-        (Err(e), Ok(Some(_))) => {
+        (Err(e), Ok(Some(db_timer))) => {
             tracing::warn!("failed to fetch milltime timer, but found in db: {:?}", e);
-            match e {
-                MilltimeFetchError::ResponseError(_) => {
-                    tracing::warn!("response error, not deleting active timer");
+            if db_timer.timer_type == TimerType::Standalone {
+                Ok((jar, Json(TokiTimer::Standalone(db_timer))))
+            } else {
+                match e {
+                    MilltimeFetchError::ResponseError(_) => {
+                        tracing::warn!("response error, not deleting active timer");
+                    }
+                    _ => milltime_repo.delete_active_timer(&user.id).await.unwrap(),
                 }
-                _ => milltime_repo.delete_active_timer(&user.id).await.unwrap(),
+                Err(ErrorResponse {
+                    status: StatusCode::NOT_FOUND,
+                    error: MilltimeError::TimerError,
+                    message: "non-standalone timer found in db but not on milltime".to_string(),
+                })
             }
-
-            Err(ErrorResponse {
-                status: StatusCode::NOT_FOUND,
-                error: MilltimeError::TimerError,
-                message: "timer found in db but not on milltime".to_string(),
-            })
         }
         _ => Err(ErrorResponse {
             status: StatusCode::NOT_FOUND,
@@ -191,6 +219,25 @@ pub async fn stop_timer(
     Ok((jar, StatusCode::OK))
 }
 
+#[instrument(name = "stop_standalone_timer", skip(app_state, auth_session))]
+pub async fn stop_standalone_timer(
+    auth_session: AuthSession,
+    State(app_state): State<AppState>,
+) -> Result<StatusCode, ErrorResponse> {
+    let user = auth_session.user.expect("user not found");
+
+    if let Err(e) = app_state.milltime_repo.delete_active_timer(&user.id).await {
+        tracing::error!("failed to delete active timer: {:?}", e);
+        return Err(ErrorResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: MilltimeError::DatabaseError,
+            message: "failed to delete active timer".to_string(),
+        });
+    }
+
+    Ok(StatusCode::OK)
+}
+
 #[instrument(name = "save_timer", skip(jar, app_state, auth_session))]
 #[debug_handler]
 pub async fn save_timer(
@@ -237,6 +284,37 @@ pub async fn edit_timer(
     }
 
     Ok((jar, StatusCode::OK))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditStandaloneTimerPayload {
+    user_note: Option<String>,
+}
+
+#[instrument(name = "edit_standalone_timer", skip(app_state, auth_session))]
+pub async fn edit_standalone_timer(
+    auth_session: AuthSession,
+    State(app_state): State<AppState>,
+    Json(body): Json<EditStandaloneTimerPayload>,
+) -> Result<StatusCode, ErrorResponse> {
+    let user = auth_session.user.expect("user not found");
+
+    let update_timer = repositories::UpdateMilltimeTimer {
+        user_id: user.id,
+        user_note: body.user_note.unwrap_or_default(),
+    };
+
+    if let Err(e) = app_state.milltime_repo.update_timer(&update_timer).await {
+        tracing::error!("failed to update timer: {:?}", e);
+        return Err(ErrorResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: MilltimeError::DatabaseError,
+            message: "failed to update timer".to_string(),
+        });
+    }
+
+    Ok(StatusCode::OK)
 }
 
 #[instrument(name = "get_timer_history", skip(auth_session, app_state))]

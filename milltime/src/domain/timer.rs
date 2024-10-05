@@ -20,7 +20,7 @@ pub struct TimerRegistration {
     pub planning_task_id: Value,
     #[serde(rename(deserialize = "starttime"))]
     pub start_time: String,
-    #[serde(rename(deserialize = "usernote"))]
+    #[serde(rename(deserialize = "usernote", serialize = "note"))]
     pub user_note: String,
     #[serde(rename(deserialize = "ticketdata"))]
     pub ticket_data: Value,

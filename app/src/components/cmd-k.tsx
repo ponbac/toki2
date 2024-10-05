@@ -11,7 +11,12 @@ import { useQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
 import { useNavigate } from "@tanstack/react-router";
 import { AzureAvatar } from "./azure-avatar";
-import { FolderGit2, GitPullRequestIcon, TimerIcon } from "lucide-react";
+import {
+  DrumIcon,
+  FolderGit2,
+  GitPullRequestIcon,
+  TimerIcon,
+} from "lucide-react";
 import { PullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -95,6 +100,9 @@ function ActionsCommandGroup(props: { close: () => void }) {
     enabled: false,
   });
 
+  const { mutate: startStandaloneTimer } =
+    milltimeMutations.useStartStandaloneTimer();
+
   const { mutate: saveTimer } = milltimeMutations.useSaveTimer({
     onSuccess: () => {
       toast.success("Timer successfully saved to Milltime");
@@ -105,28 +113,43 @@ function ActionsCommandGroup(props: { close: () => void }) {
   return (
     <CommandGroup heading="Actions">
       {timerState !== "running" ? (
-        <CommandItem
-          onSelect={() => {
-            // TODO: should probably extract this to some kind of guard hook
-            if (isAuthenticatedToMilltime) {
-              setNewTimerDialogOpen(true);
+        <>
+          <CommandItem
+            onSelect={() => {
+              startStandaloneTimer({
+                userNote: "Doing something important...",
+              });
               props.close();
-            } else {
-              setLoginDialogOpen(true);
-              props.close();
-            }
-          }}
-        >
-          <div className="flex flex-row items-center gap-2">
-            <TimerIcon className="h-1 w-1" />
-            Start a new timer
-          </div>
-        </CommandItem>
+            }}
+          >
+            <div className="flex flex-row items-center gap-2">
+              <DrumIcon className="h-1 w-1" />
+              Start empty timer
+            </div>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => {
+              // TODO: should probably extract this to some kind of guard hook
+              if (isAuthenticatedToMilltime) {
+                setNewTimerDialogOpen(true);
+                props.close();
+              } else {
+                setLoginDialogOpen(true);
+                props.close();
+              }
+            }}
+          >
+            <div className="flex flex-row items-center gap-2">
+              <TimerIcon className="h-1 w-1" />
+              Start Milltime timer
+            </div>
+          </CommandItem>
+        </>
       ) : (
         <CommandItem
           onSelect={() => {
             saveTimer({
-              userNote: timer?.userNote,
+              userNote: timer?.note,
             });
             props.close();
           }}

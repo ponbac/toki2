@@ -1,7 +1,7 @@
 import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { MilltimeLoginDialog } from "@/components/milltime-login-dialog";
-import { MilltimeTimer } from "@/components/milltime-timer";
+import { FloatingMilltimeTimer } from "@/components/floating-milltime-timer";
 import { MilltimeTimerDialog } from "@/components/milltime-timer-dialog";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
@@ -46,7 +46,7 @@ function MilltimeTimerProvider() {
 
   return isAuthenticated ? (
     <>
-      <MilltimeTimer />
+      <FloatingMilltimeTimer />
       <MilltimeTimerDialog
         open={newTimerDialogOpen}
         onOpenChange={setNewTimerDialogOpen}

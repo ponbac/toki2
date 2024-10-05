@@ -1,4 +1,5 @@
 import React from "react";
+import { match } from "ts-pattern";
 import { Button } from "./ui/button";
 import {
   CalendarClockIcon,
@@ -11,7 +12,12 @@ import {
 } from "lucide-react";
 import { Input } from "./ui/input";
 import { cn, formatHoursMinutes } from "@/lib/utils";
-import { milltimeQueries } from "@/lib/api/queries/milltime";
+import {
+  DatabaseTimer,
+  milltimeQueries,
+  TimerType,
+  type MilltimeTimer,
+} from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
 import {
   useMilltimeActions,
@@ -22,7 +28,7 @@ import dayjs from "dayjs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 
-export const MilltimeTimer = () => {
+export const FloatingMilltimeTimer = () => {
   const { setTimer } = useMilltimeActions();
   const { visible, timeSeconds, state: timerState } = useMilltimeTimer();
   const { hours, minutes, seconds } = secondsToHoursMinutesSeconds(
@@ -60,6 +66,15 @@ export const MilltimeTimer = () => {
       toast.error(`Failed to update timer, try refreshing the page`);
     },
   });
+  const { mutate: editStandaloneTimer } =
+    milltimeMutations.useEditStandaloneTimer({
+      onSuccess: () => {
+        toast.success("Timer successfully updated");
+      },
+      onError: () => {
+        toast.error(`Failed to update timer, try refreshing the page`);
+      },
+    });
 
   // Store the start time
   const startTimeRef = React.useRef<Date | null>(null);
@@ -67,8 +82,16 @@ export const MilltimeTimer = () => {
   // Sync local timer with fetched timer
   React.useEffect(() => {
     if (timer) {
-      const totalSeconds =
-        timer.seconds + timer.minutes * 60 + timer.hours * 3600;
+      const totalSeconds = match(timer.timerType)
+        .with("Milltime", () => {
+          const t = timer as MilltimeTimer;
+          return t.seconds + t.minutes * 60 + t.hours * 3600;
+        })
+        .with("Standalone", () => {
+          const t = timer as DatabaseTimer;
+          return dayjs().diff(dayjs(t.startTime), "second");
+        })
+        .exhaustive();
 
       // Set the start time
       startTimeRef.current = dayjs().subtract(totalSeconds, "second").toDate();
@@ -78,7 +101,7 @@ export const MilltimeTimer = () => {
         state: "running",
         timeSeconds: totalSeconds,
       });
-      setUserNote(timer.userNote || "");
+      setUserNote(timer.note || "");
     }
   }, [timer, setTimer]);
 
@@ -95,7 +118,7 @@ export const MilltimeTimer = () => {
 
         const { hours, minutes, seconds } =
           secondsToHoursMinutesSeconds(elapsedSeconds);
-        document.title = `${hours}:${minutes}:${seconds} - ${timer?.userNote} (${timer?.projectName} - ${timer?.activityName})`;
+        document.title = `${hours}:${minutes}:${seconds} - ${timer?.note} (${timer?.projectName} - ${timer?.activityName})`;
       }
     };
 
@@ -115,7 +138,7 @@ export const MilltimeTimer = () => {
   }, [
     timerState,
     setTimer,
-    timer?.userNote,
+    timer?.note,
     timer?.projectName,
     timer?.activityName,
   ]);
@@ -163,7 +186,7 @@ export const MilltimeTimer = () => {
                 size="icon"
                 onClick={() =>
                   saveTimer({
-                    userNote: timer?.userNote,
+                    userNote: timer?.note,
                   })
                 }
                 disabled={isSavingTimer || isStoppingTimer}
@@ -174,7 +197,11 @@ export const MilltimeTimer = () => {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => stopTimer()}
+                onClick={() =>
+                  stopTimer({
+                    timerType: timer?.timerType ?? ("Unreachable" as TimerType),
+                  })
+                }
                 disabled={isSavingTimer || isStoppingTimer}
               >
                 <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
@@ -224,7 +251,9 @@ export const MilltimeTimer = () => {
                 value={userNote}
                 onChange={(e) => setUserNote(e.target.value)}
                 onBlur={() =>
-                  userNote !== timer?.userNote && editTimer({ userNote })
+                  userNote !== timer?.note && timer?.timerType === "Standalone"
+                    ? editStandaloneTimer({ userNote })
+                    : editTimer({ userNote })
                 }
                 className={cn(
                   "w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50",
