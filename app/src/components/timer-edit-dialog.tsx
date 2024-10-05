@@ -76,7 +76,7 @@ export const TimerEditDialog = (props: {
   React.useEffect(() => {
     setProjectId(props.timer?.projectId ?? undefined);
     setActivityName(props.timer?.activityName ?? undefined);
-    setNote(props.timer.note ?? "");
+    setNote(props.timer?.note ?? "");
   }, [props.timer]);
 
   // TODO: should skeleton while loading...

@@ -77,7 +77,7 @@ export type DatabaseTimer = {
   projectName: string | null;
   activityId: string | null;
   activityName: string | null;
-  note: string | null;
+  note?: string | null;
   createdAt: string;
   timerType: TimerType;
 };
