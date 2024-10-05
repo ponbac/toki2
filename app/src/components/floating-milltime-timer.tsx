@@ -192,7 +192,7 @@ export const FloatingMilltimeTimer = () => {
                     saveTimer({
                       timerType:
                         timer?.timerType ?? ("Unreachable" as TimerType),
-                      userNote: timer?.note,
+                      userNote: timer?.note ?? "",
                     })
                   }
                   disabled={

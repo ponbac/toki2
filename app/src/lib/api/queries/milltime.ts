@@ -73,11 +73,11 @@ export type DatabaseTimer = {
   userId: number;
   startTime: string;
   endTime: string | null;
-  projectId: string;
-  projectName: string;
-  activityId: string;
-  activityName: string;
-  note: string;
+  projectId: string | null;
+  projectName: string | null;
+  activityId: string | null;
+  activityName: string | null;
+  note: string | null;
   createdAt: string;
   timerType: TimerType;
 };

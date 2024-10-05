@@ -74,8 +74,8 @@ export const TimerEditDialog = (props: {
   };
 
   React.useEffect(() => {
-    setProjectId(props.timer.projectId);
-    setActivityName(props.timer.activityName);
+    setProjectId(props.timer?.projectId ?? undefined);
+    setActivityName(props.timer?.activityName ?? undefined);
     setNote(props.timer.note ?? "");
   }, [props.timer]);
 
