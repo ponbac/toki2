@@ -263,6 +263,57 @@ pub async fn save_timer(
     Ok((jar, StatusCode::OK))
 }
 
+#[instrument(name = "save_standalone_timer", skip(app_state, auth_session))]
+pub async fn save_standalone_timer(
+    jar: CookieJar,
+    auth_session: AuthSession,
+    State(app_state): State<AppState>,
+    Json(body): Json<milltime::SaveTimerPayload>,
+) -> CookieJarResult<StatusCode> {
+    let user = auth_session.user.expect("user not found");
+    let active_timer = match app_state.milltime_repo.active_timer(&user.id).await {
+        Ok(Some(timer)) => timer,
+        _ => {
+            return Err(ErrorResponse {
+                status: StatusCode::NOT_FOUND,
+                error: MilltimeError::TimerError,
+                message: "no active timer found".to_string(),
+            })
+        }
+    };
+
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+
+    let total_time = {
+        let duration = time::OffsetDateTime::now_utc() - active_timer.start_time;
+        let total_minutes = duration.whole_minutes();
+        let hours = total_minutes / 60;
+        let minutes = total_minutes % 60;
+        format!("{:02}:{:02}", hours, minutes)
+    };
+    let current_day = time::OffsetDateTime::now_utc()
+        .date()
+        .format(&time::format_description::parse("[year]-[month]-[day]").unwrap())
+        .expect("failed to format current day");
+    let week_number = time::OffsetDateTime::now_utc().iso_week();
+
+    let payload = milltime::ProjectRegistrationPayload::new(
+        user.id.to_string(),
+        active_timer.project_id,
+        active_timer.project_name,
+        active_timer.activity_id,
+        active_timer.activity_name,
+        total_time,
+        current_day.to_string(),
+        week_number.into(),
+        body.user_note.unwrap_or(active_timer.note),
+    );
+
+    milltime_client.new_project_registration(&payload).await?;
+
+    Ok((jar, StatusCode::OK))
+}
+
 #[instrument(name = "edit_timer", skip(jar, app_state, auth_session))]
 pub async fn edit_timer(
     jar: CookieJar,

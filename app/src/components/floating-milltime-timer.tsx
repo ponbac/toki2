@@ -186,10 +186,13 @@ export const FloatingMilltimeTimer = () => {
                 size="icon"
                 onClick={() =>
                   saveTimer({
+                    timerType: timer?.timerType ?? ("Unreachable" as TimerType),
                     userNote: timer?.note,
                   })
                 }
-                disabled={isSavingTimer || isStoppingTimer}
+                disabled={
+                  isSavingTimer || isStoppingTimer || (timeSeconds ?? 0) < 60
+                }
               >
                 <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
                 <span className="sr-only">Save</span>

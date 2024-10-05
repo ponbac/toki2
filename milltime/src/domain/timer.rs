@@ -188,12 +188,12 @@ pub struct SaveTimerPayload {
 #[serde(rename_all = "camelCase")]
 pub struct SaveTimerResponse {
     #[serde(rename(deserialize = "projectregistration"))]
-    pub project_registration: ProjectRegistration,
+    pub project_registration: SaveTimerProjectRegistration,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectRegistration {
+pub struct SaveTimerProjectRegistration {
     #[serde(rename(deserialize = "absencetype"))]
     pub absence_type: Option<Value>,
     #[serde(rename(deserialize = "attestlevel"))]

@@ -131,9 +131,17 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
   return useMutation({
     mutationKey: ["milltime", "saveTimer"],
     mutationFn: (body: SaveTimerPayload) =>
-      api.put("milltime/timer", {
-        json: body,
-      }),
+      body.timerType === "Milltime"
+        ? api.put("milltime/timer", {
+            json: {
+              user_note: body.userNote,
+            },
+          })
+        : api.put("milltime/timer/standalone", {
+            json: {
+              user_note: body.userNote,
+            },
+          }),
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.resetQueries({
@@ -226,6 +234,7 @@ export type StartStandaloneTimerPayload = {
   userNote?: string;
 };
 export type SaveTimerPayload = {
+  timerType: TimerType;
   userNote?: string;
 };
 
