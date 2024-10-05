@@ -20,7 +20,7 @@ pub struct TimerRegistration {
     pub planning_task_id: Value,
     #[serde(rename(deserialize = "starttime"))]
     pub start_time: String,
-    #[serde(rename(deserialize = "usernote"))]
+    #[serde(rename(deserialize = "usernote", serialize = "note"))]
     pub user_note: String,
     #[serde(rename(deserialize = "ticketdata"))]
     pub ticket_data: Value,
@@ -188,12 +188,12 @@ pub struct SaveTimerPayload {
 #[serde(rename_all = "camelCase")]
 pub struct SaveTimerResponse {
     #[serde(rename(deserialize = "projectregistration"))]
-    pub project_registration: ProjectRegistration,
+    pub project_registration: SaveTimerProjectRegistration,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectRegistration {
+pub struct SaveTimerProjectRegistration {
     #[serde(rename(deserialize = "absencetype"))]
     pub absence_type: Option<Value>,
     #[serde(rename(deserialize = "attestlevel"))]

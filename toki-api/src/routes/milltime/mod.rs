@@ -27,9 +27,16 @@ pub fn router() -> Router<AppState> {
         .route("/timer-history", get(timer::get_timer_history))
         .route("/timer", get(timer::get_timer))
         .route("/timer", post(timer::start_timer))
+        .route("/timer/standalone", post(timer::start_standalone_timer))
         .route("/timer", delete(timer::stop_timer))
+        .route("/timer/standalone", delete(timer::stop_standalone_timer))
         .route("/timer", put(timer::save_timer))
+        .route("/timer/standalone", put(timer::save_standalone_timer))
         .route("/update-timer", put(timer::edit_timer))
+        .route(
+            "/update-timer/standalone",
+            put(timer::edit_standalone_timer),
+        )
 }
 
 #[derive(Debug, thiserror::Error, Serialize, strum::Display)]
@@ -38,6 +45,7 @@ enum MilltimeError {
     TimerError,
     DateParseError,
     FetchError,
+    DatabaseError,
 }
 
 #[derive(Debug, Serialize)]

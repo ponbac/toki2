@@ -3,14 +3,16 @@ import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { z } from "zod";
 import { useMilltimeActions } from "@/hooks/useMilltimeContext";
-import { milltimeQueries } from "../queries/milltime";
+import { milltimeQueries, TimerType } from "../queries/milltime";
 
 export const milltimeMutations = {
   useAuthenticate,
   useStartTimer,
+  useStartStandaloneTimer,
   useStopTimer,
   useSaveTimer,
   useEditTimer,
+  useEditStandaloneTimer,
 };
 
 function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
@@ -48,8 +50,8 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
         queryKey: milltimeQueries.timerBaseKey,
       });
       setTimer({
-        state: "running",
         visible: true,
+        state: "running",
         timeSeconds: 0,
       });
 
@@ -62,13 +64,46 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
   });
 }
 
-function useStopTimer(options?: DefaultMutationOptions<void>) {
+function useStartStandaloneTimer(
+  options?: DefaultMutationOptions<StartStandaloneTimerPayload>,
+) {
+  const queryClient = useQueryClient();
+  const { setTimer } = useMilltimeActions();
+
+  return useMutation({
+    mutationKey: ["milltime", "startStandaloneTimer"],
+    mutationFn: (body: StartStandaloneTimerPayload) =>
+      api.post("milltime/timer/standalone", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timerBaseKey,
+      });
+      setTimer({
+        visible: true,
+        state: "running",
+        timeSeconds: 0,
+      });
+
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
+function useStopTimer(
+  options?: DefaultMutationOptions<{ timerType: TimerType }>,
+) {
   const queryClient = useQueryClient();
   const { reset, setTimer } = useMilltimeActions();
 
   return useMutation({
     mutationKey: ["milltime", "stopTimer"],
-    mutationFn: () => api.delete("milltime/timer"),
+    mutationFn: (body: { timerType: TimerType }) =>
+      body.timerType === "Milltime"
+        ? api.delete("milltime/timer")
+        : api.delete("milltime/timer/standalone"),
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
@@ -96,11 +131,22 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
   return useMutation({
     mutationKey: ["milltime", "saveTimer"],
     mutationFn: (body: SaveTimerPayload) =>
-      api.put("milltime/timer", {
-        json: body,
-      }),
+      body.timerType === "Milltime"
+        ? api.put("milltime/timer", {
+            json: {
+              user_note: body.userNote,
+            },
+          })
+        : api.put("milltime/timer/standalone", {
+            json: {
+              user_note: body.userNote,
+            },
+          }),
     ...options,
     onSuccess: (data, v, c) => {
+      queryClient.resetQueries({
+        queryKey: [...milltimeQueries.timerBaseKey, "get"],
+      });
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.timerBaseKey,
       });
@@ -137,7 +183,28 @@ function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
-        queryKey: milltimeQueries.timerBaseKey,
+        queryKey: [...milltimeQueries.timerBaseKey, "get"],
+      });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
+function useEditStandaloneTimer(
+  options?: DefaultMutationOptions<EditStandaloneTimerPayload>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["milltime", "editStandaloneTimer"],
+    mutationFn: (body: EditStandaloneTimerPayload) =>
+      api.put("milltime/update-timer/standalone", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: [...milltimeQueries.timerBaseKey, "get"],
       });
       options?.onSuccess?.(data, v, c);
     },
@@ -163,10 +230,22 @@ export type StartTimerPayload = {
   projTime?: string;
 };
 
+export type StartStandaloneTimerPayload = {
+  userNote?: string;
+};
 export type SaveTimerPayload = {
+  timerType: TimerType;
   userNote?: string;
 };
 
 export type EditTimerPayload = {
   userNote: string;
+};
+
+export type EditStandaloneTimerPayload = {
+  userNote: string;
+  projectId?: string;
+  projectName?: string;
+  activityId?: string;
+  activityName?: string;
 };

@@ -158,4 +158,25 @@ mod tests {
             .await
             .expect("Failed to edit timer");
     }
+
+    #[tokio::test]
+    async fn test_new_project_registration() {
+        let client = initialize_client().await;
+        let payload = ProjectRegistrationPayload::new(
+            "104".to_string(),
+            "300000000000241970".to_string(),
+            "Ex-Change Parts - Quote Manager".to_string(),
+            "201201111420550010".to_string(),
+            "Systemutveckling".to_string(),
+            "00:33".to_string(),
+            "2024-10-05".to_string(),
+            40,
+            "Testing".to_string(),
+        );
+
+        client
+            .new_project_registration(&payload)
+            .await
+            .expect("Failed to create new project registration");
+    }
 }

@@ -287,7 +287,7 @@ impl MilltimeClient {
     pub async fn save_timer(
         &self,
         save_timer_payload: domain::SaveTimerPayload,
-    ) -> Result<domain::ProjectRegistration, MilltimeFetchError> {
+    ) -> Result<domain::SaveTimerProjectRegistration, MilltimeFetchError> {
         let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
 
         let result = self
@@ -309,6 +309,24 @@ impl MilltimeClient {
 
         let result = self
             .put::<MilltimeRowResponse<serde_json::Value>>(url, Some(edit_timer_payload))
+            .await?;
+
+        match result.success {
+            true => Ok(()),
+            false => Err(MilltimeFetchError::Other(
+                "milltime responded with success=false".to_string(),
+            )),
+        }
+    }
+
+    pub async fn new_project_registration(
+        &self,
+        project_registration_payload: &domain::ProjectRegistrationPayload,
+    ) -> Result<(), MilltimeFetchError> {
+        let url = MilltimeURL::from_env().append_path("/data/store/ProjectRegistrationReact");
+
+        let result = self
+            .post::<MilltimeRowResponse<serde_json::Value>>(url, project_registration_payload)
             .await?;
 
         match result.success {
