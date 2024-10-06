@@ -322,19 +322,18 @@ impl MilltimeClient {
     pub async fn new_project_registration(
         &self,
         project_registration_payload: &domain::ProjectRegistrationPayload,
-    ) -> Result<(), MilltimeFetchError> {
+    ) -> Result<domain::ProjectRegistrationResponse, MilltimeFetchError> {
         let url = MilltimeURL::from_env().append_path("/data/store/ProjectRegistrationReact");
 
         let result = self
-            .post::<MilltimeRowResponse<serde_json::Value>>(url, project_registration_payload)
-            .await?;
+            .post::<MilltimeRowResponse<domain::ProjectRegistrationResponse>>(
+                url,
+                project_registration_payload,
+            )
+            .await?
+            .only_row()?;
 
-        match result.success {
-            true => Ok(()),
-            false => Err(MilltimeFetchError::Other(
-                "milltime responded with success=false".to_string(),
-            )),
-        }
+        Ok(result)
     }
 }
 

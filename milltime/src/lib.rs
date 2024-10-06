@@ -174,9 +174,11 @@ mod tests {
             "Testing".to_string(),
         );
 
-        client
+        let project_registration_response = client
             .new_project_registration(&payload)
             .await
             .expect("Failed to create new project registration");
+
+        println!("{:#?}", project_registration_response);
     }
 }

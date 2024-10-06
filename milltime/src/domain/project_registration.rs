@@ -81,3 +81,93 @@ impl ProjectRegistrationPayload {
         }
     }
 }
+
+#[derive(Default, Serialize, Deserialize, Debug)]
+pub struct ProjectRegistrationResponse {
+    #[serde(rename = "projectregistrationid")]
+    pub project_registration_id: String,
+}
+
+// Example of a full response
+// {
+//     "rows": [
+//         {
+//             "absencetype": null,
+//             "attestlevel": null,
+//             "activityname": "Systemutveckling",
+//             "requirenote": null,
+//             "userid": "104",
+//             "favoritetype": 1,
+//             "regday": "2024-10-06",
+//             "projectid": "300000000000299726",
+//             "projectname": "Subscription Asset - Kawaii - Timbank",
+//             "activity": "201201111420550010",
+//             "phaseid": "Default",
+//             "phasename": "",
+//             "planningtaskid": null,
+//             "projectregistrationid": "300000000000413978",
+//             "projtimehh": 0.0,
+//             "projtimemm": 30,
+//             "variationid": null,
+//             "billtimehh": null,
+//             "billtimemm": null,
+//             "projectnr": null,
+//             "usernote": null,
+//             "internalnote": null,
+//             "projplandescription": null,
+//             "reportnr": null,
+//             "planningtaskname": null,
+//             "planningtype": 0,
+//             "cancreatedrivelog": true,
+//             "attendencelog": {
+//                 "clockstarthh": null,
+//                 "clockstartmm": null,
+//                 "clockendhh": null,
+//                 "clockendmm": null,
+//                 "lunchhh": null,
+//                 "lunchmm": null,
+//                 "attendencelogid": "300000000000413979",
+//                 "regday": "2024-10-06",
+//                 "userid": "104     "
+//             },
+//             "timedistributiontype": "NORMALTIME",
+//             "ticket": {
+//                 "ticketdata": null,
+//                 "description": null,
+//                 "imageurl": null
+//             },
+//             "customernames": "Subscription Asset AB"
+//         }
+//     ],
+//     "success": true,
+//     "data": {
+//         "OverTime1": {
+//             "hh": 0.0,
+//             "mm": 0
+//         },
+//         "OverTime2": {
+//             "hh": 0.0,
+//             "mm": 0
+//         },
+//         "OverTime3": {
+//             "hh": 0.0,
+//             "mm": 0
+//         },
+//         "OverTime4": {
+//             "hh": 0.0,
+//             "mm": 0
+//         },
+//         "PlusTime": {
+//             "hh": 0.0,
+//             "mm": 0
+//         },
+//         "TravelTime1": {
+//             "hh": 0.0,
+//             "mm": 0
+//         },
+//         "TravelTime2": {
+//             "hh": 0.0,
+//             "mm": 0
+//         }
+//     }
+// }

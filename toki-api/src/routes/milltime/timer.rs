@@ -309,13 +309,12 @@ pub async fn save_standalone_timer(
         body.user_note.unwrap_or(active_timer.note),
     );
 
-    // TODO: get project_registration_id from milltime
     let registration = milltime_client.new_project_registration(&payload).await?;
 
     let end_time = time::OffsetDateTime::now_utc();
     app_state
         .milltime_repo
-        .save_active_timer(&user.id, &end_time, "")
+        .save_active_timer(&user.id, &end_time, &registration.project_registration_id)
         .await
         .map_err(|e| ErrorResponse {
             status: StatusCode::INTERNAL_SERVER_ERROR,
