@@ -3,22 +3,25 @@ use std::time::Duration;
 use axum::{
     extract::State,
     http::StatusCode,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
+use axum_login::permission_required;
 use az_devops::RepoClient;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 use crate::{
-    auth::AuthSession,
-    domain::{RepoDifferMessage, RepoKey, Repository},
+    auth::{AuthBackend, AuthSession},
+    domain::{RepoDifferMessage, RepoKey, Repository, Role},
     repositories::{NewRepository, RepoRepository, UserRepository},
     AppState,
 };
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/", delete(delete_repository))
+        .route_layer(permission_required!(AuthBackend, Role::Admin))
         .route("/", get(get_repositories))
         .route("/", post(add_repository))
         .route("/follow", post(follow_repository))
@@ -146,4 +149,35 @@ async fn add_repository(
     });
 
     Ok(Json(AddRepositoryResponse { id }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteRepositoryBody {
+    organization: String,
+    project: String,
+    repo_name: String,
+}
+
+#[instrument(name = "DELETE /repositories", skip(app_state))]
+async fn delete_repository(
+    State(app_state): State<AppState>,
+    Json(body): Json<DeleteRepositoryBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let repo_key = RepoKey::new(&body.organization, &body.project, &body.repo_name);
+    let repository_repo = app_state.repository_repo.clone();
+
+    repository_repo
+        .delete_repository(&repo_key)
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to delete repository: {}", err),
+            )
+        })?;
+
+    app_state.delete_repo(repo_key).await;
+
+    Ok(StatusCode::OK)
 }

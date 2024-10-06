@@ -4,7 +4,11 @@ import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { z } from "zod";
 
-export const repositoriesMutations = { useAddRepository, useFollowRepository };
+export const repositoriesMutations = {
+  useAddRepository,
+  useFollowRepository,
+  useDeleteRepository,
+};
 
 function useAddRepository(options?: DefaultMutationOptions<AddRepositoryBody>) {
   const queryClient = useQueryClient();
@@ -64,6 +68,26 @@ function useFollowRepository(
   });
 }
 
+function useDeleteRepository(
+  options?: DefaultMutationOptions<DeleteRepositoryBody>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["deleteRepository"],
+    mutationFn: (body: DeleteRepositoryBody) =>
+      api.delete("repositories", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, vars, ctx) => {
+      queryClient.invalidateQueries(queries.differs());
+      queryClient.invalidateQueries(queries.cachedPullRequests());
+      options?.onSuccess?.(data, vars, ctx);
+    },
+  });
+}
+
 export const addRepositorySchema = z.object({
   organization: z.string().min(1, "Organization is required"),
   project: z.string().min(1, "Project is required"),
@@ -72,3 +96,9 @@ export const addRepositorySchema = z.object({
 });
 
 export type AddRepositoryBody = z.infer<typeof addRepositorySchema>;
+
+export type DeleteRepositoryBody = {
+  organization: string;
+  project: string;
+  repoName: string;
+};

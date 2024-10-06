@@ -31,6 +31,7 @@ import {
   PlayCircle,
   Plus,
   SearchCode,
+  Trash,
   Unplug,
 } from "lucide-react";
 import { useRef } from "react";
@@ -73,6 +74,8 @@ function RepositoriesComponent() {
       );
     },
   });
+  const { mutate: deleteRepository, isPending: isDeleting } =
+    mutations.useDeleteRepository();
 
   const filteredData = data.filter((differ) =>
     toRepoKeyString(differ)
@@ -173,6 +176,20 @@ function RepositoriesComponent() {
                     >
                       <PauseCircle size="1.25rem" />
                       Stop
+                    </FooterButton>
+                    <FooterButton
+                      variant="outline"
+                      onClick={() =>
+                        deleteRepository({
+                          organization: differ.organization,
+                          project: differ.project,
+                          repoName: differ.repoName,
+                        })
+                      }
+                      className="mr-auto transition-colors hover:text-destructive"
+                      disabled={differ.status === "Running" || isDeleting}
+                    >
+                      <Trash size="1.25rem" />
                     </FooterButton>
                   </CardFooter>
                 )}

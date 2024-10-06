@@ -1,12 +1,13 @@
 use sqlx::PgPool;
 
-use crate::domain::Repository;
+use crate::domain::{RepoKey, Repository};
 
 use super::repo_error::RepositoryError;
 
 pub trait RepoRepository {
     async fn get_repositories(&self) -> Result<Vec<Repository>, RepositoryError>;
     async fn upsert_repository(&self, repository: &NewRepository) -> Result<i32, RepositoryError>;
+    async fn delete_repository(&self, repo_key: &RepoKey) -> Result<(), RepositoryError>; // Added method
 }
 
 pub struct RepoRepositoryImpl {
@@ -53,6 +54,23 @@ impl RepoRepository for RepoRepositoryImpl {
         .id;
 
         Ok(id)
+    }
+
+    async fn delete_repository(&self, repo_key: &RepoKey) -> Result<(), RepositoryError> {
+        sqlx::query!(
+            r#"
+            DELETE FROM repositories
+            WHERE organization = $1 AND project = $2 AND repo_name = $3
+            "#,
+            repo_key.organization,
+            repo_key.project,
+            repo_key.repo_name,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(RepositoryError::from)?;
+
+        Ok(())
     }
 }
 

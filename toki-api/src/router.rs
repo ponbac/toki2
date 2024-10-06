@@ -55,7 +55,8 @@ pub async fn create(
     )
     .await;
 
-    // Start all the differ threads
+    // Start all the differ threads (if in production)
+    #[cfg(not(debug_assertions))]
     app_state.start_all_differs().await;
 
     // Finally, wrap the app with tracing layer, state and CORS

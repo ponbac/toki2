@@ -220,6 +220,18 @@ impl AppState {
         differ_txs.insert(key, tx);
     }
 
+    pub async fn delete_repo(&self, key: RepoKey) {
+        // Remove RepoClient
+        let mut clients = self.repo_clients.write().await;
+        clients.remove(&key);
+        // Remove RepoDiffer
+        let mut differs = self.differs.write().await;
+        differs.remove(&key);
+        // Remove Sender
+        let mut differ_txs = self.differ_txs.lock().await;
+        differ_txs.remove(&key);
+    }
+
     pub async fn push_notification(&self, message: WebPushMessage) -> Result<(), AppStateError> {
         self.web_push_client.send(message).await.map_err(|e| {
             tracing::error!("Failed to send notification: {:?}", e);
