@@ -45,6 +45,19 @@ pub async fn create(
             .layer(auth_layer)
     };
 
+    // Create app state
+    let app_state = AppState::new(
+        config.application.app_url.clone(),
+        config.application.api_url.clone(),
+        config.application.cookie_domain.clone(),
+        connection_pool.clone(),
+        repo_configs,
+    )
+    .await;
+
+    // Start all the differ threads
+    app_state.start_all_differs().await;
+
     // Finally, wrap the app with tracing layer, state and CORS
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
@@ -52,16 +65,7 @@ pub async fn create(
         .allow_credentials(true)
         .allow_origin([config.application.app_url.parse().unwrap()]);
     app_with_auth
-        .with_state(
-            AppState::new(
-                config.application.app_url,
-                config.application.api_url,
-                config.application.cookie_domain,
-                connection_pool.clone(),
-                repo_configs,
-            )
-            .await,
-        )
+        .with_state(app_state)
         .layer(cors)
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
 }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use axum::{
     http::StatusCode,
@@ -166,6 +166,17 @@ impl AppState {
             .get(&key)
             .cloned()
             .ok_or(AppStateError::RepoClientNotFound(key))
+    }
+
+    pub async fn start_all_differs(&self) {
+        let differs = self.differs.read().await;
+        for key in differs.keys() {
+            let sender = self.get_differ_sender(key.clone()).await.unwrap();
+            sender
+                .send(RepoDifferMessage::Start(Duration::from_secs(300)))
+                .await
+                .unwrap();
+        }
     }
 
     pub async fn get_cached_pull_requests(
