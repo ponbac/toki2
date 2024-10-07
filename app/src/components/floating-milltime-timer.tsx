@@ -273,7 +273,9 @@ export const FloatingMilltimeTimer = () => {
                 onBlur={() =>
                   userNote !== timer?.note
                     ? timer?.timerType === "Standalone"
-                      ? editStandaloneTimer({ userNote })
+                      ? editStandaloneTimer({
+                          userNote,
+                        })
                       : editTimer({ userNote })
                     : undefined
                 }

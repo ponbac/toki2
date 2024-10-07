@@ -371,13 +371,24 @@ pub async fn edit_standalone_timer(
 ) -> Result<StatusCode, ErrorResponse> {
     let user = auth_session.user.expect("user not found");
 
+    let active_timer = match app_state.milltime_repo.active_timer(&user.id).await {
+        Ok(Some(timer)) => timer,
+        _ => {
+            return Err(ErrorResponse {
+                status: StatusCode::NOT_FOUND,
+                error: MilltimeError::TimerError,
+                message: "no active timer found".to_string(),
+            });
+        }
+    };
+
     let update_timer = repositories::UpdateDatabaseTimer {
         user_id: user.id,
         user_note: body.user_note.unwrap_or_default(),
-        project_id: body.project_id,
-        project_name: body.project_name,
-        activity_id: body.activity_id,
-        activity_name: body.activity_name,
+        project_id: body.project_id.or(active_timer.project_id),
+        project_name: body.project_name.or(active_timer.project_name),
+        activity_id: body.activity_id.or(active_timer.activity_id),
+        activity_name: body.activity_name.or(active_timer.activity_name),
     };
 
     if let Err(e) = app_state.milltime_repo.update_timer(&update_timer).await {
