@@ -1,9 +1,4 @@
-use std::time::Duration;
-
-use reqwest::header::{self, HeaderMap};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use thiserror::Error;
-
+use super::Credentials;
 use crate::{
     domain::{
         self, ActivityFilter, DateFilter, ProjectSearchFilter, TimerRegistrationFilter,
@@ -12,8 +7,10 @@ use crate::{
     milltime_url::MilltimeURL,
     UpdateTimerFilter,
 };
-
-use super::Credentials;
+use reqwest::header::{self, HeaderMap};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::time::Duration;
+use thiserror::Error;
 
 pub struct MilltimeClient {
     credentials: Credentials,
@@ -46,19 +43,17 @@ impl MilltimeClient {
         &self.credentials.user_id
     }
 
-    async fn get<T: DeserializeOwned>(
+    async fn handle_response<T: DeserializeOwned>(
         &self,
-        url: impl AsRef<str>,
+        resp: reqwest::Response,
     ) -> Result<T, MilltimeFetchError> {
-        let resp = self
-            .client
-            .get(url.as_ref())
-            .send()
-            .await
-            .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
-
-        if resp.status() == 401 || resp.status() == 403 {
-            return Err(MilltimeFetchError::Unauthorized);
+        if resp.status().is_client_error() {
+            return match resp.status() {
+                reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+                    Err(MilltimeFetchError::Unauthorized)
+                }
+                _ => Err(MilltimeFetchError::ResponseError(resp.status().to_string())),
+            };
         }
 
         let resp_text = resp.text().await.map_err(|e| {
@@ -86,6 +81,15 @@ impl MilltimeClient {
         Ok(resp_data)
     }
 
+    async fn get<T: DeserializeOwned>(
+        &self,
+        url: impl AsRef<str>,
+    ) -> Result<T, MilltimeFetchError> {
+        let resp = self.client.get(url.as_ref()).send().await?;
+        self.handle_response(resp).await
+    }
+
+    /// Helper method to get a single row from a Milltime response (the most common Milltime response format).
     async fn get_single_row<T: DeserializeOwned + Serialize>(
         &self,
         url: impl AsRef<str>,
@@ -104,23 +108,8 @@ impl MilltimeClient {
         url: impl AsRef<str>,
         payload: impl serde::Serialize,
     ) -> Result<T, MilltimeFetchError> {
-        let resp = self
-            .client
-            .post(url.as_ref())
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
-
-        if resp.status() == 401 || resp.status() == 403 {
-            return Err(MilltimeFetchError::Unauthorized);
-        }
-
-        let resp_data = resp.json::<T>().await.map_err(|e| {
-            MilltimeFetchError::ParsingError(format!("Failed to parse response as JSON: {}", e))
-        })?;
-
-        Ok(resp_data)
+        let resp = self.client.post(url.as_ref()).json(&payload).send().await?;
+        self.handle_response(resp).await
     }
 
     async fn put<T: DeserializeOwned>(
@@ -129,47 +118,20 @@ impl MilltimeClient {
         payload: Option<impl serde::Serialize>,
     ) -> Result<T, MilltimeFetchError> {
         let mut client = self.client.put(url.as_ref());
-
         if let Some(payload) = payload {
             client = client.json(&payload);
         }
 
-        let resp = client
-            .send()
-            .await
-            .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
-
-        if resp.status() == 401 || resp.status() == 403 {
-            return Err(MilltimeFetchError::Unauthorized);
-        }
-
-        let resp_data = resp.json::<T>().await.map_err(|e| {
-            MilltimeFetchError::ParsingError(format!("Failed to parse response as JSON: {}", e))
-        })?;
-
-        Ok(resp_data)
+        let resp = client.send().await?;
+        self.handle_response(resp).await
     }
 
     async fn delete<T: DeserializeOwned>(
         &self,
         url: impl AsRef<str>,
     ) -> Result<T, MilltimeFetchError> {
-        let resp = self
-            .client
-            .delete(url.as_ref())
-            .send()
-            .await
-            .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
-
-        if resp.status() == 401 || resp.status() == 403 {
-            return Err(MilltimeFetchError::Unauthorized);
-        }
-
-        let resp_data = resp.json::<T>().await.map_err(|e| {
-            MilltimeFetchError::ParsingError(format!("Failed to parse response as JSON: {}", e))
-        })?;
-
-        Ok(resp_data)
+        let resp = self.client.delete(url.as_ref()).send().await?;
+        self.handle_response(resp).await
     }
 
     pub async fn fetch_time_period_info(
@@ -257,7 +219,9 @@ impl MilltimeClient {
     }
 
     pub async fn fetch_timer(&self) -> Result<domain::TimerRegistration, MilltimeFetchError> {
-        let url = self.milltime_url.append_path("/data/store/TimerRegistration");
+        let url = self
+            .milltime_url
+            .append_path("/data/store/TimerRegistration");
 
         let timer = self
             .get_single_row::<domain::TimerRegistration>(url)
@@ -289,7 +253,9 @@ impl MilltimeClient {
     }
 
     pub async fn stop_timer(&self) -> Result<(), MilltimeFetchError> {
-        let url = self.milltime_url.append_path("/data/store/TimerRegistration");
+        let url = self
+            .milltime_url
+            .append_path("/data/store/TimerRegistration");
 
         let response = self
             .delete::<MilltimeRowResponse<serde_json::Value>>(url)
@@ -307,7 +273,9 @@ impl MilltimeClient {
         &self,
         save_timer_payload: domain::SaveTimerPayload,
     ) -> Result<domain::SaveTimerProjectRegistration, MilltimeFetchError> {
-        let url = self.milltime_url.append_path("/data/store/TimerRegistration");
+        let url = self
+            .milltime_url
+            .append_path("/data/store/TimerRegistration");
 
         let result = self
             .put::<MilltimeRowResponse<domain::SaveTimerResponse>>(url, Some(save_timer_payload))
@@ -369,6 +337,12 @@ pub enum MilltimeFetchError {
     ParsingError(String),
     #[error("Other: {0}")]
     Other(String),
+}
+
+impl From<reqwest::Error> for MilltimeFetchError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::ResponseError(e.to_string())
+    }
 }
 
 /// This is a generic response from Milltime. It contains a list of rows and a boolean indicating
