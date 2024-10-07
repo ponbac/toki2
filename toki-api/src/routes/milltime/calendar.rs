@@ -58,7 +58,7 @@ pub struct ExtendedTimeEntry {
     end_time: Option<time::OffsetDateTime>,
 }
 
-#[instrument(name = "get_time_entries", skip(jar, app_state))]
+#[instrument(name = "get_time_entries", skip(jar, app_state, auth_session))]
 pub async fn get_time_entries(
     jar: CookieJar,
     auth_session: AuthSession,
