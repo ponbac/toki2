@@ -45,6 +45,12 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
         json: body,
       }),
     ...options,
+    onMutate: (vars) => {
+      queryClient.resetQueries({
+        queryKey: milltimeQueries.getTimer().queryKey,
+      });
+      options?.onMutate?.(vars);
+    },
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.timerBaseKey,
@@ -77,6 +83,12 @@ function useStartStandaloneTimer(
         json: body,
       }),
     ...options,
+    onMutate: (vars) => {
+      queryClient.resetQueries({
+        queryKey: milltimeQueries.getTimer().queryKey,
+      });
+      options?.onMutate?.(vars);
+    },
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.timerBaseKey,
@@ -145,7 +157,7 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.resetQueries({
-        queryKey: [...milltimeQueries.timerBaseKey, "get"],
+        queryKey: milltimeQueries.getTimer().queryKey,
       });
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.timerBaseKey,
@@ -183,7 +195,7 @@ function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
-        queryKey: [...milltimeQueries.timerBaseKey, "get"],
+        queryKey: milltimeQueries.getTimer().queryKey,
       });
       options?.onSuccess?.(data, v, c);
     },
@@ -204,7 +216,7 @@ function useEditStandaloneTimer(
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
-        queryKey: [...milltimeQueries.timerBaseKey, "get"],
+        queryKey: milltimeQueries.getTimer().queryKey,
       });
       options?.onSuccess?.(data, v, c);
     },
