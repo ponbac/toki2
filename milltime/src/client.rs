@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use reqwest::header::{self, HeaderMap};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
 
@@ -14,11 +17,29 @@ use super::Credentials;
 
 pub struct MilltimeClient {
     credentials: Credentials,
+    client: reqwest::Client,
+    milltime_url: MilltimeURL,
 }
 
 impl MilltimeClient {
     pub fn new(credentials: Credentials) -> Self {
-        Self { credentials }
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .default_headers({
+                let mut headers = HeaderMap::new();
+                headers.insert(header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36".parse().unwrap());
+                headers.insert(header::COOKIE, credentials.as_cookie_header().parse().unwrap());
+                headers.insert("X-Csrf-Token", credentials.csrf_token.parse().unwrap());
+                headers
+            })
+            .build()
+            .expect("Failed to create reqwest client");
+
+        Self {
+            credentials,
+            client,
+            milltime_url: MilltimeURL::from_env(),
+        }
     }
 
     pub fn user_id(&self) -> &str {
@@ -29,11 +50,9 @@ impl MilltimeClient {
         &self,
         url: impl AsRef<str>,
     ) -> Result<T, MilltimeFetchError> {
-        let client = reqwest::Client::new();
-
-        let resp = client
+        let resp = self
+            .client
             .get(url.as_ref())
-            .milltime_headers(&self.credentials)
             .send()
             .await
             .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
@@ -85,11 +104,9 @@ impl MilltimeClient {
         url: impl AsRef<str>,
         payload: impl serde::Serialize,
     ) -> Result<T, MilltimeFetchError> {
-        let client = reqwest::Client::new();
-
-        let resp = client
+        let resp = self
+            .client
             .post(url.as_ref())
-            .milltime_headers(&self.credentials)
             .json(&payload)
             .send()
             .await
@@ -111,9 +128,7 @@ impl MilltimeClient {
         url: impl AsRef<str>,
         payload: Option<impl serde::Serialize>,
     ) -> Result<T, MilltimeFetchError> {
-        let mut client = reqwest::Client::new()
-            .put(url.as_ref())
-            .milltime_headers(&self.credentials);
+        let mut client = self.client.put(url.as_ref());
 
         if let Some(payload) = payload {
             client = client.json(&payload);
@@ -139,11 +154,9 @@ impl MilltimeClient {
         &self,
         url: impl AsRef<str>,
     ) -> Result<T, MilltimeFetchError> {
-        let client = reqwest::Client::new();
-
-        let resp = client
+        let resp = self
+            .client
             .delete(url.as_ref())
-            .milltime_headers(&self.credentials)
             .send()
             .await
             .map_err(|e| MilltimeFetchError::ResponseError(e.to_string()))?;
@@ -163,7 +176,8 @@ impl MilltimeClient {
         &self,
         date_filter: DateFilter,
     ) -> Result<domain::TimePeriodInfo, MilltimeFetchError> {
-        let url = MilltimeURL::from_env()
+        let url = self
+            .milltime_url
             .append_path("/data/store/TimeInfo")
             .with_filter(&date_filter);
 
@@ -180,7 +194,8 @@ impl MilltimeClient {
         &self,
         date_filter: &DateFilter,
     ) -> Result<domain::UserCalendar, MilltimeFetchError> {
-        let url = MilltimeURL::from_env()
+        let url = self
+            .milltime_url
             .append_path("/data/store/UserCalendar")
             .with_filter(date_filter);
 
@@ -201,7 +216,8 @@ impl MilltimeClient {
         &self,
         search_filter: ProjectSearchFilter,
     ) -> Result<Vec<domain::ProjectSearchItem>, MilltimeFetchError> {
-        let url = MilltimeURL::from_env()
+        let url = self
+            .milltime_url
             .append_path("/data/store/ProjectSearchMT")
             .with_filter(&search_filter);
 
@@ -216,7 +232,8 @@ impl MilltimeClient {
         &self,
         activity_filter: ActivityFilter,
     ) -> Result<Vec<domain::Activity>, MilltimeFetchError> {
-        let url = MilltimeURL::from_env()
+        let url = self
+            .milltime_url
             .append_path("/data/store/ProjectPhaseActivity")
             .with_filter(&activity_filter);
 
@@ -229,7 +246,8 @@ impl MilltimeClient {
         &self,
         date_filter: DateFilter,
     ) -> Result<domain::TimeInfo, MilltimeFetchError> {
-        let url = MilltimeURL::from_env()
+        let url = self
+            .milltime_url
             .append_path("/data/store/TimeInfo")
             .with_filter(&date_filter);
 
@@ -239,7 +257,7 @@ impl MilltimeClient {
     }
 
     pub async fn fetch_timer(&self) -> Result<domain::TimerRegistration, MilltimeFetchError> {
-        let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
+        let url = self.milltime_url.append_path("/data/store/TimerRegistration");
 
         let timer = self
             .get_single_row::<domain::TimerRegistration>(url)
@@ -254,7 +272,8 @@ impl MilltimeClient {
     ) -> Result<(), MilltimeFetchError> {
         let payload: TimerRegistrationPayload = start_timer_options.into();
         let reg_timer_url_filter: TimerRegistrationFilter = (&payload).into();
-        let url = MilltimeURL::from_env()
+        let url = self
+            .milltime_url
             .append_path("/data/store/TimerRegistration")
             .with_filter(&reg_timer_url_filter);
 
@@ -270,7 +289,7 @@ impl MilltimeClient {
     }
 
     pub async fn stop_timer(&self) -> Result<(), MilltimeFetchError> {
-        let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
+        let url = self.milltime_url.append_path("/data/store/TimerRegistration");
 
         let response = self
             .delete::<MilltimeRowResponse<serde_json::Value>>(url)
@@ -288,7 +307,7 @@ impl MilltimeClient {
         &self,
         save_timer_payload: domain::SaveTimerPayload,
     ) -> Result<domain::SaveTimerProjectRegistration, MilltimeFetchError> {
-        let url = MilltimeURL::from_env().append_path("/data/store/TimerRegistration");
+        let url = self.milltime_url.append_path("/data/store/TimerRegistration");
 
         let result = self
             .put::<MilltimeRowResponse<domain::SaveTimerResponse>>(url, Some(save_timer_payload))
@@ -303,7 +322,8 @@ impl MilltimeClient {
         edit_timer_payload: &domain::EditTimerPayload,
     ) -> Result<(), MilltimeFetchError> {
         let update_timer_filter = UpdateTimerFilter::new(edit_timer_payload.user_note.clone());
-        let url = MilltimeURL::from_env()
+        let url = self
+            .milltime_url
             .append_path("/data/store/TimerRegistration")
             .with_filter(&update_timer_filter);
 
@@ -323,7 +343,9 @@ impl MilltimeClient {
         &self,
         project_registration_payload: &domain::ProjectRegistrationPayload,
     ) -> Result<domain::ProjectRegistrationResponse, MilltimeFetchError> {
-        let url = MilltimeURL::from_env().append_path("/data/store/ProjectRegistrationReact");
+        let url = self
+            .milltime_url
+            .append_path("/data/store/ProjectRegistrationReact");
 
         let result = self
             .post::<MilltimeRowResponse<domain::ProjectRegistrationResponse>>(
@@ -334,21 +356,6 @@ impl MilltimeClient {
             .only_row()?;
 
         Ok(result)
-    }
-}
-
-trait ReqwestBuilderExt
-where
-    Self: Sized,
-{
-    fn milltime_headers(self, credentials: &Credentials) -> Self;
-}
-
-impl ReqwestBuilderExt for reqwest::RequestBuilder {
-    fn milltime_headers(self, credentials: &Credentials) -> Self {
-        self.header("Cookie", credentials.as_cookie_header())
-            .header("X-Csrf-Token", credentials.csrf_token.clone())
-            .header("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     }
 }
 
