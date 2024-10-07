@@ -5,7 +5,7 @@ use serde_json::Value;
 #[serde(rename_all(serialize = "camelCase"))]
 pub struct TimeInfo {
     #[serde(rename(deserialize = "Overtimes"))]
-    pub overtimes: Vec<Overtime>,
+    pub overtimes: Option<Vec<Overtime>>,
     #[serde(rename(deserialize = "FlexTimePreviousPeriod"))]
     pub flex_time_previous_period: Option<f64>,
     #[serde(rename(deserialize = "FlexTimePeriod"))]
