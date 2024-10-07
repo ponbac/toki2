@@ -181,4 +181,26 @@ mod tests {
 
         println!("{:#?}", project_registration_response);
     }
+
+    #[tokio::test]
+    async fn test_edit_project_registration() {
+        let client = initialize_client().await;
+        let payload = ProjectRegistrationEditPayload::new(
+            "300000000000414168".to_string(),
+            "104".to_string(),
+            "300000000000000285".to_string(),
+            "Internt".to_string(),
+            "300000000000000364".to_string(),
+            "Försäljning".to_string(),
+            "00:46".to_string(),
+            "2024-10-07".to_string(),
+            41,
+            "Rentalföretagen - AI".to_string(),
+        );
+
+        client
+            .edit_project_registration(&payload)
+            .await
+            .expect("Failed to edit project registration");
+    }
 }

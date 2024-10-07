@@ -83,6 +83,44 @@ impl ProjectRegistrationPayload {
 }
 
 #[derive(Default, Serialize, Deserialize, Debug)]
+pub struct ProjectRegistrationEditPayload {
+    #[serde(rename = "projectregistrationid")]
+    pub project_registration_id: String,
+    #[serde(flatten)]
+    pub project_registration_payload: ProjectRegistrationPayload,
+}
+
+impl ProjectRegistrationEditPayload {
+    pub fn new(
+        project_registration_id: String,
+        user_id: String,
+        project_id: String,
+        project_name: String,
+        activity: String,
+        activity_name: String,
+        total_time: String,
+        reg_day: String,
+        week_number: i32,
+        user_note: String,
+    ) -> Self {
+        Self {
+            project_registration_id,
+            project_registration_payload: ProjectRegistrationPayload::new(
+                user_id,
+                project_id,
+                project_name,
+                activity,
+                activity_name,
+                total_time,
+                reg_day,
+                week_number,
+                user_note,
+            ),
+        }
+    }
+}
+
+#[derive(Default, Serialize, Deserialize, Debug)]
 pub struct ProjectRegistrationResponse {
     #[serde(rename = "projectregistrationid")]
     pub project_registration_id: String,

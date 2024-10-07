@@ -13,6 +13,7 @@ export const milltimeMutations = {
   useSaveTimer,
   useEditTimer,
   useEditStandaloneTimer,
+  useEditProjectRegistration,
 };
 
 function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
@@ -223,6 +224,27 @@ function useEditStandaloneTimer(
   });
 }
 
+function useEditProjectRegistration(
+  options?: DefaultMutationOptions<EditProjectRegistrationPayload>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["milltime", "editProjectRegistration"],
+    mutationFn: (body: EditProjectRegistrationPayload) =>
+      api.put("milltime/time-entries", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timeEntries().queryKey.slice(0, 2),
+      });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
 export const authenticateSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
@@ -260,4 +282,23 @@ export type EditStandaloneTimerPayload = {
   projectName?: string;
   activityId?: string;
   activityName?: string;
+};
+
+export type EditProjectRegistrationPayload = {
+  projectRegistrationId: string;
+  projectId: string;
+  projectName: string;
+  activityId: string;
+  activityName: string;
+  totalTime: string;
+  regDay: string;
+  weekNumber: number;
+  userNote: string;
+};
+
+export type UpdateTimeEntryPayload = {
+  id: string;
+  note: string;
+  hours: number;
+  // Add other fields as necessary
 };
