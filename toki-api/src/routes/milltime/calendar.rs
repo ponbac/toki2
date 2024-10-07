@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use axum_extra::extract::CookieJar;
+use chrono::Datelike;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
@@ -56,6 +57,7 @@ pub struct ExtendedTimeEntry {
     start_time: Option<time::OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
     end_time: Option<time::OffsetDateTime>,
+    week_number: u32,
 }
 
 #[instrument(name = "get_time_entries", skip(jar, app_state, auth_session))]
@@ -122,9 +124,10 @@ pub async fn get_time_entries(
                 .find(|timer| timer.registration_id == Some(time_entry.registration_id.clone()))
                 .and_then(|timer| timer.end_time);
             ExtendedTimeEntry {
-                time_entry,
+                time_entry: time_entry.clone(),
                 start_time,
                 end_time,
+                week_number: time_entry.date.iso_week().week(),
             }
         })
         .collect();

@@ -8,9 +8,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { TimeEntry } from "@/lib/api/queries/milltime";
-import { formatHoursAsHoursMinutes } from "@/lib/utils";
+import { formatHoursAsHoursMinutes, formatHoursMinutes } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import { toast } from "sonner";
+import { PencilIcon } from "lucide-react";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
@@ -23,6 +26,18 @@ export function TimeEntriesList(props: {
   timeEntries: Array<TimeEntry>;
   mergeSameDay: boolean;
 }) {
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+
+  const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
+    milltimeMutations.useEditProjectRegistration({
+      onSuccess: () => {
+        setEditingEntryId(null);
+      },
+      onError: () => {
+        toast.error(`Failed to update time entry, try again later`);
+      },
+    });
+
   const groupedEntries: Array<[string, Array<TimeEntry | MergedTimeEntry>]> =
     useMemo(() => {
       const groups: { [key: string]: Array<TimeEntry> } = {};
@@ -96,27 +111,6 @@ export function TimeEntriesList(props: {
       );
     }, [props.timeEntries, props.mergeSameDay]);
 
-  // Add state to manage which entry is being edited
-  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
-
-  // Handler to save the updated entry
-  const handleSave = (updatedEntry: TimeEntry | MergedTimeEntry) => {
-    // Implement the save logic, possibly using mutations from milltime.ts
-    // For example:
-    // if (isMergedTimeEntry(updatedEntry)) {
-    //   // Call appropriate mutation
-    // } else {
-    //   // Call appropriate mutation
-    // }
-    // After saving, reset the editing state
-    setEditingEntryId(null);
-  };
-
-  // Handler to cancel editing
-  const handleCancel = () => {
-    setEditingEntryId(null);
-  };
-
   return (
     <div className="mt-8 space-y-8">
       {groupedEntries.map(([dateKey, dayEntries]) => (
@@ -129,12 +123,26 @@ export function TimeEntriesList(props: {
           </h2>
           <div className="space-y-4">
             {dayEntries.map((entry) =>
-              editingEntryId === entry.registrationId ? (
+              editingEntryId === entry.registrationId &&
+              !isMergedTimeEntry(entry) ? (
                 <EditEntryCard
                   key={entry.registrationId}
                   entry={entry}
-                  onSave={handleSave}
-                  onCancel={handleCancel}
+                  isUpdatingTimeEntry={isUpdatingTimeEntry}
+                  onSave={(updatedEntry) => {
+                    updateTimeEntry({
+                      projectRegistrationId: entry.registrationId,
+                      userNote: updatedEntry.note ?? "",
+                      projectId: updatedEntry.projectId,
+                      projectName: updatedEntry.projectName,
+                      activityId: updatedEntry.activityId,
+                      activityName: updatedEntry.activityName,
+                      totalTime: formatHoursMinutes(updatedEntry.hours),
+                      regDay: updatedEntry.date,
+                      weekNumber: updatedEntry.weekNumber,
+                    });
+                  }}
+                  onCancel={() => setEditingEntryId(null)}
                 />
               ) : (
                 <ViewEntryCard
@@ -160,7 +168,9 @@ function ViewEntryCard(props: {
       <div className="flex items-center justify-between gap-2">
         <CardHeader className="pb-2">
           <CardTitle>
-            {props.entry.projectName} - {props.entry.activityName}
+            <span>
+              {props.entry.projectName} - {props.entry.activityName}
+            </span>
           </CardTitle>
           <CardDescription>
             {formatHoursAsHoursMinutes(props.entry.hours)}
@@ -184,22 +194,23 @@ function ViewEntryCard(props: {
               .reverse()}
           </div>
         ) : (
-          props.entry.endTime && (
-            <div className="flex flex-row gap-2 pr-4">
-              <p className="text-base text-muted-foreground">
-                {props.entry.startTime &&
-                  format(new Date(props.entry.startTime), "HH:mm")}
-                {" - "}
-                {props.entry.endTime &&
-                  format(new Date(props.entry.endTime), "HH:mm")}
-              </p>
-            </div>
-          )
+          <div className="mr-4 flex flex-col items-end">
+            <Button variant="ghost" size="icon" onClick={props.onEdit}>
+              <PencilIcon className="size-4" />
+            </Button>
+            {props.entry.endTime && (
+              <div className="flex flex-row gap-2">
+                <p className="text-base text-muted-foreground">
+                  {props.entry.startTime &&
+                    format(new Date(props.entry.startTime), "HH:mm")}
+                  {" - "}
+                  {props.entry.endTime &&
+                    format(new Date(props.entry.endTime), "HH:mm")}
+                </p>
+              </div>
+            )}
+          </div>
         )}
-        {/* Add Edit button */}
-        <Button variant="outline" size="sm" onClick={props.onEdit}>
-          Edit
-        </Button>
       </div>
       <CardContent>
         <p className="font-mono text-base">{props.entry.note}</p>
@@ -209,19 +220,22 @@ function ViewEntryCard(props: {
 }
 
 function EditEntryCard(props: {
-  entry: TimeEntry | MergedTimeEntry;
-  onSave: (updatedEntry: TimeEntry | MergedTimeEntry) => void;
+  entry: TimeEntry;
+  onSave: (updatedEntry: TimeEntry) => void;
   onCancel: () => void;
+  isUpdatingTimeEntry: boolean;
 }) {
   const [note, setNote] = useState(props.entry.note);
-  const [hours, setHours] = useState(props.entry.hours.toString());
+  const [hours, setHours] = useState(Math.floor(props.entry.hours));
+  const [minutes, setMinutes] = useState(
+    Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60),
+  );
 
   const handleSave = () => {
     const updatedEntry = {
       ...props.entry,
       note,
-      hours: parseFloat(hours),
-      // Add other fields as necessary
+      hours: hours + minutes / 60,
     };
     props.onSave(updatedEntry);
   };
@@ -229,37 +243,54 @@ function EditEntryCard(props: {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Edit Entry</CardTitle>
+        <CardTitle>
+          Edit Entry{" "}
+          <span className="text-muted-foreground">
+            ({props.entry.projectName} - {props.entry.activityName})
+          </span>
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700">
-            Note
-          </label>
+          <label className="block text-sm font-medium">Note</label>
           <Input
             value={note ?? ""}
             onChange={(e) => setNote(e.target.value)}
             className="mt-1"
           />
         </div>
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700">
-            Hours
-          </label>
-          <Input
-            type="number"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            className="mt-1"
-          />
+        <div className="mb-4 flex items-end gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium">Hours</label>
+            <Input
+              type="number"
+              value={hours}
+              onChange={(e) => setHours(parseInt(e.target.value))}
+              className="mt-1"
+              min={0}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium">Minutes</label>
+            <Input
+              type="number"
+              value={minutes}
+              onChange={(e) => setMinutes(parseInt(e.target.value))}
+              className="mt-1"
+              min={0}
+            />
+          </div>
         </div>
-        {/* Add more fields as necessary */}
       </CardContent>
       <div className="flex justify-end p-4">
         <Button variant="secondary" onClick={props.onCancel}>
           Cancel
         </Button>
-        <Button className="ml-2" onClick={handleSave}>
+        <Button
+          className="ml-2"
+          onClick={handleSave}
+          disabled={props.isUpdatingTimeEntry}
+        >
           Save
         </Button>
       </div>

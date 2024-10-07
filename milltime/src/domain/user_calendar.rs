@@ -85,6 +85,7 @@ pub struct TimeEntry {
     pub registration_id: String,
     pub project_id: String,
     pub project_name: String,
+    pub activity_id: String,
     pub activity_name: String,
     pub date: NaiveDate,
     pub hours: f64,
@@ -97,6 +98,7 @@ impl From<RawProjectRegistration> for TimeEntry {
             registration_id: raw_project_registration.projectregistrationid,
             project_id: raw_project_registration.projectid,
             project_name: raw_project_registration.projectname,
+            activity_id: raw_project_registration.activity,
             activity_name: raw_project_registration.activityname,
             date: NaiveDate::parse_from_str(&raw_project_registration.regday, "%Y-%m-%d")
                 .unwrap_or_default(),
