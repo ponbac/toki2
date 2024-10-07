@@ -5,7 +5,7 @@ use crate::{
         TimerRegistrationPayload,
     },
     milltime_url::MilltimeURL,
-    UpdateTimerFilter,
+    ProjectRegistrationFilter, UpdateTimerFilter,
 };
 use reqwest::header::{self, HeaderMap};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -324,6 +324,30 @@ impl MilltimeClient {
             .only_row()?;
 
         Ok(result)
+    }
+
+    pub async fn edit_project_registration(
+        &self,
+        project_registration_payload: &domain::ProjectRegistrationEditPayload,
+    ) -> Result<(), MilltimeFetchError> {
+        let project_registration_filter = ProjectRegistrationFilter::new(
+            project_registration_payload.project_registration_id.clone(),
+        );
+        let url = self
+            .milltime_url
+            .append_path("/data/store/ProjectRegistrationReact")
+            .with_filter(&project_registration_filter);
+
+        let result = self
+            .put::<MilltimeRowResponse<serde_json::Value>>(url, Some(project_registration_payload))
+            .await?;
+
+        match result.success {
+            true => Ok(()),
+            false => Err(MilltimeFetchError::Other(
+                "milltime responded with success=false".to_string(),
+            )),
+        }
     }
 }
 

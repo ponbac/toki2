@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import {
   Card,
@@ -8,7 +8,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { TimeEntry } from "@/lib/api/queries/milltime";
-import { formatHoursAsHoursMinutes } from "@/lib/utils";
+import { formatHoursAsHoursMinutes, formatHoursMinutes } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import { toast } from "sonner";
+import { PencilIcon } from "lucide-react";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
@@ -21,6 +26,18 @@ export function TimeEntriesList(props: {
   timeEntries: Array<TimeEntry>;
   mergeSameDay: boolean;
 }) {
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+
+  const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
+    milltimeMutations.useEditProjectRegistration({
+      onSuccess: () => {
+        setEditingEntryId(null);
+      },
+      onError: () => {
+        toast.error(`Failed to update time entry, try again later`);
+      },
+    });
+
   const groupedEntries: Array<[string, Array<TimeEntry | MergedTimeEntry>]> =
     useMemo(() => {
       const groups: { [key: string]: Array<TimeEntry> } = {};
@@ -105,58 +122,179 @@ export function TimeEntriesList(props: {
             </span>
           </h2>
           <div className="space-y-4">
-            {dayEntries.map((entry) => (
-              <Card key={entry.registrationId}>
-                <div className="flex items-center justify-between gap-2">
-                  <CardHeader className="pb-2">
-                    <CardTitle>
-                      {entry.projectName} - {entry.activityName}
-                    </CardTitle>
-                    <CardDescription>
-                      {formatHoursAsHoursMinutes(entry.hours)}
-                    </CardDescription>
-                  </CardHeader>
-                  {isMergedTimeEntry(entry) ? (
-                    <div className="flex max-h-28 flex-col overflow-hidden pr-4 [&:has(>:nth-child(2))]:mt-2">
-                      {entry.timePeriods
-                        .filter((period) => period.startTime && period.endTime)
-                        .map((period, index) => (
-                          <p
-                            key={index}
-                            className="text-sm text-muted-foreground only:text-base"
-                          >
-                            {period.startTime &&
-                              format(new Date(period.startTime), "HH:mm")}
-                            {" - "}
-                            {period.endTime &&
-                              format(new Date(period.endTime), "HH:mm")}
-                          </p>
-                        ))
-                        .reverse()}
-                    </div>
-                  ) : (
-                    entry.endTime && (
-                      <div className="flex flex-row gap-2 pr-4">
-                        <p className="text-base text-muted-foreground">
-                          {entry.startTime &&
-                            format(new Date(entry.startTime), "HH:mm")}
-                          {" - "}
-                          {entry.endTime &&
-                            format(new Date(entry.endTime), "HH:mm")}
-                        </p>
-                      </div>
-                    )
-                  )}
-                </div>
-                <CardContent>
-                  <p className="font-mono text-base">{entry.note}</p>
-                </CardContent>
-              </Card>
-            ))}
+            {dayEntries.map((entry) =>
+              editingEntryId === entry.registrationId &&
+              !isMergedTimeEntry(entry) ? (
+                <EditEntryCard
+                  key={entry.registrationId}
+                  entry={entry}
+                  isUpdatingTimeEntry={isUpdatingTimeEntry}
+                  onSave={(updatedEntry) => {
+                    updateTimeEntry({
+                      projectRegistrationId: entry.registrationId,
+                      userNote: updatedEntry.note ?? "",
+                      projectId: updatedEntry.projectId,
+                      projectName: updatedEntry.projectName,
+                      activityId: updatedEntry.activityId,
+                      activityName: updatedEntry.activityName,
+                      totalTime: formatHoursMinutes(updatedEntry.hours),
+                      regDay: updatedEntry.date,
+                      weekNumber: updatedEntry.weekNumber,
+                    });
+                  }}
+                  onCancel={() => setEditingEntryId(null)}
+                />
+              ) : (
+                <ViewEntryCard
+                  key={entry.registrationId}
+                  entry={entry}
+                  onEdit={() => setEditingEntryId(entry.registrationId)}
+                />
+              ),
+            )}
           </div>
         </div>
       ))}
     </div>
+  );
+}
+
+function ViewEntryCard(props: {
+  entry: TimeEntry | MergedTimeEntry;
+  onEdit: () => void;
+}) {
+  return (
+    <Card key={props.entry.registrationId}>
+      <div className="flex items-center justify-between gap-2">
+        <CardHeader className="pb-2">
+          <CardTitle>
+            <span>
+              {props.entry.projectName} - {props.entry.activityName}
+            </span>
+          </CardTitle>
+          <CardDescription>
+            {formatHoursAsHoursMinutes(props.entry.hours)}
+          </CardDescription>
+        </CardHeader>
+        {isMergedTimeEntry(props.entry) ? (
+          <div className="flex max-h-28 flex-col overflow-hidden pr-4 [&:has(>:nth-child(2))]:mt-2">
+            {props.entry.timePeriods
+              .filter((period) => period.startTime && period.endTime)
+              .map((period, index) => (
+                <p
+                  key={index}
+                  className="text-sm text-muted-foreground only:text-base"
+                >
+                  {period.startTime &&
+                    format(new Date(period.startTime), "HH:mm")}
+                  {" - "}
+                  {period.endTime && format(new Date(period.endTime), "HH:mm")}
+                </p>
+              ))
+              .reverse()}
+          </div>
+        ) : (
+          <div className="mr-4 flex flex-col items-end">
+            <Button variant="ghost" size="icon" onClick={props.onEdit}>
+              <PencilIcon className="size-4" />
+            </Button>
+            {props.entry.endTime && (
+              <div className="flex flex-row gap-2">
+                <p className="text-base text-muted-foreground">
+                  {props.entry.startTime &&
+                    format(new Date(props.entry.startTime), "HH:mm")}
+                  {" - "}
+                  {props.entry.endTime &&
+                    format(new Date(props.entry.endTime), "HH:mm")}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <CardContent>
+        <p className="font-mono text-base">{props.entry.note}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EditEntryCard(props: {
+  entry: TimeEntry;
+  onSave: (updatedEntry: TimeEntry) => void;
+  onCancel: () => void;
+  isUpdatingTimeEntry: boolean;
+}) {
+  const [note, setNote] = useState(props.entry.note);
+  const [hours, setHours] = useState(Math.floor(props.entry.hours));
+  const [minutes, setMinutes] = useState(
+    Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60),
+  );
+
+  const handleSave = () => {
+    const updatedEntry = {
+      ...props.entry,
+      note,
+      hours: hours + minutes / 60,
+    };
+    props.onSave(updatedEntry);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          Edit Entry{" "}
+          <span className="text-muted-foreground">
+            ({props.entry.projectName} - {props.entry.activityName})
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4">
+          <label className="block text-sm font-medium">Note</label>
+          <Input
+            value={note ?? ""}
+            onChange={(e) => setNote(e.target.value)}
+            className="mt-1"
+          />
+        </div>
+        <div className="mb-4 flex items-end gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium">Hours</label>
+            <Input
+              type="number"
+              value={hours}
+              onChange={(e) => setHours(parseInt(e.target.value))}
+              className="mt-1"
+              min={0}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium">Minutes</label>
+            <Input
+              type="number"
+              value={minutes}
+              onChange={(e) => setMinutes(parseInt(e.target.value))}
+              className="mt-1"
+              min={0}
+            />
+          </div>
+        </div>
+      </CardContent>
+      <div className="flex justify-end p-4">
+        <Button variant="secondary" onClick={props.onCancel}>
+          Cancel
+        </Button>
+        <Button
+          className="ml-2"
+          onClick={handleSave}
+          disabled={props.isUpdatingTimeEntry}
+        >
+          Save
+        </Button>
+      </div>
+    </Card>
   );
 }
 

@@ -169,10 +169,12 @@ export type TimeEntry = {
   registrationId: string;
   projectId: string;
   projectName: string;
+  activityId: string;
   activityName: string;
   date: string;
   hours: number;
   note: string | null;
   startTime: string | null;
   endTime: string | null;
+  weekNumber: number;
 };

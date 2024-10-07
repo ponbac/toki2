@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use axum_extra::extract::CookieJar;
+use chrono::Datelike;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
@@ -56,6 +57,7 @@ pub struct ExtendedTimeEntry {
     start_time: Option<time::OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
     end_time: Option<time::OffsetDateTime>,
+    week_number: u32,
 }
 
 #[instrument(name = "get_time_entries", skip(jar, app_state, auth_session))]
@@ -122,12 +124,53 @@ pub async fn get_time_entries(
                 .find(|timer| timer.registration_id == Some(time_entry.registration_id.clone()))
                 .and_then(|timer| timer.end_time);
             ExtendedTimeEntry {
-                time_entry,
+                time_entry: time_entry.clone(),
                 start_time,
                 end_time,
+                week_number: time_entry.date.iso_week().week(),
             }
         })
         .collect();
 
     Ok((jar, Json(time_entries)))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditProjectRegistrationPayload {
+    project_registration_id: String,
+    project_id: String,
+    project_name: String,
+    activity_id: String,
+    activity_name: String,
+    total_time: String,
+    reg_day: String,
+    week_number: i32,
+    user_note: String,
+}
+
+#[instrument(name = "edit_project_registration", skip(jar, app_state))]
+pub async fn edit_project_registration(
+    jar: CookieJar,
+    State(app_state): State<AppState>,
+    Json(payload): Json<EditProjectRegistrationPayload>,
+) -> CookieJarResult<StatusCode> {
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+
+    let payload = milltime::ProjectRegistrationEditPayload::new(
+        payload.project_registration_id,
+        milltime_client.user_id().to_string(),
+        payload.project_id,
+        payload.project_name,
+        payload.activity_id,
+        payload.activity_name,
+        payload.total_time,
+        payload.reg_day,
+        payload.week_number,
+        payload.user_note,
+    );
+
+    milltime_client.edit_project_registration(&payload).await?;
+
+    Ok((jar, StatusCode::OK))
 }
