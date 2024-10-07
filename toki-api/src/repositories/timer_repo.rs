@@ -4,12 +4,12 @@ use strum::{Display, EnumString};
 
 use super::repo_error::RepositoryError;
 
-pub trait MilltimeRepository {
+pub trait TimerRepository {
     async fn get_timer_history(&self, user_id: &i32)
-        -> Result<Vec<MilltimeTimer>, RepositoryError>;
-    async fn active_timer(&self, user_id: &i32) -> Result<Option<MilltimeTimer>, RepositoryError>;
-    async fn create_timer(&self, repository: &NewMilltimeTimer) -> Result<i32, RepositoryError>;
-    async fn update_timer(&self, repository: &UpdateMilltimeTimer) -> Result<(), RepositoryError>;
+        -> Result<Vec<DatabaseTimer>, RepositoryError>;
+    async fn active_timer(&self, user_id: &i32) -> Result<Option<DatabaseTimer>, RepositoryError>;
+    async fn create_timer(&self, repository: &NewDatabaseTimer) -> Result<i32, RepositoryError>;
+    async fn update_timer(&self, repository: &UpdateDatabaseTimer) -> Result<(), RepositoryError>;
     async fn save_active_timer(
         &self,
         user_id: &i32,
@@ -19,11 +19,11 @@ pub trait MilltimeRepository {
     async fn delete_active_timer(&self, user_id: &i32) -> Result<(), RepositoryError>;
 }
 
-pub struct MilltimeRepositoryImpl {
+pub struct TimerRepositoryImpl {
     pool: PgPool,
 }
 
-impl MilltimeRepositoryImpl {
+impl TimerRepositoryImpl {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -49,7 +49,7 @@ impl From<String> for TimerType {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MilltimeTimer {
+pub struct DatabaseTimer {
     pub timer_type: TimerType,
     pub id: i32,
     pub registration_id: Option<String>,
@@ -58,27 +58,27 @@ pub struct MilltimeTimer {
     pub start_time: time::OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     pub end_time: Option<time::OffsetDateTime>,
-    pub project_id: String,
-    pub project_name: String,
-    pub activity_id: String,
-    pub activity_name: String,
-    pub note: String,
+    pub project_id: Option<String>,
+    pub project_name: Option<String>,
+    pub activity_id: Option<String>,
+    pub activity_name: Option<String>,
+    pub note: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: time::OffsetDateTime,
 }
 
-pub struct NewMilltimeTimer {
+pub struct NewDatabaseTimer {
     pub user_id: i32,
     pub timer_type: TimerType,
     pub start_time: time::OffsetDateTime,
-    pub project_id: String,
-    pub project_name: String,
-    pub activity_id: String,
-    pub activity_name: String,
+    pub project_id: Option<String>,
+    pub project_name: Option<String>,
+    pub activity_id: Option<String>,
+    pub activity_name: Option<String>,
     pub note: String,
 }
 
-pub struct UpdateMilltimeTimer {
+pub struct UpdateDatabaseTimer {
     pub user_id: i32,
     pub user_note: String,
     pub project_id: Option<String>,
@@ -87,13 +87,13 @@ pub struct UpdateMilltimeTimer {
     pub activity_name: Option<String>,
 }
 
-impl MilltimeRepository for MilltimeRepositoryImpl {
+impl TimerRepository for TimerRepositoryImpl {
     async fn get_timer_history(
         &self,
         user_id: &i32,
-    ) -> Result<Vec<MilltimeTimer>, RepositoryError> {
+    ) -> Result<Vec<DatabaseTimer>, RepositoryError> {
         let timers = sqlx::query_as!(
-            MilltimeTimer,
+            DatabaseTimer,
             r#"
             SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id, timer_type
             FROM timer_history
@@ -107,9 +107,9 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         Ok(timers)
     }
 
-    async fn active_timer(&self, user_id: &i32) -> Result<Option<MilltimeTimer>, RepositoryError> {
+    async fn active_timer(&self, user_id: &i32) -> Result<Option<DatabaseTimer>, RepositoryError> {
         let single_timer = sqlx::query_as!(
-            MilltimeTimer,
+            DatabaseTimer,
             r#"
             SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id, timer_type
             FROM timer_history
@@ -155,7 +155,7 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         }
     }
 
-    async fn create_timer(&self, timer: &NewMilltimeTimer) -> Result<i32, RepositoryError> {
+    async fn create_timer(&self, timer: &NewDatabaseTimer) -> Result<i32, RepositoryError> {
         let id = sqlx::query!(
             r#"
             INSERT INTO timer_history (user_id, start_time, project_id, project_name, activity_id, activity_name, note, timer_type)
@@ -200,7 +200,7 @@ impl MilltimeRepository for MilltimeRepositoryImpl {
         Ok(())
     }
 
-    async fn update_timer(&self, timer: &UpdateMilltimeTimer) -> Result<(), RepositoryError> {
+    async fn update_timer(&self, timer: &UpdateDatabaseTimer) -> Result<(), RepositoryError> {
         sqlx::query!(
             r#"
             UPDATE timer_history

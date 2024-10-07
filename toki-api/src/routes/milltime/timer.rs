@@ -1,5 +1,5 @@
 use crate::{
-    repositories::{MilltimeRepository, TimerType},
+    repositories::{TimerRepository, TimerType},
     routes::milltime::{ErrorResponse, MilltimeError},
 };
 
@@ -34,7 +34,7 @@ impl From<milltime::TimerRegistration> for MilltimeTimerWrapper {
 #[serde(untagged)]
 pub enum TokiTimer {
     Milltime(MilltimeTimerWrapper),
-    Standalone(repositories::MilltimeTimer),
+    Standalone(repositories::DatabaseTimer),
 }
 
 #[debug_handler]
@@ -136,13 +136,13 @@ pub async fn start_timer(
 
     milltime_client.start_timer(start_timer_options).await?;
 
-    let new_timer = repositories::NewMilltimeTimer {
+    let new_timer = repositories::NewDatabaseTimer {
         user_id: user.id,
         start_time: time::OffsetDateTime::now_utc(),
-        project_id: body.project_id.clone(),
-        project_name: body.project_name.clone(),
-        activity_id: body.activity.clone(),
-        activity_name: body.activity_name.clone(),
+        project_id: Some(body.project_id.clone()),
+        project_name: Some(body.project_name.clone()),
+        activity_id: Some(body.activity.clone()),
+        activity_name: Some(body.activity_name.clone()),
         note: body.user_note.clone().unwrap_or_default(),
         timer_type: TimerType::Milltime,
     };
@@ -177,13 +177,13 @@ pub async fn start_standalone_timer(
         });
     }
 
-    let new_timer = repositories::NewMilltimeTimer {
+    let new_timer = repositories::NewDatabaseTimer {
         user_id: user.id,
         start_time: time::OffsetDateTime::now_utc(),
-        project_id: "".to_string(),
-        project_name: "".to_string(),
-        activity_id: "".to_string(),
-        activity_name: "".to_string(),
+        project_id: None,
+        project_name: None,
+        activity_id: None,
+        activity_name: None,
         note: body.user_note.clone().unwrap_or_default(),
         timer_type: TimerType::Standalone,
     };
@@ -299,14 +299,15 @@ pub async fn save_standalone_timer(
 
     let payload = milltime::ProjectRegistrationPayload::new(
         milltime_client.user_id().to_string(),
-        active_timer.project_id,
-        active_timer.project_name,
-        active_timer.activity_id,
-        active_timer.activity_name,
+        active_timer.project_id.expect("project id not found"),
+        active_timer.project_name.expect("project name not found"),
+        active_timer.activity_id.expect("activity id not found"),
+        active_timer.activity_name.expect("activity name not found"),
         total_time,
         current_day.to_string(),
         week_number.into(),
-        body.user_note.unwrap_or(active_timer.note),
+        body.user_note
+            .unwrap_or(active_timer.note.unwrap_or_default()),
     );
 
     let registration = milltime_client.new_project_registration(&payload).await?;
@@ -337,7 +338,7 @@ pub async fn edit_timer(
     milltime_client.edit_timer(&body).await?;
 
     let user = auth_session.user.expect("user not found");
-    let update_timer = repositories::UpdateMilltimeTimer {
+    let update_timer = repositories::UpdateDatabaseTimer {
         user_id: user.id,
         user_note: body.user_note,
         project_id: None,
@@ -370,7 +371,7 @@ pub async fn edit_standalone_timer(
 ) -> Result<StatusCode, ErrorResponse> {
     let user = auth_session.user.expect("user not found");
 
-    let update_timer = repositories::UpdateMilltimeTimer {
+    let update_timer = repositories::UpdateDatabaseTimer {
         user_id: user.id,
         user_note: body.user_note.unwrap_or_default(),
         project_id: body.project_id,
@@ -395,7 +396,7 @@ pub async fn edit_standalone_timer(
 pub async fn get_timer_history(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<repositories::MilltimeTimer>>, (StatusCode, String)> {
+) -> Result<Json<Vec<repositories::DatabaseTimer>>, (StatusCode, String)> {
     let user = auth_session.user.expect("user not found");
     let timers = app_state.milltime_repo.get_timer_history(&user.id).await;
 

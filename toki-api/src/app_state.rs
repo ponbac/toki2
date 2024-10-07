@@ -19,8 +19,7 @@ use crate::{
         NotificationHandler, PullRequest, RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey,
     },
     repositories::{
-        MilltimeRepositoryImpl, PushSubscriptionRepositoryImpl, RepoRepositoryImpl,
-        UserRepositoryImpl,
+        PushSubscriptionRepositoryImpl, RepoRepositoryImpl, TimerRepositoryImpl, UserRepositoryImpl,
     },
 };
 
@@ -52,7 +51,7 @@ pub struct AppState {
     pub user_repo: Arc<UserRepositoryImpl>,
     pub repository_repo: Arc<RepoRepositoryImpl>,
     pub push_subscriptions_repo: Arc<PushSubscriptionRepositoryImpl>,
-    pub milltime_repo: Arc<MilltimeRepositoryImpl>,
+    pub milltime_repo: Arc<TimerRepositoryImpl>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
@@ -127,7 +126,7 @@ impl AppState {
             user_repo: Arc::new(UserRepositoryImpl::new(db_pool.clone())),
             repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),
             push_subscriptions_repo: Arc::new(PushSubscriptionRepositoryImpl::new(db_pool.clone())),
-            milltime_repo: Arc::new(MilltimeRepositoryImpl::new(db_pool.clone())),
+            milltime_repo: Arc::new(TimerRepositoryImpl::new(db_pool.clone())),
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
             differs: Arc::new(RwLock::new(differs)),

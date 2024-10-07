@@ -10,7 +10,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use crate::{app_state::AppState, auth::AuthSession, repositories::MilltimeRepository};
+use crate::{app_state::AppState, auth::AuthSession, repositories::TimerRepository};
 
 use super::{CookieJarResult, ErrorResponse, MilltimeCookieJarExt, MilltimeError};
 
