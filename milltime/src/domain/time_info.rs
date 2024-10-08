@@ -8,8 +8,10 @@ pub struct TimeInfo {
     pub overtimes: Option<Vec<Overtime>>,
     #[serde(rename(deserialize = "FlexTimePreviousPeriod"))]
     pub flex_time_previous_period: Option<f64>,
-    #[serde(rename(deserialize = "FlexTimePeriod"))]
-    pub flex_time_period: f64,
+    #[serde(rename(deserialize = "FlexTimePeriodExcl"))]
+    pub flex_time_period_excl: f64,
+    #[serde(rename(deserialize = "FlexTimePeriodIncl"))]
+    pub flex_time_period_incl: f64,
     #[serde(rename(deserialize = "FlexTimeCurrent"))]
     pub flex_time_current: f64,
     #[serde(rename(deserialize = "FlexWithdrawal"))]
