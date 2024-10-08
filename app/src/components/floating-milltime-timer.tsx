@@ -48,6 +48,8 @@ export const FloatingMilltimeTimer = () => {
     retry: 1,
   });
 
+  const { mutate: startStandaloneTimer } =
+    milltimeMutations.useStartStandaloneTimer();
   const { mutate: stopTimer, isPending: isStoppingTimer } =
     milltimeMutations.useStopTimer({
       onSuccess: () => {
@@ -59,6 +61,7 @@ export const FloatingMilltimeTimer = () => {
       onSuccess: () => {
         toast.success("Timer successfully saved to Milltime");
         document.title = "Toki2";
+        startStandaloneTimer({ userNote: "Continuing my work..." });
       },
     });
   const { mutate: editTimer } = milltimeMutations.useEditTimer({
