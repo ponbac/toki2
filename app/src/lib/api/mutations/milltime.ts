@@ -147,12 +147,12 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
       body.timerType === "Milltime"
         ? api.put("milltime/timer", {
             json: {
-              user_note: body.userNote,
+              userNote: body.userNote,
             },
           })
         : api.put("milltime/timer/standalone", {
             json: {
-              user_note: body.userNote,
+              userNote: body.userNote,
             },
           }),
     ...options,
