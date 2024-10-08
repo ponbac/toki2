@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { toast } from "sonner";
 import { PencilIcon } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
@@ -122,36 +123,56 @@ export function TimeEntriesList(props: {
             </span>
           </h2>
           <div className="space-y-4">
-            {dayEntries.map((entry) =>
-              editingEntryId === entry.registrationId &&
-              !isMergedTimeEntry(entry) ? (
-                <EditEntryCard
-                  key={entry.registrationId}
-                  entry={entry}
-                  isUpdatingTimeEntry={isUpdatingTimeEntry}
-                  onSave={(updatedEntry) => {
-                    updateTimeEntry({
-                      projectRegistrationId: entry.registrationId,
-                      userNote: updatedEntry.note ?? "",
-                      projectId: updatedEntry.projectId,
-                      projectName: updatedEntry.projectName,
-                      activityId: updatedEntry.activityId,
-                      activityName: updatedEntry.activityName,
-                      totalTime: formatHoursMinutes(updatedEntry.hours),
-                      regDay: updatedEntry.date,
-                      weekNumber: updatedEntry.weekNumber,
-                    });
-                  }}
-                  onCancel={() => setEditingEntryId(null)}
-                />
-              ) : (
-                <ViewEntryCard
-                  key={entry.registrationId}
-                  entry={entry}
-                  onEdit={() => setEditingEntryId(entry.registrationId)}
-                />
-              ),
-            )}
+            {dayEntries.map((entry) => (
+              <motion.div key={entry.registrationId} layout>
+                <Card>
+                  <AnimatePresence mode="wait">
+                    {editingEntryId === entry.registrationId &&
+                    !isMergedTimeEntry(entry) ? (
+                      <motion.div
+                        key="edit"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        <EditEntryCard
+                          entry={entry}
+                          isUpdatingTimeEntry={isUpdatingTimeEntry}
+                          onSave={(updatedEntry) => {
+                            updateTimeEntry({
+                              projectRegistrationId: entry.registrationId,
+                              userNote: updatedEntry.note ?? "",
+                              projectId: updatedEntry.projectId,
+                              projectName: updatedEntry.projectName,
+                              activityId: updatedEntry.activityId,
+                              activityName: updatedEntry.activityName,
+                              totalTime: formatHoursMinutes(updatedEntry.hours),
+                              regDay: updatedEntry.date,
+                              weekNumber: updatedEntry.weekNumber,
+                            });
+                          }}
+                          onCancel={() => setEditingEntryId(null)}
+                        />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="view"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                      >
+                        <ViewEntryCard
+                          entry={entry}
+                          onEdit={() => setEditingEntryId(entry.registrationId)}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Card>
+              </motion.div>
+            ))}
           </div>
         </div>
       ))}
@@ -164,7 +185,7 @@ function ViewEntryCard(props: {
   onEdit: () => void;
 }) {
   return (
-    <Card key={props.entry.registrationId}>
+    <div>
       <div className="flex items-center justify-between gap-2">
         <CardHeader className="pb-2">
           <CardTitle>
@@ -215,7 +236,7 @@ function ViewEntryCard(props: {
       <CardContent>
         <p className="font-mono text-base">{props.entry.note}</p>
       </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -241,7 +262,7 @@ function EditEntryCard(props: {
   };
 
   return (
-    <Card>
+    <div>
       <CardHeader>
         <CardTitle>
           Edit Entry{" "}
@@ -294,7 +315,7 @@ function EditEntryCard(props: {
           Save
         </Button>
       </div>
-    </Card>
+    </div>
   );
 }
 
