@@ -9,12 +9,16 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   MilltimeStoreProvider,
   useMilltimeActions,
+  useMilltimeEditTimerDialogOpen,
   useMilltimeIsAuthenticated,
   useMilltimeLoginDialogOpen,
   useMilltimeNewTimerDialogOpen,
 } from "@/hooks/useMilltimeContext";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
+import { TimerEditDialog } from "@/components/timer-edit-dialog";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
+import { useQuery } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/_layout")({
   component: LayoutComponent,
@@ -41,8 +45,15 @@ function MilltimeTimerProvider() {
   const isAuthenticated = useMilltimeIsAuthenticated();
 
   const newTimerDialogOpen = useMilltimeNewTimerDialogOpen();
+  const editTimerDialogOpen = useMilltimeEditTimerDialogOpen();
   const loginDialogOpen = useMilltimeLoginDialogOpen();
-  const { setNewTimerDialogOpen, setLoginDialogOpen } = useMilltimeActions();
+  const { setNewTimerDialogOpen, setLoginDialogOpen, setEditTimerDialogOpen } =
+    useMilltimeActions();
+
+  const { data: timer } = useQuery({
+    ...milltimeQueries.getTimer(),
+    enabled: false,
+  });
 
   return isAuthenticated ? (
     <>
@@ -51,6 +62,13 @@ function MilltimeTimerProvider() {
         open={newTimerDialogOpen}
         onOpenChange={setNewTimerDialogOpen}
       />
+      {!!timer && timer.timerType === "Standalone" && (
+        <TimerEditDialog
+          open={editTimerDialogOpen}
+          onOpenChange={setEditTimerDialogOpen}
+          timer={timer}
+        />
+      )}
     </>
   ) : (
     <MilltimeLoginDialog

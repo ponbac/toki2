@@ -37,7 +37,7 @@ function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
 
 function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
   const queryClient = useQueryClient();
-  const { reset, setTimer } = useMilltimeActions();
+  const { setTimer } = useMilltimeActions();
 
   return useMutation({
     mutationKey: ["milltime", "startTimer"],
@@ -63,10 +63,6 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
       });
 
       options?.onSuccess?.(data, v, c);
-    },
-    onError: (e, v, c) => {
-      reset();
-      options?.onError?.(e, v, c);
     },
   });
 }
@@ -109,7 +105,7 @@ function useStopTimer(
   options?: DefaultMutationOptions<{ timerType: TimerType }>,
 ) {
   const queryClient = useQueryClient();
-  const { reset, setTimer } = useMilltimeActions();
+  const { setTimer } = useMilltimeActions();
 
   return useMutation({
     mutationKey: ["milltime", "stopTimer"],
@@ -130,16 +126,12 @@ function useStopTimer(
 
       options?.onSuccess?.(data, v, c);
     },
-    onError: (e, v, c) => {
-      reset();
-      options?.onError?.(e, v, c);
-    },
   });
 }
 
 function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
   const queryClient = useQueryClient();
-  const { reset, setTimer } = useMilltimeActions();
+  const { setTimer } = useMilltimeActions();
 
   return useMutation({
     mutationKey: ["milltime", "saveTimer"],
@@ -176,10 +168,6 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
       });
 
       options?.onSuccess?.(data, v, c);
-    },
-    onError: (e, v, c) => {
-      reset();
-      options?.onError?.(e, v, c);
     },
   });
 }

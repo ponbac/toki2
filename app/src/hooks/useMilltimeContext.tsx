@@ -14,6 +14,7 @@ type MilltimeStore = {
   isAuthenticating: boolean;
   timer: Timer;
   newTimerDialogOpen: boolean;
+  editTimerDialogOpen: boolean;
   loginDialogOpen: boolean;
   actions: {
     authenticate: (
@@ -24,6 +25,7 @@ type MilltimeStore = {
     setTimer: (timer: Partial<Timer>) => void;
     setNewTimerDialogOpen: (open: boolean) => void;
     setLoginDialogOpen: (open: boolean) => void;
+    setEditTimerDialogOpen: (open: boolean) => void;
   };
 };
 
@@ -48,6 +50,7 @@ export const MilltimeStoreProvider = ({
         timeSeconds: null,
       },
       newTimerDialogOpen: false,
+      editTimerDialogOpen: false,
       loginDialogOpen: false,
       actions: {
         authenticate: (credentials, onSuccess) => {
@@ -97,6 +100,9 @@ export const MilltimeStoreProvider = ({
         setLoginDialogOpen: (open) => {
           set({ loginDialogOpen: open });
         },
+        setEditTimerDialogOpen: (open) => {
+          set({ editTimerDialogOpen: open });
+        },
       },
     })),
   );
@@ -127,6 +133,8 @@ export const useMilltimeNewTimerDialogOpen = () =>
   useMilltimeStore((state) => state.newTimerDialogOpen);
 export const useMilltimeLoginDialogOpen = () =>
   useMilltimeStore((state) => state.loginDialogOpen);
+export const useMilltimeEditTimerDialogOpen = () =>
+  useMilltimeStore((state) => state.editTimerDialogOpen);
 export const useMilltimeActions = () =>
   useMilltimeStore((state) => state.actions);
 

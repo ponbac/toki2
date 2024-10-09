@@ -79,7 +79,7 @@ export type DatabaseTimer = {
   activityName: string | null;
   note?: string | null;
   createdAt: string;
-  timerType: TimerType;
+  timerType: "Standalone";
 };
 
 export type TimeInfo = {
@@ -128,7 +128,7 @@ export type MilltimeTimer = {
   seconds: number;
   minutes: number;
   projectRegistration: unknown;
-  timerType: TimerType;
+  timerType: "Milltime";
 };
 
 export type ProjectSearchItem = {

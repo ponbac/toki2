@@ -91,7 +91,8 @@ function PagesCommandGroup(props: { close: () => void }) {
 
 function ActionsCommandGroup(props: { close: () => void }) {
   const { state: timerState } = useMilltimeTimer();
-  const { setNewTimerDialogOpen, setLoginDialogOpen } = useMilltimeActions();
+  const { setNewTimerDialogOpen, setLoginDialogOpen, setEditTimerDialogOpen } =
+    useMilltimeActions();
   const isAuthenticatedToMilltime = useMilltimeIsAuthenticated();
 
   // TODO: should probably handle the fetched timer and saveTimer in a centralized place
@@ -112,6 +113,8 @@ function ActionsCommandGroup(props: { close: () => void }) {
       });
     },
   });
+
+  const saveTimerDisabled = !timer?.activityName || !timer?.projectName;
 
   return (
     <CommandGroup heading="Actions">
@@ -149,21 +152,39 @@ function ActionsCommandGroup(props: { close: () => void }) {
           </CommandItem>
         </>
       ) : (
-        <CommandItem
-          disabled={!timer?.activityName || !timer?.projectName}
-          onSelect={() => {
-            saveTimer({
-              timerType: timer?.timerType ?? ("Unreachable" as TimerType),
-              userNote: timer?.note ?? "",
-            });
-            props.close();
-          }}
-        >
-          <div className="flex flex-row items-center gap-2">
-            <TimerIcon className="h-1 w-1" />
-            Save current timer
-          </div>
-        </CommandItem>
+        <>
+          <CommandItem
+            disabled={saveTimerDisabled}
+            onSelect={() => {
+              saveTimer({
+                timerType: timer?.timerType ?? ("Unreachable" as TimerType),
+                userNote: timer?.note ?? "",
+              });
+              props.close();
+            }}
+          >
+            <div className="flex flex-row items-center gap-2">
+              <TimerIcon className="h-1 w-1" />
+              Save current timer
+              {saveTimerDisabled && (
+                <span className="text-muted-foreground">
+                  (disabled, no project or activity selected)
+                </span>
+              )}
+            </div>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => {
+              setEditTimerDialogOpen(true);
+              props.close();
+            }}
+          >
+            <div className="flex flex-row items-center gap-2">
+              <TimerIcon className="h-1 w-1" />
+              Edit current timer
+            </div>
+          </CommandItem>
+        </>
       )}
     </CommandGroup>
   );
