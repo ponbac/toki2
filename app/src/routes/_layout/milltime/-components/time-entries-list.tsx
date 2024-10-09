@@ -215,20 +215,23 @@ function ViewEntryCard(props: {
               .reverse()}
           </div>
         ) : (
-          <div className="mr-4 flex flex-col items-end">
-            <Button variant="ghost" size="icon" onClick={props.onEdit}>
+          <div className="mr-4 mt-4 flex flex-col items-end">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={props.onEdit}
+              className="size-8"
+            >
               <PencilIcon className="size-4" />
             </Button>
             {props.entry.endTime && (
-              <div className="flex flex-row gap-2">
-                <p className="text-base text-muted-foreground">
-                  {props.entry.startTime &&
-                    format(new Date(props.entry.startTime), "HH:mm")}
-                  {" - "}
-                  {props.entry.endTime &&
-                    format(new Date(props.entry.endTime), "HH:mm")}
-                </p>
-              </div>
+              <p className="text-base text-muted-foreground">
+                {props.entry.startTime &&
+                  format(new Date(props.entry.startTime), "HH:mm")}
+                {" - "}
+                {props.entry.endTime &&
+                  format(new Date(props.entry.endTime), "HH:mm")}
+              </p>
             )}
           </div>
         )}
@@ -280,7 +283,7 @@ function EditEntryCard(props: {
             className="mt-1"
           />
         </div>
-        <div className="mb-4 flex items-end gap-4">
+        <div className="mb-4 flex w-1/2 items-end gap-4">
           <div className="flex-1">
             <label className="block text-sm font-medium">Hours</label>
             <Input
