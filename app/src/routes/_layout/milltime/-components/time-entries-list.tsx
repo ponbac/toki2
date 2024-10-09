@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { toast } from "sonner";
-import { PencilIcon } from "lucide-react";
+import { PencilIcon, SaveIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
@@ -306,15 +306,16 @@ function EditEntryCard(props: {
           </div>
         </div>
       </CardContent>
-      <div className="flex justify-end p-4">
-        <Button variant="secondary" onClick={props.onCancel}>
+      <div className="flex justify-end gap-4 p-4">
+        <Button size="sm" variant="outline" onClick={props.onCancel}>
           Cancel
         </Button>
         <Button
-          className="ml-2"
+          size="sm"
           onClick={handleSave}
           disabled={props.isUpdatingTimeEntry}
         >
+          <SaveIcon className="mr-2 size-4" />
           Save
         </Button>
       </div>
