@@ -107,6 +107,9 @@ function ActionsCommandGroup(props: { close: () => void }) {
     onSuccess: () => {
       toast.success("Timer successfully saved to Milltime");
       document.title = "Toki2";
+      startStandaloneTimer({
+        userNote: "Continuing my work...",
+      });
     },
   });
 
