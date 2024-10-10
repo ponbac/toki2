@@ -10,25 +10,21 @@ import {
 } from "./ui/dialog";
 import React from "react";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
 import { Input } from "./ui/input";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
 import { getWeekNumber } from "@/lib/utils";
 import { TimerHistory } from "./timer-history";
+import { AutoComplete } from "./autocomplete";
 
 export const MilltimeTimerDialog = (props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) => {
   const [projectId, setProjectId] = React.useState("");
+  const [projectSearch, setProjectSearch] = React.useState("");
   const [activityName, setActivityName] = React.useState("");
+  const [activitySearch, setActivitySearch] = React.useState("");
   const [note, setNote] = React.useState("");
 
   const { projects, activities } = useMilltimeData({
@@ -45,7 +41,9 @@ export const MilltimeTimerDialog = (props: {
 
   const resetForm = () => {
     setProjectId("");
+    setProjectSearch("");
     setActivityName("");
+    setActivitySearch("");
     setNote("");
   };
 
@@ -98,44 +96,31 @@ export const MilltimeTimerDialog = (props: {
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Select
-                value={selectedProject?.projectId.toString() ?? ""}
-                onValueChange={(v) => setProjectId(v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects?.map((project) => (
-                    <SelectItem
-                      key={project.projectId}
-                      value={project.projectId.toString()}
-                    >
-                      {project.projectName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                key={activities?.length}
-                value={selectedActivity?.activityName ?? ""}
-                onValueChange={(v) => setActivityName(v)}
-                disabled={!projectId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Activity" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activities?.map((activity) => (
-                    <SelectItem
-                      key={activity.activity}
-                      value={activity.activityName}
-                    >
-                      {activity.activityName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AutoComplete
+                selectedValue={projectId}
+                onSelectedValueChange={(value) => setProjectId(value)}
+                searchValue={projectSearch}
+                onSearchValueChange={setProjectSearch}
+                items={projects?.map((project) => ({
+                  value: project.projectId.toString(),
+                  label: project.projectName,
+                })) ?? []}
+                isLoading={!projects}
+                placeholder="Select a project"
+              />
+              <AutoComplete
+                selectedValue={activityName}
+                onSelectedValueChange={setActivityName}
+                searchValue={activitySearch}
+                onSearchValueChange={setActivitySearch}
+                items={activities?.map((activity) => ({
+                  value: activity.activityName,
+                  label: activity.activityName,
+                })) ?? []}
+                isLoading={!activities}
+                placeholder="Select an activity"
+                emptyMessage="No activities available"
+              />
               <Input
                 placeholder="Note"
                 value={note}
@@ -152,12 +137,13 @@ export const MilltimeTimerDialog = (props: {
                 ) {
                   startTimer();
                 } else {
-                  setProjectId(
-                    projects
-                      ?.find((p) => p.projectName === projectName)
-                      ?.projectId.toString() ?? "",
-                  );
+                  const foundProject = projects?.find((p) => p.projectName === projectName);
+                  if (foundProject) {
+                    setProjectId(foundProject.projectId.toString());
+                    setProjectSearch(foundProject.projectName);
+                  }
                   setActivityName(activityName);
+                  setActivitySearch(activityName);
                   setNote(note);
                 }
               }}

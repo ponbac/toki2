@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { Command as CommandPrimitive } from "cmdk";
 import { Check } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import {
   Command,
   CommandEmpty,
@@ -35,6 +35,8 @@ export function AutoComplete<T extends string>({
   placeholder = "Search...",
 }: Props<T>) {
   const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   const labels = useMemo(
     () =>
@@ -48,6 +50,12 @@ export function AutoComplete<T extends string>({
     [items],
   );
 
+  const filteredItems = useMemo(() => {
+    return items.filter((item) =>
+      item.label.toLowerCase().includes(searchValue.toLowerCase())
+    );
+  }, [items, searchValue]);
+
   const reset = () => {
     onSelectedValueChange("" as T);
     onSearchValueChange("");
@@ -55,11 +63,12 @@ export function AutoComplete<T extends string>({
 
   const onInputBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     if (
-      !e.relatedTarget?.hasAttribute("cmdk-list") &&
+      !e.relatedTarget?.hasAttribute("cmdk-item") &&
       labels[selectedValue] !== searchValue
     ) {
       reset();
     }
+    setOpen(false);
   };
 
   const onSelectItem = (inputValue: string) => {
@@ -70,7 +79,37 @@ export function AutoComplete<T extends string>({
       onSearchValueChange(labels[inputValue] ?? "");
     }
     setOpen(false);
+    inputRef.current?.focus();
   };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setOpen(true);
+      }
+      return; // Allow default Tab behavior when closed
+    }
+
+    if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
+      e.preventDefault();
+      setHighlightedIndex((prev) => 
+        prev < filteredItems.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+      e.preventDefault();
+      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : filteredItems.length - 1));
+    } else if (e.key === "Enter" && highlightedIndex !== -1) {
+      e.preventDefault();
+      onSelectItem(filteredItems[highlightedIndex].value);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    setHighlightedIndex(-1);
+  }, [searchValue]);
 
   return (
     <div className="flex items-center">
@@ -78,10 +117,11 @@ export function AutoComplete<T extends string>({
         <Command shouldFilter={false}>
           <PopoverAnchor asChild>
             <CommandPrimitive.Input
+              ref={inputRef}
               asChild
               value={searchValue}
               onValueChange={onSearchValueChange}
-              onKeyDown={(e) => setOpen(e.key !== "Escape")}
+              onKeyDown={handleKeyDown}
               onMouseDown={() => setOpen((open) => !!searchValue || !open)}
               onFocus={() => setOpen(true)}
               onBlur={onInputBlur}
@@ -111,14 +151,17 @@ export function AutoComplete<T extends string>({
                   </div>
                 </CommandPrimitive.Loading>
               )}
-              {items.length > 0 && !isLoading ? (
+              {filteredItems.length > 0 && !isLoading ? (
                 <CommandGroup>
-                  {items.map((option) => (
+                  {filteredItems.map((option, index) => (
                     <CommandItem
                       key={option.value}
                       value={option.value}
                       onMouseDown={(e) => e.preventDefault()}
                       onSelect={onSelectItem}
+                      className={cn(
+                        highlightedIndex === index && "bg-accent"
+                      )}
                     >
                       <Check
                         className={cn(
@@ -133,8 +176,8 @@ export function AutoComplete<T extends string>({
                   ))}
                 </CommandGroup>
               ) : null}
-              {!isLoading ? (
-                <CommandEmpty>{emptyMessage ?? "No items."}</CommandEmpty>
+              {!isLoading && filteredItems.length === 0 ? (
+                <CommandEmpty>{emptyMessage}</CommandEmpty>
               ) : null}
             </CommandList>
           </PopoverContent>
