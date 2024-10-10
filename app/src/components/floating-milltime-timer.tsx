@@ -124,7 +124,7 @@ export const FloatingMilltimeTimer = () => {
 
         const { hours, minutes, seconds } =
           secondsToHoursMinutesSeconds(elapsedSeconds);
-        document.title = `${hours}:${minutes}:${seconds} - ${timer?.note} (${timer?.projectName} - ${timer?.activityName})`;
+        document.title = `${hours}:${minutes}:${seconds} - ${timer?.note}${timer?.projectName && timer?.activityName ? ` (${timer?.projectName} - ${timer?.activityName})` : ""}`;
       }
     };
 
