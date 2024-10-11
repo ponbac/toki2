@@ -20,7 +20,7 @@ export function TimerHistory(props: {
 
   const { data: timeEntries, isLoading } = useQuery({
     ...milltimeQueries.timeEntries({
-      from: dayjs().subtract(14, "days").format("YYYY-MM-DD"),
+      from: dayjs().subtract(1, "month").format("YYYY-MM-DD"),
       to: dayjs().add(1, "day").format("YYYY-MM-DD"),
       unique: true,
     }),
