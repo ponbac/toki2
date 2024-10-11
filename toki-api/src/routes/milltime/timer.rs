@@ -288,7 +288,7 @@ pub async fn save_standalone_timer(
         let duration = time::OffsetDateTime::now_utc() - active_timer.start_time;
         let total_minutes = duration.whole_minutes();
         let hours = total_minutes / 60;
-        let minutes = total_minutes % 60;
+        let minutes = (total_minutes % 60) + 1; // maybe should use rounding instead of adding 1
         format!("{:02}:{:02}", hours, minutes)
     };
     let current_day = time::OffsetDateTime::now_utc()
