@@ -22,16 +22,19 @@ type ComboboxItem = {
   label: string;
 };
 
-export function Combobox<T extends ComboboxItem>(props: {
-  items: T[];
+// Define the props type separately for clarity
+type ComboboxProps = {
+  items: ComboboxItem[];
   placeholder: string;
   onSelect: (value: string) => void;
   emptyMessage?: string;
   disabled?: boolean;
   value: string;
   onChange: (value: string) => void;
-  ref?: React.RefObject<HTMLButtonElement>;
-}) {
+};
+
+// Add React.forwardRef to Combobox
+export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>((props, ref) => {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
 
@@ -51,7 +54,7 @@ export function Combobox<T extends ComboboxItem>(props: {
           aria-expanded={open}
           className="w-full justify-between"
           disabled={props.disabled}
-          ref={props.ref}
+          ref={ref}
         >
           {props.value
             ? props.items.find((item) => item.value === props.value)?.label
@@ -99,4 +102,4 @@ export function Combobox<T extends ComboboxItem>(props: {
       </PopoverContent>
     </Popover>
   );
-}
+});

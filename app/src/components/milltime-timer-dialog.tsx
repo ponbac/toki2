@@ -16,6 +16,7 @@ import dayjs from "dayjs";
 import { getWeekNumber } from "@/lib/utils";
 import { TimerHistory } from "./timer-history";
 import { Combobox } from "./combobox";
+import { flushSync } from "react-dom";
 
 export const MilltimeTimerDialog = (props: {
   open: boolean;
@@ -26,6 +27,7 @@ export const MilltimeTimerDialog = (props: {
   const [note, setNote] = React.useState("");
 
   const activitiesRef = React.useRef<HTMLButtonElement>(null);
+  const noteInputRef = React.useRef<HTMLInputElement>(null);
 
   const { projects, activities } = useMilltimeData({
     projectId: projectId,
@@ -106,8 +108,10 @@ export const MilltimeTimerDialog = (props: {
                 emptyMessage="No projects found"
                 value={projectId}
                 onChange={(projectId) => {
-                  setProjectId(projectId);
-                  setActivityName("");
+                  flushSync(() => {
+                    setProjectId(projectId);
+                    setActivityName("");
+                  });
                   activitiesRef.current?.focus();
                 }}
               />
@@ -122,11 +126,18 @@ export const MilltimeTimerDialog = (props: {
                 placeholder="Select activity..."
                 onSelect={(value) => setActivityName(value)}
                 emptyMessage="No activities found"
-                disabled={!projectId || !activities || activities.length === 0}
+                disabled={!projectId}
                 value={activityName}
-                onChange={setActivityName}
+                onChange={(value) => {
+                  setActivityName(value);
+                  // Focus on the note input after selecting an activity
+                  if (value) {
+                    setTimeout(() => noteInputRef.current?.focus(), 0);
+                  }
+                }}
               />
               <Input
+                ref={noteInputRef}
                 placeholder="Note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
