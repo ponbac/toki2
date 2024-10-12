@@ -12,6 +12,7 @@ import {
 import { Input } from "./ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "./ui/popover";
 import { Skeleton } from "./ui/skeleton";
+import { ScrollArea } from "./ui/scroll-area";
 
 type Props<T extends string> = {
   selectedValue: T;
@@ -51,10 +52,15 @@ export function AutoComplete<T extends string>({
   );
 
   const filteredItems = useMemo(() => {
+    const selectedItem = items.find((item) => item.value === selectedValue);
+    if (selectedItem && searchValue === selectedItem.label) {
+      return items;
+    }
+
     return items.filter((item) =>
-      item.label.toLowerCase().includes(searchValue.toLowerCase())
+      item.label.toLowerCase().includes(searchValue.toLowerCase()),
     );
-  }, [items, searchValue]);
+  }, [items, searchValue, selectedValue]);
 
   const reset = () => {
     onSelectedValueChange("" as T);
@@ -93,12 +99,14 @@ export function AutoComplete<T extends string>({
 
     if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
       e.preventDefault();
-      setHighlightedIndex((prev) => 
-        prev < filteredItems.length - 1 ? prev + 1 : 0
+      setHighlightedIndex((prev) =>
+        prev < filteredItems.length - 1 ? prev + 1 : 0,
       );
     } else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
       e.preventDefault();
-      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : filteredItems.length - 1));
+      setHighlightedIndex((prev) =>
+        prev > 0 ? prev - 1 : filteredItems.length - 1,
+      );
     } else if (e.key === "Enter" && highlightedIndex !== -1) {
       e.preventDefault();
       onSelectItem(filteredItems[highlightedIndex].value);
@@ -143,43 +151,45 @@ export function AutoComplete<T extends string>({
             }}
             className="w-[--radix-popover-trigger-width] p-0"
           >
-            <CommandList>
-              {isLoading && (
-                <CommandPrimitive.Loading>
-                  <div className="p-1">
-                    <Skeleton className="h-6 w-full" />
-                  </div>
-                </CommandPrimitive.Loading>
-              )}
-              {filteredItems.length > 0 && !isLoading ? (
-                <CommandGroup>
-                  {filteredItems.map((option, index) => (
-                    <CommandItem
-                      key={option.value}
-                      value={option.value}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onSelect={onSelectItem}
-                      className={cn(
-                        highlightedIndex === index && "bg-accent"
-                      )}
-                    >
-                      <Check
+            <ScrollArea className="max-h-[200px] overflow-y-auto">
+              <CommandList>
+                {isLoading && (
+                  <CommandPrimitive.Loading>
+                    <div className="p-1">
+                      <Skeleton className="h-6 w-full" />
+                    </div>
+                  </CommandPrimitive.Loading>
+                )}
+                {filteredItems.length > 0 && !isLoading ? (
+                  <CommandGroup>
+                    {filteredItems.map((option, index) => (
+                      <CommandItem
+                        key={option.value}
+                        value={option.value}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onSelect={onSelectItem}
                         className={cn(
-                          "mr-2 h-4 w-4",
-                          selectedValue === option.value
-                            ? "opacity-100"
-                            : "opacity-0",
+                          highlightedIndex === index && "bg-accent",
                         )}
-                      />
-                      {option.label}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ) : null}
-              {!isLoading && filteredItems.length === 0 ? (
-                <CommandEmpty>{emptyMessage}</CommandEmpty>
-              ) : null}
-            </CommandList>
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedValue === option.value
+                              ? "opacity-100"
+                              : "opacity-0",
+                          )}
+                        />
+                        {option.label}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                ) : null}
+                {!isLoading && filteredItems.length === 0 ? (
+                  <CommandEmpty>{emptyMessage}</CommandEmpty>
+                ) : null}
+              </CommandList>
+            </ScrollArea>
           </PopoverContent>
         </Command>
       </Popover>
