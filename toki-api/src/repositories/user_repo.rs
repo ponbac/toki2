@@ -7,7 +7,7 @@ use super::repo_error::RepositoryError;
 pub trait UserRepository {
     async fn get_user(&self, id: i32) -> Result<User, RepositoryError>;
     async fn upsert_user(&self, user: &NewUser) -> Result<User, RepositoryError>;
-    async fn followed_repositories(&self, id: i32) -> Result<Vec<RepoKey>, RepositoryError>;
+    async fn followed_repositories(&self, id: &i32) -> Result<Vec<RepoKey>, RepositoryError>;
     async fn follow_repository(
         &self,
         user_id: i32,
@@ -87,7 +87,7 @@ impl UserRepository for UserRepositoryImpl {
         Ok(user)
     }
 
-    async fn followed_repositories(&self, id: i32) -> Result<Vec<RepoKey>, RepositoryError> {
+    async fn followed_repositories(&self, id: &i32) -> Result<Vec<RepoKey>, RepositoryError> {
         let repos = sqlx::query_as!(
             RepoKey,
             r#"

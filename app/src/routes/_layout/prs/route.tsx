@@ -12,7 +12,7 @@ import {
   NotebookPenIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { PullRequest } from "@/lib/api/queries/pullRequests";
+import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { Button } from "@/components/ui/button";
 import { User } from "@/lib/api/queries/user";
 
@@ -26,7 +26,7 @@ const pullRequestsSearchSchema = z.object({
 export const Route = createFileRoute("/_layout/prs")({
   loader: ({ context }) => {
     context.queryClient.ensureQueryData(queries.me());
-    context.queryClient.ensureQueryData(queries.cachedPullRequests());
+    context.queryClient.ensureQueryData(queries.listPullRequests());
   },
   shouldReload: false,
   validateSearch: pullRequestsSearchSchema,
@@ -39,15 +39,16 @@ function PrsComponent() {
     Route.useSearch();
 
   const { data: user } = useSuspenseQuery(queries.me());
-  const { data: cachedPullRequests } = useSuspenseQuery({
-    ...queries.cachedPullRequests(),
+  const { data: pullRequests } = useSuspenseQuery({
+    ...queries.listPullRequests(),
     refetchInterval: 60 * 1000,
   });
 
+  const columns = useMemo(() => pullRequestColumns(), []);
   const filteredData = useMemo(
     () =>
       filterPullRequests(
-        cachedPullRequests ?? [],
+        pullRequests ?? [],
         searchString ?? "",
         user,
         filterAuthor ?? false,
@@ -55,7 +56,7 @@ function PrsComponent() {
         filterBlocking ?? false,
       ),
     [
-      cachedPullRequests,
+      pullRequests,
       searchString,
       user,
       filterAuthor,
@@ -70,7 +71,7 @@ function PrsComponent() {
         <TopBar />
         <DataTable
           data={filteredData}
-          columns={pullRequestColumns(user)}
+          columns={columns}
           onRowClick={(row) =>
             navigate({
               to: `/prs/$prId`,
@@ -186,7 +187,7 @@ function TopBar() {
 }
 
 function filterPullRequests(
-  data: Array<PullRequest>,
+  data: Array<ListPullRequest>,
   searchString: string,
   user: User | undefined,
   filterAuthor: boolean,
@@ -202,14 +203,7 @@ function filterPullRequests(
   }
 
   if (filterReviewer && user) {
-    filteredData = filteredData.filter((pr) =>
-      pr.reviewers.some(
-        (reviewer) =>
-          reviewer.identity.uniqueName === user.email &&
-          !pr.isDraft &&
-          pr.createdBy.uniqueName !== user.email,
-      ),
-    );
+    filteredData = filteredData.filter((pr) => pr.waitingForUserReview);
   }
 
   if (filterBlocking && user) {

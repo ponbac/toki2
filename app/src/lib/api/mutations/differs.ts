@@ -3,6 +3,7 @@ import { RepoKey, queries } from "../queries/queries";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { Differ } from "../queries/differs";
+import { pullRequestsQueries } from "../queries/pullRequests";
 
 export const differsMutations = { useStartDiffers, useStopDiffers };
 
@@ -49,7 +50,9 @@ function useStartDiffers(options?: DefaultMutationOptions<RepoKey>) {
     },
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries(queries.differs());
-      queryClient.invalidateQueries(queries.cachedPullRequests());
+      queryClient.invalidateQueries({
+        queryKey: pullRequestsQueries.baseKey,
+      });
       options?.onSuccess?.(data, vars, ctx);
     },
   });

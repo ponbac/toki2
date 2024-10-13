@@ -7,7 +7,8 @@ use axum::{
     Json, Router,
 };
 use az_devops::GitCommitRef;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use tracing::instrument;
 
 use crate::{
@@ -22,6 +23,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/open", get(open_pull_requests))
         .route("/cached", get(cached_pull_requests))
+        .route("/list", get(list_pull_requests))
         .route("/most-recent-commits", get(most_recent_commits))
 }
 
@@ -79,31 +81,7 @@ async fn cached_pull_requests(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-    let user_id = auth_session.user.expect("user not found").id;
-    let user_repo = app_state.user_repo.clone();
-    let followed_repos = user_repo
-        .followed_repositories(user_id)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-
-    let mut followed_prs = vec![];
-    for repo in followed_repos {
-        let cached_prs = match app_state.get_cached_pull_requests(repo.clone()).await {
-            Ok(prs) => prs,
-            Err(_) => {
-                tracing::debug!("Error fetching cached PRs for repo: {}", repo);
-                continue;
-            }
-        };
-
-        if let Some(prs) = cached_prs {
-            followed_prs.extend(prs);
-        } else {
-            tracing::debug!("No cached PRs found for repo: {}", repo);
-        }
-    }
-    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
-
+    let followed_prs = get_followed_pull_requests(&auth_session, app_state).await?;
     Ok(Json(followed_prs))
 }
 
@@ -130,4 +108,106 @@ async fn most_recent_commits(
     commits.sort_by_key(|commit| cmp::Reverse(commit.author.as_ref().unwrap().date));
 
     Ok(Json(commits))
+}
+
+/// A trimmed down version of a pull request, only containing the fields we need for the UI.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ListPullRequest {
+    organization: String,
+    project: String,
+    repo_name: String,
+    id: i32,
+    title: String,
+    created_by: az_devops::Identity,
+    #[serde(with = "time::serde::rfc3339")]
+    created_at: OffsetDateTime,
+    source_branch: String,
+    target_branch: String,
+    is_draft: bool,
+    merge_status: Option<az_devops::MergeStatus>,
+    threads: Vec<az_devops::Thread>,
+    work_items: Vec<az_devops::WorkItem>,
+    reviewers: Vec<az_devops::IdentityWithVote>,
+    blocked_by: Vec<az_devops::IdentityWithVote>,
+    approved_by: Vec<az_devops::IdentityWithVote>,
+    waiting_for_user_review: bool,
+    review_required: bool,
+}
+
+impl ListPullRequest {
+    fn from_pull_request(pr: PullRequest, user_email: &str) -> Self {
+        let blocked_by = pr.blocked_by(&pr.threads);
+        let approved_by = pr.approved_by();
+        let (waiting_for_user_review, review_required) = pr.waiting_for_user_review(user_email);
+        Self {
+            organization: pr.organization,
+            project: pr.project,
+            repo_name: pr.repo_name,
+            id: pr.pull_request_base.id,
+            title: pr.pull_request_base.title,
+            created_by: pr.pull_request_base.created_by,
+            created_at: pr.pull_request_base.created_at,
+            source_branch: pr.pull_request_base.source_branch,
+            target_branch: pr.pull_request_base.target_branch,
+            is_draft: pr.pull_request_base.is_draft,
+            merge_status: pr.pull_request_base.merge_status,
+            threads: pr.threads,
+            work_items: pr.work_items,
+            reviewers: pr.pull_request_base.reviewers,
+            blocked_by,
+            approved_by,
+            waiting_for_user_review,
+            review_required,
+        }
+    }
+}
+
+#[instrument(name = "GET /pull-requests/list", skip(auth_session, app_state))]
+async fn list_pull_requests(
+    auth_session: AuthSession,
+    State(app_state): State<AppState>,
+) -> Result<Json<Vec<ListPullRequest>>, (StatusCode, String)> {
+    let mut followed_prs = get_followed_pull_requests(&auth_session, app_state).await?;
+    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
+
+    Ok(Json(
+        followed_prs
+            .into_iter()
+            .map(|pr| {
+                ListPullRequest::from_pull_request(pr, &auth_session.user.as_ref().unwrap().email)
+            })
+            .collect(),
+    ))
+}
+
+async fn get_followed_pull_requests(
+    auth_session: &AuthSession,
+    app_state: AppState,
+) -> Result<Vec<PullRequest>, (StatusCode, String)> {
+    let user_id = auth_session.user.as_ref().expect("user not found").id;
+    let user_repo = app_state.user_repo.clone();
+    let followed_repos = user_repo
+        .followed_repositories(&user_id)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+    let mut followed_prs = vec![];
+    for repo in followed_repos {
+        let cached_prs = match app_state.get_cached_pull_requests(repo.clone()).await {
+            Ok(prs) => prs,
+            Err(_) => {
+                tracing::debug!("Error fetching cached PRs for repo: {}", repo);
+                continue;
+            }
+        };
+
+        if let Some(prs) = cached_prs {
+            followed_prs.extend(prs);
+        } else {
+            tracing::debug!("No cached PRs found for repo: {}", repo);
+        }
+    }
+
+    Ok(followed_prs)
 }

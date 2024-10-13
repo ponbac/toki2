@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  PullRequest,
+  ListPullRequest,
   Thread as PullRequestThread,
   User,
 } from "@/lib/api/queries/pullRequests";
@@ -37,7 +37,7 @@ import React from "react";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(queries.cachedPullRequests()),
+    context.queryClient.ensureQueryData(queries.listPullRequests()),
   component: PRDetailsDialog,
 });
 
@@ -47,7 +47,7 @@ function PRDetailsDialog() {
   const navigate = useNavigate({ from: Route.fullPath });
 
   const { data: pr } = useSuspenseQuery({
-    ...queries.cachedPullRequests(),
+    ...queries.listPullRequests(),
     select: (data) => data.find((pr) => pr.id === +prId),
   });
 
@@ -115,7 +115,7 @@ function PRDetailsDialog() {
   );
 }
 
-function Header(props: { pullRequest: PullRequest }) {
+function Header(props: { pullRequest: ListPullRequest }) {
   const { createdBy, sourceBranch, targetBranch, title } = props.pullRequest;
 
   return (
@@ -133,7 +133,7 @@ function Header(props: { pullRequest: PullRequest }) {
   );
 }
 
-function Threads(props: { pullRequest: PullRequest }) {
+function Threads(props: { pullRequest: ListPullRequest }) {
   const [showResolved, setShowResolved] = React.useState(false);
 
   const threads = props.pullRequest.threads;

@@ -48,7 +48,7 @@ async fn get_differs(
 ) -> Json<Vec<Differ>> {
     let user_repo = app_state.user_repo.clone();
     let followed_repos = user_repo
-        .followed_repositories(user.expect("user should not be None").id)
+        .followed_repositories(&user.as_ref().expect("user should not be None").id)
         .await
         .expect("Failed to query followed repos");
 
