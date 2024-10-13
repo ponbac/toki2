@@ -130,9 +130,8 @@ export const MilltimeTimerDialog = (props: {
                 value={activityName}
                 onChange={(value) => {
                   setActivityName(value);
-                  // Focus on the note input after selecting an activity
                   if (value) {
-                    setTimeout(() => noteInputRef.current?.focus(), 0);
+                    noteInputRef.current?.focus();
                   }
                 }}
               />

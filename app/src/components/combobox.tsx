@@ -22,7 +22,6 @@ type ComboboxItem = {
   label: string;
 };
 
-// Define the props type separately for clarity
 type ComboboxProps = {
   items: ComboboxItem[];
   placeholder: string;
@@ -33,73 +32,76 @@ type ComboboxProps = {
   onChange: (value: string) => void;
 };
 
-// Add React.forwardRef to Combobox
-export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>((props, ref) => {
-  const [open, setOpen] = React.useState(false);
-  const [search, setSearch] = React.useState("");
+export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
+  (props, ref) => {
+    const [open, setOpen] = React.useState(false);
+    const [search, setSearch] = React.useState("");
 
-  const filteredItems = React.useMemo(() => {
-    if (!search) return props.items;
-    return props.items.filter((item) =>
-      item.label.toLowerCase().includes(search.toLowerCase()),
+    const filteredItems = React.useMemo(() => {
+      if (!search) return props.items;
+      return props.items.filter((item) =>
+        item.label.toLowerCase().includes(search.toLowerCase()),
+      );
+    }, [props.items, search]);
+
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between"
+            disabled={props.disabled}
+            ref={ref}
+          >
+            {props.value
+              ? props.items.find((item) => item.value === props.value)?.label
+              : props.placeholder}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder={`Search ${props.placeholder.toLowerCase()}...`}
+              value={search}
+              onValueChange={setSearch}
+            />
+            <CommandList>
+              <CommandEmpty>
+                {props.emptyMessage || "No items found"}
+              </CommandEmpty>
+              <CommandGroup>
+                {filteredItems.map((item) => (
+                  <CommandItem
+                    key={item.value}
+                    value={item.value}
+                    onSelect={(currentValue) => {
+                      props.onChange(
+                        currentValue === props.value ? "" : currentValue,
+                      );
+                      setOpen(false);
+                      setSearch("");
+                      props.onSelect(currentValue);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        props.value === item.value
+                          ? "opacity-100"
+                          : "opacity-0",
+                      )}
+                    />
+                    {item.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
     );
-  }, [props.items, search]);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between"
-          disabled={props.disabled}
-          ref={ref}
-        >
-          {props.value
-            ? props.items.find((item) => item.value === props.value)?.label
-            : props.placeholder}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={`Search ${props.placeholder.toLowerCase()}...`}
-            value={search}
-            onValueChange={setSearch}
-          />
-          <CommandList>
-            <CommandEmpty>
-              {props.emptyMessage || "No items found"}
-            </CommandEmpty>
-            <CommandGroup>
-              {filteredItems.map((item) => (
-                <CommandItem
-                  key={item.value}
-                  value={item.value}
-                  onSelect={(currentValue) => {
-                    props.onChange(
-                      currentValue === props.value ? "" : currentValue,
-                    );
-                    setOpen(false);
-                    setSearch("");
-                    props.onSelect(currentValue);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      props.value === item.value ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  {item.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-});
+  },
+);
