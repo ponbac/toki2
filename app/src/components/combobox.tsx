@@ -17,68 +17,91 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-export interface ComboboxProps {
-  options: { value: string; label: string }[];
+type ComboboxItem = {
+  value: string;
+  label: string;
+};
+
+type ComboboxProps = {
+  items: ComboboxItem[];
+  placeholder: string;
+  onSelect: (value: string) => void;
+  emptyMessage?: string;
+  disabled?: boolean;
   value: string;
   onChange: (value: string) => void;
-  placeholder?: string;
-  className?: string;
-  popoverClassName?: string;
-}
+};
 
-export function Combobox({
-  options,
-  value,
-  onChange,
-  placeholder = "Select an option...",
-  className,
-  popoverClassName,
-}: ComboboxProps) {
-  const [open, setOpen] = React.useState(false);
+export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
+  (props, ref) => {
+    const [open, setOpen] = React.useState(false);
+    const [search, setSearch] = React.useState("");
 
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className={cn("w-[200px] justify-between", className)}
-        >
-          {value
-            ? options.find((option) => option.value === value)?.label
-            : placeholder}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className={cn("w-[200px] p-0", popoverClassName)}>
-        <Command>
-          <CommandInput placeholder="Search..." />
-          <CommandList>
-            <CommandEmpty>No option found.</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => (
-                <CommandItem
-                  key={option.value}
-                  value={option.value}
-                  onSelect={(currentValue) => {
-                    onChange(currentValue === value ? "" : currentValue);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value === option.value ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  {option.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
+    const filteredItems = React.useMemo(() => {
+      if (!search) return props.items;
+      return props.items.filter((item) =>
+        item.label.toLowerCase().includes(search.toLowerCase()),
+      );
+    }, [props.items, search]);
+
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between"
+            disabled={props.disabled}
+            ref={ref}
+          >
+            {props.value
+              ? props.items.find((item) => item.value === props.value)?.label
+              : props.placeholder}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder={`Search ${props.placeholder.toLowerCase()}...`}
+              value={search}
+              onValueChange={setSearch}
+            />
+            <CommandList>
+              <CommandEmpty>
+                {props.emptyMessage || "No items found"}
+              </CommandEmpty>
+              <CommandGroup>
+                {filteredItems.map((item) => (
+                  <CommandItem
+                    key={item.value}
+                    value={item.value}
+                    onSelect={(currentValue) => {
+                      props.onChange(
+                        currentValue === props.value ? "" : currentValue,
+                      );
+                      setOpen(false);
+                      setSearch("");
+                      props.onSelect(currentValue);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        props.value === item.value
+                          ? "opacity-100"
+                          : "opacity-0",
+                      )}
+                    />
+                    {item.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    );
+  },
+);

@@ -10,18 +10,13 @@ import {
 } from "./ui/dialog";
 import React from "react";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
 import { Input } from "./ui/input";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
 import { getWeekNumber } from "@/lib/utils";
 import { TimerHistory } from "./timer-history";
+import { Combobox } from "./combobox";
+import { flushSync } from "react-dom";
 
 export const MilltimeTimerDialog = (props: {
   open: boolean;
@@ -30,6 +25,9 @@ export const MilltimeTimerDialog = (props: {
   const [projectId, setProjectId] = React.useState("");
   const [activityName, setActivityName] = React.useState("");
   const [note, setNote] = React.useState("");
+
+  const activitiesRef = React.useRef<HTMLButtonElement>(null);
+  const noteInputRef = React.useRef<HTMLInputElement>(null);
 
   const { projects, activities } = useMilltimeData({
     projectId: projectId,
@@ -98,45 +96,47 @@ export const MilltimeTimerDialog = (props: {
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Select
-                value={selectedProject?.projectId.toString() ?? ""}
-                onValueChange={(v) => setProjectId(v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects?.map((project) => (
-                    <SelectItem
-                      key={project.projectId}
-                      value={project.projectId.toString()}
-                    >
-                      {project.projectName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                key={activities?.length}
-                value={selectedActivity?.activityName ?? ""}
-                onValueChange={(v) => setActivityName(v)}
+              <Combobox
+                items={
+                  projects?.map((project) => ({
+                    value: project.projectId.toString(),
+                    label: project.projectName,
+                  })) || []
+                }
+                placeholder="Select project..."
+                onSelect={(value) => setProjectId(value)}
+                emptyMessage="No projects found"
+                value={projectId}
+                onChange={(projectId) => {
+                  flushSync(() => {
+                    setProjectId(projectId);
+                    setActivityName("");
+                  });
+                  activitiesRef.current?.focus();
+                }}
+              />
+              <Combobox
+                ref={activitiesRef}
+                items={
+                  activities?.map((activity) => ({
+                    value: activity.activityName,
+                    label: activity.activityName,
+                  })) || []
+                }
+                placeholder="Select activity..."
+                onSelect={(value) => setActivityName(value)}
+                emptyMessage="No activities found"
                 disabled={!projectId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Activity" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activities?.map((activity) => (
-                    <SelectItem
-                      key={activity.activity}
-                      value={activity.activityName}
-                    >
-                      {activity.activityName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                value={activityName}
+                onChange={(value) => {
+                  setActivityName(value);
+                  if (value) {
+                    noteInputRef.current?.focus();
+                  }
+                }}
+              />
               <Input
+                ref={noteInputRef}
                 placeholder="Note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
