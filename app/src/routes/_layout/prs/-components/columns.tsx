@@ -6,7 +6,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { WorkItemLink } from "@/components/work-item-link";
-import { PullRequest } from "@/lib/api/queries/pullRequests";
+import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
 import { CopySlashIcon, PickaxeIcon, UserXIcon } from "lucide-react";
@@ -16,7 +16,7 @@ import { StatusIcon } from "./status-icon";
 
 export function pullRequestColumns(
   user: User | undefined,
-): ColumnDef<PullRequest>[] {
+): ColumnDef<ListPullRequest>[] {
   return [
     {
       accessorKey: "id",

@@ -2,13 +2,38 @@ import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
 
 export const pullRequestsQueries = {
+  baseKey: ["pullRequests"],
   cachedPullRequests: () =>
     queryOptions({
-      queryKey: ["cachedPullRequests"],
+      queryKey: [...pullRequestsQueries.baseKey, "cachedPullRequests"],
       queryFn: async () =>
         api.get("pull-requests/cached").json<Array<PullRequest>>(),
-      refetchInterval: 120 * 1000,
+      refetchInterval: 60 * 1000,
     }),
+  listPullRequests: () =>
+    queryOptions({
+      queryKey: [...pullRequestsQueries.baseKey, "listPullRequests"],
+      queryFn: async () =>
+        api.get("pull-requests/list").json<Array<ListPullRequest>>(),
+    }),
+};
+
+export type ListPullRequest = {
+  organization: string;
+  project: string;
+  repoName: string;
+  id: number;
+  title: string;
+  createdBy: User;
+  createdAt: string;
+  sourceBranch: string;
+  targetBranch: string;
+  isDraft: boolean;
+  mergeStatus: MergeStatus | null;
+  reviewers: Reviewer[];
+  threads: Thread[];
+  workItems: WorkItem[];
+  blockedBy: Reviewer[];
 };
 
 export type PullRequest = {

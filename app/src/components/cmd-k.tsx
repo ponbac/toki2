@@ -17,7 +17,7 @@ import {
   GitPullRequestIcon,
   TimerIcon,
 } from "lucide-react";
-import { PullRequest } from "@/lib/api/queries/pullRequests";
+import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
   useMilltimeActions,
@@ -193,7 +193,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
 function PRCommandGroup(props: { close: () => void }) {
   const navigate = useNavigate();
 
-  const { data: pullRequests } = useQuery(queries.cachedPullRequests());
+  const { data: pullRequests } = useQuery(queries.listPullRequests());
 
   return (
     <CommandGroup heading="Pull requests">
@@ -234,6 +234,6 @@ function PRCommandGroup(props: { close: () => void }) {
   );
 }
 
-function pullRequestValue(pr: PullRequest) {
+function pullRequestValue(pr: ListPullRequest) {
   return `!${pr.id} ${pr.title} ${pr.repoName} ${pr.createdBy.displayName} ${pr.workItems.map((wi) => `#${wi.id}`).join(" ")}`;
 }

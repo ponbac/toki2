@@ -3,6 +3,7 @@ import { RepoKey, queries } from "../queries/queries";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { z } from "zod";
+import { pullRequestsQueries } from "../queries/pullRequests";
 
 export const repositoriesMutations = {
   useAddRepository,
@@ -62,7 +63,9 @@ function useFollowRepository(
     },
     onSettled: (data, err, vars, ctx) => {
       queryClient.invalidateQueries(queries.differs());
-      queryClient.invalidateQueries(queries.cachedPullRequests());
+      queryClient.invalidateQueries({
+        queryKey: pullRequestsQueries.baseKey,
+      });
       options?.onSettled?.(data, err, vars, ctx);
     },
   });
@@ -82,7 +85,9 @@ function useDeleteRepository(
     ...options,
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries(queries.differs());
-      queryClient.invalidateQueries(queries.cachedPullRequests());
+      queryClient.invalidateQueries({
+        queryKey: pullRequestsQueries.baseKey,
+      });
       options?.onSuccess?.(data, vars, ctx);
     },
   });
