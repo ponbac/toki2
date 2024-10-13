@@ -30,10 +30,13 @@ export type ListPullRequest = {
   targetBranch: string;
   isDraft: boolean;
   mergeStatus: MergeStatus | null;
-  reviewers: Reviewer[];
   threads: Thread[];
   workItems: WorkItem[];
+  reviewers: Reviewer[];
   blockedBy: Reviewer[];
+  approvedBy: Reviewer[];
+  waitingForUserReview: boolean;
+  reviewRequired: boolean;
 };
 
 export type PullRequest = {

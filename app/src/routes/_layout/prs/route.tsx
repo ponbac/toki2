@@ -44,6 +44,7 @@ function PrsComponent() {
     refetchInterval: 60 * 1000,
   });
 
+  const columns = useMemo(() => pullRequestColumns(), []);
   const filteredData = useMemo(
     () =>
       filterPullRequests(
@@ -70,7 +71,7 @@ function PrsComponent() {
         <TopBar />
         <DataTable
           data={filteredData}
-          columns={pullRequestColumns(user)}
+          columns={columns}
           onRowClick={(row) =>
             navigate({
               to: `/prs/$prId`,
@@ -202,14 +203,7 @@ function filterPullRequests(
   }
 
   if (filterReviewer && user) {
-    filteredData = filteredData.filter((pr) =>
-      pr.reviewers.some(
-        (reviewer) =>
-          reviewer.identity.uniqueName === user.email &&
-          !pr.isDraft &&
-          pr.createdBy.uniqueName !== user.email,
-      ),
-    );
+    filteredData = filteredData.filter((pr) => pr.waitingForUserReview);
   }
 
   if (filterBlocking && user) {

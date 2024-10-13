@@ -10,13 +10,10 @@ import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
 import { CopySlashIcon, PickaxeIcon, UserXIcon } from "lucide-react";
-import { User } from "@/lib/api/queries/user";
 import { cn } from "@/lib/utils";
 import { StatusIcon } from "./status-icon";
 
-export function pullRequestColumns(
-  user: User | undefined,
-): ColumnDef<ListPullRequest>[] {
+export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
   return [
     {
       accessorKey: "id",
@@ -161,24 +158,10 @@ export function pullRequestColumns(
       header: "Votes",
       cell: ({ row }) => {
         const blockedBy = row.original.blockedBy;
-        const approvedBy = row.original.reviewers
-          .filter(
-            (reviewer) =>
-              reviewer.vote === "Approved" ||
-              reviewer.vote === "ApprovedWithSuggestions",
-          )
-          .filter(
-            (r) => !blockedBy.find((b) => b.identity.id === r.identity.id),
-          );
+        const approvedBy = row.original.approvedBy;
 
-        const waitingForYourReview = row.original.reviewers.find(
-          (reviewer) =>
-            reviewer.identity.uniqueName === user?.email &&
-            reviewer.vote === "NoResponse" &&
-            !row.original.isDraft &&
-            row.original.createdBy.uniqueName !== user?.email &&
-            !blockedBy.find((b) => b.identity.id === reviewer.identity.id),
-        );
+        const waitingForYourReview = row.original.waitingForUserReview;
+        const reviewRequired = row.original.reviewRequired;
 
         return (
           <div className="flex flex-row items-center gap-2">
@@ -203,7 +186,7 @@ export function pullRequestColumns(
                     <UserXIcon
                       className={cn(
                         "size-4",
-                        waitingForYourReview.isRequired
+                        reviewRequired
                           ? "text-red-600"
                           : "text-muted-foreground",
                       )}
@@ -212,7 +195,7 @@ export function pullRequestColumns(
                 </TooltipTrigger>
                 <TooltipContent>
                   <span>
-                    {waitingForYourReview.isRequired
+                    {reviewRequired
                       ? "Waiting for your review (required)"
                       : "You are an optional reviewer"}
                   </span>

@@ -14,7 +14,6 @@ pub struct PullRequest {
     pub threads: Vec<az_devops::Thread>,
     pub commits: Vec<az_devops::GitCommitRef>,
     pub work_items: Vec<az_devops::WorkItem>,
-    pub blocked_by: Vec<az_devops::IdentityWithVote>,
 }
 
 impl PullRequest {
@@ -25,8 +24,6 @@ impl PullRequest {
         commits: Vec<az_devops::GitCommitRef>,
         work_items: Vec<az_devops::WorkItem>,
     ) -> Self {
-        let blocked_by = blocked_by(&pull_request_base, &threads);
-
         Self {
             organization: key.organization.clone(),
             project: key.project.clone(),
@@ -35,7 +32,6 @@ impl PullRequest {
             threads,
             commits,
             work_items,
-            blocked_by,
         }
     }
 
@@ -74,6 +70,84 @@ impl PullRequest {
 
         (new_pr.clone(), new_threads.chain(updated_threads).collect()).into()
     }
+
+    /// Returns the identities that are blocking this PR.
+    ///
+    /// A PR is blocked if it has a reviewer that has voted Rejected or WaitingForAuthor,
+    /// or if it has an unresolved thread.
+    pub fn blocked_by(&self, threads: &[az_devops::Thread]) -> Vec<az_devops::IdentityWithVote> {
+        let rejected_or_waiting = self
+            .pull_request_base
+            .reviewers
+            .iter()
+            .filter(|r| matches!(r.vote, Some(Vote::Rejected) | Some(Vote::WaitingForAuthor)))
+            .cloned()
+            .collect::<Vec<_>>();
+        let unresolved_thread_authors = threads
+            .iter()
+            .filter(|t| t.status == Some(ThreadStatus::Active))
+            .filter_map(|t| {
+                t.comments.iter().find(|c| {
+                    c.is_deleted != Some(true)
+                        && c.comment_type != Some(CommentType::System)
+                        && c.author.display_name != "Azure Pipelines Test Service"
+                })
+            })
+            .map(|c| c.author.clone())
+            .map(IdentityWithVote::from)
+            .collect::<Vec<_>>();
+
+        // add unresolved_thread_authors to rejected_or_waiting if they are not already there and not approved with suggestions
+        let mut blocking_authors = rejected_or_waiting;
+        for author in unresolved_thread_authors {
+            if !blocking_authors
+                .iter()
+                .any(|r| r.identity.id == author.identity.id)
+                && !self.pull_request_base.reviewers.iter().any(|r| {
+                    r.identity.id == author.identity.id
+                        && r.vote == Some(Vote::ApprovedWithSuggestions)
+                })
+            {
+                blocking_authors.push(author);
+            }
+        }
+
+        blocking_authors
+    }
+
+    pub fn approved_by(&self) -> Vec<az_devops::IdentityWithVote> {
+        let blocked_by = self.blocked_by(&self.threads);
+        self.pull_request_base
+            .reviewers
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r.vote,
+                    Some(Vote::Approved) | Some(Vote::ApprovedWithSuggestions)
+                ) && !blocked_by.iter().any(|b| b.identity.id == r.identity.id)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Returns whether the PR is waiting for user to review and whether the review is required.
+    pub fn waiting_for_user_review(&self, user_email: &str) -> (bool, bool) {
+        let waiting_for_user_review = self.pull_request_base.reviewers.iter().find(|reviewer| {
+            reviewer.identity.unique_name == user_email
+                && reviewer.vote == Some(Vote::NoResponse)
+                && !self.pull_request_base.is_draft
+                && self.pull_request_base.created_by.unique_name != user_email
+                && !self
+                    .blocked_by(&self.threads)
+                    .iter()
+                    .any(|b| b.identity.id == reviewer.identity.id)
+        });
+
+        (
+            waiting_for_user_review.is_some(),
+            waiting_for_user_review.is_some_and(|r| r.is_required.unwrap_or_default()),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -99,47 +173,6 @@ impl From<(PullRequest, Vec<PRChangeEvent>)> for PullRequestDiff {
     fn from((pr, changes): (PullRequest, Vec<PRChangeEvent>)) -> Self {
         Self::new(pr, changes)
     }
-}
-
-fn blocked_by(
-    pr: &az_devops::PullRequest,
-    threads: &[az_devops::Thread],
-) -> Vec<az_devops::IdentityWithVote> {
-    let rejected_or_waiting = pr
-        .reviewers
-        .iter()
-        .filter(|r| matches!(r.vote, Some(Vote::Rejected) | Some(Vote::WaitingForAuthor)))
-        .cloned()
-        .collect::<Vec<_>>();
-    let unresolved_thread_authors = threads
-        .iter()
-        .filter(|t| t.status == Some(ThreadStatus::Active))
-        .filter_map(|t| {
-            t.comments.iter().find(|c| {
-                c.is_deleted != Some(true)
-                    && c.comment_type != Some(CommentType::System)
-                    && c.author.display_name != "Azure Pipelines Test Service"
-            })
-        })
-        .map(|c| c.author.clone())
-        .map(IdentityWithVote::from)
-        .collect::<Vec<_>>();
-
-    // add unresolved_thread_authors to rejected_or_waiting if they are not already there and not approved with suggestions
-    let mut blocking_authors = rejected_or_waiting;
-    for author in unresolved_thread_authors {
-        if !blocking_authors
-            .iter()
-            .any(|r| r.identity.id == author.identity.id)
-            && !pr.reviewers.iter().any(|r| {
-                r.identity.id == author.identity.id && r.vote == Some(Vote::ApprovedWithSuggestions)
-            })
-        {
-            blocking_authors.push(author);
-        }
-    }
-
-    blocking_authors
 }
 
 impl From<&PullRequest> for RepoKey {
