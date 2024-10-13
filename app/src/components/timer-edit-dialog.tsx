@@ -10,13 +10,8 @@ import {
 } from "./ui/dialog";
 import React from "react";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
+import { Combobox } from "./combobox";
+import { flushSync } from "react-dom";
 import { Input } from "./ui/input";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { DatabaseTimer } from "@/lib/api/queries/milltime";
@@ -75,6 +70,9 @@ export const TimerEditDialog = (props: {
     setNote(props.timer?.note ?? "");
   }, [props.timer]);
 
+  const activitiesRef = React.useRef<HTMLButtonElement>(null);
+  const noteInputRef = React.useRef<HTMLInputElement>(null);
+
   // TODO: should skeleton while loading...
   if (!props.open || !projects) return null;
 
@@ -103,47 +101,49 @@ export const TimerEditDialog = (props: {
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Select
-                value={selectedProject?.projectId ?? ""}
-                onValueChange={(v) => setProjectId(v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects?.map((project) => (
-                    <SelectItem
-                      key={project.projectId}
-                      value={project.projectId}
-                    >
-                      {project.projectName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                key={activities?.length}
-                value={selectedActivity?.activityName ?? ""}
-                onValueChange={(v) => setActivityName(v)}
+              <Combobox
+                items={
+                  projects?.map((project) => ({
+                    value: project.projectId,
+                    label: project.projectName,
+                  })) || []
+                }
+                placeholder="Select project..."
+                onSelect={(value) => setProjectId(value)}
+                emptyMessage="No projects found"
+                value={projectId ?? ""}
+                onChange={(projectId) => {
+                  flushSync(() => {
+                    setProjectId(projectId);
+                    setActivityName(undefined);
+                  });
+                  activitiesRef.current?.focus();
+                }}
+              />
+              <Combobox
+                ref={activitiesRef}
+                items={
+                  activities?.map((activity) => ({
+                    value: activity.activityName,
+                    label: activity.activityName,
+                  })) || []
+                }
+                placeholder="Select activity..."
+                onSelect={(value) => setActivityName(value)}
+                emptyMessage="No activities found"
                 disabled={!projectId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Activity" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activities?.map((activity) => (
-                    <SelectItem
-                      key={activity.activity}
-                      value={activity.activityName}
-                    >
-                      {activity.activityName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                value={activityName ?? ""}
+                onChange={(value) => {
+                  setActivityName(value);
+                  if (value) {
+                    noteInputRef.current?.focus();
+                  }
+                }}
+              />
               <Input
+                ref={noteInputRef}
                 placeholder="Note"
-                value={note}
+                value={note ?? ""}
                 onChange={(e) => setNote(e.target.value)}
               />
             </div>
