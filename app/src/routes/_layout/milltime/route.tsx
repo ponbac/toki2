@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import {
   useMilltimeActions,
   useMilltimeIsAuthenticating,
+  useMilltimeTimer,
 } from "@/hooks/useMilltimeContext";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
 import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar";
@@ -26,6 +27,7 @@ import { atomWithStorage } from "jotai/utils";
 import { useAtom } from "jotai/react";
 import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
 import { TimeStats } from "./-components/time-stats";
+import { milltimeMutations } from "@/lib/api/mutations/milltime";
 
 export const Route = createFileRoute("/_layout/milltime")({
   loader: ({ context }) => {
@@ -75,6 +77,10 @@ function MilltimeComponent() {
         )
       : [];
   }, [timeEntries, search]);
+
+  const { state: timerState } = useMilltimeTimer();
+  const { mutate: startStandaloneTimer } =
+    milltimeMutations.useStartStandaloneTimer();
 
   return (
     <div>
@@ -148,10 +154,36 @@ function MilltimeComponent() {
                     <SearchBar search={search} setSearch={setSearch} />
                   </div>
                 </div>
-                <TimeEntriesList
-                  timeEntries={filteredTimeEntries ?? []}
-                  mergeSameDay={mergeSameDay}
-                />
+                {timeEntries?.length ? (
+                  <TimeEntriesList
+                    timeEntries={filteredTimeEntries ?? []}
+                    mergeSameDay={mergeSameDay}
+                  />
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center">
+                    <p className="text-xl font-semibold">
+                      No time entries found
+                    </p>
+                    <p className="text-center text-sm text-muted-foreground">
+                      Try changing the filters or{" "}
+                      {timerState === "running" ? (
+                        <span className="">saving your current timer</span>
+                      ) : (
+                        <span
+                          className="underline transition-colors hover:cursor-pointer hover:text-primary"
+                          onClick={() =>
+                            startStandaloneTimer({
+                              userNote: "First timer of the week...",
+                            })
+                          }
+                        >
+                          starting a new timer
+                        </span>
+                      )}
+                      .
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="flex flex-col gap-4">
                 <TimeStats />
