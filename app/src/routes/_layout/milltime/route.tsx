@@ -155,7 +155,7 @@ function MilltimeComponent() {
               </div>
               <div className="flex flex-col gap-4">
                 <TimeStats />
-                <Summary timeEntries={timeEntries ?? []} />
+                {!!timeEntries?.length && <Summary timeEntries={timeEntries} />}
               </div>
             </div>
           </div>
