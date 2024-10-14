@@ -109,6 +109,7 @@ export const TimerEditDialog = (props: {
                   })) || []
                 }
                 placeholder="Select project..."
+                searchPlaceholder="Search projects..."
                 onSelect={(value) => setProjectId(value)}
                 emptyMessage="No projects found"
                 value={projectId ?? ""}
@@ -129,6 +130,7 @@ export const TimerEditDialog = (props: {
                   })) || []
                 }
                 placeholder="Select activity..."
+                searchPlaceholder="Search activities..."
                 onSelect={(value) => setActivityName(value)}
                 emptyMessage="No activities found"
                 disabled={!projectId}

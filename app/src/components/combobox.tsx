@@ -25,6 +25,7 @@ type ComboboxItem = {
 type ComboboxProps = {
   items: ComboboxItem[];
   placeholder: string;
+  searchPlaceholder?: string;
   onSelect: (value: string) => void;
   emptyMessage?: string;
   disabled?: boolean;
@@ -64,7 +65,10 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
         <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
           <Command shouldFilter={false}>
             <CommandInput
-              placeholder={`Search ${props.placeholder.toLowerCase()}...`}
+              placeholder={
+                props.searchPlaceholder ||
+                `Search ${props.placeholder.toLowerCase()}...`
+              }
               value={search}
               onValueChange={setSearch}
             />
