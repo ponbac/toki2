@@ -39,9 +39,14 @@ export function TimerHistory(props: {
   return (
     <div className="mt-4">
       <div className="mb-2 flex flex-row items-center justify-between">
-        <div className="flex flex-row items-center gap-2">
-          <HistoryIcon className="size-4" />
-          <h2 className="text-sm font-semibold">Recent entries</h2>
+        <div className="flex flex-row items-center gap-1">
+          <HistoryIcon className="size-5" />
+          <h2 className="text-sm font-semibold">
+            Recent entries{" "}
+            <span className="text-sm text-muted-foreground">
+              (last 30 days)
+            </span>
+          </h2>
         </div>
         <div className="relative flex w-48 items-center">
           <SearchCode
