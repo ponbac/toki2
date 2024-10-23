@@ -30,17 +30,17 @@ import { TimeStats } from "./-components/time-stats";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 
 export const Route = createFileRoute("/_layout/milltime")({
-  loader: ({ context }) => {
-    context.queryClient.ensureQueryData(
-      milltimeQueries.timeEntries({
-        from: format(
-          startOfWeek(new Date(), { weekStartsOn: 1 }),
-          "yyyy-MM-dd",
-        ),
-        to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-      }),
-    );
-  },
+  // loader: ({ context }) => {
+  //   context.queryClient.ensureQueryData(
+  //     milltimeQueries.timeEntries({
+  //       from: format(
+  //         startOfWeek(new Date(), { weekStartsOn: 1 }),
+  //         "yyyy-MM-dd",
+  //       ),
+  //       to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+  //     }),
+  //   );
+  // },
   component: MilltimeComponent,
 });
 
@@ -66,6 +66,7 @@ function MilltimeComponent() {
       from: dateRange.from,
       to: dateRange.to,
     }),
+    enabled: isAuthenticated,
   });
 
   const filteredTimeEntries = React.useMemo(() => {

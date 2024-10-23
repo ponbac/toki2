@@ -76,16 +76,18 @@ export const MilltimeStoreProvider = ({
           );
         },
         reset: () => {
-          set({
-            isAuthenticated: false,
-            isAuthenticating: false,
-            timer: {
-              visible: false,
-              state: undefined,
-              timeSeconds: null,
-            },
-          });
-          clearMilltimeCookies();
+          if (isMilltimeCookiesPresent()) {
+            set({
+              isAuthenticated: false,
+              isAuthenticating: false,
+              timer: {
+                visible: false,
+                state: undefined,
+                timeSeconds: null,
+              },
+            });
+            clearMilltimeCookies();
+          }
         },
         setTimer: (timer) =>
           set((state) => ({

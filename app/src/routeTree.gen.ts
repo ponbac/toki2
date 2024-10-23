@@ -25,6 +25,7 @@ import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/ro
 // Create/Update Routes
 
 const LoginRoute = LoginImport.update({
+  id: "/login",
   path: "/login",
   getParentRoute: () => rootRoute,
 } as any)
@@ -35,43 +36,51 @@ const LayoutRouteRoute = LayoutRouteImport.update({
 } as any)
 
 const LayoutIndexRoute = LayoutIndexImport.update({
+  id: "/",
   path: "/",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
 const LayoutRepositoriesRouteRoute = LayoutRepositoriesRouteImport.update({
+  id: "/repositories",
   path: "/repositories",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
 const LayoutPrsRouteRoute = LayoutPrsRouteImport.update({
+  id: "/prs",
   path: "/prs",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
 const LayoutMilltimeRouteRoute = LayoutMilltimeRouteImport.update({
+  id: "/milltime",
   path: "/milltime",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
 const LayoutRepositoriesIndexRoute = LayoutRepositoriesIndexImport.update({
+  id: "/",
   path: "/",
   getParentRoute: () => LayoutRepositoriesRouteRoute,
 } as any)
 
 const LayoutPrsIndexRoute = LayoutPrsIndexImport.update({
+  id: "/",
   path: "/",
   getParentRoute: () => LayoutPrsRouteRoute,
 } as any)
 
 const LayoutRepositoriesAddRouteRoute = LayoutRepositoriesAddRouteImport.update(
   {
+    id: "/add",
     path: "/add",
     getParentRoute: () => LayoutRepositoriesRouteRoute,
   } as any,
 )
 
 const LayoutPrsPrIdRouteRoute = LayoutPrsPrIdRouteImport.update({
+  id: "/$prId",
   path: "/$prId",
   getParentRoute: () => LayoutPrsRouteRoute,
 } as any)
