@@ -59,12 +59,8 @@ const CommandList = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.List>
 >(({ className, ...props }, ref) => (
-  <ScrollArea className="max-h-[350px]">
-    <CommandPrimitive.List
-      ref={ref}
-      className={cn("overflow-x-hidden pr-1", className)}
-      {...props}
-    />
+  <ScrollArea className={cn("max-h-[350px]", className)}>
+    <CommandPrimitive.List ref={ref} className="h-full" {...props} />
   </ScrollArea>
 ));
 

@@ -72,7 +72,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
               value={search}
               onValueChange={setSearch}
             />
-            <CommandList>
+            <CommandList className="h-[300px]">
               <CommandEmpty>
                 {props.emptyMessage || "No items found"}
               </CommandEmpty>
