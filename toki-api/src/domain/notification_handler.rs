@@ -1,3 +1,4 @@
+use futures::future;
 use sqlx::PgPool;
 use web_push::{IsahcWebPushClient, WebPushClient};
 
@@ -25,29 +26,40 @@ impl NotificationHandler {
             .await
             .unwrap();
 
-        for subscriber in push_subscriptions {
-            for diff in &diffs {
-                for event in &diff.changes {
+        // Process notifications concurrently for each subscriber
+        let notification_futures = push_subscriptions.into_iter().map(|subscriber| {
+            let notifications = diffs.iter().flat_map(|diff| {
+                let subscriber = subscriber.clone();
+                diff.changes.iter().map(move |event| {
                     let message = event.to_web_push_message(&subscriber, &diff.pr, &diff.url);
-                    match self.web_push_client.send(message).await {
-                        Ok(_) => {
-                            tracing::info!(
-                                "Successfully sent notification to {} for {}",
-                                subscriber.endpoint,
-                                event
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to send notification to {} for {}: {}",
-                                subscriber.endpoint,
-                                event,
-                                e
-                            );
+                    let endpoint = subscriber.endpoint.clone();
+
+                    async move {
+                        match self.web_push_client.send(message).await {
+                            Ok(_) => {
+                                tracing::info!(
+                                    "Successfully sent notification to {} for {}",
+                                    endpoint,
+                                    event
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to send notification to {} for {}: {}",
+                                    endpoint,
+                                    event,
+                                    e
+                                );
+                            }
                         }
                     }
-                }
-            }
-        }
+                })
+            });
+
+            future::join_all(notifications)
+        });
+
+        // Wait for all notifications to complete
+        future::join_all(notification_futures).await;
     }
 }
