@@ -23,7 +23,7 @@ fi
 DB_USER=${POSTGRES_USER:=postgres}
 # Check if a custom password has been set, otherwise default to 'password'
 DB_PASSWORD="${POSTGRES_PASSWORD:=password}"
-# Check if a custom database name has been set, otherwise default to 'newsletter'
+# Check if a custom database name has been set, otherwise default to 'toki'
 DB_NAME="${POSTGRES_DB:=toki}"
 # Check if a custom port has been set, otherwise default to '5432'
 DB_PORT="${POSTGRES_PORT:=5432}"
