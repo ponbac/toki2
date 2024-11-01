@@ -82,8 +82,9 @@ impl RepoDiffer {
 }
 
 impl RepoDiffer {
-    const MAX_RETRIES: usize = 3;
-    const RETRY_DELAY: Duration = Duration::from_secs(5);
+    const MAX_RETRIES: usize = 10;
+    const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(30);
+    const MAX_RETRY_DELAY: Duration = Duration::from_secs(3600);
 
     #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
     pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>, db_pool: Arc<PgPool>) {
@@ -127,8 +128,8 @@ impl RepoDiffer {
                     let mut retries = 0;
                     let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
 
-                    'retry_loop: while retries < Self::MAX_RETRIES {
-                        match tokio::time::timeout(Duration::from_secs(60), self.tick()).await {
+                    'retry_loop: while retries < Self::MAX_RETRIES && *self.status.read().await == RepoDifferStatus::Running {
+                        match tokio::time::timeout(Duration::from_secs(120), self.tick()).await {
                             Ok(Ok(change_events)) => {
                                 self.notification_handler.notify_affected_users(change_events).await;
                                 break 'retry_loop;
@@ -145,8 +146,15 @@ impl RepoDiffer {
 
                         retries += 1;
                         if retries < Self::MAX_RETRIES {
-                            tracing::warn!("Retrying tick operation for {} (attempt {}/{})", self.key, retries + 1, Self::MAX_RETRIES);
-                            tokio::time::sleep(Self::RETRY_DELAY).await;
+                            let backoff_duration = Self::calculate_backoff_duration(retries);
+                            tracing::warn!(
+                                "Retrying tick operation for {} (attempt {}/{}) after {:?}",
+                                self.key,
+                                retries + 1,
+                                Self::MAX_RETRIES,
+                                backoff_duration
+                            );
+                            tokio::time::sleep(backoff_duration).await;
                         }
                     }
 
@@ -157,6 +165,17 @@ impl RepoDiffer {
                 }
             }
         }
+    }
+
+    fn calculate_backoff_duration(retry_count: usize) -> Duration {
+        let base = Self::INITIAL_RETRY_DELAY.as_secs_f64();
+        let max = Self::MAX_RETRY_DELAY.as_secs_f64();
+
+        // initial_delay * 2^retry_count
+        let exp_backoff = base * (2_f64.powi(retry_count as i32));
+        let final_delay = exp_backoff.min(max);
+
+        Duration::from_secs_f64(final_delay)
     }
 
     #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
