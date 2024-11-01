@@ -76,8 +76,8 @@ impl RepoDiffer {
         }
     }
 
-    async fn is_stopped(&self) -> bool {
-        *self.status.read().await == RepoDifferStatus::Stopped
+    async fn is_running(&self) -> bool {
+        *self.status.read().await == RepoDifferStatus::Running
     }
 }
 
@@ -88,7 +88,7 @@ impl RepoDiffer {
 
     #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
     pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>, db_pool: Arc<PgPool>) {
-        let mut interval: Option<tokio::time::Interval> = None;
+        let mut tick_interval: Option<tokio::time::Interval> = None;
 
         loop {
             tokio::select! {
@@ -100,12 +100,9 @@ impl RepoDiffer {
                                 self.key,
                                 duration
                             );
-                            interval = Some(tokio::time::interval(duration));
+                            tick_interval = Some(tokio::time::interval(duration));
                             self.interval.write().await.replace(duration);
-
-                            if self.is_stopped().await {
-                                *self.status.write().await = RepoDifferStatus::Running;
-                            }
+                            *self.status.write().await = RepoDifferStatus::Running;
                         }
                         RepoDifferMessage::ForceUpdate => {
                             // TODO: timeout
@@ -114,21 +111,18 @@ impl RepoDiffer {
                         }
                         RepoDifferMessage::Stop => {
                             tracing::debug!("Stopping differ {}", self.key);
-                            interval = None;
+                            tick_interval = None;
                             self.interval.write().await.take();
-
-                            if !self.is_stopped().await {
-                                *self.status.write().await = RepoDifferStatus::Stopped;
-                            }
+                            *self.status.write().await = RepoDifferStatus::Stopped;
                         }
                     }
                 }
-                _ = interval_tick_or_sleep(&mut interval) => {
+                _ = interval_tick_or_sleep(&mut tick_interval) => {
                     tracing::debug!("Ticked");
                     let mut retries = 0;
                     let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
 
-                    'retry_loop: while retries < Self::MAX_RETRIES && *self.status.read().await == RepoDifferStatus::Running {
+                    'retry_loop: while retries < Self::MAX_RETRIES && self.is_running().await {
                         match tokio::time::timeout(Duration::from_secs(120), self.tick()).await {
                             Ok(Ok(change_events)) => {
                                 self.notification_handler.notify_affected_users(change_events).await;
