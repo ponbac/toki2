@@ -9,6 +9,7 @@ pub enum NotificationType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NotificationRule {
     pub id: i32,
     pub user_id: i32,
@@ -18,6 +19,7 @@ pub struct NotificationRule {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PrNotificationException {
     pub id: i32,
     pub user_id: i32,
@@ -28,6 +30,7 @@ pub struct PrNotificationException {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Notification {
     pub id: i32,
     pub user_id: i32,

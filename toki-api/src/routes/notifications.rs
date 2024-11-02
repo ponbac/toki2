@@ -1,6 +1,6 @@
 use crate::domain::NotificationType;
 use crate::repositories::NotificationRepository;
-use crate::repositories::{PushSubscriptionRepository, RepositoryError};
+use crate::repositories::PushSubscriptionRepository;
 use axum::debug_handler;
 use axum::{
     extract::{Path, Query, State},
@@ -39,16 +39,6 @@ pub fn router() -> Router<AppState> {
             "/notifications/repositories/:repository_id/pull-requests/:pull_request_id/exceptions/:notification_type",
             delete(remove_pr_exception),
         )
-}
-
-#[derive(Debug, Deserialize)]
-pub struct NotificationParams {
-    #[serde(default = "default_include_viewed")]
-    include_viewed: bool,
-}
-
-fn default_include_viewed() -> bool {
-    false
 }
 
 #[instrument(name = "subscribe", skip(auth_session, app_state))]
@@ -128,7 +118,12 @@ async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, (Sta
     Ok(StatusCode::OK)
 }
 
-#[debug_handler]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationParams {
+    include_viewed: Option<bool>,
+}
+
 async fn get_notifications(
     AuthSession { user, .. }: AuthSession,
     Query(params): Query<NotificationParams>,
@@ -138,7 +133,7 @@ async fn get_notifications(
     let notification_repo = app_state.notification_repo.clone();
 
     let notifications = notification_repo
-        .get_user_notifications(user.id, params.include_viewed)
+        .get_user_notifications(user.id, params.include_viewed.unwrap_or(false))
         .await
         .map_err(|e| {
             tracing::error!("Failed to get user notifications: {:?}", e);
