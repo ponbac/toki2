@@ -68,7 +68,10 @@ impl PullRequest {
             })
             .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
 
-        (new_pr.clone(), new_threads.chain(updated_threads).collect()).into()
+        let mut change_events = Vec::new();
+        change_events.extend(new_threads);
+        change_events.extend(updated_threads);
+        (new_pr.clone(), change_events).into()
     }
 
     /// Returns the identities that are blocking this PR.

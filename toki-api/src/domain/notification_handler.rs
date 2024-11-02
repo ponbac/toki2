@@ -30,26 +30,40 @@ impl NotificationHandler {
         }
     }
 
-    pub async fn notify_affected_users(&self, diffs: Vec<PullRequestDiff>) {
-        let users = self.user_repo.get_users().await.unwrap();
-        let repos = self.repo_repo.get_repositories().await.unwrap();
+    pub async fn notify_affected_users(&self, diffs: Vec<PullRequestDiff>) -> Result<(), String> {
+        let users = self
+            .user_repo
+            .get_users()
+            .await
+            .map_err(|e| format!("Failed to get users: {}", e))?;
+        let repos = self
+            .repo_repo
+            .get_repositories()
+            .await
+            .map_err(|e| format!("Failed to get repositories: {}", e))?;
         let push_subscriptions = self
             .push_subscriptions_repo
             .get_push_subscriptions()
             .await
-            .unwrap();
+            .map_err(|e| format!("Failed to get push subscriptions: {}", e))?;
 
         for user in users {
             let following = self
                 .user_repo
                 .followed_repositories(&user.id)
                 .await
-                .unwrap();
+                .map_err(|e| {
+                    format!(
+                        "Failed to get followed repositories for user {}: {}",
+                        user.id, e
+                    )
+                })?;
 
             // Filter out diffs for unfollowed repos
-            let diffs_for_user = diffs
+            let diffs_for_user: Vec<_> = diffs
                 .iter()
-                .filter(|diff| following.contains(&RepoKey::from(&diff.pr)));
+                .filter(|diff| following.contains(&RepoKey::from(&diff.pr)))
+                .collect();
 
             let push_subscriptions_for_user: Vec<_> = push_subscriptions
                 .iter()
@@ -61,7 +75,12 @@ impl NotificationHandler {
                 let repo_id = repos
                     .iter()
                     .find(|r| RepoKey::from(&diff.pr) == RepoKey::from(*r))
-                    .unwrap()
+                    .ok_or_else(|| {
+                        format!(
+                            "Repository not found for PR {}",
+                            diff.pr.pull_request_base.id
+                        )
+                    })?
                     .id;
                 let pr_id = diff.pr.pull_request_base.id;
 
@@ -70,14 +89,24 @@ impl NotificationHandler {
                     .notification_repo
                     .get_repository_rules(user.id, repo_id)
                     .await
-                    .unwrap();
+                    .map_err(|e| {
+                        format!(
+                            "Failed to get notification rules for user {} and repo {}: {}",
+                            user.id, repo_id, e
+                        )
+                    })?;
 
                 // Get PR-specific exceptions
                 let exceptions = self
                     .notification_repo
                     .get_pr_exceptions(user.id, repo_id, pr_id)
                     .await
-                    .unwrap();
+                    .map_err(|e| {
+                        format!(
+                            "Failed to get PR exceptions for user {} and PR {}: {}",
+                            user.id, pr_id, e
+                        )
+                    })?;
 
                 for event in diff.changes.iter() {
                     // Map event to notification type
@@ -144,5 +173,7 @@ impl NotificationHandler {
 
             future::join_all(push_futures).await;
         }
+
+        Ok(())
     }
 }
