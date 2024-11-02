@@ -152,20 +152,13 @@ impl PullRequest {
 
 #[derive(Debug, Clone)]
 pub struct PullRequestDiff {
-    pub pr: az_devops::PullRequest,
-    pub url: String,
+    pub pr: PullRequest,
     pub changes: Vec<PRChangeEvent>,
 }
 
 impl PullRequestDiff {
     pub fn new(pr: PullRequest, changes: Vec<PRChangeEvent>) -> Self {
-        let url = &pr.azure_url();
-
-        Self {
-            pr: pr.pull_request_base,
-            url: url.to_string(),
-            changes,
-        }
+        Self { pr, changes }
     }
 }
 
