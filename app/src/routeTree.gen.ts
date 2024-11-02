@@ -21,6 +21,7 @@ import { Route as LayoutRepositoriesIndexImport } from "./routes/_layout/reposit
 import { Route as LayoutPrsIndexImport } from "./routes/_layout/prs/index"
 import { Route as LayoutRepositoriesAddRouteImport } from "./routes/_layout/repositories/add/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
+import { Route as LayoutRepositoriesNotificationsRepoIdRouteImport } from "./routes/_layout/repositories/notifications/$repoId/route"
 
 // Create/Update Routes
 
@@ -84,6 +85,13 @@ const LayoutPrsPrIdRouteRoute = LayoutPrsPrIdRouteImport.update({
   path: "/$prId",
   getParentRoute: () => LayoutPrsRouteRoute,
 } as any)
+
+const LayoutRepositoriesNotificationsRepoIdRouteRoute =
+  LayoutRepositoriesNotificationsRepoIdRouteImport.update({
+    id: "/notifications/$repoId",
+    path: "/notifications/$repoId",
+    getParentRoute: () => LayoutRepositoriesRouteRoute,
+  } as any)
 
 // Populate the FileRoutesByPath interface
 
@@ -159,6 +167,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutRepositoriesIndexImport
       parentRoute: typeof LayoutRepositoriesRouteImport
     }
+    "/_layout/repositories/notifications/$repoId": {
+      id: "/_layout/repositories/notifications/$repoId"
+      path: "/notifications/$repoId"
+      fullPath: "/repositories/notifications/$repoId"
+      preLoaderRoute: typeof LayoutRepositoriesNotificationsRepoIdRouteImport
+      parentRoute: typeof LayoutRepositoriesRouteImport
+    }
   }
 }
 
@@ -181,12 +196,15 @@ const LayoutPrsRouteRouteWithChildren = LayoutPrsRouteRoute._addFileChildren(
 interface LayoutRepositoriesRouteRouteChildren {
   LayoutRepositoriesAddRouteRoute: typeof LayoutRepositoriesAddRouteRoute
   LayoutRepositoriesIndexRoute: typeof LayoutRepositoriesIndexRoute
+  LayoutRepositoriesNotificationsRepoIdRouteRoute: typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
 const LayoutRepositoriesRouteRouteChildren: LayoutRepositoriesRouteRouteChildren =
   {
     LayoutRepositoriesAddRouteRoute: LayoutRepositoriesAddRouteRoute,
     LayoutRepositoriesIndexRoute: LayoutRepositoriesIndexRoute,
+    LayoutRepositoriesNotificationsRepoIdRouteRoute:
+      LayoutRepositoriesNotificationsRepoIdRouteRoute,
   }
 
 const LayoutRepositoriesRouteRouteWithChildren =
@@ -223,6 +241,7 @@ export interface FileRoutesByFullPath {
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
   "/prs/": typeof LayoutPrsIndexRoute
   "/repositories/": typeof LayoutRepositoriesIndexRoute
+  "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
 export interface FileRoutesByTo {
@@ -233,6 +252,7 @@ export interface FileRoutesByTo {
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
   "/prs": typeof LayoutPrsIndexRoute
   "/repositories": typeof LayoutRepositoriesIndexRoute
+  "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
 export interface FileRoutesById {
@@ -247,6 +267,7 @@ export interface FileRoutesById {
   "/_layout/repositories/add": typeof LayoutRepositoriesAddRouteRoute
   "/_layout/prs/": typeof LayoutPrsIndexRoute
   "/_layout/repositories/": typeof LayoutRepositoriesIndexRoute
+  "/_layout/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
 export interface FileRouteTypes {
@@ -262,6 +283,7 @@ export interface FileRouteTypes {
     | "/repositories/add"
     | "/prs/"
     | "/repositories/"
+    | "/repositories/notifications/$repoId"
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/login"
@@ -271,6 +293,7 @@ export interface FileRouteTypes {
     | "/repositories/add"
     | "/prs"
     | "/repositories"
+    | "/repositories/notifications/$repoId"
   id:
     | "__root__"
     | "/_layout"
@@ -283,6 +306,7 @@ export interface FileRouteTypes {
     | "/_layout/repositories/add"
     | "/_layout/prs/"
     | "/_layout/repositories/"
+    | "/_layout/repositories/notifications/$repoId"
   fileRoutesById: FileRoutesById
 }
 
@@ -341,7 +365,8 @@ export const routeTree = rootRoute
       "parent": "/_layout",
       "children": [
         "/_layout/repositories/add",
-        "/_layout/repositories/"
+        "/_layout/repositories/",
+        "/_layout/repositories/notifications/$repoId"
       ]
     },
     "/_layout/": {
@@ -362,6 +387,10 @@ export const routeTree = rootRoute
     },
     "/_layout/repositories/": {
       "filePath": "_layout/repositories/index.tsx",
+      "parent": "/_layout/repositories"
+    },
+    "/_layout/repositories/notifications/$repoId": {
+      "filePath": "_layout/repositories/notifications/$repoId/route.tsx",
       "parent": "/_layout/repositories"
     }
   }

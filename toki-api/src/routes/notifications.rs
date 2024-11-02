@@ -1,7 +1,6 @@
 use crate::domain::NotificationType;
 use crate::repositories::NotificationRepository;
 use crate::repositories::PushSubscriptionRepository;
-use axum::debug_handler;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -22,21 +21,21 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/subscribe", post(subscribe))
         .route("/test-push", post(test_push))
-        .route("/notifications", get(get_notifications))
-        .route("/notifications/:id/view", post(mark_notification_viewed))
-        .route("/notifications/:id", delete(delete_notification))
-        .route("/notifications/preferences", get(get_preferences))
-        .route("/notifications/preferences", post(update_preferences))
+        .route("/", get(get_notifications))
+        .route("/:id/view", post(mark_notification_viewed))
+        .route("/:id", delete(delete_notification))
+        .route("/preferences/:repository_id", get(get_preferences))
+        .route("/preferences/:repository_id", post(update_preferences))
         .route(
-            "/notifications/repositories/:repository_id/pull-requests/:pull_request_id/exceptions",
+            "/repositories/:repository_id/pull-requests/:pull_request_id/exceptions",
             get(get_pr_exceptions),
         )
         .route(
-            "/notifications/repositories/:repository_id/pull-requests/:pull_request_id/exceptions",
+            "/repositories/:repository_id/pull-requests/:pull_request_id/exceptions",
             post(set_pr_exception),
         )
         .route(
-            "/notifications/repositories/:repository_id/pull-requests/:pull_request_id/exceptions/:notification_type",
+            "/repositories/:repository_id/pull-requests/:pull_request_id/exceptions/:notification_type",
             delete(remove_pr_exception),
         )
 }

@@ -4,9 +4,9 @@ import { DefaultMutationOptions } from "./mutations";
 import { notificationsQueries } from "../queries/notifications";
 
 export enum NotificationType {
-  PrClosed = "pr_closed",
-  ThreadAdded = "thread_added",
-  ThreadUpdated = "thread_updated",
+  PrClosed = "PrClosed",
+  ThreadAdded = "ThreadAdded",
+  ThreadUpdated = "ThreadUpdated",
 }
 
 export const notificationsMutations = {

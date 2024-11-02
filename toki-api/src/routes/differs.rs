@@ -1,5 +1,5 @@
 use crate::{auth::AuthBackend, domain::Role, repositories::RepoRepository};
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use axum::{
     extract::State,
@@ -33,6 +33,7 @@ pub fn router() -> Router<AppState> {
 struct Differ {
     #[serde(flatten)]
     key: RepoKey,
+    repo_id: i32,
     status: RepoDifferStatus,
     #[serde(with = "time::serde::rfc3339::option")]
     last_updated: Option<OffsetDateTime>,
@@ -47,12 +48,31 @@ async fn get_differs(
     State(app_state): State<AppState>,
 ) -> Json<Vec<Differ>> {
     let user_repo = app_state.user_repo.clone();
+    let repositories_repo = app_state.repository_repo.clone();
+    let all_repos = repositories_repo
+        .get_repositories()
+        .await
+        .expect("Failed to query all repos");
     let followed_repos = user_repo
         .followed_repositories(&user.as_ref().expect("user should not be None").id)
         .await
         .expect("Failed to query followed repos");
 
     let differs = app_state.get_repo_differs().await;
+    let differ_to_repo_id: HashMap<_, _> = differs
+        .iter()
+        .map(|d| {
+            (
+                d.key.clone(),
+                all_repos
+                    .iter()
+                    .find(|r| RepoKey::from(*r) == d.key)
+                    .unwrap()
+                    .id,
+            )
+        })
+        .collect();
+
     let mut differ_dtos = Vec::new();
     for differ in differs {
         let differ = differ.clone();
@@ -69,14 +89,10 @@ async fn get_differs(
             refresh_interval,
             followed: followed_repos.contains(&key),
             is_invalid: false,
+            repo_id: differ_to_repo_id[&key],
         });
     }
 
-    let repositories_repo = app_state.repository_repo.clone();
-    let all_repos = repositories_repo
-        .get_repositories()
-        .await
-        .expect("Failed to query all repos");
     // add repos not found in differs, meaning no client is created for them
     for repo in all_repos {
         let key = RepoKey::new(&repo.organization, &repo.project, &repo.repo_name);
@@ -88,6 +104,7 @@ async fn get_differs(
                 refresh_interval: None,
                 followed: followed_repos.contains(&key),
                 is_invalid: true,
+                repo_id: repo.id,
             });
         }
     }

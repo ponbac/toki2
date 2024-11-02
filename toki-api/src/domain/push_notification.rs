@@ -6,10 +6,10 @@ use web_push::{
 
 #[derive(Debug, Serialize, Default)]
 pub struct PushNotification {
-    title: String,
-    body: String,
-    url: Option<String>,
-    icon: Option<String>,
+    pub title: String,
+    pub body: String,
+    pub url: Option<String>,
+    pub icon: Option<String>,
 }
 
 impl From<&PushNotification> for Vec<u8> {
