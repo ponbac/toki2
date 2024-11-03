@@ -1,4 +1,4 @@
-import { clearMilltimeCookies } from "@/hooks/useMilltimeContext";
+import { clearMilltimeCookies } from "@/hooks/useMilltimeStore";
 import { router } from "@/main";
 import ky, { KyResponse } from "ky";
 

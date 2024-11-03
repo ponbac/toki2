@@ -19,14 +19,14 @@ import {
 } from "lucide-react";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import {
-  useMilltimeActions,
-  useMilltimeIsAuthenticated,
-  useMilltimeTimer,
-} from "@/hooks/useMilltimeContext";
 import { milltimeQueries, TimerType } from "@/lib/api/queries/milltime";
 import { toast } from "sonner";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import {
+  useMilltimeTimer,
+  useMilltimeActions,
+  useMilltimeIsAuthenticated,
+} from "@/hooks/useMilltimeStore";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);

@@ -2,8 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { z } from "zod";
-import { useMilltimeActions } from "@/hooks/useMilltimeContext";
 import { milltimeQueries, TimerType } from "../queries/milltime";
+import { useMilltimeActions } from "@/hooks/useMilltimeStore";
 
 export const milltimeMutations = {
   useAuthenticate,

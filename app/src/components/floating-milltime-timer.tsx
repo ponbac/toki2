@@ -20,15 +20,12 @@ import {
   type MilltimeTimer,
 } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
-import {
-  useMilltimeActions,
-  useMilltimeTimer,
-} from "@/hooks/useMilltimeContext";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { TimerEditDialog } from "./timer-edit-dialog";
+import { useMilltimeActions, useMilltimeTimer } from "@/hooks/useMilltimeStore";
 
 export const FloatingMilltimeTimer = () => {
   const { setTimer } = useMilltimeActions();
