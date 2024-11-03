@@ -84,8 +84,6 @@ type PrExceptionPayload = {
   repositoryId: number;
   pullRequestId: number;
   exception: {
-    id: number;
-    userId: number;
     repositoryId: number;
     pullRequestId: number;
     notificationType: NotificationType;

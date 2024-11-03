@@ -23,7 +23,7 @@ import { Differ, differsQueries } from "@/lib/api/queries/differs";
 import { useEffect } from "react";
 import { useTitleStore } from "@/hooks/useTitleStore";
 
-export function NotificationsMenu() {
+export function NotificationsPopover() {
   const { addSegment, removeSegment } = useTitleStore();
 
   const { data: notifications = [] } = useQuery({
@@ -158,7 +158,7 @@ function NotificationItem(props: {
           )}
         </div>
       </div>
-      <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+      <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
         <div>
           {new Date(props.notification.createdAt).toLocaleString("sv-SE", {
             year: "numeric",

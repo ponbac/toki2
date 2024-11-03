@@ -283,36 +283,60 @@ async fn get_pr_exceptions(
     Ok(Json(exceptions))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateExceptionPayload {
+    pub repository_id: i32,
+    pub notification_type: DbNotificationType,
+    pub enabled: bool,
+}
+
 async fn set_pr_exception(
     AuthSession { user, .. }: AuthSession,
     Path(params): Path<PrExceptionPath>,
     State(app_state): State<AppState>,
-    Json(exception): Json<PrNotificationException>,
+    Json(payload): Json<UpdateExceptionPayload>,
 ) -> Result<Json<PrNotificationException>, (StatusCode, String)> {
     let user = user.expect("user not found");
 
-    // Validate that the exception belongs to the authenticated user
-    if exception.user_id != user.id {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "Cannot modify exceptions for other users".to_string(),
-        ));
-    }
-
-    // Validate that the repository_id and pull_request_id in the path match the exception
-    if exception.repository_id != params.repository_id
-        || exception.pull_request_id != params.pull_request_id
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Repository ID or Pull Request ID mismatch".to_string(),
-        ));
-    }
-
     let notification_repo = app_state.notification_repo.clone();
+    let existing_exceptions = notification_repo
+        .get_pr_exceptions(user.id, payload.repository_id, params.pull_request_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get PR exceptions: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get PR exceptions".to_string(),
+            )
+        })?;
+
+    let existing_exception = existing_exceptions
+        .iter()
+        .find(|e| e.notification_type == payload.notification_type)
+        .cloned();
+
+    // Validate that the exception belongs to the authenticated user
+    if let Some(existing_exception) = &existing_exception {
+        if existing_exception.user_id != user.id {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "Cannot modify exceptions for other users".to_string(),
+            ));
+        }
+    }
+
+    let new_exception = PrNotificationException {
+        id: 0, // DB will assign actual ID, fix this later...
+        user_id: user.id,
+        repository_id: payload.repository_id,
+        pull_request_id: params.pull_request_id,
+        notification_type: payload.notification_type,
+        enabled: payload.enabled,
+    };
 
     let updated_exception = notification_repo
-        .set_pr_exception(&exception)
+        .set_pr_exception(&new_exception)
         .await
         .map_err(|e| {
             tracing::error!("Failed to set PR exception: {:?}", e);

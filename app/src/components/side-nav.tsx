@@ -15,7 +15,7 @@ import { router } from "@/main";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { userQueries } from "@/lib/api/queries/user";
-import { NotificationsMenu } from "./notifications-menu";
+import { NotificationsPopover } from "./notifications-popover";
 
 type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
@@ -54,7 +54,7 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
           <AvatarMenu />
         </div>
         <div className="flex h-[52px] items-center justify-center">
-          <NotificationsMenu />
+          <NotificationsPopover />
         </div>
         <Separator />
         <Nav isCollapsed={true} links={MENU_ITEMS} />

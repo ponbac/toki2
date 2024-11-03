@@ -34,6 +34,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import React from "react";
+import { PRNotificationSettings } from "../-components/pr-notification-settings";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
@@ -89,6 +90,7 @@ function PRDetailsDialog() {
         <Header pullRequest={pr} />
         <Threads pullRequest={pr} />
         <DialogFooter className="pt-2">
+          <PRNotificationSettings pullRequest={pr} />
           <Button
             autoFocus
             variant="outline"
