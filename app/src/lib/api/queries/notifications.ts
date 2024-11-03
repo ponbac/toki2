@@ -3,13 +3,13 @@ import { api } from "../api";
 import { NotificationType } from "../mutations/notifications";
 
 export const notificationsQueries = {
-  notifications: (includeViewed = false) =>
+  notifications: (options: { includeViewed: boolean }) =>
     queryOptions({
-      queryKey: ["notifications", "list", { includeViewed }],
+      queryKey: ["notifications", "list", options],
       queryFn: async () =>
         api
           .get("notifications", {
-            searchParams: { include_viewed: includeViewed },
+            searchParams: { include_viewed: options.includeViewed },
           })
           .json<Array<Notification>>(),
     }),
