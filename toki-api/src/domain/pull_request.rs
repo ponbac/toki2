@@ -68,7 +68,10 @@ impl PullRequest {
             })
             .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
 
-        (new_pr.clone(), new_threads.chain(updated_threads).collect()).into()
+        let mut change_events = Vec::new();
+        change_events.extend(new_threads);
+        change_events.extend(updated_threads);
+        (new_pr.clone(), change_events).into()
     }
 
     /// Returns the identities that are blocking this PR.
@@ -152,20 +155,13 @@ impl PullRequest {
 
 #[derive(Debug, Clone)]
 pub struct PullRequestDiff {
-    pub pr: az_devops::PullRequest,
-    pub url: String,
+    pub pr: PullRequest,
     pub changes: Vec<PRChangeEvent>,
 }
 
 impl PullRequestDiff {
     pub fn new(pr: PullRequest, changes: Vec<PRChangeEvent>) -> Self {
-        let url = &pr.azure_url();
-
-        Self {
-            pr: pr.pull_request_base,
-            url: url.to_string(),
-            changes,
-        }
+        Self { pr, changes }
     }
 }
 

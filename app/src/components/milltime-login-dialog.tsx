@@ -10,12 +10,9 @@ import {
 } from "./ui/dialog";
 import React from "react";
 import { Input } from "./ui/input";
-import {
-  useMilltimeActions,
-  useMilltimeIsAuthenticating,
-} from "@/hooks/useMilltimeContext";
 import { Label } from "./ui/label";
 import { toast } from "sonner";
+import { useMilltimeActions, useMilltimeIsAuthenticating } from "@/hooks/useMilltimeStore";
 
 export const MilltimeLoginDialog = (props: {
   open: boolean;

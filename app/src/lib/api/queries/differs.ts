@@ -12,6 +12,7 @@ export const differsQueries = {
 export type Differ = {
   organization: string;
   project: string;
+  repoId: number;
   repoName: string;
   followed: boolean;
   status: "Running" | "Stopped" | "Errored";

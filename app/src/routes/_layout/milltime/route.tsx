@@ -9,11 +9,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  useMilltimeActions,
-  useMilltimeIsAuthenticating,
-  useMilltimeTimer,
-} from "@/hooks/useMilltimeContext";
 import { useMilltimeData } from "@/hooks/useMilltimeData";
 import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar";
 import { Summary } from "@/routes/_layout/milltime/-components/summary";
@@ -28,6 +23,8 @@ import { useAtom } from "jotai/react";
 import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
 import { TimeStats } from "./-components/time-stats";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import { useMilltimeIsAuthenticating, useMilltimeTimer } from "@/hooks/useMilltimeStore";
+import { useMilltimeActions } from "@/hooks/useMilltimeStore";
 
 export const Route = createFileRoute("/_layout/milltime")({
   loader: ({ context }) => {

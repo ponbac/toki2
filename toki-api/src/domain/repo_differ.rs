@@ -125,7 +125,13 @@ impl RepoDiffer {
                     'retry_loop: while retries < Self::MAX_RETRIES && self.is_running().await {
                         match tokio::time::timeout(Duration::from_secs(120), self.tick()).await {
                             Ok(Ok(change_events)) => {
-                                self.notification_handler.notify_affected_users(change_events).await;
+                                if !change_events.is_empty() {
+                                    if let Err(e) = self.notification_handler.notify_affected_users(change_events).await {
+                                        tracing::error!("Failed to notify affected users: {}", e);
+                                    }
+                                } else {
+                                    tracing::debug!("No changes to notify for {}", self.key);
+                                }
                                 break 'retry_loop;
                             }
                             Ok(Err(err)) => {
@@ -212,6 +218,7 @@ impl RepoDiffer {
                                 .find(|p| p.pull_request_base.id == prev_pr.pull_request_base.id),
                         )
                     })
+                    .filter(|diff| !diff.changes.is_empty())
                     .collect::<Vec<PullRequestDiff>>(),
                 None => Vec::new(),
             }

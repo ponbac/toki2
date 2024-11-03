@@ -6,19 +6,18 @@ import { MilltimeTimerDialog } from "@/components/milltime-timer-dialog";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import {
-  MilltimeStoreProvider,
-  useMilltimeActions,
-  useMilltimeEditTimerDialogOpen,
-  useMilltimeIsAuthenticated,
-  useMilltimeLoginDialogOpen,
-  useMilltimeNewTimerDialogOpen,
-} from "@/hooks/useMilltimeContext";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { TimerEditDialog } from "@/components/timer-edit-dialog";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
+import {
+  useMilltimeActions,
+  useMilltimeEditTimerDialogOpen,
+  useMilltimeIsAuthenticated,
+  useMilltimeLoginDialogOpen,
+  useMilltimeNewTimerDialogOpen,
+} from "@/hooks/useMilltimeStore";
 
 export const Route = createFileRoute("/_layout")({
   component: LayoutComponent,
@@ -27,16 +26,14 @@ export const Route = createFileRoute("/_layout")({
 function LayoutComponent() {
   return (
     <TooltipProvider delayDuration={0}>
-      <MilltimeStoreProvider>
-        <SideNavWrapper>
-          <Suspense fallback={<FullscreenLoading />}>
-            <Outlet />
-          </Suspense>
-        </SideNavWrapper>
-        <Toaster position="top-right" />
-        <CmdK />
-        <MilltimeTimerProvider />
-      </MilltimeStoreProvider>
+      <SideNavWrapper>
+        <Suspense fallback={<FullscreenLoading />}>
+          <Outlet />
+        </Suspense>
+      </SideNavWrapper>
+      <Toaster position="top-right" />
+      <CmdK />
+      <MilltimeTimerProvider />
     </TooltipProvider>
   );
 }

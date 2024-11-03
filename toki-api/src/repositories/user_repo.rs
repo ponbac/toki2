@@ -6,6 +6,7 @@ use super::repo_error::RepositoryError;
 
 pub trait UserRepository {
     async fn get_user(&self, id: i32) -> Result<User, RepositoryError>;
+    async fn get_users(&self) -> Result<Vec<User>, RepositoryError>;
     async fn upsert_user(&self, user: &NewUser) -> Result<User, RepositoryError>;
     async fn followed_repositories(&self, id: &i32) -> Result<Vec<RepoKey>, RepositoryError>;
     async fn follow_repository(
@@ -50,6 +51,29 @@ impl UserRepository for UserRepositoryImpl {
         };
 
         Ok(user)
+    }
+
+    async fn get_users(&self) -> Result<Vec<User>, RepositoryError> {
+        let db_users = sqlx::query_as!(
+            DbUser,
+            r#"SELECT id, email, full_name, picture, access_token, roles FROM users"#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let users = db_users
+            .into_iter()
+            .map(|db_user| User {
+                id: db_user.id,
+                email: db_user.email,
+                full_name: db_user.full_name,
+                picture: db_user.picture,
+                access_token: db_user.access_token,
+                roles: db_user.roles.into_iter().map(Role::from).collect(),
+            })
+            .collect();
+
+        Ok(users)
     }
 
     async fn upsert_user(&self, user: &NewUser) -> Result<User, RepositoryError> {

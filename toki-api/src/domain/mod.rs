@@ -9,6 +9,7 @@ mod repo_differ;
 mod repo_key;
 mod repository;
 mod user;
+mod notification_preference;
 
 pub use milltime_password::*;
 pub use notification_handler::*;
@@ -21,3 +22,4 @@ pub use repo_differ::*;
 pub use repo_key::*;
 pub use repository::*;
 pub use user::*;
+pub use notification_preference::*;

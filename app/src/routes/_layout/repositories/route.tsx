@@ -26,6 +26,7 @@ import {
 } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import {
+  BellIcon,
   Heart,
   PauseCircle,
   PlayCircle,
@@ -53,6 +54,7 @@ export const Route = createFileRoute("/_layout/repositories")({
 
 function RepositoriesComponent() {
   const { searchString } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
 
   const { data: isAdmin } = useSuspenseQuery({
     ...queries.me(),
@@ -105,32 +107,51 @@ function RepositoriesComponent() {
                     </CardTitle>
                     <CardDescription className="leading-4">{`${differ.organization}/${differ.project}`}</CardDescription>
                   </div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="group size-8"
-                        onClick={() =>
-                          followRepository({
-                            ...differ,
-                            follow: !differ.followed,
-                          })
-                        }
-                      >
-                        {differ.followed ? (
-                          <Unplug size="1.25rem" />
-                        ) : (
-                          <Heart size="1.25rem" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {differ.followed
-                        ? "Unfollow repository"
-                        : "Follow repository"}
-                    </TooltipContent>
-                  </Tooltip>
+                  <div className="flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() =>
+                            navigate({
+                              to: `/repositories/notifications/${differ.repoId}`,
+                            })
+                          }
+                        >
+                          <BellIcon />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Manage notifications</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="group size-8"
+                          onClick={() =>
+                            followRepository({
+                              ...differ,
+                              follow: !differ.followed,
+                            })
+                          }
+                        >
+                          {differ.followed ? (
+                            <Unplug size="1.25rem" />
+                          ) : (
+                            <Heart size="1.25rem" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {differ.followed
+                          ? "Unfollow repository"
+                          : "Follow repository"}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <CardDescription>

@@ -1,10 +1,8 @@
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
-import {
-  useMilltimeActions,
-  useMilltimeIsAuthenticated,
-} from "./useMilltimeContext";
 import { useMemo } from "react";
+import { useMilltimeActions } from "./useMilltimeStore";
+import { useMilltimeIsAuthenticated } from "./useMilltimeStore";
 
 export const useMilltimeData = (options?: {
   projectId?: string;
