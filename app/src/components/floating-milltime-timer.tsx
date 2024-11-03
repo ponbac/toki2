@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { TimerEditDialog } from "./timer-edit-dialog";
 import { useMilltimeActions, useMilltimeTimer } from "@/hooks/useMilltimeStore";
+import { useTitleStore } from "@/hooks/useTitleStore";
 
 export const FloatingMilltimeTimer = () => {
   const { setTimer } = useMilltimeActions();
@@ -50,14 +51,14 @@ export const FloatingMilltimeTimer = () => {
   const { mutate: stopTimer, isPending: isStoppingTimer } =
     milltimeMutations.useStopTimer({
       onSuccess: () => {
-        document.title = "Toki2";
+        removeSegment("timer");
       },
     });
   const { mutate: saveTimer, isPending: isSavingTimer } =
     milltimeMutations.useSaveTimer({
       onSuccess: () => {
         toast.success("Timer successfully saved to Milltime");
-        document.title = "Toki2";
+        removeSegment("timer");
         startStandaloneTimer({ userNote: "Continuing my work..." });
       },
     });
@@ -81,6 +82,8 @@ export const FloatingMilltimeTimer = () => {
 
   // Store the start time
   const startTimeRef = React.useRef<Date | null>(null);
+
+  const { addSegment, removeSegment } = useTitleStore();
 
   // Sync local timer with fetched timer
   React.useEffect(() => {
@@ -121,7 +124,15 @@ export const FloatingMilltimeTimer = () => {
 
         const { hours, minutes, seconds } =
           secondsToHoursMinutesSeconds(elapsedSeconds);
-        document.title = `${hours}:${minutes}:${seconds} - ${timer?.note}${timer?.projectName && timer?.activityName ? ` (${timer?.projectName} - ${timer?.activityName})` : ""}`;
+
+        addSegment({
+          id: "timer",
+          title: `${hours}:${minutes}:${seconds}${timer?.note ? ` - ${timer.note}` : ""}${
+            timer?.projectName && timer?.activityName
+              ? ` (${timer.projectName} - ${timer.activityName})`
+              : ""
+          }`,
+        });
       }
     };
 
@@ -130,13 +141,15 @@ export const FloatingMilltimeTimer = () => {
     let interval: NodeJS.Timeout | null = null;
     if (timerState === "running") {
       interval = setInterval(updateTimer, 1000);
-
-      return () => clearInterval(interval!);
+      return () => {
+        clearInterval(interval!);
+        removeSegment("timer");
+      };
     } else {
       if (interval) {
         clearInterval(interval);
       }
-      document.title = "Toki2";
+      removeSegment("timer");
     }
   }, [
     timerState,
@@ -144,6 +157,8 @@ export const FloatingMilltimeTimer = () => {
     timer?.note,
     timer?.projectName,
     timer?.activityName,
+    addSegment,
+    removeSegment,
   ]);
 
   // If the timer could not be fetched, it is probably not active

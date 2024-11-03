@@ -20,11 +20,11 @@ import { match } from "ts-pattern";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { NotificationIcon } from "./notification-icon";
 import { Differ, differsQueries } from "@/lib/api/queries/differs";
-import { useMilltimeTimer } from "@/hooks/useMilltimeStore";
 import { useEffect } from "react";
+import { useTitleStore } from "@/hooks/useTitleStore";
 
 export function NotificationsMenu() {
-  const timer = useMilltimeTimer();
+  const { addSegment, removeSegment } = useTitleStore();
 
   const { data: notifications = [] } = useQuery({
     ...notificationsQueries.notifications({ includeViewed: true }),
@@ -43,13 +43,15 @@ export function NotificationsMenu() {
 
   // useEffect that prepends the number of unviewed notifications to the document title
   useEffect(() => {
-    const currentTitle = document.title;
     if (unviewedCount > 0) {
-      document.title = `(${unviewedCount}) ${currentTitle}`;
+      addSegment({
+        id: "notifications",
+        title: `(${unviewedCount})`,
+      });
     } else {
-      document.title = currentTitle;
+      removeSegment("notifications");
     }
-  }, [unviewedCount, timer.visible]);
+  }, [unviewedCount, addSegment, removeSegment]);
 
   return (
     <Popover>

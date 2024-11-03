@@ -27,6 +27,7 @@ import {
   useMilltimeActions,
   useMilltimeIsAuthenticated,
 } from "@/hooks/useMilltimeStore";
+import { useTitleStore } from "@/hooks/useTitleStore";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -90,6 +91,7 @@ function PagesCommandGroup(props: { close: () => void }) {
 }
 
 function ActionsCommandGroup(props: { close: () => void }) {
+  const { removeSegment } = useTitleStore();
   const { state: timerState } = useMilltimeTimer();
   const { setNewTimerDialogOpen, setLoginDialogOpen, setEditTimerDialogOpen } =
     useMilltimeActions();
@@ -107,7 +109,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
   const { mutate: saveTimer } = milltimeMutations.useSaveTimer({
     onSuccess: () => {
       toast.success("Timer successfully saved to Milltime");
-      document.title = "Toki2";
+      removeSegment("timer");
       startStandaloneTimer({
         userNote: "Continuing my work...",
       });
