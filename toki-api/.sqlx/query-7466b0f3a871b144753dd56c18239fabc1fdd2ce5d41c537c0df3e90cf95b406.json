@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                id, user_id, repository_id,\n                notification_type as \"notification_type: DbNotificationType\",\n                enabled\n            FROM notification_rules\n            WHERE user_id = $1 AND repository_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "repository_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "notification_type: DbNotificationType",
+        "type_info": {
+          "Custom": {
+            "name": "notification_type",
+            "kind": {
+              "Enum": [
+                "pr_closed",
+                "thread_added",
+                "thread_updated"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "enabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7466b0f3a871b144753dd56c18239fabc1fdd2ce5d41c537c0df3e90cf95b406"
+}
