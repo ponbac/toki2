@@ -108,8 +108,13 @@ impl NotificationHandler {
                         )
                     })?;
 
-                for event in diff.changes.iter() {
-                    // Map event to notification type
+                // Process events that apply to the user
+                for event in diff.changes.iter().filter(|e| {
+                    e.applies_to(
+                        &user.email,
+                        &diff.pr.pull_request_base.created_by.unique_name,
+                    )
+                }) {
                     let notification_type = match event {
                         PRChangeEvent::PullRequestClosed => DbNotificationType::PrClosed,
                         PRChangeEvent::ThreadAdded(_) => DbNotificationType::ThreadAdded,
@@ -134,11 +139,9 @@ impl NotificationHandler {
                         continue;
                     }
 
-                    // Create notification in database
                     let push_notification = event
                         .to_push_notification(&diff.pr.pull_request_base, &diff.pr.azure_url());
-
-                    let notification = Notification {
+                    let db_notification = Notification {
                         id: 0, // Will be set by database
                         user_id: user.id,
                         repository_id: repo_id,
@@ -154,7 +157,7 @@ impl NotificationHandler {
 
                     if (self
                         .notification_repo
-                        .create_notification(&notification)
+                        .create_notification(&db_notification)
                         .await)
                         .is_ok()
                     {

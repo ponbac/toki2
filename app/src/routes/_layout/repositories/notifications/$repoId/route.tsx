@@ -92,7 +92,8 @@ function NotificationsDialog() {
                   <div>
                     <Label htmlFor="pr-closed">Pull Request Closed</Label>
                     <p className="text-sm text-muted-foreground">
-                      Get notified when a pull request is completed or abandoned
+                      Get notified when a pull request is completed or
+                      abandoned.
                     </p>
                   </div>
                 </div>
@@ -120,7 +121,8 @@ function NotificationsDialog() {
                   <div>
                     <Label htmlFor="thread-added">Thread Added</Label>
                     <p className="text-sm text-muted-foreground">
-                      Get notified when someone starts a new review thread
+                      Get notified when someone starts a new review thread in
+                      one of your pull requests.
                     </p>
                   </div>
                 </div>
@@ -149,7 +151,8 @@ function NotificationsDialog() {
                   <div>
                     <Label htmlFor="thread-updated">Thread Updated</Label>
                     <p className="text-sm text-muted-foreground">
-                      Get notified when someone replies to a review thread
+                      Get notified when someone replies to a review thread you
+                      are part of.
                     </p>
                   </div>
                 </div>

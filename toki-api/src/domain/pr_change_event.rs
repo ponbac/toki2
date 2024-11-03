@@ -26,6 +26,34 @@ impl fmt::Display for PRChangeEvent {
 }
 
 impl PRChangeEvent {
+    pub fn applies_to(&self, email: &str, pr_author: &str) -> bool {
+        match self {
+            PRChangeEvent::PullRequestClosed => true,
+            PRChangeEvent::ThreadAdded(thread) => {
+                thread.author().unique_name != email && pr_author == email
+            }
+            PRChangeEvent::ThreadUpdated(thread) => {
+                let most_recent_author = &thread.most_recent_comment().author;
+
+                // Don't notify if you're the one who just commented
+                if most_recent_author.unique_name == email {
+                    return false;
+                }
+
+                // Notify if you're the PR author
+                if email == pr_author {
+                    return true;
+                }
+
+                // Or if you've participated in this thread before
+                thread
+                    .comments
+                    .iter()
+                    .any(|comment| comment.author.unique_name == email)
+            }
+        }
+    }
+
     pub fn to_web_push_message(
         &self,
         sub: &PushSubscription,
