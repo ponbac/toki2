@@ -1,12 +1,4 @@
-import {
-  Bell,
-  ExternalLink,
-  Check,
-  CheckCircle2,
-  MessageSquare,
-  GitPullRequestClosed,
-  MessageSquarePlus,
-} from "lucide-react";
+import { Bell, ExternalLink, Check, CheckCircle2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Popover,
@@ -26,11 +18,21 @@ import {
 } from "@/lib/api/mutations/notifications";
 import { match } from "ts-pattern";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { NotificationIcon } from "./notification-icon";
+import { Differ, differsQueries } from "@/lib/api/queries/differs";
+import { useMilltimeTimer } from "@/hooks/useMilltimeStore";
+import { useEffect } from "react";
 
 export function NotificationsMenu() {
+  const timer = useMilltimeTimer();
+
   const { data: notifications = [] } = useQuery({
     ...notificationsQueries.notifications({ includeViewed: true }),
-    refetchInterval: 1000 * 30,
+    refetchInterval: 1000 * 30, // 30 seconds
+  });
+  const { data: repositories } = useQuery({
+    ...differsQueries.differs(),
+    staleTime: 1000 * 60 * 30, // 30 minutes
   });
 
   const { mutate: markViewed } =
@@ -38,6 +40,16 @@ export function NotificationsMenu() {
 
   const unviewedCount = notifications.filter((n) => !n.viewedAt).length;
   const hasUnviewedNotifications = unviewedCount > 0;
+
+  // useEffect that prepends the number of unviewed notifications to the document title
+  useEffect(() => {
+    const currentTitle = document.title;
+    if (unviewedCount > 0) {
+      document.title = `(${unviewedCount}) ${currentTitle}`;
+    } else {
+      document.title = currentTitle;
+    }
+  }, [unviewedCount, timer.visible]);
 
   return (
     <Popover>
@@ -56,7 +68,7 @@ export function NotificationsMenu() {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[30rem] p-0" align="start" side="right">
+      <PopoverContent className="w-[36rem] p-0" align="start" side="right">
         <div className="flex items-center justify-between border-b p-3">
           <div className="font-semibold">Notifications</div>
           {hasUnviewedNotifications && (
@@ -77,6 +89,9 @@ export function NotificationsMenu() {
                 <NotificationItem
                   key={notification.id}
                   notification={notification}
+                  repository={repositories?.find(
+                    (r) => r.repoId === notification.repositoryId,
+                  )}
                   onView={() => markViewed(notification.id)}
                 />
               ))}
@@ -88,56 +103,69 @@ export function NotificationsMenu() {
   );
 }
 
-function NotificationItem({
-  notification,
-  onView,
-}: {
+function NotificationItem(props: {
   notification: Notification;
+  repository: Differ | undefined;
   onView: () => void;
 }) {
   return (
     <div
       className={cn(
         "group flex flex-col gap-1 border-b px-4 py-3 transition-colors",
-        notification.viewedAt ? "bg-background opacity-75" : "bg-muted/30",
+        props.notification.viewedAt
+          ? "bg-background opacity-75"
+          : "bg-muted/30",
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
           <div className="mb-0.5 flex items-center gap-2">
-            <NotificationIcon type={notification.notificationType} />
-            <span className="w-[22rem] truncate font-medium">
-              {notification.title}
+            <ColoredNotificationIconWithTooltip
+              type={props.notification.notificationType}
+            />
+            <span className="w-[26rem] truncate font-medium">
+              {props.notification.title}
             </span>
           </div>
           <div className="text-sm text-muted-foreground">
-            {notification.message}
+            {props.notification.message}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {new Date(notification.createdAt).toLocaleString("sv-SE", {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+          <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <div>
+              {new Date(props.notification.createdAt).toLocaleString("sv-SE", {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </div>
+            {!!props.repository && (
+              <div className="flex items-center gap-0.5 font-mono">
+                <span>{props.repository.organization}</span>
+                <span>/</span>
+                <span>{props.repository.project}</span>
+                <span>/</span>
+                <span>{props.repository.repoName}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="mt-1 flex items-center gap-1 self-start">
-          {notification.viewedAt ? (
+          {props.notification.viewedAt ? (
             <CheckCircle2 className="h-4 w-4 text-muted-foreground/50" />
           ) : (
             <button
-              onClick={onView}
+              onClick={props.onView}
               className="rounded-md p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
               title="Mark as read"
             >
               <Check className="h-4 w-4" />
             </button>
           )}
-          {!!notification.link && (
+          {!!props.notification.link && (
             <a
-              href={notification.link}
+              href={props.notification.link}
               className="rounded-md p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
               target="_blank"
               rel="noopener noreferrer"
@@ -152,29 +180,28 @@ function NotificationItem({
   );
 }
 
-function NotificationIcon(props: { type: NotificationType }) {
-  const { icon, content } = match(props.type)
-    .with(NotificationType.ThreadAdded, () => ({
-      icon: <MessageSquarePlus className="h-4 w-4 text-blue-500" />,
-      content: "New thread added",
-    }))
-    .with(NotificationType.ThreadUpdated, () => ({
-      icon: <MessageSquare className="h-4 w-4 text-yellow-500" />,
-      content: "Thread updated",
-    }))
-    .with(NotificationType.PrClosed, () => ({
-      icon: <GitPullRequestClosed className="h-4 w-4 text-red-500" />,
-      content: "Pull request closed",
-    }))
-    .otherwise(() => ({
-      icon: <Bell className="h-4 w-4 text-muted-foreground" />,
-      content: "Notification",
-    }));
+function ColoredNotificationIconWithTooltip(props: { type: NotificationType }) {
+  const iconColorClasses = {
+    [NotificationType.ThreadAdded]: "text-blue-500",
+    [NotificationType.ThreadUpdated]: "text-yellow-500",
+    [NotificationType.PrClosed]: "text-red-500",
+  };
 
   return (
     <Tooltip>
-      <TooltipTrigger className="cursor-default">{icon}</TooltipTrigger>
-      <TooltipContent>{content}</TooltipContent>
+      <TooltipTrigger className="cursor-default">
+        <NotificationIcon
+          type={props.type}
+          className={cn("h-4 w-4", iconColorClasses[props.type])}
+        />
+      </TooltipTrigger>
+      <TooltipContent>
+        {match(props.type)
+          .with(NotificationType.ThreadAdded, () => "New thread added")
+          .with(NotificationType.ThreadUpdated, () => "Thread updated")
+          .with(NotificationType.PrClosed, () => "Pull request closed")
+          .exhaustive()}
+      </TooltipContent>
     </Tooltip>
   );
 }

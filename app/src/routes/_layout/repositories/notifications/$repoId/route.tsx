@@ -16,8 +16,8 @@ import {
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { CheckSquare, MessageSquarePlus, MessagesSquare } from "lucide-react";
 import { userQueries } from "@/lib/api/queries/user";
+import { NotificationIcon } from "@/components/notification-icon";
 
 export const Route = createFileRoute(
   "/_layout/repositories/notifications/$repoId",
@@ -85,7 +85,10 @@ function NotificationsDialog() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex gap-3">
-                  <CheckSquare className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                  <NotificationIcon
+                    type={NotificationType.PrClosed}
+                    className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+                  />
                   <div>
                     <Label htmlFor="pr-closed">Pull Request Closed</Label>
                     <p className="text-sm text-muted-foreground">
@@ -110,7 +113,10 @@ function NotificationsDialog() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex gap-3">
-                  <MessageSquarePlus className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                  <NotificationIcon
+                    type={NotificationType.ThreadAdded}
+                    className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+                  />
                   <div>
                     <Label htmlFor="thread-added">Thread Added</Label>
                     <p className="text-sm text-muted-foreground">
@@ -136,7 +142,10 @@ function NotificationsDialog() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex gap-3">
-                  <MessagesSquare className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                  <NotificationIcon
+                    type={NotificationType.ThreadUpdated}
+                    className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+                  />
                   <div>
                     <Label htmlFor="thread-updated">Thread Updated</Label>
                     <p className="text-sm text-muted-foreground">
