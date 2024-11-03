@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_layout")({
 function LayoutComponent() {
   return (
     <TooltipProvider delayDuration={0}>
-      <MilltimeStoreProvider>
+      {/* <MilltimeStoreProvider> */}
         <SideNavWrapper>
           <Suspense fallback={<FullscreenLoading />}>
             <Outlet />
@@ -35,8 +35,8 @@ function LayoutComponent() {
         </SideNavWrapper>
         <Toaster position="top-right" />
         <CmdK />
-        <MilltimeTimerProvider />
-      </MilltimeStoreProvider>
+        {/* <MilltimeTimerProvider /> */}
+      {/* </MilltimeStoreProvider> */}
     </TooltipProvider>
   );
 }

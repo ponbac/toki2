@@ -66,7 +66,7 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function Nav({
+function Nav({
   links,
   isCollapsed,
 }: {

@@ -40,7 +40,9 @@ pub struct Notification {
     pub title: String,
     pub message: String,
     pub link: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
     pub viewed_at: Option<time::OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
     pub created_at: time::OffsetDateTime,
     pub metadata: serde_json::Value,
 }

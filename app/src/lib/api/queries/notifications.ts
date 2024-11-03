@@ -9,7 +9,7 @@ export const notificationsQueries = {
       queryFn: async () =>
         api
           .get("notifications", {
-            searchParams: { include_viewed: options.includeViewed },
+            searchParams: { includeViewed: options.includeViewed },
           })
           .json<Array<Notification>>(),
     }),
