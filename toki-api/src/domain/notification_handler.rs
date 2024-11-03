@@ -3,7 +3,7 @@ use futures::future;
 use sqlx::PgPool;
 use web_push::{IsahcWebPushClient, WebPushClient};
 
-use crate::domain::{Notification, NotificationType};
+use crate::domain::{DbNotificationType, Notification};
 use crate::repositories::{
     NotificationRepository, NotificationRepositoryImpl, PushSubscriptionRepository,
     PushSubscriptionRepositoryImpl, RepoRepositoryImpl, UserRepository, UserRepositoryImpl,
@@ -111,9 +111,9 @@ impl NotificationHandler {
                 for event in diff.changes.iter() {
                     // Map event to notification type
                     let notification_type = match event {
-                        PRChangeEvent::PullRequestClosed => NotificationType::PrClosed,
-                        PRChangeEvent::ThreadAdded(_) => NotificationType::ThreadAdded,
-                        PRChangeEvent::ThreadUpdated(_) => NotificationType::ThreadUpdated,
+                        PRChangeEvent::PullRequestClosed => DbNotificationType::PrClosed,
+                        PRChangeEvent::ThreadAdded(_) => DbNotificationType::ThreadAdded,
+                        PRChangeEvent::ThreadUpdated(_) => DbNotificationType::ThreadUpdated,
                     };
 
                     // Check if notification is enabled via rules/exceptions
@@ -135,7 +135,7 @@ impl NotificationHandler {
                     }
 
                     // Create notification in database
-                    let push_notif = event
+                    let push_notification = event
                         .to_push_notification(&diff.pr.pull_request_base, &diff.pr.azure_url());
 
                     let notification = Notification {
@@ -144,9 +144,9 @@ impl NotificationHandler {
                         repository_id: repo_id,
                         pull_request_id: pr_id,
                         notification_type,
-                        title: push_notif.title.clone(),
-                        message: push_notif.body.clone(),
-                        link: push_notif.url.clone(),
+                        title: diff.pr.pull_request_base.title.clone(),
+                        message: push_notification.body.clone(),
+                        link: push_notification.url.clone(),
                         viewed_at: None,
                         created_at: time::OffsetDateTime::now_utc(),
                         metadata: serde_json::Value::Null,

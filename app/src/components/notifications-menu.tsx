@@ -1,4 +1,12 @@
-import { Bell, ExternalLink, Check, CheckCircle2 } from "lucide-react";
+import {
+  Bell,
+  ExternalLink,
+  Check,
+  CheckCircle2,
+  MessageSquare,
+  GitPullRequestClosed,
+  MessageSquarePlus,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Popover,
@@ -12,7 +20,12 @@ import {
   Notification,
 } from "@/lib/api/queries/notifications";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { notificationsMutations } from "@/lib/api/mutations/notifications";
+import {
+  notificationsMutations,
+  NotificationType,
+} from "@/lib/api/mutations/notifications";
+import { match } from "ts-pattern";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export function NotificationsMenu() {
   const { data: notifications = [] } = useQuery({
@@ -43,7 +56,7 @@ export function NotificationsMenu() {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align="end" side="bottom">
+      <PopoverContent className="w-[30rem] p-0" align="start" side="right">
         <div className="flex items-center justify-between border-b p-3">
           <div className="font-semibold">Notifications</div>
           {hasUnviewedNotifications && (
@@ -91,7 +104,12 @@ function NotificationItem({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
-          <div className="mb-0.5 font-medium">{notification.title}</div>
+          <div className="mb-0.5 flex items-center gap-2">
+            <NotificationIcon type={notification.notificationType} />
+            <span className="w-[22rem] truncate font-medium">
+              {notification.title}
+            </span>
+          </div>
           <div className="text-sm text-muted-foreground">
             {notification.message}
           </div>
@@ -131,5 +149,32 @@ function NotificationItem({
         </div>
       </div>
     </div>
+  );
+}
+
+function NotificationIcon(props: { type: NotificationType }) {
+  const { icon, content } = match(props.type)
+    .with(NotificationType.ThreadAdded, () => ({
+      icon: <MessageSquarePlus className="h-4 w-4 text-blue-500" />,
+      content: "New thread added",
+    }))
+    .with(NotificationType.ThreadUpdated, () => ({
+      icon: <MessageSquare className="h-4 w-4 text-yellow-500" />,
+      content: "Thread updated",
+    }))
+    .with(NotificationType.PrClosed, () => ({
+      icon: <GitPullRequestClosed className="h-4 w-4 text-red-500" />,
+      content: "Pull request closed",
+    }))
+    .otherwise(() => ({
+      icon: <Bell className="h-4 w-4 text-muted-foreground" />,
+      content: "Notification",
+    }));
+
+  return (
+    <Tooltip>
+      <TooltipTrigger className="cursor-default">{icon}</TooltipTrigger>
+      <TooltipContent>{content}</TooltipContent>
+    </Tooltip>
   );
 }

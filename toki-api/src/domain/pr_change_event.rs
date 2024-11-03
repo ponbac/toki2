@@ -41,20 +41,20 @@ impl PRChangeEvent {
         match self {
             PRChangeEvent::PullRequestClosed => PushNotification::new(
                 format!("{}: Pull Request Closed", pr.title).as_str(),
-                format!("!{} has been closed", pr.id).as_str(),
+                format!("!{} has been closed.", pr.id).as_str(),
                 Some(url),
                 None,
             ),
             PRChangeEvent::ThreadAdded(thread) => PushNotification::new(
                 format!("{}: New Thread", pr.title).as_str(),
-                format!("{} has created a new thread", thread.author().display_name).as_str(),
+                format!("{} has created a new thread.", thread.author().display_name).as_str(),
                 Some(url),
                 None,
             ),
             PRChangeEvent::ThreadUpdated(thread) => PushNotification::new(
                 format!("{}: Thread Updated", pr.title).as_str(),
                 format!(
-                    "{} has replied in a thread you are a part of",
+                    "{} has replied in a thread you are a part of.",
                     thread.most_recent_comment().author.display_name
                 )
                 .as_str(),

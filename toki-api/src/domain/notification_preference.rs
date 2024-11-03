@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
 #[sqlx(type_name = "notification_type", rename_all = "snake_case")]
-pub enum NotificationType {
+pub enum DbNotificationType {
     PrClosed,
     ThreadAdded,
     ThreadUpdated,
@@ -14,7 +14,7 @@ pub struct NotificationRule {
     pub id: i32,
     pub user_id: i32,
     pub repository_id: i32,
-    pub notification_type: NotificationType,
+    pub notification_type: DbNotificationType,
     pub enabled: bool,
 }
 
@@ -25,7 +25,7 @@ pub struct PrNotificationException {
     pub user_id: i32,
     pub repository_id: i32,
     pub pull_request_id: i32,
-    pub notification_type: NotificationType,
+    pub notification_type: DbNotificationType,
     pub enabled: bool,
 }
 
@@ -36,7 +36,7 @@ pub struct Notification {
     pub user_id: i32,
     pub repository_id: i32,
     pub pull_request_id: i32,
-    pub notification_type: NotificationType,
+    pub notification_type: DbNotificationType,
     pub title: String,
     pub message: String,
     pub link: Option<String>,

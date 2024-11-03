@@ -1,4 +1,4 @@
-use crate::domain::NotificationType;
+use crate::domain::DbNotificationType;
 use crate::repositories::NotificationRepository;
 use crate::repositories::PushSubscriptionRepository;
 use axum::{
@@ -258,7 +258,7 @@ struct PrExceptionPath {
 struct RemovePrExceptionPath {
     repository_id: i32,
     pull_request_id: i32,
-    notification_type: NotificationType,
+    notification_type: DbNotificationType,
 }
 
 async fn get_pr_exceptions(

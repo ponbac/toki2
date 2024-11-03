@@ -1,26 +1,40 @@
 use async_trait::async_trait;
 use sqlx::PgPool;
 
-use crate::domain::{Notification, NotificationRule, NotificationType, PrNotificationException};
+use crate::domain::{DbNotificationType, Notification, NotificationRule, PrNotificationException};
 use crate::repositories::repo_error::RepositoryError;
 
 #[async_trait]
 pub trait NotificationRepository {
-    async fn create_notification(&self, notification: &Notification) -> Result<i32, RepositoryError>;
+    async fn create_notification(
+        &self,
+        notification: &Notification,
+    ) -> Result<i32, RepositoryError>;
     async fn get_user_notifications(
         &self,
         user_id: i32,
         include_viewed: bool,
     ) -> Result<Vec<Notification>, RepositoryError>;
-    async fn mark_as_viewed(&self, notification_id: i32, user_id: i32) -> Result<(), RepositoryError>;
-    async fn delete_notification(&self, notification_id: i32, user_id: i32) -> Result<(), RepositoryError>;
+    async fn mark_as_viewed(
+        &self,
+        notification_id: i32,
+        user_id: i32,
+    ) -> Result<(), RepositoryError>;
+    async fn delete_notification(
+        &self,
+        notification_id: i32,
+        user_id: i32,
+    ) -> Result<(), RepositoryError>;
 
     async fn get_repository_rules(
         &self,
         user_id: i32,
         repository_id: i32,
     ) -> Result<Vec<NotificationRule>, RepositoryError>;
-    async fn update_rule(&self, rule: &NotificationRule) -> Result<NotificationRule, RepositoryError>;
+    async fn update_rule(
+        &self,
+        rule: &NotificationRule,
+    ) -> Result<NotificationRule, RepositoryError>;
 
     async fn get_pr_exceptions(
         &self,
@@ -37,7 +51,7 @@ pub trait NotificationRepository {
         user_id: i32,
         repository_id: i32,
         pull_request_id: i32,
-        notification_type: NotificationType,
+        notification_type: DbNotificationType,
     ) -> Result<(), RepositoryError>;
 }
 
@@ -53,7 +67,10 @@ impl NotificationRepositoryImpl {
 
 #[async_trait]
 impl NotificationRepository for NotificationRepositoryImpl {
-    async fn create_notification(&self, notification: &Notification) -> Result<i32, RepositoryError> {
+    async fn create_notification(
+        &self,
+        notification: &Notification,
+    ) -> Result<i32, RepositoryError> {
         Ok(sqlx::query_scalar!(
             r#"
             INSERT INTO notifications (
@@ -66,7 +83,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
             notification.user_id,
             notification.repository_id,
             notification.pull_request_id,
-            notification.notification_type.clone() as NotificationType,
+            notification.notification_type.clone() as DbNotificationType,
             notification.title,
             notification.message,
             notification.link,
@@ -84,7 +101,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
         Ok(sqlx::query_as!(
             Notification,
             r#"SELECT id, user_id, repository_id, pull_request_id,
-                     notification_type as "notification_type: NotificationType",
+                     notification_type as "notification_type: DbNotificationType",
                      title, message, link, viewed_at, created_at, metadata
               FROM notifications
               WHERE user_id = $1
@@ -97,7 +114,11 @@ impl NotificationRepository for NotificationRepositoryImpl {
         .await?)
     }
 
-    async fn mark_as_viewed(&self, notification_id: i32, user_id: i32) -> Result<(), RepositoryError> {
+    async fn mark_as_viewed(
+        &self,
+        notification_id: i32,
+        user_id: i32,
+    ) -> Result<(), RepositoryError> {
         sqlx::query!(
             r#"
             UPDATE notifications
@@ -112,7 +133,11 @@ impl NotificationRepository for NotificationRepositoryImpl {
         Ok(())
     }
 
-    async fn delete_notification(&self, notification_id: i32, user_id: i32) -> Result<(), RepositoryError> {
+    async fn delete_notification(
+        &self,
+        notification_id: i32,
+        user_id: i32,
+    ) -> Result<(), RepositoryError> {
         sqlx::query!(
             r#"
             DELETE FROM notifications
@@ -136,7 +161,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
             r#"
             SELECT 
                 id, user_id, repository_id,
-                notification_type as "notification_type: NotificationType",
+                notification_type as "notification_type: DbNotificationType",
                 enabled
             FROM notification_rules
             WHERE user_id = $1 AND repository_id = $2
@@ -148,7 +173,10 @@ impl NotificationRepository for NotificationRepositoryImpl {
         .await?)
     }
 
-    async fn update_rule(&self, rule: &NotificationRule) -> Result<NotificationRule, RepositoryError> {
+    async fn update_rule(
+        &self,
+        rule: &NotificationRule,
+    ) -> Result<NotificationRule, RepositoryError> {
         Ok(sqlx::query_as!(
             NotificationRule,
             r#"
@@ -160,12 +188,12 @@ impl NotificationRepository for NotificationRepositoryImpl {
             DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = CURRENT_TIMESTAMP
             RETURNING 
                 id, user_id, repository_id,
-                notification_type as "notification_type: NotificationType",
+                notification_type as "notification_type: DbNotificationType",
                 enabled
             "#,
             rule.user_id,
             rule.repository_id,
-            rule.notification_type.clone() as NotificationType,
+            rule.notification_type.clone() as DbNotificationType,
             rule.enabled
         )
         .fetch_one(&self.pool)
@@ -183,7 +211,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
             r#"
             SELECT 
                 id, user_id, repository_id, pull_request_id,
-                notification_type as "notification_type: NotificationType",
+                notification_type as "notification_type: DbNotificationType",
                 enabled
             FROM pr_notification_exceptions
             WHERE user_id = $1 
@@ -213,13 +241,13 @@ impl NotificationRepository for NotificationRepositoryImpl {
             DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = CURRENT_TIMESTAMP
             RETURNING 
                 id, user_id, repository_id, pull_request_id,
-                notification_type as "notification_type: NotificationType",
+                notification_type as "notification_type: DbNotificationType",
                 enabled
             "#,
             exception.user_id,
             exception.repository_id,
             exception.pull_request_id,
-            exception.notification_type.clone() as NotificationType,
+            exception.notification_type.clone() as DbNotificationType,
             exception.enabled
         )
         .fetch_one(&self.pool)
@@ -231,7 +259,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
         user_id: i32,
         repository_id: i32,
         pull_request_id: i32,
-        notification_type: NotificationType,
+        notification_type: DbNotificationType,
     ) -> Result<(), RepositoryError> {
         sqlx::query!(
             r#"
@@ -244,7 +272,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
             user_id,
             repository_id,
             pull_request_id,
-            notification_type as NotificationType
+            notification_type as DbNotificationType
         )
         .execute(&self.pool)
         .await?;
