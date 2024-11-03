@@ -16,12 +16,15 @@ import { notificationsQueries } from "@/lib/api/queries/notifications";
 import { notificationsMutations } from "@/lib/api/mutations/notifications";
 import { differsQueries } from "@/lib/api/queries/differs";
 import { cn } from "@/lib/utils";
+import * as React from "react";
 
 export function PRNotificationSettings({
   pullRequest,
 }: {
   pullRequest: ListPullRequest;
 }) {
+  const [open, setOpen] = React.useState(false);
+
   const { data: currentRepositoryId } = useQuery({
     ...differsQueries.differs(),
     staleTime: 1000 * 60 * 30, // 30 minutes
@@ -42,7 +45,8 @@ export function PRNotificationSettings({
     enabled: !!currentRepositoryId,
   });
 
-  const { mutate: setPrException } = notificationsMutations.useSetPrException();
+  const { mutate: setPrException, isPending: isSettingException } =
+    notificationsMutations.useSetPrException();
 
   const handleToggle = (type: NotificationType, checked: boolean) => {
     setPrException({
@@ -69,22 +73,30 @@ export function PRNotificationSettings({
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="icon" disabled={!currentRepositoryId}>
           <Bell className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent
+        align="end"
+        className="w-56"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <DropdownMenuLabel>Notify me when</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuCheckboxItem
           key={NotificationType.PrClosed}
           checked={isEnabled(NotificationType.PrClosed)}
-          onCheckedChange={(checked) =>
-            handleToggle(NotificationType.PrClosed, checked)
-          }
+          onSelect={(e) => {
+            e.preventDefault();
+          }}
+          onCheckedChange={(checked) => {
+            handleToggle(NotificationType.PrClosed, checked);
+          }}
           className={cn(isEnabled(NotificationType.PrClosed) && "bg-primary")}
+          disabled={isSettingException}
         >
           <span className="">Pull Request is closed</span>
           <NotificationIcon
