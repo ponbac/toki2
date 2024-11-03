@@ -70,7 +70,7 @@ export function NotificationsMenu() {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[36rem] p-0" align="start" side="right">
+      <PopoverContent className="w-[32rem] p-0" align="start" side="right">
         <div className="flex items-center justify-between border-b p-3">
           <div className="font-semibold">Notifications</div>
           {hasUnviewedNotifications && (
@@ -125,35 +125,15 @@ function NotificationItem(props: {
             <ColoredNotificationIconWithTooltip
               type={props.notification.notificationType}
             />
-            <span className="w-[26rem] truncate font-medium">
+            <span className="truncate font-medium">
               {props.notification.title}
             </span>
           </div>
           <div className="text-sm text-muted-foreground">
             {props.notification.message}
           </div>
-          <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <div>
-              {new Date(props.notification.createdAt).toLocaleString("sv-SE", {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </div>
-            {!!props.repository && (
-              <div className="flex items-center gap-0.5 font-mono">
-                <span>{props.repository.organization}</span>
-                <span>/</span>
-                <span>{props.repository.project}</span>
-                <span>/</span>
-                <span>{props.repository.repoName}</span>
-              </div>
-            )}
-          </div>
         </div>
-        <div className="mt-1 flex items-center gap-1 self-start">
+        <div className="flex items-center gap-1 self-start">
           {props.notification.viewedAt ? (
             <CheckCircle2 className="h-4 w-4 text-muted-foreground/50" />
           ) : (
@@ -177,6 +157,26 @@ function NotificationItem(props: {
             </a>
           )}
         </div>
+      </div>
+      <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+        <div>
+          {new Date(props.notification.createdAt).toLocaleString("sv-SE", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </div>
+        {!!props.repository && (
+          <div className="flex items-center gap-0.5 font-mono">
+            <span>{props.repository.organization}</span>
+            <span>/</span>
+            <span>{props.repository.project}</span>
+            <span>/</span>
+            <span>{props.repository.repoName}</span>
+          </div>
+        )}
       </div>
     </div>
   );
