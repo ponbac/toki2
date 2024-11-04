@@ -126,8 +126,7 @@ function NotificationItem(props: {
               type={props.notification.notificationType}
             />
             <span className="truncate font-medium">
-              {props.notification.title +
-                "asdbksadjbsdjksadjbjskabdkjsadbjsadkjkasjdbjsadkbjskbj"}
+              {props.notification.title}
             </span>
           </div>
           <div className="text-sm text-muted-foreground">
