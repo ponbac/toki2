@@ -120,13 +120,14 @@ function NotificationItem(props: {
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="flex-1">
+        <div className="max-w-[26rem] flex-1">
           <div className="mb-0.5 flex items-center gap-2">
             <ColoredNotificationIconWithTooltip
               type={props.notification.notificationType}
             />
             <span className="truncate font-medium">
-              {props.notification.title}
+              {props.notification.title +
+                "asdbksadjbsdjksadjbjskabdkjsadbjsadkjkasjdbjsadkbjskbj"}
             </span>
           </div>
           <div className="text-sm text-muted-foreground">
