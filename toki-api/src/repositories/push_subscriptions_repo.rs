@@ -6,6 +6,10 @@ use super::repo_error::RepositoryError;
 
 pub trait PushSubscriptionRepository {
     async fn get_push_subscriptions(&self) -> Result<Vec<PushSubscription>, RepositoryError>;
+    async fn get_user_push_subscriptions(
+        &self,
+        user_id: i32,
+    ) -> Result<Vec<PushSubscription>, RepositoryError>;
     async fn upsert_push_subscription(
         &self,
         push_subscription: NewPushSubscription,
@@ -30,6 +34,25 @@ impl PushSubscriptionRepository for PushSubscriptionRepositoryImpl {
             SELECT id, user_id, device, endpoint, auth, p256dh, created_at
             FROM push_subscriptions
             "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(push_subscriptions)
+    }
+
+    async fn get_user_push_subscriptions(
+        &self,
+        user_id: i32,
+    ) -> Result<Vec<PushSubscription>, RepositoryError> {
+        let push_subscriptions = sqlx::query_as!(
+            PushSubscription,
+            r#"
+            SELECT id, user_id, device, endpoint, auth, p256dh, created_at
+            FROM push_subscriptions
+            WHERE user_id = $1
+            "#,
+            user_id
         )
         .fetch_all(&self.pool)
         .await?;

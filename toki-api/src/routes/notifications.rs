@@ -1,6 +1,7 @@
 use crate::domain::DbNotificationType;
 use crate::repositories::NotificationRepository;
 use crate::repositories::PushSubscriptionRepository;
+use axum::http::HeaderMap;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -20,6 +21,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/subscribe", post(subscribe))
+        .route("/is-subscribed", get(is_subscribed))
         .route("/test-push", post(test_push))
         .route("/", get(get_notifications))
         .route("/:id/view", post(mark_notification_viewed))
@@ -43,6 +45,7 @@ pub fn router() -> Router<AppState> {
 #[instrument(name = "subscribe", skip(auth_session, app_state))]
 async fn subscribe(
     auth_session: AuthSession,
+    headers: HeaderMap,
     State(app_state): State<AppState>,
     Json(body): Json<web_push::SubscriptionInfo>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -51,7 +54,11 @@ async fn subscribe(
 
     let new_push_subscription = NewPushSubscription {
         user_id,
-        device: "NOT IMPLEMENTED".to_string(),
+        device: headers
+            .get("User-Agent")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("unknown")
+            .to_string(),
         endpoint: body.endpoint,
         auth: body.keys.auth,
         p256dh: body.keys.p256dh,
@@ -69,6 +76,35 @@ async fn subscribe(
         })?;
 
     Ok(StatusCode::OK)
+}
+
+#[instrument(name = "is_subscribed", skip(app_state))]
+async fn is_subscribed(
+    AuthSession { user, .. }: AuthSession,
+    headers: HeaderMap,
+    State(app_state): State<AppState>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    let user = user.expect("user not found");
+    let push_subscription_repo = app_state.push_subscriptions_repo.clone();
+
+    let is_subscribed = push_subscription_repo
+        .get_user_push_subscriptions(user.id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get user push subscriptions: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get user push subscriptions".to_string(),
+            )
+        })?;
+
+    let user_agent = headers
+        .get("User-Agent")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+    let is_subscribed_with_user_agent = is_subscribed.iter().any(|sub| sub.device == user_agent);
+
+    Ok(Json(is_subscribed_with_user_agent))
 }
 
 #[instrument(name = "test_push", skip(app_state))]

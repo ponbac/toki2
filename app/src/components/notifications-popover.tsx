@@ -22,6 +22,20 @@ import { NotificationIcon } from "./notification-icon";
 import { Differ, differsQueries } from "@/lib/api/queries/differs";
 import { useEffect } from "react";
 import { useTitleStore } from "@/hooks/useTitleStore";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { Settings2, BellOff, BellRing } from "lucide-react";
+import {
+  hasPushPermission,
+  requestNotificationPermission,
+  subscribeUser,
+} from "@/lib/notifications/web_push";
+import { useState } from "react";
 
 export function NotificationsPopover() {
   const { addSegment, removeSegment } = useTitleStore();
@@ -73,11 +87,14 @@ export function NotificationsPopover() {
       <PopoverContent className="w-[32rem] p-0" align="start" side="right">
         <div className="flex items-center justify-between border-b p-3">
           <div className="font-semibold">Notifications</div>
-          {hasUnviewedNotifications && (
-            <div className="text-xs text-muted-foreground">
-              {unviewedCount} unread
-            </div>
-          )}
+          <div className="flex flex-row items-center gap-1">
+            {hasUnviewedNotifications && (
+              <div className="text-xs text-muted-foreground">
+                {unviewedCount} unread
+              </div>
+            )}
+            <NotificationSettingsDropdown />
+          </div>
         </div>
         <ScrollArea className="h-[400px]">
           {notifications.length === 0 ? (
@@ -102,6 +119,69 @@ export function NotificationsPopover() {
         </ScrollArea>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function NotificationSettingsDropdown() {
+  const [pushEnabled, setPushEnabled] = useState(false);
+
+  const { data: isSubscribed } = useQuery(notificationsQueries.isSubscribed());
+
+  useEffect(() => {
+    const permission = hasPushPermission();
+
+    if (permission && !isSubscribed) {
+      subscribeUser();
+      setPushEnabled(false);
+    } else if (permission && isSubscribed) {
+      setPushEnabled(true);
+    }
+  }, [isSubscribed]);
+
+  const handlePushPermission = () => {
+    requestNotificationPermission({
+      onGranted: () => {
+        setPushEnabled(true);
+        subscribeUser();
+      },
+      onDenied: () => setPushEnabled(false),
+      onNotSupported: () => setPushEnabled(false),
+    });
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="rounded-md p-1 opacity-50 transition-opacity hover:bg-muted hover:opacity-100"
+          title="Notification settings"
+        >
+          <Settings2 className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[220px]">
+        <div className="px-2 py-1.5 text-sm font-semibold">
+          Notification Settings
+        </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={handlePushPermission}
+          className="gap-2"
+          disabled={pushEnabled}
+        >
+          {pushEnabled ? (
+            <BellRing className="h-4 w-4" />
+          ) : (
+            <BellOff className="h-4 w-4" />
+          )}
+          <span className="text-xs">
+            {pushEnabled
+              ? "Push notifications enabled"
+              : "Enable push notifications"}
+          </span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

@@ -13,7 +13,6 @@ export const notificationsQueries = {
           })
           .json<Array<Notification>>(),
     }),
-
   preferences: (repositoryId: number) =>
     queryOptions({
       queryKey: ["notifications", "preferences", repositoryId],
@@ -22,7 +21,6 @@ export const notificationsQueries = {
           .get(`notifications/preferences/${repositoryId}`)
           .json<Array<NotificationRule>>(),
     }),
-
   prExceptions: (repositoryId: number, pullRequestId: number) =>
     queryOptions({
       queryKey: ["notifications", "exceptions", repositoryId, pullRequestId],
@@ -32,6 +30,12 @@ export const notificationsQueries = {
             `notifications/repositories/${repositoryId}/pull-requests/${pullRequestId}/exceptions`,
           )
           .json<Array<PrNotificationException>>(),
+    }),
+  isSubscribed: () =>
+    queryOptions({
+      queryKey: ["notifications", "is-subscribed"],
+      queryFn: async () =>
+        api.get("notifications/is-subscribed").json<boolean>(),
     }),
 };
 
