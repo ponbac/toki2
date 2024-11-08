@@ -228,6 +228,9 @@ function useEditProjectRegistration(
       queryClient.invalidateQueries({
         queryKey: milltimeQueries.timeEntries().queryKey.slice(0, 2),
       });
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timeInfo().queryKey.slice(0, 2),
+      });
       options?.onSuccess?.(data, v, c);
     },
   });

@@ -51,7 +51,3 @@ url = "2.5.0"
 aes-gcm = "0.10.3"
 base64 = "0.22.1"
 strum_macros = "0.26.4"
-
-[profile.dev]
-debug = 0
-strip = "debuginfo"

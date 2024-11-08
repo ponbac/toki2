@@ -127,8 +127,7 @@ export function TimeEntriesList(props: {
               <motion.div key={entry.registrationId} layout>
                 <Card>
                   <AnimatePresence mode="wait">
-                    {editingEntryId === entry.registrationId &&
-                    !isMergedTimeEntry(entry) ? (
+                    {editingEntryId === entry.registrationId ? (
                       <motion.div
                         key="edit"
                         initial={{ opacity: 0 }}
@@ -137,7 +136,15 @@ export function TimeEntriesList(props: {
                         transition={{ duration: 0.15 }}
                       >
                         <EditEntryCard
-                          entry={entry}
+                          entry={
+                            isMergedTimeEntry(entry)
+                              ? {
+                                  ...entry,
+                                  startTime: entry.timePeriods[0].startTime,
+                                  endTime: entry.timePeriods[0].endTime,
+                                }
+                              : entry
+                          }
                           isUpdatingTimeEntry={isUpdatingTimeEntry}
                           onSave={(updatedEntry) => {
                             updateTimeEntry({
@@ -198,24 +205,37 @@ function ViewEntryCard(props: {
           </CardDescription>
         </CardHeader>
         {isMergedTimeEntry(props.entry) ? (
-          <div className="flex max-h-28 flex-col overflow-hidden pr-4 [&:has(>:nth-child(2))]:mt-2">
-            {props.entry.timePeriods
-              .filter((period) => period.startTime && period.endTime)
-              .map((period, index) => (
-                <p
-                  key={index}
-                  className="text-sm text-muted-foreground only:text-base"
-                >
-                  {period.startTime &&
-                    format(new Date(period.startTime), "HH:mm")}
-                  {" - "}
-                  {period.endTime && format(new Date(period.endTime), "HH:mm")}
-                </p>
-              ))
-              .reverse()}
-          </div>
+          <>
+            {props.entry.timePeriods.length === 1 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={props.onEdit}
+                className="ml-auto size-8"
+              >
+                <PencilIcon className="size-4" />
+              </Button>
+            )}
+            <div className="flex max-h-28 flex-col overflow-hidden pr-4 [&:has(>:nth-child(2))]:mt-2">
+              {props.entry.timePeriods
+                .filter((period) => period.startTime && period.endTime)
+                .map((period, index) => (
+                  <p
+                    key={index}
+                    className="text-sm text-muted-foreground only:text-base"
+                  >
+                    {period.startTime &&
+                      format(new Date(period.startTime), "HH:mm")}
+                    {" - "}
+                    {period.endTime &&
+                      format(new Date(period.endTime), "HH:mm")}
+                  </p>
+                ))
+                .reverse()}
+            </div>
+          </>
         ) : (
-          <div className="mr-4 mt-4 flex flex-col items-end">
+          <div className="mr-4 mt-4 flex flex-row items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
