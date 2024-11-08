@@ -1,4 +1,4 @@
-import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import { api } from "@/lib/api/api";
 import { create } from "zustand";
 
 type Timer = {
@@ -61,25 +61,23 @@ export const useMilltimeStore = create<MilltimeStore>()((set) => ({
       onSuccess?: () => void,
     ) => {
       set({ isAuthenticating: true });
-      milltimeMutations.useAuthenticate().mutate(
-        {
-          username: credentials.username,
-          password: credentials.password,
-        },
-        {
-          onSuccess: () => {
+      api
+        .post("milltime/authenticate", {
+          json: credentials,
+        })
+        .then((res) => {
+          if (res.ok) {
             set({ isAuthenticated: true });
             onSuccess?.();
-          },
-          onError: () => {
-            set({ isAuthenticated: false });
-            clearMilltimeCookies();
-          },
-          onSettled: () => {
-            set({ isAuthenticating: false });
-          },
-        },
-      );
+          }
+        })
+        .catch(() => {
+          set({ isAuthenticated: false });
+          clearMilltimeCookies();
+        })
+        .finally(() => {
+          set({ isAuthenticating: false });
+        });
     },
 
     reset: () => {

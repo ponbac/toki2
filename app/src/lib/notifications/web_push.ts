@@ -23,6 +23,14 @@ export function subscribeUser() {
   }
 }
 
+export function hasPushPermission() {
+  return (
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    Notification.permission === "granted"
+  );
+}
+
 export function requestNotificationPermission(options?: {
   onGranted?: () => void;
   onDenied?: () => void;

@@ -60,11 +60,10 @@ impl PullRequest {
             .filter(|t| {
                 let old_thread = self.threads.iter().find(|ot| ot.id == t.id);
 
-                let status_changed = old_thread.map_or(false, |ot| ot.status != t.status);
-                let has_new_comment =
-                    old_thread.map_or(false, |ot| t.comments.len() > ot.comments.len());
+                // let status_changed = old_thread.map_or(false, |ot| ot.status != t.status);
 
-                status_changed || has_new_comment
+                // New comments in the thread
+                old_thread.map_or(false, |ot| t.comments.len() > ot.comments.len())
             })
             .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
 
