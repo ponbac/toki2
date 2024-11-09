@@ -279,14 +279,17 @@ function NotificationSettingsDropdown() {
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="right">
-                    <p>
-                      Subscribed at{" "}
-                      <span className="font-semibold">
-                        {dayjs(subscription.createdAt).format(
-                          "YYYY-MM-DD HH:mm",
-                        )}
-                      </span>
-                    </p>
+                    <div className="flex flex-col gap-1">
+                      <p className="font-mono text-xs">{subscription.device}</p>
+                      <p>
+                        Subscribed at{" "}
+                        <span className="font-semibold">
+                          {dayjs(subscription.createdAt).format(
+                            "YYYY-MM-DD HH:mm",
+                          )}
+                        </span>
+                      </p>
+                    </div>
                   </TooltipContent>
                 </Tooltip>
               </DropdownMenuItem>
