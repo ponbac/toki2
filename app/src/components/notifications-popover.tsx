@@ -35,6 +35,7 @@ import {
   requestNotificationPermission,
 } from "@/lib/notifications/web_push";
 import { useState } from "react";
+import { toast } from "sonner";
 
 export function NotificationsPopover() {
   const { addSegment, removeSegment } = useTitleStore();
@@ -126,8 +127,13 @@ function NotificationSettingsDropdown() {
     useState<NotificationPermission>(hasPushPermission());
 
   const { data: isSubscribed } = useQuery(notificationsQueries.isSubscribed());
-  const { mutate: subscribeToPush } =
-    notificationsMutations.useSubscribeToPush();
+  const { mutate: subscribeToPush } = notificationsMutations.useSubscribeToPush(
+    {
+      onSuccess: () => {
+        toast.success("Toki push notifications enabled for this device.");
+      },
+    },
+  );
 
   useEffect(() => {
     setBrowserPermission(hasPushPermission());
