@@ -1,26 +1,26 @@
 import { api } from "../api/api";
 
-export function subscribeUser() {
+export async function subscribeUser() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.ready.then((registration) => {
+    try {
+      const registration = await navigator.serviceWorker.ready;
       const publicVapidKey =
         "BBxWgyzTUn1tmVdmImHR67ZWFUuvqY_l8UErBpkHRcaakYqV4TjUM1_el0P0M3rQYN-gzO2tsykLuOLMFXG8y50";
 
-      registration.pushManager
-        .subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToPaddedUint8Array(publicVapidKey),
-        })
-        .then((subscription) => {
-          console.log("User is subscribed:", subscription);
-          // Send subscription object to the server
-          sendSubscriptionToServer(subscription);
-        })
-        .catch((err) => {
-          console.log("Failed to subscribe the user: ", err);
-        });
-    });
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToPaddedUint8Array(publicVapidKey),
+      });
+
+      console.log("User is subscribed:", subscription);
+      await sendSubscriptionToServer(subscription);
+    } catch (err) {
+      console.log("Failed to subscribe the user: ", err);
+      throw err;
+    }
   }
+
+  return "OK" as const;
 }
 
 export function hasPushPermission() {
@@ -31,13 +31,14 @@ export function hasPushPermission() {
   );
 }
 
-export function requestNotificationPermission(options?: {
+export async function requestNotificationPermission(options?: {
   onGranted?: () => void;
   onDenied?: () => void;
   onNotSupported?: () => void;
 }) {
   if ("Notification" in window) {
-    Notification.requestPermission().then((permission) => {
+    try {
+      const permission = await Notification.requestPermission();
       if (permission === "granted") {
         console.log("Notification permission granted.");
         options?.onGranted?.();
@@ -45,29 +46,33 @@ export function requestNotificationPermission(options?: {
         console.warn("Unable to get permission to notify.");
         options?.onDenied?.();
       }
-    });
+    } catch (err) {
+      console.error("Error requesting notification permission:", err);
+      options?.onDenied?.();
+      throw err;
+    }
   } else {
     console.warn("This browser does not support notifications.");
     options?.onNotSupported?.();
   }
 }
 
-function sendSubscriptionToServer(subscription: PushSubscription) {
-  api
-    .post("notifications/subscribe", {
+async function sendSubscriptionToServer(subscription: PushSubscription) {
+  try {
+    const response = await api.post("notifications/subscribe", {
       json: subscription,
-    })
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error("Bad status code from server.");
-      }
-    })
-    .then((responseData) => {
-      console.log("Subscription sent to server:", responseData);
-    })
-    .catch((err) => {
-      console.log("Error sending subscription to server:", err);
     });
+
+    if (!response.ok) {
+      throw new Error("Bad status code from server.");
+    }
+
+    console.log("Subscription sent to server successfully");
+    return response;
+  } catch (err) {
+    console.error("Error sending subscription to server:", err);
+    throw err;
+  }
 }
 
 function urlBase64ToPaddedUint8Array(base64String: string) {

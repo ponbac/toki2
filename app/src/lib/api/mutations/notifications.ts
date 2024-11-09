@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { notificationsQueries } from "../queries/notifications";
+import { subscribeUser } from "@/lib/notifications/web_push";
 
 export enum NotificationType {
   PrClosed = "PrClosed",
@@ -156,23 +157,10 @@ function useRemovePrException(
   });
 }
 
-type PushSubscription = {
-  endpoint: string;
-  keys: {
-    auth: string;
-    p256dh: string;
-  };
-};
-
-function useSubscribeToPush(
-  options?: DefaultMutationOptions<PushSubscription>,
-) {
+function useSubscribeToPush(options?: DefaultMutationOptions<void, "OK">) {
   return useMutation({
     mutationKey: ["notifications", "subscribe"],
-    mutationFn: (subscription: PushSubscription) =>
-      api.post("subscribe", {
-        json: subscription,
-      }),
+    mutationFn: subscribeUser,
     ...options,
   });
 }

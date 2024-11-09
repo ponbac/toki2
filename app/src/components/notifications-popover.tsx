@@ -33,7 +33,6 @@ import { Settings2, BellOff, BellRing } from "lucide-react";
 import {
   hasPushPermission,
   requestNotificationPermission,
-  subscribeUser,
 } from "@/lib/notifications/web_push";
 import { useState } from "react";
 
@@ -126,23 +125,31 @@ function NotificationSettingsDropdown() {
   const [pushEnabled, setPushEnabled] = useState(false);
 
   const { data: isSubscribed } = useQuery(notificationsQueries.isSubscribed());
+  const { mutate: subscribeToPush } = notificationsMutations.useSubscribeToPush(
+    {
+      onSuccess: () => {
+        setPushEnabled(true);
+      },
+      onError: () => {
+        setPushEnabled(false);
+      },
+    },
+  );
 
   useEffect(() => {
     const permission = hasPushPermission();
 
     if (permission && !isSubscribed) {
-      subscribeUser();
-      setPushEnabled(false);
+      subscribeToPush();
     } else if (permission && isSubscribed) {
       setPushEnabled(true);
     }
-  }, [isSubscribed]);
+  }, [isSubscribed, subscribeToPush]);
 
   const handlePushPermission = () => {
     requestNotificationPermission({
       onGranted: () => {
-        setPushEnabled(true);
-        subscribeUser();
+        subscribeToPush();
       },
       onDenied: () => setPushEnabled(false),
       onNotSupported: () => setPushEnabled(false),
