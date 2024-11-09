@@ -132,6 +132,11 @@ function NotificationSettingsDropdown() {
       onSuccess: () => {
         toast.success("Toki push notifications enabled for this device.");
       },
+      onError: () => {
+        toast.error(
+          "Failed to enable Toki push notifications for this device.",
+        );
+      },
     },
   );
 
