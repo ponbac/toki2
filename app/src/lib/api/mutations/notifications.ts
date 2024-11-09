@@ -57,6 +57,7 @@ type PreferencePayload = {
     repositoryId: number;
     notificationType: NotificationType;
     enabled: boolean;
+    pushEnabled: boolean;
   };
 };
 

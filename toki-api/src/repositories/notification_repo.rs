@@ -162,7 +162,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
             SELECT 
                 id, user_id, repository_id,
                 notification_type as "notification_type: DbNotificationType",
-                enabled
+                enabled, push_enabled
             FROM notification_rules
             WHERE user_id = $1 AND repository_id = $2
             "#,
@@ -181,20 +181,24 @@ impl NotificationRepository for NotificationRepositoryImpl {
             NotificationRule,
             r#"
             INSERT INTO notification_rules (
-                user_id, repository_id, notification_type, enabled
+                user_id, repository_id, notification_type, enabled, push_enabled
             )
-            VALUES ($1, $2, $3, $4)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (user_id, repository_id, notification_type)
-            DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = CURRENT_TIMESTAMP
+            DO UPDATE SET 
+                enabled = EXCLUDED.enabled, 
+                push_enabled = EXCLUDED.push_enabled,
+                updated_at = CURRENT_TIMESTAMP
             RETURNING 
                 id, user_id, repository_id,
                 notification_type as "notification_type: DbNotificationType",
-                enabled
+                enabled, push_enabled
             "#,
             rule.user_id,
             rule.repository_id,
             rule.notification_type.clone() as DbNotificationType,
-            rule.enabled
+            rule.enabled,
+            rule.push_enabled
         )
         .fetch_one(&self.pool)
         .await?)

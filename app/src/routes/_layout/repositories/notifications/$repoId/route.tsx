@@ -54,6 +54,7 @@ function NotificationsDialog() {
         repositoryId: Number(repoId),
         notificationType: type,
         enabled,
+        pushEnabled: false,
       },
     });
   }

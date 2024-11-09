@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT \n                id, user_id, repository_id,\n                notification_type as \"notification_type: DbNotificationType\",\n                enabled\n            FROM notification_rules\n            WHERE user_id = $1 AND repository_id = $2\n            ",
+  "query": "\n            SELECT \n                id, user_id, repository_id,\n                notification_type as \"notification_type: DbNotificationType\",\n                enabled, push_enabled\n            FROM notification_rules\n            WHERE user_id = $1 AND repository_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,11 @@
         "ordinal": 4,
         "name": "enabled",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "push_enabled",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -51,8 +56,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "7466b0f3a871b144753dd56c18239fabc1fdd2ce5d41c537c0df3e90cf95b406"
+  "hash": "4de6a2d102d5f32a9ea18c688bf0369f6817685d7f045fc87c18e363775e0b67"
 }
