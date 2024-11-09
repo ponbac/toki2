@@ -8,7 +8,17 @@ pub struct PushSubscription {
     pub endpoint: String,
     pub auth: String,
     pub p256dh: String,
-    pub created_at: Option<time::PrimitiveDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: time::OffsetDateTime,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PushSubscriptionInfo {
+    pub id: i32,
+    pub device: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: time::OffsetDateTime,
 }
 
 impl PushSubscription {
@@ -19,6 +29,16 @@ impl PushSubscription {
                 auth: self.auth.clone(),
                 p256dh: self.p256dh.clone(),
             },
+        }
+    }
+}
+
+impl From<PushSubscription> for PushSubscriptionInfo {
+    fn from(subscription: PushSubscription) -> Self {
+        PushSubscriptionInfo {
+            id: subscription.id,
+            device: subscription.device,
+            created_at: subscription.created_at,
         }
     }
 }

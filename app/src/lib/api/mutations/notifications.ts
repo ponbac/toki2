@@ -17,6 +17,7 @@ export const notificationsMutations = {
   useSetPrException,
   useRemovePrException,
   useSubscribeToPush,
+  useDeletePushSubscription,
 };
 
 function useMarkNotificationViewed(options?: DefaultMutationOptions<number>) {
@@ -167,7 +168,24 @@ function useSubscribeToPush(options?: DefaultMutationOptions<void, "OK">) {
     ...options,
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries({
-        queryKey: notificationsQueries.isSubscribed().queryKey,
+        queryKey: notificationsQueries.pushSubscriptions().queryKey,
+      });
+      options?.onSuccess?.(data, vars, ctx);
+    },
+  });
+}
+
+function useDeletePushSubscription(options?: DefaultMutationOptions<number>) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["notifications", "push-subscriptions", "delete"],
+    mutationFn: (id: number) =>
+      api.delete(`notifications/push-subscriptions/${id}`),
+    ...options,
+    onSuccess: (data, vars, ctx) => {
+      queryClient.invalidateQueries({
+        queryKey: notificationsQueries.pushSubscriptions().queryKey,
       });
       options?.onSuccess?.(data, vars, ctx);
     },

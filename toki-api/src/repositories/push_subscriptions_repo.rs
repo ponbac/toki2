@@ -8,12 +8,13 @@ pub trait PushSubscriptionRepository {
     async fn get_push_subscriptions(&self) -> Result<Vec<PushSubscription>, RepositoryError>;
     async fn get_user_push_subscriptions(
         &self,
-        user_id: i32,
+        user_id: &i32,
     ) -> Result<Vec<PushSubscription>, RepositoryError>;
     async fn upsert_push_subscription(
         &self,
         push_subscription: NewPushSubscription,
     ) -> Result<(), RepositoryError>;
+    async fn delete_push_subscription(&self, id: &i32) -> Result<(), RepositoryError>;
 }
 
 pub struct PushSubscriptionRepositoryImpl {
@@ -43,7 +44,7 @@ impl PushSubscriptionRepository for PushSubscriptionRepositoryImpl {
 
     async fn get_user_push_subscriptions(
         &self,
-        user_id: i32,
+        user_id: &i32,
     ) -> Result<Vec<PushSubscription>, RepositoryError> {
         let push_subscriptions = sqlx::query_as!(
             PushSubscription,
@@ -81,6 +82,14 @@ impl PushSubscriptionRepository for PushSubscriptionRepositoryImpl {
         )
         .execute(&self.pool)
         .await?;
+
+        Ok(())
+    }
+
+    async fn delete_push_subscription(&self, id: &i32) -> Result<(), RepositoryError> {
+        sqlx::query!(r#"DELETE FROM push_subscriptions WHERE id = $1"#, id)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }

@@ -33,9 +33,17 @@ export const notificationsQueries = {
     }),
   isSubscribed: () =>
     queryOptions({
-      queryKey: ["notifications", "is-subscribed"],
+      queryKey: ["notifications", "push-subscriptions", "is-subscribed"],
       queryFn: async () =>
         api.get("notifications/is-subscribed").json<boolean>(),
+    }),
+  pushSubscriptions: () =>
+    queryOptions({
+      queryKey: ["notifications", "push-subscriptions"],
+      queryFn: async () =>
+        api
+          .get("notifications/push-subscriptions")
+          .json<Array<PushSubscriptionInfo>>(),
     }),
 };
 
@@ -69,4 +77,10 @@ export type PrNotificationException = {
   pullRequestId: number;
   notificationType: NotificationType;
   enabled: boolean;
+};
+
+export type PushSubscriptionInfo = {
+  id: number;
+  device: string;
+  createdAt: string;
 };

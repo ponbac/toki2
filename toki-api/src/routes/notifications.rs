@@ -1,7 +1,9 @@
 use crate::domain::DbNotificationType;
+use crate::domain::PushSubscription;
+use crate::domain::PushSubscriptionInfo;
 use crate::repositories::NotificationRepository;
 use crate::repositories::PushSubscriptionRepository;
-use axum::http::HeaderMap;
+use crate::utils::client_hints::ClientHints;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -22,6 +24,8 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/subscribe", post(subscribe))
         .route("/is-subscribed", get(is_subscribed))
+        .route("/push-subscriptions", get(get_push_subscriptions))
+        .route("/push-subscriptions/:id", delete(delete_push_subscription))
         .route("/test-push", post(test_push))
         .route("/", get(get_notifications))
         .route("/:id/view", post(mark_notification_viewed))
@@ -45,7 +49,7 @@ pub fn router() -> Router<AppState> {
 #[instrument(name = "subscribe", skip(auth_session, app_state))]
 async fn subscribe(
     auth_session: AuthSession,
-    headers: HeaderMap,
+    client_hints: ClientHints,
     State(app_state): State<AppState>,
     Json(body): Json<web_push::SubscriptionInfo>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -54,11 +58,7 @@ async fn subscribe(
 
     let new_push_subscription = NewPushSubscription {
         user_id,
-        device: headers
-            .get("User-Agent")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or("unknown")
-            .to_string(),
+        device: client_hints.identifier(),
         endpoint: body.endpoint,
         auth: body.keys.auth,
         p256dh: body.keys.p256dh,
@@ -78,17 +78,17 @@ async fn subscribe(
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "is_subscribed", skip(app_state))]
+#[instrument(name = "is_subscribed", skip(app_state, user))]
 async fn is_subscribed(
     AuthSession { user, .. }: AuthSession,
-    headers: HeaderMap,
+    client_hints: ClientHints,
     State(app_state): State<AppState>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
     let user = user.expect("user not found");
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let is_subscribed = push_subscription_repo
-        .get_user_push_subscriptions(user.id)
+        .get_user_push_subscriptions(&user.id)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get user push subscriptions: {:?}", e);
@@ -98,13 +98,79 @@ async fn is_subscribed(
             )
         })?;
 
-    let user_agent = headers
-        .get("User-Agent")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("unknown");
-    let is_subscribed_with_user_agent = is_subscribed.iter().any(|sub| sub.device == user_agent);
+    let is_subscribed_with_client_hints = is_subscribed
+        .iter()
+        .any(|sub| sub.device == client_hints.identifier());
 
-    Ok(Json(is_subscribed_with_user_agent))
+    Ok(Json(is_subscribed_with_client_hints))
+}
+
+#[instrument(name = "get_push_subscriptions", skip(app_state, user))]
+async fn get_push_subscriptions(
+    AuthSession { user, .. }: AuthSession,
+    State(app_state): State<AppState>,
+) -> Result<Json<Vec<PushSubscriptionInfo>>, (StatusCode, String)> {
+    let user = user.expect("user not found");
+    let push_subscription_repo = app_state.push_subscriptions_repo.clone();
+
+    let subscriptions = push_subscription_repo
+        .get_user_push_subscriptions(&user.id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get push subscriptions: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get push subscriptions".to_string(),
+            )
+        })?;
+
+    Ok(Json(
+        subscriptions
+            .into_iter()
+            .map(PushSubscriptionInfo::from)
+            .collect(),
+    ))
+}
+
+#[instrument(name = "delete_push_subscription", skip(app_state))]
+async fn delete_push_subscription(
+    AuthSession { user, .. }: AuthSession,
+    State(app_state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let user = user.expect("user not found");
+    let push_subscription_repo = app_state.push_subscriptions_repo.clone();
+
+    let user_push_subscriptions = push_subscription_repo
+        .get_user_push_subscriptions(&user.id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get user push subscriptions: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get user push subscriptions".to_string(),
+            )
+        })?;
+
+    if !user_push_subscriptions.iter().any(|sub| sub.id == id) {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "Push subscription not found".to_string(),
+        ));
+    }
+
+    push_subscription_repo
+        .delete_push_subscription(&id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete push subscription: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to delete push subscription".to_string(),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
 }
 
 #[instrument(name = "test_push", skip(app_state))]

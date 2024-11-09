@@ -1,4 +1,4 @@
-import { Bell, ExternalLink, Check, CheckCircle2 } from "lucide-react";
+import { Bell, ExternalLink, Check, CheckCircle2, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Popover,
@@ -28,6 +28,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Settings2, BellOff, BellRing } from "lucide-react";
 import {
@@ -36,6 +37,7 @@ import {
 } from "@/lib/notifications/web_push";
 import { useState } from "react";
 import { toast } from "sonner";
+import dayjs from "dayjs";
 
 export function NotificationsPopover() {
   const { addSegment, removeSegment } = useTitleStore();
@@ -140,6 +142,20 @@ function NotificationSettingsDropdown() {
     },
   );
 
+  const { data: pushSubscriptions = [] } = useQuery(
+    notificationsQueries.pushSubscriptions(),
+  );
+
+  const { mutate: deletePushSubscription } =
+    notificationsMutations.useDeletePushSubscription({
+      onSuccess: () => {
+        toast.success("Push subscription deleted.");
+      },
+      onError: () => {
+        toast.error("Failed to delete push subscription.");
+      },
+    });
+
   useEffect(() => {
     setBrowserPermission(hasPushPermission());
 
@@ -240,6 +256,43 @@ function NotificationSettingsDropdown() {
               : "Enable Toki notifications"}
           </span>
         </DropdownMenuItem>
+        {!!pushSubscriptions.length && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Subscribed devices</DropdownMenuLabel>
+            {pushSubscriptions.map((subscription) => (
+              <DropdownMenuItem
+                key={subscription.id}
+                className="group/item relative truncate text-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deletePushSubscription(subscription.id);
+                }}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex w-full items-center transition-all group-focus/item:pl-6">
+                      <div className="absolute left-2 opacity-0 transition-all group-focus/item:opacity-100">
+                        <Trash2 className="size-4 text-destructive" />
+                      </div>
+                      <span className="truncate">{subscription.device}</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    <p>
+                      Subscribed at{" "}
+                      <span className="font-semibold">
+                        {dayjs(subscription.createdAt).format(
+                          "YYYY-MM-DD HH:mm",
+                        )}
+                      </span>
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
