@@ -162,13 +162,20 @@ impl NotificationHandler {
                         .is_ok()
                     {
                         // Send push notification if enabled
-                        for sub in push_subscriptions_for_user.iter() {
-                            let message = event.to_web_push_message(
-                                sub,
-                                &diff.pr.pull_request_base,
-                                &diff.pr.azure_url(),
-                            );
-                            push_futures.push(self.web_push_client.send(message));
+                        let push_enabled = match (rule, exception) {
+                            (_, Some(e)) => e.enabled, // exception overrides rule
+                            (Some(r), None) => r.push_enabled,
+                            (None, None) => false,
+                        };
+                        if push_enabled {
+                            for sub in push_subscriptions_for_user.iter() {
+                                let message = event.to_web_push_message(
+                                    sub,
+                                    &diff.pr.pull_request_base,
+                                    &diff.pr.azure_url(),
+                                );
+                                push_futures.push(self.web_push_client.send(message));
+                            }
                         }
                     }
                 }

@@ -16,6 +16,7 @@ pub struct NotificationRule {
     pub repository_id: i32,
     pub notification_type: DbNotificationType,
     pub enabled: bool,
+    pub push_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

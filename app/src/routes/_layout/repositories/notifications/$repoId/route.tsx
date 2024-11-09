@@ -8,7 +8,10 @@ import {
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { notificationsQueries } from "@/lib/api/queries/notifications";
+import {
+  NotificationRule,
+  notificationsQueries,
+} from "@/lib/api/queries/notifications";
 import {
   notificationsMutations,
   NotificationType,
@@ -45,15 +48,21 @@ function NotificationsDialog() {
       },
     });
 
-  function handleToggle(type: NotificationType, enabled: boolean) {
+  function handleToggle(
+    type: NotificationType,
+    enabled: boolean,
+    isPush: boolean = false,
+  ) {
+    const preference = preferences?.find((p) => p.notificationType === type);
     updatePreference({
       repositoryId: Number(repoId),
       rule: {
-        id: preferences?.find((p) => p.notificationType === type)?.id ?? 0,
+        id: preference?.id ?? 0,
         userId: me?.id ?? 0,
         repositoryId: Number(repoId),
         notificationType: type,
-        enabled,
+        enabled: isPush ? (preference?.enabled ?? false) : enabled,
+        pushEnabled: isPush ? enabled : (preference?.pushEnabled ?? false),
       },
     });
   }
@@ -72,7 +81,7 @@ function NotificationsDialog() {
           <DialogTitle>Notifications</DialogTitle>
           <DialogDescription className="text-balance text-sm">
             Choose which notifications you want to receive for this repository.
-            These settings can be overridden for individual pull requests.
+            You can enable site notifications, push notifications, or both.
           </DialogDescription>
         </DialogHeader>
 
@@ -81,98 +90,86 @@ function NotificationsDialog() {
             <LoadingSpinner />
           </div>
         ) : (
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex gap-3">
-                  <NotificationIcon
-                    type={NotificationType.PrClosed}
-                    className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
-                  />
-                  <div>
-                    <Label htmlFor="pr-closed">Pull Request Closed</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Get notified when a pull request is completed or
-                      abandoned.
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  id="pr-closed"
-                  checked={
-                    preferences?.find(
-                      (p) => p.notificationType === NotificationType.PrClosed,
-                    )?.enabled ?? false
-                  }
-                  onCheckedChange={(checked) =>
-                    handleToggle(NotificationType.PrClosed, checked)
-                  }
-                />
-              </div>
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-[1fr,auto,auto] items-center gap-4 border-b pb-2">
+              <div /> {/* Empty space for alignment */}
+              <Label className="px-2 text-sm font-medium text-muted-foreground">
+                Site
+              </Label>
+              <Label className="px-2 text-sm font-medium text-muted-foreground">
+                Push
+              </Label>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex gap-3">
-                  <NotificationIcon
-                    type={NotificationType.ThreadAdded}
-                    className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
-                  />
-                  <div>
-                    <Label htmlFor="thread-added">Thread Added</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Get notified when someone starts a new review thread in
-                      one of your pull requests.
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  id="thread-added"
-                  checked={
-                    preferences?.find(
-                      (p) =>
-                        p.notificationType === NotificationType.ThreadAdded,
-                    )?.enabled ?? false
-                  }
-                  onCheckedChange={(checked) =>
-                    handleToggle(NotificationType.ThreadAdded, checked)
-                  }
-                />
-              </div>
-            </div>
+            <div className="space-y-4">
+              <NotificationRow
+                type={NotificationType.PrClosed}
+                title="Pull Request Closed"
+                description="Get notified when a pull request is completed or abandoned."
+                preferences={preferences}
+                onToggle={handleToggle}
+              />
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex gap-3">
-                  <NotificationIcon
-                    type={NotificationType.ThreadUpdated}
-                    className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
-                  />
-                  <div>
-                    <Label htmlFor="thread-updated">Thread Updated</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Get notified when someone replies to a review thread you
-                      are part of.
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  id="thread-updated"
-                  checked={
-                    preferences?.find(
-                      (p) =>
-                        p.notificationType === NotificationType.ThreadUpdated,
-                    )?.enabled ?? false
-                  }
-                  onCheckedChange={(checked) =>
-                    handleToggle(NotificationType.ThreadUpdated, checked)
-                  }
-                />
-              </div>
+              <NotificationRow
+                type={NotificationType.ThreadAdded}
+                title="Thread Added"
+                description="Get notified when someone starts a new review thread in one of your pull requests."
+                preferences={preferences}
+                onToggle={handleToggle}
+              />
+
+              <NotificationRow
+                type={NotificationType.ThreadUpdated}
+                title="Thread Updated"
+                description="Get notified when someone replies to a review thread you are part of."
+                preferences={preferences}
+                onToggle={handleToggle}
+              />
             </div>
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function NotificationRow(props: {
+  type: NotificationType;
+  title: string;
+  description: string;
+  preferences?: Array<NotificationRule>;
+  onToggle: (
+    type: NotificationType,
+    enabled: boolean,
+    isPush?: boolean,
+  ) => void;
+}) {
+  const preference = props.preferences?.find(
+    (p) => p.notificationType === props.type,
+  );
+
+  return (
+    <div className="grid grid-cols-[1fr,auto,auto] items-center gap-4">
+      <div className="flex gap-3">
+        <NotificationIcon
+          type={props.type}
+          className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+        />
+        <div>
+          <Label>{props.title}</Label>
+          <p className="text-sm text-muted-foreground">{props.description}</p>
+        </div>
+      </div>
+      <Switch
+        id={`${props.type}-site`}
+        checked={preference?.enabled ?? false}
+        onCheckedChange={(checked) => props.onToggle(props.type, checked)}
+      />
+      <Switch
+        id={`${props.type}-push`}
+        checked={preference?.pushEnabled ?? false}
+        onCheckedChange={(checked) => props.onToggle(props.type, checked, true)}
+      />
+    </div>
   );
 }

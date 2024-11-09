@@ -59,6 +59,7 @@ export type NotificationRule = {
   repositoryId: number;
   notificationType: NotificationType;
   enabled: boolean;
+  pushEnabled: boolean;
 };
 
 export type PrNotificationException = {
