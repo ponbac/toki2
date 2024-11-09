@@ -36,7 +36,7 @@
       {
         "ordinal": 6,
         "name": "created_at",
-        "type_info": "Timestamp"
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -51,7 +51,7 @@
       false,
       false,
       false,
-      true
+      false
     ]
   },
   "hash": "1165bd69a7ff24f71de51ea06d2f60e8f4020aff79cf60423ac415cc5974ce96"
