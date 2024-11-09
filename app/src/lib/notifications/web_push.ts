@@ -22,13 +22,16 @@ export async function subscribeUser() {
 
   return "OK" as const;
 }
+export function hasPushPermission(): NotificationPermission {
+  if (
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window) ||
+    !("Notification" in window)
+  ) {
+    return "denied";
+  }
 
-export function hasPushPermission() {
-  return (
-    "serviceWorker" in navigator &&
-    "PushManager" in window &&
-    Notification.permission === "granted"
-  );
+  return Notification.permission;
 }
 
 export async function requestNotificationPermission(options?: {

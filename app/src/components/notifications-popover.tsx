@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   notificationsQueries,
-  Notification,
+  type Notification,
 } from "@/lib/api/queries/notifications";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -122,38 +122,60 @@ export function NotificationsPopover() {
 }
 
 function NotificationSettingsDropdown() {
-  const [pushEnabled, setPushEnabled] = useState(false);
+  const [browserPermission, setBrowserPermission] =
+    useState<NotificationPermission>(hasPushPermission());
 
   const { data: isSubscribed } = useQuery(notificationsQueries.isSubscribed());
-  const { mutate: subscribeToPush } = notificationsMutations.useSubscribeToPush(
-    {
-      onSuccess: () => {
-        setPushEnabled(true);
-      },
-      onError: () => {
-        setPushEnabled(false);
-      },
-    },
-  );
+  const { mutate: subscribeToPush } =
+    notificationsMutations.useSubscribeToPush();
 
   useEffect(() => {
-    const permission = hasPushPermission();
+    setBrowserPermission(hasPushPermission());
 
-    if (permission && !isSubscribed) {
-      subscribeToPush();
-    } else if (permission && isSubscribed) {
-      setPushEnabled(true);
+    const permissionChangeHandler = () => {
+      setBrowserPermission(hasPushPermission());
+    };
+
+    if ("permissions" in navigator) {
+      navigator.permissions
+        .query({ name: "notifications" })
+        .then((permissionStatus) => {
+          permissionStatus.addEventListener("change", permissionChangeHandler);
+        });
     }
-  }, [isSubscribed, subscribeToPush]);
 
-  const handlePushPermission = () => {
+    return () => {
+      if ("permissions" in navigator) {
+        navigator.permissions
+          .query({ name: "notifications" })
+          .then((permissionStatus) => {
+            permissionStatus.removeEventListener(
+              "change",
+              permissionChangeHandler,
+            );
+          });
+      }
+    };
+  }, []);
+
+  const handleRequestPermission = () => {
     requestNotificationPermission({
       onGranted: () => {
-        subscribeToPush();
+        setBrowserPermission("granted");
       },
-      onDenied: () => setPushEnabled(false),
-      onNotSupported: () => setPushEnabled(false),
+      onDenied: () => {
+        setBrowserPermission("denied");
+      },
+      onNotSupported: () => {
+        setBrowserPermission("denied");
+      },
     });
+  };
+
+  const handleSubscribe = () => {
+    if (browserPermission === "granted") {
+      subscribeToPush();
+    }
   };
 
   return (
@@ -163,7 +185,7 @@ function NotificationSettingsDropdown() {
           className="rounded-md p-1 opacity-50 transition-opacity hover:bg-muted hover:opacity-100"
           title="Notification settings"
         >
-          <Settings2 className="h-4 w-4" />
+          <Settings2 className="size-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[220px]">
@@ -171,20 +193,40 @@ function NotificationSettingsDropdown() {
           Notification Settings
         </div>
         <DropdownMenuSeparator />
+
+        {/* Browser Permission Status */}
         <DropdownMenuItem
-          onClick={handlePushPermission}
+          onClick={handleRequestPermission}
           className="gap-2"
-          disabled={pushEnabled}
+          disabled={browserPermission === "granted"}
         >
-          {pushEnabled ? (
-            <BellRing className="h-4 w-4" />
+          {browserPermission === "granted" ? (
+            <BellRing className="size-4" />
           ) : (
-            <BellOff className="h-4 w-4" />
+            <BellOff className="size-4" />
           )}
           <span className="text-xs">
-            {pushEnabled
-              ? "Push notifications enabled"
-              : "Enable push notifications"}
+            {browserPermission === "granted"
+              ? "Browser notifications allowed"
+              : "Allow browser notifications"}
+          </span>
+        </DropdownMenuItem>
+
+        {/* Push Subscription Status */}
+        <DropdownMenuItem
+          onClick={handleSubscribe}
+          className="gap-2"
+          disabled={browserPermission !== "granted" || isSubscribed}
+        >
+          {isSubscribed ? (
+            <CheckCircle2 className="size-4" />
+          ) : (
+            <Bell className="size-4" />
+          )}
+          <span className="text-xs">
+            {isSubscribed
+              ? "Toki notifications enabled"
+              : "Enable Toki notifications"}
           </span>
         </DropdownMenuItem>
       </DropdownMenuContent>

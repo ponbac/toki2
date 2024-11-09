@@ -158,9 +158,17 @@ function useRemovePrException(
 }
 
 function useSubscribeToPush(options?: DefaultMutationOptions<void, "OK">) {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationKey: ["notifications", "subscribe"],
     mutationFn: subscribeUser,
     ...options,
+    onSuccess: (data, vars, ctx) => {
+      queryClient.invalidateQueries({
+        queryKey: notificationsQueries.isSubscribed().queryKey,
+      });
+      options?.onSuccess?.(data, vars, ctx);
+    },
   });
 }
