@@ -17,6 +17,13 @@ pub struct Comment {
     pub liked_by: Vec<Identity>,
 }
 
+impl Comment {
+    pub fn is_system_comment(&self) -> bool {
+        self.comment_type == Some(CommentType::System)
+            || self.author.display_name == "Azure Pipelines Test Service"
+    }
+}
+
 impl From<AzureComment> for Comment {
     fn from(comment: AzureComment) -> Self {
         Self {

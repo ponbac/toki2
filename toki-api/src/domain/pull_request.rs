@@ -87,13 +87,11 @@ impl PullRequest {
             .collect::<Vec<_>>();
         let unresolved_thread_authors = threads
             .iter()
-            .filter(|t| t.status == Some(ThreadStatus::Active))
+            .filter(|t| t.status == Some(ThreadStatus::Active) && !t.is_system_thread())
             .filter_map(|t| {
-                t.comments.iter().find(|c| {
-                    c.is_deleted != Some(true)
-                        && c.comment_type != Some(CommentType::System)
-                        && c.author.display_name != "Azure Pipelines Test Service"
-                })
+                t.comments
+                    .iter()
+                    .find(|c| c.is_deleted != Some(true) && !c.is_system_comment())
             })
             .map(|c| c.author.clone())
             .map(IdentityWithVote::from)

@@ -38,7 +38,7 @@ impl Thread {
     pub fn is_system_thread(&self) -> bool {
         self.comments
             .first()
-            .map_or(false, |c| c.comment_type == Some(CommentType::System))
+            .map_or(false, |c| c.is_system_comment())
     }
 
     pub fn author(&self) -> &Identity {
