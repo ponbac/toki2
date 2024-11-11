@@ -1,20 +1,6 @@
-import { Button, ButtonProps, buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { mutations } from "@/lib/api/mutations/mutations";
-import { Differ } from "@/lib/api/queries/differs";
 import { queries } from "@/lib/api/queries/queries";
 import { cn, toRepoKeyString } from "@/lib/utils";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -24,20 +10,10 @@ import {
   createFileRoute,
   useNavigate,
 } from "@tanstack/react-router";
-import dayjs from "dayjs";
-import {
-  BellIcon,
-  Heart,
-  PauseCircle,
-  PlayCircle,
-  Plus,
-  SearchCode,
-  Trash,
-  Unplug,
-} from "lucide-react";
-import { useRef } from "react";
-import { toast } from "sonner";
+import { Plus, SearchCode } from "lucide-react";
+import { useMemo, useRef } from "react";
 import { z } from "zod";
+import { RepoCard } from "./-components/repo-card";
 
 const repositoriesSearchSchema = z.object({
   searchString: z.string().optional().catch(""),
@@ -54,7 +30,6 @@ export const Route = createFileRoute("/_layout/repositories")({
 
 function RepositoriesComponent() {
   const { searchString } = Route.useSearch();
-  const navigate = useNavigate({ from: Route.fullPath });
 
   const { data: isAdmin } = useSuspenseQuery({
     ...queries.me(),
@@ -65,159 +40,68 @@ function RepositoriesComponent() {
     refetchInterval: 15 * 1000,
   });
 
-  const { mutate: startDiffer } = mutations.useStartDiffers();
-  const { mutate: stopDiffer } = mutations.useStopDiffers();
-  const { mutate: followRepository } = mutations.useFollowRepository({
-    onSuccess: (_, vars) => {
-      toast.success(
-        vars.follow
-          ? `You are now following ${vars.repoName}.`
-          : `You are no longer following ${vars.repoName}.`,
-      );
-    },
-  });
-  const { mutate: deleteRepository, isPending: isDeleting } =
-    mutations.useDeleteRepository();
+  const filteredData = useMemo(
+    () =>
+      data.filter((differ) =>
+        toRepoKeyString(differ)
+          .toLowerCase()
+          .includes(searchString?.toLowerCase() ?? ""),
+      ),
+    [data, searchString],
+  );
 
-  const filteredData = data.filter((differ) =>
-    toRepoKeyString(differ)
-      .toLowerCase()
-      .includes(searchString?.toLowerCase() ?? ""),
+  const followedRepos = useMemo(
+    () => filteredData.filter((differ) => differ.followed),
+    [filteredData],
+  );
+  const unfollowedRepos = useMemo(
+    () => filteredData.filter((differ) => !differ.followed),
+    [filteredData],
   );
 
   return (
     <main className="flex w-full items-center justify-center p-8">
       <div className="flex flex-col items-center justify-center gap-4">
         <TopBar />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredData.length > 0 ? (
-            filteredData.map((differ) => (
-              <Card
-                key={`${toRepoKeyString(differ)}-${dataUpdatedAt}`}
-                className={cn(
-                  "flex h-56 w-[25rem] flex-col justify-between",
-                  differ.isInvalid && "border border-destructive",
-                  !isAdmin && "h-44",
+        <div className="flex w-full flex-col gap-4">
+          {/* Followed Repositories Section */}
+          {followedRepos.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h2 className="text-xl font-semibold">Followed</h2>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {followedRepos.length > 0 ? (
+                  followedRepos.map((differ) => (
+                    <RepoCard
+                      key={`${toRepoKeyString(differ)}-${dataUpdatedAt}`}
+                      differ={differ}
+                      isAdmin={isAdmin}
+                    />
+                  ))
+                ) : (
+                  <Card className="w-[25rem] opacity-0" />
                 )}
-              >
-                <CardHeader className="flex w-full flex-row items-start justify-between">
-                  <div className="flex flex-col gap-1 overflow-hidden">
-                    <CardTitle className="truncate leading-6">
-                      {differ.repoName}
-                    </CardTitle>
-                    <CardDescription className="leading-4">{`${differ.organization}/${differ.project}`}</CardDescription>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-8"
-                          onClick={() =>
-                            navigate({
-                              to: `/repositories/notifications/${differ.repoId}`,
-                            })
-                          }
-                        >
-                          <BellIcon />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Manage notifications</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="group size-8"
-                          onClick={() =>
-                            followRepository({
-                              ...differ,
-                              follow: !differ.followed,
-                            })
-                          }
-                        >
-                          {differ.followed ? (
-                            <Unplug size="1.25rem" />
-                          ) : (
-                            <Heart size="1.25rem" />
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {differ.followed
-                          ? "Unfollow repository"
-                          : "Follow repository"}
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription>
-                    Status:{" "}
-                    <span
-                      className={cn("font-semibold", {
-                        "text-destructive": differ.status === "Errored",
-                      })}
-                    >
-                      {differ.status}
-                    </span>
-                  </CardDescription>
-                  {differ.isInvalid ? (
-                    <CardDescription>
-                      Could not create an Azure DevOps connection. Add the
-                      repository to Toki again with a new PAT.
-                    </CardDescription>
-                  ) : (
-                    <>
-                      <CardDescription>
-                        Fetch Interval:{" "}
-                        {differ.refreshInterval
-                          ? `${differ.refreshInterval.secs} seconds`
-                          : "None"}
-                      </CardDescription>
-                      <LastUpdated differ={differ} />
-                    </>
-                  )}
-                </CardContent>
-                {isAdmin && (
-                  <CardFooter className="flex flex-row-reverse gap-2">
-                    <FooterButton
-                      disabled={differ.status === "Running" || differ.isInvalid}
-                      onClick={() => startDiffer(differ)}
-                    >
-                      <PlayCircle size="1.25rem" />
-                      Start
-                    </FooterButton>
-                    <FooterButton
-                      variant="outline"
-                      disabled={differ.status === "Stopped" || differ.isInvalid}
-                      onClick={() => stopDiffer(differ)}
-                    >
-                      <PauseCircle size="1.25rem" />
-                      Stop
-                    </FooterButton>
-                    <FooterButton
-                      variant="outline"
-                      onClick={() =>
-                        deleteRepository({
-                          organization: differ.organization,
-                          project: differ.project,
-                          repoName: differ.repoName,
-                        })
-                      }
-                      className="mr-auto transition-colors hover:text-destructive"
-                      disabled={differ.status === "Running" || isDeleting}
-                    >
-                      <Trash size="1.25rem" />
-                    </FooterButton>
-                  </CardFooter>
+              </div>
+            </div>
+          )}
+
+          {/* Unfollowed Repositories Section */}
+          {unfollowedRepos.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h2 className="text-xl font-semibold">All repositories</h2>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {unfollowedRepos.length > 0 ? (
+                  unfollowedRepos.map((differ) => (
+                    <RepoCard
+                      key={`${toRepoKeyString(differ)}-${dataUpdatedAt}`}
+                      differ={differ}
+                      isAdmin={isAdmin}
+                    />
+                  ))
+                ) : (
+                  <Card className="w-[25rem] opacity-0" />
                 )}
-              </Card>
-            ))
-          ) : (
-            <Card className="w-[25rem] opacity-0" />
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -272,37 +156,5 @@ function TopBar() {
         </Link>
       </div>
     </div>
-  );
-}
-
-function LastUpdated({ differ }: { differ: Differ }) {
-  const nMinutesAgo = differ.lastUpdated
-    ? dayjs().diff(dayjs(differ.lastUpdated), "minute")
-    : undefined;
-
-  return (
-    <CardDescription>
-      Updated:{" "}
-      {nMinutesAgo === undefined
-        ? "Never"
-        : nMinutesAgo < 1
-          ? "Just now"
-          : nMinutesAgo === 1
-            ? "1 minute ago"
-            : `${nMinutesAgo} minutes ago`}
-    </CardDescription>
-  );
-}
-
-function FooterButton({ className, ...rest }: Omit<ButtonProps, "size">) {
-  return (
-    <Button
-      size="sm"
-      className={cn(
-        "w-18 flex items-center gap-1.5 transition-colors",
-        className,
-      )}
-      {...rest}
-    />
   );
 }
