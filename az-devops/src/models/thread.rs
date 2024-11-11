@@ -35,6 +35,7 @@ impl From<CommentThread> for Thread {
 }
 
 impl Thread {
+    /// Checks if the first comment in the thread is a system comment.
     pub fn is_system_thread(&self) -> bool {
         self.comments
             .first()
