@@ -75,7 +75,7 @@ export function PRNotificationSettings({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" disabled={!currentRepositoryId}>
+        <Button variant="outline" size="sm" disabled={!currentRepositoryId}>
           <Bell className="size-4" />
         </Button>
       </DropdownMenuTrigger>
