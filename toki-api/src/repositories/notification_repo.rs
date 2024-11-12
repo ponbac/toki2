@@ -14,6 +14,7 @@ pub trait NotificationRepository {
         &self,
         user_id: i32,
         include_viewed: bool,
+        max_age_days: i32,
     ) -> Result<Vec<Notification>, RepositoryError>;
     async fn mark_as_viewed(
         &self,
@@ -97,6 +98,7 @@ impl NotificationRepository for NotificationRepositoryImpl {
         &self,
         user_id: i32,
         include_viewed: bool,
+        max_age_days: i32,
     ) -> Result<Vec<Notification>, RepositoryError> {
         Ok(sqlx::query_as!(
             Notification,
@@ -106,9 +108,11 @@ impl NotificationRepository for NotificationRepositoryImpl {
               FROM notifications
               WHERE user_id = $1
                 AND ($2 OR viewed_at IS NULL)
+                AND created_at > NOW() - make_interval(days => $3)
               ORDER BY created_at DESC"#,
             user_id,
-            include_viewed
+            include_viewed,
+            max_age_days
         )
         .fetch_all(&self.pool)
         .await?)

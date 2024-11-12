@@ -31,6 +31,7 @@ export function NotificationsPopover() {
   const { data: notifications = [] } = useQuery({
     ...notificationsQueries.notifications({
       includeViewed: !hideViewed,
+      maxAgeDays: 14,
     }),
     refetchInterval: 1000 * 30, // 30 seconds
   });

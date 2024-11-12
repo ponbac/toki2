@@ -223,6 +223,7 @@ async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, (Sta
 #[serde(rename_all = "camelCase")]
 pub struct NotificationParams {
     include_viewed: Option<bool>,
+    max_age_days: Option<i32>,
 }
 
 async fn get_notifications(
@@ -234,7 +235,11 @@ async fn get_notifications(
     let notification_repo = app_state.notification_repo.clone();
 
     let notifications = notification_repo
-        .get_user_notifications(user.id, params.include_viewed.unwrap_or(false))
+        .get_user_notifications(
+            user.id,
+            params.include_viewed.unwrap_or(false),
+            params.max_age_days.unwrap_or(30),
+        )
         .await
         .map_err(|e| {
             tracing::error!("Failed to get user notifications: {:?}", e);
