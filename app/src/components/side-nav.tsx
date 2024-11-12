@@ -15,7 +15,7 @@ import { router } from "@/main";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { userQueries } from "@/lib/api/queries/user";
-import { NotificationsPopover } from "./notifications-popover";
+import { NotificationsPopover } from "./notifications-popover/notifications-popover";
 
 type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
