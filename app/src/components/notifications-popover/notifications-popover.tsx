@@ -15,12 +15,23 @@ import { useEffect } from "react";
 import { useTitleStore } from "@/hooks/useTitleStore";
 import { NotificationItem } from "./notification-item";
 import { NotificationSettingsDropdown } from "./notification-settings-dropdown";
+import { Switch } from "@/components/ui/switch";
+import { atomWithStorage } from "jotai/utils";
+import { useAtom } from "jotai/react";
+
+const persistedHideViewedAtom = atomWithStorage<boolean>(
+  "notifications-hide-viewed",
+  false,
+);
 
 export function NotificationsPopover() {
   const { addSegment, removeSegment } = useTitleStore();
+  const [hideViewed, setHideViewed] = useAtom(persistedHideViewedAtom);
 
   const { data: notifications = [] } = useQuery({
-    ...notificationsQueries.notifications({ includeViewed: true }),
+    ...notificationsQueries.notifications({
+      includeViewed: !hideViewed,
+    }),
     refetchInterval: 1000 * 30, // 30 seconds
   });
   const { data: repositories } = useQuery({
@@ -65,13 +76,30 @@ export function NotificationsPopover() {
       </PopoverTrigger>
       <PopoverContent className="w-[32rem] p-0" align="start" side="right">
         <div className="flex items-center justify-between border-b p-3">
-          <div className="font-semibold">Notifications</div>
-          <div className="flex flex-row items-center gap-1">
+          <div className="flex items-center gap-2 font-semibold">
+            <span>Notifications</span>
             {hasUnviewedNotifications && (
-              <div className="text-xs text-muted-foreground">
-                {unviewedCount} unread
-              </div>
+              <span className="text-sm text-muted-foreground">
+                ({unviewedCount} unread)
+              </span>
             )}
+          </div>
+          <div className="flex flex-row items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="hide-viewed"
+                checked={hideViewed}
+                onCheckedChange={setHideViewed}
+                className="h-5 w-10"
+                thumbClassName="size-4"
+              />
+              <label
+                htmlFor="hide-viewed"
+                className="text-xs text-muted-foreground"
+              >
+                Hide viewed
+              </label>
+            </div>
             <NotificationSettingsDropdown />
           </div>
         </div>
@@ -100,4 +128,3 @@ export function NotificationsPopover() {
     </Popover>
   );
 }
-

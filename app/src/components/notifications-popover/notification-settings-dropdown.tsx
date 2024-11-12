@@ -4,14 +4,6 @@ import {
   hasPushPermission,
   requestNotificationPermission,
 } from "@/lib/notifications/web_push";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuSeparator,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-} from "@radix-ui/react-dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import {
@@ -25,6 +17,14 @@ import {
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 export function NotificationSettingsDropdown() {
   const [browserPermission, setBrowserPermission] =
