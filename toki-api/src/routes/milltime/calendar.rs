@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, collections::HashMap};
 
 use axum::{
     extract::{Query, State},
@@ -11,7 +11,11 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use crate::{app_state::AppState, auth::AuthSession, repositories::TimerRepository};
+use crate::{
+    app_state::AppState,
+    auth::AuthSession,
+    repositories::{DatabaseTimer, TimerRepository},
+};
 
 use super::{CookieJarResult, ErrorResponse, MilltimeCookieJarExt, MilltimeError};
 
@@ -78,29 +82,14 @@ pub async fn get_time_entries(
         })?;
 
     let user_calendar = milltime_client.fetch_user_calendar(&date_filter).await?;
-
     let time_entries_iter = user_calendar
         .weeks
         .into_iter()
         .flat_map(|week| week.days)
         .filter(|day| day.date >= date_filter.from && day.date <= date_filter.to) // Milltime returns entire weeks, even if the range is in the middle of the week
-        .sorted_by_key(|day| cmp::Reverse(day.date))
         .flat_map(|day| day.time_entries);
-    let time_entries: Vec<milltime::TimeEntry> = if query.unique.unwrap_or(false) {
-        time_entries_iter
-            .unique_by(|time_entry| {
-                format!(
-                    "{}-{}-{}",
-                    time_entry.project_name,
-                    time_entry.activity_name,
-                    time_entry.note.as_ref().unwrap_or(&"".to_string())
-                )
-            })
-            .collect()
-    } else {
-        time_entries_iter.collect()
-    };
 
+    // get timer history from database
     let timer_repo = app_state.milltime_repo.clone();
     let user = auth_session.user.expect("user not found");
     let timer_history = timer_repo.get_timer_history(&user.id).await.map_err(|e| {
@@ -112,16 +101,25 @@ pub async fn get_time_entries(
         }
     })?;
 
-    let time_entries = time_entries
+    let db_timer_registrations: HashMap<String, DatabaseTimer> = timer_history
+        .clone()
         .into_iter()
+        .filter_map(|timer| {
+            timer
+                .registration_id
+                .as_ref()
+                .map(|reg_id| (reg_id.clone(), timer.clone()))
+        })
+        .collect();
+
+    // merge database timer history with milltime time entries
+    let time_entries_iter = time_entries_iter
         .map(|time_entry| {
-            let start_time = timer_history
-                .iter()
-                .find(|timer| timer.registration_id == Some(time_entry.registration_id.clone()))
+            let start_time = db_timer_registrations
+                .get(&time_entry.registration_id)
                 .map(|timer| timer.start_time);
-            let end_time = timer_history
-                .iter()
-                .find(|timer| timer.registration_id == Some(time_entry.registration_id.clone()))
+            let end_time = db_timer_registrations
+                .get(&time_entry.registration_id)
                 .and_then(|timer| timer.end_time);
             ExtendedTimeEntry {
                 time_entry: time_entry.clone(),
@@ -130,8 +128,35 @@ pub async fn get_time_entries(
                 week_number: time_entry.date.iso_week().week(),
             }
         })
-        .sorted_by_key(|time_entry| cmp::Reverse(time_entry.start_time))
-        .collect();
+        .sorted_by(|a, b| {
+            let date_cmp = b.time_entry.date.cmp(&a.time_entry.date);
+
+            // if dates are equal, then compare by start_time
+            if date_cmp == std::cmp::Ordering::Equal {
+                b.start_time.cmp(&a.start_time)
+            } else {
+                date_cmp
+            }
+        });
+
+    let time_entries = if query.unique.unwrap_or(false) {
+        time_entries_iter
+            .unique_by(|time_entry| {
+                format!(
+                    "{}-{}-{}",
+                    time_entry.time_entry.project_name,
+                    time_entry.time_entry.activity_name,
+                    time_entry
+                        .time_entry
+                        .note
+                        .as_ref()
+                        .unwrap_or(&"".to_string())
+                )
+            })
+            .collect()
+    } else {
+        time_entries_iter.collect()
+    };
 
     Ok((jar, Json(time_entries)))
 }

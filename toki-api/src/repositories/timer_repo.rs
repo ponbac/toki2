@@ -29,7 +29,7 @@ impl TimerRepositoryImpl {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, EnumString, Display, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, EnumString, Display, PartialEq, Eq, Clone)]
 pub enum TimerType {
     #[strum(ascii_case_insensitive, serialize = "milltime")]
     Milltime,
@@ -47,7 +47,7 @@ impl From<String> for TimerType {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseTimer {
     pub timer_type: TimerType,
