@@ -150,12 +150,12 @@ export const TimerEditDialog = (props: {
               />
             </div>
             <TimerHistory
-              onHistoryClick={(projectName, activityName, note) => {
+              onHistoryClick={(projectName, activityName, clickedNote) => {
                 // already selected? start timer
                 if (
                   projectName === selectedProject?.projectName &&
                   activityName === selectedActivity?.activityName &&
-                  note === note
+                  clickedNote === note
                 ) {
                   updateTimer();
                 } else {
@@ -165,7 +165,7 @@ export const TimerEditDialog = (props: {
                       ?.projectId.toString() ?? "",
                   );
                   setActivityName(activityName);
-                  setNote(note);
+                  setNote(clickedNote);
                 }
               }}
             />
