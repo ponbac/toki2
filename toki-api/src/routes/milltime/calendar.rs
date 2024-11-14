@@ -130,6 +130,7 @@ pub async fn get_time_entries(
                 week_number: time_entry.date.iso_week().week(),
             }
         })
+        .sorted_by_key(|time_entry| cmp::Reverse(time_entry.start_time))
         .collect();
 
     Ok((jar, Json(time_entries)))
