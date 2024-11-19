@@ -36,13 +36,20 @@ function isMilltimeCookiesPresent() {
 
 export function clearMilltimeCookies() {
   console.debug("Clearing milltime cookies");
-  document.cookie = "mt_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  document.cookie =
-    "mt_password=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  document.cookie =
-    "mt_milltimesessionid=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-  document.cookie =
-    "mt_CSRFToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+
+  const domains = [location.hostname, location.hostname.replace("www.", "")];
+  const cookies = [
+    "mt_user",
+    "mt_password",
+    "mt_milltimesessionid",
+    "mt_CSRFToken",
+  ];
+
+  domains.forEach((domain) => {
+    cookies.forEach((cookie) => {
+      document.cookie = `${cookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${domain}`;
+    });
+  });
 }
 
 export const useMilltimeStore = create<MilltimeStore>()((set) => ({
