@@ -1,4 +1,5 @@
 mod activity;
+mod attest_level;
 mod filters;
 mod project_registration;
 mod project_search;
@@ -8,6 +9,7 @@ mod timer;
 mod user_calendar;
 
 pub use activity::*;
+pub use attest_level::*;
 pub use filters::*;
 pub use project_registration::*;
 pub use project_search::*;

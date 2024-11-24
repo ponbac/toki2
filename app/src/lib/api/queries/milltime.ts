@@ -89,7 +89,7 @@ export type TimeInfo = {
     label: string;
   }>;
   flexTimePreviousPeriod: number | null;
-  flexTimePeriod: number;
+  flexTimePeriod: number | null;
   flexTimeCurrent: number;
   flexWithdrawal: number;
   scheduledPeriodTime: number;

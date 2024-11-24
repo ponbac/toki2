@@ -2,6 +2,8 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::AttestLevel;
+
 #[derive(Debug, Serialize)]
 pub struct UserCalendar {
     pub weeks: Vec<Week>,
@@ -113,17 +115,21 @@ impl From<RawProjectRegistration> for TimeEntry {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawUserCalendar {
-    pub previous_attest_level: i64,
-    pub attest_level: i64,
+    pub previous_attest_level: AttestLevel,
+    pub attest_level: AttestLevel,
     pub month: i64,
     pub weeks: Vec<RawWeek>,
+    #[serde(rename = "user_startdate")]
+    pub user_start_date: String,
+    #[serde(rename = "user_enddate")]
+    pub user_end_date: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawWeek {
     pub weeknr: i64,
-    pub attestlevel: i64,
+    pub attestlevel: AttestLevel,
     pub days: Vec<RawDay>,
 }
 
@@ -137,8 +143,8 @@ pub struct RawDay {
     pub holiday: bool,
     pub monthday: i64,
     pub month: i64,
-    pub attestlevel: i64,
-    pub weeklyattestlevel: i64,
+    pub attestlevel: AttestLevel,
+    pub weeklyattestlevel: AttestLevel,
     pub projectregistrations: Vec<RawProjectRegistration>,
     pub flexdiff: RawFlexDiff,
 }
@@ -146,7 +152,7 @@ pub struct RawDay {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawProjectRegistration {
-    pub attestlevel: Option<i64>,
+    pub attestlevel: Option<AttestLevel>,
     pub activityname: String,
     pub userid: String,
     pub favoritetype: Value,

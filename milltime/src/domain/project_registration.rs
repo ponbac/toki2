@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 
+use super::AttestLevel;
+
 #[derive(Default, Serialize, Deserialize, Debug)]
 pub struct ProjectRegistrationPayload {
     #[serde(rename = "absencetype")]
     pub absence_type: Option<String>,
     #[serde(rename = "attestlevel")]
-    pub attest_level: i32,
+    pub attest_level: AttestLevel,
     #[serde(rename = "favoritetype")]
     pub favorite_type: i32,
     #[serde(rename = "phaseid")]

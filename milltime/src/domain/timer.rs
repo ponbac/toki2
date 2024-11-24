@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::AttestLevel;
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all(serialize = "camelCase"))]
 pub struct TimerRegistration {
@@ -63,7 +65,7 @@ pub struct TimerRegistration {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimerRegistrationPayload {
     pub absencetype: Value,
-    pub attestlevel: i64,
+    pub attestlevel: AttestLevel,
     pub favoritetype: i64,
     pub phaseid: String,
     pub phasename: String,
@@ -197,7 +199,7 @@ pub struct SaveTimerProjectRegistration {
     #[serde(rename(deserialize = "absencetype"))]
     pub absence_type: Option<Value>,
     #[serde(rename(deserialize = "attestlevel"))]
-    pub attest_level: Option<Value>,
+    pub attest_level: Option<AttestLevel>,
     #[serde(rename(deserialize = "activityname"))]
     pub activity_name: String,
     #[serde(rename(deserialize = "requirenote"))]

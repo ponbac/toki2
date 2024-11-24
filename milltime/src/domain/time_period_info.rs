@@ -9,7 +9,8 @@ pub struct TimePeriodInfo {
     #[serde(default)]
     pub to: NaiveDate,
     pub flex_time_previous_period: Option<f64>,
-    pub flex_time_period: f64,
+    // TODO: check if this still exists
+    pub flex_time_period: Option<f64>,
     #[serde(rename(deserialize = "FlexTimeCurrent"))]
     pub flex_time_total: f64,
     #[serde(rename(deserialize = "ScheduledPeriodTime"))]
