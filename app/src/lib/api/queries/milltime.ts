@@ -177,4 +177,11 @@ export type TimeEntry = {
   startTime: string | null;
   endTime: string | null;
   weekNumber: number;
+  attestLevel: AttestLevel;
 };
+
+export enum AttestLevel {
+  None = 0,
+  Week = 1,
+  Month = 2,
+}

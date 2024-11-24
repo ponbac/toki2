@@ -92,6 +92,7 @@ pub struct TimeEntry {
     pub date: NaiveDate,
     pub hours: f64,
     pub note: Option<String>,
+    pub attest_level: AttestLevel,
 }
 
 impl From<RawProjectRegistration> for TimeEntry {
@@ -107,6 +108,7 @@ impl From<RawProjectRegistration> for TimeEntry {
             hours: raw_project_registration.projtimehh
                 + (raw_project_registration.projtimemm.unwrap_or(0) as f64 / 60.0),
             note: raw_project_registration.usernote,
+            attest_level: raw_project_registration.attestlevel.unwrap_or_default(),
         }
     }
 }
