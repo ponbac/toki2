@@ -33,6 +33,10 @@ export const NotLockedAlert = () => {
 
   const { lastWeekLocked, lastMonthLocked } = lockedStatus(timeEntries);
 
+  if (lastWeekLocked && lastMonthLocked) {
+    return null;
+  }
+
   return (
     <div className="flex w-fit min-w-[25rem] flex-col gap-2 pb-4">
       {!lastWeekLocked && (
