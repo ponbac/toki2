@@ -7,19 +7,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { TimeEntry } from "@/lib/api/queries/milltime";
+import { AttestLevel, TimeEntry } from "@/lib/api/queries/milltime";
 import { formatHoursAsHoursMinutes, formatHoursMinutes } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { toast } from "sonner";
-import { PencilIcon, SaveIcon } from "lucide-react";
+import { LockIcon, PencilIcon, SaveIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
     startTime: string | null;
     endTime: string | null;
+    attestLevel: AttestLevel;
   }>;
 };
 
@@ -69,6 +70,7 @@ export function TimeEntriesList(props: {
             mergedByProjectActivityAndNote[key].timePeriods.push({
               startTime: entry.startTime,
               endTime: entry.endTime,
+              attestLevel: entry.attestLevel,
             });
           });
           mergedEntries[dateKey] = Object.values(
@@ -206,16 +208,21 @@ function ViewEntryCard(props: {
         </CardHeader>
         {isMergedTimeEntry(props.entry) ? (
           <>
-            {props.entry.timePeriods.length === 1 && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={props.onEdit}
-                className="ml-auto size-8"
-              >
-                <PencilIcon className="size-4" />
-              </Button>
-            )}
+            {props.entry.timePeriods.length === 1 &&
+              props.entry.timePeriods.at(0)?.attestLevel ===
+                AttestLevel.None && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={props.onEdit}
+                  className="ml-auto size-8"
+                >
+                  <PencilIcon className="size-4" />
+                </Button>
+              )}
+            {props.entry.timePeriods.every(
+              (period) => period.attestLevel !== AttestLevel.None,
+            ) && <LockIcon className="ml-auto size-4 text-muted-foreground" />}
             <div className="flex max-h-28 flex-col overflow-hidden pr-4 [&:has(>:nth-child(2))]:mt-2">
               {props.entry.timePeriods
                 .filter((period) => period.startTime && period.endTime)
@@ -236,14 +243,18 @@ function ViewEntryCard(props: {
           </>
         ) : (
           <div className="mr-4 mt-4 flex flex-row items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={props.onEdit}
-              className="size-8"
-            >
-              <PencilIcon className="size-4" />
-            </Button>
+            {props.entry.attestLevel === AttestLevel.None ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={props.onEdit}
+                className="size-8"
+              >
+                <PencilIcon className="size-4" />
+              </Button>
+            ) : (
+              <LockIcon className="size-4 text-muted-foreground" />
+            )}
             {props.entry.endTime && (
               <p className="text-base text-muted-foreground">
                 {props.entry.startTime &&
