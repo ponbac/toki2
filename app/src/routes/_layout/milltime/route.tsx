@@ -23,8 +23,12 @@ import { useAtom } from "jotai/react";
 import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
 import { TimeStats } from "./-components/time-stats";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
-import { useMilltimeIsAuthenticating, useMilltimeTimer } from "@/hooks/useMilltimeStore";
+import {
+  useMilltimeIsAuthenticating,
+  useMilltimeTimer,
+} from "@/hooks/useMilltimeStore";
 import { useMilltimeActions } from "@/hooks/useMilltimeStore";
+import { NotLockedAlert } from "./-components/not-locked-alert";
 
 export const Route = createFileRoute("/_layout/milltime")({
   loader: ({ context }) => {
@@ -137,6 +141,7 @@ function MilltimeComponent() {
             <header className="mb-8 flex items-center justify-between">
               <h1 className="text-3xl font-bold">Milltime</h1>
             </header>
+            <NotLockedAlert />
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <div className="mt-4 flex items-center justify-between">
