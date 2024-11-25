@@ -387,7 +387,7 @@ function TimeSummary(props: {
       <SummaryIcon
         icon={<PiggyBankIcon size={20} />}
         tooltip="Total flex"
-        className={cn(flexTimeTotal < 0 ? "text-red-500" : "text-green-600")}
+        className={cn(flexTimeTotal < 0 && "text-red-500")}
       >
         {flexTimeTotal}h
       </SummaryIcon>
