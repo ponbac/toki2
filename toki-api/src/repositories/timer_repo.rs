@@ -17,6 +17,15 @@ pub trait TimerRepository {
         registration_id: &str,
     ) -> Result<(), RepositoryError>;
     async fn delete_active_timer(&self, user_id: &i32) -> Result<(), RepositoryError>;
+    async fn get_by_registration_id(
+        &self,
+        registration_id: &str,
+    ) -> Result<Option<DatabaseTimer>, RepositoryError>;
+    async fn update_end_time(
+        &self,
+        registration_id: &str,
+        end_time: &time::OffsetDateTime,
+    ) -> Result<(), RepositoryError>;
 }
 
 pub struct TimerRepositoryImpl {
@@ -230,6 +239,45 @@ impl TimerRepository for TimerRepositoryImpl {
         )
         .execute(&self.pool)
         .await?;
+
+        Ok(())
+    }
+
+    async fn get_by_registration_id(
+        &self,
+        registration_id: &str,
+    ) -> Result<Option<DatabaseTimer>, RepositoryError> {
+        let timer = sqlx::query_as!(
+            DatabaseTimer,
+            r#"
+            SELECT * FROM timer_history WHERE registration_id = $1
+            "#,
+            registration_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(timer)
+    }
+
+    async fn update_end_time(
+        &self,
+        registration_id: &str,
+        end_time: &time::OffsetDateTime,
+    ) -> Result<(), RepositoryError> {
+        let query_result = sqlx::query!(
+            r#"
+            UPDATE timer_history SET end_time = $1 WHERE registration_id = $2
+            "#,
+            end_time,
+            registration_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        if query_result.rows_affected() == 0 {
+            return Err(RepositoryError::NotFound(registration_id.to_string()));
+        }
 
         Ok(())
     }

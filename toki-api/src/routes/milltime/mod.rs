@@ -5,14 +5,14 @@ mod timer;
 
 use axum::{
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{get, post, put},
     Json, Router,
 };
 use axum_extra::extract::CookieJar;
 use reqwest::StatusCode;
 use serde::Serialize;
 
-use crate::{app_state::AppState, domain::MilltimePassword};
+use crate::{app_state::AppState, domain::MilltimePassword, repositories::RepositoryError};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -23,16 +23,24 @@ pub fn router() -> Router<AppState> {
             get(projects::list_activities),
         )
         .route("/time-info", get(calendar::get_time_info))
-        .route("/time-entries", get(calendar::get_time_entries))
-        .route("/time-entries", put(calendar::edit_project_registration))
+        .route(
+            "/time-entries",
+            get(calendar::get_time_entries).put(calendar::edit_project_registration),
+        )
         .route("/timer-history", get(timer::get_timer_history))
-        .route("/timer", get(timer::get_timer))
-        .route("/timer", post(timer::start_timer))
-        .route("/timer/standalone", post(timer::start_standalone_timer))
-        .route("/timer", delete(timer::stop_timer))
-        .route("/timer/standalone", delete(timer::stop_standalone_timer))
-        .route("/timer", put(timer::save_timer))
-        .route("/timer/standalone", put(timer::save_standalone_timer))
+        .route(
+            "/timer",
+            get(timer::get_timer)
+                .post(timer::start_timer)
+                .delete(timer::stop_timer)
+                .put(timer::save_timer),
+        )
+        .route(
+            "/timer/standalone",
+            post(timer::start_standalone_timer)
+                .delete(timer::stop_standalone_timer)
+                .put(timer::save_standalone_timer),
+        )
         .route("/update-timer", put(timer::edit_timer))
         .route(
             "/update-timer/standalone",
@@ -68,6 +76,23 @@ impl From<milltime::MilltimeFetchError> for ErrorResponse {
             _ => ErrorResponse {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
                 error: MilltimeError::FetchError,
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
+impl From<RepositoryError> for ErrorResponse {
+    fn from(error: RepositoryError) -> Self {
+        match error {
+            RepositoryError::NotFound(_) => ErrorResponse {
+                status: StatusCode::NOT_FOUND,
+                error: MilltimeError::DatabaseError,
+                message: error.to_string(),
+            },
+            _ => ErrorResponse {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                error: MilltimeError::DatabaseError,
                 message: error.to_string(),
             },
         }

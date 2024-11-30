@@ -1,4 +1,4 @@
-use std::{cmp, collections::HashMap};
+use std::{collections::HashMap, time::Duration};
 
 use axum::{
     extract::{Query, State},
@@ -6,7 +6,7 @@ use axum::{
     Json,
 };
 use axum_extra::extract::CookieJar;
-use chrono::Datelike;
+use chrono::{Datelike, NaiveTime, Timelike};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
@@ -183,20 +183,46 @@ pub async fn edit_project_registration(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    let payload = milltime::ProjectRegistrationEditPayload::new(
+    let mt_payload = milltime::ProjectRegistrationEditPayload::new(
         payload.project_registration_id,
         milltime_client.user_id().to_string(),
         payload.project_id,
         payload.project_name,
         payload.activity_id,
         payload.activity_name,
-        payload.total_time,
+        payload.total_time.clone(),
         payload.reg_day,
         payload.week_number,
         payload.user_note,
     );
 
-    milltime_client.edit_project_registration(&payload).await?;
+    milltime_client
+        .edit_project_registration(&mt_payload)
+        .await?;
+
+    // update end time of timer registration
+    let timer_repo = app_state.milltime_repo;
+    let timer = timer_repo
+        .get_by_registration_id(&mt_payload.project_registration_id)
+        .await?;
+
+    if let Some(timer) = timer {
+        let total_time =
+            NaiveTime::parse_from_str(&payload.total_time, "%H:%M").map_err(|_| ErrorResponse {
+                status: StatusCode::BAD_REQUEST,
+                error: MilltimeError::DateParseError,
+                message: "Invalid total time format".to_string(),
+            })?;
+
+        let new_end_time = timer.start_time
+            + Duration::from_secs(
+                (total_time.hour() as u64 * 3600) + (total_time.minute() as u64 * 60),
+            );
+
+        timer_repo
+            .update_end_time(&mt_payload.project_registration_id, &new_end_time)
+            .await?;
+    }
 
     Ok((jar, StatusCode::OK))
 }
