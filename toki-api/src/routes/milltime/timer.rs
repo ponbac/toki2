@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{
     repositories::{TimerRepository, TimerType},
     routes::milltime::{ErrorResponse, MilltimeError},
@@ -284,11 +286,12 @@ pub async fn save_standalone_timer(
 
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
+    const BONUS_TIME_MINUTES: i64 = 1;
     let total_time = {
         let duration = time::OffsetDateTime::now_utc() - active_timer.start_time;
         let total_minutes = duration.whole_minutes();
         let hours = total_minutes / 60;
-        let minutes = (total_minutes % 60) + 1; // maybe should use rounding instead of adding 1
+        let minutes = (total_minutes % 60) + BONUS_TIME_MINUTES; // maybe should use rounding instead of adding 1
         format!("{:02}:{:02}", hours, minutes)
     };
     let current_day = time::OffsetDateTime::now_utc()
@@ -312,7 +315,7 @@ pub async fn save_standalone_timer(
 
     let registration = milltime_client.new_project_registration(&payload).await?;
 
-    let end_time = time::OffsetDateTime::now_utc();
+    let end_time = time::OffsetDateTime::now_utc() + Duration::from_secs(BONUS_TIME_MINUTES as u64 * 60);
     app_state
         .milltime_repo
         .save_active_timer(&user.id, &end_time, &registration.project_registration_id)
