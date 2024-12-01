@@ -16,6 +16,7 @@ import {
 import { subMonths } from "date-fns";
 import { endOfWeek, subDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
+import { useMemo } from "react";
 
 export const NotLockedAlert = () => {
   const { data: timeEntries } = useQuery({
@@ -27,11 +28,10 @@ export const NotLockedAlert = () => {
     gcTime: 1000 * 60 * 60 * 24, // 24 hours
   });
 
-  if (!timeEntries) {
-    return null;
-  }
-
-  const { lastWeekLocked, lastMonthLocked } = lockedStatus(timeEntries);
+  const { lastWeekLocked, lastMonthLocked } = useMemo(
+    () => lockedStatus(timeEntries ?? []),
+    [timeEntries],
+  );
 
   if (lastWeekLocked && lastMonthLocked) {
     return null;
@@ -78,6 +78,10 @@ function lockedStatus(timeEntries: Array<TimeEntry>): {
   lastWeekLocked: boolean;
   lastMonthLocked: boolean;
 } {
+  if (timeEntries.length === 0) {
+    return { lastWeekLocked: true, lastMonthLocked: true };
+  }
+
   const now = new Date();
   const startOfLastWeek = startOfWeek(subDays(now, 7), { weekStartsOn: 1 });
   const endOfLastWeek = endOfWeek(subDays(now, 7), { weekStartsOn: 1 });
