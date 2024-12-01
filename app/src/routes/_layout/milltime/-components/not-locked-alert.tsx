@@ -112,7 +112,9 @@ function lockedStatus(timeEntries: Array<TimeEntry>): {
       entry.attestLevel === AttestLevel.Month,
   );
   const lastMonthLocked = entriesLastMonth.every(
-    (entry) => entry.attestLevel === AttestLevel.Month,
+    (entry) =>
+      entry.attestLevel === AttestLevel.Week ||
+      entry.attestLevel === AttestLevel.Month,
   );
 
   return { lastWeekLocked, lastMonthLocked };
