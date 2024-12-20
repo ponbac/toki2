@@ -237,8 +237,7 @@ function ViewEntryCard(props: {
                     {period.endTime &&
                       format(new Date(period.endTime), "HH:mm")}
                   </p>
-                ))
-                .reverse()}
+                ))}
             </div>
           </>
         ) : (
