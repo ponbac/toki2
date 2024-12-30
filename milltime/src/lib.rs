@@ -114,7 +114,7 @@ mod tests {
             activity_name: "Systemutveckling".to_string(),
             project_id: "300000000000241970".to_string(),
             project_name: "Ex-Change Parts - Quote Manager".to_string(),
-            user_id: "104".to_string(),
+            user_id: client.user_id().to_string(),
             user_note: Some("Testing".to_string()),
             reg_day: "2024-10-01".to_string(),
             week_number: 16,
@@ -163,7 +163,7 @@ mod tests {
     async fn test_new_project_registration() {
         let client = initialize_client().await;
         let payload = ProjectRegistrationPayload::new(
-            "104".to_string(),
+            client.user_id().to_string(),
             "300000000000241970".to_string(),
             "Ex-Change Parts - Quote Manager".to_string(),
             "201201111420550010".to_string(),
@@ -187,7 +187,7 @@ mod tests {
         let client = initialize_client().await;
         let payload = ProjectRegistrationEditPayload::new(
             "300000000000414168".to_string(),
-            "104".to_string(),
+            client.user_id().to_string(),
             "300000000000000285".to_string(),
             "Internt".to_string(),
             "300000000000000364".to_string(),
