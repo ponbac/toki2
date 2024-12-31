@@ -113,7 +113,7 @@ export function Summary({ timeEntries }: SummaryProps) {
         <CardTitle className="text-2xl">
           Summary{" "}
           <span className="text-muted-foreground">
-            ({totalHours.toFixed(2)} hours)
+            ({formatHoursAsHoursMinutes(totalHours)})
           </span>
         </CardTitle>
         <CardDescription>
