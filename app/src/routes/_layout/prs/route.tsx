@@ -24,12 +24,12 @@ const pullRequestsSearchSchema = z.object({
 });
 
 export const Route = createFileRoute("/_layout/prs")({
+  validateSearch: pullRequestsSearchSchema,
+  shouldReload: false,
   loader: ({ context }) => {
     context.queryClient.ensureQueryData(queries.me());
     context.queryClient.ensureQueryData(queries.listPullRequests());
   },
-  shouldReload: false,
-  validateSearch: pullRequestsSearchSchema,
   component: PrsComponent,
 });
 

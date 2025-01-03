@@ -16,9 +16,7 @@ import { Route as LayoutRouteImport } from "./routes/_layout/route"
 import { Route as LayoutIndexImport } from "./routes/_layout/index"
 import { Route as LayoutRepositoriesRouteImport } from "./routes/_layout/repositories/route"
 import { Route as LayoutPrsRouteImport } from "./routes/_layout/prs/route"
-import { Route as LayoutMilltimeRouteImport } from "./routes/_layout/milltime/route"
-import { Route as LayoutRepositoriesIndexImport } from "./routes/_layout/repositories/index"
-import { Route as LayoutPrsIndexImport } from "./routes/_layout/prs/index"
+import { Route as LayoutMilltimeIndexImport } from "./routes/_layout/milltime/index"
 import { Route as LayoutRepositoriesAddRouteImport } from "./routes/_layout/repositories/add/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
 import { Route as LayoutRepositoriesNotificationsRepoIdRouteImport } from "./routes/_layout/repositories/notifications/$repoId/route"
@@ -54,22 +52,10 @@ const LayoutPrsRouteRoute = LayoutPrsRouteImport.update({
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
-const LayoutMilltimeRouteRoute = LayoutMilltimeRouteImport.update({
-  id: "/milltime",
-  path: "/milltime",
+const LayoutMilltimeIndexRoute = LayoutMilltimeIndexImport.update({
+  id: "/milltime/",
+  path: "/milltime/",
   getParentRoute: () => LayoutRouteRoute,
-} as any)
-
-const LayoutRepositoriesIndexRoute = LayoutRepositoriesIndexImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => LayoutRepositoriesRouteRoute,
-} as any)
-
-const LayoutPrsIndexRoute = LayoutPrsIndexImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => LayoutPrsRouteRoute,
 } as any)
 
 const LayoutRepositoriesAddRouteRoute = LayoutRepositoriesAddRouteImport.update(
@@ -111,13 +97,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LoginImport
       parentRoute: typeof rootRoute
     }
-    "/_layout/milltime": {
-      id: "/_layout/milltime"
-      path: "/milltime"
-      fullPath: "/milltime"
-      preLoaderRoute: typeof LayoutMilltimeRouteImport
-      parentRoute: typeof LayoutRouteImport
-    }
     "/_layout/prs": {
       id: "/_layout/prs"
       path: "/prs"
@@ -153,19 +132,12 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutRepositoriesAddRouteImport
       parentRoute: typeof LayoutRepositoriesRouteImport
     }
-    "/_layout/prs/": {
-      id: "/_layout/prs/"
-      path: "/"
-      fullPath: "/prs/"
-      preLoaderRoute: typeof LayoutPrsIndexImport
-      parentRoute: typeof LayoutPrsRouteImport
-    }
-    "/_layout/repositories/": {
-      id: "/_layout/repositories/"
-      path: "/"
-      fullPath: "/repositories/"
-      preLoaderRoute: typeof LayoutRepositoriesIndexImport
-      parentRoute: typeof LayoutRepositoriesRouteImport
+    "/_layout/milltime/": {
+      id: "/_layout/milltime/"
+      path: "/milltime"
+      fullPath: "/milltime"
+      preLoaderRoute: typeof LayoutMilltimeIndexImport
+      parentRoute: typeof LayoutRouteImport
     }
     "/_layout/repositories/notifications/$repoId": {
       id: "/_layout/repositories/notifications/$repoId"
@@ -181,12 +153,10 @@ declare module "@tanstack/react-router" {
 
 interface LayoutPrsRouteRouteChildren {
   LayoutPrsPrIdRouteRoute: typeof LayoutPrsPrIdRouteRoute
-  LayoutPrsIndexRoute: typeof LayoutPrsIndexRoute
 }
 
 const LayoutPrsRouteRouteChildren: LayoutPrsRouteRouteChildren = {
   LayoutPrsPrIdRouteRoute: LayoutPrsPrIdRouteRoute,
-  LayoutPrsIndexRoute: LayoutPrsIndexRoute,
 }
 
 const LayoutPrsRouteRouteWithChildren = LayoutPrsRouteRoute._addFileChildren(
@@ -195,14 +165,12 @@ const LayoutPrsRouteRouteWithChildren = LayoutPrsRouteRoute._addFileChildren(
 
 interface LayoutRepositoriesRouteRouteChildren {
   LayoutRepositoriesAddRouteRoute: typeof LayoutRepositoriesAddRouteRoute
-  LayoutRepositoriesIndexRoute: typeof LayoutRepositoriesIndexRoute
   LayoutRepositoriesNotificationsRepoIdRouteRoute: typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
 const LayoutRepositoriesRouteRouteChildren: LayoutRepositoriesRouteRouteChildren =
   {
     LayoutRepositoriesAddRouteRoute: LayoutRepositoriesAddRouteRoute,
-    LayoutRepositoriesIndexRoute: LayoutRepositoriesIndexRoute,
     LayoutRepositoriesNotificationsRepoIdRouteRoute:
       LayoutRepositoriesNotificationsRepoIdRouteRoute,
   }
@@ -213,17 +181,17 @@ const LayoutRepositoriesRouteRouteWithChildren =
   )
 
 interface LayoutRouteRouteChildren {
-  LayoutMilltimeRouteRoute: typeof LayoutMilltimeRouteRoute
   LayoutPrsRouteRoute: typeof LayoutPrsRouteRouteWithChildren
   LayoutRepositoriesRouteRoute: typeof LayoutRepositoriesRouteRouteWithChildren
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutMilltimeIndexRoute: typeof LayoutMilltimeIndexRoute
 }
 
 const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
-  LayoutMilltimeRouteRoute: LayoutMilltimeRouteRoute,
   LayoutPrsRouteRoute: LayoutPrsRouteRouteWithChildren,
   LayoutRepositoriesRouteRoute: LayoutRepositoriesRouteRouteWithChildren,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutMilltimeIndexRoute: LayoutMilltimeIndexRoute,
 }
 
 const LayoutRouteRouteWithChildren = LayoutRouteRoute._addFileChildren(
@@ -233,25 +201,23 @@ const LayoutRouteRouteWithChildren = LayoutRouteRoute._addFileChildren(
 export interface FileRoutesByFullPath {
   "": typeof LayoutRouteRouteWithChildren
   "/login": typeof LoginRoute
-  "/milltime": typeof LayoutMilltimeRouteRoute
   "/prs": typeof LayoutPrsRouteRouteWithChildren
   "/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
-  "/prs/": typeof LayoutPrsIndexRoute
-  "/repositories/": typeof LayoutRepositoriesIndexRoute
+  "/milltime": typeof LayoutMilltimeIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
 export interface FileRoutesByTo {
   "/login": typeof LoginRoute
-  "/milltime": typeof LayoutMilltimeRouteRoute
+  "/prs": typeof LayoutPrsRouteRouteWithChildren
+  "/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
-  "/prs": typeof LayoutPrsIndexRoute
-  "/repositories": typeof LayoutRepositoriesIndexRoute
+  "/milltime": typeof LayoutMilltimeIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
@@ -259,14 +225,12 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   "/_layout": typeof LayoutRouteRouteWithChildren
   "/login": typeof LoginRoute
-  "/_layout/milltime": typeof LayoutMilltimeRouteRoute
   "/_layout/prs": typeof LayoutPrsRouteRouteWithChildren
   "/_layout/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
   "/_layout/": typeof LayoutIndexRoute
   "/_layout/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/_layout/repositories/add": typeof LayoutRepositoriesAddRouteRoute
-  "/_layout/prs/": typeof LayoutPrsIndexRoute
-  "/_layout/repositories/": typeof LayoutRepositoriesIndexRoute
+  "/_layout/milltime/": typeof LayoutMilltimeIndexRoute
   "/_layout/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
@@ -275,37 +239,33 @@ export interface FileRouteTypes {
   fullPaths:
     | ""
     | "/login"
-    | "/milltime"
     | "/prs"
     | "/repositories"
     | "/"
     | "/prs/$prId"
     | "/repositories/add"
-    | "/prs/"
-    | "/repositories/"
+    | "/milltime"
     | "/repositories/notifications/$repoId"
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/login"
-    | "/milltime"
+    | "/prs"
+    | "/repositories"
     | "/"
     | "/prs/$prId"
     | "/repositories/add"
-    | "/prs"
-    | "/repositories"
+    | "/milltime"
     | "/repositories/notifications/$repoId"
   id:
     | "__root__"
     | "/_layout"
     | "/login"
-    | "/_layout/milltime"
     | "/_layout/prs"
     | "/_layout/repositories"
     | "/_layout/"
     | "/_layout/prs/$prId"
     | "/_layout/repositories/add"
-    | "/_layout/prs/"
-    | "/_layout/repositories/"
+    | "/_layout/milltime/"
     | "/_layout/repositories/notifications/$repoId"
   fileRoutesById: FileRoutesById
 }
@@ -337,25 +297,20 @@ export const routeTree = rootRoute
     "/_layout": {
       "filePath": "_layout/route.tsx",
       "children": [
-        "/_layout/milltime",
         "/_layout/prs",
         "/_layout/repositories",
-        "/_layout/"
+        "/_layout/",
+        "/_layout/milltime/"
       ]
     },
     "/login": {
       "filePath": "login.tsx"
     },
-    "/_layout/milltime": {
-      "filePath": "_layout/milltime/route.tsx",
-      "parent": "/_layout"
-    },
     "/_layout/prs": {
       "filePath": "_layout/prs/route.tsx",
       "parent": "/_layout",
       "children": [
-        "/_layout/prs/$prId",
-        "/_layout/prs/"
+        "/_layout/prs/$prId"
       ]
     },
     "/_layout/repositories": {
@@ -363,7 +318,6 @@ export const routeTree = rootRoute
       "parent": "/_layout",
       "children": [
         "/_layout/repositories/add",
-        "/_layout/repositories/",
         "/_layout/repositories/notifications/$repoId"
       ]
     },
@@ -379,13 +333,9 @@ export const routeTree = rootRoute
       "filePath": "_layout/repositories/add/route.tsx",
       "parent": "/_layout/repositories"
     },
-    "/_layout/prs/": {
-      "filePath": "_layout/prs/index.tsx",
-      "parent": "/_layout/prs"
-    },
-    "/_layout/repositories/": {
-      "filePath": "_layout/repositories/index.tsx",
-      "parent": "/_layout/repositories"
+    "/_layout/milltime/": {
+      "filePath": "_layout/milltime/index.tsx",
+      "parent": "/_layout"
     },
     "/_layout/repositories/notifications/$repoId": {
       "filePath": "_layout/repositories/notifications/$repoId/route.tsx",

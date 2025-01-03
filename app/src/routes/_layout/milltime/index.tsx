@@ -1,36 +1,36 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router"
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useMilltimeData } from "@/hooks/useMilltimeData";
-import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar";
-import { Summary } from "@/routes/_layout/milltime/-components/summary";
-import { TimeEntriesList } from "./-components/time-entries-list";
-import { DateRangeSelector } from "./-components/date-range-selector";
-import { useQuery } from "@tanstack/react-query";
-import { milltimeQueries } from "@/lib/api/queries/milltime";
-import { startOfWeek, endOfWeek, format } from "date-fns";
-import React from "react";
-import { atomWithStorage } from "jotai/utils";
-import { useAtom } from "jotai/react";
-import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
-import { TimeStats } from "./-components/time-stats";
-import { milltimeMutations } from "@/lib/api/mutations/milltime";
+} from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { useMilltimeData } from "@/hooks/useMilltimeData"
+import { SearchBar } from "@/routes/_layout/milltime/-components/search-bar"
+import { Summary } from "@/routes/_layout/milltime/-components/summary"
+import { TimeEntriesList } from "./-components/time-entries-list"
+import { DateRangeSelector } from "./-components/date-range-selector"
+import { useQuery } from "@tanstack/react-query"
+import { milltimeQueries } from "@/lib/api/queries/milltime"
+import { startOfWeek, endOfWeek, format } from "date-fns"
+import React from "react"
+import { atomWithStorage } from "jotai/utils"
+import { useAtom } from "jotai/react"
+import { MergeEntriesSwitch } from "./-components/merge-entries-switch"
+import { TimeStats } from "./-components/time-stats"
+import { milltimeMutations } from "@/lib/api/mutations/milltime"
 import {
   useMilltimeIsAuthenticating,
   useMilltimeTimer,
-} from "@/hooks/useMilltimeStore";
-import { useMilltimeActions } from "@/hooks/useMilltimeStore";
-import { NotLockedAlert } from "./-components/not-locked-alert";
+} from "@/hooks/useMilltimeStore"
+import { useMilltimeActions } from "@/hooks/useMilltimeStore"
+import { NotLockedAlert } from "./-components/not-locked-alert"
 
-export const Route = createFileRoute("/_layout/milltime")({
+export const Route = createFileRoute("/_layout/milltime/")({
   loader: ({ context }) => {
     context.queryClient.ensureQueryData(
       milltimeQueries.timeEntries({
@@ -40,27 +40,27 @@ export const Route = createFileRoute("/_layout/milltime")({
         ),
         to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
       }),
-    );
+    )
   },
   component: MilltimeComponent,
-});
+})
 
 const mergeSameDayPersistedAtom = atomWithStorage(
   "milltime-mergeSameDay",
   false,
-);
+)
 
 function MilltimeComponent() {
-  const { authenticate } = useMilltimeActions();
-  const isAuthenticating = useMilltimeIsAuthenticating();
-  const { isAuthenticated } = useMilltimeData();
+  const { authenticate } = useMilltimeActions()
+  const isAuthenticating = useMilltimeIsAuthenticating()
+  const { isAuthenticated } = useMilltimeData()
 
   const [dateRange, setDateRange] = React.useState({
     from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
     to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-  });
-  const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
-  const [search, setSearch] = React.useState("");
+  })
+  const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom)
+  const [search, setSearch] = React.useState("")
 
   const { data: timeEntries } = useQuery({
     ...milltimeQueries.timeEntries({
@@ -68,7 +68,7 @@ function MilltimeComponent() {
       to: dateRange.to,
     }),
     enabled: isAuthenticated,
-  });
+  })
 
   const filteredTimeEntries = React.useMemo(() => {
     return timeEntries?.length
@@ -77,12 +77,12 @@ function MilltimeComponent() {
             .toLowerCase()
             .includes(search.toLowerCase()),
         )
-      : [];
-  }, [timeEntries, search]);
+      : []
+  }, [timeEntries, search])
 
-  const { state: timerState } = useMilltimeTimer();
+  const { state: timerState } = useMilltimeTimer()
   const { mutate: startStandaloneTimer } =
-    milltimeMutations.useStartStandaloneTimer();
+    milltimeMutations.useStartStandaloneTimer()
 
   return (
     <div>
@@ -90,15 +90,15 @@ function MilltimeComponent() {
         <form
           className="flex min-h-screen items-center justify-center"
           onSubmit={(e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target as HTMLFormElement);
-            const username = formData.get("username") as string;
-            const password = formData.get("password") as string;
+            e.preventDefault()
+            const formData = new FormData(e.target as HTMLFormElement)
+            const username = formData.get("username") as string
+            const password = formData.get("password") as string
 
             authenticate({
               username,
               password,
-            });
+            })
           }}
         >
           <Card className="mx-auto max-w-sm">
@@ -197,5 +197,5 @@ function MilltimeComponent() {
         </div>
       )}
     </div>
-  );
+  )
 }
