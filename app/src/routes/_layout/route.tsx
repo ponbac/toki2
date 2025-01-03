@@ -31,7 +31,16 @@ function LayoutComponent() {
           <Outlet />
         </Suspense>
       </SideNavWrapper>
-      <Toaster position="top-right" />
+      <Toaster
+        position="top-right"
+        closeButton
+        toastOptions={{
+          classNames: {
+            closeButton:
+              "!bg-background text-muted-foreground hover:text-primary transition-colors !border-muted-foreground hover:!border-primary",
+          },
+        }}
+      />
       <CmdK />
       <MilltimeTimerProvider />
     </TooltipProvider>
