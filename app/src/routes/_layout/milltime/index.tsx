@@ -29,6 +29,7 @@ import {
 } from "@/hooks/useMilltimeStore";
 import { useMilltimeActions } from "@/hooks/useMilltimeStore";
 import { NotLockedAlert } from "./-components/not-locked-alert";
+import { TimerIcon } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/milltime/")({
   loader: ({ context }) => {
@@ -81,7 +82,7 @@ function MilltimeComponent() {
   }, [timeEntries, search]);
 
   const { state: timerState } = useMilltimeTimer();
-  const { mutate: startStandaloneTimer } =
+  const { mutate: startStandaloneTimer, isPending: isStartingStandaloneTimer } =
     milltimeMutations.useStartStandaloneTimer();
 
   return (
@@ -94,8 +95,22 @@ function MilltimeComponent() {
       ) : (
         <div className={`min-h-screen`}>
           <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
-            <header className="mb-8 flex items-center justify-between">
+            <header className="mb-8 flex h-12 items-center justify-between">
               <h1 className="text-3xl font-bold">Milltime</h1>
+              {timerState !== "running" && (
+                <Button
+                  variant="outline"
+                  disabled={isStartingStandaloneTimer}
+                  onClick={() =>
+                    startStandaloneTimer({
+                      userNote: "Try Ctrl+K to start a timer next time",
+                    })
+                  }
+                >
+                  <TimerIcon className="mr-2 h-4 w-4" />
+                  Start New Timer
+                </Button>
+              )}
             </header>
             <NotLockedAlert />
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
