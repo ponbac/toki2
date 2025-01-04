@@ -95,8 +95,8 @@ function MilltimeComponent() {
       ) : (
         <div className={`min-h-screen`}>
           <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
-            <header className="mb-8 flex h-12 items-center justify-between">
-              <h1 className="text-3xl font-bold">Milltime</h1>
+            <header className="mb-8 flex flex-col gap-4 md:h-12 md:flex-row md:items-center md:justify-between">
+              <h1 className="text-2xl font-bold md:text-3xl">Milltime</h1>
               {timerState !== "running" && (
                 <Button
                   variant="outline"
@@ -106,6 +106,7 @@ function MilltimeComponent() {
                       userNote: "Try Ctrl+K to start a timer next time",
                     })
                   }
+                  className="w-full md:w-auto"
                 >
                   <TimerIcon className="mr-2 h-4 w-4" />
                   Start New Timer
@@ -115,12 +116,12 @@ function MilltimeComponent() {
             <NotLockedAlert />
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               <div className="lg:col-span-2">
-                <div className="mt-4 flex items-center justify-between">
+                <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <DateRangeSelector
                     dateRange={dateRange}
                     setDateRange={setDateRange}
                   />
-                  <div className="flex flex-row items-center gap-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center">
                     <MergeEntriesSwitch
                       mergeSameDay={mergeSameDay}
                       setMergeSameDay={setMergeSameDay}
