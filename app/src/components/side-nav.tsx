@@ -48,19 +48,25 @@ type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 
 export function SideNavWrapper({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex">
-      <div className="fixed left-0 top-0 flex h-full w-14 flex-col items-stretch border-r">
-        <div className="flex h-[52px] items-center justify-center">
-          <AvatarMenu />
+    <div className="flex flex-col md:flex-row">
+      <div className="fixed left-0 right-0 top-0 z-50 flex h-14 flex-row border-b bg-background md:h-full md:w-14 md:flex-col md:items-stretch md:border-b-0 md:border-r">
+        <div className="flex w-full flex-row justify-center space-x-2 px-4 md:h-auto md:flex-col md:space-x-0 md:space-y-2 md:px-0 md:py-2">
+          <div className="flex h-full items-center justify-center md:h-[52px]">
+            <AvatarMenu />
+          </div>
+          <div className="flex h-full items-center justify-center md:h-[52px]">
+            <NotificationsPopover />
+          </div>
+          <div className="flex h-full items-center justify-center md:hidden">
+            <Separator orientation="vertical" className="h-6" />
+          </div>
+          <Nav links={MENU_ITEMS} />
         </div>
-        <div className="flex h-[52px] items-center justify-center">
-          <NotificationsPopover />
-        </div>
-        <Separator />
-        <Nav isCollapsed={true} links={MENU_ITEMS} />
       </div>
-      <div className="ml-16 flex-1">
-        <ScrollArea className="h-screen">{children}</ScrollArea>
+      <div className="mt-14 flex-1 md:ml-16 md:mt-0">
+        <ScrollArea className="h-[calc(100vh-3.5rem)] md:h-screen">
+          {children}
+        </ScrollArea>
       </div>
     </div>
   );
@@ -68,9 +74,7 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
 
 function Nav({
   links,
-  isCollapsed,
 }: {
-  isCollapsed: boolean;
   links: readonly {
     title: string;
     label?: string;
@@ -80,11 +84,8 @@ function Nav({
   }[];
 }) {
   return (
-    <div
-      data-collapsed={isCollapsed}
-      className="group flex flex-col gap-4 py-2 data-[collapsed=true]:py-2"
-    >
-      <nav className="grid gap-1 px-2 group-[[data-collapsed=true]]:justify-center group-[[data-collapsed=true]]:px-2">
+    <div className="flex h-full items-center md:h-auto md:flex-col md:gap-4">
+      <nav className="flex flex-row items-center space-x-2 md:flex-col md:space-x-0 md:space-y-2">
         {links.map((link, index) => (
           <NavLink
             key={index}
@@ -94,7 +95,6 @@ function Nav({
               icon: link.icon,
               to: link.to,
             }}
-            isCollapsed={isCollapsed}
           />
         ))}
       </nav>
@@ -106,7 +106,6 @@ function NavLink({
   title,
   label,
   link,
-  isCollapsed,
 }: {
   title: string;
   label?: string;
@@ -114,14 +113,13 @@ function NavLink({
     icon: LucideIcon;
     to: UsedLink;
   };
-  isCollapsed: boolean;
 }) {
-  return isCollapsed ? (
+  return (
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>
         <Link
           to={link.to}
-          className={cn("h-9 w-9")}
+          className={cn("size-9")}
           activeOptions={{ exact: true, includeSearch: false }}
           activeProps={{
             className: cn(
@@ -133,7 +131,7 @@ function NavLink({
             className: buttonVariants({ variant: "ghost", size: "icon" }),
           }}
         >
-          <link.icon className="h-4 w-4" />
+          <link.icon className="scale-125" />
           <span className="sr-only">{title}</span>
         </Link>
       </TooltipTrigger>
@@ -144,28 +142,6 @@ function NavLink({
         )}
       </TooltipContent>
     </Tooltip>
-  ) : (
-    <Link
-      to={link.to}
-      activeOptions={{ exact: true, includeSearch: false }}
-      activeProps={{
-        className: cn(
-          buttonVariants({ variant: "default", size: "sm" }),
-          "dark:bg-muted dark:text-white dark:hover:bg-muted dark:hover:text-white justify-start",
-          "[&>span]:text-background [&>span]:dark:text-white",
-        ),
-      }}
-      inactiveProps={{
-        className: cn(
-          buttonVariants({ variant: "ghost", size: "sm" }),
-          "justify-start",
-        ),
-      }}
-    >
-      <link.icon className="mr-2 h-4 w-4" />
-      {title}
-      {label && <span className={cn("ml-auto")}>{label}</span>}
-    </Link>
   );
 }
 
