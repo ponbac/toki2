@@ -21,6 +21,7 @@ import {
 } from "recharts";
 import { format, parseISO, getISODay } from "date-fns"; // Added getISODay
 import { formatHoursAsHoursMinutes } from "@/lib/utils";
+import { match } from "ts-pattern";
 
 type SummaryProps = {
   timeEntries: Array<TimeEntry>;
@@ -244,7 +245,7 @@ function DailyHoursTooltip(props: TooltipProps<number, string>) {
 
     return (
       <div className="flex flex-col items-center justify-center rounded-md border border-border bg-background p-2">
-        <p className="label font-semibold">{props.label}</p>
+        <p className="label font-semibold">{dayShortToLong(props.label)}</p>
         {nonZeroEntries.map((entry, index) => (
           <p key={`${entry.name}-${index}`} className="label">
             <span style={{ color: entry.color }}>{entry.name}: </span>
@@ -260,4 +261,16 @@ function DailyHoursTooltip(props: TooltipProps<number, string>) {
   }
 
   return null;
+}
+
+function dayShortToLong(dayShort: string) {
+  return match(dayShort)
+    .with("Mon", () => "Monday")
+    .with("Tue", () => "Tuesday")
+    .with("Wed", () => "Wednesday")
+    .with("Thu", () => "Thursday")
+    .with("Fri", () => "Friday")
+    .with("Sat", () => "Saturday")
+    .with("Sun", () => "Sunday")
+    .otherwise(() => dayShort);
 }
