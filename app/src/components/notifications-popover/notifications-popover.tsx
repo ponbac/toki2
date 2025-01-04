@@ -64,7 +64,7 @@ export function NotificationsPopover() {
         <button
           className={cn(
             buttonVariants({ variant: "ghost", size: "icon" }),
-            "relative size-9 transition-colors hover:bg-muted/80",
+            "relative size-10 transition-colors hover:bg-muted/80",
           )}
         >
           <Bell className="scale-125" />
