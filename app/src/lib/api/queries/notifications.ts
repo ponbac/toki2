@@ -34,11 +34,20 @@ export const notificationsQueries = {
           )
           .json<Array<PrNotificationException>>(),
     }),
-  isSubscribed: () =>
+  isSubscribed: (deviceName?: string) =>
     queryOptions({
-      queryKey: ["notifications", "push-subscriptions", "is-subscribed"],
+      queryKey: [
+        "notifications",
+        "push-subscriptions",
+        "is-subscribed",
+        deviceName,
+      ],
       queryFn: async () =>
-        api.get("notifications/is-subscribed").json<boolean>(),
+        api
+          .post("notifications/is-subscribed", {
+            json: { deviceName },
+          })
+          .json<boolean>(),
     }),
   pushSubscriptions: () =>
     queryOptions({

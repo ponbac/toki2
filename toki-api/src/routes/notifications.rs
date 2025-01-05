@@ -1,5 +1,4 @@
 use crate::domain::DbNotificationType;
-use crate::domain::PushSubscription;
 use crate::domain::PushSubscriptionInfo;
 use crate::repositories::NotificationRepository;
 use crate::repositories::PushSubscriptionRepository;
@@ -23,7 +22,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/subscribe", post(subscribe))
-        .route("/is-subscribed", get(is_subscribed))
+        .route("/is-subscribed", post(is_subscribed))
         .route("/push-subscriptions", get(get_push_subscriptions))
         .route("/push-subscriptions/:id", delete(delete_push_subscription))
         .route("/test-push", post(test_push))
@@ -46,22 +45,31 @@ pub fn router() -> Router<AppState> {
         )
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscribePayload {
+    subscription: web_push::SubscriptionInfo,
+    device_name: Option<String>,
+}
+
 #[instrument(name = "subscribe", skip(auth_session, app_state))]
 async fn subscribe(
     auth_session: AuthSession,
     client_hints: ClientHints,
     State(app_state): State<AppState>,
-    Json(body): Json<web_push::SubscriptionInfo>,
+    Json(body): Json<SubscribePayload>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let user_id = auth_session.user.expect("user not found").id;
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let new_push_subscription = NewPushSubscription {
         user_id,
-        device: client_hints.identifier(),
-        endpoint: body.endpoint,
-        auth: body.keys.auth,
-        p256dh: body.keys.p256dh,
+        device: body
+            .device_name
+            .unwrap_or_else(|| client_hints.identifier()),
+        endpoint: body.subscription.endpoint,
+        auth: body.subscription.keys.auth,
+        p256dh: body.subscription.keys.p256dh,
     };
 
     push_subscription_repo
@@ -78,16 +86,23 @@ async fn subscribe(
     Ok(StatusCode::OK)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IsSubscribedPayload {
+    device_name: Option<String>,
+}
+
 #[instrument(name = "is_subscribed", skip(app_state, user))]
 async fn is_subscribed(
     AuthSession { user, .. }: AuthSession,
     client_hints: ClientHints,
     State(app_state): State<AppState>,
+    Json(body): Json<IsSubscribedPayload>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
     let user = user.expect("user not found");
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
-    let is_subscribed = push_subscription_repo
+    let user_subscriptions = push_subscription_repo
         .get_user_push_subscriptions(&user.id)
         .await
         .map_err(|e| {
@@ -98,11 +113,14 @@ async fn is_subscribed(
             )
         })?;
 
-    let is_subscribed_with_client_hints = is_subscribed
+    let device_name = body
+        .device_name
+        .unwrap_or_else(|| client_hints.identifier());
+    let is_subscribed_with_device_name = user_subscriptions
         .iter()
-        .any(|sub| sub.device == client_hints.identifier());
+        .any(|sub| sub.device == device_name);
 
-    Ok(Json(is_subscribed_with_client_hints))
+    Ok(Json(is_subscribed_with_device_name))
 }
 
 #[instrument(name = "get_push_subscriptions", skip(app_state, user))]

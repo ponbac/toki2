@@ -25,12 +25,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { atomWithStorage } from "jotai/utils";
+import { useAtom } from "jotai/react";
+
+const deviceNamePersistedAtom = atomWithStorage<string | undefined>(
+  "deviceName",
+  undefined,
+);
 
 export function NotificationSettingsDropdown() {
+  const [deviceName, setDeviceName] = useAtom(deviceNamePersistedAtom);
   const [browserPermission, setBrowserPermission] =
     useState<NotificationPermission>(hasPushPermission());
 
-  const { data: isSubscribed } = useQuery(notificationsQueries.isSubscribed());
+  const { data: isSubscribed } = useQuery(
+    notificationsQueries.isSubscribed(deviceName),
+  );
   const { mutate: subscribeToPush } = notificationsMutations.useSubscribeToPush(
     {
       onSuccess: () => {
@@ -74,7 +84,13 @@ export function NotificationSettingsDropdown() {
 
   const handleSubscribe = () => {
     if (browserPermission === "granted") {
-      subscribeToPush();
+      const name = prompt(
+        "Enter a name for this device (this will help you identify it in the future)",
+      );
+      if (name) {
+        setDeviceName(name);
+        subscribeToPush({ deviceName: name });
+      }
     }
   };
 
@@ -182,7 +198,15 @@ export function NotificationSettingsDropdown() {
                   </TooltipTrigger>
                   <TooltipContent side="right">
                     <div className="flex flex-col gap-1">
-                      <p className="font-mono text-xs">{subscription.device}</p>
+                      <p className="font-mono text-xs">
+                        {subscription.device}
+                        {deviceName === subscription.device && (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            (current device)
+                          </span>
+                        )}
+                      </p>
                       <p>
                         Subscribed at{" "}
                         <span className="font-semibold">

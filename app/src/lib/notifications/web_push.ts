@@ -1,6 +1,6 @@
 import { api } from "../api/api";
 
-export async function subscribeUser() {
+export async function subscribeUser(deviceName?: string) {
   if ("serviceWorker" in navigator) {
     try {
       const registration = await navigator.serviceWorker.ready;
@@ -13,7 +13,7 @@ export async function subscribeUser() {
       });
 
       console.log("User is subscribed:", subscription);
-      await sendSubscriptionToServer(subscription);
+      await sendSubscriptionToServer(subscription, deviceName);
     } catch (err) {
       console.log("Failed to subscribe the user: ", err);
       throw err;
@@ -60,10 +60,13 @@ export async function requestNotificationPermission(options?: {
   }
 }
 
-async function sendSubscriptionToServer(subscription: PushSubscription) {
+async function sendSubscriptionToServer(
+  subscription: PushSubscription,
+  deviceName?: string,
+) {
   try {
     const response = await api.post("notifications/subscribe", {
-      json: subscription,
+      json: { subscription, deviceName },
     });
 
     if (!response.ok) {

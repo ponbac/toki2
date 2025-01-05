@@ -159,12 +159,18 @@ function useRemovePrException(
   });
 }
 
-function useSubscribeToPush(options?: DefaultMutationOptions<void, "OK">) {
+type SubscribePayload = {
+  deviceName: string | undefined;
+};
+
+function useSubscribeToPush(
+  options?: DefaultMutationOptions<SubscribePayload, "OK">,
+) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationKey: ["notifications", "subscribe"],
-    mutationFn: subscribeUser,
+    mutationFn: ({ deviceName }: SubscribePayload) => subscribeUser(deviceName),
     ...options,
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries({
