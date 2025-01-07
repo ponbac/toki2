@@ -24,9 +24,9 @@ const pullRequestsSearchSchema = z.object({
 });
 
 export const Route = createFileRoute("/_layout/prs")({
-  loader: ({ context }) => {
-    context.queryClient.ensureQueryData(queries.me());
-    context.queryClient.ensureQueryData(queries.listPullRequests());
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(queries.me());
+    await context.queryClient.ensureQueryData(queries.listPullRequests());
   },
   shouldReload: false,
   validateSearch: pullRequestsSearchSchema,

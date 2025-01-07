@@ -28,6 +28,8 @@ export function DataTable<TData extends DataWithId, TValue>({
   data,
   onRowClick,
 }: DataTableProps<TData, TValue>) {
+  "use no memo";
+
   const table = useReactTable({
     data,
     columns,
