@@ -9,6 +9,7 @@ pub struct Repository {
     pub organization: String,
     pub project: String,
     pub repo_name: String,
+    pub milltime_project_id: Option<String>,
 }
 
 impl From<&Repository> for RepoKey {

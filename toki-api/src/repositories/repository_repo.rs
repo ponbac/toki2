@@ -7,7 +7,8 @@ use super::repo_error::RepositoryError;
 pub trait RepoRepository {
     async fn get_repositories(&self) -> Result<Vec<Repository>, RepositoryError>;
     async fn upsert_repository(&self, repository: &NewRepository) -> Result<i32, RepositoryError>;
-    async fn delete_repository(&self, repo_key: &RepoKey) -> Result<(), RepositoryError>; // Added method
+    async fn delete_repository(&self, repo_key: &RepoKey) -> Result<(), RepositoryError>;
+    async fn update_milltime_project(&self, repo_key: &RepoKey, milltime_project_id: Option<String>) -> Result<(), RepositoryError>;
 }
 
 pub struct RepoRepositoryImpl {
@@ -25,7 +26,7 @@ impl RepoRepository for RepoRepositoryImpl {
         let repos = sqlx::query_as!(
             Repository,
             r#"
-            SELECT id, organization, project, repo_name
+            SELECT id, organization, project, repo_name, milltime_project_id
             FROM repositories
             "#
         )
@@ -65,6 +66,25 @@ impl RepoRepository for RepoRepositoryImpl {
             repo_key.organization,
             repo_key.project,
             repo_key.repo_name,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(RepositoryError::from)?;
+
+        Ok(())
+    }
+
+    async fn update_milltime_project(&self, repo_key: &RepoKey, milltime_project_id: Option<String>) -> Result<(), RepositoryError> {
+        sqlx::query!(
+            r#"
+            UPDATE repositories
+            SET milltime_project_id = $4
+            WHERE organization = $1 AND project = $2 AND repo_name = $3
+            "#,
+            repo_key.organization,
+            repo_key.project,
+            repo_key.repo_name,
+            milltime_project_id,
         )
         .execute(&self.pool)
         .await

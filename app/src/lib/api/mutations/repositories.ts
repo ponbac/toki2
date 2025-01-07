@@ -9,6 +9,7 @@ export const repositoriesMutations = {
   useAddRepository,
   useFollowRepository,
   useDeleteRepository,
+  useUpdateMilltimeProject,
 };
 
 function useAddRepository(options?: DefaultMutationOptions<AddRepositoryBody>) {
@@ -107,3 +108,26 @@ export type DeleteRepositoryBody = {
   project: string;
   repoName: string;
 };
+
+type UpdateMilltimeProjectBody = RepoKey & {
+  milltimeProjectId: string;
+};
+
+function useUpdateMilltimeProject(
+  options?: DefaultMutationOptions<UpdateMilltimeProjectBody>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["updateMilltimeProject"],
+    mutationFn: (body: UpdateMilltimeProjectBody) =>
+      api.post("repositories/milltime-project", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, vars, ctx) => {
+      queryClient.invalidateQueries(queries.differs());
+      options?.onSuccess?.(data, vars, ctx);
+    },
+  });
+}

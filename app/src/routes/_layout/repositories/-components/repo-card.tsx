@@ -24,8 +24,18 @@ import {
   PlayCircle,
   Trash,
   Unplug,
+  Timer,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { queries } from "@/lib/api/queries/queries";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const RepoCard = (props: {
   differ: Differ;
@@ -46,6 +56,13 @@ export const RepoCard = (props: {
   });
   const { mutate: deleteRepository, isPending: isDeleting } =
     mutations.useDeleteRepository();
+
+  const { data: projects } = useSuspenseQuery(queries.listProjects());
+  const { mutate: updateMilltimeProject } = mutations.useUpdateMilltimeProject({
+    onSuccess: () => {
+      toast.success("Milltime project updated successfully");
+    },
+  });
 
   return (
     <Card
@@ -140,6 +157,29 @@ export const RepoCard = (props: {
                 : "None"}
             </CardDescription>
             <LastUpdated differ={props.differ} />
+            <div className="flex items-center gap-2 mt-2">
+              <Timer className="size-4" />
+              <Select
+                value={props.differ.milltimeProjectId}
+                onValueChange={(value) =>
+                  updateMilltimeProject({
+                    ...props.differ,
+                    milltimeProjectId: value,
+                  })
+                }
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select Milltime project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.projectId} value={project.projectId}>
+                      {project.projectName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </>
         )}
       </CardContent>

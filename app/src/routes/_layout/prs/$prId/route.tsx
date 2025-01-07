@@ -11,6 +11,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ListPullRequest,
   Thread as PullRequestThread,
   User,
@@ -52,7 +64,26 @@ function PRDetailsDialog() {
     select: (data) => data.find((pr) => pr.id === +prId),
   });
 
-  const copyTimeReportTextToClipboard = (mode: "review" | "develop") => {
+  const { data: projects } = useSuspenseQuery(queries.listProjects());
+  const [selectedProject, setSelectedProject] = React.useState<string | null>(null);
+  const [selectedActivity, setSelectedActivity] = React.useState<string | null>(null);
+  const [timeReportMode, setTimeReportMode] = React.useState<"review" | "develop" | null>(null);
+
+  const { data: activities } = useSuspenseQuery({
+    ...queries.listActivities(selectedProject ?? ""),
+    enabled: !!selectedProject,
+  });
+
+  const { mutate: startTimer } = mutations.useStartTimer({
+    onSuccess: () => {
+      toast.success("Timer started successfully");
+      setSelectedProject(null);
+      setSelectedActivity(null);
+      setTimeReportMode(null);
+    },
+  });
+
+  const getTimeReportText = (mode: "review" | "develop") => {
     let text = "";
     const workItem = pr?.workItems.at(0);
     if (!workItem) {
@@ -61,7 +92,10 @@ function PRDetailsDialog() {
       const parentWorkItem = workItem.parentId;
       text = `${parentWorkItem ? `#${parentWorkItem} ` : ""}#${workItem.id} - ${mode === "review" ? "[CR] " : ""}${workItem.title}`;
     }
+    return text;
+  };
 
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.info(
       <div className="flex flex-row items-center">
@@ -71,6 +105,35 @@ function PRDetailsDialog() {
         </p>
       </div>,
     );
+  };
+
+  const startTimeReport = () => {
+    if (!timeReportMode || !selectedProject || !selectedActivity) return;
+
+    const text = getTimeReportText(timeReportMode);
+    copyToClipboard(text);
+
+    const project = projects.find(p => p.projectId === selectedProject);
+    if (!project) {
+      toast.error("Project not found");
+      return;
+    }
+
+    const activity = activities?.find(a => a.activity === selectedActivity);
+    if (!activity) {
+      toast.error("Activity not found");
+      return;
+    }
+
+    startTimer({
+      projectId: project.projectId,
+      projectName: project.projectName,
+      activity: activity.activity,
+      activityName: activity.activityName,
+      userNote: text,
+      regDay: dayjs().format("YYYY-MM-DD"),
+      weekNumber: dayjs().week(),
+    });
   };
 
   if (!pr) {
@@ -91,26 +154,150 @@ function PRDetailsDialog() {
         <Threads pullRequest={pr} />
         <DialogFooter className="pt-2">
           <PRNotificationSettings pullRequest={pr} />
-          <Button
-            autoFocus
-            variant="outline"
-            size="sm"
-            className="flex gap-2"
-            onClick={() => copyTimeReportTextToClipboard("review")}
-          >
-            <MessageCircleCodeIcon className="size-4" />
-            Review
-          </Button>
-          <Button
-            autoFocus
-            variant="default"
-            size="sm"
-            className="flex gap-2"
-            onClick={() => copyTimeReportTextToClipboard("develop")}
-          >
-            <CodeXmlIcon className="size-4" />
-            Develop
-          </Button>
+          <Popover open={timeReportMode === "review"} onOpenChange={(open) => {
+            if (open) {
+              setTimeReportMode("review");
+            } else {
+              setTimeReportMode(null);
+              setSelectedProject(null);
+              setSelectedActivity(null);
+            }
+          }}>
+            <PopoverTrigger asChild>
+              <Button
+                autoFocus
+                variant="outline"
+                size="sm"
+                className="flex gap-2"
+              >
+                <MessageCircleCodeIcon className="size-4" />
+                Review
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <h4 className="font-medium">Select Project</h4>
+                  <Select
+                    value={selectedProject ?? undefined}
+                    onValueChange={(value) => {
+                      setSelectedProject(value);
+                      setSelectedActivity(null);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projects.map((project) => (
+                        <SelectItem key={project.projectId} value={project.projectId}>
+                          {project.projectName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedProject && (
+                  <div className="flex flex-col gap-2">
+                    <h4 className="font-medium">Select Activity</h4>
+                    <Select
+                      value={selectedActivity ?? undefined}
+                      onValueChange={setSelectedActivity}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an activity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activities?.map((activity) => (
+                          <SelectItem key={activity.activity} value={activity.activity}>
+                            {activity.activityName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <Button
+                  disabled={!selectedProject || !selectedActivity}
+                  onClick={startTimeReport}
+                >
+                  Start Timer
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Popover open={timeReportMode === "develop"} onOpenChange={(open) => {
+            if (open) {
+              setTimeReportMode("develop");
+            } else {
+              setTimeReportMode(null);
+              setSelectedProject(null);
+              setSelectedActivity(null);
+            }
+          }}>
+            <PopoverTrigger asChild>
+              <Button
+                autoFocus
+                variant="default"
+                size="sm"
+                className="flex gap-2"
+              >
+                <CodeXmlIcon className="size-4" />
+                Develop
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <h4 className="font-medium">Select Project</h4>
+                  <Select
+                    value={selectedProject ?? undefined}
+                    onValueChange={(value) => {
+                      setSelectedProject(value);
+                      setSelectedActivity(null);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projects.map((project) => (
+                        <SelectItem key={project.projectId} value={project.projectId}>
+                          {project.projectName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedProject && (
+                  <div className="flex flex-col gap-2">
+                    <h4 className="font-medium">Select Activity</h4>
+                    <Select
+                      value={selectedActivity ?? undefined}
+                      onValueChange={setSelectedActivity}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an activity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activities?.map((activity) => (
+                          <SelectItem key={activity.activity} value={activity.activity}>
+                            {activity.activityName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <Button
+                  disabled={!selectedProject || !selectedActivity}
+                  onClick={startTimeReport}
+                >
+                  Start Timer
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </DialogFooter>
       </DialogContent>
     </Dialog>

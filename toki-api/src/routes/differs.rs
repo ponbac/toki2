@@ -40,6 +40,7 @@ struct Differ {
     refresh_interval: Option<Duration>,
     followed: bool,
     is_invalid: bool,
+    milltime_project_id: Option<String>,
 }
 
 #[instrument(name = "get_differs", skip(user, app_state))]
@@ -82,6 +83,7 @@ async fn get_differs(
         let last_updated = *differ.last_updated.read().await;
         let refresh_interval = *differ.interval.read().await;
 
+        let repo = all_repos.iter().find(|r| RepoKey::from(*r) == key).unwrap();
         differ_dtos.push(Differ {
             key: key.clone(),
             status,
@@ -90,6 +92,7 @@ async fn get_differs(
             followed: followed_repos.contains(&key),
             is_invalid: false,
             repo_id: differ_to_repo_id[&key],
+            milltime_project_id: repo.milltime_project_id.clone(),
         });
     }
 
@@ -105,6 +108,7 @@ async fn get_differs(
                 followed: followed_repos.contains(&key),
                 is_invalid: true,
                 repo_id: repo.id,
+                milltime_project_id: repo.milltime_project_id.clone(),
             });
         }
     }

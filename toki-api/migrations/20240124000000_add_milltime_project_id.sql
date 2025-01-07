@@ -1,0 +1,1 @@
+ALTER TABLE repositories ADD COLUMN milltime_project_id TEXT;
