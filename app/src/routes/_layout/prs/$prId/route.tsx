@@ -1,52 +1,7 @@
-import { AzureAvatar } from "@/components/azure-avatar";
-import BranchLink from "@/components/branch-link";
-import { PRLink } from "@/components/pr-link";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  ListPullRequest,
-  Thread as PullRequestThread,
-  User,
-} from "@/lib/api/queries/pullRequests";
+import { createFileRoute } from "@tanstack/react-router";
 import { queries } from "@/lib/api/queries/queries";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import dayjs from "dayjs";
-import {
-  ClipboardCopy,
-  CodeXmlIcon,
-  MessageCircleCodeIcon,
-} from "lucide-react";
-import { toast } from "sonner";
-import Markdown from "react-markdown";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import React from "react";
-import { PRNotificationSettings } from "../-components/pr-notification-settings";
+import { PRDetailsDialog } from "../-components/pr-details-dialog";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
@@ -64,10 +19,14 @@ function PRDetailsDialog() {
     select: (data) => data.find((pr) => pr.id === +prId),
   });
 
-  const { data: projects } = useSuspenseQuery(queries.listProjects());
+  const { data: differs } = useSuspenseQuery(queries.differs());
+  const { data: allProjects } = useSuspenseQuery(queries.listProjects());
   const [selectedProject, setSelectedProject] = React.useState<string | null>(null);
   const [selectedActivity, setSelectedActivity] = React.useState<string | null>(null);
   const [timeReportMode, setTimeReportMode] = React.useState<"review" | "develop" | null>(null);
+
+  const differ = differs.find(d => d.repoName === pr?.repoName);
+  const connectedProjects = allProjects.filter(p => differ?.milltimeProjectIds.includes(p.projectId));
 
   const { data: activities } = useSuspenseQuery({
     ...queries.listActivities(selectedProject ?? ""),
