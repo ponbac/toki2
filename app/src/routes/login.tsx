@@ -31,6 +31,7 @@ function LoginComponent() {
     mutationFn: (next?: string) =>
       api.post("login", { searchParams: next ? { next } : undefined }).text(),
     onSuccess: (authUrl) => {
+      // eslint-disable-next-line react-compiler/react-compiler
       window.location.href = authUrl;
     },
   });

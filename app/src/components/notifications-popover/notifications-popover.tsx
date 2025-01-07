@@ -64,10 +64,10 @@ export function NotificationsPopover() {
         <button
           className={cn(
             buttonVariants({ variant: "ghost", size: "icon" }),
-            "relative h-9 w-9 transition-colors hover:bg-muted/80",
+            "relative size-10 transition-colors hover:bg-muted/80",
           )}
         >
-          <Bell className="h-4 w-4" />
+          <Bell className="scale-125" />
           {hasUnviewedNotifications && (
             <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground duration-200 animate-in zoom-in-50">
               {unviewedCount}

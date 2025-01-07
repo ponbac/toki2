@@ -20,11 +20,11 @@ const repositoriesSearchSchema = z.object({
 });
 
 export const Route = createFileRoute("/_layout/repositories")({
+  validateSearch: repositoriesSearchSchema,
   loader: ({ context }) => {
     context.queryClient.ensureQueryData(queries.me());
     context.queryClient.ensureQueryData(queries.differs());
   },
-  validateSearch: repositoriesSearchSchema,
   component: RepositoriesComponent,
 });
 

@@ -29,8 +29,9 @@ import {
 } from "@/hooks/useMilltimeStore";
 import { useMilltimeActions } from "@/hooks/useMilltimeStore";
 import { NotLockedAlert } from "./-components/not-locked-alert";
+import { TimerIcon } from "lucide-react";
 
-export const Route = createFileRoute("/_layout/milltime")({
+export const Route = createFileRoute("/_layout/milltime/")({
   loader: ({ context }) => {
     context.queryClient.ensureQueryData(
       milltimeQueries.timeEntries({
@@ -81,75 +82,46 @@ function MilltimeComponent() {
   }, [timeEntries, search]);
 
   const { state: timerState } = useMilltimeTimer();
-  const { mutate: startStandaloneTimer } =
+  const { mutate: startStandaloneTimer, isPending: isStartingStandaloneTimer } =
     milltimeMutations.useStartStandaloneTimer();
 
   return (
     <div>
       {!isAuthenticated ? (
-        <form
-          className="flex min-h-screen items-center justify-center"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target as HTMLFormElement);
-            const username = formData.get("username") as string;
-            const password = formData.get("password") as string;
-
-            authenticate({
-              username,
-              password,
-            });
-          }}
-        >
-          <Card className="mx-auto max-w-sm">
-            <CardHeader>
-              <CardTitle className="text-xl">Authenticate</CardTitle>
-              <CardDescription>
-                Allow Toki to access your Milltime account.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="username">Username</Label>
-                  <Input
-                    id="username"
-                    name="username"
-                    type="text"
-                    placeholder="pbac"
-                    required
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input id="password" name="password" type="password" />
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isAuthenticating}
-                >
-                  Authenticate
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </form>
+        <LoginForm
+          onSubmit={authenticate}
+          isAuthenticating={isAuthenticating}
+        />
       ) : (
         <div className={`min-h-screen`}>
           <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
-            <header className="mb-8 flex items-center justify-between">
-              <h1 className="text-3xl font-bold">Milltime</h1>
+            <header className="mb-8 flex flex-col gap-4 md:h-12 md:flex-row md:items-center md:justify-between">
+              <h1 className="text-2xl font-bold md:text-3xl">Milltime</h1>
+              {timerState !== "running" && (
+                <Button
+                  variant="outline"
+                  disabled={isStartingStandaloneTimer}
+                  onClick={() =>
+                    startStandaloneTimer({
+                      userNote: "Try Ctrl+K to start a timer next time",
+                    })
+                  }
+                  className="w-full md:w-auto"
+                >
+                  <TimerIcon className="mr-2 h-4 w-4" />
+                  Start New Timer
+                </Button>
+              )}
             </header>
             <NotLockedAlert />
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               <div className="lg:col-span-2">
-                <div className="mt-4 flex items-center justify-between">
+                <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <DateRangeSelector
                     dateRange={dateRange}
                     setDateRange={setDateRange}
                   />
-                  <div className="flex flex-row items-center gap-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center">
                     <MergeEntriesSwitch
                       mergeSameDay={mergeSameDay}
                       setMergeSameDay={setMergeSameDay}
@@ -197,5 +169,61 @@ function MilltimeComponent() {
         </div>
       )}
     </div>
+  );
+}
+
+function LoginForm(props: {
+  onSubmit: (credentials: { username: string; password: string }) => void;
+  isAuthenticating: boolean;
+}) {
+  return (
+    <form
+      className="flex min-h-screen items-center justify-center"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target as HTMLFormElement);
+        const username = formData.get("username") as string;
+        const password = formData.get("password") as string;
+
+        props.onSubmit({
+          username,
+          password,
+        });
+      }}
+    >
+      <Card className="mx-auto max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-xl">Authenticate</CardTitle>
+          <CardDescription>
+            Allow Toki to access your Milltime account.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                name="username"
+                type="text"
+                placeholder="pbac"
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="password">Password</Label>
+              <Input id="password" name="password" type="password" />
+            </div>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={props.isAuthenticating}
+            >
+              Authenticate
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </form>
   );
 }

@@ -21,6 +21,7 @@ import {
 } from "recharts";
 import { format, parseISO, getISODay } from "date-fns"; // Added getISODay
 import { formatHoursAsHoursMinutes } from "@/lib/utils";
+import { match } from "ts-pattern";
 
 type SummaryProps = {
   timeEntries: Array<TimeEntry>;
@@ -63,32 +64,55 @@ export function Summary({ timeEntries }: SummaryProps) {
   }, [timeEntries]);
 
   const dailyData = useMemo(() => {
-    const dailyHours = timeEntries.reduce(
+    const dailyProjectHours = timeEntries.reduce(
       (acc, entry) => {
         const date = parseISO(entry.date);
         const day = format(date, "EEE");
-        const dayIndex = getISODay(date); // Monday = 1, Sunday = 7
+        const dayIndex = getISODay(date);
+
         if (!acc[day]) {
-          acc[day] = { date, dayIndex, hours: 0 };
+          acc[day] = {
+            date,
+            dayIndex,
+            projects: {} as Record<string, number>,
+          };
         }
-        acc[day].hours += entry.hours;
+
+        acc[day].projects[entry.projectName] =
+          (acc[day].projects[entry.projectName] || 0) + entry.hours;
         return acc;
       },
-      {} as Record<string, { date: Date; dayIndex: number; hours: number }>,
+      {} as Record<
+        string,
+        {
+          date: Date;
+          dayIndex: number;
+          projects: Record<string, number>;
+        }
+      >,
     );
 
-    return Object.values(dailyHours)
-      .map(({ date, hours, dayIndex }) => ({
-        name: format(date, "EEE"),
-        hoursUpTo8: Math.min(hours, 8),
-        hoursAbove8: Math.max(hours - 8, 0),
-        dayIndex, // Include dayIndex for sorting
+    // Get unique project names
+    const projectNames = Array.from(
+      new Set(timeEntries.map((entry) => entry.projectName)),
+    );
+
+    return Object.entries(dailyProjectHours)
+      .map(([day, { dayIndex, projects }]) => ({
+        name: day,
+        dayIndex,
+        ...projectNames.reduce(
+          (acc, project) => ({
+            ...acc,
+            [project]: projects[project] || 0,
+          }),
+          {},
+        ),
       }))
-      .sort((a, b) => a.dayIndex - b.dayIndex) // Sort by ISO day number
-      .map(({ name, hoursUpTo8, hoursAbove8 }) => ({
+      .sort((a, b) => a.dayIndex - b.dayIndex)
+      .map(({ name, ...rest }) => ({
         name,
-        hoursUpTo8,
-        hoursAbove8,
+        ...rest,
       }));
   }, [timeEntries]);
 
@@ -113,7 +137,7 @@ export function Summary({ timeEntries }: SummaryProps) {
         <CardTitle className="text-2xl">
           Summary{" "}
           <span className="text-muted-foreground">
-            ({totalHours.toFixed(2)} hours)
+            ({formatHoursAsHoursMinutes(totalHours)})
           </span>
         </CardTitle>
         <CardDescription>
@@ -163,16 +187,14 @@ export function Summary({ timeEntries }: SummaryProps) {
               <XAxis dataKey="name" />
               <YAxis />
               <Tooltip content={<DailyHoursTooltip />} />
-              <Bar
-                dataKey="hoursUpTo8"
-                stackId="a"
-                className="fill-primary/90"
-              />
-              <Bar
-                dataKey="hoursAbove8"
-                stackId="a"
-                className="fill-primary/70"
-              />
+              {projectData.map((project, index) => (
+                <Bar
+                  key={project.name}
+                  dataKey={project.name}
+                  stackId="a"
+                  fill={COLORS[index % COLORS.length]}
+                />
+              ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -211,14 +233,27 @@ function ProjectBreakdownTooltip({
 
 function DailyHoursTooltip(props: TooltipProps<number, string>) {
   if (props.active && props.payload && props.payload.length) {
-    const totalHours = props.payload.reduce(
+    const nonZeroEntries = props.payload.filter(
+      (entry) => (entry.value as number) > 0,
+    );
+    const totalHours = nonZeroEntries.reduce(
       (sum, entry) => sum + (entry.value as number),
       0,
     );
+
+    if (totalHours === 0) return null;
+
     return (
       <div className="flex flex-col items-center justify-center rounded-md border border-border bg-background p-2">
-        <p className="label">
-          <span className="text-muted-foreground">{props.label}: </span>
+        <p className="label font-semibold">{dayShortToLong(props.label)}</p>
+        {nonZeroEntries.map((entry, index) => (
+          <p key={`${entry.name}-${index}`} className="label">
+            <span style={{ color: entry.color }}>{entry.name}: </span>
+            {formatHoursAsHoursMinutes(entry.value as number)}
+          </p>
+        ))}
+        <p className="label mt-1 border-t border-border pt-1">
+          <span className="text-muted-foreground">Total: </span>
           {formatHoursAsHoursMinutes(totalHours)}
         </p>
       </div>
@@ -226,4 +261,16 @@ function DailyHoursTooltip(props: TooltipProps<number, string>) {
   }
 
   return null;
+}
+
+function dayShortToLong(dayShort: string) {
+  return match(dayShort)
+    .with("Mon", () => "Monday")
+    .with("Tue", () => "Tuesday")
+    .with("Wed", () => "Wednesday")
+    .with("Thu", () => "Thursday")
+    .with("Fri", () => "Friday")
+    .with("Sat", () => "Saturday")
+    .with("Sun", () => "Sunday")
+    .otherwise(() => dayShort);
 }

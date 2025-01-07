@@ -1,4 +1,5 @@
 import { api } from "@/lib/api/api";
+import { toast } from "sonner";
 import { create } from "zustand";
 
 type Timer = {
@@ -24,6 +25,7 @@ type MilltimeStore = {
     setNewTimerDialogOpen: (open: boolean) => void;
     setLoginDialogOpen: (open: boolean) => void;
     setEditTimerDialogOpen: (open: boolean) => void;
+    setIsAuthenticated: (isAuthenticated: boolean) => void;
   };
 };
 
@@ -52,7 +54,7 @@ export function clearMilltimeCookies() {
   });
 }
 
-export const useMilltimeStore = create<MilltimeStore>()((set) => ({
+export const useMilltimeStore = create<MilltimeStore>()((set, get) => ({
   isAuthenticated: isMilltimeCookiesPresent(),
   isAuthenticating: false,
   timer: {
@@ -87,7 +89,6 @@ export const useMilltimeStore = create<MilltimeStore>()((set) => ({
           set({ isAuthenticating: false });
         });
     },
-
     reset: () => {
       if (isMilltimeCookiesPresent()) {
         set({
@@ -102,7 +103,6 @@ export const useMilltimeStore = create<MilltimeStore>()((set) => ({
         clearMilltimeCookies();
       }
     },
-
     setTimer: (timer: Partial<Timer>) =>
       set((state) => ({
         timer: {
@@ -110,11 +110,31 @@ export const useMilltimeStore = create<MilltimeStore>()((set) => ({
           ...timer,
         },
       })),
-
     setNewTimerDialogOpen: (open: boolean) => set({ newTimerDialogOpen: open }),
     setLoginDialogOpen: (open: boolean) => set({ loginDialogOpen: open }),
     setEditTimerDialogOpen: (open: boolean) =>
       set({ editTimerDialogOpen: open }),
+    setIsAuthenticated: (newIsAuthenticated: boolean) => {
+      // If the user is not authenticated and was previously authenticated
+      if (!newIsAuthenticated && get().isAuthenticated) {
+        clearMilltimeCookies();
+        toast.error("Could not connect to Milltime", {
+          description: "Please try signing in again.",
+          duration: Infinity,
+          dismissible: true,
+          classNames: {
+            toast: "!border-destructive",
+          },
+        });
+
+        return set({
+          isAuthenticated: false,
+          timer: { visible: false, state: undefined, timeSeconds: null },
+        });
+      }
+
+      return set({ isAuthenticated: newIsAuthenticated });
+    },
   },
 }));
 

@@ -6,6 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import js from "@eslint/js";
 import { FlatCompat } from "@eslint/eslintrc";
+import pluginRouter from "@tanstack/eslint-plugin-router";
+import reactCompiler from "eslint-plugin-react-compiler";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +21,7 @@ export default [
   {
     ignores: ["**/dist", "**/.eslintrc.cjs"],
   },
+  ...pluginRouter.configs["flat/recommended"],
   ...fixupConfigRules(
     compat.extends(
       "eslint:recommended",
@@ -26,6 +29,14 @@ export default [
       "plugin:react-hooks/recommended",
     ),
   ),
+  {
+    plugins: {
+      "react-compiler": reactCompiler,
+    },
+    rules: {
+      "react-compiler/react-compiler": "error",
+    },
+  },
   {
     plugins: {
       "react-refresh": reactRefresh,

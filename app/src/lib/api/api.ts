@@ -1,4 +1,4 @@
-import { clearMilltimeCookies } from "@/hooks/useMilltimeStore";
+import { useMilltimeStore } from "@/hooks/useMilltimeStore";
 import { router } from "@/main";
 import ky, { KyResponse } from "ky";
 
@@ -35,7 +35,7 @@ export const api = ky.create({
           const parsedError = await parseResponseError(response);
           // Milltime authentication failed should not redirect to login page
           if (parsedError.data?.error === "MilltimeAuthenticationFailed") {
-            clearMilltimeCookies();
+            useMilltimeStore.getState().actions.setIsAuthenticated(false);
             return response;
           }
 
