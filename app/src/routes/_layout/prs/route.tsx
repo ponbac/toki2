@@ -27,8 +27,10 @@ export const Route = createFileRoute("/_layout/prs")({
   validateSearch: pullRequestsSearchSchema,
   shouldReload: false,
   loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(queries.me());
-    await context.queryClient.ensureQueryData(queries.listPullRequests());
+    await Promise.all([
+      context.queryClient.ensureQueryData(queries.me()),
+      context.queryClient.ensureQueryData(queries.listPullRequests()),
+    ]);
   },
   component: PrsComponent,
 });
