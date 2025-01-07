@@ -1,7 +1,41 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { queries } from "@/lib/api/queries/queries";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { PRDetailsDialog } from "../-components/pr-details-dialog";
+import { AzureAvatar } from "@/components/azure-avatar";
+import { AccordionContent, AccordionTrigger } from "@/components/ui/accordion";
+import { Accordion, AccordionItem } from "@/components/ui/accordion";
+import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DialogContent } from "@/components/ui/dialog";
+import BranchLink from "@/components/branch-link";
+import { PRLink } from "@/components/pr-link";
+import { DialogFooter, DialogHeader } from "@/components/ui/dialog";
+import { mutations } from "@/lib/api/mutations/mutations";
+import {
+  ListPullRequest,
+  User,
+  Thread as PullRequestThread,
+} from "@/lib/api/queries/pullRequests";
+import dayjs from "dayjs";
+import {
+  ClipboardCopy,
+  MessageCircleCodeIcon,
+  CodeXmlIcon,
+} from "lucide-react";
+import React from "react";
+import { toast } from "sonner";
+import { PRNotificationSettings } from "../-components/pr-notification-settings";
+import { Popover } from "@/components/ui/popover";
+import {
+  Select,
+  SelectItem,
+  SelectContent,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import Markdown from "react-markdown";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
@@ -21,12 +55,20 @@ function PRDetailsDialog() {
 
   const { data: differs } = useSuspenseQuery(queries.differs());
   const { data: allProjects } = useSuspenseQuery(queries.listProjects());
-  const [selectedProject, setSelectedProject] = React.useState<string | null>(null);
-  const [selectedActivity, setSelectedActivity] = React.useState<string | null>(null);
-  const [timeReportMode, setTimeReportMode] = React.useState<"review" | "develop" | null>(null);
+  const [selectedProject, setSelectedProject] = React.useState<string | null>(
+    null,
+  );
+  const [selectedActivity, setSelectedActivity] = React.useState<string | null>(
+    null,
+  );
+  const [timeReportMode, setTimeReportMode] = React.useState<
+    "review" | "develop" | null
+  >(null);
 
-  const differ = differs.find(d => d.repoName === pr?.repoName);
-  const connectedProjects = allProjects.filter(p => differ?.milltimeProjectIds.includes(p.projectId));
+  const differ = differs.find((d) => d.repoName === pr?.repoName);
+  const connectedProjects = allProjects.filter((p) =>
+    differ?.milltimeProjectIds.includes(p.projectId),
+  );
 
   const { data: activities } = useSuspenseQuery({
     ...queries.listActivities(selectedProject ?? ""),
@@ -72,13 +114,13 @@ function PRDetailsDialog() {
     const text = getTimeReportText(timeReportMode);
     copyToClipboard(text);
 
-    const project = projects.find(p => p.projectId === selectedProject);
+    const project = projects.find((p) => p.projectId === selectedProject);
     if (!project) {
       toast.error("Project not found");
       return;
     }
 
-    const activity = activities?.find(a => a.activity === selectedActivity);
+    const activity = activities?.find((a) => a.activity === selectedActivity);
     if (!activity) {
       toast.error("Activity not found");
       return;
@@ -113,15 +155,18 @@ function PRDetailsDialog() {
         <Threads pullRequest={pr} />
         <DialogFooter className="pt-2">
           <PRNotificationSettings pullRequest={pr} />
-          <Popover open={timeReportMode === "review"} onOpenChange={(open) => {
-            if (open) {
-              setTimeReportMode("review");
-            } else {
-              setTimeReportMode(null);
-              setSelectedProject(null);
-              setSelectedActivity(null);
-            }
-          }}>
+          <Popover
+            open={timeReportMode === "review"}
+            onOpenChange={(open) => {
+              if (open) {
+                setTimeReportMode("review");
+              } else {
+                setTimeReportMode(null);
+                setSelectedProject(null);
+                setSelectedActivity(null);
+              }
+            }}
+          >
             <PopoverTrigger asChild>
               <Button
                 autoFocus
@@ -149,7 +194,10 @@ function PRDetailsDialog() {
                     </SelectTrigger>
                     <SelectContent>
                       {projects.map((project) => (
-                        <SelectItem key={project.projectId} value={project.projectId}>
+                        <SelectItem
+                          key={project.projectId}
+                          value={project.projectId}
+                        >
                           {project.projectName}
                         </SelectItem>
                       ))}
@@ -168,7 +216,10 @@ function PRDetailsDialog() {
                       </SelectTrigger>
                       <SelectContent>
                         {activities?.map((activity) => (
-                          <SelectItem key={activity.activity} value={activity.activity}>
+                          <SelectItem
+                            key={activity.activity}
+                            value={activity.activity}
+                          >
                             {activity.activityName}
                           </SelectItem>
                         ))}
@@ -185,15 +236,18 @@ function PRDetailsDialog() {
               </div>
             </PopoverContent>
           </Popover>
-          <Popover open={timeReportMode === "develop"} onOpenChange={(open) => {
-            if (open) {
-              setTimeReportMode("develop");
-            } else {
-              setTimeReportMode(null);
-              setSelectedProject(null);
-              setSelectedActivity(null);
-            }
-          }}>
+          <Popover
+            open={timeReportMode === "develop"}
+            onOpenChange={(open) => {
+              if (open) {
+                setTimeReportMode("develop");
+              } else {
+                setTimeReportMode(null);
+                setSelectedProject(null);
+                setSelectedActivity(null);
+              }
+            }}
+          >
             <PopoverTrigger asChild>
               <Button
                 autoFocus
@@ -221,7 +275,10 @@ function PRDetailsDialog() {
                     </SelectTrigger>
                     <SelectContent>
                       {projects.map((project) => (
-                        <SelectItem key={project.projectId} value={project.projectId}>
+                        <SelectItem
+                          key={project.projectId}
+                          value={project.projectId}
+                        >
                           {project.projectName}
                         </SelectItem>
                       ))}
@@ -240,7 +297,10 @@ function PRDetailsDialog() {
                       </SelectTrigger>
                       <SelectContent>
                         {activities?.map((activity) => (
-                          <SelectItem key={activity.activity} value={activity.activity}>
+                          <SelectItem
+                            key={activity.activity}
+                            value={activity.activity}
+                          >
                             {activity.activityName}
                           </SelectItem>
                         ))}
