@@ -29,13 +29,7 @@ import {
 import { toast } from "sonner";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export const RepoCard = (props: {
   differ: Differ;
@@ -159,26 +153,26 @@ export const RepoCard = (props: {
             <LastUpdated differ={props.differ} />
             <div className="flex items-center gap-2 mt-2">
               <Timer className="size-4" />
-              <Select
-                value={props.differ.milltimeProjectId}
-                onValueChange={(value) =>
-                  updateMilltimeProject({
-                    ...props.differ,
-                    milltimeProjectId: value,
-                  })
-                }
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select Milltime project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project.projectId} value={project.projectId}>
-                      {project.projectName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex flex-col gap-2">
+                <h4 className="font-medium">Connected Milltime Projects</h4>
+                {projects.map((project) => (
+                  <div key={project.projectId} className="flex items-center gap-2">
+                    <Checkbox
+                      checked={props.differ.milltimeProjectIds.includes(project.projectId)}
+                      onCheckedChange={(checked) => {
+                        const newProjectIds = checked
+                          ? [...props.differ.milltimeProjectIds, project.projectId]
+                          : props.differ.milltimeProjectIds.filter(id => id !== project.projectId);
+                        updateMilltimeProjects({
+                          ...props.differ,
+                          milltimeProjectIds: newProjectIds,
+                        });
+                      }}
+                    />
+                    <label className="text-sm">{project.projectName}</label>
+                  </div>
+                ))}
+              </div>
             </div>
           </>
         )}

@@ -109,19 +109,19 @@ export type DeleteRepositoryBody = {
   repoName: string;
 };
 
-type UpdateMilltimeProjectBody = RepoKey & {
-  milltimeProjectId: string;
+type UpdateMilltimeProjectsBody = RepoKey & {
+  milltimeProjectIds: string[];
 };
 
-function useUpdateMilltimeProject(
-  options?: DefaultMutationOptions<UpdateMilltimeProjectBody>,
+function useUpdateMilltimeProjects(
+  options?: DefaultMutationOptions<UpdateMilltimeProjectsBody>,
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationKey: ["updateMilltimeProject"],
-    mutationFn: (body: UpdateMilltimeProjectBody) =>
-      api.post("repositories/milltime-project", {
+    mutationKey: ["updateMilltimeProjects"],
+    mutationFn: (body: UpdateMilltimeProjectsBody) =>
+      api.post("repositories/milltime-projects", {
         json: body,
       }),
     ...options,

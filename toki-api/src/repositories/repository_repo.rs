@@ -8,7 +8,7 @@ pub trait RepoRepository {
     async fn get_repositories(&self) -> Result<Vec<Repository>, RepositoryError>;
     async fn upsert_repository(&self, repository: &NewRepository) -> Result<i32, RepositoryError>;
     async fn delete_repository(&self, repo_key: &RepoKey) -> Result<(), RepositoryError>;
-    async fn update_milltime_project(&self, repo_key: &RepoKey, milltime_project_id: Option<String>) -> Result<(), RepositoryError>;
+    async fn update_milltime_projects(&self, repo_key: &RepoKey, milltime_project_ids: Vec<String>) -> Result<(), RepositoryError>;
 }
 
 pub struct RepoRepositoryImpl {
@@ -23,17 +23,28 @@ impl RepoRepositoryImpl {
 
 impl RepoRepository for RepoRepositoryImpl {
     async fn get_repositories(&self) -> Result<Vec<Repository>, RepositoryError> {
-        let repos = sqlx::query_as!(
-            Repository,
+        let repos = sqlx::query!(
             r#"
-            SELECT id, organization, project, repo_name, milltime_project_id
-            FROM repositories
+            SELECT r.id, r.organization, r.project, r.repo_name,
+                   ARRAY_AGG(rmp.milltime_project_id) FILTER (WHERE rmp.milltime_project_id IS NOT NULL) as milltime_project_ids
+            FROM repositories r
+            LEFT JOIN repository_milltime_projects rmp ON r.id = rmp.repository_id
+            GROUP BY r.id, r.organization, r.project, r.repo_name
             "#
         )
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(repos)
+        Ok(repos
+            .into_iter()
+            .map(|r| Repository {
+                id: r.id,
+                organization: r.organization,
+                project: r.project,
+                repo_name: r.repo_name,
+                milltime_project_ids: r.milltime_project_ids.unwrap_or_default(),
+            })
+            .collect())
     }
 
     async fn upsert_repository(&self, repository: &NewRepository) -> Result<i32, RepositoryError> {
@@ -74,22 +85,48 @@ impl RepoRepository for RepoRepositoryImpl {
         Ok(())
     }
 
-    async fn update_milltime_project(&self, repo_key: &RepoKey, milltime_project_id: Option<String>) -> Result<(), RepositoryError> {
-        sqlx::query!(
+    async fn update_milltime_projects(&self, repo_key: &RepoKey, milltime_project_ids: Vec<String>) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await?;
+
+        // Get repository ID
+        let repo = sqlx::query!(
             r#"
-            UPDATE repositories
-            SET milltime_project_id = $4
+            SELECT id FROM repositories
             WHERE organization = $1 AND project = $2 AND repo_name = $3
             "#,
             repo_key.organization,
             repo_key.project,
             repo_key.repo_name,
-            milltime_project_id,
         )
-        .execute(&self.pool)
-        .await
-        .map_err(RepositoryError::from)?;
+        .fetch_one(&mut *tx)
+        .await?;
 
+        // Delete existing connections
+        sqlx::query!(
+            r#"
+            DELETE FROM repository_milltime_projects
+            WHERE repository_id = $1
+            "#,
+            repo.id,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // Insert new connections
+        for project_id in milltime_project_ids {
+            sqlx::query!(
+                r#"
+                INSERT INTO repository_milltime_projects (repository_id, milltime_project_id)
+                VALUES ($1, $2)
+                "#,
+                repo.id,
+                project_id,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 }
