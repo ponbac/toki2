@@ -20,16 +20,16 @@ import { NotificationsPopover } from "./notifications-popover/notifications-popo
 type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
   {
-    title: "Pull requests",
-    icon: GitPullRequest,
-    variant: "ghost",
-    to: "/prs",
-  },
-  {
     title: "Milltime",
     icon: TimerIcon,
     variant: "ghost",
     to: "/milltime",
+  },
+  {
+    title: "Pull requests",
+    icon: GitPullRequest,
+    variant: "ghost",
+    to: "/prs",
   },
   {
     title: "Repositories",
