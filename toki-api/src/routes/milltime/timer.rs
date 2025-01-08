@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     repositories::{TimerRepository, TimerType},
     routes::milltime::{ErrorResponse, MilltimeError},
