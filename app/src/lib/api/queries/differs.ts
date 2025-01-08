@@ -22,4 +22,5 @@ export type Differ = {
     nanos: number;
   } | null;
   isInvalid: boolean;
+  milltimeProjectIds: string[] | null;
 };

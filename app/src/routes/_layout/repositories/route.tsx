@@ -17,6 +17,10 @@ import { RepoCard } from "./-components/repo-card";
 
 const repositoriesSearchSchema = z.object({
   searchString: z.string().optional().catch(""),
+  updateMilltimeProjectConnectionsDialogOpen: z
+    .boolean()
+    .optional()
+    .catch(false),
 });
 
 export const Route = createFileRoute("/_layout/repositories")({

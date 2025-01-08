@@ -1,6 +1,4 @@
-use azure_devops_rust_api::git::models::{
-    comment::CommentType, comment_thread::Status, CommentThread,
-};
+use azure_devops_rust_api::git::models::{comment_thread::Status, CommentThread};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 

@@ -8,6 +8,11 @@ pub trait RepoRepository {
     async fn get_repositories(&self) -> Result<Vec<Repository>, RepositoryError>;
     async fn upsert_repository(&self, repository: &NewRepository) -> Result<i32, RepositoryError>;
     async fn delete_repository(&self, repo_key: &RepoKey) -> Result<(), RepositoryError>; // Added method
+    async fn update_milltime_project_ids(
+        &self,
+        repo_id: i32,
+        milltime_project_ids: &[String],
+    ) -> Result<(), RepositoryError>;
 }
 
 pub struct RepoRepositoryImpl {
@@ -72,6 +77,41 @@ impl RepoRepository for RepoRepositoryImpl {
         .execute(&self.pool)
         .await
         .map_err(RepositoryError::from)?;
+
+        Ok(())
+    }
+
+    async fn update_milltime_project_ids(
+        &self,
+        repo_id: i32,
+        milltime_project_ids: &[String],
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query!(
+            r#"
+            DELETE FROM repository_milltime_projects
+            WHERE repository_id = $1
+            "#,
+            repo_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        for milltime_project_id in milltime_project_ids {
+            sqlx::query!(
+                r#"
+                INSERT INTO repository_milltime_projects (repository_id, milltime_project_id)
+                VALUES ($1, $2)
+                "#,
+                repo_id,
+                milltime_project_id,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
 
         Ok(())
     }

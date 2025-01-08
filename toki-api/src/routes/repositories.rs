@@ -25,6 +25,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(get_repositories))
         .route("/", post(add_repository))
         .route("/follow", post(follow_repository))
+        .route("/update-milltime-projects", post(update_milltime_projects))
 }
 
 #[instrument(name = "GET /repositories", skip(app_state))]
@@ -178,6 +179,33 @@ async fn delete_repository(
         })?;
 
     app_state.delete_repo(repo_key).await;
+
+    Ok(StatusCode::OK)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateMilltimeProjectsBody {
+    repo_id: i32,
+    milltime_project_ids: Vec<String>,
+}
+
+#[instrument(name = "POST /repositories/update-milltime-projects", skip(app_state))]
+async fn update_milltime_projects(
+    State(app_state): State<AppState>,
+    Json(body): Json<UpdateMilltimeProjectsBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let repository_repo = app_state.repository_repo.clone();
+
+    repository_repo
+        .update_milltime_project_ids(body.repo_id, &body.milltime_project_ids)
+        .await
+        .map_err(|err| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to update milltime projects: {}", err),
+            )
+        })?;
 
     Ok(StatusCode::OK)
 }

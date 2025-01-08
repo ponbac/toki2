@@ -26,6 +26,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
+import { UpdateMilltimeProjectConnectionsDialog } from "./update-milltime-project-connections-dialog";
 
 export const RepoCard = (props: {
   differ: Differ;
@@ -33,8 +34,6 @@ export const RepoCard = (props: {
 }) => {
   const navigate = useNavigate();
 
-  const { mutate: startDiffer } = mutations.useStartDiffers();
-  const { mutate: stopDiffer } = mutations.useStopDiffers();
   const { mutate: followRepository } = mutations.useFollowRepository({
     onSuccess: (_, vars) => {
       toast.success(
@@ -44,8 +43,6 @@ export const RepoCard = (props: {
       );
     },
   });
-  const { mutate: deleteRepository, isPending: isDeleting } =
-    mutations.useDeleteRepository();
 
   return (
     <Card
@@ -143,46 +140,48 @@ export const RepoCard = (props: {
           </>
         )}
       </CardContent>
-      {props.isAdmin && (
-        <CardFooter className="flex flex-row-reverse gap-2">
-          <FooterButton
-            disabled={
-              props.differ.status === "Running" || props.differ.isInvalid
-            }
-            onClick={() => startDiffer(props.differ)}
-          >
-            <PlayCircle size="1.25rem" />
-            Start
-          </FooterButton>
-          <FooterButton
-            variant="outline"
-            disabled={
-              props.differ.status === "Stopped" || props.differ.isInvalid
-            }
-            onClick={() => stopDiffer(props.differ)}
-          >
-            <PauseCircle size="1.25rem" />
-            Stop
-          </FooterButton>
-          <FooterButton
-            variant="outline"
-            onClick={() =>
-              deleteRepository({
-                organization: props.differ.organization,
-                project: props.differ.project,
-                repoName: props.differ.repoName,
-              })
-            }
-            className="mr-auto transition-colors hover:text-destructive"
-            disabled={props.differ.status === "Running" || isDeleting}
-          >
-            <Trash size="1.25rem" />
-          </FooterButton>
-        </CardFooter>
-      )}
+      {props.isAdmin && <AdminButtons differ={props.differ} />}
     </Card>
   );
 };
+
+function AdminButtons(props: { differ: Differ }) {
+  const { mutate: startDiffer } = mutations.useStartDiffers();
+  const { mutate: stopDiffer } = mutations.useStopDiffers();
+  const { mutate: deleteRepository, isPending: isDeleting } =
+    mutations.useDeleteRepository();
+  const { mutate: updateMilltimeProjects } =
+    mutations.useUpdateMilltimeProjects();
+
+  return (
+    <CardFooter className="flex flex-row-reverse gap-2">
+      <FooterButton
+        disabled={props.differ.status === "Running" || props.differ.isInvalid}
+        onClick={() => startDiffer(props.differ)}
+      >
+        <PlayCircle size="1.25rem" />
+        Start
+      </FooterButton>
+      <FooterButton
+        variant="outline"
+        disabled={props.differ.status === "Stopped" || props.differ.isInvalid}
+        onClick={() => stopDiffer(props.differ)}
+      >
+        <PauseCircle size="1.25rem" />
+        Stop
+      </FooterButton>
+      <FooterButton
+        variant="outline"
+        onClick={() => deleteRepository(props.differ)}
+        className="mr-auto transition-colors hover:text-destructive"
+        disabled={props.differ.status === "Running" || isDeleting}
+      >
+        <Trash size="1.25rem" />
+      </FooterButton>
+      <UpdateMilltimeProjectConnectionsDialog />
+    </CardFooter>
+  );
+}
 
 function LastUpdated(props: { differ: Differ }) {
   const nMinutesAgo = props.differ.lastUpdated

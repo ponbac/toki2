@@ -9,6 +9,7 @@ export const repositoriesMutations = {
   useAddRepository,
   useFollowRepository,
   useDeleteRepository,
+  useUpdateMilltimeProjects,
 };
 
 function useAddRepository(options?: DefaultMutationOptions<AddRepositoryBody>) {
@@ -93,6 +94,25 @@ function useDeleteRepository(
   });
 }
 
+function useUpdateMilltimeProjects(
+  options?: DefaultMutationOptions<UpdateMilltimeProjectsBody>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["updateMilltimeProjects"],
+    mutationFn: (body: UpdateMilltimeProjectsBody) =>
+      api.post("repositories/update-milltime-projects", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, vars, ctx) => {
+      queryClient.invalidateQueries(queries.differs());
+      options?.onSuccess?.(data, vars, ctx);
+    },
+  });
+}
+
 export const addRepositorySchema = z.object({
   organization: z.string().min(1, "Organization is required"),
   project: z.string().min(1, "Project is required"),
@@ -106,4 +126,9 @@ export type DeleteRepositoryBody = {
   organization: string;
   project: string;
   repoName: string;
+};
+
+export type UpdateMilltimeProjectsBody = {
+  repoId: number;
+  milltimeProjectIds: string[];
 };

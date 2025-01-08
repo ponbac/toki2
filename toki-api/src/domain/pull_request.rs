@@ -1,4 +1,4 @@
-use az_devops::{CommentType, IdentityWithVote, ThreadStatus, Vote};
+use az_devops::{IdentityWithVote, ThreadStatus, Vote};
 use serde::{Deserialize, Serialize};
 
 use super::{PRChangeEvent, RepoKey};
