@@ -6,25 +6,6 @@ A Milltime and Azure DevOps integration platform built with Rust and React.
 
 Toki2 helps you manage your time entries, track pull requests, and stay notified about important updates in Azure DevOps.
 
-## Project Structure
-
-The project is organized into several key components:
-
-### Backend Services
-
-- `toki-api/`: The main backend service, handles authentication, data persistence, business logic, and communication with Azure DevOps and Milltime.
-- `az-devops/`: Azure DevOps integration crate, custom client with the goal of making it easier to use the Azure DevOps API.
-- `milltime/`: Milltime integration crate, created by reverse engineering the Milltime web app (no API exists as of yet).
-
-### Frontend Application
-
-- `app/`: React frontend
-  - TanStack Router + TanStack Query
-  - Tailwind CSS
-  - shadcn/ui components
-  - Service worker for Web Push notifications (https://developer.mozilla.org/en-US/docs/Web/API/Push_API)
-  - PWA capabilities
-
 ## Features
 
 - ⌨️ Keyboard friendly
@@ -48,3 +29,59 @@ The project is organized into several key components:
   - Can configure which notifications you want to receive, and where you want to receive them
   - Ability to track entire repositories, or individual PRs
   - Notifications for closed PRs, new comments, replies, etc.
+
+## Screenshots
+
+<details>
+<summary>🏠 Home Dashboard</summary>
+
+![Home Dashboard](docs/images/home.png)
+
+</details>
+
+<details>
+<summary>⏱️ Time Tracking</summary>
+
+![Timer](docs/images/timer.gif)
+![Milltime Integration](docs/images/milltime.png)
+
+</details>
+
+<details>
+<summary>🔄 Pull Requests</summary>
+
+![PR Details](docs/images/pr-details.png)
+
+</details>
+
+<details>
+<summary>🔔 Notifications</summary>
+
+### In-app Notifications
+
+![Notifications Popover](docs/images/notifications-popover.gif)
+
+### Windows Notifications
+
+![Windows Notifications](docs/images/windows-notification.png)
+
+</details>
+
+## Project Structure
+
+The project is organized into several key components:
+
+### Backend Services
+
+- `toki-api/`: The main backend service, handles authentication, data persistence, business logic, and communication with Azure DevOps and Milltime.
+- `az-devops/`: Azure DevOps integration crate, custom client with the goal of making it easier to use the Azure DevOps API.
+- `milltime/`: Milltime integration crate, created by reverse engineering the Milltime web app (no API exists as of yet).
+
+### Frontend Application
+
+- `app/`: React frontend
+  - TanStack Router + TanStack Query
+  - Tailwind CSS
+  - shadcn/ui components
+  - Service worker for Web Push notifications (https://developer.mozilla.org/en-US/docs/Web/API/Push_API)
+  - PWA capabilities
