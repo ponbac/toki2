@@ -31,7 +31,7 @@ impl RepoRepository for RepoRepositoryImpl {
             Repository,
             r#"
             SELECT r.id, r.organization, r.project, r.repo_name,
-                ARRAY_AGG(rmp.milltime_project_id) as milltime_project_ids
+                COALESCE(ARRAY_REMOVE(ARRAY_AGG(rmp.milltime_project_id), NULL), ARRAY[]::text[]) as "milltime_project_ids!: Vec<String>"
             FROM repositories r
             LEFT JOIN repository_milltime_projects rmp ON r.id = rmp.repository_id
             GROUP BY r.id, r.organization, r.project, r.repo_name

@@ -1,17 +1,25 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
 use axum_extra::extract::CookieJar;
+use serde::Deserialize;
 use tracing::instrument;
 
 use crate::app_state::AppState;
 
 use super::{CookieJarResult, MilltimeCookieJarExt};
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListProjectsQuery {
+    show_all: Option<bool>,
+}
+
 #[instrument(name = "list_projects", skip(jar, app_state))]
 pub async fn list_projects(
     State(app_state): State<AppState>,
+    Query(query): Query<ListProjectsQuery>,
     jar: CookieJar,
 ) -> CookieJarResult<Json<Vec<milltime::ProjectSearchItem>>> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
@@ -21,7 +29,7 @@ pub async fn list_projects(
         .fetch_project_search(search_filter)
         .await?
         .into_iter()
-        .filter(|project| project.is_member)
+        .filter(|project| project.is_member || query.show_all.unwrap_or(false))
         .collect();
 
     Ok((jar, Json(projects)))

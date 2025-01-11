@@ -15,7 +15,7 @@ import {
 import { mutations } from "@/lib/api/mutations/mutations";
 import { Differ } from "@/lib/api/queries/differs";
 import { cn } from "@/lib/utils";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import {
   BellIcon,
@@ -146,12 +146,17 @@ export const RepoCard = (props: {
 };
 
 function AdminButtons(props: { differ: Differ }) {
+  const navigate = useNavigate({
+    from: "/repositories",
+  });
+  const { updateMilltimeProjectConnectionsDialogOpen } = useSearch({
+    from: "/_layout/repositories",
+  });
+
   const { mutate: startDiffer } = mutations.useStartDiffers();
   const { mutate: stopDiffer } = mutations.useStopDiffers();
   const { mutate: deleteRepository, isPending: isDeleting } =
     mutations.useDeleteRepository();
-  const { mutate: updateMilltimeProjects } =
-    mutations.useUpdateMilltimeProjects();
 
   return (
     <CardFooter className="flex flex-row-reverse gap-2">
@@ -178,7 +183,18 @@ function AdminButtons(props: { differ: Differ }) {
       >
         <Trash size="1.25rem" />
       </FooterButton>
-      <UpdateMilltimeProjectConnectionsDialog />
+      <UpdateMilltimeProjectConnectionsDialog
+        open={updateMilltimeProjectConnectionsDialogOpen ?? false}
+        onClose={() => {
+          navigate({
+            search: (prev) => ({
+              ...prev,
+              updateMilltimeProjectConnectionsDialogOpen: undefined,
+            }),
+          });
+        }}
+        differ={props.differ}
+      />
     </CardFooter>
   );
 }

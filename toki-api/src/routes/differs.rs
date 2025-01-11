@@ -40,7 +40,7 @@ struct Differ {
     refresh_interval: Option<Duration>,
     followed: bool,
     is_invalid: bool,
-    milltime_project_ids: Option<Vec<String>>,
+    milltime_project_ids: Vec<String>,
 }
 
 #[instrument(name = "get_differs", skip(user, app_state))]
@@ -94,7 +94,8 @@ async fn get_differs(
             milltime_project_ids: all_repos
                 .iter()
                 .find(|r| RepoKey::from(*r) == key)
-                .and_then(|r| r.milltime_project_ids.clone()),
+                .map(|r| r.milltime_project_ids.clone())
+                .unwrap_or_default(),
         });
     }
 

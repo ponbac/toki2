@@ -3,11 +3,15 @@ import { api } from "../api";
 import dayjs from "dayjs";
 
 export const milltimeQueries = {
-  listProjects: () =>
+  listProjects: (query?: { showAll: boolean }) =>
     queryOptions({
-      queryKey: ["milltime", "projects"],
+      queryKey: ["milltime", "projects", query?.showAll],
       queryFn: async () =>
-        api.get("milltime/projects").json<Array<ProjectSearchItem>>(),
+        api
+          .get("milltime/projects", {
+            searchParams: query,
+          })
+          .json<Array<ProjectSearchItem>>(),
     }),
   listActivities: (projectId: string) =>
     queryOptions({
