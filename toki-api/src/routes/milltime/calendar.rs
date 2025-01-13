@@ -9,6 +9,7 @@ use axum_extra::extract::CookieJar;
 use chrono::{Datelike, NaiveTime, Timelike};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use tracing::instrument;
 
 use crate::{
@@ -169,7 +170,8 @@ pub struct EditProjectRegistrationPayload {
     project_name: String,
     activity_id: String,
     activity_name: String,
-    total_time: String,
+    start_time: OffsetDateTime,
+    end_time: OffsetDateTime,
     reg_day: String,
     week_number: i32,
     user_note: String,
@@ -183,6 +185,11 @@ pub async fn edit_project_registration(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
+    let total_time = format!(
+        "{:02}:{:02}",
+        (payload.end_time - payload.start_time).whole_hours(),
+        (payload.end_time - payload.start_time).whole_minutes() % 60
+    );
     let mt_payload = milltime::ProjectRegistrationEditPayload::new(
         payload.project_registration_id,
         milltime_client.user_id().to_string(),
@@ -190,7 +197,7 @@ pub async fn edit_project_registration(
         payload.project_name,
         payload.activity_id,
         payload.activity_name,
-        payload.total_time.clone(),
+        total_time,
         payload.reg_day,
         payload.week_number,
         payload.user_note,
@@ -206,21 +213,13 @@ pub async fn edit_project_registration(
         .get_by_registration_id(&mt_payload.project_registration_id)
         .await?;
 
-    if let Some(timer) = timer {
-        let total_time =
-            NaiveTime::parse_from_str(&payload.total_time, "%H:%M").map_err(|_| ErrorResponse {
-                status: StatusCode::BAD_REQUEST,
-                error: MilltimeError::DateParseError,
-                message: "Invalid total time format".to_string(),
-            })?;
-
-        let new_end_time = timer.start_time
-            + Duration::from_secs(
-                (total_time.hour() as u64 * 3600) + (total_time.minute() as u64 * 60),
-            );
-
+    if timer.is_some() {
         timer_repo
-            .update_end_time(&mt_payload.project_registration_id, &new_end_time)
+            .update_start_and_end_time(
+                &mt_payload.project_registration_id,
+                &payload.start_time,
+                &payload.end_time,
+            )
             .await?;
     }
 

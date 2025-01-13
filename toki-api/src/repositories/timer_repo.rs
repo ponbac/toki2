@@ -21,9 +21,10 @@ pub trait TimerRepository {
         &self,
         registration_id: &str,
     ) -> Result<Option<DatabaseTimer>, RepositoryError>;
-    async fn update_end_time(
+    async fn update_start_and_end_time(
         &self,
         registration_id: &str,
+        start_time: &time::OffsetDateTime,
         end_time: &time::OffsetDateTime,
     ) -> Result<(), RepositoryError>;
 }
@@ -260,15 +261,17 @@ impl TimerRepository for TimerRepositoryImpl {
         Ok(timer)
     }
 
-    async fn update_end_time(
+    async fn update_start_and_end_time(
         &self,
         registration_id: &str,
+        start_time: &time::OffsetDateTime,
         end_time: &time::OffsetDateTime,
     ) -> Result<(), RepositoryError> {
         let query_result = sqlx::query!(
             r#"
-            UPDATE timer_history SET end_time = $1 WHERE registration_id = $2
+            UPDATE timer_history SET start_time = $1, end_time = $2 WHERE registration_id = $3
             "#,
+            start_time,
             end_time,
             registration_id
         )

@@ -30,16 +30,6 @@ export function TimeEntriesList(props: {
 }) {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
 
-  const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
-    milltimeMutations.useEditProjectRegistration({
-      onSuccess: () => {
-        setEditingEntryId(null);
-      },
-      onError: () => {
-        toast.error(`Failed to update time entry, try again later`);
-      },
-    });
-
   const groupedEntries: Array<[string, Array<TimeEntry | MergedTimeEntry>]> =
     useMemo(() => {
       const groups: { [key: string]: Array<TimeEntry> } = {};
@@ -147,19 +137,8 @@ export function TimeEntriesList(props: {
                                 }
                               : entry
                           }
-                          isUpdatingTimeEntry={isUpdatingTimeEntry}
-                          onSave={(updatedEntry) => {
-                            updateTimeEntry({
-                              projectRegistrationId: entry.registrationId,
-                              userNote: updatedEntry.note ?? "",
-                              projectId: updatedEntry.projectId,
-                              projectName: updatedEntry.projectName,
-                              activityId: updatedEntry.activityId,
-                              activityName: updatedEntry.activityName,
-                              totalTime: formatHoursMinutes(updatedEntry.hours),
-                              regDay: updatedEntry.date,
-                              weekNumber: updatedEntry.weekNumber,
-                            });
+                          onSaved={() => {
+                            setEditingEntryId(null);
                           }}
                           onCancel={() => setEditingEntryId(null)}
                         />
@@ -275,9 +254,8 @@ function ViewEntryCard(props: {
 
 function EditEntryCard(props: {
   entry: TimeEntry;
-  onSave: (updatedEntry: TimeEntry) => void;
+  onSaved: () => void;
   onCancel: () => void;
-  isUpdatingTimeEntry: boolean;
 }) {
   const [note, setNote] = useState(props.entry.note);
   const [hours, setHours] = useState(Math.floor(props.entry.hours));
@@ -285,13 +263,33 @@ function EditEntryCard(props: {
     Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60),
   );
 
+  const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
+    milltimeMutations.useEditProjectRegistration({
+      onSuccess: () => {
+        props.onSaved();
+      },
+      onError: () => {
+        toast.error(`Failed to update time entry, try again later`);
+      },
+    });
+
   const handleSave = () => {
     const updatedEntry = {
       ...props.entry,
       note,
       hours: hours + minutes / 60,
     };
-    props.onSave(updatedEntry);
+    updateTimeEntry({
+      projectRegistrationId: props.entry.registrationId,
+      userNote: updatedEntry.note ?? "",
+      projectId: updatedEntry.projectId,
+      projectName: updatedEntry.projectName,
+      activityId: updatedEntry.activityId,
+      activityName: updatedEntry.activityName,
+      totalTime: formatHoursMinutes(updatedEntry.hours),
+      regDay: updatedEntry.date,
+      weekNumber: updatedEntry.weekNumber,
+    });
   };
 
   return (
@@ -340,11 +338,7 @@ function EditEntryCard(props: {
         <Button size="sm" variant="outline" onClick={props.onCancel}>
           Cancel
         </Button>
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={props.isUpdatingTimeEntry}
-        >
+        <Button size="sm" onClick={handleSave} disabled={isUpdatingTimeEntry}>
           <SaveIcon className="mr-2 size-4" />
           Save
         </Button>
