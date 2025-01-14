@@ -281,7 +281,8 @@ export type EditProjectRegistrationPayload = {
   projectName: string;
   activityId: string;
   activityName: string;
-  totalTime: string;
+  startTime: string;
+  endTime: string;
   regDay: string;
   weekNumber: number;
   userNote: string;

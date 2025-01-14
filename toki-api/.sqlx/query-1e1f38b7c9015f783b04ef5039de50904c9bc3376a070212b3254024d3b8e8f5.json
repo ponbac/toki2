@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE timer_history SET start_time = $1, end_time = $2 WHERE registration_id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1e1f38b7c9015f783b04ef5039de50904c9bc3376a070212b3254024d3b8e8f5"
+}
