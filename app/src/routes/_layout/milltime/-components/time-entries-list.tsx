@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { format } from "date-fns";
+import dayjs from "dayjs";
 import {
   Card,
   CardContent,
@@ -8,9 +9,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AttestLevel, TimeEntry } from "@/lib/api/queries/milltime";
-import { formatHoursAsHoursMinutes, formatHoursMinutes } from "@/lib/utils";
+import { formatHoursAsHoursMinutes } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { toast } from "sonner";
 import { LockIcon, PencilIcon, SaveIcon } from "lucide-react";
@@ -262,6 +264,37 @@ function EditEntryCard(props: {
   const [minutes, setMinutes] = useState(
     Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60),
   );
+  const [startTime, setStartTime] = useState(
+    props.entry.startTime
+      ? dayjs(props.entry.startTime).format("HH:mm")
+      : "06:00",
+  );
+  const [endTime, setEndTime] = useState(
+    props.entry.endTime ? dayjs(props.entry.endTime).format("HH:mm") : "",
+  );
+
+  // Keep time range and total time in sync
+  const updateTimeRange = (start: string, end: string) => {
+    setStartTime(start);
+    setEndTime(end);
+    if (start && end) {
+      const startDate = dayjs(`2000-01-01T${start}`);
+      const endDate = dayjs(`2000-01-01T${end}`);
+      const diffHours = endDate.diff(startDate, "hour", true);
+      setHours(Math.floor(diffHours));
+      setMinutes(Math.round((diffHours - Math.floor(diffHours)) * 60));
+    }
+  };
+
+  const updateTotalTime = (h: number, m: number) => {
+    setHours(h);
+    setMinutes(m);
+    if (startTime) {
+      const startDate = dayjs(`2000-01-01T${startTime}`);
+      const endDate = startDate.add(h, "hour").add(m, "minute");
+      setEndTime(endDate.format("HH:mm"));
+    }
+  };
 
   const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
     milltimeMutations.useEditProjectRegistration({
@@ -274,21 +307,20 @@ function EditEntryCard(props: {
     });
 
   const handleSave = () => {
-    const updatedEntry = {
-      ...props.entry,
-      note,
-      hours: hours + minutes / 60,
-    };
+    const startDateTime = dayjs(`${props.entry.date}T${startTime}`);
+    const endDateTime = dayjs(`${props.entry.date}T${endTime}`);
+
     updateTimeEntry({
       projectRegistrationId: props.entry.registrationId,
-      userNote: updatedEntry.note ?? "",
-      projectId: updatedEntry.projectId,
-      projectName: updatedEntry.projectName,
-      activityId: updatedEntry.activityId,
-      activityName: updatedEntry.activityName,
-      totalTime: formatHoursMinutes(updatedEntry.hours),
-      regDay: updatedEntry.date,
-      weekNumber: updatedEntry.weekNumber,
+      userNote: note ?? "",
+      projectId: props.entry.projectId,
+      projectName: props.entry.projectName,
+      activityId: props.entry.activityId,
+      activityName: props.entry.activityName,
+      startTime: startDateTime.toISOString(),
+      endTime: endDateTime.toISOString(),
+      regDay: props.entry.date,
+      weekNumber: props.entry.weekNumber,
     });
   };
 
@@ -302,8 +334,8 @@ function EditEntryCard(props: {
           </span>
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="mb-4">
+      <CardContent className="space-y-6">
+        <div>
           <label className="block text-sm font-medium">Note</label>
           <Input
             value={note ?? ""}
@@ -311,26 +343,74 @@ function EditEntryCard(props: {
             className="mt-1"
           />
         </div>
-        <div className="mb-4 flex w-1/2 items-end gap-4">
-          <div className="flex-1">
-            <label className="block text-sm font-medium">Hours</label>
-            <Input
-              type="number"
-              value={hours}
-              onChange={(e) => setHours(parseInt(e.target.value))}
-              className="mt-1"
-              min={0}
-            />
+
+        <div className="relative flex gap-12">
+          <div className="space-y-4">
+            <h3 className="font-medium">Range</h3>
+            <div className="flex gap-4">
+              <div className="w-32">
+                <label className="block text-sm font-medium text-muted-foreground">
+                  Start Time
+                </label>
+                <Input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => updateTimeRange(e.target.value, endTime)}
+                  className="mt-1"
+                />
+              </div>
+              <div className="w-32">
+                <label className="block text-sm font-medium text-muted-foreground">
+                  End Time
+                </label>
+                <Input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => updateTimeRange(startTime, e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+            </div>
           </div>
-          <div className="flex-1">
-            <label className="block text-sm font-medium">Minutes</label>
-            <Input
-              type="number"
-              value={minutes}
-              onChange={(e) => setMinutes(parseInt(e.target.value))}
-              className="mt-1"
-              min={0}
-            />
+
+          <Separator
+            orientation="vertical"
+            className="mb-[6px] h-[80px] self-end"
+          />
+
+          <div className="space-y-4">
+            <h3 className="font-medium">Total</h3>
+            <div className="flex gap-4">
+              <div className="w-24">
+                <label className="block text-sm font-medium text-muted-foreground">
+                  Hours
+                </label>
+                <Input
+                  type="number"
+                  value={hours}
+                  onChange={(e) =>
+                    updateTotalTime(parseInt(e.target.value), minutes)
+                  }
+                  className="mt-1"
+                  min={0}
+                />
+              </div>
+              <div className="w-24">
+                <label className="block text-sm font-medium text-muted-foreground">
+                  Minutes
+                </label>
+                <Input
+                  type="number"
+                  value={minutes}
+                  onChange={(e) =>
+                    updateTotalTime(hours, parseInt(e.target.value))
+                  }
+                  className="mt-1"
+                  min={0}
+                  max={59}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -338,7 +418,11 @@ function EditEntryCard(props: {
         <Button size="sm" variant="outline" onClick={props.onCancel}>
           Cancel
         </Button>
-        <Button size="sm" onClick={handleSave} disabled={isUpdatingTimeEntry}>
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={isUpdatingTimeEntry || !startTime || !endTime}
+        >
           <SaveIcon className="mr-2 size-4" />
           Save
         </Button>

@@ -170,8 +170,8 @@ pub struct EditProjectRegistrationPayload {
     project_name: String,
     activity_id: String,
     activity_name: String,
-    start_time: OffsetDateTime,
-    end_time: OffsetDateTime,
+    start_time: String,
+    end_time: String,
     reg_day: String,
     week_number: i32,
     user_note: String,
@@ -185,10 +185,29 @@ pub async fn edit_project_registration(
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
+    let start_time = time::OffsetDateTime::parse(
+        &payload.start_time,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .map_err(|_| ErrorResponse {
+        status: StatusCode::BAD_REQUEST,
+        error: MilltimeError::DateParseError,
+        message: "Invalid start time format".to_string(),
+    })?;
+    let end_time = time::OffsetDateTime::parse(
+        &payload.end_time,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .map_err(|_| ErrorResponse {
+        status: StatusCode::BAD_REQUEST,
+        error: MilltimeError::DateParseError,
+        message: "Invalid end time format".to_string(),
+    })?;
+
     let total_time = format!(
         "{:02}:{:02}",
-        (payload.end_time - payload.start_time).whole_hours(),
-        (payload.end_time - payload.start_time).whole_minutes() % 60
+        (end_time - start_time).whole_hours(),
+        (end_time - start_time).whole_minutes() % 60
     );
     let mt_payload = milltime::ProjectRegistrationEditPayload::new(
         payload.project_registration_id,
@@ -215,11 +234,7 @@ pub async fn edit_project_registration(
 
     if timer.is_some() {
         timer_repo
-            .update_start_and_end_time(
-                &mt_payload.project_registration_id,
-                &payload.start_time,
-                &payload.end_time,
-            )
+            .update_start_and_end_time(&mt_payload.project_registration_id, &start_time, &end_time)
             .await?;
     }
 
