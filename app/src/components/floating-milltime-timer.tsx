@@ -176,7 +176,7 @@ export const FloatingMilltimeTimer = () => {
     <>
       <div
         className={cn(
-          "fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-gray-900/95 p-4 shadow-lg w-[90%] sm:w-[400px] md:left-auto md:right-4 md:translate-x-0",
+          "fixed bottom-4 left-1/2 w-[90%] -translate-x-1/2 rounded-lg bg-gray-900/95 p-4 shadow-lg sm:w-[400px] md:left-auto md:right-4 md:translate-x-0",
           {
             "w-fit min-w-[170px] px-2 py-1": isMinimized,
           },
@@ -211,7 +211,9 @@ export const FloatingMilltimeTimer = () => {
                     })
                   }
                   disabled={
-                    isSavingTimer || isStoppingTimer || (timeSeconds ?? 0) < 60
+                    isSavingTimer ||
+                    isStoppingTimer ||
+                    ((timeSeconds ?? 0) < 60 && timer.timerType === "Milltime")
                   }
                 >
                   <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
