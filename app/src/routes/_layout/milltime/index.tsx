@@ -32,8 +32,8 @@ import { NotLockedAlert } from "./-components/not-locked-alert";
 import { TimerIcon } from "lucide-react";
 
 export const Route = createFileRoute("/_layout/milltime/")({
-  loader: ({ context }) => {
-    context.queryClient.ensureQueryData(
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(
       milltimeQueries.timeEntries({
         from: format(
           startOfWeek(new Date(), { weekStartsOn: 1 }),
