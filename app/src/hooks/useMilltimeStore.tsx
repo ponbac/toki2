@@ -140,7 +140,10 @@ export const useMilltimeStore = create<MilltimeStore>()((set, get) => ({
           description: (
             <p>
               Try going to the{" "}
-              <Link className="font-bold" to="/milltime">
+              <Link
+                className="font-bold underline transition-colors hover:text-primary"
+                to="/milltime"
+              >
                 Milltime view
               </Link>{" "}
               and signing in.
