@@ -1,4 +1,5 @@
 import { api } from "@/lib/api/api";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { create } from "zustand";
 
@@ -135,7 +136,16 @@ export const useMilltimeStore = create<MilltimeStore>()((set, get) => ({
         });
       } else if (!get().initialAuthChecked && !newIsAuthenticated) {
         toast.info("Could not connect to Milltime", {
-          description: "Try going to the Milltime view and signing in.",
+          // description: "Try going to the Milltime view and signing in.",
+          description: (
+            <p>
+              Try going to the{" "}
+              <Link className="font-bold" to="/milltime">
+                Milltime view
+              </Link>{" "}
+              and signing in.
+            </p>
+          ),
           duration: Infinity,
           dismissible: true,
         });
