@@ -37,7 +37,7 @@ pub async fn authenticate(
                         .path("/")
                         .secure(true)
                         .http_only(false)
-                        .expires(OffsetDateTime::now_utc().add(Duration::days(30)))
+                        .expires(OffsetDateTime::now_utc().add(Duration::days(180)))
                         .build(),
                 )
                 .add(
@@ -46,7 +46,7 @@ pub async fn authenticate(
                         .path("/")
                         .secure(true)
                         .http_only(true)
-                        .expires(OffsetDateTime::now_utc().add(Duration::days(30)))
+                        .expires(OffsetDateTime::now_utc().add(Duration::days(180)))
                         .build(),
                 );
             jar = jar.with_milltime_credentials(&creds, &domain);

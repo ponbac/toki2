@@ -11,6 +11,7 @@ type Timer = {
 type MilltimeStore = {
   isAuthenticated: boolean;
   isAuthenticating: boolean;
+  initialAuthChecked: boolean;
   timer: Timer;
   newTimerDialogOpen: boolean;
   editTimerDialogOpen: boolean;
@@ -57,6 +58,7 @@ export function clearMilltimeCookies() {
 export const useMilltimeStore = create<MilltimeStore>()((set, get) => ({
   isAuthenticated: isMilltimeCookiesPresent(),
   isAuthenticating: false,
+  initialAuthChecked: false,
   timer: {
     visible: false,
     state: undefined,
@@ -86,7 +88,7 @@ export const useMilltimeStore = create<MilltimeStore>()((set, get) => ({
           clearMilltimeCookies();
         })
         .finally(() => {
-          set({ isAuthenticating: false });
+          set({ isAuthenticating: false, initialAuthChecked: true });
         });
     },
     reset: () => {
@@ -131,9 +133,18 @@ export const useMilltimeStore = create<MilltimeStore>()((set, get) => ({
           isAuthenticated: false,
           timer: { visible: false, state: undefined, timeSeconds: null },
         });
+      } else if (!get().initialAuthChecked && !newIsAuthenticated) {
+        toast.info("Could not connect to Milltime", {
+          description: "Try going to the Milltime view and signing in.",
+          duration: Infinity,
+          dismissible: true,
+        });
       }
 
-      return set({ isAuthenticated: newIsAuthenticated });
+      return set({
+        isAuthenticated: newIsAuthenticated,
+        initialAuthChecked: true,
+      });
     },
   },
 }));
