@@ -96,7 +96,7 @@ export function TimerHistory(props: {
                   </span>
                 </div>
                 {timeEntry.note && (
-                  <div className="mt-1 max-w-[55ch] truncate text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
+                  <div className="mt-1 max-w-[55ch] truncate text-left text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
                     {timeEntry.note}
                   </div>
                 )}
