@@ -5,6 +5,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ConditionalTooltip } from "@/components/ui/tooltip";
 import { WorkItemLink } from "@/components/work-item-link";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
@@ -82,11 +83,23 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
       accessorKey: "createdBy.displayName",
       header: "Author",
       cell: ({ row }) => {
+        const LIMIT = 25;
+        const displayName = row.original.createdBy.displayName;
+        const displayText =
+          displayName.length > LIMIT
+            ? displayName.slice(0, LIMIT) + "..."
+            : displayName;
+
         return (
           <div className="flex flex-row items-center justify-center gap-2 2xl:justify-start">
             <AzureAvatar user={row.original.createdBy} />
             <span className="hidden text-nowrap 2xl:block">
-              {row.original.createdBy.displayName}
+              <ConditionalTooltip
+                condition={displayName.length > LIMIT}
+                content={displayName}
+              >
+                {displayText}
+              </ConditionalTooltip>
             </span>
           </div>
         );
