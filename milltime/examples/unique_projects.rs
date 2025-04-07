@@ -1,9 +1,16 @@
 use milltime::{Credentials, DateFilter, MilltimeClient};
 use std::collections::HashMap;
-use std::env;
 use std::error::Error;
+use std::{cmp, env};
 
 const START_DATE: &str = "2020-01-01";
+
+struct ProjectInfo {
+    project_name: String,
+    hours: f64,
+    first_entry: chrono::NaiveDate,
+    last_entry: chrono::NaiveDate,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -16,7 +23,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let calendar = client.fetch_user_calendar(&date_filter).await?;
 
     // Create a map to store project info and total hours
-    let mut project_times: HashMap<String, (String, f64)> = HashMap::new();
+    let mut project_times: HashMap<String, ProjectInfo> = HashMap::new();
 
     // Sum up hours for each project
     calendar
@@ -27,17 +34,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .for_each(|entry| {
             project_times
                 .entry(entry.project_id.clone())
-                .and_modify(|(_, hours)| *hours += entry.hours)
-                .or_insert((entry.project_name, entry.hours));
+                .and_modify(|project_info| {
+                    project_info.hours += entry.hours;
+                    project_info.first_entry = cmp::min(project_info.first_entry, entry.date);
+                    project_info.last_entry = cmp::max(project_info.last_entry, entry.date);
+                })
+                .or_insert(ProjectInfo {
+                    project_name: entry.project_name,
+                    hours: entry.hours,
+                    first_entry: entry.date,
+                    last_entry: entry.date,
+                });
         });
 
     // Sort projects by total time (descending)
     let mut projects: Vec<_> = project_times.into_iter().collect();
-    projects.sort_by(|a, b| b.1 .1.partial_cmp(&a.1 .1).unwrap());
+    projects.sort_by(|a, b| {
+        b.1.hours
+            .partial_cmp(&a.1.hours)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     println!("Unique projects since {}:", START_DATE);
-    for (_, (project_name, hours)) in projects {
-        println!("{} ({})", project_name, format_hours_minutes(hours));
+    for (
+        _,
+        ProjectInfo {
+            project_name,
+            hours,
+            first_entry,
+            last_entry,
+        },
+    ) in projects
+    {
+        println!(
+            "{} ({}) | [{} - {}]",
+            project_name,
+            format_hours_minutes(hours),
+            first_entry,
+            last_entry
+        );
     }
 
     Ok(())
