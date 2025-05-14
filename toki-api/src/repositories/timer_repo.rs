@@ -95,6 +95,7 @@ pub struct UpdateDatabaseTimer {
     pub project_name: Option<String>,
     pub activity_id: Option<String>,
     pub activity_name: Option<String>,
+    pub start_time: Option<time::OffsetDateTime>,
 }
 
 impl TimerRepository for TimerRepositoryImpl {
@@ -214,7 +215,7 @@ impl TimerRepository for TimerRepositoryImpl {
         sqlx::query!(
             r#"
             UPDATE timer_history
-            SET note = $1, project_id = $2, project_name = $3, activity_id = $4, activity_name = $5
+            SET note = $1, project_id = $2, project_name = $3, activity_id = $4, activity_name = $5, start_time = COALESCE($7, start_time)
             WHERE user_id = $6 AND end_time IS NULL
             "#,
             timer.user_note,
@@ -222,7 +223,8 @@ impl TimerRepository for TimerRepositoryImpl {
             timer.project_name,
             timer.activity_id,
             timer.activity_name,
-            timer.user_id
+            timer.user_id,
+            timer.start_time
         )
         .execute(&self.pool)
         .await?;

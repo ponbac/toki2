@@ -268,11 +268,12 @@ export type EditTimerPayload = {
 };
 
 export type EditStandaloneTimerPayload = {
-  userNote: string;
+  userNote?: string;
   projectId?: string;
   projectName?: string;
   activityId?: string;
   activityName?: string;
+  startTime?: string;
 };
 
 export type EditProjectRegistrationPayload = {

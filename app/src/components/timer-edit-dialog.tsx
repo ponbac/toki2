@@ -16,15 +16,26 @@ import { Input } from "./ui/input";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { DatabaseTimer } from "@/lib/api/queries/milltime";
 import { TimerHistory } from "./timer-history";
+import dayjs from "dayjs";
+import { Label } from "./ui/label";
 
 export const TimerEditDialog = (props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   timer: DatabaseTimer;
 }) => {
-  const [projectId, setProjectId] = React.useState<string | undefined>();
-  const [activityName, setActivityName] = React.useState<string | undefined>();
-  const [note, setNote] = React.useState<string | undefined>();
+  const [projectId, setProjectId] = React.useState<string | undefined>(
+    props.timer?.projectId ?? undefined,
+  );
+  const [activityName, setActivityName] = React.useState<string | undefined>(
+    props.timer?.activityName ?? undefined,
+  );
+  const [note, setNote] = React.useState<string | undefined>(
+    props.timer?.note ?? undefined,
+  );
+  const [startTimeISO, setStartTimeISO] = React.useState<string | undefined>(
+    props.timer?.startTime,
+  );
 
   const { projects, activities } = useMilltimeData({
     projectId: projectId,
@@ -55,6 +66,7 @@ export const TimerEditDialog = (props: {
         activityId: selectedActivity?.activity ?? "",
         activityName: activityName,
         userNote: note ?? "",
+        startTime: startTimeISO,
       },
       {
         onSuccess: () => {
@@ -65,13 +77,45 @@ export const TimerEditDialog = (props: {
   };
 
   React.useEffect(() => {
+    // Synchronize state with props.timer when it changes
     setProjectId(props.timer?.projectId ?? undefined);
     setActivityName(props.timer?.activityName ?? undefined);
-    setNote(props.timer?.note ?? "");
+    setNote(props.timer?.note ?? undefined); // Convert null to undefined for consistency
+    setStartTimeISO(props.timer?.startTime);
   }, [props.timer]);
 
   const activitiesRef = React.useRef<HTMLButtonElement>(null);
   const noteInputRef = React.useRef<HTMLInputElement>(null);
+
+  const timeInputDisplayValue = React.useMemo(() => {
+    return startTimeISO ? dayjs(startTimeISO).format("HH:mm") : "06:00";
+  }, [startTimeISO]);
+
+  // Handle time input change from "HH:mm"
+  const handleTimeInputChange = (newTimeValue: string) => {
+    if (!props.timer?.startTime) {
+      console.warn(
+        "Original timer start time not available to derive date for time input change.",
+      );
+      return;
+    }
+    const originalTimerDate = dayjs(props.timer.startTime); // Base date from original timer
+    const [hours, minutes] = newTimeValue.split(":").map(Number);
+
+    let newFullDateTime = originalTimerDate
+      .hour(hours)
+      .minute(minutes)
+      .second(0)
+      .millisecond(0);
+
+    // If the new start time is in the future, set it to the current time
+    const now = dayjs();
+    if (newFullDateTime.isAfter(now)) {
+      newFullDateTime = now.second(0).millisecond(0); // Also reset seconds and milliseconds for consistency
+    }
+
+    setStartTimeISO(newFullDateTime.toISOString());
+  };
 
   // TODO: should skeleton while loading...
   if (!props.open || !projects) return null;
@@ -148,6 +192,15 @@ export const TimerEditDialog = (props: {
                 value={note ?? ""}
                 onChange={(e) => setNote(e.target.value)}
               />
+              <div className="mt-2 flex w-32 flex-col gap-2">
+                <Label htmlFor="timer-start-time">Start Time</Label>
+                <Input
+                  id="timer-start-time"
+                  type="time"
+                  value={timeInputDisplayValue}
+                  onChange={(e) => handleTimeInputChange(e.target.value)}
+                />
+              </div>
             </div>
             <TimerHistory
               onHistoryClick={(projectName, activityName, clickedNote) => {
@@ -176,7 +229,7 @@ export const TimerEditDialog = (props: {
               variant="default"
               size="sm"
               className="flex gap-2"
-              disabled={!projectId || !activityName}
+              disabled={!!projectId !== !!activityName}
             >
               <EditIcon className="size-5" />
               Save

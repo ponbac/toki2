@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     repositories::{TimerRepository, TimerType},
     routes::milltime::{ErrorResponse, MilltimeError},
@@ -349,6 +347,7 @@ pub async fn edit_timer(
         project_name: None,
         activity_id: None,
         activity_name: None,
+        start_time: None,
     };
     if let Err(e) = app_state.milltime_repo.update_timer(&update_timer).await {
         tracing::error!("failed to update timer: {:?}", e);
@@ -365,6 +364,7 @@ pub struct EditStandaloneTimerPayload {
     project_name: Option<String>,
     activity_id: Option<String>,
     activity_name: Option<String>,
+    start_time: Option<String>,
 }
 
 #[instrument(name = "edit_standalone_timer", skip(app_state, auth_session))]
@@ -386,16 +386,46 @@ pub async fn edit_standalone_timer(
         }
     };
 
-    let update_timer = repositories::UpdateDatabaseTimer {
+    let parsed_start_time_option: Option<time::OffsetDateTime> = body
+        .start_time
+        .filter(|st_iso_str| !st_iso_str.is_empty())
+        .map(|st_iso_str| {
+            time::OffsetDateTime::parse(&st_iso_str, &time::format_description::well_known::Rfc3339)
+                .map_err(|e| {
+                    tracing::warn!(
+                        "Failed to parse start_time ISO string '{}': {}",
+                        st_iso_str,
+                        e
+                    );
+                    ErrorResponse {
+                        status: StatusCode::BAD_REQUEST,
+                        error: MilltimeError::TimerError, // Consider a more specific ValidationError
+                        message: format!(
+                            "Invalid start_time format. Expected ISO 8601 string. Details: {}",
+                            e
+                        ),
+                    }
+                })
+        })
+        .transpose()?;
+
+    let update_timer_data = repositories::UpdateDatabaseTimer {
         user_id: user.id,
-        user_note: body.user_note.unwrap_or_default(),
+        user_note: body
+            .user_note
+            .unwrap_or_else(|| active_timer.note.clone().unwrap_or_default()),
         project_id: body.project_id.or(active_timer.project_id),
         project_name: body.project_name.or(active_timer.project_name),
         activity_id: body.activity_id.or(active_timer.activity_id),
         activity_name: body.activity_name.or(active_timer.activity_name),
+        start_time: parsed_start_time_option,
     };
 
-    if let Err(e) = app_state.milltime_repo.update_timer(&update_timer).await {
+    if let Err(e) = app_state
+        .milltime_repo
+        .update_timer(&update_timer_data)
+        .await
+    {
         tracing::error!("failed to update timer: {:?}", e);
         return Err(ErrorResponse {
             status: StatusCode::INTERNAL_SERVER_ERROR,
