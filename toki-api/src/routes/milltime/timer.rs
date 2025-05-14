@@ -388,10 +388,9 @@ pub async fn edit_standalone_timer(
 
     let parsed_start_time_option: Option<time::OffsetDateTime> = body
         .start_time
-        .as_ref()
         .filter(|st_iso_str| !st_iso_str.is_empty())
         .map(|st_iso_str| {
-            time::OffsetDateTime::parse(st_iso_str, &time::format_description::well_known::Rfc3339)
+            time::OffsetDateTime::parse(&st_iso_str, &time::format_description::well_known::Rfc3339)
                 .map_err(|e| {
                     tracing::warn!(
                         "Failed to parse start_time ISO string '{}': {}",
@@ -415,16 +414,10 @@ pub async fn edit_standalone_timer(
         user_note: body
             .user_note
             .unwrap_or_else(|| active_timer.note.clone().unwrap_or_default()),
-        project_id: body.project_id.or_else(|| active_timer.project_id.clone()),
-        project_name: body
-            .project_name
-            .or_else(|| active_timer.project_name.clone()),
-        activity_id: body
-            .activity_id
-            .or_else(|| active_timer.activity_id.clone()),
-        activity_name: body
-            .activity_name
-            .or_else(|| active_timer.activity_name.clone()),
+        project_id: body.project_id.or(active_timer.project_id),
+        project_name: body.project_name.or(active_timer.project_name),
+        activity_id: body.activity_id.or(active_timer.activity_id),
+        activity_name: body.activity_name.or(active_timer.activity_name),
         start_time: parsed_start_time_option,
     };
 

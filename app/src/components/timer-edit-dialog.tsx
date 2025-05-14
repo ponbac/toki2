@@ -34,7 +34,7 @@ export const TimerEditDialog = (props: {
     props.timer?.note ?? undefined,
   );
   const [startTimeISO, setStartTimeISO] = React.useState<string | undefined>(
-    props.timer?.startTime, // Assuming DatabaseTimer.startTime is not nullable. If it can be null, use ?? undefined
+    props.timer?.startTime,
   );
 
   const { projects, activities } = useMilltimeData({
@@ -81,13 +81,12 @@ export const TimerEditDialog = (props: {
     setProjectId(props.timer?.projectId ?? undefined);
     setActivityName(props.timer?.activityName ?? undefined);
     setNote(props.timer?.note ?? undefined); // Convert null to undefined for consistency
-    setStartTimeISO(props.timer?.startTime); // If DatabaseTimer.startTime is not nullable, this is fine.
+    setStartTimeISO(props.timer?.startTime);
   }, [props.timer]);
 
   const activitiesRef = React.useRef<HTMLButtonElement>(null);
   const noteInputRef = React.useRef<HTMLInputElement>(null);
 
-  // For the time input value prop
   const timeInputDisplayValue = React.useMemo(() => {
     return startTimeISO ? dayjs(startTimeISO).format("HH:mm") : "06:00";
   }, [startTimeISO]);
