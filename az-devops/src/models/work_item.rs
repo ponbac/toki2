@@ -22,6 +22,7 @@ pub struct WorkItem {
     pub assigned_to: Option<Identity>,
     pub created_by: Option<Identity>,
     pub relations: Vec<WorkItemRelation>,
+    pub description: String,
 }
 
 impl From<AzureWorkItem> for WorkItem {
@@ -75,6 +76,12 @@ impl From<AzureWorkItem> for WorkItem {
                 .into_iter()
                 .map(WorkItemRelation::from)
                 .collect(),
+            description: work_item
+                .fields
+                .get("System.Description")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .to_owned(),
         }
     }
 }
