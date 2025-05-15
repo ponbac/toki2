@@ -14,3 +14,4 @@ reqwest = { version = "0.12.5", features = ["json"] }
 clap = { version = "4.5.38", features = ["derive"] }
 git2 = "0.20.2"
 dotenvy = "0.15.7"
+tempfile = "3.20.0"
