@@ -203,4 +203,17 @@ mod tests {
             .await
             .expect("Failed to edit project registration");
     }
+
+    #[tokio::test]
+    async fn test_delete_project_registration() {
+        let client = initialize_client().await;
+        // Note: Use a valid project registration ID that can be safely deleted
+        // This should be a test registration or one created specifically for deletion
+        let project_registration_id = "300000000000463334".to_string();
+
+        client
+            .delete_project_registration(project_registration_id)
+            .await
+            .expect("Failed to delete project registration");
+    }
 }
