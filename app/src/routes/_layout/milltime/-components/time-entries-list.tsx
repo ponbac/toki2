@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { toast } from "sonner";
-import { LockIcon, PencilIcon, SaveIcon } from "lucide-react";
+import { LockIcon, PencilIcon, SaveIcon, TrashIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
@@ -306,6 +306,17 @@ function EditEntryCard(props: {
       },
     });
 
+  const { mutate: deleteTimeEntry, isPending: isDeletingTimeEntry } =
+    milltimeMutations.useDeleteProjectRegistration({
+      onSuccess: () => {
+        props.onSaved();
+        toast.success("Time entry deleted successfully");
+      },
+      onError: () => {
+        toast.error("Failed to delete time entry, try again later");
+      },
+    });
+
   const handleSave = () => {
     const startDateTime = dayjs(`${props.entry.date}T${startTime}`);
     const endDateTime = dayjs(`${props.entry.date}T${endTime}`);
@@ -322,6 +333,18 @@ function EditEntryCard(props: {
       regDay: props.entry.date,
       weekNumber: props.entry.weekNumber,
     });
+  };
+
+  const handleDelete = () => {
+    if (
+      window.confirm(
+        "Are you sure you want to delete this time entry? This action cannot be undone.",
+      )
+    ) {
+      deleteTimeEntry({
+        projectRegistrationId: props.entry.registrationId,
+      });
+    }
   };
 
   return (
@@ -414,18 +437,30 @@ function EditEntryCard(props: {
           </div>
         </div>
       </CardContent>
-      <div className="flex justify-end gap-4 p-4">
-        <Button size="sm" variant="outline" onClick={props.onCancel}>
-          Cancel
-        </Button>
+      <div className="flex justify-between p-4">
         <Button
           size="sm"
-          onClick={handleSave}
-          disabled={isUpdatingTimeEntry || !startTime || !endTime}
+          variant="outline"
+          onClick={handleDelete}
+          disabled={isDeletingTimeEntry || isUpdatingTimeEntry}
+          className="group"
         >
-          <SaveIcon className="mr-2 size-4" />
-          Save
+          <TrashIcon className="size-4 transition-colors group-hover:text-destructive" />
+          Delete
         </Button>
+        <div className="flex gap-4">
+          <Button size="sm" variant="outline" onClick={props.onCancel}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={isUpdatingTimeEntry || !startTime || !endTime}
+          >
+            <SaveIcon className="size-4" />
+            Save
+          </Button>
+        </div>
       </div>
     </div>
   );
