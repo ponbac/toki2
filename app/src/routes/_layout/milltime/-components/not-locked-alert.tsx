@@ -4,6 +4,7 @@ import {
   TimeEntry,
 } from "@/lib/api/queries/milltime";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import {
   endOfMonth,
@@ -17,8 +18,19 @@ import { subMonths } from "date-fns";
 import { endOfWeek, subDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useMemo } from "react";
+import { atomWithStorage } from "jotai/utils";
+import { useAtom } from "jotai/react";
+
+const previousWeekAlertDisabledAtom = atomWithStorage(
+  "milltime-previous-week-alert-disabled",
+  false,
+);
 
 export const NotLockedAlert = () => {
+  const [isPreviousWeekAlertDisabled, setIsPreviousWeekAlertDisabled] = useAtom(
+    previousWeekAlertDisabledAtom,
+  );
+
   const { data: timeEntries } = useQuery({
     ...milltimeQueries.timeEntries({
       from: format(startOfMonth(subMonths(new Date(), 1)), "yyyy-MM-dd"),
@@ -39,13 +51,20 @@ export const NotLockedAlert = () => {
 
   return (
     <div className="flex w-fit min-w-[25rem] flex-col gap-2 pb-4">
-      {!lastWeekLocked && (
-        <Alert variant="warning">
+      {!lastWeekLocked && !isPreviousWeekAlertDisabled && (
+        <Alert variant="warning" className="relative">
           <AlertCircle className="size-5" />
           <AlertTitle>Previous week unlocked</AlertTitle>
           <AlertDescription>
             You need to lock last week in <MilltimeLink />.
           </AlertDescription>
+          <Button
+            variant="link"
+            onClick={() => setIsPreviousWeekAlertDisabled(true)}
+            className="absolute right-3 top-3 h-auto p-0 !pl-0 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Don't show again
+          </Button>
         </Alert>
       )}
       {!lastMonthLocked && (
