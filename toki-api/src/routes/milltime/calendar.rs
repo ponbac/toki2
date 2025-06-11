@@ -239,3 +239,24 @@ pub async fn edit_project_registration(
 
     Ok((jar, StatusCode::OK))
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteProjectRegistrationPayload {
+    project_registration_id: String,
+}
+
+#[instrument(name = "delete_project_registration", skip(jar, app_state))]
+pub async fn delete_project_registration(
+    jar: CookieJar,
+    State(app_state): State<AppState>,
+    Json(payload): Json<DeleteProjectRegistrationPayload>,
+) -> CookieJarResult<StatusCode> {
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+
+    milltime_client
+        .delete_project_registration(payload.project_registration_id)
+        .await?;
+
+    Ok((jar, StatusCode::OK))
+}

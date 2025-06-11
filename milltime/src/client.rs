@@ -1,8 +1,8 @@
 use super::Credentials;
 use crate::{
     domain::{
-        self, ActivityFilter, DateFilter, ProjectSearchFilter, TimerRegistrationFilter,
-        TimerRegistrationPayload,
+        self, ActivityFilter, DateFilter, ProjectRegistrationDeleteFilter, ProjectSearchFilter,
+        TimerRegistrationFilter, TimerRegistrationPayload,
     },
     milltime_url::MilltimeURL,
     ProjectRegistrationFilter, UpdateTimerFilter,
@@ -340,6 +340,29 @@ impl MilltimeClient {
 
         let result = self
             .put::<MilltimeRowResponse<serde_json::Value>>(url, Some(project_registration_payload))
+            .await?;
+
+        match result.success {
+            true => Ok(()),
+            false => Err(MilltimeFetchError::Other(
+                "milltime responded with success=false".to_string(),
+            )),
+        }
+    }
+
+    pub async fn delete_project_registration(
+        &self,
+        project_registration_id: String,
+    ) -> Result<(), MilltimeFetchError> {
+        let project_registration_delete_filter =
+            ProjectRegistrationDeleteFilter::new(project_registration_id);
+        let url = self
+            .milltime_url
+            .append_path("/data/store/ProjectRegistrationReact")
+            .with_filter(&project_registration_delete_filter);
+
+        let result = self
+            .delete::<MilltimeRowResponse<serde_json::Value>>(url)
             .await?;
 
         match result.success {
