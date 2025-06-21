@@ -1,4 +1,4 @@
-use az_devops::{CommentType, IdentityWithVote, ThreadStatus, Vote};
+use az_devops::{IdentityWithVote, ThreadStatus, Vote};
 use serde::{Deserialize, Serialize};
 
 use super::{PRChangeEvent, RepoKey};
@@ -63,7 +63,7 @@ impl PullRequest {
                 // let status_changed = old_thread.map_or(false, |ot| ot.status != t.status);
 
                 // New comments in the thread
-                old_thread.map_or(false, |ot| t.comments.len() > ot.comments.len())
+                old_thread.is_some_and(|ot| t.comments.len() > ot.comments.len())
             })
             .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
 

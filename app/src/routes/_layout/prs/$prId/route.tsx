@@ -181,7 +181,7 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
     .filter((c) => !c.isDeleted)
     .map((c) => ({
       ...c,
-      content: replaceMentionsWithUsernames(c.content, props.users),
+      content: mdFormatMentions(c.content),
     }));
 
   const firstComment = nonDeletedComments.at(0);
@@ -243,10 +243,7 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
   );
 }
 
-// @<23770AE1-E35F-613D-91B9-9BCC85CC5CE8> replace these mentions with display names
-function replaceMentionsWithUsernames(text: string, users: Array<User>) {
-  return text.replace(/@<([A-F0-9-]+)>/g, (match, userId) => {
-    const user = users.find((u) => u.id.toUpperCase() === userId);
-    return user ? `*@${user.displayName}*` : match;
-  });
+// @<Pontus Backman> -> ***@Pontus Backman***
+function mdFormatMentions(text: string) {
+  return text.replace(/@<([^>]+)>/g, "***@$1***");
 }

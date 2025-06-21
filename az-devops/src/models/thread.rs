@@ -1,6 +1,6 @@
-use azure_devops_rust_api::git::models::{
-    comment::CommentType, comment_thread::Status, CommentThread,
-};
+use std::collections::HashMap;
+
+use azure_devops_rust_api::git::models::{comment_thread::Status, CommentThread};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -37,9 +37,7 @@ impl From<CommentThread> for Thread {
 impl Thread {
     /// Checks if the first comment in the thread is a system comment.
     pub fn is_system_thread(&self) -> bool {
-        self.comments
-            .first()
-            .map_or(false, |c| c.is_system_comment())
+        self.comments.first().is_some_and(|c| c.is_system_comment())
     }
 
     pub fn author(&self) -> &Identity {
@@ -54,5 +52,21 @@ impl Thread {
         self.comments
             .last()
             .expect("Thread has no comments, should this be possible!?")
+    }
+
+    /// Expects a map of `<ID, Name>`
+    pub fn with_replaced_mentions(&self, name_map: &HashMap<String, String>) -> Thread {
+        Thread {
+            id: self.id,
+            comments: self
+                .comments
+                .iter()
+                .map(|c| c.with_replaced_mentions(name_map))
+                .collect(),
+            status: self.status.clone(),
+            is_deleted: self.is_deleted,
+            last_updated_at: self.last_updated_at,
+            published_at: self.published_at,
+        }
     }
 }

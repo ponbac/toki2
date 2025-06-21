@@ -1,11 +1,15 @@
 use core::fmt;
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use az_devops::RepoClient;
+use az_devops::{Identity, IdentityWithVote, RepoClient};
 use serde::Serialize;
 use sqlx::PgPool;
 use time::OffsetDateTime;
@@ -186,12 +190,15 @@ impl RepoDiffer {
             .await
             .map_err(|_| RepoDifferError::PullRequests)?;
 
+        let mut connected_identities = base_pull_requests
+            .iter()
+            .flat_map(|pr| {
+                std::iter::once(pr.created_by.clone().into()).chain(pr.reviewers.iter().cloned())
+            })
+            .collect::<HashSet<IdentityWithVote>>();
+
         let mut complete_pull_requests = Vec::new();
         for pr in base_pull_requests {
-            let threads = pr
-                .threads(&self.az_client)
-                .await
-                .map_err(|_| RepoDifferError::Threads)?;
             let commits = pr
                 .commits(&self.az_client)
                 .await
@@ -201,8 +208,31 @@ impl RepoDiffer {
                 .await
                 .map_err(|_| RepoDifferError::WorkItems)?;
 
+            let threads = pr
+                .threads(&self.az_client)
+                .await
+                .map_err(|_| RepoDifferError::Threads)?;
+            // Add the identities from the threads to the set of connected identities.
+            connected_identities.extend(
+                threads
+                    .iter()
+                    .flat_map(|t| t.comments.iter().map(|c| c.author.clone().into())),
+            );
+            let name_map = connected_identities
+                .iter()
+                .map(|i| (i.identity.id.clone(), i.identity.display_name.clone()))
+                .collect::<HashMap<_, _>>();
+            let threads_with_replaced_mentions = threads
+                .iter()
+                .map(|t| t.with_replaced_mentions(&name_map))
+                .collect::<Vec<_>>();
+
             complete_pull_requests.push(PullRequest::new(
-                &self.key, pr, threads, commits, work_items,
+                &self.key,
+                pr,
+                threads_with_replaced_mentions,
+                commits,
+                work_items,
             ));
         }
 
