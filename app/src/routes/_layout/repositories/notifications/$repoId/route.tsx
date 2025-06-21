@@ -125,6 +125,14 @@ function NotificationsDialog() {
                 preferences={preferences}
                 onToggle={handleToggle}
               />
+
+              <NotificationRow
+                type={NotificationType.CommentMentioned}
+                title="Mentioned in Comment"
+                description="Get notified when someone mentions you in a comment."
+                preferences={preferences}
+                onToggle={handleToggle}
+              />
             </div>
           </div>
         )}

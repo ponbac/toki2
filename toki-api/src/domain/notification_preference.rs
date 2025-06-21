@@ -6,6 +6,7 @@ pub enum DbNotificationType {
     PrClosed,
     ThreadAdded,
     ThreadUpdated,
+    CommentMentioned,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

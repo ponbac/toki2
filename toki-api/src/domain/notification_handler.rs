@@ -119,6 +119,9 @@ impl NotificationHandler {
                         PRChangeEvent::PullRequestClosed => DbNotificationType::PrClosed,
                         PRChangeEvent::ThreadAdded(_) => DbNotificationType::ThreadAdded,
                         PRChangeEvent::ThreadUpdated(_) => DbNotificationType::ThreadUpdated,
+                        PRChangeEvent::CommentMentioned(_, _, _) => {
+                            DbNotificationType::CommentMentioned
+                        }
                     };
 
                     // Check if notification is enabled via rules/exceptions

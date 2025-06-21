@@ -1,12 +1,14 @@
 use std::fmt;
 
 use super::{PushNotification, PushSubscription};
+use az_devops::{Comment, Thread};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PRChangeEvent {
     PullRequestClosed,
     ThreadAdded(az_devops::Thread),
     ThreadUpdated(az_devops::Thread),
+    CommentMentioned(Thread, Comment, String), // Thread, Comment, mentioned_user_email
 }
 
 impl fmt::Display for PRChangeEvent {
@@ -20,6 +22,13 @@ impl fmt::Display for PRChangeEvent {
             }
             PRChangeEvent::ThreadUpdated(thread) => {
                 write!(f, "ThreadUpdated({})", thread.id)
+            }
+            PRChangeEvent::CommentMentioned(thread, comment, mentioned_email) => {
+                write!(
+                    f,
+                    "CommentMentioned(thread:{}, comment:{}, mentioned:{})",
+                    thread.id, comment.id, mentioned_email
+                )
             }
         }
     }
@@ -50,6 +59,11 @@ impl PRChangeEvent {
                     .comments
                     .iter()
                     .any(|comment| comment.author.unique_name == email)
+            }
+            PRChangeEvent::CommentMentioned(_thread, comment, mentioned_email) => {
+                // Only applies if you're the mentioned user and you're not the comment author
+                comment.author.unique_name != email
+                    && mentioned_email.to_lowercase() == email.to_lowercase()
             }
         }
     }
@@ -89,6 +103,18 @@ impl PRChangeEvent {
                 Some(url),
                 None,
             ),
+            PRChangeEvent::CommentMentioned(_thread, comment, _mentioned_email) => {
+                PushNotification::new(
+                    format!("{}: You were mentioned", pr.title).as_str(),
+                    format!(
+                        "{} mentioned you in a comment.",
+                        comment.author.display_name
+                    )
+                    .as_str(),
+                    Some(url),
+                    None,
+                )
+            }
         }
     }
 }

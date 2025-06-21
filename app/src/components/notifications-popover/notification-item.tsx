@@ -89,6 +89,7 @@ function ColoredNotificationIconWithTooltip(props: { type: NotificationType }) {
     [NotificationType.ThreadAdded]: "text-blue-500",
     [NotificationType.ThreadUpdated]: "text-yellow-500",
     [NotificationType.PrClosed]: "text-red-500",
+    [NotificationType.CommentMentioned]: "text-purple-500",
   };
 
   return (
@@ -104,6 +105,7 @@ function ColoredNotificationIconWithTooltip(props: { type: NotificationType }) {
           .with(NotificationType.ThreadAdded, () => "New thread added")
           .with(NotificationType.ThreadUpdated, () => "Thread updated")
           .with(NotificationType.PrClosed, () => "Pull request closed")
+          .with(NotificationType.CommentMentioned, () => "You were mentioned")
           .exhaustive()}
       </TooltipContent>
     </Tooltip>

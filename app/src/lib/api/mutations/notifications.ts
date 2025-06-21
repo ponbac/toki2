@@ -8,6 +8,7 @@ export enum NotificationType {
   PrClosed = "PrClosed",
   ThreadAdded = "ThreadAdded",
   ThreadUpdated = "ThreadUpdated",
+  CommentMentioned = "CommentMentioned",
 }
 
 export const notificationsMutations = {

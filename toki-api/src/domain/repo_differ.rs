@@ -9,7 +9,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use az_devops::{Identity, IdentityWithVote, RepoClient};
+use az_devops::{IdentityWithVote, RepoClient};
 use serde::Serialize;
 use sqlx::PgPool;
 use time::OffsetDateTime;
@@ -236,6 +236,12 @@ impl RepoDiffer {
             ));
         }
 
+        // Create ID to email mapping after all identities are collected
+        let id_to_email_map = connected_identities
+            .iter()
+            .map(|i| (i.identity.id.clone(), i.identity.unique_name.clone()))
+            .collect::<HashMap<_, _>>();
+
         let change_events = {
             let prev_pull_requests = self.prev_pull_requests.read().await;
             match prev_pull_requests.clone() {
@@ -246,6 +252,7 @@ impl RepoDiffer {
                             complete_pull_requests
                                 .iter()
                                 .find(|p| p.pull_request_base.id == prev_pr.pull_request_base.id),
+                            &id_to_email_map,
                         )
                     })
                     .filter(|diff| !diff.changes.is_empty())
