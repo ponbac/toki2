@@ -1,5 +1,6 @@
 use azure_devops_rust_api::{
     git::{self, models::GitCommitRef},
+    graph::{self, models::GraphUser},
     wit::{
         self,
         models::{work_item_batch_get_request::Expand, WorkItemBatchGetRequest},
@@ -7,12 +8,13 @@ use azure_devops_rust_api::{
     Credential,
 };
 
-use crate::{models::PullRequest, Thread, WorkItem};
+use crate::{models::PullRequest, Identity, Thread, WorkItem};
 
 #[derive(Clone)]
 pub struct RepoClient {
     git_client: git::Client,
     work_item_client: wit::Client,
+    graph_client: graph::Client,
     organization: String,
     project: String,
     repo_id: String,
@@ -28,7 +30,8 @@ impl RepoClient {
         // might need to disable retries or set a timeout (https://docs.rs/azure_devops_rust_api/latest/azure_devops_rust_api/git/struct.ClientBuilder.html, https://docs.rs/azure_core/0.20.0/azure_core/struct.TimeoutPolicy.html)
         let credential = Credential::from_pat(pat.to_owned());
         let git_client = git::ClientBuilder::new(credential.clone()).build();
-        let work_item_client = wit::ClientBuilder::new(credential).build();
+        let work_item_client = wit::ClientBuilder::new(credential.clone()).build();
+        let graph_client = graph::ClientBuilder::new(credential).build();
 
         let repo = git_client
             .repositories_client()
@@ -43,6 +46,7 @@ impl RepoClient {
         Ok(Self {
             git_client,
             work_item_client,
+            graph_client,
             organization: organization.to_owned(),
             project: project.to_owned(),
             repo_id: repo.id,
@@ -173,6 +177,20 @@ impl RepoClient {
 
         Ok(work_items.into_iter().map(WorkItem::from).collect())
     }
+
+    pub async fn get_identities(&self) -> Result<Vec<GraphUser>, Box<dyn std::error::Error>> {
+        let user_list_response = self
+            .graph_client
+            .users_client()
+            .list(&self.organization)
+            .await?;
+
+        if user_list_response.count.is_none_or(|count| count == 0) {
+            return Ok(vec![]);
+        }
+
+        Ok(user_list_response.value)
+    }
 }
 
 #[cfg(test)]
@@ -252,5 +270,13 @@ mod tests {
 
         let work_items = repo_client.get_work_items(work_item_ids).await.unwrap();
         assert!(!work_items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_identities() {
+        let repo_client = get_repo_client().await;
+        let identities = repo_client.get_identities().await.unwrap();
+        println!("{:#?}", identities);
+        assert!(!identities.is_empty());
     }
 }
