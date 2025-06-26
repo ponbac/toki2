@@ -8,7 +8,7 @@ use azure_devops_rust_api::{
     Credential,
 };
 
-use crate::{models::PullRequest, Identity, Thread, WorkItem};
+use crate::{models::PullRequest, Thread, WorkItem};
 
 #[derive(Clone)]
 pub struct RepoClient {
@@ -178,7 +178,7 @@ impl RepoClient {
         Ok(work_items.into_iter().map(WorkItem::from).collect())
     }
 
-    pub async fn get_identities(&self) -> Result<Vec<GraphUser>, Box<dyn std::error::Error>> {
+    pub async fn get_graph_users(&self) -> Result<Vec<GraphUser>, Box<dyn std::error::Error>> {
         let user_list_response = self
             .graph_client
             .users_client()
@@ -222,8 +222,6 @@ mod tests {
     async fn test_get_pull_request_threads() {
         let repo_client = get_repo_client().await;
         let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
-
-        assert!(!pull_requests.is_empty());
 
         let test_pr = &pull_requests[0];
         let threads = repo_client
@@ -275,8 +273,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_identities() {
         let repo_client = get_repo_client().await;
-        let identities = repo_client.get_identities().await.unwrap();
-        println!("{:#?}", identities);
+        let identities = repo_client.get_graph_users().await.unwrap();
         assert!(!identities.is_empty());
     }
 }
