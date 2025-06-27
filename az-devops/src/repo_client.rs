@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use azure_devops_rust_api::{
     git::{self, models::GitCommitRef},
     graph::{self, models::GraphUser},
@@ -7,8 +9,9 @@ use azure_devops_rust_api::{
     },
     Credential,
 };
+use futures::{StreamExt, TryStreamExt};
 
-use crate::{models::PullRequest, Thread, WorkItem};
+use crate::{models::PullRequest, Identity, Thread, WorkItem};
 
 #[derive(Clone)]
 pub struct RepoClient {
@@ -68,19 +71,26 @@ impl RepoClient {
 
     pub async fn get_all_pull_requests(
         &self,
+        limit: Option<usize>,
     ) -> Result<Vec<PullRequest>, Box<dyn std::error::Error>> {
-        let mut pull_requests = vec![];
+        const PAGE_SIZE: i32 = 50;
+        let max_items = limit.unwrap_or(usize::MAX);
+
+        if max_items == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut pull_requests = Vec::new();
         let mut skip = 0;
-        let top = 100;
 
         loop {
-            let mut page = self
+            let page = self
                 .git_client
                 .pull_requests_client()
                 .get_pull_requests(&self.organization, &self.repo_id, &self.project)
                 .search_criteria_status("all")
                 .skip(skip)
-                .top(top)
+                .top(PAGE_SIZE)
                 .await?
                 .value;
 
@@ -88,12 +98,21 @@ impl RepoClient {
                 break;
             }
 
-            pull_requests.append(&mut page);
+            let remaining_capacity = max_items.saturating_sub(pull_requests.len());
+            pull_requests.extend(
+                page.into_iter()
+                    .take(remaining_capacity)
+                    .map(PullRequest::from),
+            );
 
-            skip += top;
+            if pull_requests.len() >= max_items {
+                break;
+            }
+
+            skip += PAGE_SIZE;
         }
 
-        Ok(pull_requests.into_iter().map(PullRequest::from).collect())
+        Ok(pull_requests)
     }
 
     pub async fn get_threads_in_pull_request(
@@ -178,6 +197,7 @@ impl RepoClient {
         Ok(work_items.into_iter().map(WorkItem::from).collect())
     }
 
+    // TODO: how to handle continuation token?
     pub async fn get_graph_users(&self) -> Result<Vec<GraphUser>, Box<dyn std::error::Error>> {
         let user_list_response = self
             .graph_client
@@ -190,6 +210,38 @@ impl RepoClient {
         }
 
         Ok(user_list_response.value)
+    }
+
+    /// Workaround to get all identities as there is no way to list all identities with
+    /// the same ID that is used in the git API.
+    pub async fn get_git_identities(&self) -> Result<Vec<Identity>, Box<dyn std::error::Error>> {
+        const MAX_PULL_REQUESTS: usize = 100;
+        const CONCURRENCY: usize = 10;
+
+        let pull_requests = self.get_all_pull_requests(Some(MAX_PULL_REQUESTS)).await?;
+        let threads = futures::stream::iter(pull_requests.iter())
+            .map(|pr| pr.threads(self))
+            .buffer_unordered(CONCURRENCY)
+            .filter_map(|result| async { result.ok() })
+            .flat_map(futures::stream::iter)
+            .collect::<Vec<_>>()
+            .await;
+
+        let mut identities = HashSet::new();
+        for pull_request in pull_requests {
+            identities.insert(pull_request.created_by);
+            pull_request.reviewers.iter().for_each(|reviewer| {
+                identities.insert(reviewer.identity.clone());
+            });
+        }
+
+        for thread in threads {
+            thread.comments.iter().for_each(|comment| {
+                identities.insert(comment.author.clone());
+            });
+        }
+
+        Ok(identities.into_iter().collect())
     }
 }
 
@@ -271,9 +323,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_identities() {
+    async fn test_get_graph_users() {
         let repo_client = get_repo_client().await;
         let identities = repo_client.get_graph_users().await.unwrap();
+        assert!(!identities.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_git_identities() {
+        let repo_client = get_repo_client().await;
+        let identities = repo_client.get_git_identities().await.unwrap();
+
+        for identity in &identities {
+            println!(
+                "Name: {}, Email: {}, ID: {}",
+                identity.display_name, identity.unique_name, identity.id
+            );
+        }
+
         assert!(!identities.is_empty());
     }
 }

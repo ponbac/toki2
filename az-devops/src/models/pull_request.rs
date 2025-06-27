@@ -37,6 +37,7 @@ pub struct PullRequest {
 }
 
 impl PullRequest {
+    /// Get all threads in the pull request, along with their comments.
     pub async fn threads(&self, client: &RepoClient) -> Result<Vec<crate::Thread>, Box<dyn Error>> {
         client.get_threads_in_pull_request(self.id).await
     }
