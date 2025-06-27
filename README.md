@@ -1,6 +1,6 @@
 # Toki2 🕒
 
-A Milltime and Azure DevOps integration platform built with Rust and React.
+A Milltime and Azure DevOps integration platform built with Rust and React. Initially built because I wanted to try out Rust _(this is an excuse for the code quality)_.
 
 ## Overview
 
