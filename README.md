@@ -61,6 +61,8 @@ Toki2 helps you manage your time entries, track pull requests, and stay notified
 
 ![Notifications Popover](docs/images/notifications-popover.gif)
 
+![Settings](docs/images/noti-settings.png)
+
 ### Windows Notifications
 
 ![Windows Notifications](docs/images/windows-notification.png)
