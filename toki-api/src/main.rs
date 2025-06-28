@@ -90,9 +90,7 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn query_repository_configs(
-    pool: &PgPool,
-) -> Result<Vec<RepoConfig>, Box<dyn std::error::Error>> {
+async fn query_repository_configs(pool: &PgPool) -> Result<Vec<RepoConfig>, sqlx::Error> {
     let repos = sqlx::query_as!(
         RepoConfig,
         r#"
