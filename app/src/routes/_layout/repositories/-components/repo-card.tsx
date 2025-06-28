@@ -24,8 +24,12 @@ import {
   PlayCircle,
   Trash,
   Unplug,
+  Timer,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { queries } from "@/lib/api/queries/queries";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export const RepoCard = (props: {
   differ: Differ;
@@ -46,6 +50,13 @@ export const RepoCard = (props: {
   });
   const { mutate: deleteRepository, isPending: isDeleting } =
     mutations.useDeleteRepository();
+
+  const { data: projects } = useSuspenseQuery(queries.listProjects());
+  const { mutate: updateMilltimeProject } = mutations.useUpdateMilltimeProject({
+    onSuccess: () => {
+      toast.success("Milltime project updated successfully");
+    },
+  });
 
   return (
     <Card
@@ -140,6 +151,29 @@ export const RepoCard = (props: {
                 : "None"}
             </CardDescription>
             <LastUpdated differ={props.differ} />
+            <div className="flex items-center gap-2 mt-2">
+              <Timer className="size-4" />
+              <div className="flex flex-col gap-2">
+                <h4 className="font-medium">Connected Milltime Projects</h4>
+                {projects.map((project) => (
+                  <div key={project.projectId} className="flex items-center gap-2">
+                    <Checkbox
+                      checked={props.differ.milltimeProjectIds.includes(project.projectId)}
+                      onCheckedChange={(checked) => {
+                        const newProjectIds = checked
+                          ? [...props.differ.milltimeProjectIds, project.projectId]
+                          : props.differ.milltimeProjectIds.filter(id => id !== project.projectId);
+                        updateMilltimeProjects({
+                          ...props.differ,
+                          milltimeProjectIds: newProjectIds,
+                        });
+                      }}
+                    />
+                    <label className="text-sm">{project.projectName}</label>
+                  </div>
+                ))}
+              </div>
+            </div>
           </>
         )}
       </CardContent>
