@@ -13,14 +13,13 @@ azure_devops_rust_api = { version = "0.28.0", features = [
     "wit",
     "graph",
 ] }
-futures = "0.3.31"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 thiserror = "2.0.12"
 time = { version = "0.3.31", features = ["serde", "parsing"] }
+tokio = { version = "1.35.1", features = ["full"] }
 tracing = { version = "0.1.40", features = ["attributes"] }
 typespec = "0.4.0"
 
 [dev-dependencies]
 dotenvy = "0.15.7"
-tokio = { version = "1.35.1", features = ["full"] }

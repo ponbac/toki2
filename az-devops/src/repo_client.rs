@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use azure_devops_rust_api::{
     git::{self, models::GitCommitRef},
@@ -9,7 +10,7 @@ use azure_devops_rust_api::{
     },
     Credential,
 };
-use futures::StreamExt;
+use tokio::sync::Semaphore;
 
 use crate::{models::PullRequest, Identity, Thread, WorkItem};
 
@@ -222,13 +223,26 @@ impl RepoClient {
         const CONCURRENCY: usize = 10;
 
         let pull_requests = self.get_all_pull_requests(Some(MAX_PULL_REQUESTS)).await?;
-        let threads = futures::stream::iter(pull_requests.iter())
-            .map(|pr| pr.threads(self))
-            .buffer_unordered(CONCURRENCY)
-            .filter_map(|result| async { result.ok() })
-            .flat_map(futures::stream::iter)
-            .collect::<Vec<_>>()
-            .await;
+        let semaphore = Arc::new(Semaphore::new(CONCURRENCY));
+
+        let mut handles = Vec::with_capacity(pull_requests.len());
+        for pr in &pull_requests {
+            let client = self.clone();
+            let pr_id = pr.id;
+            let semaphore = Arc::clone(&semaphore);
+            handles.push(tokio::spawn(async move {
+                // Fails if semaphore is closed, which should not happen here.
+                let _permit = semaphore.acquire_owned().await.unwrap();
+                client.get_threads_in_pull_request(pr_id).await
+            }));
+        }
+
+        let mut threads = Vec::new();
+        for handle in handles {
+            if let Ok(Ok(pr_threads)) = handle.await {
+                threads.extend(pr_threads);
+            }
+        }
 
         let mut identities = HashSet::new();
         for pull_request in pull_requests {

@@ -294,7 +294,6 @@ dependencies = [
  "azure_core 0.25.0",
  "azure_devops_rust_api",
  "dotenvy",
- "futures",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
