@@ -43,6 +43,16 @@ impl PullRequest {
         )
     }
 
+    pub fn with_replaced_mentions(&self, id_to_email_map: &HashMap<String, String>) -> Self {
+        let mut pr = self.clone();
+        pr.threads = pr
+            .threads
+            .iter()
+            .map(|t| t.with_replaced_mentions(id_to_email_map))
+            .collect();
+        pr
+    }
+
     pub fn changelog(
         &self,
         new: Option<&Self>,
