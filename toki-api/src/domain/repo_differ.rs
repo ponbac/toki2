@@ -9,7 +9,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use az_devops::{IdentityWithVote, RepoClient};
+use az_devops::{Identity, IdentityWithVote, RepoClient};
 use serde::Serialize;
 use sqlx::PgPool;
 use time::OffsetDateTime;
@@ -28,6 +28,8 @@ pub enum RepoDifferError {
     Commits,
     #[error("Could not fetch work items for pull request")]
     WorkItems,
+    #[error("Could not fetch identities")]
+    Identities,
 }
 
 impl IntoResponse for RepoDifferError {
@@ -57,6 +59,7 @@ pub struct RepoDiffer {
     pub key: RepoKey,
     az_client: RepoClient,
     notification_handler: Arc<NotificationHandler>,
+    pub identities: Arc<RwLock<CachedIdentities>>,
     pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
     pub status: Arc<RwLock<RepoDifferStatus>>,
     pub last_updated: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -73,6 +76,9 @@ impl RepoDiffer {
             key,
             az_client,
             notification_handler,
+            identities: Arc::new(RwLock::new(CachedIdentities::new(Duration::from_secs(
+                60 * 60, // Refresh identities every hour
+            )))),
             prev_pull_requests: Arc::new(RwLock::new(None)),
             status: Arc::new(RwLock::new(RepoDifferStatus::Stopped)),
             last_updated: Arc::new(RwLock::new(None)),
@@ -190,13 +196,6 @@ impl RepoDiffer {
             .await
             .map_err(|_| RepoDifferError::PullRequests)?;
 
-        let mut connected_identities = base_pull_requests
-            .iter()
-            .flat_map(|pr| {
-                std::iter::once(pr.created_by.clone().into()).chain(pr.reviewers.iter().cloned())
-            })
-            .collect::<HashSet<IdentityWithVote>>();
-
         let mut complete_pull_requests = Vec::new();
         for pr in base_pull_requests {
             let commits = pr
@@ -207,40 +206,34 @@ impl RepoDiffer {
                 .work_items(&self.az_client)
                 .await
                 .map_err(|_| RepoDifferError::WorkItems)?;
-
             let threads = pr
                 .threads(&self.az_client)
                 .await
                 .map_err(|_| RepoDifferError::Threads)?;
-            // Add the identities from the threads to the set of connected identities.
-            connected_identities.extend(
-                threads
-                    .iter()
-                    .flat_map(|t| t.comments.iter().map(|c| c.author.clone().into())),
-            );
-            let name_map = connected_identities
-                .iter()
-                .map(|i| (i.identity.id.clone(), i.identity.display_name.clone()))
-                .collect::<HashMap<_, _>>();
-            let threads_with_replaced_mentions = threads
-                .iter()
-                .map(|t| t.with_replaced_mentions(&name_map))
-                .collect::<Vec<_>>();
 
             complete_pull_requests.push(PullRequest::new(
-                &self.key,
-                pr,
-                threads_with_replaced_mentions,
-                commits,
-                work_items,
+                &self.key, pr, threads, commits, work_items,
             ));
         }
 
-        // Create ID to email mapping after all identities are collected
-        let id_to_email_map = connected_identities
-            .iter()
-            .map(|i| (i.identity.id.clone(), i.identity.unique_name.clone()))
-            .collect::<HashMap<_, _>>();
+        let id_to_email_map = {
+            let cached_identities = self.identities.read().await;
+            // Update the cached identities if they are stale.
+            if cached_identities.is_stale() {
+                let identities = self
+                    .az_client
+                    .get_git_identities()
+                    .await
+                    .map_err(|_| RepoDifferError::Identities)?;
+
+                drop(cached_identities); // Drop the read lock before acquiring write lock to avoid deadlock
+                let mut cached_identities = self.identities.write().await;
+                cached_identities.update(identities);
+                cached_identities.id_to_email_map()
+            } else {
+                cached_identities.id_to_email_map()
+            }
+        };
 
         let change_events = {
             let prev_pull_requests = self.prev_pull_requests.read().await;
@@ -290,5 +283,48 @@ async fn interval_tick_or_sleep(interval: &mut Option<tokio::time::Interval>) {
     } else {
         // Sleep for a very long time to mimic a pending future.
         tokio::time::sleep(tokio::time::Duration::from_secs(86400)).await;
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CachedIdentities {
+    pub identities: Vec<Identity>,
+    last_updated: Option<OffsetDateTime>,
+    stale_after: Duration,
+}
+
+impl CachedIdentities {
+    pub fn new(stale_after: Duration) -> Self {
+        Self {
+            identities: Vec::new(),
+            last_updated: None,
+            stale_after,
+        }
+    }
+
+    pub fn is_stale(&self) -> bool {
+        self.last_updated.is_none_or(|last_updated| {
+            (OffsetDateTime::now_utc() - last_updated).unsigned_abs() > self.stale_after
+        })
+    }
+
+    /// Update the cached identities and set the last updated time to now.
+    pub fn update(&mut self, identities: Vec<Identity>) {
+        self.identities = identities;
+        self.last_updated = Some(OffsetDateTime::now_utc());
+    }
+
+    pub fn id_to_name_map(&self) -> HashMap<String, String> {
+        self.identities
+            .iter()
+            .map(|i| (i.id.clone(), i.display_name.clone()))
+            .collect::<HashMap<_, _>>()
+    }
+
+    pub fn id_to_email_map(&self) -> HashMap<String, String> {
+        self.identities
+            .iter()
+            .map(|i| (i.id.clone(), i.unique_name.clone()))
+            .collect::<HashMap<_, _>>()
     }
 }

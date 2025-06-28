@@ -1,4 +1,4 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1.82.0 as chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.88.0 AS chef
 WORKDIR /app
 RUN cargo install cargo-chef
 RUN apt update && apt install lld clang -y
@@ -16,7 +16,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release --bin toki-api
 
-FROM ubuntu:22.04 as runtime
+FROM ubuntu:22.04 AS runtime
 WORKDIR /app
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends openssl ca-certificates \
