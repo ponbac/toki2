@@ -9,9 +9,17 @@ use azure_devops_rust_api::{
     },
     Credential,
 };
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 
 use crate::{models::PullRequest, Identity, Thread, WorkItem};
+
+#[derive(Debug, thiserror::Error)]
+pub enum RepoClientError {
+    #[error("Azure DevOps API error: {0}")]
+    AzureDevOpsError(#[from] typespec::error::Error),
+    #[error("Repository not found: {0}")]
+    RepoNotFound(String),
+}
 
 #[derive(Clone)]
 pub struct RepoClient {
@@ -29,7 +37,7 @@ impl RepoClient {
         organization: &str,
         project: &str,
         pat: &str,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, RepoClientError> {
         // might need to disable retries or set a timeout (https://docs.rs/azure_devops_rust_api/latest/azure_devops_rust_api/git/struct.ClientBuilder.html, https://docs.rs/azure_core/0.20.0/azure_core/struct.TimeoutPolicy.html)
         let credential = Credential::from_pat(pat.to_owned());
         let git_client = git::ClientBuilder::new(credential.clone()).build();
@@ -44,7 +52,7 @@ impl RepoClient {
             .iter()
             .find(|repo| repo.name == repo_name)
             .cloned()
-            .ok_or_else(|| format!("Repo {} not found", repo_name))?;
+            .ok_or_else(|| RepoClientError::RepoNotFound(repo_name.to_string()))?;
 
         Ok(Self {
             git_client,
@@ -56,9 +64,7 @@ impl RepoClient {
         })
     }
 
-    pub async fn get_open_pull_requests(
-        &self,
-    ) -> Result<Vec<PullRequest>, Box<dyn std::error::Error>> {
+    pub async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, RepoClientError> {
         let pull_requests = self
             .git_client
             .pull_requests_client()
@@ -72,7 +78,7 @@ impl RepoClient {
     pub async fn get_all_pull_requests(
         &self,
         limit: Option<usize>,
-    ) -> Result<Vec<PullRequest>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<PullRequest>, RepoClientError> {
         const PAGE_SIZE: i32 = 50;
         let max_items = limit.unwrap_or(usize::MAX);
 
@@ -118,7 +124,7 @@ impl RepoClient {
     pub async fn get_threads_in_pull_request(
         &self,
         pull_request_id: i32,
-    ) -> Result<Vec<Thread>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Thread>, RepoClientError> {
         let threads = self
             .git_client
             .pull_request_threads_client()
@@ -140,7 +146,7 @@ impl RepoClient {
     pub async fn get_work_item_ids_in_pull_request(
         &self,
         pull_request_id: i32,
-    ) -> Result<Vec<i32>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<i32>, RepoClientError> {
         let work_item_refs = self
             .git_client
             .pull_request_work_items_client()
@@ -163,7 +169,7 @@ impl RepoClient {
     pub async fn get_commits_in_pull_request(
         &self,
         pull_request_id: i32,
-    ) -> Result<Vec<GitCommitRef>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<GitCommitRef>, RepoClientError> {
         let commits = self
             .git_client
             .pull_request_commits_client()
@@ -179,10 +185,7 @@ impl RepoClient {
         Ok(commits)
     }
 
-    pub async fn get_work_items(
-        &self,
-        ids: Vec<i32>,
-    ) -> Result<Vec<WorkItem>, Box<dyn std::error::Error>> {
+    pub async fn get_work_items(&self, ids: Vec<i32>) -> Result<Vec<WorkItem>, RepoClientError> {
         let mut batch_request = WorkItemBatchGetRequest::new();
         batch_request.expand = Some(Expand::Relations);
         batch_request.ids = ids;
@@ -198,7 +201,7 @@ impl RepoClient {
     }
 
     // TODO: how to handle continuation token?
-    pub async fn get_graph_users(&self) -> Result<Vec<GraphUser>, Box<dyn std::error::Error>> {
+    pub async fn get_graph_users(&self) -> Result<Vec<GraphUser>, RepoClientError> {
         let user_list_response = self
             .graph_client
             .users_client()
@@ -214,7 +217,7 @@ impl RepoClient {
 
     /// Workaround to get all identities as there is no way to list all identities with
     /// the same ID that is used in the git API.
-    pub async fn get_git_identities(&self) -> Result<Vec<Identity>, Box<dyn std::error::Error>> {
+    pub async fn get_git_identities(&self) -> Result<Vec<Identity>, RepoClientError> {
         const MAX_PULL_REQUESTS: usize = 100;
         const CONCURRENCY: usize = 10;
 

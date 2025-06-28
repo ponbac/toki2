@@ -7,7 +7,7 @@ use azure_devops_rust_api::git::models::{
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::RepoClient;
+use crate::{repo_client::RepoClientError, RepoClient};
 
 use super::identity::{Identity, IdentityWithVote};
 
@@ -38,18 +38,21 @@ pub struct PullRequest {
 
 impl PullRequest {
     /// Get all threads in the pull request, along with their comments.
-    pub async fn threads(&self, client: &RepoClient) -> Result<Vec<crate::Thread>, Box<dyn Error>> {
+    pub async fn threads(
+        &self,
+        client: &RepoClient,
+    ) -> Result<Vec<crate::Thread>, RepoClientError> {
         client.get_threads_in_pull_request(self.id).await
     }
 
-    pub async fn commits(&self, client: &RepoClient) -> Result<Vec<GitCommitRef>, Box<dyn Error>> {
+    pub async fn commits(&self, client: &RepoClient) -> Result<Vec<GitCommitRef>, RepoClientError> {
         client.get_commits_in_pull_request(self.id).await
     }
 
     pub async fn work_items(
         &self,
         client: &RepoClient,
-    ) -> Result<Vec<crate::WorkItem>, Box<dyn Error>> {
+    ) -> Result<Vec<crate::WorkItem>, RepoClientError> {
         let ids = client
             .get_work_item_ids_in_pull_request(self.id)
             .await
