@@ -51,14 +51,7 @@ impl PullRequest {
         &self,
         client: &RepoClient,
     ) -> Result<Vec<crate::WorkItem>, RepoClientError> {
-        let ids = client
-            .get_work_item_ids_in_pull_request(self.id)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to get work item ids in pull request: {}", e);
-                e
-            })?;
-
+        let ids = client.get_work_item_ids_in_pull_request(self.id).await?;
         if ids.is_empty() {
             return Ok(vec![]);
         }
