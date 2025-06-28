@@ -1,15 +1,11 @@
 use core::fmt;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use az_devops::{Identity, IdentityWithVote, RepoClient};
+use az_devops::{Identity, RepoClient};
 use serde::Serialize;
 use sqlx::PgPool;
 use time::OffsetDateTime;

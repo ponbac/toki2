@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use azure_devops_rust_api::git::models::{
     git_pull_request::{MergeFailureType, MergeStatus, Status},
     GitCommitRef, GitPullRequest, GitPullRequestCompletionOptions,
