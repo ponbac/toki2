@@ -33,7 +33,8 @@
               "Enum": [
                 "pr_closed",
                 "thread_added",
-                "thread_updated"
+                "thread_updated",
+                "comment_mentioned"
               ]
             }
           }
@@ -57,7 +58,8 @@
               "Enum": [
                 "pr_closed",
                 "thread_added",
-                "thread_updated"
+                "thread_updated",
+                "comment_mentioned"
               ]
             }
           }
