@@ -6,10 +6,12 @@ use crate::utils::client_hints::ClientHints;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::Json,
     routing::{delete, get, post},
-    Json, Router,
+    Router,
 };
 use serde::Deserialize;
+use std::collections::HashMap;
 use tracing::instrument;
 
 use crate::{
@@ -18,6 +20,7 @@ use crate::{
     domain::{Notification, NotificationRule, PrNotificationException, PushNotification},
     repositories::NewPushSubscription,
 };
+use strum::IntoEnumIterator;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -344,7 +347,7 @@ async fn get_preferences(
     let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
-    let rules = notification_repo
+    let existing_rules = notification_repo
         .get_repository_rules(user.id, repository_id)
         .await
         .map_err(|e| {
@@ -355,7 +358,28 @@ async fn get_preferences(
             )
         })?;
 
-    Ok(Json(rules))
+    let rules_map: HashMap<DbNotificationType, NotificationRule> = existing_rules
+        .into_iter()
+        .map(|rule| (rule.notification_type, rule))
+        .collect();
+
+    let all_rules = DbNotificationType::iter()
+        .map(|notification_type| {
+            rules_map
+                .get(&notification_type)
+                .cloned()
+                .unwrap_or_else(|| NotificationRule {
+                    id: 0, // Indicates a default, non-DB rule
+                    user_id: user.id,
+                    repository_id,
+                    notification_type,
+                    enabled: notification_type.default_enabled(),
+                    push_enabled: false,
+                })
+        })
+        .collect();
+
+    Ok(Json(all_rules))
 }
 
 async fn update_preferences(

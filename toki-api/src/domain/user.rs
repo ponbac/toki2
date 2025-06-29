@@ -25,7 +25,7 @@ impl fmt::Display for Role {
             Role::Admin => "Admin",
             Role::User => "User",
         };
-        write!(f, "{}", role_str)
+        write!(f, "{role_str}")
     }
 }
 
