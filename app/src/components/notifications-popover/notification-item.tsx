@@ -11,6 +11,7 @@ export function NotificationItem(props: {
   notification: Notification;
   repository: Differ | undefined;
   onView: () => void;
+  isMarkingViewed: boolean;
 }) {
   return (
     <div
@@ -40,6 +41,7 @@ export function NotificationItem(props: {
             <CheckCircle2 className="h-4 w-4 text-muted-foreground/50" />
           ) : (
             <button
+              disabled={props.isMarkingViewed}
               onClick={props.onView}
               className="rounded-md p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
               title="Mark as read"
