@@ -30,6 +30,7 @@ impl Comment {
             Some(content) => content
                 .split_whitespace()
                 .filter_map(strip_mention)
+                .map(|s| s.to_uppercase())
                 .collect(),
             None => vec![],
         }
@@ -50,7 +51,7 @@ impl Comment {
                         .and_then(|id| {
                             upper_name_map
                                 .get(&id.to_uppercase())
-                                .map(|name| format!("@<{}>", name))
+                                .map(|name| format!("@<{name}>"))
                         })
                         .unwrap_or(mention.to_string())
                 })

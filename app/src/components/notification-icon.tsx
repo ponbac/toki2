@@ -1,5 +1,10 @@
 import { NotificationType } from "@/lib/api/mutations/notifications";
-import { MessageSquarePlus, MessagesSquare, CheckSquare } from "lucide-react";
+import {
+  MessageSquarePlus,
+  MessagesSquare,
+  CheckSquare,
+  AtSign,
+} from "lucide-react";
 import { match } from "ts-pattern";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +21,9 @@ export function NotificationIcon(props: {
     ))
     .with(NotificationType.PrClosed, () => (
       <CheckSquare className={cn(props.className)} />
+    ))
+    .with(NotificationType.CommentMentioned, () => (
+      <AtSign className={cn(props.className)} />
     ))
     .exhaustive();
 }

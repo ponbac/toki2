@@ -89,7 +89,7 @@ impl Credentials {
         headers.insert("X-CSRF-Token", HeaderValue::from_str(&csrf_token)?);
         headers.insert(
             "Cookie",
-            HeaderValue::from_str(&format!("CSRFToken={}; Secure; SameSite=Lax", csrf_token))?,
+            HeaderValue::from_str(&format!("CSRFToken={csrf_token}; Secure; SameSite=Lax"))?,
         );
 
         let resp = client

@@ -181,6 +181,9 @@ async fn list_pull_requests(
     ))
 }
 
+/// Get the followed pull requests from the cache.
+///
+/// This function will fetch the cached pull requests from the cache and replace the mentions in the threads with names instead of ids.
 async fn get_followed_pull_requests(
     auth_session: &AuthSession,
     app_state: AppState,
@@ -193,20 +196,26 @@ async fn get_followed_pull_requests(
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
     let mut followed_prs = vec![];
-    for repo in followed_repos {
-        let cached_prs = match app_state.get_cached_pull_requests(repo.clone()).await {
-            Ok(prs) => prs,
+    for repo_key in &followed_repos {
+        match app_state.get_cached_pull_requests(repo_key.clone()).await {
+            Ok(Some(prs)) => {
+                let identities = app_state
+                    .get_cached_identities(repo_key.clone())
+                    .await
+                    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+                followed_prs.extend(
+                    prs.iter()
+                        .map(|pr| pr.with_replaced_mentions(&identities.id_to_name_map())),
+                );
+            }
+            Ok(None) => {
+                tracing::debug!("No cached PRs found for repo: {}", repo_key);
+            }
             Err(_) => {
-                tracing::debug!("Error fetching cached PRs for repo: {}", repo);
+                tracing::debug!("Error fetching cached PRs for repo: {}", repo_key);
                 continue;
             }
         };
-
-        if let Some(prs) = cached_prs {
-            followed_prs.extend(prs);
-        } else {
-            tracing::debug!("No cached PRs found for repo: {}", repo);
-        }
     }
 
     Ok(followed_prs)

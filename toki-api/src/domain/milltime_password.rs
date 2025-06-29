@@ -37,7 +37,7 @@ impl MilltimePassword {
 
         let cipher_b64 = BASE64_STANDARD.encode(ciphertext);
         let nonce_b64 = BASE64_STANDARD.encode(nonce);
-        format!("{}:{}", cipher_b64, nonce_b64)
+        format!("{cipher_b64}:{nonce_b64}")
     }
 }
 

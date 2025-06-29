@@ -8,10 +8,12 @@ export enum NotificationType {
   PrClosed = "PrClosed",
   ThreadAdded = "ThreadAdded",
   ThreadUpdated = "ThreadUpdated",
+  CommentMentioned = "CommentMentioned",
 }
 
 export const notificationsMutations = {
   useMarkNotificationViewed,
+  useMarkAllNotificationsViewed,
   useDeleteNotification,
   useUpdatePreferences,
   useSetPrException,
@@ -27,6 +29,20 @@ function useMarkNotificationViewed(options?: DefaultMutationOptions<number>) {
     mutationKey: ["notifications", "view"],
     mutationFn: (notificationId: number) =>
       api.post(`notifications/${notificationId}/view`),
+    ...options,
+    onSuccess: (data, vars, ctx) => {
+      queryClient.invalidateQueries({ queryKey: ["notifications", "list"] });
+      options?.onSuccess?.(data, vars, ctx);
+    },
+  });
+}
+
+function useMarkAllNotificationsViewed(options?: DefaultMutationOptions<void>) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["notifications", "view-all"],
+    mutationFn: () => api.post("notifications/view-all"),
     ...options,
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries({ queryKey: ["notifications", "list"] });

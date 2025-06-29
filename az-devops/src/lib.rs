@@ -6,3 +6,4 @@ pub use azure_devops_rust_api::git::models::comment_thread::Status as ThreadStat
 pub use azure_devops_rust_api::git::models::git_pull_request::MergeStatus;
 pub use models::*;
 pub use repo_client::RepoClient;
+pub use repo_client::RepoClientError;

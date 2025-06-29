@@ -1,12 +1,16 @@
 use std::fmt;
 
+use crate::domain::Email;
+
 use super::{PushNotification, PushSubscription};
+use az_devops::Comment;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PRChangeEvent {
     PullRequestClosed,
     ThreadAdded(az_devops::Thread),
     ThreadUpdated(az_devops::Thread),
+    CommentMentioned(Comment, Email),
 }
 
 impl fmt::Display for PRChangeEvent {
@@ -20,6 +24,13 @@ impl fmt::Display for PRChangeEvent {
             }
             PRChangeEvent::ThreadUpdated(thread) => {
                 write!(f, "ThreadUpdated({})", thread.id)
+            }
+            PRChangeEvent::CommentMentioned(comment, mentioned_email) => {
+                write!(
+                    f,
+                    "CommentMentioned(comment:{}, mentioned:{})",
+                    comment.id, mentioned_email
+                )
             }
         }
     }
@@ -50,6 +61,11 @@ impl PRChangeEvent {
                     .comments
                     .iter()
                     .any(|comment| comment.author.unique_name == email)
+            }
+            PRChangeEvent::CommentMentioned(comment, mentioned_email) => {
+                // Only applies if you're the mentioned user and you're not the comment author
+                comment.author.unique_name != email
+                    && mentioned_email.to_lowercase() == email.to_lowercase()
             }
         }
     }
@@ -84,6 +100,16 @@ impl PRChangeEvent {
                 format!(
                     "{} has replied in a thread you are a part of.",
                     thread.most_recent_comment().author.display_name
+                )
+                .as_str(),
+                Some(url),
+                None,
+            ),
+            PRChangeEvent::CommentMentioned(comment, _mentioned_email) => PushNotification::new(
+                format!("{}: You were mentioned", pr.title).as_str(),
+                format!(
+                    "{} mentioned you in a comment.",
+                    comment.author.display_name
                 )
                 .as_str(),
                 Some(url),

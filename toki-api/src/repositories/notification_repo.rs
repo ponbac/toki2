@@ -21,6 +21,7 @@ pub trait NotificationRepository {
         notification_id: i32,
         user_id: i32,
     ) -> Result<(), RepositoryError>;
+    async fn mark_all_notifications_viewed(&self, user_id: i32) -> Result<(), RepositoryError>;
     async fn delete_notification(
         &self,
         notification_id: i32,
@@ -130,6 +131,20 @@ impl NotificationRepository for NotificationRepositoryImpl {
             WHERE id = $1 AND user_id = $2
             "#,
             notification_id,
+            user_id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn mark_all_notifications_viewed(&self, user_id: i32) -> Result<(), RepositoryError> {
+        sqlx::query!(
+            r#"
+            UPDATE notifications
+            SET viewed_at = CURRENT_TIMESTAMP
+            WHERE user_id = $1 AND viewed_at IS NULL
+            "#,
             user_id
         )
         .execute(&self.pool)

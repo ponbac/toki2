@@ -1,11 +1,37 @@
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIter;
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
+use crate::domain::PRChangeEvent;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, PartialEq, Eq, Hash, EnumIter)]
 #[sqlx(type_name = "notification_type", rename_all = "snake_case")]
 pub enum DbNotificationType {
     PrClosed,
     ThreadAdded,
     ThreadUpdated,
+    CommentMentioned,
+}
+
+impl DbNotificationType {
+    pub fn default_enabled(&self) -> bool {
+        match self {
+            DbNotificationType::PrClosed => false,
+            DbNotificationType::ThreadAdded => false,
+            DbNotificationType::ThreadUpdated => false,
+            DbNotificationType::CommentMentioned => true,
+        }
+    }
+}
+
+impl From<&PRChangeEvent> for DbNotificationType {
+    fn from(event: &PRChangeEvent) -> Self {
+        match event {
+            PRChangeEvent::PullRequestClosed => DbNotificationType::PrClosed,
+            PRChangeEvent::ThreadAdded(_) => DbNotificationType::ThreadAdded,
+            PRChangeEvent::ThreadUpdated(_) => DbNotificationType::ThreadUpdated,
+            PRChangeEvent::CommentMentioned(_, _) => DbNotificationType::CommentMentioned,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

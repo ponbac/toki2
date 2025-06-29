@@ -5,7 +5,6 @@ use super::RepoKey;
 
 #[derive(Deserialize)]
 pub struct RepoConfig {
-    pub id: i32,
     pub organization: String,
     pub project: String,
     pub repo_name: String,
@@ -13,7 +12,7 @@ pub struct RepoConfig {
 }
 
 impl RepoConfig {
-    pub async fn to_client(&self) -> Result<RepoClient, Box<dyn std::error::Error>> {
+    pub async fn to_client(&self) -> Result<RepoClient, az_devops::RepoClientError> {
         let repo_client = RepoClient::new(
             &self.repo_name,
             &self.organization,

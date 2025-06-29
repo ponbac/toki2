@@ -1,5 +1,8 @@
 use az_devops::{IdentityWithVote, ThreadStatus, Vote};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+use crate::domain::Email;
 
 use super::{PRChangeEvent, RepoKey};
 
@@ -42,7 +45,21 @@ impl PullRequest {
         )
     }
 
-    pub fn changelog(&self, new: Option<&Self>) -> PullRequestDiff {
+    pub fn with_replaced_mentions(&self, id_to_email_map: &HashMap<String, String>) -> Self {
+        let mut pr = self.clone();
+        pr.threads = pr
+            .threads
+            .iter()
+            .map(|t| t.with_replaced_mentions(id_to_email_map))
+            .collect();
+        pr
+    }
+
+    pub fn changelog(
+        &self,
+        new: Option<&Self>,
+        id_to_email_map: &HashMap<String, Email>,
+    ) -> PullRequestDiff {
         let new_pr = match new {
             Some(new) => new,
             None => return (self.clone(), vec![PRChangeEvent::PullRequestClosed]).into(),
@@ -60,16 +77,51 @@ impl PullRequest {
             .filter(|t| {
                 let old_thread = self.threads.iter().find(|ot| ot.id == t.id);
 
-                // let status_changed = old_thread.map_or(false, |ot| ot.status != t.status);
-
                 // New comments in the thread
                 old_thread.is_some_and(|ot| t.comments.len() > ot.comments.len())
             })
             .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
 
+        // Detect mentions in new comments
+        let mention_events = new_pr
+            .threads
+            .iter()
+            .flat_map(|new_thread| {
+                let old_thread = self.threads.iter().find(|ot| ot.id == new_thread.id);
+
+                // Get new comments (either all comments if thread is new, or only new comments if thread existed)
+                let new_comments: Vec<&az_devops::Comment> = match old_thread {
+                    Some(old_thread) => new_thread
+                        .comments
+                        .iter()
+                        .skip(old_thread.comments.len())
+                        .collect(),
+                    None => new_thread.comments.iter().collect(),
+                };
+
+                // For each new comment, create mention events for each mention
+                new_comments
+                    .into_iter()
+                    .filter(|comment| !comment.is_system_comment())
+                    .flat_map(|comment| {
+                        comment
+                            .mentions()
+                            .into_iter()
+                            .filter_map(move |mention_id| {
+                                // Resolve mention ID to email
+                                id_to_email_map.get(&mention_id).map(|email| {
+                                    PRChangeEvent::CommentMentioned(comment.clone(), email.clone())
+                                })
+                            })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
         let mut change_events = Vec::new();
         change_events.extend(new_threads);
         change_events.extend(updated_threads);
+        change_events.extend(mention_events);
         (new_pr.clone(), change_events).into()
     }
 

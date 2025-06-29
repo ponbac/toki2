@@ -1,18 +1,32 @@
+use std::collections::HashSet;
+use std::sync::Arc;
+
 use azure_devops_rust_api::{
     git::{self, models::GitCommitRef},
+    graph::{self, models::GraphUser},
     wit::{
         self,
         models::{work_item_batch_get_request::Expand, WorkItemBatchGetRequest},
     },
     Credential,
 };
+use tokio::sync::Semaphore;
 
-use crate::{models::PullRequest, Thread, WorkItem};
+use crate::{models::PullRequest, Identity, Thread, WorkItem};
+
+#[derive(Debug, thiserror::Error)]
+pub enum RepoClientError {
+    #[error("Azure DevOps API error: {0}")]
+    AzureDevOpsError(#[from] typespec::error::Error),
+    #[error("Repository not found: {0}")]
+    RepoNotFound(String),
+}
 
 #[derive(Clone)]
 pub struct RepoClient {
     git_client: git::Client,
     work_item_client: wit::Client,
+    graph_client: graph::Client,
     organization: String,
     project: String,
     repo_id: String,
@@ -24,11 +38,12 @@ impl RepoClient {
         organization: &str,
         project: &str,
         pat: &str,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self, RepoClientError> {
         // might need to disable retries or set a timeout (https://docs.rs/azure_devops_rust_api/latest/azure_devops_rust_api/git/struct.ClientBuilder.html, https://docs.rs/azure_core/0.20.0/azure_core/struct.TimeoutPolicy.html)
         let credential = Credential::from_pat(pat.to_owned());
         let git_client = git::ClientBuilder::new(credential.clone()).build();
-        let work_item_client = wit::ClientBuilder::new(credential).build();
+        let work_item_client = wit::ClientBuilder::new(credential.clone()).build();
+        let graph_client = graph::ClientBuilder::new(credential).build();
 
         let repo = git_client
             .repositories_client()
@@ -38,20 +53,19 @@ impl RepoClient {
             .iter()
             .find(|repo| repo.name == repo_name)
             .cloned()
-            .ok_or_else(|| format!("Repo {} not found", repo_name))?;
+            .ok_or_else(|| RepoClientError::RepoNotFound(repo_name.to_string()))?;
 
         Ok(Self {
             git_client,
             work_item_client,
+            graph_client,
             organization: organization.to_owned(),
             project: project.to_owned(),
             repo_id: repo.id,
         })
     }
 
-    pub async fn get_open_pull_requests(
-        &self,
-    ) -> Result<Vec<PullRequest>, Box<dyn std::error::Error>> {
+    pub async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, RepoClientError> {
         let pull_requests = self
             .git_client
             .pull_requests_client()
@@ -64,19 +78,26 @@ impl RepoClient {
 
     pub async fn get_all_pull_requests(
         &self,
-    ) -> Result<Vec<PullRequest>, Box<dyn std::error::Error>> {
-        let mut pull_requests = vec![];
+        limit: Option<usize>,
+    ) -> Result<Vec<PullRequest>, RepoClientError> {
+        const PAGE_SIZE: i32 = 50;
+        let max_items = limit.unwrap_or(usize::MAX);
+
+        if max_items == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut pull_requests = Vec::new();
         let mut skip = 0;
-        let top = 100;
 
         loop {
-            let mut page = self
+            let page = self
                 .git_client
                 .pull_requests_client()
                 .get_pull_requests(&self.organization, &self.repo_id, &self.project)
                 .search_criteria_status("all")
                 .skip(skip)
-                .top(top)
+                .top(PAGE_SIZE)
                 .await?
                 .value;
 
@@ -84,18 +105,27 @@ impl RepoClient {
                 break;
             }
 
-            pull_requests.append(&mut page);
+            let remaining_capacity = max_items.saturating_sub(pull_requests.len());
+            pull_requests.extend(
+                page.into_iter()
+                    .take(remaining_capacity)
+                    .map(PullRequest::from),
+            );
 
-            skip += top;
+            if pull_requests.len() >= max_items {
+                break;
+            }
+
+            skip += PAGE_SIZE;
         }
 
-        Ok(pull_requests.into_iter().map(PullRequest::from).collect())
+        Ok(pull_requests)
     }
 
     pub async fn get_threads_in_pull_request(
         &self,
         pull_request_id: i32,
-    ) -> Result<Vec<Thread>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Thread>, RepoClientError> {
         let threads = self
             .git_client
             .pull_request_threads_client()
@@ -117,7 +147,7 @@ impl RepoClient {
     pub async fn get_work_item_ids_in_pull_request(
         &self,
         pull_request_id: i32,
-    ) -> Result<Vec<i32>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<i32>, RepoClientError> {
         let work_item_refs = self
             .git_client
             .pull_request_work_items_client()
@@ -140,7 +170,7 @@ impl RepoClient {
     pub async fn get_commits_in_pull_request(
         &self,
         pull_request_id: i32,
-    ) -> Result<Vec<GitCommitRef>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<GitCommitRef>, RepoClientError> {
         let commits = self
             .git_client
             .pull_request_commits_client()
@@ -156,10 +186,7 @@ impl RepoClient {
         Ok(commits)
     }
 
-    pub async fn get_work_items(
-        &self,
-        ids: Vec<i32>,
-    ) -> Result<Vec<WorkItem>, Box<dyn std::error::Error>> {
+    pub async fn get_work_items(&self, ids: Vec<i32>) -> Result<Vec<WorkItem>, RepoClientError> {
         let mut batch_request = WorkItemBatchGetRequest::new();
         batch_request.expand = Some(Expand::Relations);
         batch_request.ids = ids;
@@ -172,6 +199,65 @@ impl RepoClient {
             .value;
 
         Ok(work_items.into_iter().map(WorkItem::from).collect())
+    }
+
+    // TODO: how to handle continuation token?
+    pub async fn get_graph_users(&self) -> Result<Vec<GraphUser>, RepoClientError> {
+        let user_list_response = self
+            .graph_client
+            .users_client()
+            .list(&self.organization)
+            .await?;
+
+        if user_list_response.count.is_none_or(|count| count == 0) {
+            return Ok(vec![]);
+        }
+
+        Ok(user_list_response.value)
+    }
+
+    /// Workaround to get all identities as there is no way to list all identities with
+    /// the same ID that is used in the git API.
+    pub async fn get_git_identities(&self) -> Result<Vec<Identity>, RepoClientError> {
+        const MAX_PULL_REQUESTS: usize = 100;
+        const CONCURRENCY: usize = 10;
+
+        let pull_requests = self.get_all_pull_requests(Some(MAX_PULL_REQUESTS)).await?;
+
+        let semaphore = Arc::new(Semaphore::new(CONCURRENCY));
+        let mut handles = Vec::with_capacity(pull_requests.len());
+        for pr in &pull_requests {
+            let client = self.clone();
+            let pr_id = pr.id;
+            let semaphore = Arc::clone(&semaphore);
+            handles.push(tokio::spawn(async move {
+                let _permit = semaphore.acquire_owned().await.unwrap();
+                client.get_threads_in_pull_request(pr_id).await
+            }));
+        }
+
+        let mut threads = Vec::new();
+        for handle in handles {
+            if let Ok(Ok(pr_threads)) = handle.await {
+                threads.extend(pr_threads);
+            }
+        }
+
+        let mut identities = HashSet::new();
+        for pull_request in pull_requests {
+            identities.insert(pull_request.created_by);
+            pull_request.reviewers.iter().for_each(|reviewer| {
+                identities.insert(reviewer.identity.clone());
+            });
+        }
+
+        for thread in threads {
+            thread.comments.iter().for_each(|comment| {
+                identities.insert(comment.author.clone());
+            });
+        }
+
+        Ok(identities.into_iter().collect())
     }
 }
 
@@ -204,8 +290,6 @@ mod tests {
     async fn test_get_pull_request_threads() {
         let repo_client = get_repo_client().await;
         let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
-
-        assert!(!pull_requests.is_empty());
 
         let test_pr = &pull_requests[0];
         let threads = repo_client
@@ -252,5 +336,27 @@ mod tests {
 
         let work_items = repo_client.get_work_items(work_item_ids).await.unwrap();
         assert!(!work_items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_graph_users() {
+        let repo_client = get_repo_client().await;
+        let identities = repo_client.get_graph_users().await.unwrap();
+        assert!(!identities.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_git_identities() {
+        let repo_client = get_repo_client().await;
+        let identities = repo_client.get_git_identities().await.unwrap();
+
+        for identity in &identities {
+            println!(
+                "Name: {}, Email: {}, ID: {}",
+                identity.display_name, identity.unique_name, identity.id
+            );
+        }
+
+        assert!(!identities.is_empty());
     }
 }

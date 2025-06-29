@@ -9,7 +9,7 @@ use crate::repositories::{
     PushSubscriptionRepositoryImpl, RepoRepositoryImpl, UserRepository, UserRepositoryImpl,
 };
 
-use super::{PRChangeEvent, PullRequestDiff, RepoKey};
+use super::{PullRequestDiff, RepoKey};
 
 pub struct NotificationHandler {
     push_subscriptions_repo: PushSubscriptionRepositoryImpl,
@@ -35,17 +35,17 @@ impl NotificationHandler {
             .user_repo
             .get_users()
             .await
-            .map_err(|e| format!("Failed to get users: {}", e))?;
+            .map_err(|e| format!("Failed to get users: {e}"))?;
         let repos = self
             .repo_repo
             .get_repositories()
             .await
-            .map_err(|e| format!("Failed to get repositories: {}", e))?;
+            .map_err(|e| format!("Failed to get repositories: {e}"))?;
         let push_subscriptions = self
             .push_subscriptions_repo
             .get_push_subscriptions()
             .await
-            .map_err(|e| format!("Failed to get push subscriptions: {}", e))?;
+            .map_err(|e| format!("Failed to get push subscriptions: {e}"))?;
 
         for user in users {
             let following = self
@@ -115,11 +115,7 @@ impl NotificationHandler {
                         &diff.pr.pull_request_base.created_by.unique_name,
                     )
                 }) {
-                    let notification_type = match event {
-                        PRChangeEvent::PullRequestClosed => DbNotificationType::PrClosed,
-                        PRChangeEvent::ThreadAdded(_) => DbNotificationType::ThreadAdded,
-                        PRChangeEvent::ThreadUpdated(_) => DbNotificationType::ThreadUpdated,
-                    };
+                    let notification_type = DbNotificationType::from(event);
 
                     // Check if notification is enabled via rules/exceptions
                     let rule = rules
@@ -130,9 +126,9 @@ impl NotificationHandler {
                         .find(|e| e.notification_type == notification_type);
 
                     let is_enabled = match (rule, exception) {
-                        (_, Some(e)) => e.enabled,
+                        (_, Some(e)) => e.enabled, // exception overrides rule
                         (Some(r), None) => r.enabled,
-                        (None, None) => false, // Default to disabled if no rule exists
+                        (None, None) => notification_type.default_enabled(),
                     };
 
                     if !is_enabled {

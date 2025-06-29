@@ -16,7 +16,8 @@ use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
     domain::{
-        NotificationHandler, PullRequest, RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey,
+        CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
+        RepoDifferMessage, RepoKey,
     },
     repositories::{
         NotificationRepositoryImpl, PushSubscriptionRepositoryImpl, RepoRepositoryImpl,
@@ -192,9 +193,25 @@ impl AppState {
             .get(&key)
             .cloned()
             .ok_or(AppStateError::RepoClientNotFound(key))?;
-        let cached_pull_requests = differ.prev_pull_requests.read().await.clone();
 
+        let cached_pull_requests = differ.prev_pull_requests.read().await.clone();
         Ok(cached_pull_requests)
+    }
+
+    pub async fn get_cached_identities(
+        &self,
+        key: impl Into<RepoKey>,
+    ) -> Result<CachedIdentities, AppStateError> {
+        let key: RepoKey = key.into();
+
+        let differs = self.differs.read().await;
+        let differ = differs
+            .get(&key)
+            .cloned()
+            .ok_or(AppStateError::RepoClientNotFound(key))?;
+
+        let cached_identities = differ.identities.read().await.clone();
+        Ok(cached_identities)
     }
 
     pub async fn insert_repo(&self, key: impl Into<RepoKey>, client: RepoClient) {

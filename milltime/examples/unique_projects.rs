@@ -90,5 +90,5 @@ fn format_hours_minutes(hours: f64) -> String {
     let total_minutes = (hours * 60.0).round() as i32;
     let hours = total_minutes / 60;
     let minutes = total_minutes % 60;
-    format!("{:02}:{:02}", hours, minutes)
+    format!("{hours:02}:{minutes:02}")
 }
