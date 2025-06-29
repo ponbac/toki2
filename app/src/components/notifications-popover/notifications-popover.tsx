@@ -42,6 +42,8 @@ export function NotificationsPopover() {
 
   const { mutate: markViewed } =
     notificationsMutations.useMarkNotificationViewed();
+  const { mutate: markAllViewed } =
+    notificationsMutations.useMarkAllNotificationsViewed();
 
   const unviewedCount = notifications.filter((n) => !n.viewedAt).length;
   const hasUnviewedNotifications = unviewedCount > 0;
@@ -81,7 +83,16 @@ export function NotificationsPopover() {
             <span>Notifications</span>
             {hasUnviewedNotifications && (
               <span className="text-sm text-muted-foreground">
-                ({unviewedCount} unread)
+                ({unviewedCount} unread
+                {unviewedCount > 0 && (
+                  <button onClick={() => markAllViewed()}>
+                    ,{" "}
+                    <span className="text-primary-foreground underline transition-colors hover:text-primary">
+                      mark all as read
+                    </span>
+                  </button>
+                )}
+                )
               </span>
             )}
           </div>

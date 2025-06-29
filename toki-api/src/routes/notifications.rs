@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/test-push", post(test_push))
         .route("/", get(get_notifications))
         .route("/:id/view", post(mark_notification_viewed))
+        .route("/view-all", post(mark_all_notifications_viewed))
         .route("/:id", delete(delete_notification))
         .route("/preferences/:repository_id", get(get_preferences))
         .route("/preferences/:repository_id", post(update_preferences))
@@ -286,6 +287,27 @@ async fn mark_notification_viewed(
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to mark notification as viewed".to_string(),
+            )
+        })?;
+
+    Ok(StatusCode::OK)
+}
+
+async fn mark_all_notifications_viewed(
+    AuthSession { user, .. }: AuthSession,
+    State(app_state): State<AppState>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let user = user.expect("user not found");
+    let notification_repo = app_state.notification_repo.clone();
+
+    notification_repo
+        .mark_all_notifications_viewed(user.id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to mark all notifications as viewed: {:?}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to mark all notifications as viewed".to_string(),
             )
         })?;
 
