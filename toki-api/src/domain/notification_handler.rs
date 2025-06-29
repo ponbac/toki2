@@ -35,17 +35,17 @@ impl NotificationHandler {
             .user_repo
             .get_users()
             .await
-            .map_err(|e| format!("Failed to get users: {}", e))?;
+            .map_err(|e| format!("Failed to get users: {e}"))?;
         let repos = self
             .repo_repo
             .get_repositories()
             .await
-            .map_err(|e| format!("Failed to get repositories: {}", e))?;
+            .map_err(|e| format!("Failed to get repositories: {e}"))?;
         let push_subscriptions = self
             .push_subscriptions_repo
             .get_push_subscriptions()
             .await
-            .map_err(|e| format!("Failed to get push subscriptions: {}", e))?;
+            .map_err(|e| format!("Failed to get push subscriptions: {e}"))?;
 
         for user in users {
             let following = self
@@ -119,7 +119,7 @@ impl NotificationHandler {
                         PRChangeEvent::PullRequestClosed => DbNotificationType::PrClosed,
                         PRChangeEvent::ThreadAdded(_) => DbNotificationType::ThreadAdded,
                         PRChangeEvent::ThreadUpdated(_) => DbNotificationType::ThreadUpdated,
-                        PRChangeEvent::CommentMentioned(_, _, _) => {
+                        PRChangeEvent::CommentMentioned(_, _) => {
                             DbNotificationType::CommentMentioned
                         }
                     };

@@ -12,6 +12,8 @@ use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
 
+use crate::domain::Email;
+
 use super::{NotificationHandler, PullRequest, PullRequestDiff, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
@@ -317,10 +319,16 @@ impl CachedIdentities {
             .collect::<HashMap<_, _>>()
     }
 
-    pub fn id_to_email_map(&self) -> HashMap<String, String> {
+    pub fn id_to_email_map(&self) -> HashMap<String, Email> {
         self.identities
             .iter()
-            .map(|i| (i.id.clone(), i.unique_name.clone()))
+            .map(|i| {
+                (
+                    i.id.clone(),
+                    Email::try_from(i.unique_name.as_str())
+                        .expect("Should never fail since email is from Azure DevOps"),
+                )
+            })
             .collect::<HashMap<_, _>>()
     }
 }

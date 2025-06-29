@@ -2,6 +2,8 @@ use az_devops::{IdentityWithVote, ThreadStatus, Vote};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::domain::Email;
+
 use super::{PRChangeEvent, RepoKey};
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -56,7 +58,7 @@ impl PullRequest {
     pub fn changelog(
         &self,
         new: Option<&Self>,
-        id_to_email_map: &HashMap<String, String>,
+        id_to_email_map: &HashMap<String, Email>,
     ) -> PullRequestDiff {
         let new_pr = match new {
             Some(new) => new,
@@ -74,8 +76,6 @@ impl PullRequest {
             .iter()
             .filter(|t| {
                 let old_thread = self.threads.iter().find(|ot| ot.id == t.id);
-
-                // let status_changed = old_thread.map_or(false, |ot| ot.status != t.status);
 
                 // New comments in the thread
                 old_thread.is_some_and(|ot| t.comments.len() > ot.comments.len())
@@ -110,11 +110,7 @@ impl PullRequest {
                             .filter_map(move |mention_id| {
                                 // Resolve mention ID to email
                                 id_to_email_map.get(&mention_id).map(|email| {
-                                    PRChangeEvent::CommentMentioned(
-                                        new_thread.clone(),
-                                        comment.clone(),
-                                        email.clone(),
-                                    )
+                                    PRChangeEvent::CommentMentioned(comment.clone(), email.clone())
                                 })
                             })
                     })

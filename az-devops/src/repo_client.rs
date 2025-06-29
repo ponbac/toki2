@@ -223,15 +223,14 @@ impl RepoClient {
         const CONCURRENCY: usize = 10;
 
         let pull_requests = self.get_all_pull_requests(Some(MAX_PULL_REQUESTS)).await?;
-        let semaphore = Arc::new(Semaphore::new(CONCURRENCY));
 
+        let semaphore = Arc::new(Semaphore::new(CONCURRENCY));
         let mut handles = Vec::with_capacity(pull_requests.len());
         for pr in &pull_requests {
             let client = self.clone();
             let pr_id = pr.id;
             let semaphore = Arc::clone(&semaphore);
             handles.push(tokio::spawn(async move {
-                // Fails if semaphore is closed, which should not happen here.
                 let _permit = semaphore.acquire_owned().await.unwrap();
                 client.get_threads_in_pull_request(pr_id).await
             }));
