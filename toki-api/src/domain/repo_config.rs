@@ -5,7 +5,6 @@ use super::RepoKey;
 
 #[derive(Deserialize)]
 pub struct RepoConfig {
-    pub id: i32,
     pub organization: String,
     pub project: String,
     pub repo_name: String,

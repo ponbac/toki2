@@ -315,19 +315,17 @@ impl CachedIdentities {
     pub fn id_to_name_map(&self) -> HashMap<String, String> {
         self.identities
             .iter()
-            .map(|i| (i.id.clone(), i.display_name.clone()))
+            .map(|i| (i.id.to_uppercase(), i.display_name.clone()))
             .collect::<HashMap<_, _>>()
     }
 
     pub fn id_to_email_map(&self) -> HashMap<String, Email> {
         self.identities
             .iter()
-            .map(|i| {
-                (
-                    i.id.clone(),
-                    Email::try_from(i.unique_name.as_str())
-                        .expect("Should never fail since email is from Azure DevOps"),
-                )
+            .filter_map(|i| {
+                Email::try_from(i.unique_name.as_str())
+                    .map(|email| (i.id.to_uppercase(), email))
+                    .ok()
             })
             .collect::<HashMap<_, _>>()
     }

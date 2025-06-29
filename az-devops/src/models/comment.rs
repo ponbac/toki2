@@ -30,6 +30,7 @@ impl Comment {
             Some(content) => content
                 .split_whitespace()
                 .filter_map(strip_mention)
+                .map(|s| s.to_uppercase())
                 .collect(),
             None => vec![],
         }
