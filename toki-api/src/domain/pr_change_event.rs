@@ -37,22 +37,22 @@ impl fmt::Display for PRChangeEvent {
 }
 
 impl PRChangeEvent {
-    pub fn applies_to(&self, email: &str, pr_author: &str) -> bool {
+    pub fn applies_to(&self, user_email: &str, pr_author: &str) -> bool {
         match self {
             PRChangeEvent::PullRequestClosed => true,
             PRChangeEvent::ThreadAdded(thread) => {
-                thread.author().unique_name != email && pr_author == email
+                thread.author().unique_name != user_email && pr_author == user_email
             }
             PRChangeEvent::ThreadUpdated(thread) => {
                 let most_recent_author = &thread.most_recent_comment().author;
 
                 // Don't notify if you're the one who just commented
-                if most_recent_author.unique_name == email {
+                if most_recent_author.unique_name == user_email {
                     return false;
                 }
 
                 // Notify if you're the PR author
-                if email == pr_author {
+                if user_email == pr_author {
                     return true;
                 }
 
@@ -60,12 +60,10 @@ impl PRChangeEvent {
                 thread
                     .comments
                     .iter()
-                    .any(|comment| comment.author.unique_name == email)
+                    .any(|comment| comment.author.unique_name == user_email)
             }
-            PRChangeEvent::CommentMentioned(comment, mentioned_email) => {
-                // Only applies if you're the mentioned user and you're not the comment author
-                comment.author.unique_name != email
-                    && mentioned_email.to_lowercase() == email.to_lowercase()
+            PRChangeEvent::CommentMentioned(_, mentioned_email) => {
+                mentioned_email.to_lowercase() == user_email.to_lowercase()
             }
         }
     }
