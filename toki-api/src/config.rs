@@ -10,6 +10,7 @@ pub struct Settings {
     pub application: ApplicationSettings,
     pub database: DatabaseSettings,
     pub auth: AuthSettings,
+    pub avatar_cache: AvatarCacheSettings,
 }
 
 #[serde_as]
@@ -43,6 +44,15 @@ pub struct AuthSettings {
     pub auth_url: String,
     pub token_url: String,
     pub redirect_url: String,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct AvatarCacheSettings {
+    pub cache_dir: String,
+    pub ttl_hours: u64,
+    pub max_cache_size_mb: u64,
+    pub max_image_size_mb: u64,
+    pub max_concurrent_downloads: usize,
 }
 
 impl DatabaseSettings {

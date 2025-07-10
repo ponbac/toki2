@@ -80,7 +80,7 @@ async fn get_differs(
         let key = differ.key.clone();
         let status = *differ.status.read().await;
         let last_updated = *differ.last_updated.read().await;
-        let refresh_interval = *differ.interval.read().await;
+        let refresh_interval = differ.interval.read().await.map(|d| std::time::Duration::try_from(d).unwrap_or(std::time::Duration::from_secs(300)));
 
         differ_dtos.push(Differ {
             key: key.clone(),
@@ -123,7 +123,7 @@ async fn start_differ(
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
     let _ = sender
-        .send(RepoDifferMessage::Start(Duration::from_secs(300)))
+        .send(RepoDifferMessage::Start(time::Duration::minutes(5)))
         .await
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()));
 

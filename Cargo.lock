@@ -2006,6 +2006,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "md5"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
+
+[[package]]
 name = "memchr"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3757,6 +3763,7 @@ dependencies = [
  "axum-login",
  "az-devops",
  "base64 0.22.1",
+ "bytes",
  "chrono",
  "config",
  "crossbeam",
@@ -3764,12 +3771,16 @@ dependencies = [
  "futures",
  "futures-util",
  "itertools 0.13.0",
+ "md5",
  "milltime",
+ "mime",
+ "mime_guess",
  "oauth2",
  "reqwest 0.12.5",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2",
  "sqlx",
  "strum",
  "strum_macros",

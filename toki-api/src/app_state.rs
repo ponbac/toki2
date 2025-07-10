@@ -23,6 +23,7 @@ use crate::{
         NotificationRepositoryImpl, PushSubscriptionRepositoryImpl, RepoRepositoryImpl,
         TimerRepositoryImpl, UserRepositoryImpl,
     },
+    services::{AvatarCacheService, IdentityProcessor},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -55,6 +56,7 @@ pub struct AppState {
     pub push_subscriptions_repo: Arc<PushSubscriptionRepositoryImpl>,
     pub milltime_repo: Arc<TimerRepositoryImpl>,
     pub notification_repo: Arc<NotificationRepositoryImpl>,
+    pub avatar_cache: Arc<AvatarCacheService>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
@@ -69,6 +71,7 @@ impl AppState {
         cookie_domain: String,
         db_pool: PgPool,
         repo_configs: Vec<RepoConfig>,
+        avatar_cache: Arc<AvatarCacheService>,
     ) -> Self {
         let client_futures = repo_configs
             .into_iter()
@@ -100,6 +103,8 @@ impl AppState {
             web_push_client.clone(),
         ));
 
+        let identity_processor = Arc::new(IdentityProcessor::new(avatar_cache.clone()));
+
         let mut differs = HashMap::new();
         let differ_txs = clients
             .iter()
@@ -108,6 +113,7 @@ impl AppState {
                     key.clone(),
                     client.clone(),
                     notification_handler.clone(),
+                    identity_processor.clone(),
                 ));
                 differs.insert(key.clone(), differ.clone());
 
@@ -131,6 +137,7 @@ impl AppState {
             push_subscriptions_repo: Arc::new(PushSubscriptionRepositoryImpl::new(db_pool.clone())),
             milltime_repo: Arc::new(TimerRepositoryImpl::new(db_pool.clone())),
             notification_repo: Arc::new(NotificationRepositoryImpl::new(db_pool.clone())),
+            avatar_cache,
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
             differs: Arc::new(RwLock::new(differs)),
@@ -176,7 +183,7 @@ impl AppState {
         for key in differs.keys() {
             let sender = self.get_differ_sender(key.clone()).await.unwrap();
             sender
-                .send(RepoDifferMessage::Start(Duration::from_secs(300)))
+                .send(RepoDifferMessage::Start(time::Duration::minutes(5)))
                 .await
                 .unwrap();
         }
@@ -222,10 +229,12 @@ impl AppState {
 
         let mut differ_txs = self.differ_txs.lock().await;
         let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
+        let identity_processor = Arc::new(IdentityProcessor::new(self.avatar_cache.clone()));
         let differ = Arc::new(RepoDiffer::new(
             key.clone(),
             client.clone(),
             self.notification_handler.clone(),
+            identity_processor,
         ));
         self.differs
             .write()

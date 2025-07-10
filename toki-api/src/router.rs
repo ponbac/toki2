@@ -7,6 +7,7 @@ use axum_login::{
 };
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use sqlx::PgPool;
+use std::{path::PathBuf, sync::Arc};
 use time::Duration;
 use tower_http::{
     cors::CorsLayer,
@@ -19,6 +20,7 @@ use crate::{
     config::Settings,
     domain::RepoConfig,
     routes,
+    services::AvatarCacheService,
 };
 
 pub async fn create(
@@ -32,7 +34,8 @@ pub async fn create(
         .nest("/differs", routes::differs::router())
         .nest("/repositories", routes::repositories::router())
         .nest("/notifications", routes::notifications::router())
-        .nest("/milltime", routes::milltime::router());
+        .nest("/milltime", routes::milltime::router())
+        .nest("/avatars", routes::avatars::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
@@ -45,6 +48,23 @@ pub async fn create(
             .layer(auth_layer)
     };
 
+    // Create avatar cache service
+    let avatar_cache = Arc::new(AvatarCacheService::new(
+        PathBuf::from(&config.avatar_cache.cache_dir),
+        Duration::hours(config.avatar_cache.ttl_hours as i64),
+        config.avatar_cache.max_cache_size_mb * 1024 * 1024,
+        config.avatar_cache.max_image_size_mb * 1024 * 1024,
+        config.application.api_url.clone(),
+    ));
+
+    // Initialize avatar cache
+    if let Err(e) = avatar_cache.initialize().await {
+        tracing::error!("Failed to initialize avatar cache: {}", e);
+    }
+
+    // Start avatar cache cleanup task
+    avatar_cache.start_cleanup_task();
+
     // Create app state
     let app_state = AppState::new(
         config.application.app_url.clone(),
@@ -52,6 +72,7 @@ pub async fn create(
         config.application.cookie_domain.clone(),
         connection_pool.clone(),
         repo_configs,
+        avatar_cache,
     )
     .await;
 

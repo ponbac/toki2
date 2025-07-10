@@ -11,3 +11,9 @@ auth:
   # client_secret: "provide through env"
   auth_url: "https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/authorize?scope=https://graph.microsoft.com/.default"
   token_url: "https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/token"
+avatar_cache:
+  cache_dir: "./avatar_cache"
+  ttl_hours: 24
+  max_cache_size_mb: 500
+  max_image_size_mb: 5
+  max_concurrent_downloads: 10
