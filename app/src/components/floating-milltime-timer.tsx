@@ -19,16 +19,21 @@ import {
   TimerType,
   type MilltimeTimer,
 } from "@/lib/api/queries/milltime";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import dayjs from "dayjs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { TimerEditDialog } from "./timer-edit-dialog";
+import { TimerHistory } from "./timer-history";
 import { useMilltimeActions, useMilltimeTimer } from "@/hooks/useMilltimeStore";
 import { useTitleStore } from "@/hooks/useTitleStore";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { HistoryIcon } from "lucide-react";
 
 export const FloatingMilltimeTimer = () => {
+  const queryClient = useQueryClient();
+
   const { setTimer } = useMilltimeActions();
   const { visible, timeSeconds, state: timerState } = useMilltimeTimer();
   const { hours, minutes, seconds } = secondsToHoursMinutesSeconds(
@@ -38,6 +43,7 @@ export const FloatingMilltimeTimer = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [userNote, setUserNote] = React.useState("");
+  const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
 
   const { data: timer, error: timerFetchError } = useQuery({
     ...milltimeQueries.getTimer(),
@@ -282,24 +288,79 @@ export const FloatingMilltimeTimer = () => {
                 hidden: isMinimized,
               })}
             >
-              <Input
-                type="text"
-                placeholder="Add a note..."
-                value={userNote}
-                onChange={(e) => setUserNote(e.target.value)}
-                onBlur={() =>
-                  userNote !== timer?.note
-                    ? timer?.timerType === "Standalone"
-                      ? editStandaloneTimer({
-                          userNote,
+              <div className="relative">
+                <Input
+                  type="text"
+                  placeholder="Add a note..."
+                  value={userNote}
+                  onChange={(e) => setUserNote(e.target.value)}
+                  onBlur={() =>
+                    userNote !== timer?.note
+                      ? timer?.timerType === "Standalone"
+                        ? editStandaloneTimer({
+                            userNote,
+                          })
+                        : editTimer({ userNote })
+                      : undefined
+                  }
+                  className={cn(
+                    "w-full rounded-md border border-gray-300 px-4 py-2 pr-10 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50",
+                  )}
+                />
+                <Popover open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      title="Show recent entries"
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:bg-accent hover:text-primary focus:outline-none"
+                      aria-label="Show recent entries"
+                      onMouseEnter={() =>
+                        queryClient.prefetchQuery({
+                          ...milltimeQueries.timeEntries({
+                            from: dayjs()
+                              .subtract(1, "month")
+                              .format("YYYY-MM-DD"),
+                            to: dayjs().add(1, "day").format("YYYY-MM-DD"),
+                            unique: true,
+                          }),
                         })
-                      : editTimer({ userNote })
-                    : undefined
-                }
-                className={cn(
-                  "w-full rounded-md border border-gray-300 px-4 py-2 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50",
-                )}
-              />
+                      }
+                    >
+                      <HistoryIcon className="size-4" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    className="w-[42rem] bg-gray-900/80 p-2"
+                  >
+                    <TimerHistory
+                      className="bg-gray-900/80"
+                      scrollAreaClassName="min-h-72"
+                      searchInputClassName="focus-visible:ring-0 focus-visible:ring-shadow-none focus-visible:shadow-none focus-visible:ring-offset-0"
+                      onHistoryClick={(
+                        projectName: string,
+                        activityName: string,
+                        clickedNote: string,
+                      ) => {
+                        setUserNote(clickedNote ?? "");
+                        if (timer?.timerType === "Standalone") {
+                          editStandaloneTimer({
+                            userNote: clickedNote ?? "",
+                            projectName,
+                            activityName,
+                          });
+                        } else if (timer?.timerType === "Milltime") {
+                          // Milltime timers only allow editing note
+                          if (clickedNote !== timer?.note) {
+                            editTimer({ userNote: clickedNote ?? "" });
+                          }
+                        }
+                        setIsHistoryOpen(false);
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
           </div>
           {!isMinimized && (

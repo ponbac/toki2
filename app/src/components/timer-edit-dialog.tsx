@@ -203,6 +203,7 @@ export const TimerEditDialog = (props: {
               </div>
             </div>
             <TimerHistory
+              className="mt-4"
               onHistoryClick={(projectName, activityName, clickedNote) => {
                 // already selected? start timer
                 if (

@@ -14,6 +14,9 @@ export function TimerHistory(props: {
     activityName: string,
     note: string,
   ) => void;
+  className?: string;
+  searchInputClassName?: string;
+  scrollAreaClassName?: string;
 }) {
   const [searchTerm, setSearchTerm] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -37,7 +40,7 @@ export function TimerHistory(props: {
   }, [timeEntries, searchTerm]);
 
   return (
-    <div className="mt-4">
+    <div className={props.className}>
       <div className="mb-2 flex flex-row items-center justify-between">
         <div className="flex flex-row items-center gap-1">
           <HistoryIcon className="size-5" />
@@ -62,11 +65,16 @@ export function TimerHistory(props: {
               const value = event.target.value;
               setSearchTerm(value);
             }}
-            className="h-9 pl-8 text-sm"
+            className={cn("h-9 pl-8 text-sm", props.searchInputClassName)}
           />
         </div>
       </div>
-      <ScrollArea className="flex max-h-72 w-full flex-col gap-2">
+      <ScrollArea
+        className={cn(
+          "flex max-h-72 w-full flex-col gap-2",
+          props.scrollAreaClassName,
+        )}
+      >
         {isLoading
           ? Array.from({ length: 10 }).map((_, index) => (
               <HistoryEntrySkeleton key={index} />
