@@ -331,10 +331,9 @@ export const FloatingMilltimeTimer = () => {
                   </PopoverTrigger>
                   <PopoverContent
                     align="end"
-                    className="w-[42rem] bg-gray-900/80 p-2"
+                    className="w-[42rem] bg-gray-900/95 p-2"
                   >
                     <TimerHistory
-                      className="bg-gray-900/80"
                       scrollAreaClassName="min-h-72"
                       searchInputClassName="focus-visible:ring-0 focus-visible:ring-shadow-none focus-visible:shadow-none focus-visible:ring-offset-0"
                       onHistoryClick={(
