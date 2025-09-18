@@ -204,22 +204,18 @@ export const TimerEditDialog = (props: {
             </div>
             <TimerHistory
               className="mt-4"
-              onHistoryClick={(projectName, activityName, clickedNote) => {
+              onHistoryClick={(timeEntry) => {
                 // already selected? start timer
                 if (
-                  projectName === selectedProject?.projectName &&
-                  activityName === selectedActivity?.activityName &&
-                  clickedNote === note
+                  timeEntry.projectName === selectedProject?.projectName &&
+                  timeEntry.activityName === selectedActivity?.activityName &&
+                  timeEntry.note === note
                 ) {
                   updateTimer();
                 } else {
-                  setProjectId(
-                    projects
-                      ?.find((p) => p.projectName === projectName)
-                      ?.projectId.toString() ?? "",
-                  );
-                  setActivityName(activityName);
-                  setNote(clickedNote);
+                  setProjectId(timeEntry.projectId);
+                  setActivityName(timeEntry.activityName);
+                  setNote(timeEntry.note);
                 }
               }}
             />

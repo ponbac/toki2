@@ -336,22 +336,20 @@ export const FloatingMilltimeTimer = () => {
                     <TimerHistory
                       scrollAreaClassName="min-h-72"
                       searchInputClassName="focus-visible:ring-0 focus-visible:ring-shadow-none focus-visible:shadow-none focus-visible:ring-offset-0"
-                      onHistoryClick={(
-                        projectName: string,
-                        activityName: string,
-                        clickedNote: string,
-                      ) => {
-                        setUserNote(clickedNote ?? "");
+                      onHistoryClick={(timeEntry) => {
+                        setUserNote(timeEntry.note ?? "");
                         if (timer?.timerType === "Standalone") {
                           editStandaloneTimer({
-                            userNote: clickedNote ?? "",
-                            projectName,
-                            activityName,
+                            userNote: timeEntry.note ?? "",
+                            projectId: timeEntry.projectId,
+                            activityId: timeEntry.activityId,
+                            projectName: timeEntry.projectName,
+                            activityName: timeEntry.activityName,
                           });
                         } else if (timer?.timerType === "Milltime") {
                           // Milltime timers only allow editing note
-                          if (clickedNote !== timer?.note) {
-                            editTimer({ userNote: clickedNote ?? "" });
+                          if (timeEntry.note !== timer?.note) {
+                            editTimer({ userNote: timeEntry.note ?? "" });
                           }
                         }
                         setIsHistoryOpen(false);

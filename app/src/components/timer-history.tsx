@@ -9,11 +9,13 @@ import { Skeleton } from "./ui/skeleton";
 import { ScrollArea } from "./ui/scroll-area";
 
 export function TimerHistory(props: {
-  onHistoryClick: (
-    projectName: string,
-    activityName: string,
-    note: string,
-  ) => void;
+  onHistoryClick: (timeEntry: {
+    projectId: string;
+    projectName: string;
+    activityId: string;
+    activityName: string;
+    note: string;
+  }) => void;
   className?: string;
   searchInputClassName?: string;
   scrollAreaClassName?: string;
@@ -88,11 +90,13 @@ export function TimerHistory(props: {
                 )}
                 key={index}
                 onClick={() =>
-                  props.onHistoryClick(
-                    timeEntry.projectName,
-                    timeEntry.activityName,
-                    timeEntry.note ?? "",
-                  )
+                  props.onHistoryClick({
+                    projectId: timeEntry.projectId,
+                    projectName: timeEntry.projectName,
+                    activityId: timeEntry.activityId,
+                    activityName: timeEntry.activityName,
+                    note: timeEntry.note ?? "",
+                  })
                 }
               >
                 <div className="flex w-full items-center justify-between">
