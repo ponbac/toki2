@@ -123,7 +123,7 @@ export function TimeEntriesList(props: {
       (sum, [, entries]) => sum + entries.length,
       0,
     );
-    if (totalVisible > 250) return {} as Record<string, boolean>;
+    if (totalVisible > 250) return {};
 
     return groupedEntries.reduce<Record<string, boolean>>(
       (acc, [, dayEntries]) => {
