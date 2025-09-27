@@ -333,27 +333,31 @@ export const FloatingMilltimeTimer = () => {
                   )}
                 />
                 <Popover open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      title="Show recent entries"
-                      type="button"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:bg-accent hover:text-primary focus:outline-none"
-                      aria-label="Show recent entries"
-                      onMouseEnter={() =>
-                        queryClient.prefetchQuery({
-                          ...milltimeQueries.timeEntries({
-                            from: dayjs()
-                              .subtract(1, "month")
-                              .format("YYYY-MM-DD"),
-                            to: dayjs().add(1, "day").format("YYYY-MM-DD"),
-                            unique: true,
-                          }),
-                        })
-                      }
-                    >
-                      <HistoryIcon className="size-4" />
-                    </button>
-                  </PopoverTrigger>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:bg-accent hover:text-primary focus:outline-none"
+                          aria-label="Show recent entries"
+                          onMouseEnter={() =>
+                            queryClient.prefetchQuery({
+                              ...milltimeQueries.timeEntries({
+                                from: dayjs()
+                                  .subtract(1, "month")
+                                  .format("YYYY-MM-DD"),
+                                to: dayjs().add(1, "day").format("YYYY-MM-DD"),
+                                unique: true,
+                              }),
+                            })
+                          }
+                        >
+                          <HistoryIcon className="size-4" />
+                        </button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Show recent entries</TooltipContent>
+                  </Tooltip>
                   <PopoverContent
                     align="end"
                     className="w-[42rem] bg-gray-900/95 p-2"
