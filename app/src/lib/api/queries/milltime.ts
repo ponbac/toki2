@@ -171,6 +171,7 @@ export type TimeEntry = {
   projectName: string;
   activityId: string;
   activityName: string;
+  activity?: string; // raw activity code (exposed for restart functionality)
   date: string;
   hours: number;
   note: string | null;

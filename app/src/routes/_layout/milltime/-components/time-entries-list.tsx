@@ -254,15 +254,20 @@ function ViewEntryCard(props: {
   onEdit: () => void;
   overlapMap: Record<string, boolean>;
 }) {
-  const { mutate: startTimerMutate } = milltimeMutations.useStartTimer();
+  const { mutate: startTimerMutate, isPending: isStarting } =
+    milltimeMutations.useStartTimer({
+      onSuccess: () => toast.success("Timer started"),
+      onError: () => toast.error("Failed to start timer"),
+    });
   const handleStartAgain = () => {
-    if (isMergedTimeEntry(props.entry)) return; // ambiguous for merged entries
+    const entry = props.entry;
+    const activityCode = (entry as any).activity ?? entry.activityId; // prefer raw activity if available
     startTimerMutate({
-      activity: props.entry.activityName,
-      activityName: props.entry.activityName,
-      projectId: props.entry.projectId,
-      projectName: props.entry.projectName,
-      userNote: props.entry.note ?? "",
+      activity: activityCode,
+      activityName: entry.activityName,
+      projectId: entry.projectId,
+      projectName: entry.projectName,
+      userNote: entry.note ?? "",
       regDay: dayjs().format("YYYY-MM-DD"),
       weekNumber: getWeekNumber(new Date()),
     });
@@ -282,26 +287,42 @@ function ViewEntryCard(props: {
         </CardHeader>
         {isMergedTimeEntry(props.entry) ? (
           <>
-            {props.entry.timePeriods.length === 1 &&
-              props.entry.timePeriods.at(0)?.attestLevel ===
-                AttestLevel.None && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={props.onEdit}
-                      className="ml-auto size-8"
-                    >
-                      <PencilIcon className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit entry</TooltipContent>
-                </Tooltip>
-              )}
-            {props.entry.timePeriods.every(
-              (period) => period.attestLevel !== AttestLevel.None,
-            ) && <LockIcon className="ml-auto size-4 text-muted-foreground" />}
+            <div className="mr-2 mt-4 flex flex-row items-center gap-2">
+              {props.entry.timePeriods.length === 1 &&
+                props.entry.timePeriods.at(0)?.attestLevel ===
+                  AttestLevel.None && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={props.onEdit}
+                        className="size-8"
+                      >
+                        <PencilIcon className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Edit entry</TooltipContent>
+                  </Tooltip>
+                )}
+              {props.entry.timePeriods.every(
+                (period) => period.attestLevel !== AttestLevel.None,
+              ) && <LockIcon className="size-4 text-muted-foreground" />}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleStartAgain}
+                    disabled={isStarting}
+                    className="size-8"
+                  >
+                    <PlayCircleIcon className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Start again</TooltipContent>
+              </Tooltip>
+            </div>
             <div className="flex max-h-28 flex-col overflow-hidden pr-4 [&:has(>:nth-child(2))]:mt-2">
               {props.entry.timePeriods
                 .filter((period) => period.startTime && period.endTime)
@@ -352,21 +373,20 @@ function ViewEntryCard(props: {
             ) : (
               <LockIcon className="size-4 text-muted-foreground" />
             )}
-            {!isMergedTimeEntry(props.entry) && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleStartAgain}
-                    className="size-8"
-                  >
-                    <PlayCircleIcon className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Start again</TooltipContent>
-              </Tooltip>
-            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleStartAgain}
+                  disabled={isStarting}
+                  className="size-8"
+                >
+                  <PlayCircleIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Start again</TooltipContent>
+            </Tooltip>
             {props.entry.endTime && (
               <p className="flex items-center gap-1 text-base text-muted-foreground">
                 {props.entry.startTime &&
