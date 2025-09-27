@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AttestLevel, TimeEntry } from "@/lib/api/queries/milltime";
-import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
+import { cn, formatHoursAsHoursMinutes, getWeekNumber } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -21,6 +21,7 @@ import {
   PencilIcon,
   SaveIcon,
   TrashIcon,
+  PlayCircleIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -253,6 +254,19 @@ function ViewEntryCard(props: {
   onEdit: () => void;
   overlapMap: Record<string, boolean>;
 }) {
+  const { mutate: startTimerMutate } = milltimeMutations.useStartTimer();
+  const handleStartAgain = () => {
+    if (isMergedTimeEntry(props.entry)) return; // ambiguous for merged entries
+    startTimerMutate({
+      activity: props.entry.activityName,
+      activityName: props.entry.activityName,
+      projectId: props.entry.projectId,
+      projectName: props.entry.projectName,
+      userNote: props.entry.note ?? "",
+      regDay: dayjs().format("YYYY-MM-DD"),
+      weekNumber: getWeekNumber(new Date()),
+    });
+  };
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
@@ -337,6 +351,21 @@ function ViewEntryCard(props: {
               </Tooltip>
             ) : (
               <LockIcon className="size-4 text-muted-foreground" />
+            )}
+            {!isMergedTimeEntry(props.entry) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleStartAgain}
+                    className="size-8"
+                  >
+                    <PlayCircleIcon className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Start again</TooltipContent>
+              </Tooltip>
             )}
             {props.entry.endTime && (
               <p className="flex items-center gap-1 text-base text-muted-foreground">

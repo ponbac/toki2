@@ -147,18 +147,18 @@ export const MilltimeTimerDialog = (props: {
             <TimerHistory
               className="mt-4"
               onHistoryClick={(timeEntry) => {
-                // already selected? start timer
-                if (
-                  timeEntry.projectName === selectedProject?.projectName &&
-                  timeEntry.activityName === selectedActivity?.activityName &&
-                  timeEntry.note === note
-                ) {
-                  startTimer();
-                } else {
-                  setProjectId(timeEntry.projectId);
-                  setActivityName(timeEntry.activityName);
-                  setNote(timeEntry.note);
-                }
+                // One-click start again
+                startTimerMutate({
+                  activity: timeEntry.activityName,
+                  activityName: timeEntry.activityName,
+                  projectId: timeEntry.projectId,
+                  projectName: timeEntry.projectName,
+                  userNote: timeEntry.note,
+                  regDay: dayjs().format("YYYY-MM-DD"),
+                  weekNumber: getWeekNumber(new Date()),
+                });
+                props.onOpenChange(false);
+                resetForm();
               }}
             />
           </div>
