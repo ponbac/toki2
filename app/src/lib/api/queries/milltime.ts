@@ -170,7 +170,7 @@ export type TimeEntry = {
   projectId: string;
   projectName: string;
   activityId: string;
-  activityName: string;
+  activityName: string; // activityId is the raw activity code used when (re)starting timers
   date: string;
   hours: number;
   note: string | null;

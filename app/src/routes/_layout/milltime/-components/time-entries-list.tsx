@@ -21,6 +21,7 @@ import {
   PencilIcon,
   SaveIcon,
   TrashIcon,
+  PlayIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -253,108 +254,202 @@ function ViewEntryCard(props: {
   onEdit: () => void;
   overlapMap: Record<string, boolean>;
 }) {
+  const { mutateAsync: startStandaloneAsync, isPending: isStarting } =
+    milltimeMutations.useStartStandaloneTimer();
+  const { mutateAsync: editStandaloneAsync } =
+    milltimeMutations.useEditStandaloneTimer();
+
+  const handleStartAgain = () => {
+    const entry = props.entry;
+    startStandaloneAsync({ userNote: entry.note ?? "" })
+      .then(() =>
+        editStandaloneAsync({
+          projectId: entry.projectId,
+          projectName: entry.projectName,
+          activityId: entry.activityId,
+          activityName: entry.activityName,
+        }),
+      )
+      .then(() => {
+        toast.success("Timer started");
+      })
+      .catch(() => {
+        toast.error("Failed to start timer");
+      });
+  };
+  const entry = props.entry;
+  const isMerged = isMergedTimeEntry(entry);
+  const mergedPeriodsWithTimes = isMerged
+    ? entry.timePeriods.reduce<
+        Array<{
+          index: number;
+          startTime: string;
+          endTime: string;
+          attestLevel: AttestLevel;
+        }>
+      >((acc, period, index) => {
+        if (period.startTime && period.endTime) {
+          acc.push({
+            index,
+            startTime: period.startTime,
+            endTime: period.endTime,
+            attestLevel: period.attestLevel,
+          });
+        }
+        return acc;
+      }, [])
+    : [];
+  const hasMultipleMergedPeriods = mergedPeriodsWithTimes.length > 1;
+
+  const renderStartStopTimes = () => {
+    if (isMerged) {
+      if (mergedPeriodsWithTimes.length === 0) return null;
+
+      if (mergedPeriodsWithTimes.length === 1) {
+        const period = mergedPeriodsWithTimes[0];
+        const periodId = `${entry.registrationId}-p${period.index}`;
+        const isOverlap = props.overlapMap[periodId];
+        return (
+          <div className="flex items-center gap-1 text-base text-muted-foreground">
+            <span>{format(new Date(period.startTime), "HH:mm")}</span>
+            <span>-</span>
+            <span>{format(new Date(period.endTime), "HH:mm")}</span>
+            {isOverlap && <OverlapWarning />}
+          </div>
+        );
+      }
+
+      return (
+        <div className="flex max-h-28 flex-col gap-1 overflow-hidden text-sm text-muted-foreground">
+          {mergedPeriodsWithTimes.map((period) => {
+            const periodId = `${entry.registrationId}-p${period.index}`;
+            const isOverlap = props.overlapMap[periodId];
+            return (
+              <p
+                key={periodId}
+                className="flex items-center gap-1 text-sm text-muted-foreground"
+              >
+                {format(new Date(period.startTime), "HH:mm")}
+                {" - "}
+                {format(new Date(period.endTime), "HH:mm")}
+                {isOverlap && <OverlapWarning className="size-4" />}
+              </p>
+            );
+          })}
+        </div>
+      );
+    }
+
+    if (!entry.endTime) return null;
+
+    return (
+      <div className="flex items-center gap-1 text-base text-muted-foreground">
+        <span>
+          {entry.startTime && format(new Date(entry.startTime), "HH:mm")}
+        </span>
+        <span>-</span>
+        <span>{entry.endTime && format(new Date(entry.endTime), "HH:mm")}</span>
+        {props.overlapMap[entry.registrationId] && <OverlapWarning />}
+      </div>
+    );
+  };
+
+  const renderEditControl = () => {
+    if (isMerged) {
+      const canEditSinglePeriod =
+        entry.timePeriods.length === 1 &&
+        entry.timePeriods.at(0)?.attestLevel === AttestLevel.None;
+
+      if (!canEditSinglePeriod)
+        return entry.timePeriods.every(
+          (period) => period.attestLevel !== AttestLevel.None,
+        ) ? (
+          <LockIcon className="size-4 text-muted-foreground" />
+        ) : null;
+
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={props.onEdit}
+              className="size-8"
+            >
+              <PencilIcon className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Edit entry</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    if (entry.attestLevel === AttestLevel.None) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={props.onEdit}
+              className="size-8"
+            >
+              <PencilIcon className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Edit entry</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return <LockIcon className="size-4 text-muted-foreground" />;
+  };
+
   return (
     <div>
-      <div className="flex items-center justify-between gap-2">
-        <CardHeader className="pb-2">
-          <CardTitle>
-            <span>
-              {props.entry.projectName} - {props.entry.activityName}
-            </span>
-          </CardTitle>
-          <CardDescription>
-            {formatHoursAsHoursMinutes(props.entry.hours)}
-          </CardDescription>
-        </CardHeader>
-        {isMergedTimeEntry(props.entry) ? (
-          <>
-            {props.entry.timePeriods.length === 1 &&
-              props.entry.timePeriods.at(0)?.attestLevel ===
-                AttestLevel.None && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={props.onEdit}
-                      className="ml-auto size-8"
-                    >
-                      <PencilIcon className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit entry</TooltipContent>
-                </Tooltip>
-              )}
-            {props.entry.timePeriods.every(
-              (period) => period.attestLevel !== AttestLevel.None,
-            ) && <LockIcon className="ml-auto size-4 text-muted-foreground" />}
-            <div className="flex max-h-28 flex-col overflow-hidden pr-4 [&:has(>:nth-child(2))]:mt-2">
-              {props.entry.timePeriods
-                .filter((period) => period.startTime && period.endTime)
-                .map((period, index) => {
-                  const periodId = `${props.entry.registrationId}-p${index}`;
-                  const isOverlap = props.overlapMap[periodId];
-                  return (
-                    <p
-                      key={index}
-                      className="flex items-center gap-1 text-sm text-muted-foreground only:text-base"
-                    >
-                      {period.startTime &&
-                        format(new Date(period.startTime), "HH:mm")}
-                      {" - "}
-                      {period.endTime &&
-                        format(new Date(period.endTime), "HH:mm")}
-                      {isOverlap && (
-                        <OverlapWarning
-                          className={
-                            (props.entry as MergedTimeEntry).timePeriods
-                              .length === 1
-                              ? "size-5"
-                              : "size-4"
-                          }
-                        />
-                      )}
-                    </p>
-                  );
-                })}
-            </div>
-          </>
-        ) : (
-          <div className="mr-4 mt-4 flex flex-row items-center gap-2">
-            {props.entry.attestLevel === AttestLevel.None ? (
+      <CardHeader className="pb-0">
+        <div className="flex w-full items-start justify-between gap-6">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <CardTitle className="truncate leading-tight">
+              <span>
+                {entry.projectName} - {entry.activityName}
+              </span>
+            </CardTitle>
+            <CardDescription>
+              {formatHoursAsHoursMinutes(entry.hours)}
+            </CardDescription>
+          </div>
+          <div
+            className={cn(
+              "flex shrink-0 gap-3",
+              !isMerged || !hasMultipleMergedPeriods
+                ? "items-center"
+                : "items-start",
+            )}
+          >
+            <div className="flex items-center gap-1">
+              {renderEditControl()}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={props.onEdit}
-                    className="size-8"
+                    onClick={handleStartAgain}
+                    disabled={isStarting}
+                    className="group size-8"
                   >
-                    <PencilIcon className="size-4" />
+                    <PlayIcon className="size-4 transition-colors group-hover:stroke-primary" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Edit entry</TooltipContent>
+                <TooltipContent>Start again</TooltipContent>
               </Tooltip>
-            ) : (
-              <LockIcon className="size-4 text-muted-foreground" />
-            )}
-            {props.entry.endTime && (
-              <p className="flex items-center gap-1 text-base text-muted-foreground">
-                {props.entry.startTime &&
-                  format(new Date(props.entry.startTime), "HH:mm")}
-                {" - "}
-                {props.entry.endTime &&
-                  format(new Date(props.entry.endTime), "HH:mm")}
-                {props.overlapMap[props.entry.registrationId] && (
-                  <OverlapWarning />
-                )}
-              </p>
-            )}
+            </div>
+            {renderStartStopTimes()}
           </div>
-        )}
-      </div>
-      <CardContent>
-        <p className="font-mono text-base">{props.entry.note}</p>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-4">
+        <p className="font-mono text-base">{entry.note}</p>
       </CardContent>
     </div>
   );
