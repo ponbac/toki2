@@ -206,72 +206,97 @@ export const FloatingMilltimeTimer = () => {
               })}
             >
               {timer?.activityName && timer.projectName ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() =>
-                    saveTimer({
-                      timerType:
-                        timer?.timerType ?? ("Unreachable" as TimerType),
-                      userNote: timer?.note ?? "",
-                    })
-                  }
-                  disabled={
-                    isSavingTimer ||
-                    isStoppingTimer ||
-                    ((timeSeconds ?? 0) < 60 && timer.timerType === "Milltime")
-                  }
-                >
-                  <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                  <span className="sr-only">Save</span>
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        saveTimer({
+                          timerType:
+                            timer?.timerType ?? ("Unreachable" as TimerType),
+                          userNote: timer?.note ?? "",
+                        })
+                      }
+                      disabled={
+                        isSavingTimer ||
+                        isStoppingTimer ||
+                        ((timeSeconds ?? 0) < 60 && timer.timerType === "Milltime")
+                      }
+                    >
+                      <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                      <span className="sr-only">Save</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Save</TooltipContent>
+                </Tooltip>
               ) : null}
               {timer?.timerType === "Standalone" && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsEditDialogOpen(true)}
-                  disabled={isSavingTimer || isStoppingTimer}
-                >
-                  <EditIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                  <span className="sr-only">Edit</span>
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsEditDialogOpen(true)}
+                      disabled={isSavingTimer || isStoppingTimer}
+                    >
+                      <EditIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                      <span className="sr-only">Edit</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit</TooltipContent>
+                </Tooltip>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() =>
-                  stopTimer({
-                    timerType: timer?.timerType ?? ("Unreachable" as TimerType),
-                  })
-                }
-                disabled={isSavingTimer || isStoppingTimer}
-              >
-                <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                <span className="sr-only">Delete</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsMinimized(true)}
-              >
-                <Minimize2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                <span className="sr-only">Minimize</span>
-              </Button>
+<Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        stopTimer({
+                          timerType: timer?.timerType ?? ("Unreachable" as TimerType),
+                        })
+                      }
+                      disabled={isSavingTimer || isStoppingTimer}
+                    >
+                      <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Delete</TooltipContent>
+                </Tooltip>
+<Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setIsMinimized(true)}
+                    >
+                      <Minimize2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                      <span className="sr-only">Minimize</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Minimize</TooltipContent>
+                </Tooltip>
             </div>
             <div
               className={cn("hidden", {
                 flex: isMinimized,
               })}
             >
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsMinimized(false)}
-              >
-                <Maximize2Icon className="size-4 text-gray-500 dark:text-gray-400" />
-                <span className="sr-only">Maximize</span>
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setIsMinimized(false)}
+                  >
+                    <Maximize2Icon className="size-4 text-gray-500 dark:text-gray-400" />
+                    <span className="sr-only">Maximize</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Maximize</TooltipContent>
+              </Tooltip>
             </div>
           </div>
           <div
