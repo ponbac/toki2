@@ -9,15 +9,25 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AttestLevel, TimeEntry } from "@/lib/api/queries/milltime";
-import { formatHoursAsHoursMinutes } from "@/lib/utils";
+import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { toast } from "sonner";
-import { AlertTriangleIcon, LockIcon, PencilIcon, SaveIcon, TrashIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  LockIcon,
+  PencilIcon,
+  SaveIcon,
+  TrashIcon,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
@@ -115,42 +125,53 @@ export function TimeEntriesList(props: {
     );
     if (totalVisible > 250) return {} as Record<string, boolean>;
 
-    return groupedEntries.reduce<Record<string, boolean>>((acc, [, dayEntries]) => {
-      const intervals = dayEntries
-        .flatMap((entry) => {
-          if (isMergedTimeEntry(entry)) {
-            return entry.timePeriods
-              .map((p, i) =>
-                p.startTime && p.endTime
-                  ? {
-                      id: `${entry.registrationId}-p${i}`,
-                      start: new Date(p.startTime).getTime(),
-                      end: new Date(p.endTime).getTime(),
-                    }
-                  : null,
-              )
-              .filter(Boolean) as Array<{ id: string; start: number; end: number }>;
-          }
-          return entry.startTime && entry.endTime
-            ? [
-                {
-                  id: entry.registrationId,
-                  start: new Date(entry.startTime).getTime(),
-                  end: new Date(entry.endTime).getTime(),
-                },
-              ]
-            : [];
-        })
-        .sort((a, b) => a.start - b.start);
+    return groupedEntries.reduce<Record<string, boolean>>(
+      (acc, [, dayEntries]) => {
+        const intervals = dayEntries
+          .flatMap((entry) => {
+            if (isMergedTimeEntry(entry)) {
+              return entry.timePeriods
+                .map((p, i) =>
+                  p.startTime && p.endTime
+                    ? {
+                        id: `${entry.registrationId}-p${i}`,
+                        start: new Date(p.startTime).getTime(),
+                        end: new Date(p.endTime).getTime(),
+                      }
+                    : null,
+                )
+                .filter(Boolean) as Array<{
+                id: string;
+                start: number;
+                end: number;
+              }>;
+            }
+            return entry.startTime && entry.endTime
+              ? [
+                  {
+                    id: entry.registrationId,
+                    start: new Date(entry.startTime).getTime(),
+                    end: new Date(entry.endTime).getTime(),
+                  },
+                ]
+              : [];
+          })
+          .sort((a, b) => a.start - b.start);
 
-      intervals.forEach((curr, idx) => {
-        for (let j = idx + 1; j < intervals.length && intervals[j].start < curr.end; j++) {
-          acc[curr.id] = true;
-          acc[intervals[j].id] = true;
-        }
-      });
-      return acc;
-    }, {});
+        intervals.forEach((curr, idx) => {
+          for (
+            let j = idx + 1;
+            j < intervals.length && intervals[j].start < curr.end;
+            j++
+          ) {
+            acc[curr.id] = true;
+            acc[intervals[j].id] = true;
+          }
+        });
+        return acc;
+      },
+      {},
+    );
   }, [groupedEntries]);
 
   return (
@@ -275,14 +296,14 @@ function ViewEntryCard(props: {
                       {period.endTime &&
                         format(new Date(period.endTime), "HH:mm")}
                       {isOverlap && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <AlertTriangleIcon className="size-3.5 text-primary" />
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Overlapping time interval with another entry
-                          </TooltipContent>
-                        </Tooltip>
+                        <OverlapWarning
+                          className={
+                            (props.entry as MergedTimeEntry).timePeriods
+                              .length === 1
+                              ? "size-5"
+                              : "size-4"
+                          }
+                        />
                       )}
                     </p>
                   );
@@ -316,14 +337,7 @@ function ViewEntryCard(props: {
                 {props.entry.endTime &&
                   format(new Date(props.entry.endTime), "HH:mm")}
                 {props.overlapMap[props.entry.registrationId] && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <AlertTriangleIcon className="size-4 text-primary" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Overlapping time interval with another entry
-                    </TooltipContent>
-                  </Tooltip>
+                  <OverlapWarning />
                 )}
               </p>
             )}
@@ -553,4 +567,19 @@ function isMergedTimeEntry(
   entry: TimeEntry | MergedTimeEntry,
 ): entry is MergedTimeEntry {
   return "timePeriods" in entry;
+}
+
+function OverlapWarning(props: { className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <AlertTriangleIcon
+          className={cn("ml-0.5 size-5 text-primary", props.className)}
+        />
+      </TooltipTrigger>
+      <TooltipContent>
+        Overlapping time interval with another entry
+      </TooltipContent>
+    </Tooltip>
+  );
 }
