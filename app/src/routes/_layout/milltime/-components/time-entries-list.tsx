@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AttestLevel, TimeEntry } from "@/lib/api/queries/milltime";
-import { cn, formatHoursAsHoursMinutes, getWeekNumber } from "@/lib/utils";
+import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -254,22 +254,24 @@ function ViewEntryCard(props: {
   onEdit: () => void;
   overlapMap: Record<string, boolean>;
 }) {
-  const { mutate: startTimerMutate, isPending: isStarting } =
-    milltimeMutations.useStartTimer({
+  const { mutate: startStandalone, isPending: isStarting } =
+    milltimeMutations.useStartStandaloneTimer({
       onSuccess: () => toast.success("Timer started"),
       onError: () => toast.error("Failed to start timer"),
     });
+  const { mutate: editStandalone } = milltimeMutations.useEditStandaloneTimer();
   const handleStartAgain = () => {
-    // activityId is the raw Milltime activity code used to start timers
     const entry = props.entry;
-    startTimerMutate({
-      activity: entry.activityId,
-      activityName: entry.activityName,
+    // Start a blank standalone timer, then attach metadata
+    startStandalone({
+      userNote: entry.note ?? "",
+    });
+    // Optimistically update metadata (backend standalone edit supports partial updates)
+    editStandalone({
       projectId: entry.projectId,
       projectName: entry.projectName,
-      userNote: entry.note ?? "",
-      regDay: dayjs().format("YYYY-MM-DD"),
-      weekNumber: getWeekNumber(new Date()),
+      activityId: entry.activityId,
+      activityName: entry.activityName,
     });
   };
   return (
