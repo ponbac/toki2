@@ -17,6 +17,7 @@ import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { toast } from "sonner";
 import { LockIcon, PencilIcon, SaveIcon, TrashIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
@@ -192,14 +193,19 @@ function ViewEntryCard(props: {
             {props.entry.timePeriods.length === 1 &&
               props.entry.timePeriods.at(0)?.attestLevel ===
                 AttestLevel.None && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={props.onEdit}
-                  className="ml-auto size-8"
-                >
-                  <PencilIcon className="size-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={props.onEdit}
+                      className="ml-auto size-8"
+                    >
+                      <PencilIcon className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Edit entry</TooltipContent>
+                </Tooltip>
               )}
             {props.entry.timePeriods.every(
               (period) => period.attestLevel !== AttestLevel.None,
@@ -224,14 +230,19 @@ function ViewEntryCard(props: {
         ) : (
           <div className="mr-4 mt-4 flex flex-row items-center gap-2">
             {props.entry.attestLevel === AttestLevel.None ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={props.onEdit}
-                className="size-8"
-              >
-                <PencilIcon className="size-4" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={props.onEdit}
+                    className="size-8"
+                  >
+                    <PencilIcon className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Edit entry</TooltipContent>
+              </Tooltip>
             ) : (
               <LockIcon className="size-4 text-muted-foreground" />
             )}
