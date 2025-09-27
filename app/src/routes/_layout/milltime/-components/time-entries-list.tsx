@@ -260,10 +260,10 @@ function ViewEntryCard(props: {
       onError: () => toast.error("Failed to start timer"),
     });
   const handleStartAgain = () => {
+    // activityId is the raw Milltime activity code used to start timers
     const entry = props.entry;
-    const activityCode = (entry as any).activity ?? entry.activityId; // prefer raw activity if available
     startTimerMutate({
-      activity: activityCode,
+      activity: entry.activityId,
       activityName: entry.activityName,
       projectId: entry.projectId,
       projectName: entry.projectName,
