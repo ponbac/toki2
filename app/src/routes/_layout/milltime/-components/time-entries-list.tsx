@@ -164,6 +164,15 @@ export function TimeEntriesList(props: {
             j < intervals.length && intervals[j].start < curr.end;
             j++
           ) {
+            // Allow second-level differences when the UI would show the same minute.
+            // If the next start and current end are within the same displayed minute (HH:mm),
+            // do not count as an overlap.
+            const currEndMinute = Math.floor(curr.end / 60000);
+            const nextStartMinute = Math.floor(intervals[j].start / 60000);
+            if (nextStartMinute === currEndMinute) {
+              continue;
+            }
+
             acc[curr.id] = true;
             acc[intervals[j].id] = true;
           }
