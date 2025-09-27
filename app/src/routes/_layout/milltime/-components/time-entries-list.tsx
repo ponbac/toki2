@@ -254,25 +254,28 @@ function ViewEntryCard(props: {
   onEdit: () => void;
   overlapMap: Record<string, boolean>;
 }) {
-  const { mutate: startStandalone, isPending: isStarting } =
-    milltimeMutations.useStartStandaloneTimer({
-      onSuccess: () => toast.success("Timer started"),
-      onError: () => toast.error("Failed to start timer"),
-    });
-  const { mutate: editStandalone } = milltimeMutations.useEditStandaloneTimer();
+  const { mutateAsync: startStandaloneAsync, isPending: isStarting } =
+    milltimeMutations.useStartStandaloneTimer();
+  const { mutateAsync: editStandaloneAsync } =
+    milltimeMutations.useEditStandaloneTimer();
+
   const handleStartAgain = () => {
     const entry = props.entry;
-    // Start a blank standalone timer, then attach metadata
-    startStandalone({
-      userNote: entry.note ?? "",
-    });
-    // Optimistically update metadata (backend standalone edit supports partial updates)
-    editStandalone({
-      projectId: entry.projectId,
-      projectName: entry.projectName,
-      activityId: entry.activityId,
-      activityName: entry.activityName,
-    });
+    startStandaloneAsync({ userNote: entry.note ?? "" })
+      .then(() =>
+        editStandaloneAsync({
+          projectId: entry.projectId,
+          projectName: entry.projectName,
+          activityId: entry.activityId,
+          activityName: entry.activityName,
+        }),
+      )
+      .then(() => {
+        toast.success("Timer started");
+      })
+      .catch(() => {
+        toast.error("Failed to start timer");
+      });
   };
   return (
     <div>
