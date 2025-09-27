@@ -107,50 +107,43 @@ export function TimeEntriesList(props: {
       );
     }, [props.timeEntries, props.mergeSameDay]);
 
-  // Precompute overlap flags per registration id for the day entries
   const overlapMap = useMemo(() => {
-    const map: Record<string, boolean> = {};
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    groupedEntries.forEach(([_, dayEntries]) => {
-      // Only consider non-merged evaluation (we rely on raw underlying entries)
-      // Flatten merged entries into their time periods with synthetic ids referencing parent
-      const expanded: Array<{ id: string; start: number; end: number }> = [];
-      dayEntries.forEach((entry) => {
-        if (isMergedTimeEntry(entry)) {
-          entry.timePeriods.forEach((p, idx) => {
-            if (p.startTime && p.endTime) {
-              expanded.push({
-                id: `${entry.registrationId}-p${idx}`,
-                start: new Date(p.startTime).getTime(),
-                end: new Date(p.endTime).getTime(),
-              });
-            }
-          });
-        } else if (entry.startTime && entry.endTime) {
-          expanded.push({
-            id: entry.registrationId,
-            start: new Date(entry.startTime).getTime(),
-            end: new Date(entry.endTime).getTime(),
-          });
+    return groupedEntries.reduce<Record<string, boolean>>((acc, [, dayEntries]) => {
+      const intervals = dayEntries
+        .flatMap((entry) => {
+          if (isMergedTimeEntry(entry)) {
+            return entry.timePeriods
+              .map((p, i) =>
+                p.startTime && p.endTime
+                  ? {
+                      id: `${entry.registrationId}-p${i}`,
+                      start: new Date(p.startTime).getTime(),
+                      end: new Date(p.endTime).getTime(),
+                    }
+                  : null,
+              )
+              .filter(Boolean) as Array<{ id: string; start: number; end: number }>;
+          }
+          return entry.startTime && entry.endTime
+            ? [
+                {
+                  id: entry.registrationId,
+                  start: new Date(entry.startTime).getTime(),
+                  end: new Date(entry.endTime).getTime(),
+                },
+              ]
+            : [];
+        })
+        .sort((a, b) => a.start - b.start);
+
+      intervals.forEach((curr, idx) => {
+        for (let j = idx + 1; j < intervals.length && intervals[j].start < curr.end; j++) {
+          acc[curr.id] = true;
+          acc[intervals[j].id] = true;
         }
       });
-      // Sort by start
-      expanded.sort((a, b) => a.start - b.start);
-      // Sweep to detect overlaps
-      for (let i = 0; i < expanded.length; i++) {
-        for (let j = i + 1; j < expanded.length; j++) {
-          if (expanded[j].start < expanded[i].end) {
-            // mark both as overlapping
-            map[expanded[i].id] = true;
-            map[expanded[j].id] = true;
-          } else {
-            // since sorted by start, can break
-            break;
-          }
-        }
-      }
-    });
-    return map;
+      return acc;
+    }, {});
   }, [groupedEntries]);
 
   return (
