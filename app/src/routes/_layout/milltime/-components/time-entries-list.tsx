@@ -110,6 +110,7 @@ export function TimeEntriesList(props: {
   // Precompute overlap flags per registration id for the day entries
   const overlapMap = useMemo(() => {
     const map: Record<string, boolean> = {};
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     groupedEntries.forEach(([_, dayEntries]) => {
       // Only consider non-merged evaluation (we rely on raw underlying entries)
       // Flatten merged entries into their time periods with synthetic ids referencing parent
