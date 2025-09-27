@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { toast } from "sonner";
-import { LockIcon, PencilIcon, SaveIcon, TrashIcon } from "lucide-react";
+import { AlertTriangleIcon, LockIcon, PencilIcon, SaveIcon, TrashIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -107,6 +107,51 @@ export function TimeEntriesList(props: {
       );
     }, [props.timeEntries, props.mergeSameDay]);
 
+  // Precompute overlap flags per registration id for the day entries
+  const overlapMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    groupedEntries.forEach(([_, dayEntries]) => {
+      // Only consider non-merged evaluation (we rely on raw underlying entries)
+      // Flatten merged entries into their time periods with synthetic ids referencing parent
+      const expanded: Array<{ id: string; start: number; end: number }> = [];
+      dayEntries.forEach((entry) => {
+        if (isMergedTimeEntry(entry)) {
+          entry.timePeriods.forEach((p, idx) => {
+            if (p.startTime && p.endTime) {
+              expanded.push({
+                id: `${entry.registrationId}-p${idx}`,
+                start: new Date(p.startTime).getTime(),
+                end: new Date(p.endTime).getTime(),
+              });
+            }
+          });
+        } else if (entry.startTime && entry.endTime) {
+          expanded.push({
+            id: entry.registrationId,
+            start: new Date(entry.startTime).getTime(),
+            end: new Date(entry.endTime).getTime(),
+          });
+        }
+      });
+      // Sort by start
+      expanded.sort((a, b) => a.start - b.start);
+      // Sweep to detect overlaps
+      for (let i = 0; i < expanded.length; i++) {
+        for (let j = i + 1; j < expanded.length; j++) {
+          if (expanded[j].start < expanded[i].end) {
+            // mark both as overlapping
+            map[expanded[i].id] = true;
+            map[expanded[j].id] = true;
+          } else {
+            // since sorted by start, can break
+            break;
+          }
+        }
+      }
+    });
+    return map;
+  }, [groupedEntries]);
+
   return (
     <div className="mt-8 space-y-8">
       {groupedEntries.map(([dateKey, dayEntries]) => (
@@ -157,6 +202,7 @@ export function TimeEntriesList(props: {
                         <ViewEntryCard
                           entry={entry}
                           onEdit={() => setEditingEntryId(entry.registrationId)}
+                          overlapMap={overlapMap}
                         />
                       </motion.div>
                     )}
@@ -174,6 +220,7 @@ export function TimeEntriesList(props: {
 function ViewEntryCard(props: {
   entry: TimeEntry | MergedTimeEntry;
   onEdit: () => void;
+  overlapMap: Record<string, boolean>;
 }) {
   return (
     <div>
@@ -213,18 +260,32 @@ function ViewEntryCard(props: {
             <div className="flex max-h-28 flex-col overflow-hidden pr-4 [&:has(>:nth-child(2))]:mt-2">
               {props.entry.timePeriods
                 .filter((period) => period.startTime && period.endTime)
-                .map((period, index) => (
-                  <p
-                    key={index}
-                    className="text-sm text-muted-foreground only:text-base"
-                  >
-                    {period.startTime &&
-                      format(new Date(period.startTime), "HH:mm")}
-                    {" - "}
-                    {period.endTime &&
-                      format(new Date(period.endTime), "HH:mm")}
-                  </p>
-                ))}
+                .map((period, index) => {
+                  const periodId = `${props.entry.registrationId}-p${index}`;
+                  const isOverlap = props.overlapMap[periodId];
+                  return (
+                    <p
+                      key={index}
+                      className="flex items-center gap-1 text-sm text-muted-foreground only:text-base"
+                    >
+                      {period.startTime &&
+                        format(new Date(period.startTime), "HH:mm")}
+                      {" - "}
+                      {period.endTime &&
+                        format(new Date(period.endTime), "HH:mm")}
+                      {isOverlap && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <AlertTriangleIcon className="size-3.5 text-primary" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Overlapping time interval with another entry
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </p>
+                  );
+                })}
             </div>
           </>
         ) : (
@@ -247,12 +308,22 @@ function ViewEntryCard(props: {
               <LockIcon className="size-4 text-muted-foreground" />
             )}
             {props.entry.endTime && (
-              <p className="text-base text-muted-foreground">
+              <p className="flex items-center gap-1 text-base text-muted-foreground">
                 {props.entry.startTime &&
                   format(new Date(props.entry.startTime), "HH:mm")}
                 {" - "}
                 {props.entry.endTime &&
                   format(new Date(props.entry.endTime), "HH:mm")}
+                {props.overlapMap[props.entry.registrationId] && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertTriangleIcon className="size-4 text-primary" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Overlapping time interval with another entry
+                    </TooltipContent>
+                  </Tooltip>
+                )}
               </p>
             )}
           </div>
