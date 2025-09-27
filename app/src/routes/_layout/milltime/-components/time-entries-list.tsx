@@ -108,6 +108,13 @@ export function TimeEntriesList(props: {
     }, [props.timeEntries, props.mergeSameDay]);
 
   const overlapMap = useMemo(() => {
+    // Disable overlap calculation if too many entries (performance safeguard)
+    const totalVisible = groupedEntries.reduce(
+      (sum, [, entries]) => sum + entries.length,
+      0,
+    );
+    if (totalVisible > 250) return {} as Record<string, boolean>;
+
     return groupedEntries.reduce<Record<string, boolean>>((acc, [, dayEntries]) => {
       const intervals = dayEntries
         .flatMap((entry) => {
