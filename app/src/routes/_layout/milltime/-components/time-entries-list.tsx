@@ -267,7 +267,6 @@ function ViewEntryCard(props: {
   const { data: activeTimer } = useQuery({
     ...milltimeQueries.getTimer(),
     enabled: timerState === "running" || timerState === undefined,
-    staleTime: 5 * 1000,
   });
 
   const handleStartAgain = () => {
