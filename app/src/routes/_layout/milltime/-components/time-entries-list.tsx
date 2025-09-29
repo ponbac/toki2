@@ -126,61 +126,63 @@ export function TimeEntriesList(props: {
     );
     if (totalVisible > 250) return {};
 
-    return groupedEntries.reduce<Record<string, boolean>>(
-      (acc, [, dayEntries]) => {
-        const intervals = dayEntries
-          .flatMap((entry) => {
-            if (isMergedTimeEntry(entry)) {
-              return entry.timePeriods
-                .map((p, i) =>
-                  p.startTime && p.endTime
-                    ? {
-                        id: `${entry.registrationId}-p${i}`,
-                        start: new Date(p.startTime).getTime(),
-                        end: new Date(p.endTime).getTime(),
-                      }
-                    : null,
-                )
-                .filter(Boolean) as Array<{
-                id: string;
-                start: number;
-                end: number;
-              }>;
-            }
-            return entry.startTime && entry.endTime
-              ? [
-                  {
-                    id: entry.registrationId,
-                    start: new Date(entry.startTime).getTime(),
-                    end: new Date(entry.endTime).getTime(),
-                  },
-                ]
-              : [];
-          })
-          .sort((a, b) => a.start - b.start);
+    // Build pair-wise overlap relationships to guarantee symmetry
+    const overlapCounts: Record<string, number> = {};
 
-        intervals.forEach((curr, idx) => {
-          for (
-            let j = idx + 1;
-            j < intervals.length && intervals[j].start < curr.end;
-            j++
-          ) {
-            // Allow second-level differences when the UI would show the same minute.
-            // If the next start and current end are within the same displayed minute (HH:mm),
-            // do not count as an overlap.
-            const currEndMinute = Math.floor(curr.end / 60000);
-            const nextStartMinute = Math.floor(intervals[j].start / 60000);
-            if (nextStartMinute === currEndMinute) {
-              continue;
-            }
-
-            acc[curr.id] = true;
-            acc[intervals[j].id] = true;
+    groupedEntries.forEach(([, dayEntries]) => {
+      const intervals = dayEntries
+        .flatMap((entry) => {
+          if (isMergedTimeEntry(entry)) {
+            return entry.timePeriods
+              .map((p, i) =>
+                p.startTime && p.endTime
+                  ? {
+                      id: `${entry.registrationId}-p${i}`,
+                      start: new Date(p.startTime).getTime(),
+                      end: new Date(p.endTime).getTime(),
+                    }
+                  : null,
+              )
+              .filter(Boolean) as Array<{
+              id: string;
+              start: number;
+              end: number;
+            }>;
           }
-        });
-        return acc;
-      },
-      {},
+          return entry.startTime && entry.endTime
+            ? [
+                {
+                  id: entry.registrationId,
+                  start: new Date(entry.startTime).getTime(),
+                  end: new Date(entry.endTime).getTime(),
+                },
+              ]
+            : [];
+        })
+        .sort((a, b) => a.start - b.start);
+
+      for (let i = 0; i < intervals.length; i++) {
+        const a = intervals[i];
+        for (let j = i + 1; j < intervals.length; j++) {
+          const b = intervals[j];
+          // Early break if future intervals start after (or at) the earliest possible non-overlap point
+          if (b.start >= a.end) break;
+
+          // Allow second-level differences when both times fall in the same displayed minute (HH:mm)
+          const aEndMinute = Math.floor(a.end / 60000);
+            const bStartMinute = Math.floor(b.start / 60000);
+            if (aEndMinute === bStartMinute) continue;
+
+          // Overlap confirmed (a.start <= b.start < a.end)
+          overlapCounts[a.id] = (overlapCounts[a.id] ?? 0) + 1;
+          overlapCounts[b.id] = (overlapCounts[b.id] ?? 0) + 1;
+        }
+      }
+    });
+
+    // Convert to simple boolean map, ensuring at least one real partner
+    return Object.fromEntries(
+      Object.entries(overlapCounts).filter(([, count]) => count > 0),
     );
   }, [groupedEntries]);
 
