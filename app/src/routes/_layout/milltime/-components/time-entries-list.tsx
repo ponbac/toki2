@@ -126,8 +126,7 @@ export function TimeEntriesList(props: {
     );
     if (totalVisible > 250) return {};
 
-    // Build pair-wise overlap relationships to guarantee symmetry
-    const overlapCounts: Record<string, number> = {};
+    const result: Record<string, boolean> = {};
 
     groupedEntries.forEach(([, dayEntries]) => {
       const intervals = dayEntries
@@ -161,29 +160,33 @@ export function TimeEntriesList(props: {
         })
         .sort((a, b) => a.start - b.start);
 
-      for (let i = 0; i < intervals.length; i++) {
-        const a = intervals[i];
-        for (let j = i + 1; j < intervals.length; j++) {
-          const b = intervals[j];
-          // Early break if future intervals start after (or at) the earliest possible non-overlap point
-          if (b.start >= a.end) break;
+      const dayOverlaps = new Set<string>();
 
-          // Allow second-level differences when both times fall in the same displayed minute (HH:mm)
-          const aEndMinute = Math.floor(a.end / 60000);
-            const bStartMinute = Math.floor(b.start / 60000);
-            if (aEndMinute === bStartMinute) continue;
+      intervals.forEach((curr, idx) => {
+        for (
+          let j = idx + 1;
+          j < intervals.length && intervals[j].start < curr.end;
+          j++
+        ) {
+          // Skip when only second-level difference inside same displayed minute
+          const currEndMinute = Math.floor(curr.end / 60000);
+          const nextStartMinute = Math.floor(intervals[j].start / 60000);
+          if (nextStartMinute === currEndMinute) continue;
 
-          // Overlap confirmed (a.start <= b.start < a.end)
-          overlapCounts[a.id] = (overlapCounts[a.id] ?? 0) + 1;
-          overlapCounts[b.id] = (overlapCounts[b.id] ?? 0) + 1;
+          dayOverlaps.add(curr.id);
+          dayOverlaps.add(intervals[j].id);
         }
+      });
+
+      // Prevent impossible singleton overlap indicators
+      if (dayOverlaps.size > 1) {
+        dayOverlaps.forEach((id) => {
+          result[id] = true;
+        });
       }
     });
 
-    // Convert to simple boolean map, ensuring at least one real partner
-    return Object.fromEntries(
-      Object.entries(overlapCounts).filter(([, count]) => count > 0),
-    );
+    return result;
   }, [groupedEntries]);
 
   return (
