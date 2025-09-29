@@ -261,20 +261,36 @@ function ViewEntryCard(props: {
 
   const handleStartAgain = () => {
     const entry = props.entry;
-    startStandaloneAsync({ userNote: entry.note ?? "" })
-      .then(() =>
-        editStandaloneAsync({
-          projectId: entry.projectId,
-          projectName: entry.projectName,
-          activityId: entry.activityId,
-          activityName: entry.activityName,
-        }),
-      )
+
+    // If there is an active timer, just edit it (Standalone timer only supports editing)
+    // Otherwise start a new standalone timer first and then edit it
+    editStandaloneAsync({
+      userNote: entry.note ?? "",
+      projectId: entry.projectId,
+      projectName: entry.projectName,
+      activityId: entry.activityId,
+      activityName: entry.activityName,
+    })
       .then(() => {
-        toast.success("Timer started");
+        toast.success("Timer updated");
       })
       .catch(() => {
-        toast.error("Failed to start timer");
+        // If edit failed, attempt to start a new timer (covers case where no timer was running)
+        startStandaloneAsync({ userNote: entry.note ?? "" })
+          .then(() =>
+            editStandaloneAsync({
+              projectId: entry.projectId,
+              projectName: entry.projectName,
+              activityId: entry.activityId,
+              activityName: entry.activityName,
+            }),
+          )
+          .then(() => {
+            toast.success("Timer started");
+          })
+          .catch(() => {
+            toast.error("Failed to start timer");
+          });
       });
   };
   const entry = props.entry;
