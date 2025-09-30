@@ -14,6 +14,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import { useMilltimeTimer } from "@/hooks/useMilltimeStore";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangleIcon,
@@ -264,8 +267,39 @@ function ViewEntryCard(props: {
   const { mutateAsync: editStandaloneAsync } =
     milltimeMutations.useEditStandaloneTimer();
 
+  const { state: timerState } = useMilltimeTimer();
+  // Fetch timer details only when we think something may be running
+  const { data: activeTimer } = useQuery({
+    ...milltimeQueries.getTimer(),
+    enabled: timerState === "running" || timerState === undefined,
+  });
+
   const handleStartAgain = () => {
     const entry = props.entry;
+
+    // Determine if a standalone timer is currently active based on fetched timer
+    const isStandaloneActive =
+      !!activeTimer && activeTimer.timerType === "Standalone";
+
+    if (isStandaloneActive) {
+      // Update existing standalone timer metadata only
+      editStandaloneAsync({
+        userNote: entry.note ?? "",
+        projectId: entry.projectId,
+        projectName: entry.projectName,
+        activityId: entry.activityId,
+        activityName: entry.activityName,
+      })
+        .then(() => {
+          toast.success("Timer updated");
+        })
+        .catch(() => {
+          toast.error("Failed to update timer");
+        });
+      return;
+    }
+
+    // No active standalone timer -> start a new one then edit metadata
     startStandaloneAsync({ userNote: entry.note ?? "" })
       .then(() =>
         editStandaloneAsync({
