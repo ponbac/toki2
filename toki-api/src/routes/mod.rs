@@ -1,3 +1,4 @@
+pub(crate) mod avatars;
 pub(crate) mod differs;
 pub(crate) mod milltime;
 pub(crate) mod notifications;

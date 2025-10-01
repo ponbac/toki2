@@ -143,7 +143,7 @@ async fn add_repository(
     tokio::spawn(async move {
         let sender = app_state.get_differ_sender(key).await.unwrap();
         sender
-            .send(RepoDifferMessage::Start(Duration::from_secs(300)))
+            .send(RepoDifferMessage::Start(time::Duration::minutes(5)))
             .await
             .unwrap();
     });
