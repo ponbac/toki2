@@ -136,6 +136,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
             </div>
           </CommandItem>
           <CommandItem
+            disabled
             onSelect={() => {
               // TODO: should probably extract this to some kind of guard hook
               if (isAuthenticatedToMilltime) {
@@ -147,7 +148,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
               }
             }}
           >
-            <div className="flex flex-row items-center gap-2">
+            <div className="flex flex-row items-center gap-2 line-through">
               <TimerIcon className="h-1 w-1" />
               Start Milltime timer
             </div>
