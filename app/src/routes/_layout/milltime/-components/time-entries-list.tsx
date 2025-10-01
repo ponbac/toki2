@@ -127,62 +127,67 @@ export function TimeEntriesList(props: {
     );
     if (totalVisible > 250) return {};
 
-    return groupedEntries.reduce<Record<string, boolean>>(
-      (acc, [, dayEntries]) => {
-        const intervals = dayEntries
-          .flatMap((entry) => {
-            if (isMergedTimeEntry(entry)) {
-              return entry.timePeriods
-                .map((p, i) =>
-                  p.startTime && p.endTime
-                    ? {
-                        id: `${entry.registrationId}-p${i}`,
-                        start: new Date(p.startTime).getTime(),
-                        end: new Date(p.endTime).getTime(),
-                      }
-                    : null,
-                )
-                .filter(Boolean) as Array<{
-                id: string;
-                start: number;
-                end: number;
-              }>;
-            }
-            return entry.startTime && entry.endTime
-              ? [
-                  {
-                    id: entry.registrationId,
-                    start: new Date(entry.startTime).getTime(),
-                    end: new Date(entry.endTime).getTime(),
-                  },
-                ]
-              : [];
-          })
-          .sort((a, b) => a.start - b.start);
+    const result: Record<string, boolean> = {};
 
-        intervals.forEach((curr, idx) => {
-          for (
-            let j = idx + 1;
-            j < intervals.length && intervals[j].start < curr.end;
-            j++
-          ) {
-            // Allow second-level differences when the UI would show the same minute.
-            // If the next start and current end are within the same displayed minute (HH:mm),
-            // do not count as an overlap.
-            const currEndMinute = Math.floor(curr.end / 60000);
-            const nextStartMinute = Math.floor(intervals[j].start / 60000);
-            if (nextStartMinute === currEndMinute) {
-              continue;
-            }
-
-            acc[curr.id] = true;
-            acc[intervals[j].id] = true;
+    groupedEntries.forEach(([, dayEntries]) => {
+      const intervals = dayEntries
+        .flatMap((entry) => {
+          if (isMergedTimeEntry(entry)) {
+            return entry.timePeriods
+              .map((p, i) =>
+                p.startTime && p.endTime
+                  ? {
+                      id: `${entry.registrationId}-p${i}`,
+                      start: new Date(p.startTime).getTime(),
+                      end: new Date(p.endTime).getTime(),
+                    }
+                  : null,
+              )
+              .filter(Boolean) as Array<{
+              id: string;
+              start: number;
+              end: number;
+            }>;
           }
+          return entry.startTime && entry.endTime
+            ? [
+                {
+                  id: entry.registrationId,
+                  start: new Date(entry.startTime).getTime(),
+                  end: new Date(entry.endTime).getTime(),
+                },
+              ]
+            : [];
+        })
+        .sort((a, b) => a.start - b.start);
+
+      const dayOverlaps = new Set<string>();
+
+      intervals.forEach((curr, idx) => {
+        for (
+          let j = idx + 1;
+          j < intervals.length && intervals[j].start < curr.end;
+          j++
+        ) {
+          // Skip when only second-level difference inside same displayed minute
+          const currEndMinute = Math.floor(curr.end / 60000);
+          const nextStartMinute = Math.floor(intervals[j].start / 60000);
+          if (nextStartMinute === currEndMinute) continue;
+
+          dayOverlaps.add(curr.id);
+          dayOverlaps.add(intervals[j].id);
+        }
+      });
+
+      // Prevent impossible singleton overlap indicators
+      if (dayOverlaps.size > 1) {
+        dayOverlaps.forEach((id) => {
+          result[id] = true;
         });
-        return acc;
-      },
-      {},
-    );
+      }
+    });
+
+    return result;
   }, [groupedEntries]);
 
   return (
