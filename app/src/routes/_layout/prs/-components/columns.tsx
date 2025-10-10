@@ -10,7 +10,12 @@ import { WorkItemLink } from "@/components/work-item-link";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
-import { CopySlashIcon, PickaxeIcon, UserXIcon, AlertTriangleIcon } from "lucide-react";
+import {
+  CopySlashIcon,
+  PickaxeIcon,
+  UserXIcon,
+  ClockAlertIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusIcon } from "./status-icon";
 
@@ -65,11 +70,6 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
                 <span className="text-nowrap">{title}</span>
               )}
             </div>
-            {row.original.workItems.some((wi) => wi.priority === 1) && (
-              <StatusIcon tooltip="Important: Priority 1 work item linked">
-                <AlertTriangleIcon className="size-5 text-amber-500" />
-              </StatusIcon>
-            )}
             {row.original.isDraft && (
               <StatusIcon tooltip="Draft">
                 <PickaxeIcon className="size-5 text-blue-400" />
@@ -118,6 +118,11 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
 
         return (
           <div className="flex flex-row items-center gap-1">
+            {row.original.workItems.some((wi) => wi.priority === 1) && (
+              <StatusIcon tooltip="Priority 1 work item linked">
+                <ClockAlertIcon className="size-4 text-amber-500" />
+              </StatusIcon>
+            )}
             {row.original.workItems.length < 3 ? (
               row.original.workItems.map((wi) => (
                 <WorkItemLink
