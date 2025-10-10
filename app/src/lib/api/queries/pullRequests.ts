@@ -161,6 +161,7 @@ export type WorkItem = {
   title: string;
   state: string;
   itemType: string;
+  priority?: number | null;
   createdAt: Date;
   changedAt: Date;
   assignedTo: User;
