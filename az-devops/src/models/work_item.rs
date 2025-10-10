@@ -15,6 +15,7 @@ pub struct WorkItem {
     pub title: String,
     pub state: String,
     pub item_type: String,
+    pub priority: Option<i32>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
@@ -50,6 +51,10 @@ impl From<AzureWorkItem> for WorkItem {
                 .and_then(|value| value.as_str())
                 .unwrap_or_default()
                 .to_owned(),
+            priority: work_item
+                .fields
+                .get("Microsoft.VSTS.Common.Priority")
+                .and_then(|value| value.as_i64().map(|p| p as i32)),
             created_at: work_item
                 .fields
                 .get("System.CreatedDate")
