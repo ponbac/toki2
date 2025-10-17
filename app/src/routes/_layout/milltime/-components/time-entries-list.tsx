@@ -440,10 +440,13 @@ function ViewEntryCard(props: {
     <div>
       <CardHeader className="pb-0">
         <div className="flex w-full items-start justify-between gap-6">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex min-w-0 flex-1 flex-col">
             <CardTitle className="truncate leading-tight">
-              <span>
-                {entry.projectName} - {entry.activityName}
+              <span className="inline-flex min-w-0 items-center">
+                <span className="truncate">{entry.projectName}</span>
+                <span className="ml-2 shrink-0 text-base text-muted-foreground">
+                  ({entry.activityName})
+                </span>
               </span>
             </CardTitle>
             <CardDescription>
@@ -479,7 +482,7 @@ function ViewEntryCard(props: {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-4">
+      <CardContent className="pt-3">
         <p className="font-mono text-base">{entry.note}</p>
       </CardContent>
     </div>
