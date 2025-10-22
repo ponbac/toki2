@@ -215,13 +215,14 @@ export const FloatingMilltimeTimer = () => {
                         saveTimer({
                           timerType:
                             timer?.timerType ?? ("Unreachable" as TimerType),
-                          userNote: timer?.note ?? "",
+                          userNote: userNote ?? "",
                         })
                       }
                       disabled={
                         isSavingTimer ||
                         isStoppingTimer ||
-                        ((timeSeconds ?? 0) < 60 && timer.timerType === "Milltime")
+                        ((timeSeconds ?? 0) < 60 &&
+                          timer.timerType === "Milltime")
                       }
                     >
                       <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
@@ -247,37 +248,38 @@ export const FloatingMilltimeTimer = () => {
                   <TooltipContent>Edit</TooltipContent>
                 </Tooltip>
               )}
-<Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() =>
-                        stopTimer({
-                          timerType: timer?.timerType ?? ("Unreachable" as TimerType),
-                        })
-                      }
-                      disabled={isSavingTimer || isStoppingTimer}
-                    >
-                      <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                      <span className="sr-only">Delete</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete</TooltipContent>
-                </Tooltip>
-<Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setIsMinimized(true)}
-                    >
-                      <Minimize2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
-                      <span className="sr-only">Minimize</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Minimize</TooltipContent>
-                </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() =>
+                      stopTimer({
+                        timerType:
+                          timer?.timerType ?? ("Unreachable" as TimerType),
+                      })
+                    }
+                    disabled={isSavingTimer || isStoppingTimer}
+                  >
+                    <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                    <span className="sr-only">Delete</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delete</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsMinimized(true)}
+                  >
+                    <Minimize2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                    <span className="sr-only">Minimize</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Minimize</TooltipContent>
+              </Tooltip>
             </div>
             <div
               className={cn("hidden", {
