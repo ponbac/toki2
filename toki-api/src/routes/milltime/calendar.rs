@@ -174,6 +174,7 @@ pub struct EditProjectRegistrationPayload {
     reg_day: String,
     week_number: i32,
     user_note: String,
+    original_reg_day: Option<String>,
 }
 
 #[instrument(name = "edit_project_registration", skip(jar, app_state))]
@@ -208,33 +209,101 @@ pub async fn edit_project_registration(
         (end_time - start_time).whole_hours(),
         (end_time - start_time).whole_minutes() % 60
     );
-    let mt_payload = milltime::ProjectRegistrationEditPayload::new(
-        payload.project_registration_id,
-        milltime_client.user_id().to_string(),
-        payload.project_id,
-        payload.project_name,
-        payload.activity_id,
-        payload.activity_name,
-        total_time,
-        payload.reg_day,
-        payload.week_number,
-        payload.user_note,
-    );
 
-    milltime_client
-        .edit_project_registration(&mt_payload)
-        .await?;
+    let regday_changed = payload
+        .original_reg_day
+        .as_ref()
+        .map(|orig| *orig != payload.reg_day)
+        .unwrap_or(false);
 
-    // update end time of timer registration
     let timer_repo = app_state.milltime_repo;
-    let timer = timer_repo
-        .get_by_registration_id(&mt_payload.project_registration_id)
-        .await?;
 
-    if timer.is_some() {
-        timer_repo
-            .update_start_and_end_time(&mt_payload.project_registration_id, &start_time, &end_time)
+    if regday_changed {
+        // Create new registration with new day
+        let new_payload = milltime::ProjectRegistrationPayload::new(
+            milltime_client.user_id().to_string(),
+            payload.project_id.clone(),
+            payload.project_name.clone(),
+            payload.activity_id.clone(),
+            payload.activity_name.clone(),
+            total_time.clone(),
+            payload.reg_day.clone(),
+            payload.week_number,
+            payload.user_note.clone(),
+        );
+
+        let new_resp = milltime_client
+            .new_project_registration(&new_payload)
             .await?;
+
+        // If timer exists in DB, update start/end, then registration_id
+        if timer_repo
+            .get_by_registration_id(&payload.project_registration_id)
+            .await?
+            .is_some()
+        {
+            timer_repo
+                .update_start_and_end_time(&payload.project_registration_id, &start_time, &end_time)
+                .await?;
+
+            // Update registration id to the newly created one
+            if let Err(e) = timer_repo
+                .update_registration_id(
+                    &payload.project_registration_id,
+                    &new_resp.project_registration_id,
+                )
+                .await
+            {
+                // attempt rollback: delete the newly created registration
+                let _ = milltime_client
+                    .delete_project_registration(new_resp.project_registration_id.clone())
+                    .await;
+
+                return Err(ErrorResponse {
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                    error: MilltimeError::DatabaseError,
+                    message: format!("failed to update registration id in DB: {:?}", e),
+                });
+            }
+        }
+
+        // Delete old registration
+        milltime_client
+            .delete_project_registration(payload.project_registration_id.clone())
+            .await?;
+    } else {
+        // Day unchanged -> regular edit in Milltime
+        let mt_payload = milltime::ProjectRegistrationEditPayload::new(
+            payload.project_registration_id.clone(),
+            milltime_client.user_id().to_string(),
+            payload.project_id,
+            payload.project_name,
+            payload.activity_id,
+            payload.activity_name,
+            total_time,
+            payload.reg_day,
+            payload.week_number,
+            payload.user_note,
+        );
+
+        milltime_client
+            .edit_project_registration(&mt_payload)
+            .await?;
+
+        // update end time of timer registration
+        if timer_repo
+            .get_by_registration_id(&mt_payload.project_registration_id)
+            .await?
+            .is_some()
+        {
+            timer_repo
+                .update_start_and_end_time(
+                    &mt_payload.project_registration_id,
+                    &start_time,
+                    &end_time,
+                )
+                .await?;
+        }
     }
 
     Ok((jar, StatusCode::OK))

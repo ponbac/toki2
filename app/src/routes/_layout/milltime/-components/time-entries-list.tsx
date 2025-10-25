@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AttestLevel, TimeEntry } from "@/lib/api/queries/milltime";
-import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
+import { cn, formatHoursAsHoursMinutes, getWeekNumber } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -23,6 +23,7 @@ import {
   SaveIcon,
   TrashIcon,
   PlayIcon,
+  CalendarIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -30,6 +31,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
@@ -499,6 +506,8 @@ function EditEntryCard(props: {
   const [minutes, setMinutes] = useState(
     Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60),
   );
+  const [selectedDate, setSelectedDate] = useState(props.entry.date);
+  const [isDateOpen, setIsDateOpen] = useState(false);
   const [startTime, setStartTime] = useState(
     props.entry.startTime
       ? dayjs(props.entry.startTime).format("HH:mm")
@@ -553,8 +562,8 @@ function EditEntryCard(props: {
     });
 
   const handleSave = () => {
-    const startDateTime = dayjs(`${props.entry.date}T${startTime}`);
-    const endDateTime = dayjs(`${props.entry.date}T${endTime}`);
+    const startDateTime = dayjs(`${selectedDate}T${startTime}`);
+    const endDateTime = dayjs(`${selectedDate}T${endTime}`);
 
     updateTimeEntry({
       projectRegistrationId: props.entry.registrationId,
@@ -565,8 +574,9 @@ function EditEntryCard(props: {
       activityName: props.entry.activityName,
       startTime: startDateTime.toISOString(),
       endTime: endDateTime.toISOString(),
-      regDay: props.entry.date,
-      weekNumber: props.entry.weekNumber,
+      regDay: selectedDate,
+      weekNumber: getWeekNumber(new Date(selectedDate)),
+      originalRegDay: format(new Date(props.entry.date), "yyyy-MM-dd"),
     });
   };
 
@@ -593,6 +603,34 @@ function EditEntryCard(props: {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div>
+          <label className="block text-sm font-medium">Day</label>
+          <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="mt-1 w-[240px] justify-start"
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {format(new Date(selectedDate), "EEE, MMM d, yyyy")}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={new Date(selectedDate)}
+                onSelect={(d) => {
+                  if (d) {
+                    setSelectedDate(format(d, "yyyy-MM-dd"));
+                    setIsDateOpen(false);
+                  }
+                }}
+                weekStartsOn={1}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
         <div>
           <label className="block text-sm font-medium">Note</label>
           <Input
