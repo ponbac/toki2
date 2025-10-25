@@ -213,8 +213,7 @@ export const FloatingMilltimeTimer = () => {
                       size="icon"
                       onClick={() =>
                         saveTimer({
-                          timerType:
-                            timer?.timerType ?? ("Unreachable" as TimerType),
+                          timerType: timer.timerType,
                           userNote: userNote ?? "",
                         })
                       }
