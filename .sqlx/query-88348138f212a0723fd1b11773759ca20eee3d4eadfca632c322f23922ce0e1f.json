@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO pr_notification_exceptions (\n                user_id, repository_id, pull_request_id, notification_type, enabled\n            )\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT (user_id, repository_id, pull_request_id, notification_type)\n            DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = CURRENT_TIMESTAMP\n            RETURNING \n                id, user_id, repository_id, pull_request_id,\n                notification_type as \"notification_type: DbNotificationType\",\n                enabled\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "repository_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "pull_request_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "notification_type: DbNotificationType",
+        "type_info": {
+          "Custom": {
+            "name": "notification_type",
+            "kind": {
+              "Enum": [
+                "pr_closed",
+                "thread_added",
+                "thread_updated",
+                "comment_mentioned"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "enabled",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Int4",
+        {
+          "Custom": {
+            "name": "notification_type",
+            "kind": {
+              "Enum": [
+                "pr_closed",
+                "thread_added",
+                "thread_updated",
+                "comment_mentioned"
+              ]
+            }
+          }
+        },
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "88348138f212a0723fd1b11773759ca20eee3d4eadfca632c322f23922ce0e1f"
+}

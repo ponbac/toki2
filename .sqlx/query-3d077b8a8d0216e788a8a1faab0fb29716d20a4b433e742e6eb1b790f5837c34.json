@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT * FROM timer_history WHERE registration_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "end_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "project_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "project_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "activity_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "activity_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "registration_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "timer_type",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "3d077b8a8d0216e788a8a1faab0fb29716d20a4b433e742e6eb1b790f5837c34"
+}

@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT organization, project, repo_name, token\n        FROM repositories\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "organization",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "project",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "repo_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "token",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8230b8efe8bc978687d86898da59656ad7728d123ec574a216829a3086d2e932"
+}

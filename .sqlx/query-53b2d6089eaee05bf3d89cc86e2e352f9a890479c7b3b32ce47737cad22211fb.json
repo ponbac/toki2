@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE timer_history SET registration_id = $2 WHERE registration_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53b2d6089eaee05bf3d89cc86e2e352f9a890479c7b3b32ce47737cad22211fb"
+}

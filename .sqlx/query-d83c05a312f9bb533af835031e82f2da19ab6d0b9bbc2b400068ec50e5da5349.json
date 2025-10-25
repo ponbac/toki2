@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM user_repositories\n                WHERE user_id = $1 AND repository_id = $2\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d83c05a312f9bb533af835031e82f2da19ab6d0b9bbc2b400068ec50e5da5349"
+}
