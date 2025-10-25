@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import dayjs from "dayjs";
 import {
@@ -550,6 +550,15 @@ function EditEntryCard(props: {
       },
     });
 
+  // Initialize or recompute endTime based on hours/minutes and startTime when missing
+  useEffect(() => {
+    if (startTime && !endTime && (hours > 0 || minutes > 0)) {
+      const startDate = dayjs(`2000-01-01T${startTime}`);
+      const endDate = startDate.add(hours, "hour").add(minutes, "minute");
+      setEndTime(endDate.format("HH:mm"));
+    }
+  }, [startTime, endTime, hours, minutes]);
+
   const { mutate: deleteTimeEntry, isPending: isDeletingTimeEntry } =
     milltimeMutations.useDeleteProjectRegistration({
       onSuccess: () => {
@@ -563,7 +572,15 @@ function EditEntryCard(props: {
 
   const handleSave = () => {
     const startDateTime = dayjs(`${selectedDate}T${startTime}`);
-    const endDateTime = dayjs(`${selectedDate}T${endTime}`);
+    const computedEndTime = endTime
+      ? endTime
+      : startTime
+        ? dayjs(`2000-01-01T${startTime}`)
+            .add(hours, "hour")
+            .add(minutes, "minute")
+            .format("HH:mm")
+        : "";
+    const endDateTime = dayjs(`${selectedDate}T${computedEndTime}`);
 
     updateTimeEntry({
       projectRegistrationId: props.entry.registrationId,
@@ -728,7 +745,11 @@ function EditEntryCard(props: {
           <Button
             size="sm"
             onClick={handleSave}
-            disabled={isUpdatingTimeEntry || !startTime || !endTime}
+            disabled={
+              isUpdatingTimeEntry ||
+              !startTime ||
+              (!endTime && hours === 0 && minutes === 0)
+            }
           >
             <SaveIcon className="size-4" />
             Save
