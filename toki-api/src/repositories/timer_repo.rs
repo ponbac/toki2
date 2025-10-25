@@ -27,6 +27,11 @@ pub trait TimerRepository {
         start_time: &time::OffsetDateTime,
         end_time: &time::OffsetDateTime,
     ) -> Result<(), RepositoryError>;
+    async fn update_registration_id(
+        &self,
+        old_registration_id: &str,
+        new_registration_id: &str,
+    ) -> Result<(), RepositoryError>;
 }
 
 pub struct TimerRepositoryImpl {
@@ -282,6 +287,28 @@ impl TimerRepository for TimerRepositoryImpl {
 
         if query_result.rows_affected() == 0 {
             return Err(RepositoryError::NotFound(registration_id.to_string()));
+        }
+
+        Ok(())
+    }
+
+    async fn update_registration_id(
+        &self,
+        old_registration_id: &str,
+        new_registration_id: &str,
+    ) -> Result<(), RepositoryError> {
+        let query_result = sqlx::query!(
+            r#"
+            UPDATE timer_history SET registration_id = $2 WHERE registration_id = $1
+            "#,
+            old_registration_id,
+            new_registration_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        if query_result.rows_affected() == 0 {
+            return Err(RepositoryError::NotFound(old_registration_id.to_string()));
         }
 
         Ok(())
