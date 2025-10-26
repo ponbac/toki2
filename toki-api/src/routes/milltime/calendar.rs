@@ -232,37 +232,36 @@ pub async fn edit_project_registration(
             payload.user_note.clone(),
         );
 
-        let new_resp = milltime_client
+        let new_project_registration = milltime_client
             .new_project_registration(&new_payload)
             .await?;
 
-        // If timer exists in DB, update start/end, then registration_id
+        // If timer exists in DB, atomically update start/end and registration_id
         if timer_repo
             .get_by_registration_id(&payload.project_registration_id)
             .await?
             .is_some()
         {
-            timer_repo
-                .update_start_and_end_time(&payload.project_registration_id, &start_time, &end_time)
-                .await?;
-
-            // Update registration id to the newly created one
             if let Err(e) = timer_repo
-                .update_registration_id(
+                .update_times_and_registration_id(
                     &payload.project_registration_id,
-                    &new_resp.project_registration_id,
+                    &new_project_registration.project_registration_id,
+                    &start_time,
+                    &end_time,
                 )
                 .await
             {
                 // attempt rollback: delete the newly created registration
                 let _ = milltime_client
-                    .delete_project_registration(new_resp.project_registration_id.clone())
+                    .delete_project_registration(
+                        new_project_registration.project_registration_id.clone(),
+                    )
                     .await;
 
                 return Err(ErrorResponse {
                     status: StatusCode::INTERNAL_SERVER_ERROR,
                     error: MilltimeError::DatabaseError,
-                    message: format!("failed to update registration id in DB: {:?}", e),
+                    message: format!("failed to update times and registration id in DB: {:?}", e),
                 });
             }
         }
@@ -290,7 +289,7 @@ pub async fn edit_project_registration(
             .edit_project_registration(&mt_payload)
             .await?;
 
-        // update end time of timer registration
+        // update start and end times of timer registration
         if timer_repo
             .get_by_registration_id(&mt_payload.project_registration_id)
             .await?
