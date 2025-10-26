@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { format } from "date-fns";
 import dayjs from "dayjs";
 import {
   Card,
@@ -56,7 +55,7 @@ export function TimeEntriesList(props: {
     useMemo(() => {
       const groups: { [key: string]: Array<TimeEntry> } = {};
       props.timeEntries.forEach((entry) => {
-        const dateKey = format(entry.date, "yyyy-MM-dd");
+        const dateKey = dayjs(entry.date).format("YYYY-MM-DD");
         if (!groups[dateKey]) {
           groups[dateKey] = [];
         }
@@ -202,9 +201,9 @@ export function TimeEntriesList(props: {
       {groupedEntries.map(([dateKey, dayEntries]) => (
         <div key={dateKey}>
           <h2 className="mb-4 text-lg font-semibold">
-            {format(new Date(dateKey), "EEEE")}
+            {dayjs(dateKey).format("dddd")}
             <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
-              {format(new Date(dateKey), "MMMM d, yyyy")}
+              {dayjs(dateKey).format("MMMM D, YYYY")}
             </span>
           </h2>
           <div className="space-y-4">
@@ -349,9 +348,9 @@ function ViewEntryCard(props: {
         const isOverlap = props.overlapMap[periodId];
         return (
           <div className="flex items-center gap-1 text-base text-muted-foreground">
-            <span>{format(new Date(period.startTime), "HH:mm")}</span>
+            <span>{dayjs(period.startTime).format("HH:mm")}</span>
             <span>-</span>
-            <span>{format(new Date(period.endTime), "HH:mm")}</span>
+            <span>{dayjs(period.endTime).format("HH:mm")}</span>
             {isOverlap && <OverlapWarning />}
           </div>
         );
@@ -367,9 +366,9 @@ function ViewEntryCard(props: {
                 key={periodId}
                 className="flex items-center gap-1 text-sm text-muted-foreground"
               >
-                {format(new Date(period.startTime), "HH:mm")}
+                {dayjs(period.startTime).format("HH:mm")}
                 {" - "}
-                {format(new Date(period.endTime), "HH:mm")}
+                {dayjs(period.endTime).format("HH:mm")}
                 {isOverlap && <OverlapWarning className="size-4" />}
               </p>
             );
@@ -382,11 +381,9 @@ function ViewEntryCard(props: {
 
     return (
       <div className="flex items-center gap-1 text-base text-muted-foreground">
-        <span>
-          {entry.startTime && format(new Date(entry.startTime), "HH:mm")}
-        </span>
+        <span>{entry.startTime && dayjs(entry.startTime).format("HH:mm")}</span>
         <span>-</span>
-        <span>{entry.endTime && format(new Date(entry.endTime), "HH:mm")}</span>
+        <span>{entry.endTime && dayjs(entry.endTime).format("HH:mm")}</span>
         {props.overlapMap[entry.registrationId] && <OverlapWarning />}
       </div>
     );
@@ -593,7 +590,7 @@ function EditEntryCard(props: {
       endTime: endDateTime.toISOString(),
       regDay: selectedDate,
       weekNumber: getWeekNumber(new Date(selectedDate)),
-      originalRegDay: format(new Date(props.entry.date), "yyyy-MM-dd"),
+      originalRegDay: dayjs(props.entry.date).format("YYYY-MM-DD"),
     });
   };
 
@@ -629,7 +626,7 @@ function EditEntryCard(props: {
                 className="mt-1 w-[240px] justify-start"
               >
                 <CalendarIcon className="mr-2 h-4 w-4" />
-                {format(new Date(selectedDate), "EEE, MMM d, yyyy")}
+                {dayjs(selectedDate).format("ddd, MMM D, YYYY")}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
@@ -638,7 +635,7 @@ function EditEntryCard(props: {
                 selected={new Date(selectedDate)}
                 onSelect={(d) => {
                   if (d) {
-                    setSelectedDate(format(d, "yyyy-MM-dd"));
+                    setSelectedDate(dayjs(d).format("YYYY-MM-DD"));
                     setIsDateOpen(false);
                   }
                 }}
