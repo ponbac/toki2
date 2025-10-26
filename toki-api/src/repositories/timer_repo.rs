@@ -34,6 +34,10 @@ pub trait TimerRepository {
         start_time: &time::OffsetDateTime,
         end_time: &time::OffsetDateTime,
     ) -> Result<(), RepositoryError>;
+    async fn create_finished_timer(
+        &self,
+        timer: &FinishedDatabaseTimer,
+    ) -> Result<i32, RepositoryError>;
 }
 
 pub struct TimerRepositoryImpl {
@@ -103,6 +107,19 @@ pub struct UpdateDatabaseTimer {
     pub activity_id: Option<String>,
     pub activity_name: Option<String>,
     pub start_time: Option<time::OffsetDateTime>,
+}
+
+pub struct FinishedDatabaseTimer {
+    pub user_id: i32,
+    pub start_time: time::OffsetDateTime,
+    pub end_time: time::OffsetDateTime,
+    pub project_id: Option<String>,
+    pub project_name: Option<String>,
+    pub activity_id: Option<String>,
+    pub activity_name: Option<String>,
+    pub note: String,
+    pub registration_id: String,
+    pub timer_type: TimerType,
 }
 
 impl TimerRepository for TimerRepositoryImpl {
@@ -321,5 +338,35 @@ impl TimerRepository for TimerRepositoryImpl {
         }
 
         Ok(())
+    }
+
+    async fn create_finished_timer(
+        &self,
+        timer: &FinishedDatabaseTimer,
+    ) -> Result<i32, RepositoryError> {
+        let id = sqlx::query!(
+            r#"
+            INSERT INTO timer_history (
+                user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, registration_id, timer_type
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id
+            "#,
+            timer.user_id,
+            timer.start_time,
+            timer.end_time,
+            timer.project_id,
+            timer.project_name,
+            timer.activity_id,
+            timer.activity_name,
+            timer.note,
+            timer.registration_id,
+            timer.timer_type.to_string()
+        )
+        .fetch_one(&self.pool)
+        .await?
+        .id;
+
+        Ok(id)
     }
 }

@@ -15,6 +15,7 @@ export const milltimeMutations = {
   useEditStandaloneTimer,
   useEditProjectRegistration,
   useDeleteProjectRegistration,
+  useCreateProjectRegistration,
 };
 
 function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
@@ -261,6 +262,30 @@ function useDeleteProjectRegistration(
   });
 }
 
+function useCreateProjectRegistration(
+  options?: DefaultMutationOptions<CreateProjectRegistrationPayload>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["milltime", "createProjectRegistration"],
+    mutationFn: (body: CreateProjectRegistrationPayload) =>
+      api.post("milltime/time-entries", {
+        json: body,
+      }),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timeEntries().queryKey.slice(0, 2),
+      });
+      queryClient.invalidateQueries({
+        queryKey: milltimeQueries.timeInfo().queryKey.slice(0, 2),
+      });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
 export const authenticateSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
@@ -324,4 +349,16 @@ export type UpdateTimeEntryPayload = {
   note: string;
   hours: number;
   // Add other fields as necessary
+};
+
+export type CreateProjectRegistrationPayload = {
+  projectId: string;
+  projectName: string;
+  activityId: string;
+  activityName: string;
+  startTime: string; // ISO
+  endTime: string; // ISO
+  regDay: string; // YYYY-MM-DD
+  weekNumber: number;
+  userNote: string;
 };

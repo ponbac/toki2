@@ -30,6 +30,9 @@ import {
 import { useMilltimeActions } from "@/hooks/useMilltimeStore";
 import { NotLockedAlert } from "./-components/not-locked-alert";
 import { TimerIcon } from "lucide-react";
+import { Plus } from "lucide-react";
+import { toast } from "sonner";
+import { NewEntryDialog } from "./-components/new-entry-dialog";
 
 export const Route = createFileRoute("/_layout/milltime/")({
   loader: async ({ context }) => {
@@ -88,6 +91,16 @@ function MilltimeComponent() {
   const { state: timerState } = useMilltimeTimer();
   const { mutate: startStandaloneTimer, isPending: isStartingStandaloneTimer } =
     milltimeMutations.useStartStandaloneTimer();
+  const { mutate: createProjectRegistration } =
+    milltimeMutations.useCreateProjectRegistration({
+      onSuccess: () => {
+        setIsNewEntryOpen(false);
+        toast.success("Entry created");
+      },
+      onError: () => toast.error("Failed to create entry"),
+    });
+
+  const [isNewEntryOpen, setIsNewEntryOpen] = React.useState(false);
 
   return (
     <div>
@@ -101,21 +114,30 @@ function MilltimeComponent() {
           <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
             <header className="mb-8 flex flex-col gap-4 md:h-12 md:flex-row md:items-center md:justify-between">
               <h1 className="text-2xl font-bold md:text-3xl">Milltime</h1>
-              {timerState !== "running" && (
+              <div className="flex gap-2">
+                {timerState !== "running" && (
+                  <Button
+                    variant="outline"
+                    disabled={isStartingStandaloneTimer}
+                    onClick={() =>
+                      startStandaloneTimer({
+                        userNote: "Try Ctrl+K to start a timer next time",
+                      })
+                    }
+                    className="w-full md:w-auto"
+                  >
+                    <TimerIcon className="mr-2 h-4 w-4" />
+                    Start New Timer
+                  </Button>
+                )}
                 <Button
-                  variant="outline"
-                  disabled={isStartingStandaloneTimer}
-                  onClick={() =>
-                    startStandaloneTimer({
-                      userNote: "Try Ctrl+K to start a timer next time",
-                    })
-                  }
-                  className="w-full md:w-auto"
+                  variant="default"
+                  onClick={() => setIsNewEntryOpen(true)}
                 >
-                  <TimerIcon className="mr-2 h-4 w-4" />
-                  Start New Timer
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Entry
                 </Button>
-              )}
+              </div>
             </header>
             <NotLockedAlert />
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
@@ -172,6 +194,13 @@ function MilltimeComponent() {
           </div>
         </div>
       )}
+      <NewEntryDialog
+        open={isNewEntryOpen}
+        onOpenChange={setIsNewEntryOpen}
+        onCreate={(payload) => {
+          createProjectRegistration(payload);
+        }}
+      />
     </div>
   );
 }

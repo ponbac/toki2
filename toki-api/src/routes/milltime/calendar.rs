@@ -14,7 +14,7 @@ use tracing::instrument;
 use crate::{
     app_state::AppState,
     auth::AuthSession,
-    repositories::{DatabaseTimer, TimerRepository},
+    repositories::{DatabaseTimer, FinishedDatabaseTimer, TimerRepository, TimerType},
 };
 
 use super::{CookieJarResult, ErrorResponse, MilltimeCookieJarExt, MilltimeError};
@@ -327,4 +327,95 @@ pub async fn delete_project_registration(
         .await?;
 
     Ok((jar, StatusCode::OK))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProjectRegistrationPayload {
+    project_id: String,
+    project_name: String,
+    activity_id: String,
+    activity_name: String,
+    start_time: String,
+    end_time: String,
+    reg_day: String,
+    week_number: i32,
+    user_note: String,
+}
+
+#[instrument(
+    name = "create_project_registration",
+    skip(jar, app_state, auth_session)
+)]
+pub async fn create_project_registration(
+    jar: CookieJar,
+    auth_session: AuthSession,
+    State(app_state): State<AppState>,
+    Json(payload): Json<CreateProjectRegistrationPayload>,
+) -> CookieJarResult<StatusCode> {
+    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+
+    let start_time = time::OffsetDateTime::parse(
+        &payload.start_time,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .map_err(|_| ErrorResponse {
+        status: StatusCode::BAD_REQUEST,
+        error: MilltimeError::DateParseError,
+        message: "Invalid start time format".to_string(),
+    })?;
+
+    let end_time = time::OffsetDateTime::parse(
+        &payload.end_time,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .map_err(|_| ErrorResponse {
+        status: StatusCode::BAD_REQUEST,
+        error: MilltimeError::DateParseError,
+        message: "Invalid end time format".to_string(),
+    })?;
+
+    let total_time = format!(
+        "{:02}:{:02}",
+        (end_time - start_time).whole_hours(),
+        (end_time - start_time).whole_minutes() % 60
+    );
+
+    let mt_payload = milltime::ProjectRegistrationPayload::new(
+        milltime_client.user_id().to_string(),
+        payload.project_id.clone(),
+        payload.project_name.clone(),
+        payload.activity_id.clone(),
+        payload.activity_name.clone(),
+        total_time,
+        payload.reg_day.clone(),
+        payload.week_number,
+        payload.user_note.clone(),
+    );
+
+    let registration = milltime_client
+        .new_project_registration(&mt_payload)
+        .await?;
+
+    // persist finished timer locally for overlap/sorting purposes
+    let user = auth_session.user.expect("user not found");
+    let record = FinishedDatabaseTimer {
+        user_id: user.id,
+        start_time,
+        end_time,
+        project_id: Some(payload.project_id.clone()),
+        project_name: Some(payload.project_name.clone()),
+        activity_id: Some(payload.activity_id.clone()),
+        activity_name: Some(payload.activity_name.clone()),
+        note: payload.user_note.clone(),
+        registration_id: registration.project_registration_id,
+        timer_type: TimerType::Standalone,
+    };
+
+    if let Err(e) = app_state.milltime_repo.create_finished_timer(&record).await {
+        tracing::error!("failed to persist finished timer locally: {:?}", e);
+        // continue; Milltime already succeeded
+    }
+
+    Ok((jar, StatusCode::CREATED))
 }

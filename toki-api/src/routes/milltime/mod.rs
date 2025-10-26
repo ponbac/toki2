@@ -27,7 +27,8 @@ pub fn router() -> Router<AppState> {
             "/time-entries",
             get(calendar::get_time_entries)
                 .put(calendar::edit_project_registration)
-                .delete(calendar::delete_project_registration),
+                .delete(calendar::delete_project_registration)
+                .post(calendar::create_project_registration),
         )
         .route("/timer-history", get(timer::get_timer_history))
         .route(
