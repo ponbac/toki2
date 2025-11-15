@@ -5,7 +5,7 @@ import ky, { KyResponse } from "ky";
 const API_URL =
   import.meta.env.MODE === "development"
     ? "http://localhost:8080"
-    : "https://toki2-api.ponbac.xyz";
+    : "https://toki-api.spinit.se";
 
 import { z } from "zod";
 

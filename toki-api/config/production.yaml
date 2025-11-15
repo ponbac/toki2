@@ -1,10 +1,10 @@
 application:
   host: "0.0.0.0"
-  app_url: "https://toki2.ponbac.xyz"
-  api_url: "https://toki2-api.ponbac.xyz"
-  cookie_domain: ".ponbac.xyz"
+  app_url: "https://toki.spinit.se"
+  api_url: "https://toki-api.spinit.se"
+  cookie_domain: ".spinit.se"
   disable_auth: false
 database:
   require_ssl: true
 auth:
-  redirect_url: "https://toki2-api.ponbac.xyz/oauth/callback"
+  redirect_url: "https://toki-api.spinit.se/oauth/callback"

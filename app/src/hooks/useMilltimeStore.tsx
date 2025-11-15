@@ -41,7 +41,7 @@ function isMilltimeCookiesPresent() {
 export function clearMilltimeCookies() {
   console.debug("Clearing milltime cookies");
 
-  const domains = [".ponbac.xyz", location.hostname];
+  const domains = [".spinit.se", location.hostname];
   const cookies = [
     "mt_user",
     "mt_password",

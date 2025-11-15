@@ -25,7 +25,7 @@ impl PushNotification {
             body: body.to_string(),
             url: url.map(|s| s.to_string()),
             icon: Some(match icon {
-                None => "https://toki2.ponbac.xyz/android-chrome-192x192.png".to_string(),
+                None => "https://toki.spinit.se/android-chrome-192x192.png".to_string(),
                 Some(s) => s.to_string(),
             }),
         }
