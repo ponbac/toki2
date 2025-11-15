@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     http::StatusCode,
@@ -8,11 +8,12 @@ use axum::{
 use az_devops::{Identity, RepoClient};
 use serde::Serialize;
 use sqlx::PgPool;
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use tokio::sync::{mpsc, RwLock};
 use tracing::instrument;
 
 use crate::domain::Email;
+use crate::services::IdentityProcessor;
 
 use super::{NotificationHandler, PullRequest, PullRequestDiff, RepoKey};
 
@@ -57,6 +58,7 @@ pub struct RepoDiffer {
     pub key: RepoKey,
     az_client: RepoClient,
     notification_handler: Arc<NotificationHandler>,
+    identity_processor: Arc<IdentityProcessor>,
     pub identities: Arc<RwLock<CachedIdentities>>,
     pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
     pub status: Arc<RwLock<RepoDifferStatus>>,
@@ -69,14 +71,14 @@ impl RepoDiffer {
         key: RepoKey,
         az_client: RepoClient,
         notification_handler: Arc<NotificationHandler>,
+        identity_processor: Arc<IdentityProcessor>,
     ) -> Self {
         Self {
             key,
             az_client,
             notification_handler,
-            identities: Arc::new(RwLock::new(CachedIdentities::new(Duration::from_secs(
-                60 * 60, // Refresh identities every hour
-            )))),
+            identity_processor,
+            identities: Arc::new(RwLock::new(CachedIdentities::new(Duration::hours(1)))),
             prev_pull_requests: Arc::new(RwLock::new(None)),
             status: Arc::new(RwLock::new(RepoDifferStatus::Stopped)),
             last_updated: Arc::new(RwLock::new(None)),
@@ -91,8 +93,8 @@ impl RepoDiffer {
 
 impl RepoDiffer {
     const MAX_RETRIES: usize = 10;
-    const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(30);
-    const MAX_RETRY_DELAY: Duration = Duration::from_secs(3600);
+    const INITIAL_RETRY_DELAY: Duration = Duration::seconds(30);
+    const MAX_RETRY_DELAY: Duration = Duration::hours(1);
 
     #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
     pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>, db_pool: Arc<PgPool>) {
@@ -108,7 +110,7 @@ impl RepoDiffer {
                                 self.key,
                                 duration
                             );
-                            tick_interval = Some(tokio::time::interval(duration));
+                            tick_interval = Some(tokio::time::interval(std::time::Duration::try_from(duration).unwrap_or(std::time::Duration::from_secs(300))));
                             self.interval.write().await.replace(duration);
                             *self.status.write().await = RepoDifferStatus::Running;
                         }
@@ -131,7 +133,7 @@ impl RepoDiffer {
                     let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
 
                     'retry_loop: while retries < Self::MAX_RETRIES && self.is_running().await {
-                        match tokio::time::timeout(Duration::from_secs(120), self.tick()).await {
+                        match tokio::time::timeout(std::time::Duration::from_secs(120), self.tick()).await {
                             Ok(Ok(change_events)) => {
                                 if !change_events.is_empty() {
                                     if let Err(e) = self.notification_handler.notify_affected_users(change_events).await {
@@ -175,15 +177,15 @@ impl RepoDiffer {
         }
     }
 
-    fn calculate_backoff_duration(retry_count: usize) -> Duration {
-        let base = Self::INITIAL_RETRY_DELAY.as_secs_f64();
-        let max = Self::MAX_RETRY_DELAY.as_secs_f64();
+    fn calculate_backoff_duration(retry_count: usize) -> std::time::Duration {
+        let base = Self::INITIAL_RETRY_DELAY.as_seconds_f64();
+        let max = Self::MAX_RETRY_DELAY.as_seconds_f64();
 
         // initial_delay * 2^retry_count
         let exp_backoff = base * (2_f64.powi(retry_count as i32));
         let final_delay = exp_backoff.min(max);
 
-        Duration::from_secs_f64(final_delay)
+        std::time::Duration::from_secs_f64(final_delay)
     }
 
     #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
@@ -224,9 +226,13 @@ impl RepoDiffer {
                     .await
                     .map_err(|_| RepoDifferError::Identities)?;
 
+                // Process identities to cache avatars
+                let processed_identities =
+                    self.identity_processor.process_identities(identities).await;
+
                 drop(cached_identities); // Drop the read lock before acquiring write lock to avoid deadlock
                 let mut cached_identities = self.identities.write().await;
-                cached_identities.update(identities);
+                cached_identities.update(processed_identities);
                 cached_identities.id_to_email_map()
             } else {
                 cached_identities.id_to_email_map()
@@ -280,7 +286,7 @@ async fn interval_tick_or_sleep(interval: &mut Option<tokio::time::Interval>) {
         interval.tick().await;
     } else {
         // Sleep for a very long time to mimic a pending future.
-        tokio::time::sleep(tokio::time::Duration::from_secs(86400)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(86400)).await;
     }
 }
 
