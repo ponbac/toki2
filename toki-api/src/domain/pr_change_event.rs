@@ -41,13 +41,29 @@ impl PRChangeEvent {
         match self {
             PRChangeEvent::PullRequestClosed => true,
             PRChangeEvent::ThreadAdded(thread) => {
-                thread.author().unique_name != user_email && pr_author == user_email
+                thread.author().unique_name != user_email
+                    && pr_author == user_email
+                    && thread
+                        .comments
+                        .first()
+                        .and_then(|comment| comment.content.as_ref())
+                        .map_or(false, |content| !Self::is_ignored_message_content(&content))
             }
             PRChangeEvent::ThreadUpdated(thread) => {
                 let most_recent_author = &thread.most_recent_comment().author;
 
                 // Don't notify if you're the one who just commented
                 if most_recent_author.unique_name == user_email {
+                    return false;
+                }
+
+                // Don't notify if ignored message content
+                let has_ignored_content = thread
+                    .comments
+                    .last()
+                    .and_then(|c| c.content.as_ref())
+                    .map_or(true, |content| Self::is_ignored_message_content(content));
+                if has_ignored_content {
                     return false;
                 }
 
@@ -114,5 +130,10 @@ impl PRChangeEvent {
                 None,
             ),
         }
+    }
+
+    fn is_ignored_message_content(content: &str) -> bool {
+        // Slash commands are ignored
+        content.starts_with("/")
     }
 }
