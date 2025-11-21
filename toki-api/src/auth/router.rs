@@ -1,6 +1,5 @@
 use axum::{
     extract::Query,
-    http::StatusCode,
     response::{IntoResponse, Redirect},
     routing::{get, post},
     Router,
@@ -16,10 +15,9 @@ const CSRF_STATE_KEY: &str = "oauth.csrf-state";
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/me", get(self::get::me))
-        .route("/login", post(self::post::login))
-        .route("/logout", get(self::post::logout))
-        .route("/oauth/callback", get(self::get::callback))
+        .route("/login", post(self::commands::login))
+        .route("/logout", get(self::commands::logout))
+        .route("/oauth/callback", get(self::queries::callback))
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,7 +31,9 @@ struct AuthzResp {
     state: CsrfToken,
 }
 
-mod post {
+mod commands {
+    use axum::http::StatusCode;
+
     use crate::auth::backend::AuthSession;
 
     use super::*;
@@ -66,25 +66,16 @@ mod post {
     }
 }
 
-mod get {
-    use axum::{extract::State, Json};
+mod queries {
+    use axum::{extract::State, http::StatusCode};
     use tracing::instrument;
 
     use crate::{
         auth::backend::{AuthSession, Credentials},
-        domain::User,
+        AppState,
     };
 
     use super::*;
-
-    pub async fn me(auth_session: AuthSession) -> Result<Json<User>, StatusCode> {
-        let user = match auth_session.user {
-            Some(user) => user,
-            None => return Err(StatusCode::UNAUTHORIZED),
-        };
-
-        Ok(Json(user))
-    }
 
     #[instrument(name = "auth_callback", skip(auth_session, session, app_state))]
     pub async fn callback(

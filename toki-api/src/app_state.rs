@@ -258,6 +258,13 @@ impl AppState {
         })
     }
 
+    pub fn user_avatar_url(&self, user_id: i32) -> Option<String> {
+        self.api_url
+            .join(&format!("users/{user_id}/avatar"))
+            .ok()
+            .map(|url| url.to_string())
+    }
+
     pub fn host_domain(&self) -> String {
         self.api_url.host_str().unwrap_or("localhost").to_string()
     }

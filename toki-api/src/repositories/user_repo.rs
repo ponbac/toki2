@@ -15,6 +15,24 @@ pub trait UserRepository {
         repo: &RepoKey,
         follow: bool,
     ) -> Result<(), RepositoryError>;
+
+    async fn get_user_avatar(&self, user_id: i32) -> Result<Option<UserAvatar>, RepositoryError>;
+
+    async fn set_user_avatar(
+        &self,
+        user_id: i32,
+        image: Vec<u8>,
+        mime_type: String,
+    ) -> Result<(), RepositoryError>;
+
+    async fn clear_user_avatar(&self, user_id: i32) -> Result<(), RepositoryError>;
+
+    async fn has_user_avatar(&self, user_id: i32) -> Result<bool, RepositoryError>;
+
+    async fn users_with_avatars_by_email(
+        &self,
+        emails: &[String],
+    ) -> Result<Vec<UserAvatarIdentity>, RepositoryError>;
 }
 
 pub struct UserRepositoryImpl {
@@ -25,6 +43,16 @@ impl UserRepositoryImpl {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+}
+
+pub struct UserAvatar {
+    pub image: Vec<u8>,
+    pub mime_type: String,
+}
+
+pub struct UserAvatarIdentity {
+    pub user_id: i32,
+    pub email: String,
 }
 
 impl UserRepository for UserRepositoryImpl {
@@ -174,6 +202,107 @@ impl UserRepository for UserRepositoryImpl {
         }
 
         Ok(())
+    }
+
+    async fn get_user_avatar(&self, user_id: i32) -> Result<Option<UserAvatar>, RepositoryError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT image, mime_type
+            FROM user_avatars
+            WHERE user_id = $1
+            "#,
+            user_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|row| UserAvatar {
+            image: row.image,
+            mime_type: row.mime_type,
+        }))
+    }
+
+    async fn set_user_avatar(
+        &self,
+        user_id: i32,
+        image: Vec<u8>,
+        mime_type: String,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO user_avatars (user_id, image, mime_type)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id) DO UPDATE
+            SET image = EXCLUDED.image,
+                mime_type = EXCLUDED.mime_type,
+                created_at = now()
+            "#,
+            user_id,
+            image,
+            mime_type
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn clear_user_avatar(&self, user_id: i32) -> Result<(), RepositoryError> {
+        sqlx::query!(
+            r#"
+            DELETE FROM user_avatars
+            WHERE user_id = $1
+            "#,
+            user_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn has_user_avatar(&self, user_id: i32) -> Result<bool, RepositoryError> {
+        let row = sqlx::query!(
+            r#"
+            SELECT EXISTS(
+                SELECT 1 FROM user_avatars WHERE user_id = $1
+            ) AS "has_avatar!"
+            "#,
+            user_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row.has_avatar)
+    }
+
+    async fn users_with_avatars_by_email(
+        &self,
+        emails: &[String],
+    ) -> Result<Vec<UserAvatarIdentity>, RepositoryError> {
+        if emails.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT users.id, users.email
+            FROM users
+            INNER JOIN user_avatars ON user_avatars.user_id = users.id
+            WHERE users.email = ANY($1)
+            "#,
+            emails
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| UserAvatarIdentity {
+                user_id: row.id,
+                email: row.email,
+            })
+            .collect())
     }
 }
 
