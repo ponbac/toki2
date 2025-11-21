@@ -252,7 +252,7 @@ pub struct SaveTimerProjectRegistration {
     #[serde(rename(deserialize = "timedistributiontype"))]
     pub time_distribution_type: String,
     #[serde(rename(deserialize = "customernames"))]
-    pub customer_names: String,
+    pub customer_names: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

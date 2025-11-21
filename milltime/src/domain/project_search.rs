@@ -20,7 +20,7 @@ pub struct ProjectSearchItem {
     #[serde(rename(deserialize = "isfavorite"))]
     pub is_favorite: bool,
     #[serde(rename(deserialize = "customernames"))]
-    pub customer_names: String,
+    pub customer_names: Option<String>,
     #[serde(rename(deserialize = "ismember"))]
     pub is_member: bool,
     #[serde(rename(deserialize = "isleader"))]

@@ -166,7 +166,7 @@ pub struct RawProjectRegistration {
     pub projtimehh: f64,
     pub projtimemm: Option<i64>,
     pub usernote: Option<String>,
-    pub customernames: String,
+    pub customernames: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
