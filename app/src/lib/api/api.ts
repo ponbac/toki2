@@ -2,10 +2,11 @@ import { useMilltimeStore } from "@/hooks/useMilltimeStore";
 import { router } from "@/main";
 import ky, { KyResponse } from "ky";
 
-const API_URL =
+export const API_URL =
   import.meta.env.MODE === "development"
     ? "http://localhost:8080"
     : "https://toki-api.spinit.se";
+
 
 import { z } from "zod";
 
