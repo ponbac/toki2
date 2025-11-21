@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 
 use crate::domain::{RepoKey, Role, User};
 
@@ -15,6 +15,22 @@ pub trait UserRepository {
         repo: &RepoKey,
         follow: bool,
     ) -> Result<(), RepositoryError>;
+
+    async fn get_user_avatar(
+        &self,
+        user_id: i32,
+    ) -> Result<Option<UserAvatar>, RepositoryError>;
+
+    async fn set_user_avatar(
+        &self,
+        user_id: i32,
+        image: Vec<u8>,
+        mime_type: String,
+    ) -> Result<(), RepositoryError>;
+
+    async fn clear_user_avatar(&self, user_id: i32) -> Result<(), RepositoryError>;
+
+    async fn has_user_avatar(&self, user_id: i32) -> Result<bool, RepositoryError>;
 }
 
 pub struct UserRepositoryImpl {
@@ -25,6 +41,11 @@ impl UserRepositoryImpl {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+}
+
+pub struct UserAvatar {
+    pub image: Vec<u8>,
+    pub mime_type: String,
 }
 
 impl UserRepository for UserRepositoryImpl {
@@ -174,6 +195,72 @@ impl UserRepository for UserRepositoryImpl {
         }
 
         Ok(())
+    }
+
+    async fn get_user_avatar(
+        &self,
+        user_id: i32,
+    ) -> Result<Option<UserAvatar>, RepositoryError> {
+        let row = sqlx::query(
+            "SELECT avatar_image, avatar_image_mime_type FROM users WHERE id = $1",
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|row| {
+            let image: Vec<u8> = row.get("avatar_image");
+            let mime_type: Option<String> = row.get("avatar_image_mime_type");
+            UserAvatar {
+                image,
+                mime_type: mime_type.unwrap_or_else(|| "image/png".to_string()),
+            }
+        }))
+    }
+
+    async fn set_user_avatar(
+        &self,
+        user_id: i32,
+        image: Vec<u8>,
+        mime_type: String,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query(
+            "UPDATE users SET avatar_image = $1, avatar_image_mime_type = $2 WHERE id = $3",
+        )
+        .bind(image)
+        .bind(mime_type)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn clear_user_avatar(&self, user_id: i32) -> Result<(), RepositoryError> {
+        sqlx::query(
+            "UPDATE users SET avatar_image = NULL, avatar_image_mime_type = NULL WHERE id = $1",
+        )
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn has_user_avatar(&self, user_id: i32) -> Result<bool, RepositoryError> {
+        let row = sqlx::query(
+            "SELECT avatar_image IS NOT NULL AS has_avatar FROM users WHERE id = $1",
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let has_avatar: bool = row.get("has_avatar");
+            Ok(has_avatar)
+        } else {
+            Ok(false)
+        }
     }
 }
 
