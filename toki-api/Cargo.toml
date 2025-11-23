@@ -38,6 +38,7 @@ sqlx = { version = "0.8.0", features = [
     "runtime-tokio",
     "tls-rustls",
     "time",
+    "chrono",
     "migrate",
 ] }
 axum-login = "0.16.0"

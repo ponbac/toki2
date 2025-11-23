@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use az_devops::RepoClient;
+use chrono::{DateTime, Utc};
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use sqlx::PgPool;
 use tokio::sync::{
@@ -258,14 +259,52 @@ impl AppState {
         })
     }
 
-    pub fn user_avatar_url(&self, user_id: i32) -> Option<String> {
-        self.api_url
-            .join(&format!("users/{user_id}/avatar"))
-            .ok()
-            .map(|url| url.to_string())
+    pub fn user_avatar_url(
+        &self,
+        user_id: i32,
+        updated_at: DateTime<Utc>,
+    ) -> Option<String> {
+        build_avatar_url(&self.api_url, user_id, updated_at)
     }
 
     pub fn host_domain(&self) -> String {
         self.api_url.host_str().unwrap_or("localhost").to_string()
+    }
+}
+
+fn build_avatar_url(api_url: &Url, user_id: i32, updated_at: DateTime<Utc>) -> Option<String> {
+    let fingerprint = updated_at.timestamp_millis();
+    api_url
+        .join(&format!("users/{user_id}/avatar?v={fingerprint}"))
+        .ok()
+        .map(|url| url.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn build_avatar_url_appends_millis_fingerprint() {
+        let api_url = Url::parse("https://api.example.com/").unwrap();
+        let updated_at = Utc.timestamp_millis_opt(1_735_000_000_000).unwrap();
+
+        let url = build_avatar_url(&api_url, 42, updated_at).unwrap();
+
+        assert_eq!(
+            url,
+            "https://api.example.com/users/42/avatar?v=1735000000000"
+        );
+    }
+
+    #[test]
+    fn build_avatar_url_preserves_base_path() {
+        let api_url = Url::parse("https://api.example.com/v1/").unwrap();
+        let updated_at = Utc.timestamp_millis_opt(0).unwrap();
+
+        let url = build_avatar_url(&api_url, 7, updated_at).unwrap();
+
+        assert_eq!(url, "https://api.example.com/v1/users/7/avatar?v=0");
     }
 }

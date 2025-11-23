@@ -19,7 +19,7 @@ export function useUploadAvatar(
     mutationFn: async ({ file }: UploadAvatarVars) => {
       const formData = new FormData();
       formData.append("avatar", file);
-      return api.post("me/avatar", { body: formData });
+      return api.post("users/me/avatar", { body: formData });
     },
     ...options,
     onSuccess: (data, vars, ctx) => {
@@ -34,7 +34,7 @@ export function useDeleteAvatar(options?: DefaultMutationOptions<void>) {
 
   return useMutation({
     mutationKey: ["user", "avatar", "delete"],
-    mutationFn: async () => api.delete("me/avatar"),
+    mutationFn: async () => api.delete("users/me/avatar"),
     ...options,
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries({ queryKey: ["me"] });

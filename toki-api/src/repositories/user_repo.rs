@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
 use crate::domain::{RepoKey, Role, User};
@@ -27,7 +28,10 @@ pub trait UserRepository {
 
     async fn clear_user_avatar(&self, user_id: i32) -> Result<(), RepositoryError>;
 
-    async fn has_user_avatar(&self, user_id: i32) -> Result<bool, RepositoryError>;
+    async fn avatar_updated_at(
+        &self,
+        user_id: i32,
+    ) -> Result<Option<DateTime<Utc>>, RepositoryError>;
 
     async fn users_with_avatars_by_email(
         &self,
@@ -53,6 +57,7 @@ pub struct UserAvatar {
 pub struct UserAvatarIdentity {
     pub user_id: i32,
     pub email: String,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl UserRepository for UserRepositoryImpl {
@@ -230,11 +235,12 @@ impl UserRepository for UserRepositoryImpl {
     ) -> Result<(), RepositoryError> {
         sqlx::query!(
             r#"
-            INSERT INTO user_avatars (user_id, image, mime_type)
-            VALUES ($1, $2, $3)
+            INSERT INTO user_avatars (user_id, image, mime_type, updated_at)
+            VALUES ($1, $2, $3, now())
             ON CONFLICT (user_id) DO UPDATE
             SET image = EXCLUDED.image,
                 mime_type = EXCLUDED.mime_type,
+                updated_at = now(),
                 created_at = now()
             "#,
             user_id,
@@ -261,19 +267,22 @@ impl UserRepository for UserRepositoryImpl {
         Ok(())
     }
 
-    async fn has_user_avatar(&self, user_id: i32) -> Result<bool, RepositoryError> {
+    async fn avatar_updated_at(
+        &self,
+        user_id: i32,
+    ) -> Result<Option<DateTime<Utc>>, RepositoryError> {
         let row = sqlx::query!(
             r#"
-            SELECT EXISTS(
-                SELECT 1 FROM user_avatars WHERE user_id = $1
-            ) AS "has_avatar!"
+            SELECT updated_at as "updated_at: chrono::DateTime<Utc>"
+            FROM user_avatars
+            WHERE user_id = $1
             "#,
             user_id
         )
-        .fetch_one(&self.pool)
+        .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.has_avatar)
+        Ok(row.map(|row| row.updated_at))
     }
 
     async fn users_with_avatars_by_email(
@@ -286,7 +295,7 @@ impl UserRepository for UserRepositoryImpl {
 
         let rows = sqlx::query!(
             r#"
-            SELECT users.id, users.email
+            SELECT users.id, users.email, user_avatars.updated_at as "updated_at: chrono::DateTime<Utc>"
             FROM users
             INNER JOIN user_avatars ON user_avatars.user_id = users.id
             WHERE users.email = ANY($1)
@@ -301,6 +310,7 @@ impl UserRepository for UserRepositoryImpl {
             .map(|row| UserAvatarIdentity {
                 user_id: row.id,
                 email: row.email,
+                updated_at: row.updated_at,
             })
             .collect())
     }

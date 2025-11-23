@@ -132,18 +132,18 @@ async fn avatar_url_if_present(
     app_state: &AppState,
     user_id: i32,
 ) -> Result<Option<String>, StatusCode> {
-    let has_avatar = app_state
+    let updated_at = app_state
         .user_repo
-        .has_user_avatar(user_id)
+        .avatar_updated_at(user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if !has_avatar {
+    let Some(updated_at) = updated_at else {
         return Ok(None);
-    }
+    };
 
     let url = app_state
-        .user_avatar_url(user_id)
+        .user_avatar_url(user_id, updated_at)
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Some(url))

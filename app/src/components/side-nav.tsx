@@ -28,7 +28,6 @@ import {
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { toast } from "sonner";
-import { API_URL } from "@/lib/api/api";
 import { userMutations } from "@/lib/api/mutations/user";
 
 type LinkDestination = LinkProps<typeof router>["to"];
@@ -165,18 +164,6 @@ function AvatarMenu() {
     staleTime: Infinity,
   });
 
-<<<<<<< Conflict 1 of 1
-+++++++ Contents of side #1
-  const avatarUrl = me?.avatarUrl ?? me?.picture ?? undefined;
-
-%%%%%%% Changes from base to side #2
--  const avatarNumber = React.useMemo(
--    () => Math.floor(Math.random() * 649 + 1),
--    [],
--  );
--  const avatarUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${avatarNumber}.png`;
--
->>>>>>> Conflict 1 of 1 ends
   const initials = me?.fullName
     ?.split(" ")
     .map((n) => n[0])
@@ -184,12 +171,10 @@ function AvatarMenu() {
 
   const [open, setOpen] = React.useState(false);
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
-  const [avatarVersion, setAvatarVersion] = React.useState(0);
 
   const uploadAvatar = userMutations.useUploadAvatar({
     onSuccess: () => {
       toast.success("Avatar updated");
-      setAvatarVersion((v) => v + 1);
       setSelectedFile(null);
       setOpen(false);
     },
@@ -201,7 +186,6 @@ function AvatarMenu() {
   const deleteAvatar = userMutations.useDeleteAvatar({
     onSuccess: () => {
       toast.success("Avatar removed");
-      setAvatarVersion((v) => v + 1);
     },
     onError: () => {
       toast.error("Failed to remove avatar");
@@ -220,18 +204,15 @@ function AvatarMenu() {
       return;
     }
 
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("Avatar must be smaller than 2MB");
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Avatar must be smaller than 5MB");
       return;
     }
 
     setSelectedFile(file);
   };
 
-  const defaultAvatarUrl = me?.picture;
-  const customAvatarUrl =
-    me?.hasAvatar && `${API_URL}/me/avatar?v=${avatarVersion}`;
-  const avatarUrl = customAvatarUrl ?? defaultAvatarUrl;
+  const avatarUrl = me?.avatarUrl ?? me?.picture ?? undefined;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -251,8 +232,8 @@ function AvatarMenu() {
         <DialogHeader>
           <DialogTitle>Account settings</DialogTitle>
           <DialogDescription>
-            Upload a custom avatar image. This will replace your Azure
-            avatar for you.
+            Upload a custom avatar image. This will replace your Azure avatar
+            for you.
           </DialogDescription>
         </DialogHeader>
 
@@ -260,13 +241,11 @@ function AvatarMenu() {
           <div className="flex items-center gap-4">
             <Avatar className="size-16 bg-accent">
               {avatarUrl && <AvatarImage src={avatarUrl} />}
-              <AvatarFallback className="text-2xl">
-                {initials}
-              </AvatarFallback>
+              <AvatarFallback className="text-2xl">{initials}</AvatarFallback>
             </Avatar>
             <div className="text-sm text-muted-foreground">
               <p>Accepted formats: PNG, JPEG, WebP</p>
-              <p>Max size: 2MB</p>
+              <p>Max size: 5MB</p>
             </div>
           </div>
 
@@ -274,7 +253,7 @@ function AvatarMenu() {
         </div>
 
         <DialogFooter>
-          {me?.hasAvatar && (
+          {me?.avatarUrl && (
             <Button
               variant="outline"
               onClick={() => deleteAvatar.mutate()}
@@ -296,4 +275,3 @@ function AvatarMenu() {
     </Dialog>
   );
 }
-

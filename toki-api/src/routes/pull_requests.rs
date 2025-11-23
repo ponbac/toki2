@@ -269,7 +269,7 @@ async fn enrich_avatar_overrides(
         .into_iter()
         .filter_map(|record| {
             app_state
-                .user_avatar_url(record.user_id)
+                .user_avatar_url(record.user_id, record.updated_at)
                 .map(|url| (record.email, url))
         })
         .collect();
