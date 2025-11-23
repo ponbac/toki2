@@ -38,6 +38,7 @@ import React from "react";
 import { PRNotificationSettings } from "../-components/pr-notification-settings";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import { buildAvatarOverrideMap } from "@/lib/utils";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
@@ -54,6 +55,11 @@ function PRDetailsDialog() {
     ...queries.listPullRequests(),
     select: (data) => data.find((pr) => pr.id === +prId),
   });
+
+  const avatarOverrideMap = React.useMemo(
+    () => buildAvatarOverrideMap(pr?.avatarOverrides ?? []),
+    [pr?.avatarOverrides],
+  );
 
   // Timer state and mutations
   const { data: timerResponse, isSuccess: timerQuerySuccess } = useQuery({
@@ -133,8 +139,8 @@ function PRDetailsDialog() {
       }}
     >
       <DialogContent className="max-w-5xl">
-        <Header pullRequest={pr} />
-        <Threads pullRequest={pr} />
+        <Header pullRequest={pr} avatarOverrides={avatarOverrideMap} />
+        <Threads pullRequest={pr} avatarOverrides={avatarOverrideMap} />
         <DialogFooter className="pt-2">
           <PRNotificationSettings pullRequest={pr} />
           <Button
@@ -163,13 +169,23 @@ function PRDetailsDialog() {
   );
 }
 
-function Header(props: { pullRequest: ListPullRequest }) {
+function Header(props: {
+  pullRequest: ListPullRequest;
+  avatarOverrides: Record<string, string>;
+}) {
   const { createdBy, sourceBranch, targetBranch, title } = props.pullRequest;
+  const overrideUrl = props.avatarOverrides[
+    createdBy.uniqueName.toLowerCase()
+  ] as string | undefined;
 
   return (
     <DialogHeader>
       <DialogTitle className="flex flex-row items-center gap-2">
-        <AzureAvatar user={createdBy} className="size-8" />
+        <AzureAvatar
+          user={createdBy}
+          className="size-8"
+          overrideAvatarUrl={overrideUrl}
+        />
         <PRLink data={props.pullRequest}>
           <h1 className="text-xl font-semibold">{title}</h1>
         </PRLink>
@@ -181,7 +197,10 @@ function Header(props: { pullRequest: ListPullRequest }) {
   );
 }
 
-function Threads(props: { pullRequest: ListPullRequest }) {
+function Threads(props: {
+  pullRequest: ListPullRequest;
+  avatarOverrides: Record<string, string>;
+}) {
   const [showResolved, setShowResolved] = React.useState(false);
 
   const threads = props.pullRequest.threads;
@@ -198,7 +217,12 @@ function Threads(props: { pullRequest: ListPullRequest }) {
     <ScrollArea className="max-h-[60vh] max-w-5xl">
       <div className="flex flex-col">
         {activeThreads.map((thread) => (
-          <Thread key={thread.id} thread={thread} users={allUsers} />
+          <Thread
+            key={thread.id}
+            thread={thread}
+            users={allUsers}
+            avatarOverrides={props.avatarOverrides}
+          />
         ))}
         {resolvedThreads.length > 0 && (
           <div className="flex w-full flex-col items-center pt-2">
@@ -213,7 +237,12 @@ function Threads(props: { pullRequest: ListPullRequest }) {
             </Button>
             {showResolved &&
               resolvedThreads.map((thread) => (
-                <Thread key={thread.id} thread={thread} users={allUsers} />
+                <Thread
+                  key={thread.id}
+                  thread={thread}
+                  users={allUsers}
+                  avatarOverrides={props.avatarOverrides}
+                />
               ))}
           </div>
         )}
@@ -222,7 +251,11 @@ function Threads(props: { pullRequest: ListPullRequest }) {
   );
 }
 
-function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
+function Thread(props: {
+  thread: PullRequestThread;
+  users: Array<User>;
+  avatarOverrides: Record<string, string>;
+}) {
   const nonDeletedComments = props.thread.comments
     .filter((c) => !c.isDeleted)
     .map((c) => ({
@@ -236,6 +269,10 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
     return null;
   }
 
+  const firstCommentOverride = props.avatarOverrides[
+    firstComment.author.uniqueName.toLowerCase()
+  ] as string | undefined;
+
   return (
     <Accordion type="single" collapsible className="w-full">
       <AccordionItem value={firstComment.id.toString()}>
@@ -246,6 +283,7 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
                 user={firstComment.author}
                 className="size-6"
                 disableTooltip
+                overrideAvatarUrl={firstCommentOverride}
               />
               <h1>
                 {firstComment.author.displayName}{" "}
@@ -270,6 +308,11 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
                   user={comment.author}
                   className="size-6"
                   disableTooltip
+                  overrideAvatarUrl={
+                    props.avatarOverrides[
+                      comment.author.uniqueName.toLowerCase()
+                    ]
+                  }
                 />
                 <h1>
                   {comment.author.displayName}{" "}

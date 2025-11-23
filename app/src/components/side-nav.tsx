@@ -151,11 +151,7 @@ function AvatarMenu() {
     staleTime: Infinity,
   });
 
-  const avatarNumber = React.useMemo(
-    () => Math.floor(Math.random() * 649 + 1),
-    [],
-  );
-  const avatarUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${avatarNumber}.png`;
+  const avatarUrl = me?.avatarUrl ?? me?.picture ?? undefined;
 
   const initials = me?.fullName
     ?.split(" ")

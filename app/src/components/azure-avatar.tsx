@@ -7,17 +7,27 @@ export function AzureAvatar({
   user,
   disableTooltip,
   className,
+  overrideAvatarUrl,
 }: {
   user: User;
   disableTooltip?: boolean;
   className?: string;
+  overrideAvatarUrl?: string;
 }) {
   return disableTooltip ? (
-    <AvatarComponent user={user} className={className} />
+    <AvatarComponent
+      user={user}
+      className={className}
+      overrideAvatarUrl={overrideAvatarUrl}
+    />
   ) : (
     <Tooltip>
       <TooltipTrigger>
-        <AvatarComponent user={user} className={className} />
+        <AvatarComponent
+          user={user}
+          className={className}
+          overrideAvatarUrl={overrideAvatarUrl}
+        />
       </TooltipTrigger>
       <TooltipContent>
         <div className="text-sm font-medium">{user.displayName}</div>
@@ -26,10 +36,17 @@ export function AzureAvatar({
   );
 }
 
-function AvatarComponent(props: { user: User; className?: string }) {
+function AvatarComponent(props: {
+  user: User;
+  className?: string;
+  overrideAvatarUrl?: string;
+}) {
+  const fallbackSrc =
+    props.overrideAvatarUrl ?? props.user.avatarUrl ?? undefined;
+
   return (
     <Avatar className={cn("size-6", props.className)}>
-      <AvatarImage src={props.user.avatarUrl} alt={props.user.displayName} />
+      <AvatarImage src={fallbackSrc} alt={props.user.displayName} />
       <AvatarFallback>{props.user.displayName[0].toUpperCase()}</AvatarFallback>
     </Avatar>
   );
