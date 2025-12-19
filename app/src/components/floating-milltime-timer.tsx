@@ -61,13 +61,7 @@ export const FloatingMilltimeTimer = () => {
       },
     });
   const { mutate: saveTimer, isPending: isSavingTimer } =
-    milltimeMutations.useSaveTimer({
-      onSuccess: () => {
-        toast.success("Timer successfully saved to Milltime");
-        removeSegment("timer");
-        startStandaloneTimer({ userNote: "Continuing my work..." });
-      },
-    });
+    milltimeMutations.useSaveTimer();
   const { mutate: editTimer } = milltimeMutations.useEditTimer({
     onSuccess: () => {
       toast.success("Timer successfully updated");
@@ -211,12 +205,28 @@ export const FloatingMilltimeTimer = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() =>
-                        saveTimer({
-                          timerType: timer.timerType,
-                          userNote: userNote ?? "",
-                        })
-                      }
+                      onClick={(e) => {
+                        const shouldAutoRestart = !(e.ctrlKey || e.metaKey);
+                        saveTimer(
+                          {
+                            timerType: timer.timerType,
+                            userNote: userNote ?? "",
+                          },
+                          {
+                            onSuccess: () => {
+                              toast.success(
+                                "Timer successfully saved to Milltime",
+                              );
+                              removeSegment("timer");
+                              if (shouldAutoRestart) {
+                                startStandaloneTimer({
+                                  userNote: "Continuing my work...",
+                                });
+                              }
+                            },
+                          },
+                        );
+                      }}
                       disabled={
                         isSavingTimer ||
                         isStoppingTimer ||
@@ -228,7 +238,9 @@ export const FloatingMilltimeTimer = () => {
                       <span className="sr-only">Save</span>
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Save</TooltipContent>
+                  <TooltipContent>
+                    Save (Ctrl/Cmd+Click to save without creating a new timer)
+                  </TooltipContent>
                 </Tooltip>
               ) : null}
               {timer?.timerType === "Standalone" && (
