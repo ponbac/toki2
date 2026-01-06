@@ -52,6 +52,16 @@ bacon run
 cd app && bun dev
 ```
 
+## Verifying Changes
+
+```bash
+# Backend - verify Rust changes compile
+cargo check
+
+# Frontend - verify TypeScript and linting
+cd app && bun tsc && bun lint
+```
+
 ## Important Notes
 
 1. **Milltime API is unofficial** - reverse-engineered, no documentation

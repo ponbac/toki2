@@ -45,12 +45,13 @@ export const FloatingMilltimeTimer = () => {
   const [userNote, setUserNote] = React.useState("");
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
 
-  const { data: timer, error: timerFetchError } = useQuery({
+  const { data: timerResponse, error: timerFetchError } = useQuery({
     ...milltimeQueries.getTimer(),
     enabled: timerState === "running" || timerState === undefined,
     refetchInterval: 60 * 1000,
     retry: 1,
   });
+  const timer = timerResponse?.timer;
 
   const { mutate: startStandaloneTimer } =
     milltimeMutations.useStartStandaloneTimer();
@@ -161,16 +162,16 @@ export const FloatingMilltimeTimer = () => {
     removeSegment,
   ]);
 
-  // If the timer could not be fetched, it is probably not active
+  // If the timer could not be fetched or response indicates no active timer, reset state
   React.useEffect(() => {
-    if (timerFetchError) {
+    if (timerFetchError || (timerResponse && timerResponse.timer === null)) {
       setTimer({
         visible: false,
         state: "stopped",
         timeSeconds: null,
       });
     }
-  }, [timerFetchError, setTimer]);
+  }, [timerFetchError, timerResponse, setTimer]);
 
   return visible ? (
     <>

@@ -16,13 +16,14 @@ import {
   User,
 } from "@/lib/api/queries/pullRequests";
 import { queries } from "@/lib/api/queries/queries";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
 import {
   ClipboardCopy,
   CodeXmlIcon,
   MessageCircleCodeIcon,
+  TimerIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import Markdown from "react-markdown";
@@ -35,6 +36,8 @@ import {
 } from "@/components/ui/accordion";
 import React from "react";
 import { PRNotificationSettings } from "../-components/pr-notification-settings";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
+import { milltimeMutations } from "@/lib/api/mutations/milltime";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
@@ -52,16 +55,31 @@ function PRDetailsDialog() {
     select: (data) => data.find((pr) => pr.id === +prId),
   });
 
-  const copyTimeReportTextToClipboard = (mode: "review" | "develop") => {
-    let text = "";
+  // Timer state and mutations
+  const { data: timerResponse, isSuccess: timerQuerySuccess } = useQuery({
+    ...milltimeQueries.getTimer(),
+    retry: false,
+  });
+  const timer = timerResponse?.timer;
+
+  const { mutateAsync: startStandaloneTimer } =
+    milltimeMutations.useStartStandaloneTimer();
+  const { mutateAsync: editStandaloneTimer } =
+    milltimeMutations.useEditStandaloneTimer();
+
+  const buildTimeReportText = (mode: "review" | "develop") => {
     const workItem = pr?.workItems.at(0);
     if (!workItem) {
-      text = `!${prId} - ${mode === "review" ? "[CR] " : ""}${pr?.title}`;
-    } else {
-      const parentWorkItem = workItem.parentId;
-      text = `${parentWorkItem ? `#${parentWorkItem} ` : ""}#${workItem.id} - ${mode === "review" ? "[CR] " : ""}${workItem.title}`;
+      return `!${prId} - ${mode === "review" ? "[CR] " : ""}${pr?.title}`;
     }
+    const parentWorkItem = workItem.parentId;
+    return `${parentWorkItem ? `#${parentWorkItem} ` : ""}#${workItem.id} - ${mode === "review" ? "[CR] " : ""}${workItem.title}`;
+  };
 
+  const handleTimeReportClick = async (mode: "review" | "develop") => {
+    const text = buildTimeReportText(mode);
+
+    // Always copy to clipboard
     navigator.clipboard.writeText(text);
     toast.info(
       <div className="flex flex-row items-center">
@@ -71,6 +89,34 @@ function PRDetailsDialog() {
         </p>
       </div>,
     );
+
+    // Only proceed with timer operations if query succeeded
+    if (!timerQuerySuccess) return;
+
+    try {
+      if (timer?.timerType === "Standalone") {
+        // Update existing standalone timer note
+        await editStandaloneTimer({ userNote: text });
+        toast.success(
+          <div className="flex flex-row items-center">
+            <TimerIcon className="mr-2 inline-block" size="1.25rem" />
+            Timer note updated
+          </div>,
+        );
+      } else if (timer === null) {
+        // No active timer - start a new standalone timer
+        await startStandaloneTimer({ userNote: text });
+        toast.success(
+          <div className="flex flex-row items-center">
+            <TimerIcon className="mr-2 inline-block" size="1.25rem" />
+            Timer started
+          </div>,
+        );
+      }
+      // If timer is Milltime type, do nothing (deprecated)
+    } catch {
+      // Silently fail - clipboard copy already succeeded
+    }
   };
 
   if (!pr) {
@@ -96,7 +142,7 @@ function PRDetailsDialog() {
             variant="outline"
             size="sm"
             className="flex gap-2"
-            onClick={() => copyTimeReportTextToClipboard("review")}
+            onClick={() => handleTimeReportClick("review")}
           >
             <MessageCircleCodeIcon className="size-4" />
             Review
@@ -106,7 +152,7 @@ function PRDetailsDialog() {
             variant="default"
             size="sm"
             className="flex gap-2"
-            onClick={() => copyTimeReportTextToClipboard("develop")}
+            onClick={() => handleTimeReportClick("develop")}
           >
             <CodeXmlIcon className="size-4" />
             Develop
