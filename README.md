@@ -2,6 +2,10 @@
 
 A Milltime and Azure DevOps integration platform built with Rust and React. Initially built because I wanted to try out Rust _(this is an excuse for the code quality)_.
 
+## Documentation
+
+- [User Manual (Swedish)](docs/MANUAL_SV.md) - Användarmanual
+
 ## Overview
 
 Toki2 helps you manage your time entries, track pull requests, and stay notified about important updates in Azure DevOps.
