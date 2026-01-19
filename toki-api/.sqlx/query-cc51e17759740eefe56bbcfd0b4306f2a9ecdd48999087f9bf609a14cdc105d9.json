@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_avatars (user_id, image, mime_type, updated_at)\n            VALUES ($1, $2, $3, now())\n            ON CONFLICT (user_id) DO UPDATE\n            SET image = EXCLUDED.image,\n                mime_type = EXCLUDED.mime_type,\n                updated_at = now(),\n                created_at = user_avatars.created_at\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cc51e17759740eefe56bbcfd0b4306f2a9ecdd48999087f9bf609a14cdc105d9"
+}

@@ -241,7 +241,7 @@ impl UserRepository for UserRepositoryImpl {
             SET image = EXCLUDED.image,
                 mime_type = EXCLUDED.mime_type,
                 updated_at = now(),
-                created_at = now()
+                created_at = user_avatars.created_at
             "#,
             user_id,
             image,
