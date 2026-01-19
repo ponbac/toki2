@@ -56,10 +56,11 @@ function MilltimeTimerProvider() {
   const { setNewTimerDialogOpen, setLoginDialogOpen, setEditTimerDialogOpen } =
     useMilltimeActions();
 
-  const { data: timer } = useQuery({
+  const { data: timerResponse } = useQuery({
     ...milltimeQueries.getTimer(),
     enabled: false,
   });
+  const timer = timerResponse?.timer;
 
   return isAuthenticated ? (
     <>

@@ -98,10 +98,11 @@ function ActionsCommandGroup(props: { close: () => void }) {
   const isAuthenticatedToMilltime = useMilltimeIsAuthenticated();
 
   // TODO: should probably handle the fetched timer and saveTimer in a centralized place
-  const { data: timer } = useQuery({
+  const { data: timerResponse } = useQuery({
     ...milltimeQueries.getTimer(),
     enabled: false,
   });
+  const timer = timerResponse?.timer;
 
   const { mutate: startStandaloneTimer } =
     milltimeMutations.useStartStandaloneTimer();

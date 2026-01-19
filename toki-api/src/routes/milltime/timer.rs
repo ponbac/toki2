@@ -37,13 +37,19 @@ pub enum TokiTimer {
     Standalone(repositories::DatabaseTimer),
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetTimerResponse {
+    timer: Option<TokiTimer>,
+}
+
 #[debug_handler]
 #[instrument(name = "get_timer", skip(jar, app_state, auth_session))]
 pub async fn get_timer(
     jar: CookieJar,
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-) -> CookieJarResult<Json<TokiTimer>> {
+) -> CookieJarResult<Json<GetTimerResponse>> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     let mt_timer = milltime_client.fetch_timer().await;
@@ -53,38 +59,56 @@ pub async fn get_timer(
     let db_timer = milltime_repo.active_timer(&user.id).await;
 
     match (mt_timer, db_timer) {
-        (Ok(mt_timer), Ok(Some(_))) => Ok((jar, Json(TokiTimer::Milltime(mt_timer.into())))),
+        (Ok(mt_timer), Ok(Some(_))) => Ok((
+            jar,
+            Json(GetTimerResponse {
+                timer: Some(TokiTimer::Milltime(mt_timer.into())),
+            }),
+        )),
         (Ok(mt_timer), Ok(None)) => {
             tracing::warn!("milltime timer found but no active timer in db");
-            Ok((jar, Json(TokiTimer::Milltime(mt_timer.into()))))
+            Ok((
+                jar,
+                Json(GetTimerResponse {
+                    timer: Some(TokiTimer::Milltime(mt_timer.into())),
+                }),
+            ))
         }
         (Ok(mt_timer), Err(e)) => {
             tracing::warn!("failed to fetch single active timer in db: {:?}", e);
-            Ok((jar, Json(TokiTimer::Milltime(mt_timer.into()))))
+            Ok((
+                jar,
+                Json(GetTimerResponse {
+                    timer: Some(TokiTimer::Milltime(mt_timer.into())),
+                }),
+            ))
         }
         (Err(e), Ok(Some(db_timer))) => {
             tracing::warn!("failed to fetch milltime timer, but found in db: {:?}", e);
             if db_timer.timer_type == TimerType::Standalone {
-                Ok((jar, Json(TokiTimer::Standalone(db_timer))))
+                Ok((
+                    jar,
+                    Json(GetTimerResponse {
+                        timer: Some(TokiTimer::Standalone(db_timer)),
+                    }),
+                ))
             } else {
                 match e {
                     MilltimeFetchError::ResponseError(_) => {
                         tracing::warn!("response error, not deleting active timer");
                     }
-                    _ => milltime_repo.delete_active_timer(&user.id).await.unwrap(),
+                    _ => {
+                        if let Err(e) = milltime_repo.delete_active_timer(&user.id).await {
+                            tracing::error!("failed to delete stale timer: {:?}", e);
+                        }
+                    }
                 }
-                Err(ErrorResponse {
-                    status: StatusCode::NOT_FOUND,
-                    error: MilltimeError::TimerError,
-                    message: "non-standalone timer found in db but not on milltime".to_string(),
-                })
+                // Milltime timer in DB but not on Milltime - treat as no active timer
+                Ok((jar, Json(GetTimerResponse { timer: None })))
             }
         }
-        _ => Err(ErrorResponse {
-            status: StatusCode::NOT_FOUND,
-            error: MilltimeError::TimerError,
-            message: "timer not found in db or on milltime".to_string(),
-        }),
+        // No active timer found anywhere
+        _ => Ok((jar, Json(GetTimerResponse { timer: None }))),
     }
 }
 

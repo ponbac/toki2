@@ -22,7 +22,7 @@ export const milltimeQueries = {
     queryOptions({
       queryKey: [...milltimeQueries.timerBaseKey, "get"],
       queryFn: async () =>
-        api.get("milltime/timer").json<MilltimeTimer | DatabaseTimer>(),
+        api.get("milltime/timer").json<GetTimerResponse>(),
     }),
   timerHistory: () =>
     queryOptions({
@@ -67,6 +67,12 @@ export const milltimeQueries = {
 };
 
 export type TimerType = "Milltime" | "Standalone";
+
+export type TokiTimer = MilltimeTimer | DatabaseTimer;
+
+export type GetTimerResponse = {
+  timer: TokiTimer | null;
+};
 
 export type DatabaseTimer = {
   id: number;
