@@ -142,7 +142,10 @@ function PRDetailsDialog() {
             variant="outline"
             size="sm"
             className="flex gap-2"
-            onClick={() => handleTimeReportClick("review")}
+            onClick={() => {
+              handleTimeReportClick("review");
+              navigate({ to: "..", search: parentSearch });
+            }}
           >
             <MessageCircleCodeIcon className="size-4" />
             Review
@@ -152,7 +155,10 @@ function PRDetailsDialog() {
             variant="default"
             size="sm"
             className="flex gap-2"
-            onClick={() => handleTimeReportClick("develop")}
+            onClick={() => {
+              handleTimeReportClick("develop");
+              navigate({ to: "..", search: parentSearch });
+            }}
           >
             <CodeXmlIcon className="size-4" />
             Develop
