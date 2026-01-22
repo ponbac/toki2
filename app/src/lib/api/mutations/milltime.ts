@@ -307,6 +307,10 @@ export type StartTimerPayload = {
 
 export type StartStandaloneTimerPayload = {
   userNote?: string;
+  projectId?: string;
+  projectName?: string;
+  activityId?: string;
+  activityName?: string;
 };
 export type SaveTimerPayload = {
   timerType: TimerType;

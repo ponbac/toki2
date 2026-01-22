@@ -19,8 +19,15 @@ import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { startOfWeek, endOfWeek, format } from "date-fns";
 import React from "react";
 import { atomWithStorage } from "jotai/utils";
-import { useAtom } from "jotai/react";
+import { useAtom, useAtomValue } from "jotai/react";
 import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
+import { MilltimeSettings } from "./-components/milltime-settings";
+import {
+  buildRememberedTimerParams,
+  lastActivityAtom,
+  lastProjectAtom,
+  rememberLastProjectAtom,
+} from "@/lib/milltime-preferences";
 import { TimeStats } from "./-components/time-stats";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import {
@@ -68,6 +75,11 @@ function MilltimeComponent() {
     to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
   });
   const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
+  const [rememberLastProject, setRememberLastProject] = useAtom(
+    rememberLastProjectAtom,
+  );
+  const lastProject = useAtomValue(lastProjectAtom);
+  const lastActivity = useAtomValue(lastActivityAtom);
   const [search, setSearch] = React.useState("");
 
   const { data: timeEntries } = useQuery({
@@ -122,12 +134,19 @@ function MilltimeComponent() {
                     onClick={() =>
                       startStandaloneTimer({
                         userNote: "Try Ctrl+K to start a timer next time",
+                        ...buildRememberedTimerParams({
+                          rememberLastProject,
+                          lastProject,
+                          lastActivity,
+                        }),
                       })
                     }
                     className="w-full md:w-auto"
                   >
                     <TimerIcon className="mr-2 h-4 w-4" />
-                    Start New Timer
+                    {rememberLastProject && lastProject
+                      ? `Start Timer (${lastProject.projectName}${lastActivity ? ` - ${lastActivity.activityName}` : ""})`
+                      : "Start New Timer"}
                   </Button>
                 )}
                 <Button
@@ -153,6 +172,10 @@ function MilltimeComponent() {
                       setMergeSameDay={setMergeSameDay}
                     />
                     <SearchBar search={search} setSearch={setSearch} />
+                    <MilltimeSettings
+                      rememberLastProject={rememberLastProject}
+                      setRememberLastProject={setRememberLastProject}
+                    />
                   </div>
                 </div>
                 {timeEntries?.length ? (

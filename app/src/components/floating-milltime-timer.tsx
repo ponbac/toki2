@@ -30,6 +30,12 @@ import { useMilltimeActions, useMilltimeTimer } from "@/hooks/useMilltimeStore";
 import { useTitleStore } from "@/hooks/useTitleStore";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { HistoryIcon } from "lucide-react";
+import { useAtomValue, useSetAtom } from "jotai/react";
+import {
+  lastActivityAtom,
+  lastProjectAtom,
+  rememberLastProjectAtom,
+} from "@/lib/milltime-preferences";
 
 export const FloatingMilltimeTimer = () => {
   const queryClient = useQueryClient();
@@ -44,6 +50,10 @@ export const FloatingMilltimeTimer = () => {
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [userNote, setUserNote] = React.useState("");
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
+
+  const setLastProject = useSetAtom(lastProjectAtom);
+  const setLastActivity = useSetAtom(lastActivityAtom);
+  const rememberLastProject = useAtomValue(rememberLastProjectAtom);
 
   const { data: timerResponse, error: timerFetchError } = useQuery({
     ...milltimeQueries.getTimer(),
@@ -219,9 +229,43 @@ export const FloatingMilltimeTimer = () => {
                                 "Timer successfully saved to Milltime",
                               );
                               removeSegment("timer");
+                              // Remember this project and activity for next time
+                              if (timer.projectId && timer.projectName) {
+                                setLastProject({
+                                  projectId: timer.projectId,
+                                  projectName: timer.projectName,
+                                });
+                              }
+                              // Get activityId from the correct field based on timer type
+                              const activityId =
+                                timer.timerType === "Milltime"
+                                  ? (timer as MilltimeTimer).activity
+                                  : (timer as DatabaseTimer).activityId;
+                              if (activityId && timer.activityName) {
+                                setLastActivity({
+                                  activityId: activityId,
+                                  activityName: timer.activityName,
+                                });
+                              }
                               if (shouldAutoRestart) {
                                 startStandaloneTimer({
                                   userNote: "Continuing my work...",
+                                  ...(rememberLastProject &&
+                                  timer.projectId &&
+                                  timer.projectName
+                                    ? {
+                                        projectId: timer.projectId,
+                                        projectName: timer.projectName,
+                                      }
+                                    : {}),
+                                  ...(rememberLastProject &&
+                                  activityId &&
+                                  timer.activityName
+                                    ? {
+                                        activityId: activityId,
+                                        activityName: timer.activityName,
+                                      }
+                                    : {}),
                                 });
                               }
                             },

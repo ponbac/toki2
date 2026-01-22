@@ -28,6 +28,13 @@ import {
   useMilltimeIsAuthenticated,
 } from "@/hooks/useMilltimeStore";
 import { useTitleStore } from "@/hooks/useTitleStore";
+import { useAtomValue } from "jotai/react";
+import {
+  lastActivityAtom,
+  lastProjectAtom,
+  rememberLastProjectAtom,
+  buildRememberedTimerParams,
+} from "@/lib/milltime-preferences";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -97,6 +104,10 @@ function ActionsCommandGroup(props: { close: () => void }) {
     useMilltimeActions();
   const isAuthenticatedToMilltime = useMilltimeIsAuthenticated();
 
+  const lastProject = useAtomValue(lastProjectAtom);
+  const lastActivity = useAtomValue(lastActivityAtom);
+  const rememberLastProject = useAtomValue(rememberLastProjectAtom);
+
   // TODO: should probably handle the fetched timer and saveTimer in a centralized place
   const { data: timerResponse } = useQuery({
     ...milltimeQueries.getTimer(),
@@ -113,6 +124,11 @@ function ActionsCommandGroup(props: { close: () => void }) {
       removeSegment("timer");
       startStandaloneTimer({
         userNote: "Continuing my work...",
+        ...buildRememberedTimerParams({
+          rememberLastProject,
+          lastProject,
+          lastActivity,
+        }),
       });
     },
   });
@@ -127,13 +143,20 @@ function ActionsCommandGroup(props: { close: () => void }) {
             onSelect={() => {
               startStandaloneTimer({
                 userNote: "Doing something important...",
+                ...buildRememberedTimerParams({
+                  rememberLastProject,
+                  lastProject,
+                  lastActivity,
+                }),
               });
               props.close();
             }}
           >
             <div className="flex flex-row items-center gap-2">
               <DrumIcon className="h-1 w-1" />
-              Start empty timer
+              {rememberLastProject && lastProject
+                ? `Start timer (${lastProject.projectName}${lastActivity ? ` - ${lastActivity.activityName}` : ""})`
+                : "Start empty timer"}
             </div>
           </CommandItem>
           <CommandItem
