@@ -182,6 +182,10 @@ pub async fn start_timer(
 #[serde(rename_all = "camelCase")]
 pub struct StartStandaloneTimerPayload {
     user_note: Option<String>,
+    project_id: Option<String>,
+    project_name: Option<String>,
+    activity_id: Option<String>,
+    activity_name: Option<String>,
 }
 
 #[instrument(name = "start_standalone_timer", skip(app_state, auth_session))]
@@ -204,10 +208,10 @@ pub async fn start_standalone_timer(
     let new_timer = repositories::NewDatabaseTimer {
         user_id: user.id,
         start_time: time::OffsetDateTime::now_utc(),
-        project_id: None,
-        project_name: None,
-        activity_id: None,
-        activity_name: None,
+        project_id: body.project_id,
+        project_name: body.project_name,
+        activity_id: body.activity_id,
+        activity_name: body.activity_name,
         note: body.user_note.clone().unwrap_or_default(),
         timer_type: TimerType::Standalone,
     };
