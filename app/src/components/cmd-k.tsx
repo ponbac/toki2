@@ -154,9 +154,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
           >
             <div className="flex flex-row items-center gap-2">
               <DrumIcon className="h-1 w-1" />
-              {rememberLastProject && lastProject
-                ? `Start timer (${lastProject.projectName}${lastActivity ? ` - ${lastActivity.activityName}` : ""})`
-                : "Start empty timer"}
+              Start empty timer
             </div>
           </CommandItem>
           <CommandItem

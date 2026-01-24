@@ -144,9 +144,7 @@ function MilltimeComponent() {
                     className="w-full md:w-auto"
                   >
                     <TimerIcon className="mr-2 h-4 w-4" />
-                    {rememberLastProject && lastProject
-                      ? `Start Timer (${lastProject.projectName}${lastActivity ? ` - ${lastActivity.activityName}` : ""})`
-                      : "Start New Timer"}
+                    Start New Timer
                   </Button>
                 )}
                 <Button
