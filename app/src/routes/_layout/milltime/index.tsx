@@ -126,7 +126,7 @@ function MilltimeComponent() {
           <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
             <header className="mb-8 flex flex-col gap-4 md:h-12 md:flex-row md:items-center md:justify-between">
               <h1 className="text-2xl font-bold md:text-3xl">Milltime</h1>
-              <div className="flex gap-2">
+              <div className="flex gap-4">
                 {timerState !== "running" && (
                   <Button
                     variant="outline"
@@ -143,7 +143,7 @@ function MilltimeComponent() {
                     }
                     className="w-full md:w-auto"
                   >
-                    <TimerIcon className="mr-2 h-4 w-4" />
+                    <TimerIcon className="mr-1 h-4 w-4" />
                     Start New Timer
                   </Button>
                 )}
@@ -151,7 +151,7 @@ function MilltimeComponent() {
                   variant="default"
                   onClick={() => setIsNewEntryOpen(true)}
                 >
-                  <Plus className="mr-2 h-4 w-4" />
+                  <Plus className="mr-1 h-4 w-4" />
                   New Entry
                 </Button>
               </div>
