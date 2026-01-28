@@ -18,6 +18,7 @@ mod domain;
 mod repositories;
 mod router;
 mod routes;
+mod services;
 mod utils;
 
 #[tokio::main]
