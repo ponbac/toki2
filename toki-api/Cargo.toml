@@ -51,3 +51,4 @@ url = "2.5.0"
 aes-gcm = "0.10.3"
 base64 = "0.22.1"
 strum_macros = "0.26.4"
+tower-sessions-sqlx-store = { version = "0.14.2", features = ["postgres"] }

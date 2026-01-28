@@ -38,6 +38,8 @@ pub struct User {
     pub picture: String,
     pub access_token: String,
     pub roles: Vec<Role>,
+    #[serde(skip)]
+    pub session_auth_hash: String,
 }
 
 impl fmt::Debug for User {
@@ -61,6 +63,6 @@ impl AuthUser for User {
     }
 
     fn session_auth_hash(&self) -> &[u8] {
-        self.access_token.as_bytes()
+        self.session_auth_hash.as_bytes()
     }
 }
