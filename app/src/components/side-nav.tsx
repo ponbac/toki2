@@ -16,6 +16,19 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { userQueries } from "@/lib/api/queries/user";
 import { NotificationsPopover } from "./notifications-popover/notifications-popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
+import { toast } from "sonner";
+import { userMutations } from "@/lib/api/mutations/user";
 
 type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
@@ -151,23 +164,114 @@ function AvatarMenu() {
     staleTime: Infinity,
   });
 
-  const avatarNumber = React.useMemo(
-    () => Math.floor(Math.random() * 649 + 1),
-    [],
-  );
-  const avatarUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${avatarNumber}.png`;
-
   const initials = me?.fullName
     ?.split(" ")
     .map((n) => n[0])
     .join("");
 
+  const [open, setOpen] = React.useState(false);
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
+
+  const uploadAvatar = userMutations.useUploadAvatar({
+    onSuccess: () => {
+      toast.success("Avatar updated");
+      setSelectedFile(null);
+      setOpen(false);
+    },
+    onError: () => {
+      toast.error("Failed to upload avatar");
+    },
+  });
+
+  const deleteAvatar = userMutations.useDeleteAvatar({
+    onSuccess: () => {
+      toast.success("Avatar removed");
+    },
+    onError: () => {
+      toast.error("Failed to remove avatar");
+    },
+  });
+
+  const handleFileChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Avatar must be smaller than 5MB");
+      return;
+    }
+
+    setSelectedFile(file);
+  };
+
+  const avatarUrl = me?.avatarUrl ?? me?.picture ?? undefined;
+
   return (
-    <div>
-      <Avatar className="size-10 bg-accent">
-        <AvatarImage src={avatarUrl} />
-        <AvatarFallback>{initials}</AvatarFallback>
-      </Avatar>
-    </div>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="rounded-full focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <Avatar className="size-10 bg-accent">
+            {avatarUrl && <AvatarImage src={avatarUrl} />}
+            <AvatarFallback>{initials}</AvatarFallback>
+          </Avatar>
+        </button>
+      </DialogTrigger>
+
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Account settings</DialogTitle>
+          <DialogDescription>
+            Upload a custom avatar image. This will replace your Azure avatar
+            for you.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4 py-2">
+          <div className="flex items-center gap-4">
+            <Avatar className="size-16 bg-accent">
+              {avatarUrl && <AvatarImage src={avatarUrl} />}
+              <AvatarFallback className="text-2xl">{initials}</AvatarFallback>
+            </Avatar>
+            <div className="text-sm text-muted-foreground">
+              <p>Accepted formats: PNG, JPEG, WebP</p>
+              <p>Max size: 5MB</p>
+            </div>
+          </div>
+
+          <Input type="file" accept="image/*" onChange={handleFileChange} />
+        </div>
+
+        <DialogFooter>
+          {me?.avatarUrl && (
+            <Button
+              variant="outline"
+              onClick={() => deleteAvatar.mutate()}
+              disabled={deleteAvatar.isPending}
+            >
+              Remove avatar
+            </Button>
+          )}
+          <Button
+            onClick={() =>
+              selectedFile && uploadAvatar.mutate({ file: selectedFile })
+            }
+            disabled={!selectedFile || uploadAvatar.isPending}
+          >
+            Save avatar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

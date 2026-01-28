@@ -1,4 +1,7 @@
-use std::cmp;
+use std::{
+    cmp,
+    collections::{HashMap, HashSet},
+};
 
 use axum::{
     extract::{Query, State},
@@ -81,7 +84,7 @@ async fn cached_pull_requests(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
-    let followed_prs = get_followed_pull_requests(&auth_session, app_state).await?;
+    let followed_prs = get_followed_pull_requests(&auth_session, &app_state).await?;
     Ok(Json(followed_prs))
 }
 
@@ -133,6 +136,15 @@ struct ListPullRequest {
     approved_by: Vec<az_devops::IdentityWithVote>,
     waiting_for_user_review: bool,
     review_required: bool,
+    #[serde(default)]
+    avatar_overrides: Vec<AvatarOverride>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AvatarOverride {
+    email: String,
+    avatar_url: String,
 }
 
 impl ListPullRequest {
@@ -159,6 +171,7 @@ impl ListPullRequest {
             approved_by,
             waiting_for_user_review,
             review_required,
+            avatar_overrides: Vec::new(),
         }
     }
 }
@@ -168,17 +181,19 @@ async fn list_pull_requests(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<ListPullRequest>>, (StatusCode, String)> {
-    let mut followed_prs = get_followed_pull_requests(&auth_session, app_state).await?;
+    let mut followed_prs = get_followed_pull_requests(&auth_session, &app_state).await?;
     followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
 
-    Ok(Json(
-        followed_prs
-            .into_iter()
-            .map(|pr| {
-                ListPullRequest::from_pull_request(pr, &auth_session.user.as_ref().unwrap().email)
-            })
-            .collect(),
-    ))
+    let mut list_prs: Vec<ListPullRequest> = followed_prs
+        .into_iter()
+        .map(|pr| {
+            ListPullRequest::from_pull_request(pr, &auth_session.user.as_ref().unwrap().email)
+        })
+        .collect();
+
+    enrich_avatar_overrides(&app_state, &mut list_prs).await?;
+
+    Ok(Json(list_prs))
 }
 
 /// Get the followed pull requests from the cache.
@@ -186,7 +201,7 @@ async fn list_pull_requests(
 /// This function will fetch the cached pull requests from the cache and replace the mentions in the threads with names instead of ids.
 async fn get_followed_pull_requests(
     auth_session: &AuthSession,
-    app_state: AppState,
+    app_state: &AppState,
 ) -> Result<Vec<PullRequest>, (StatusCode, String)> {
     let user_id = auth_session.user.as_ref().expect("user not found").id;
     let user_repo = app_state.user_repo.clone();
@@ -219,4 +234,86 @@ async fn get_followed_pull_requests(
     }
 
     Ok(followed_prs)
+}
+
+async fn enrich_avatar_overrides(
+    app_state: &AppState,
+    prs: &mut [ListPullRequest],
+) -> Result<(), (StatusCode, String)> {
+    if prs.is_empty() {
+        return Ok(());
+    }
+
+    let mut per_pr_emails = Vec::with_capacity(prs.len());
+    let mut unique_emails = HashSet::new();
+
+    for pr in prs.iter() {
+        let emails = collect_pr_participant_emails(pr);
+        unique_emails.extend(emails.iter().cloned());
+        per_pr_emails.push(emails);
+    }
+
+    if unique_emails.is_empty() {
+        return Ok(());
+    }
+
+    let email_list: Vec<String> = unique_emails.into_iter().collect();
+
+    let users_with_avatars = app_state
+        .user_repo
+        .users_with_avatars_by_email(&email_list)
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+    let avatar_map: HashMap<String, String> = users_with_avatars
+        .into_iter()
+        .filter_map(|record| {
+            app_state
+                .user_avatar_url(record.user_id, record.updated_at)
+                .map(|url| (record.email, url))
+        })
+        .collect();
+
+    for (pr, emails) in prs.iter_mut().zip(per_pr_emails.into_iter()) {
+        pr.avatar_overrides = emails
+            .into_iter()
+            .filter_map(|email| {
+                avatar_map.get(&email).cloned().map(|url| AvatarOverride {
+                    email,
+                    avatar_url: url,
+                })
+            })
+            .collect();
+    }
+
+    Ok(())
+}
+
+fn collect_pr_participant_emails(pr: &ListPullRequest) -> HashSet<String> {
+    let mut emails = HashSet::new();
+    emails.insert(pr.created_by.unique_name.clone());
+
+    collect_identity_emails(&mut emails, &pr.reviewers);
+    collect_identity_emails(&mut emails, &pr.blocked_by);
+    collect_identity_emails(&mut emails, &pr.approved_by);
+
+    for thread in &pr.threads {
+        for comment in &thread.comments {
+            emails.insert(comment.author.unique_name.clone());
+            for liker in &comment.liked_by {
+                emails.insert(liker.unique_name.clone());
+            }
+        }
+    }
+
+    emails
+}
+
+fn collect_identity_emails(
+    emails: &mut HashSet<String>,
+    identities: &[az_devops::IdentityWithVote],
+) {
+    for identity_with_vote in identities {
+        emails.insert(identity_with_vote.identity.unique_name.clone());
+    }
 }

@@ -5,7 +5,7 @@ export const userQueries = {
   me: () =>
     queryOptions({
       queryKey: ["me"],
-      queryFn: () => api.get("me").json<User>(),
+      queryFn: () => api.get("users/me").json<User>(),
     }),
 };
 
@@ -18,4 +18,5 @@ export type User = {
   picture: string;
   accessToken: string;
   roles: Role[];
+  avatarUrl: string | null;
 };
