@@ -2,7 +2,7 @@ use axum::{http::Method, routing::get, Router};
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
     login_required,
-    tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
+    tower_sessions::{CachingSessionStore, ExpiredDeletion, Expiry, SessionManagerLayer},
     AuthManagerLayer, AuthManagerLayerBuilder,
 };
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
@@ -12,6 +12,10 @@ use tower_http::{
     cors::CorsLayer,
     trace::{DefaultMakeSpan, TraceLayer},
 };
+use tower_sessions_moka_store::MokaStore;
+use tower_sessions_sqlx_store::PostgresStore;
+
+type SessionStore = CachingSessionStore<MokaStore, PostgresStore>;
 
 use crate::{
     app_state::AppState,
@@ -38,7 +42,7 @@ pub async fn create(
     let app_with_auth = if config.application.disable_auth {
         base_app
     } else {
-        let auth_layer = new_auth_layer(connection_pool.clone(), config.clone());
+        let auth_layer = new_auth_layer(connection_pool.clone(), config.clone()).await;
         base_app
             .route_layer(login_required!(AuthBackend))
             .merge(auth::router())
@@ -71,10 +75,10 @@ pub async fn create(
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
 }
 
-fn new_auth_layer(
+async fn new_auth_layer(
     connection_pool: PgPool,
     config: Settings,
-) -> AuthManagerLayer<AuthBackend, MemoryStore> {
+) -> AuthManagerLayer<AuthBackend, SessionStore> {
     let client = BasicClient::new(
         ClientId::new(config.auth.client_id),
         Some(ClientSecret::new(config.auth.client_secret)),
@@ -83,7 +87,26 @@ fn new_auth_layer(
     )
     .set_redirect_uri(RedirectUrl::new(config.auth.redirect_url).expect("Invalid redirect URL"));
 
-    let session_store = MemoryStore::default();
+    // Use PostgresStore for DB-backed sessions that persist across restarts
+    let db_store = PostgresStore::new(connection_pool.clone());
+    db_store
+        .migrate()
+        .await
+        .expect("Failed to run session store migration");
+
+    // Spawn background task to clean up expired sessions from DB
+    let deletion_task = tokio::task::spawn(
+        db_store
+            .clone()
+            .continuously_delete_expired(tokio::time::Duration::from_secs(60)),
+    );
+    // Detach the task so it runs independently
+    drop(deletion_task);
+
+    // Wrap with in-memory Moka cache to reduce DB reads for hot sessions
+    let cache_store = MokaStore::new(Some(2_000));
+    let session_store = CachingSessionStore::new(cache_store, db_store);
+
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(false) // todo: explore production values
         .with_same_site(SameSite::Lax)

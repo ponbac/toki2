@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, email, full_name, picture, access_token, roles FROM users",
+  "query": "SELECT id, email, full_name, picture, access_token, roles, session_auth_hash FROM users",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,11 @@
         "ordinal": 5,
         "name": "roles",
         "type_info": "TextArray"
+      },
+      {
+        "ordinal": 6,
+        "name": "session_auth_hash",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -43,8 +48,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "ed0cf3603af8311bafbccf7828c74062321d73b4d100014b4173b7778cda7f20"
+  "hash": "04f8354faff05b84b0ed028d139b99b2b2e778224716fe7b7fee470d2ff80fcf"
 }
