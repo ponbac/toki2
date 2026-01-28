@@ -2,7 +2,7 @@ use axum::{http::Method, routing::get, Router};
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
     login_required,
-    tower_sessions::{ExpiredDeletion, Expiry, SessionManagerLayer},
+    tower_sessions::{CachingSessionStore, ExpiredDeletion, Expiry, SessionManagerLayer},
     AuthManagerLayer, AuthManagerLayerBuilder,
 };
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
@@ -12,7 +12,10 @@ use tower_http::{
     cors::CorsLayer,
     trace::{DefaultMakeSpan, TraceLayer},
 };
+use tower_sessions_moka_store::MokaStore;
 use tower_sessions_sqlx_store::PostgresStore;
+
+type SessionStore = CachingSessionStore<MokaStore, PostgresStore>;
 
 use crate::{
     app_state::AppState,
@@ -75,7 +78,7 @@ pub async fn create(
 async fn new_auth_layer(
     connection_pool: PgPool,
     config: Settings,
-) -> AuthManagerLayer<AuthBackend, PostgresStore> {
+) -> AuthManagerLayer<AuthBackend, SessionStore> {
     let client = BasicClient::new(
         ClientId::new(config.auth.client_id),
         Some(ClientSecret::new(config.auth.client_secret)),
@@ -85,20 +88,24 @@ async fn new_auth_layer(
     .set_redirect_uri(RedirectUrl::new(config.auth.redirect_url).expect("Invalid redirect URL"));
 
     // Use PostgresStore for DB-backed sessions that persist across restarts
-    let session_store = PostgresStore::new(connection_pool.clone());
-    session_store
+    let db_store = PostgresStore::new(connection_pool.clone());
+    db_store
         .migrate()
         .await
         .expect("Failed to run session store migration");
 
-    // Spawn background task to clean up expired sessions
+    // Spawn background task to clean up expired sessions from DB
     let deletion_task = tokio::task::spawn(
-        session_store
+        db_store
             .clone()
             .continuously_delete_expired(tokio::time::Duration::from_secs(60)),
     );
     // Detach the task so it runs independently
     drop(deletion_task);
+
+    // Wrap with in-memory Moka cache to reduce DB reads for hot sessions
+    let cache_store = MokaStore::new(Some(2_000));
+    let session_store = CachingSessionStore::new(cache_store, db_store);
 
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(false) // todo: explore production values
