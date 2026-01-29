@@ -2,7 +2,6 @@ use std::cmp;
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
     routing::get,
     Json, Router,
 };
@@ -18,6 +17,8 @@ use crate::{
     repositories::UserRepository,
     AppState,
 };
+
+use super::ApiError;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -75,12 +76,11 @@ async fn open_pull_requests(
     Ok(Json(pull_requests))
 }
 
-// TODO: Global error type!
 #[instrument(name = "GET /cached-pull-requests", skip(auth_session, app_state))]
 async fn cached_pull_requests(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<PullRequest>>, (StatusCode, String)> {
+) -> Result<Json<Vec<PullRequest>>, ApiError> {
     let followed_prs = get_followed_pull_requests(&auth_session, app_state).await?;
     Ok(Json(followed_prs))
 }
@@ -89,11 +89,10 @@ async fn cached_pull_requests(
 async fn most_recent_commits(
     State(app_state): State<AppState>,
     Query(query): Query<RepoKey>,
-) -> Result<Json<Vec<GitCommitRef>>, (StatusCode, String)> {
+) -> Result<Json<Vec<GitCommitRef>>, ApiError> {
     let cached_prs = app_state
         .get_cached_pull_requests(query.clone())
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+        .await?
         .map(|mut prs| {
             prs.sort_by_key(|pr| pr.pull_request_base.created_at);
             prs
@@ -167,7 +166,7 @@ impl ListPullRequest {
 async fn list_pull_requests(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<ListPullRequest>>, (StatusCode, String)> {
+) -> Result<Json<Vec<ListPullRequest>>, ApiError> {
     let mut followed_prs = get_followed_pull_requests(&auth_session, app_state).await?;
     followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
 
@@ -187,13 +186,10 @@ async fn list_pull_requests(
 async fn get_followed_pull_requests(
     auth_session: &AuthSession,
     app_state: AppState,
-) -> Result<Vec<PullRequest>, (StatusCode, String)> {
+) -> Result<Vec<PullRequest>, ApiError> {
     let user_id = auth_session.user.as_ref().expect("user not found").id;
     let user_repo = app_state.user_repo.clone();
-    let followed_repos = user_repo
-        .followed_repositories(&user_id)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let followed_repos = user_repo.followed_repositories(&user_id).await?;
 
     let mut followed_prs = vec![];
     for repo_key in &followed_repos {
@@ -201,8 +197,7 @@ async fn get_followed_pull_requests(
             Ok(Some(prs)) => {
                 let identities = app_state
                     .get_cached_identities(repo_key.clone())
-                    .await
-                    .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+                    .await?;
                 followed_prs.extend(
                     prs.iter()
                         .map(|pr| pr.with_replaced_mentions(&identities.id_to_name_map())),

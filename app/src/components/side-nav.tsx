@@ -25,10 +25,10 @@ const MENU_ITEMS = [
     to: "/prs",
   },
   {
-    title: "Milltime",
+    title: "Time Tracking",
     icon: TimerIcon,
     variant: "ghost",
-    to: "/milltime",
+    to: "/time-tracking",
   },
   {
     title: "Repositories",

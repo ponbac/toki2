@@ -15,13 +15,14 @@ use url::Url;
 use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
+    adapters::inbound::http::TimeTrackingServiceFactory,
     domain::{
         CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
         RepoDifferMessage, RepoKey,
     },
     repositories::{
         NotificationRepositoryImpl, PushSubscriptionRepositoryImpl, RepoRepositoryImpl,
-        TimerRepositoryImpl, UserRepositoryImpl,
+        UserRepositoryImpl,
     },
 };
 
@@ -54,8 +55,8 @@ pub struct AppState {
     pub user_repo: Arc<UserRepositoryImpl>,
     pub repository_repo: Arc<RepoRepositoryImpl>,
     pub push_subscriptions_repo: Arc<PushSubscriptionRepositoryImpl>,
-    pub milltime_repo: Arc<TimerRepositoryImpl>,
     pub notification_repo: Arc<NotificationRepositoryImpl>,
+    pub time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
@@ -70,6 +71,7 @@ impl AppState {
         cookie_domain: String,
         db_pool: PgPool,
         repo_configs: Vec<RepoConfig>,
+        time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
     ) -> Self {
         let client_futures = repo_configs
             .into_iter()
@@ -130,8 +132,8 @@ impl AppState {
             user_repo: Arc::new(UserRepositoryImpl::new(db_pool.clone())),
             repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),
             push_subscriptions_repo: Arc::new(PushSubscriptionRepositoryImpl::new(db_pool.clone())),
-            milltime_repo: Arc::new(TimerRepositoryImpl::new(db_pool.clone())),
             notification_repo: Arc::new(NotificationRepositoryImpl::new(db_pool.clone())),
+            time_tracking_factory,
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
             differs: Arc::new(RwLock::new(differs)),

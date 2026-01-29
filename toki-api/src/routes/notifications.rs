@@ -22,6 +22,8 @@ use crate::{
 };
 use strum::IntoEnumIterator;
 
+use super::ApiError;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/subscribe", post(subscribe))
@@ -62,7 +64,7 @@ async fn subscribe(
     client_hints: ClientHints,
     State(app_state): State<AppState>,
     Json(body): Json<SubscribePayload>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiError> {
     let user_id = auth_session.user.expect("user not found").id;
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
@@ -78,14 +80,7 @@ async fn subscribe(
 
     push_subscription_repo
         .upsert_push_subscription(new_push_subscription)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to upsert push subscription: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to upsert push subscription".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(StatusCode::OK)
 }
@@ -102,20 +97,13 @@ async fn is_subscribed(
     client_hints: ClientHints,
     State(app_state): State<AppState>,
     Json(body): Json<IsSubscribedPayload>,
-) -> Result<Json<bool>, (StatusCode, String)> {
+) -> Result<Json<bool>, ApiError> {
     let user = user.expect("user not found");
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let user_subscriptions = push_subscription_repo
         .get_user_push_subscriptions(&user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get user push subscriptions: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to get user push subscriptions".to_string(),
-            )
-        })?;
+        .await?;
 
     let device_name = body
         .device_name
@@ -131,20 +119,13 @@ async fn is_subscribed(
 async fn get_push_subscriptions(
     AuthSession { user, .. }: AuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<PushSubscriptionInfo>>, (StatusCode, String)> {
+) -> Result<Json<Vec<PushSubscriptionInfo>>, ApiError> {
     let user = user.expect("user not found");
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let subscriptions = push_subscription_repo
         .get_user_push_subscriptions(&user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get push subscriptions: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to get push subscriptions".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(Json(
         subscriptions
@@ -159,55 +140,29 @@ async fn delete_push_subscription(
     AuthSession { user, .. }: AuthSession,
     State(app_state): State<AppState>,
     Path(id): Path<i32>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiError> {
     let user = user.expect("user not found");
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let user_push_subscriptions = push_subscription_repo
         .get_user_push_subscriptions(&user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get user push subscriptions: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to get user push subscriptions".to_string(),
-            )
-        })?;
+        .await?;
 
     if !user_push_subscriptions.iter().any(|sub| sub.id == id) {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "Push subscription not found".to_string(),
-        ));
+        return Err(ApiError::not_found("Push subscription not found"));
     }
 
     push_subscription_repo
         .delete_push_subscription(&id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to delete push subscription: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to delete push subscription".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(StatusCode::OK)
 }
 
 #[instrument(name = "test_push", skip(app_state))]
-async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, (StatusCode, String)> {
+async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, ApiError> {
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
-    let subscribers = push_subscription_repo
-        .get_push_subscriptions()
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get push subscriptions: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to get push subscriptions".to_string(),
-            )
-        })?;
+    let subscribers = push_subscription_repo.get_push_subscriptions().await?;
 
     let content = PushNotification::new(
         "Hello, World!",
@@ -220,22 +175,10 @@ async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, (Sta
             .to_web_push_message(&subscriber.as_subscription_info())
             .map_err(|e| {
                 tracing::error!("Failed to create push message: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to create push message".to_string(),
-                )
+                ApiError::internal("Failed to create push message")
             })?;
 
-        app_state
-            .push_notification(push_message)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to send notification: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to send notification".to_string(),
-                )
-            })?;
+        app_state.push_notification(push_message).await?;
     }
 
     Ok(StatusCode::OK)
@@ -252,7 +195,7 @@ async fn get_notifications(
     AuthSession { user, .. }: AuthSession,
     Query(params): Query<NotificationParams>,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<Notification>>, (StatusCode, String)> {
+) -> Result<Json<Vec<Notification>>, ApiError> {
     let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
@@ -262,14 +205,7 @@ async fn get_notifications(
             params.include_viewed.unwrap_or(false),
             params.max_age_days.unwrap_or(30),
         )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get user notifications: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to get user notifications".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(Json(notifications))
 }
@@ -278,20 +214,11 @@ async fn mark_notification_viewed(
     AuthSession { user, .. }: AuthSession,
     Path(id): Path<i32>,
     State(app_state): State<AppState>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiError> {
     let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
-    notification_repo
-        .mark_as_viewed(id, user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to mark notification as viewed: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to mark notification as viewed".to_string(),
-            )
-        })?;
+    notification_repo.mark_as_viewed(id, user.id).await?;
 
     Ok(StatusCode::OK)
 }
@@ -299,20 +226,13 @@ async fn mark_notification_viewed(
 async fn mark_all_notifications_viewed(
     AuthSession { user, .. }: AuthSession,
     State(app_state): State<AppState>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiError> {
     let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     notification_repo
         .mark_all_notifications_viewed(user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to mark all notifications as viewed: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to mark all notifications as viewed".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(StatusCode::OK)
 }
@@ -321,20 +241,13 @@ async fn delete_notification(
     AuthSession { user, .. }: AuthSession,
     Path(id): Path<i32>,
     State(app_state): State<AppState>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiError> {
     let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     notification_repo
         .delete_notification(id, user.id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to delete notification: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to delete notification".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(StatusCode::OK)
 }
@@ -343,20 +256,13 @@ async fn get_preferences(
     AuthSession { user, .. }: AuthSession,
     State(app_state): State<AppState>,
     Path(repository_id): Path<i32>,
-) -> Result<Json<Vec<NotificationRule>>, (StatusCode, String)> {
+) -> Result<Json<Vec<NotificationRule>>, ApiError> {
     let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     let existing_rules = notification_repo
         .get_repository_rules(user.id, repository_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get notification rules: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to get notification rules".to_string(),
-            )
-        })?;
+        .await?;
 
     let rules_map: HashMap<DbNotificationType, NotificationRule> = existing_rules
         .into_iter()
@@ -387,34 +293,24 @@ async fn update_preferences(
     State(app_state): State<AppState>,
     Path(repository_id): Path<i32>,
     Json(rule): Json<NotificationRule>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiError> {
     let user = user.expect("user not found");
 
     // Validate that the rule belongs to the authenticated user
     if rule.user_id != user.id {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "Cannot modify rules for other users".to_string(),
+        return Err(ApiError::forbidden(
+            "Cannot modify rules for other users",
         ));
     }
 
     // Validate that the repository_id in the path matches the rule
     if rule.repository_id != repository_id {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Repository ID mismatch".to_string(),
-        ));
+        return Err(ApiError::bad_request("Repository ID mismatch"));
     }
 
     let notification_repo = app_state.notification_repo.clone();
 
-    notification_repo.update_rule(&rule).await.map_err(|e| {
-        tracing::error!("Failed to update notification rule: {:?}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to update notification rule".to_string(),
-        )
-    })?;
+    notification_repo.update_rule(&rule).await?;
 
     Ok(StatusCode::OK)
 }
@@ -436,20 +332,13 @@ async fn get_pr_exceptions(
     AuthSession { user, .. }: AuthSession,
     Path(params): Path<PrExceptionPath>,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<PrNotificationException>>, (StatusCode, String)> {
+) -> Result<Json<Vec<PrNotificationException>>, ApiError> {
     let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     let exceptions = notification_repo
         .get_pr_exceptions(user.id, params.repository_id, params.pull_request_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get PR exceptions: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to get PR exceptions".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(Json(exceptions))
 }
@@ -467,20 +356,13 @@ async fn set_pr_exception(
     Path(params): Path<PrExceptionPath>,
     State(app_state): State<AppState>,
     Json(payload): Json<UpdateExceptionPayload>,
-) -> Result<Json<PrNotificationException>, (StatusCode, String)> {
+) -> Result<Json<PrNotificationException>, ApiError> {
     let user = user.expect("user not found");
 
     let notification_repo = app_state.notification_repo.clone();
     let existing_exceptions = notification_repo
         .get_pr_exceptions(user.id, payload.repository_id, params.pull_request_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get PR exceptions: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to get PR exceptions".to_string(),
-            )
-        })?;
+        .await?;
 
     let existing_exception = existing_exceptions
         .iter()
@@ -490,9 +372,8 @@ async fn set_pr_exception(
     // Validate that the exception belongs to the authenticated user
     if let Some(existing_exception) = &existing_exception {
         if existing_exception.user_id != user.id {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "Cannot modify exceptions for other users".to_string(),
+            return Err(ApiError::forbidden(
+                "Cannot modify exceptions for other users",
             ));
         }
     }
@@ -508,14 +389,7 @@ async fn set_pr_exception(
 
     let updated_exception = notification_repo
         .set_pr_exception(&new_exception)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to set PR exception: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to set PR exception".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(Json(updated_exception))
 }
@@ -524,7 +398,7 @@ async fn remove_pr_exception(
     AuthSession { user, .. }: AuthSession,
     Path(params): Path<RemovePrExceptionPath>,
     State(app_state): State<AppState>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiError> {
     let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
@@ -535,14 +409,7 @@ async fn remove_pr_exception(
             params.pull_request_id,
             params.notification_type,
         )
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to remove PR exception: {:?}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to remove PR exception".to_string(),
-            )
-        })?;
+        .await?;
 
     Ok(StatusCode::OK)
 }

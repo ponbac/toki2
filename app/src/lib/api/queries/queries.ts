@@ -1,7 +1,7 @@
 import { differsQueries } from "./differs";
 import { pullRequestsQueries } from "./pullRequests";
 import { commitsQueries } from "./commits";
-import { milltimeQueries } from "./milltime";
+import { timeTrackingQueries } from "./time-tracking";
 import { userQueries } from "./user";
 
 export const queries = {
@@ -9,7 +9,7 @@ export const queries = {
   ...differsQueries,
   ...pullRequestsQueries,
   ...commitsQueries,
-  ...milltimeQueries,
+  ...timeTrackingQueries,
 };
 
 export type RepoKey<T = object> = T & {

@@ -1,4 +1,4 @@
-import { milltimeQueries } from "@/lib/api/queries/milltime";
+import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -24,7 +24,7 @@ export function TimerHistory(props: {
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   const { data: timeEntries, isLoading } = useQuery({
-    ...milltimeQueries.timeEntries({
+    ...timeTrackingQueries.timeEntries({
       from: dayjs().subtract(1, "month").format("YYYY-MM-DD"),
       to: dayjs().add(1, "day").format("YYYY-MM-DD"),
       unique: true,

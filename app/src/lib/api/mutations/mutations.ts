@@ -1,7 +1,7 @@
 import { MutationOptions } from "@tanstack/react-query";
 import { differsMutations } from "./differs";
 import { repositoriesMutations } from "./repositories";
-import { milltimeMutations } from "./milltime";
+import { timeTrackingMutations } from "./time-tracking";
 
 export type DefaultMutationOptions<
   TVars = void,
@@ -16,5 +16,5 @@ export type DefaultMutationOptions<
 export const mutations = {
   ...differsMutations,
   ...repositoriesMutations,
-  ...milltimeMutations,
+  ...timeTrackingMutations,
 };

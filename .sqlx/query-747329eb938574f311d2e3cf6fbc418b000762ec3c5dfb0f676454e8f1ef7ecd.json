@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM timer_history\n                WHERE user_id = $1 AND end_time IS NULL AND id != $2\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "747329eb938574f311d2e3cf6fbc418b000762ec3c5dfb0f676454e8f1ef7ecd"
+}

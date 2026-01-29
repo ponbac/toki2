@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{http::Method, routing::get, Router};
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
@@ -22,6 +24,7 @@ use crate::{
     auth::{self, AuthBackend},
     config::Settings,
     domain::RepoConfig,
+    factory::MilltimeServiceFactory,
     routes,
 };
 
@@ -36,7 +39,7 @@ pub async fn create(
         .nest("/differs", routes::differs::router())
         .nest("/repositories", routes::repositories::router())
         .nest("/notifications", routes::notifications::router())
-        .nest("/milltime", routes::milltime::router());
+        .nest("/time-tracking", routes::time_tracking::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
@@ -49,6 +52,12 @@ pub async fn create(
             .layer(auth_layer)
     };
 
+    // Create the time tracking factory (composition root wiring)
+    let timer_repo = Arc::new(crate::repositories::TimerRepositoryImpl::new(
+        connection_pool.clone(),
+    ));
+    let time_tracking_factory = Arc::new(MilltimeServiceFactory::new(timer_repo));
+
     // Create app state
     let app_state = AppState::new(
         config.application.app_url.clone(),
@@ -56,6 +65,7 @@ pub async fn create(
         config.application.cookie_domain.clone(),
         connection_pool.clone(),
         repo_configs,
+        time_tracking_factory,
     )
     .await;
 
