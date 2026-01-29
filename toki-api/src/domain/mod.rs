@@ -1,5 +1,9 @@
 mod email;
+mod error;
 mod milltime_password;
+pub mod models;
+pub mod ports;
+pub mod services;
 mod notification_handler;
 mod notification_preference;
 mod pr_change_event;
@@ -13,6 +17,7 @@ mod repository;
 mod user;
 
 pub use email::*;
+pub use error::*;
 pub use milltime_password::*;
 pub use notification_handler::*;
 pub use notification_preference::*;

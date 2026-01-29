@@ -1,9 +1,11 @@
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use strum::{Display, EnumString};
 
 use super::repo_error::RepositoryError;
 
+#[async_trait]
 pub trait TimerRepository {
     async fn get_timer_history(&self, user_id: &i32)
         -> Result<Vec<DatabaseTimer>, RepositoryError>;
@@ -122,6 +124,7 @@ pub struct FinishedDatabaseTimer {
     pub timer_type: TimerType,
 }
 
+#[async_trait]
 impl TimerRepository for TimerRepositoryImpl {
     async fn get_timer_history(
         &self,

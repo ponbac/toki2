@@ -5,26 +5,34 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use tracing::instrument;
 
-use crate::app_state::AppState;
+use crate::{
+    adapters::inbound::http::{
+        ActivityResponse, ProjectResponse, TimeTrackingServiceError, TimeTrackingServiceExt,
+    },
+    app_state::AppState,
+    domain::ports::inbound::TimeTrackingService,
+};
 
-use super::{CookieJarResult, MilltimeCookieJarExt};
+use super::{CookieJarResult, ErrorResponse, MilltimeError};
 
 #[instrument(name = "list_projects", skip(jar, app_state))]
 pub async fn list_projects(
     State(app_state): State<AppState>,
     jar: CookieJar,
-) -> CookieJarResult<Json<Vec<milltime::ProjectSearchItem>>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+) -> CookieJarResult<Json<Vec<ProjectResponse>>> {
+    let (service, jar) = jar
+        .into_time_tracking_service(&app_state.cookie_domain)
+        .await
+        .map_err(service_error_to_response)?;
 
-    let search_filter = milltime::ProjectSearchFilter::new("Overview".to_string());
-    let projects = milltime_client
-        .fetch_project_search(search_filter)
-        .await?
-        .into_iter()
-        .filter(|project| project.is_member)
-        .collect();
+    let projects = service
+        .get_projects()
+        .await
+        .map_err(tracking_error_to_response)?;
 
-    Ok((jar, Json(projects)))
+    let response: Vec<ProjectResponse> = projects.into_iter().map(ProjectResponse::from).collect();
+
+    Ok((jar, Json(response)))
 }
 
 #[instrument(name = "list_activities", skip(jar, app_state))]
@@ -32,15 +40,47 @@ pub async fn list_activities(
     Path(project_id): Path<String>,
     State(app_state): State<AppState>,
     jar: CookieJar,
-) -> CookieJarResult<Json<Vec<milltime::Activity>>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+) -> CookieJarResult<Json<Vec<ActivityResponse>>> {
+    let (service, jar) = jar
+        .into_time_tracking_service(&app_state.cookie_domain)
+        .await
+        .map_err(service_error_to_response)?;
 
-    let activity_filter = milltime::ActivityFilter::new(
-        project_id,
-        "2024-04-15".to_string(),
-        "2024-04-21".to_string(),
-    );
-    let activities = milltime_client.fetch_activities(activity_filter).await?;
+    // Use current date range for activity filtering (matches old behavior)
+    let today = time::OffsetDateTime::now_utc().date();
+    let date_range = (today, today);
 
-    Ok((jar, Json(activities)))
+    let activities = service
+        .get_activities(&project_id.into(), date_range)
+        .await
+        .map_err(tracking_error_to_response)?;
+
+    let response: Vec<ActivityResponse> = activities.into_iter().map(ActivityResponse::from).collect();
+
+    Ok((jar, Json(response)))
+}
+
+fn service_error_to_response(e: TimeTrackingServiceError) -> ErrorResponse {
+    ErrorResponse {
+        status: e.status,
+        error: MilltimeError::MilltimeAuthenticationFailed,
+        message: e.message,
+    }
+}
+
+fn tracking_error_to_response(e: crate::domain::TimeTrackingError) -> ErrorResponse {
+    use crate::domain::TimeTrackingError;
+
+    match e {
+        TimeTrackingError::AuthenticationFailed => ErrorResponse {
+            status: axum::http::StatusCode::UNAUTHORIZED,
+            error: MilltimeError::MilltimeAuthenticationFailed,
+            message: "Authentication failed".to_string(),
+        },
+        _ => ErrorResponse {
+            status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            error: MilltimeError::FetchError,
+            message: e.to_string(),
+        },
+    }
 }

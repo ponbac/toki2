@@ -14,7 +14,7 @@ import { Combobox } from "./combobox";
 import { flushSync } from "react-dom";
 import { Input } from "./ui/input";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
-import { DatabaseTimer } from "@/lib/api/queries/milltime";
+import { TimerResponse } from "@/lib/api/queries/milltime";
 import { TimerHistory } from "./timer-history";
 import dayjs from "dayjs";
 import { Label } from "./ui/label";
@@ -22,7 +22,7 @@ import { Label } from "./ui/label";
 export const TimerEditDialog = (props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  timer: DatabaseTimer;
+  timer: TimerResponse;
 }) => {
   const [projectId, setProjectId] = React.useState<string | undefined>(
     props.timer?.projectId ?? undefined,

@@ -7,7 +7,7 @@ export const milltimeQueries = {
     queryOptions({
       queryKey: ["milltime", "projects"],
       queryFn: async () =>
-        api.get("milltime/projects").json<Array<ProjectSearchItem>>(),
+        api.get("milltime/projects").json<Array<Project>>(),
     }),
   listActivities: (projectId: string) =>
     queryOptions({
@@ -28,7 +28,7 @@ export const milltimeQueries = {
     queryOptions({
       queryKey: [...milltimeQueries.timerBaseKey, "history"],
       queryFn: async () =>
-        api.get("milltime/timer-history").json<Array<DatabaseTimer>>(),
+        api.get("milltime/timer-history").json<Array<TimerHistoryEntry>>(),
     }),
   timeInfo: (query?: { from: string; to: string }) =>
     queryOptions({
@@ -68,14 +68,29 @@ export const milltimeQueries = {
 
 export type TimerType = "Milltime" | "Standalone";
 
-export type TokiTimer = MilltimeTimer | DatabaseTimer;
-
 export type GetTimerResponse = {
-  timer: TokiTimer | null;
+  timer: TimerResponse | null;
 };
 
-export type DatabaseTimer = {
+/** Active timer response - unified for both Milltime and Standalone timers. */
+export type TimerResponse = {
+  timerType: TimerType;
+  startTime: string;
+  projectId: string | null;
+  projectName: string | null;
+  activityId: string | null;
+  activityName: string | null;
+  note: string;
+  hours: number;
+  minutes: number;
+  seconds: number;
+};
+
+/** Timer history entry from the database. */
+export type TimerHistoryEntry = {
   id: number;
+  timerType: TimerType;
+  registrationId: string | null;
   userId: number;
   startTime: string;
   endTime: string | null;
@@ -83,92 +98,26 @@ export type DatabaseTimer = {
   projectName: string | null;
   activityId: string | null;
   activityName: string | null;
-  note?: string | null;
+  note: string | null;
   createdAt: string;
-  timerType: "Standalone";
 };
 
 export type TimeInfo = {
-  overtimes: Array<{
-    key: string;
-    value: number;
-    label: string;
-  }>;
-  flexTimePreviousPeriod: number | null;
-  flexTimePeriod: number | null;
-  flexTimeCurrent: number;
-  flexWithdrawal: number;
-  scheduledPeriodTime: number;
-  workedPeriodTime: number;
-  absencePeriodTime: number;
-  workedPeriodWithAbsenceTime: number;
   periodTimeLeft: number;
-  mtinfoDetailRow: unknown[];
+  workedPeriodTime: number;
+  scheduledPeriodTime: number;
+  workedPeriodWithAbsenceTime: number;
+  flexTimeCurrent: number;
 };
 
-export type MilltimeTimer = {
-  timerRegistrationId: string;
-  projectRegistrationId: string;
-  userId: string;
-  projectId: string;
-  activity: string;
-  phaseId: string;
-  planningTaskId: unknown;
-  startTime: string;
-  note: string;
-  ticketData: unknown;
-  internalNote: unknown;
-  typeOf: unknown;
-  attendanceLogId: string;
-  variationId: unknown;
-  projTimeHh: unknown;
-  projTimeMm: unknown;
-  difference: string;
-  projectName: string;
-  activityName: string;
-  attributeValue: unknown;
-  requireNote: unknown;
-  favoriteType: number;
-  projectNr: unknown;
-  hours: number;
-  seconds: number;
-  minutes: number;
-  projectRegistration: unknown;
-  timerType: "Milltime";
-};
-
-export type ProjectSearchItem = {
-  id: number;
-  userId: string;
+export type Project = {
   projectId: string;
   projectName: string;
-  projectNr: unknown;
-  leaderName: string;
-  planningType: number;
-  isFavorite: boolean;
-  customerNames: string;
-  isMember: boolean;
-  isLeader: boolean;
 };
 
 export type Activity = {
-  userId: string;
-  projectId: string;
   activity: string;
   activityName: string;
-  variationId: unknown;
-  absenceType: unknown;
-  phaseId: string;
-  phaseName: string;
-  requireNote: boolean | null;
-  phaseOrder: number;
-  isFavorite: boolean;
-  projPlanDescription: unknown;
-  planningTaskId: unknown;
-  planningTaskName: unknown;
-  name: string;
-  timeDistributionType: unknown;
-  planningType: number;
 };
 
 export type TimeEntry = {

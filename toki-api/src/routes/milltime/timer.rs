@@ -1,116 +1,114 @@
 use crate::{
-    repositories::{TimerRepository, TimerType},
-    routes::milltime::{ErrorResponse, MilltimeError},
+    adapters::inbound::http::{
+        GetTimerResponse, TimeTrackingServiceError, TimeTrackingServiceExt, TimerResponse,
+    },
+    app_state::AppState,
+    auth::AuthSession,
+    domain::{
+        models::{StartTimerRequest, TimerSource},
+        ports::inbound::TimeTrackingService,
+    },
+    repositories::{self, DatabaseTimer, TimerRepository, TimerType},
 };
 
-use axum::{debug_handler, extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use axum_extra::extract::CookieJar;
-use milltime::MilltimeFetchError;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use time::OffsetDateTime;
 use tracing::instrument;
 
-use crate::{app_state::AppState, auth::AuthSession, repositories};
+use super::{CookieJarResult, ErrorResponse, MilltimeCookieJarExt, MilltimeError};
 
-use super::{CookieJarResult, MilltimeCookieJarExt};
+// ============================================================================
+// Get Timer
+// ============================================================================
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MilltimeTimerWrapper {
-    #[serde(flatten)]
-    timer: milltime::TimerRegistration,
-    timer_type: TimerType,
-}
-
-impl From<milltime::TimerRegistration> for MilltimeTimerWrapper {
-    fn from(timer: milltime::TimerRegistration) -> Self {
-        Self {
-            timer,
-            timer_type: TimerType::Milltime,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub enum TokiTimer {
-    Milltime(MilltimeTimerWrapper),
-    Standalone(repositories::DatabaseTimer),
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GetTimerResponse {
-    timer: Option<TokiTimer>,
-}
-
-#[debug_handler]
 #[instrument(name = "get_timer", skip(jar, app_state, auth_session))]
 pub async fn get_timer(
     jar: CookieJar,
     auth_session: AuthSession,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<Json<GetTimerResponse>> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
-
-    let mt_timer = milltime_client.fetch_timer().await;
-
-    let milltime_repo = app_state.milltime_repo.clone();
     let user = auth_session.user.expect("user not found");
-    let db_timer = milltime_repo.active_timer(&user.id).await;
+
+    // Try to get timer from Milltime via service
+    let (service, jar) = jar
+        .into_time_tracking_service(&app_state.cookie_domain)
+        .await
+        .map_err(|e| ErrorResponse {
+            status: e.status,
+            error: MilltimeError::MilltimeAuthenticationFailed,
+            message: e.message,
+        })?;
+
+    let mt_timer = service.get_active_timer().await;
+
+    // Also check database for active timer
+    let db_timer = app_state.milltime_repo.active_timer(&user.id).await;
 
     match (mt_timer, db_timer) {
-        (Ok(mt_timer), Ok(Some(_))) => Ok((
+        // Milltime timer exists - use it
+        (Ok(Some(timer)), _) => Ok((
             jar,
             Json(GetTimerResponse {
-                timer: Some(TokiTimer::Milltime(mt_timer.into())),
+                timer: Some(timer.into()),
             }),
         )),
-        (Ok(mt_timer), Ok(None)) => {
-            tracing::warn!("milltime timer found but no active timer in db");
+        // No Milltime timer but standalone timer exists
+        (Ok(None), Ok(Some(db_timer))) if db_timer.timer_type == TimerType::Standalone => Ok((
+            jar,
+            Json(GetTimerResponse {
+                timer: Some(database_timer_to_response(&db_timer)),
+            }),
+        )),
+        (Err(e), Ok(Some(db_timer))) if db_timer.timer_type == TimerType::Standalone => {
+            tracing::warn!("failed to fetch milltime timer, but found standalone in db: {:?}", e);
             Ok((
                 jar,
                 Json(GetTimerResponse {
-                    timer: Some(TokiTimer::Milltime(mt_timer.into())),
+                    timer: Some(database_timer_to_response(&db_timer)),
                 }),
             ))
         }
-        (Ok(mt_timer), Err(e)) => {
-            tracing::warn!("failed to fetch single active timer in db: {:?}", e);
-            Ok((
-                jar,
-                Json(GetTimerResponse {
-                    timer: Some(TokiTimer::Milltime(mt_timer.into())),
-                }),
-            ))
-        }
-        (Err(e), Ok(Some(db_timer))) => {
-            tracing::warn!("failed to fetch milltime timer, but found in db: {:?}", e);
-            if db_timer.timer_type == TimerType::Standalone {
-                Ok((
-                    jar,
-                    Json(GetTimerResponse {
-                        timer: Some(TokiTimer::Standalone(db_timer)),
-                    }),
-                ))
-            } else {
-                match e {
-                    MilltimeFetchError::ResponseError(_) => {
-                        tracing::warn!("response error, not deleting active timer");
-                    }
-                    _ => {
-                        if let Err(e) = milltime_repo.delete_active_timer(&user.id).await {
-                            tracing::error!("failed to delete stale timer: {:?}", e);
-                        }
-                    }
-                }
-                // Milltime timer in DB but not on Milltime - treat as no active timer
-                Ok((jar, Json(GetTimerResponse { timer: None })))
+        // Milltime timer in DB but not on Milltime - cleanup stale entry
+        (Err(_), Ok(Some(db_timer))) if db_timer.timer_type == TimerType::Milltime => {
+            if let Err(e) = app_state.milltime_repo.delete_active_timer(&user.id).await {
+                tracing::error!("failed to delete stale timer: {:?}", e);
             }
+            Ok((jar, Json(GetTimerResponse { timer: None })))
         }
-        // No active timer found anywhere
+        // No timer found anywhere
         _ => Ok((jar, Json(GetTimerResponse { timer: None }))),
     }
 }
+
+fn database_timer_to_response(timer: &DatabaseTimer) -> TimerResponse {
+    let elapsed = OffsetDateTime::now_utc() - timer.start_time;
+    let total_seconds = elapsed.whole_seconds();
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+
+    TimerResponse {
+        timer_type: match timer.timer_type {
+            TimerType::Milltime => TimerSource::Milltime,
+            TimerType::Standalone => TimerSource::Standalone,
+        },
+        start_time: timer.start_time,
+        project_id: timer.project_id.clone(),
+        project_name: timer.project_name.clone(),
+        activity_id: timer.activity_id.clone(),
+        activity_name: timer.activity_name.clone(),
+        note: timer.note.clone().unwrap_or_default(),
+        hours,
+        minutes,
+        seconds,
+    }
+}
+
+// ============================================================================
+// Start Timer
+// ============================================================================
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -122,8 +120,6 @@ pub struct StartTimerPayload {
     user_note: Option<String>,
     reg_day: String,
     week_number: i64,
-    input_time: Option<String>,
-    proj_time: Option<String>,
 }
 
 #[instrument(name = "start_timer", skip(jar, app_state, auth_session))]
@@ -133,8 +129,9 @@ pub async fn start_timer(
     State(app_state): State<AppState>,
     Json(body): Json<StartTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
-    // check if user has active timer, if so, return error
     let user = auth_session.user.expect("user not found");
+
+    // Check if user has active timer
     if let Ok(Some(_)) = app_state.milltime_repo.active_timer(&user.id).await {
         return Err(ErrorResponse {
             status: StatusCode::CONFLICT,
@@ -143,40 +140,51 @@ pub async fn start_timer(
         });
     }
 
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+    let (service, jar) = jar
+        .into_time_tracking_service(&app_state.cookie_domain)
+        .await
+        .map_err(service_error_to_response)?;
 
-    let start_timer_options = milltime::StartTimerOptions::new(
-        body.activity.clone(),
-        body.activity_name.clone(),
+    let req = StartTimerRequest::new(
         body.project_id.clone(),
         body.project_name.clone(),
-        milltime_client.user_id().to_string(),
-        body.user_note.clone(),
+        body.activity.clone(),
+        body.activity_name.clone(),
         body.reg_day.clone(),
         body.week_number,
-        body.input_time,
-        body.proj_time,
     );
+    let req = match body.user_note.as_ref() {
+        Some(note) => req.with_note(note),
+        None => req,
+    };
 
-    milltime_client.start_timer(start_timer_options).await?;
+    service
+        .start_timer(&req)
+        .await
+        .map_err(tracking_error_to_response)?;
 
+    // Save to local database
     let new_timer = repositories::NewDatabaseTimer {
         user_id: user.id,
-        start_time: time::OffsetDateTime::now_utc(),
-        project_id: Some(body.project_id.clone()),
-        project_name: Some(body.project_name.clone()),
-        activity_id: Some(body.activity.clone()),
-        activity_name: Some(body.activity_name.clone()),
-        note: body.user_note.clone().unwrap_or_default(),
+        start_time: OffsetDateTime::now_utc(),
+        project_id: Some(body.project_id),
+        project_name: Some(body.project_name),
+        activity_id: Some(body.activity),
+        activity_name: Some(body.activity_name),
+        note: body.user_note.unwrap_or_default(),
         timer_type: TimerType::Milltime,
     };
 
     if let Err(e) = app_state.milltime_repo.create_timer(&new_timer).await {
-        tracing::error!("failed to create timer: {:?}", e);
+        tracing::error!("failed to create timer in db: {:?}", e);
     }
 
     Ok((jar, StatusCode::OK))
 }
+
+// ============================================================================
+// Start Standalone Timer
+// ============================================================================
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -196,7 +204,6 @@ pub async fn start_standalone_timer(
 ) -> Result<StatusCode, ErrorResponse> {
     let user = auth_session.user.expect("user not found");
 
-    // check if user has active timer, if so, return error
     if let Ok(Some(_)) = app_state.milltime_repo.active_timer(&user.id).await {
         return Err(ErrorResponse {
             status: StatusCode::CONFLICT,
@@ -207,12 +214,12 @@ pub async fn start_standalone_timer(
 
     let new_timer = repositories::NewDatabaseTimer {
         user_id: user.id,
-        start_time: time::OffsetDateTime::now_utc(),
+        start_time: OffsetDateTime::now_utc(),
         project_id: body.project_id,
         project_name: body.project_name,
         activity_id: body.activity_id,
         activity_name: body.activity_name,
-        note: body.user_note.clone().unwrap_or_default(),
+        note: body.user_note.unwrap_or_default(),
         timer_type: TimerType::Standalone,
     };
 
@@ -229,15 +236,25 @@ pub async fn start_standalone_timer(
     }
 }
 
+// ============================================================================
+// Stop Timer
+// ============================================================================
+
 #[instrument(name = "stop_timer", skip(jar, app_state, auth_session))]
 pub async fn stop_timer(
     jar: CookieJar,
     auth_session: AuthSession,
     State(app_state): State<AppState>,
 ) -> CookieJarResult<StatusCode> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+    let (service, jar) = jar
+        .into_time_tracking_service(&app_state.cookie_domain)
+        .await
+        .map_err(service_error_to_response)?;
 
-    milltime_client.stop_timer().await?;
+    service
+        .stop_timer()
+        .await
+        .map_err(tracking_error_to_response)?;
 
     let user = auth_session.user.expect("user not found");
     if let Err(e) = app_state.milltime_repo.delete_active_timer(&user.id).await {
@@ -266,23 +283,38 @@ pub async fn stop_standalone_timer(
     Ok(StatusCode::OK)
 }
 
+// ============================================================================
+// Save Timer
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveTimerPayload {
+    user_note: Option<String>,
+}
+
 #[instrument(name = "save_timer", skip(jar, app_state, auth_session))]
-#[debug_handler]
 pub async fn save_timer(
     jar: CookieJar,
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-    Json(body): Json<milltime::SaveTimerPayload>,
+    Json(body): Json<SaveTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
-    let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
+    let (service, jar) = jar
+        .into_time_tracking_service(&app_state.cookie_domain)
+        .await
+        .map_err(service_error_to_response)?;
 
-    let registration = milltime_client.save_timer(body).await?;
+    let registration_id = service
+        .save_timer(body.user_note.as_deref())
+        .await
+        .map_err(tracking_error_to_response)?;
 
     let user = auth_session.user.expect("user not found");
-    let end_time = time::OffsetDateTime::now_utc();
+    let end_time = OffsetDateTime::now_utc();
     if let Err(e) = app_state
         .milltime_repo
-        .save_active_timer(&user.id, &end_time, &registration.project_registration_id)
+        .save_active_timer(&user.id, &end_time, registration_id.as_str())
         .await
     {
         tracing::error!("failed to save active timer: {:?}", e);
@@ -296,7 +328,7 @@ pub async fn save_standalone_timer(
     jar: CookieJar,
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-    Json(body): Json<milltime::SaveTimerPayload>,
+    Json(body): Json<SaveTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
     let user = auth_session.user.expect("user not found");
     let active_timer = match app_state.milltime_repo.active_timer(&user.id).await {
@@ -310,21 +342,23 @@ pub async fn save_standalone_timer(
         }
     };
 
+    // Get Milltime client for saving to Milltime
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
     const BONUS_TIME_MINUTES: i64 = 1;
     let total_time = {
-        let duration = time::OffsetDateTime::now_utc() - active_timer.start_time;
+        let duration = OffsetDateTime::now_utc() - active_timer.start_time;
         let total_minutes = duration.whole_minutes();
         let hours = total_minutes / 60;
-        let minutes = (total_minutes % 60) + BONUS_TIME_MINUTES; // maybe should use rounding instead of adding 1
+        let minutes = (total_minutes % 60) + BONUS_TIME_MINUTES;
         format!("{:02}:{:02}", hours, minutes)
     };
-    let current_day = time::OffsetDateTime::now_utc()
+
+    let current_day = OffsetDateTime::now_utc()
         .date()
         .format(&time::format_description::parse("[year]-[month]-[day]").unwrap())
         .expect("failed to format current day");
-    let week_number = time::OffsetDateTime::now_utc().iso_week();
+    let week_number = OffsetDateTime::now_utc().iso_week();
 
     let payload = milltime::ProjectRegistrationPayload::new(
         milltime_client.user_id().to_string(),
@@ -341,8 +375,7 @@ pub async fn save_standalone_timer(
 
     let registration = milltime_client.new_project_registration(&payload).await?;
 
-    // let end_time = time::OffsetDateTime::now_utc() + Duration::from_secs(BONUS_TIME_MINUTES as u64 * 60);
-    let end_time = time::OffsetDateTime::now_utc();
+    let end_time = OffsetDateTime::now_utc();
     app_state
         .milltime_repo
         .save_active_timer(&user.id, &end_time, &registration.project_registration_id)
@@ -356,16 +389,29 @@ pub async fn save_standalone_timer(
     Ok((jar, StatusCode::OK))
 }
 
+// ============================================================================
+// Edit Timer
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditTimerPayload {
+    user_note: String,
+}
+
 #[instrument(name = "edit_timer", skip(jar, app_state, auth_session))]
 pub async fn edit_timer(
     jar: CookieJar,
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-    Json(body): Json<milltime::EditTimerPayload>,
+    Json(body): Json<EditTimerPayload>,
 ) -> CookieJarResult<StatusCode> {
     let (milltime_client, jar) = jar.into_milltime_client(&app_state.cookie_domain).await?;
 
-    milltime_client.edit_timer(&body).await?;
+    let payload = milltime::EditTimerPayload {
+        user_note: body.user_note.clone(),
+    };
+    milltime_client.edit_timer(&payload).await?;
 
     let user = auth_session.user.expect("user not found");
     let update_timer = repositories::UpdateDatabaseTimer {
@@ -414,11 +460,11 @@ pub async fn edit_standalone_timer(
         }
     };
 
-    let parsed_start_time_option: Option<time::OffsetDateTime> = body
+    let parsed_start_time_option: Option<OffsetDateTime> = body
         .start_time
         .filter(|st_iso_str| !st_iso_str.is_empty())
         .map(|st_iso_str| {
-            time::OffsetDateTime::parse(&st_iso_str, &time::format_description::well_known::Rfc3339)
+            OffsetDateTime::parse(&st_iso_str, &time::format_description::well_known::Rfc3339)
                 .map_err(|e| {
                     tracing::warn!(
                         "Failed to parse start_time ISO string '{}': {}",
@@ -427,7 +473,7 @@ pub async fn edit_standalone_timer(
                     );
                     ErrorResponse {
                         status: StatusCode::BAD_REQUEST,
-                        error: MilltimeError::TimerError, // Consider a more specific ValidationError
+                        error: MilltimeError::TimerError,
                         message: format!(
                             "Invalid start_time format. Expected ISO 8601 string. Details: {}",
                             e
@@ -465,11 +511,15 @@ pub async fn edit_standalone_timer(
     Ok(StatusCode::OK)
 }
 
+// ============================================================================
+// Timer History
+// ============================================================================
+
 #[instrument(name = "get_timer_history", skip(auth_session, app_state))]
 pub async fn get_timer_history(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<repositories::DatabaseTimer>>, (StatusCode, String)> {
+) -> Result<Json<Vec<DatabaseTimer>>, (StatusCode, String)> {
     let user = auth_session.user.expect("user not found");
     let timers = app_state.milltime_repo.get_timer_history(&user.id).await;
 
@@ -479,5 +529,44 @@ pub async fn get_timer_history(
             tracing::error!("failed to fetch timer history: {:?}", e);
             Err((StatusCode::INTERNAL_SERVER_ERROR, "".to_string()))
         }
+    }
+}
+
+// ============================================================================
+// Error Mapping
+// ============================================================================
+
+fn service_error_to_response(e: TimeTrackingServiceError) -> ErrorResponse {
+    ErrorResponse {
+        status: e.status,
+        error: MilltimeError::MilltimeAuthenticationFailed,
+        message: e.message,
+    }
+}
+
+fn tracking_error_to_response(e: crate::domain::TimeTrackingError) -> ErrorResponse {
+    use crate::domain::TimeTrackingError;
+
+    match e {
+        TimeTrackingError::AuthenticationFailed => ErrorResponse {
+            status: StatusCode::UNAUTHORIZED,
+            error: MilltimeError::MilltimeAuthenticationFailed,
+            message: "Authentication failed".to_string(),
+        },
+        TimeTrackingError::TimerNotFound | TimeTrackingError::NoTimerRunning => ErrorResponse {
+            status: StatusCode::NOT_FOUND,
+            error: MilltimeError::TimerError,
+            message: e.to_string(),
+        },
+        TimeTrackingError::TimerAlreadyRunning => ErrorResponse {
+            status: StatusCode::CONFLICT,
+            error: MilltimeError::TimerError,
+            message: e.to_string(),
+        },
+        _ => ErrorResponse {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            error: MilltimeError::FetchError,
+            message: e.to_string(),
+        },
     }
 }

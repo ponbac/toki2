@@ -1,5 +1,4 @@
 import React from "react";
-import { match } from "ts-pattern";
 import { Button } from "./ui/button";
 import {
   CalendarClockIcon,
@@ -14,10 +13,9 @@ import {
 import { Input } from "./ui/input";
 import { cn, formatHoursMinutes } from "@/lib/utils";
 import {
-  DatabaseTimer,
   milltimeQueries,
   TimerType,
-  type MilltimeTimer,
+  type TimerResponse,
 } from "@/lib/api/queries/milltime";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
@@ -99,16 +97,8 @@ export const FloatingMilltimeTimer = () => {
   // Sync local timer with fetched timer
   React.useEffect(() => {
     if (timer) {
-      const totalSeconds = match(timer.timerType)
-        .with("Milltime", () => {
-          const t = timer as MilltimeTimer;
-          return t.seconds + t.minutes * 60 + t.hours * 3600;
-        })
-        .with("Standalone", () => {
-          const t = timer as DatabaseTimer;
-          return dayjs().diff(dayjs(t.startTime), "second");
-        })
-        .exhaustive();
+      // All timer types now have hours/minutes/seconds directly
+      const totalSeconds = timer.seconds + timer.minutes * 60 + timer.hours * 3600;
 
       // Set the start time
       startTimeRef.current = dayjs().subtract(totalSeconds, "second").toDate();
@@ -236,14 +226,10 @@ export const FloatingMilltimeTimer = () => {
                                   projectName: timer.projectName,
                                 });
                               }
-                              // Get activityId from the correct field based on timer type
-                              const activityId =
-                                timer.timerType === "Milltime"
-                                  ? (timer as MilltimeTimer).activity
-                                  : (timer as DatabaseTimer).activityId;
-                              if (activityId && timer.activityName) {
+                              // All timer types now have activityId directly
+                              if (timer.activityId && timer.activityName) {
                                 setLastActivity({
-                                  activityId: activityId,
+                                  activityId: timer.activityId,
                                   activityName: timer.activityName,
                                 });
                               }
@@ -259,10 +245,10 @@ export const FloatingMilltimeTimer = () => {
                                       }
                                     : {}),
                                   ...(rememberLastProject &&
-                                  activityId &&
+                                  timer.activityId &&
                                   timer.activityName
                                     ? {
-                                        activityId: activityId,
+                                        activityId: timer.activityId,
                                         activityName: timer.activityName,
                                       }
                                     : {}),
@@ -461,7 +447,7 @@ export const FloatingMilltimeTimer = () => {
         key={`${isEditDialogOpen}`}
         open={isEditDialogOpen}
         onOpenChange={setIsEditDialogOpen}
-        timer={timer as DatabaseTimer}
+        timer={timer as TimerResponse}
       />
     </>
   ) : null;

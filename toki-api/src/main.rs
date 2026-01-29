@@ -11,6 +11,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 
 use crate::{app_state::AppState, config::read_config};
 
+mod adapters;
 mod app_state;
 mod auth;
 mod config;
