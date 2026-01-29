@@ -8,7 +8,7 @@ use crate::domain::{
     models::{
         Activity, ActiveTimer, CreateTimeEntryRequest, EditTimeEntryRequest,
         NewTimerHistoryEntry, Project, ProjectId, StartTimerRequest, TimeEntry, TimeInfo,
-        TimerId, TimerSource, UserId,
+        TimerId, UserId,
     },
     ports::{
         inbound::TimeTrackingService,
@@ -159,7 +159,6 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         if let Some(repo) = &self.timer_repo {
             let entry = NewTimerHistoryEntry {
                 user_id: *user_id,
-                source: TimerSource::Standalone, // Manual entries are "standalone" type
                 registration_id: registration_id.to_string(),
                 start_time: request.start_time,
                 end_time: request.end_time,

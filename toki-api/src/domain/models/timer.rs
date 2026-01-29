@@ -3,39 +3,9 @@ use time::{Date, Duration, OffsetDateTime};
 
 use super::{ActivityId, ProjectId, TimerHistoryId, UserId};
 
-/// Source/type of a timer (where it was started).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum TimerSource {
-    Milltime,
-    Standalone,
-}
-
-impl std::fmt::Display for TimerSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TimerSource::Milltime => write!(f, "Milltime"),
-            TimerSource::Standalone => write!(f, "Standalone"),
-        }
-    }
-}
-
-impl std::str::FromStr for TimerSource {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "milltime" => Ok(TimerSource::Milltime),
-            "standalone" => Ok(TimerSource::Standalone),
-            _ => Err(format!("Unknown timer source: {}", s)),
-        }
-    }
-}
-
 /// A currently running timer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveTimer {
-    pub source: TimerSource,
     pub started_at: OffsetDateTime,
     pub project_id: Option<ProjectId>,
     pub project_name: Option<String>,
@@ -45,9 +15,8 @@ pub struct ActiveTimer {
 }
 
 impl ActiveTimer {
-    pub fn new(source: TimerSource, started_at: OffsetDateTime) -> Self {
+    pub fn new(started_at: OffsetDateTime) -> Self {
         Self {
-            source,
             started_at,
             project_id: None,
             project_name: None,
@@ -305,7 +274,6 @@ pub struct EditTimeEntryRequest {
 pub struct TimerHistoryEntry {
     pub id: TimerHistoryId,
     pub user_id: UserId,
-    pub source: TimerSource,
     /// Registration ID from the time tracking provider (if saved).
     pub registration_id: Option<String>,
     pub start_time: OffsetDateTime,
@@ -322,14 +290,12 @@ impl TimerHistoryEntry {
     pub fn new(
         id: impl Into<TimerHistoryId>,
         user_id: impl Into<UserId>,
-        source: TimerSource,
         start_time: OffsetDateTime,
         created_at: OffsetDateTime,
     ) -> Self {
         Self {
             id: id.into(),
             user_id: user_id.into(),
-            source,
             registration_id: None,
             start_time,
             end_time: None,
@@ -374,7 +340,6 @@ impl TimerHistoryEntry {
 #[derive(Debug, Clone)]
 pub struct NewTimerHistoryEntry {
     pub user_id: UserId,
-    pub source: TimerSource,
     pub registration_id: String,
     pub start_time: OffsetDateTime,
     pub end_time: OffsetDateTime,

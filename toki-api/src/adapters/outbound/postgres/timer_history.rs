@@ -8,14 +8,12 @@ use time::OffsetDateTime;
 use crate::domain::{
     models::{
         ActivityId, NewTimerHistoryEntry, ProjectId, TimerHistoryEntry, TimerHistoryId,
-        TimerSource, UserId,
+        UserId,
     },
     ports::outbound::TimerHistoryRepository,
     TimeTrackingError,
 };
-use crate::repositories::{
-    DatabaseTimer, FinishedDatabaseTimer, TimerRepository, TimerRepositoryImpl, TimerType,
-};
+use crate::repositories::{DatabaseTimer, FinishedDatabaseTimer, TimerRepository, TimerRepositoryImpl};
 
 /// Adapter that implements TimerHistoryRepository using PostgreSQL.
 pub struct PostgresTimerHistoryAdapter<R = TimerRepositoryImpl> {
@@ -72,7 +70,6 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
             activity_name: entry.activity_name.clone(),
             note: entry.note.clone(),
             registration_id: entry.registration_id.clone(),
-            timer_type: domain_source_to_db(entry.source),
         };
 
         let id = self
@@ -120,7 +117,6 @@ fn db_timer_to_domain(timer: DatabaseTimer) -> TimerHistoryEntry {
     let mut entry = TimerHistoryEntry::new(
         timer.id,
         timer.user_id,
-        db_type_to_domain_source(timer.timer_type),
         timer.start_time,
         timer.created_at,
     );
@@ -146,20 +142,4 @@ fn db_timer_to_domain(timer: DatabaseTimer) -> TimerHistoryEntry {
     }
 
     entry
-}
-
-/// Convert database TimerType to domain TimerSource.
-fn db_type_to_domain_source(timer_type: TimerType) -> TimerSource {
-    match timer_type {
-        TimerType::Milltime => TimerSource::Milltime,
-        TimerType::Standalone => TimerSource::Standalone,
-    }
-}
-
-/// Convert domain TimerSource to database TimerType.
-fn domain_source_to_db(source: TimerSource) -> TimerType {
-    match source {
-        TimerSource::Milltime => TimerType::Milltime,
-        TimerSource::Standalone => TimerType::Standalone,
-    }
 }

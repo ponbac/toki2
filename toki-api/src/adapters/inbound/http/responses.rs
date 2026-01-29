@@ -5,9 +5,7 @@
 use serde::Serialize;
 use time::OffsetDateTime;
 
-use crate::domain::models::{
-    ActiveTimer, Activity, AttestLevel, Project, TimeEntry, TimeInfo, TimerSource,
-};
+use crate::domain::models::{ActiveTimer, Activity, AttestLevel, Project, TimeEntry, TimeInfo};
 
 /// Response for the get timer endpoint.
 #[derive(Debug, Serialize)]
@@ -16,12 +14,10 @@ pub struct GetTimerResponse {
     pub timer: Option<TimerResponse>,
 }
 
-/// Active timer response - unified for both Milltime and Standalone timers.
+/// Active timer response - all timers are standalone now.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimerResponse {
-    /// Timer type/source ("Milltime" or "Standalone").
-    pub timer_type: TimerSource,
     /// When the timer was started (ISO 8601).
     #[serde(with = "time::serde::rfc3339")]
     pub start_time: OffsetDateTime,
@@ -47,7 +43,6 @@ impl From<ActiveTimer> for TimerResponse {
     fn from(timer: ActiveTimer) -> Self {
         let (hours, minutes, seconds) = timer.elapsed_hms();
         Self {
-            timer_type: timer.source,
             start_time: timer.started_at,
             project_id: timer.project_id.map(|id| id.to_string()),
             project_name: timer.project_name,
