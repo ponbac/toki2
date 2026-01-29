@@ -1,5 +1,4 @@
 import React from "react";
-import { match } from "ts-pattern";
 import { Button } from "./ui/button";
 import {
   CalendarClockIcon,
@@ -13,10 +12,8 @@ import {
 import { Input } from "./ui/input";
 import { cn, formatHoursMinutes } from "@/lib/utils";
 import {
-  DatabaseTimer,
   milltimeQueries,
-  TimerType,
-  type MilltimeTimer,
+  type TimerResponse,
 } from "@/lib/api/queries/milltime";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
@@ -62,8 +59,8 @@ export const FloatingMilltimeTimer = () => {
   });
   const timer = timerResponse?.timer;
 
-  const { mutate: startStandaloneTimer } =
-    milltimeMutations.useStartStandaloneTimer();
+  const { mutate: startTimer } =
+    milltimeMutations.useStartTimer();
   const { mutate: stopTimer, isPending: isStoppingTimer } =
     milltimeMutations.useStopTimer({
       onSuccess: () => {
@@ -72,16 +69,8 @@ export const FloatingMilltimeTimer = () => {
     });
   const { mutate: saveTimer, isPending: isSavingTimer } =
     milltimeMutations.useSaveTimer();
-  const { mutate: editTimer } = milltimeMutations.useEditTimer({
-    onSuccess: () => {
-      toast.success("Timer successfully updated");
-    },
-    onError: () => {
-      toast.error(`Failed to update timer, try refreshing the page`);
-    },
-  });
-  const { mutate: editStandaloneTimer } =
-    milltimeMutations.useEditStandaloneTimer({
+  const { mutate: editTimer } =
+    milltimeMutations.useEditTimer({
       onSuccess: () => {
         toast.success("Timer successfully updated");
       },
@@ -98,16 +87,8 @@ export const FloatingMilltimeTimer = () => {
   // Sync local timer with fetched timer
   React.useEffect(() => {
     if (timer) {
-      const totalSeconds = match(timer.timerType)
-        .with("Milltime", () => {
-          const t = timer as MilltimeTimer;
-          return t.seconds + t.minutes * 60 + t.hours * 3600;
-        })
-        .with("Standalone", () => {
-          const t = timer as DatabaseTimer;
-          return dayjs().diff(dayjs(t.startTime), "second");
-        })
-        .exhaustive();
+      // All timer types now have hours/minutes/seconds directly
+      const totalSeconds = timer.seconds + timer.minutes * 60 + timer.hours * 3600;
 
       // Set the start time
       startTimeRef.current = dayjs().subtract(totalSeconds, "second").toDate();
@@ -223,7 +204,6 @@ export const FloatingMilltimeTimer = () => {
                         const shouldAutoRestart = !(e.ctrlKey || e.metaKey);
                         saveTimer(
                           {
-                            timerType: timer.timerType,
                             userNote: userNote ?? "",
                           },
                           {
@@ -239,19 +219,14 @@ export const FloatingMilltimeTimer = () => {
                                   projectName: timer.projectName,
                                 });
                               }
-                              // Get activityId from the correct field based on timer type
-                              const activityId =
-                                timer.timerType === "Milltime"
-                                  ? (timer as MilltimeTimer).activity
-                                  : (timer as DatabaseTimer).activityId;
-                              if (activityId && timer.activityName) {
+                              if (timer.activityId && timer.activityName) {
                                 setLastActivity({
-                                  activityId: activityId,
+                                  activityId: timer.activityId,
                                   activityName: timer.activityName,
                                 });
                               }
                               if (shouldAutoRestart) {
-                                startStandaloneTimer({
+                                startTimer({
                                   userNote: "Continuing my work...",
                                   ...(rememberLastProject &&
                                   timer.projectId &&
@@ -262,10 +237,10 @@ export const FloatingMilltimeTimer = () => {
                                       }
                                     : {}),
                                   ...(rememberLastProject &&
-                                  activityId &&
+                                  timer.activityId &&
                                   timer.activityName
                                     ? {
-                                        activityId: activityId,
+                                        activityId: timer.activityId,
                                         activityName: timer.activityName,
                                       }
                                     : {}),
@@ -275,12 +250,7 @@ export const FloatingMilltimeTimer = () => {
                           },
                         );
                       }}
-                      disabled={
-                        isSavingTimer ||
-                        isStoppingTimer ||
-                        ((timeSeconds ?? 0) < 60 &&
-                          timer.timerType === "Milltime")
-                      }
+                      disabled={isSavingTimer || isStoppingTimer}
                     >
                       <SaveIcon className="h-6 w-6 text-muted-foreground" />
                       <span className="sr-only">Save</span>
@@ -291,33 +261,26 @@ export const FloatingMilltimeTimer = () => {
                   </TooltipContent>
                 </Tooltip>
               ) : null}
-              {timer?.timerType === "Standalone" && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setIsEditDialogOpen(true)}
-                      disabled={isSavingTimer || isStoppingTimer}
-                    >
-                      <EditIcon className="h-6 w-6 text-muted-foreground" />
-                      <span className="sr-only">Edit</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit</TooltipContent>
-                </Tooltip>
-              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() =>
-                      stopTimer({
-                        timerType:
-                          timer?.timerType ?? ("Unreachable" as TimerType),
-                      })
-                    }
+                    onClick={() => setIsEditDialogOpen(true)}
+                    disabled={isSavingTimer || isStoppingTimer}
+                  >
+                    <EditIcon className="h-6 w-6 text-muted-foreground" />
+                    <span className="sr-only">Edit</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Edit</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => stopTimer()}
                     disabled={isSavingTimer || isStoppingTimer}
                   >
                     <Trash2Icon className="h-6 w-6 text-muted-foreground" />
@@ -355,11 +318,7 @@ export const FloatingMilltimeTimer = () => {
                   onChange={(e) => setUserNote(e.target.value)}
                   onBlur={() =>
                     userNote !== timer?.note
-                      ? timer?.timerType === "Standalone"
-                        ? editStandaloneTimer({
-                            userNote,
-                          })
-                        : editTimer({ userNote })
+                      ? editTimer({ userNote })
                       : undefined
                   }
                   className={cn(
@@ -401,20 +360,13 @@ export const FloatingMilltimeTimer = () => {
                       searchInputClassName="focus-visible:ring-0 focus-visible:ring-shadow-none focus-visible:shadow-none focus-visible:ring-offset-0"
                       onHistoryClick={(timeEntry) => {
                         setUserNote(timeEntry.note ?? "");
-                        if (timer?.timerType === "Standalone") {
-                          editStandaloneTimer({
-                            userNote: timeEntry.note ?? "",
-                            projectId: timeEntry.projectId,
-                            activityId: timeEntry.activityId,
-                            projectName: timeEntry.projectName,
-                            activityName: timeEntry.activityName,
-                          });
-                        } else if (timer?.timerType === "Milltime") {
-                          // Milltime timers only allow editing note
-                          if (timeEntry.note !== timer?.note) {
-                            editTimer({ userNote: timeEntry.note ?? "" });
-                          }
-                        }
+                        editTimer({
+                          userNote: timeEntry.note ?? "",
+                          projectId: timeEntry.projectId,
+                          activityId: timeEntry.activityId,
+                          projectName: timeEntry.projectName,
+                          activityName: timeEntry.activityName,
+                        });
                         setIsHistoryOpen(false);
                       }}
                     />
@@ -436,7 +388,7 @@ export const FloatingMilltimeTimer = () => {
         key={`${isEditDialogOpen}`}
         open={isEditDialogOpen}
         onOpenChange={setIsEditDialogOpen}
-        timer={timer as DatabaseTimer}
+        timer={timer as TimerResponse}
       />
     </>
   ) : null;

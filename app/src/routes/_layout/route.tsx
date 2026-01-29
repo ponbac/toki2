@@ -2,7 +2,6 @@ import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { MilltimeLoginDialog } from "@/components/milltime-login-dialog";
 import { FloatingMilltimeTimer } from "@/components/floating-milltime-timer";
-import { MilltimeTimerDialog } from "@/components/milltime-timer-dialog";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,7 +15,6 @@ import {
   useMilltimeEditTimerDialogOpen,
   useMilltimeIsAuthenticated,
   useMilltimeLoginDialogOpen,
-  useMilltimeNewTimerDialogOpen,
 } from "@/hooks/useMilltimeStore";
 
 export const Route = createFileRoute("/_layout")({
@@ -50,10 +48,9 @@ function LayoutComponent() {
 function MilltimeTimerProvider() {
   const isAuthenticated = useMilltimeIsAuthenticated();
 
-  const newTimerDialogOpen = useMilltimeNewTimerDialogOpen();
   const editTimerDialogOpen = useMilltimeEditTimerDialogOpen();
   const loginDialogOpen = useMilltimeLoginDialogOpen();
-  const { setNewTimerDialogOpen, setLoginDialogOpen, setEditTimerDialogOpen } =
+  const { setLoginDialogOpen, setEditTimerDialogOpen } =
     useMilltimeActions();
 
   const { data: timerResponse } = useQuery({
@@ -65,11 +62,7 @@ function MilltimeTimerProvider() {
   return isAuthenticated ? (
     <>
       <FloatingMilltimeTimer />
-      <MilltimeTimerDialog
-        open={newTimerDialogOpen}
-        onOpenChange={setNewTimerDialogOpen}
-      />
-      {!!timer && timer.timerType === "Standalone" && (
+      {!!timer && (
         <TimerEditDialog
           open={editTimerDialogOpen}
           onOpenChange={setEditTimerDialogOpen}

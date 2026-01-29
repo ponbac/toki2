@@ -2,17 +2,15 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { z } from "zod";
-import { milltimeQueries, TimerType } from "../queries/milltime";
+import { milltimeQueries } from "../queries/milltime";
 import { useMilltimeActions } from "@/hooks/useMilltimeStore";
 
 export const milltimeMutations = {
   useAuthenticate,
   useStartTimer,
-  useStartStandaloneTimer,
   useStopTimer,
   useSaveTimer,
   useEditTimer,
-  useEditStandaloneTimer,
   useEditProjectRegistration,
   useDeleteProjectRegistration,
   useCreateProjectRegistration,
@@ -69,52 +67,13 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
   });
 }
 
-function useStartStandaloneTimer(
-  options?: DefaultMutationOptions<StartStandaloneTimerPayload>,
-) {
-  const queryClient = useQueryClient();
-  const { setTimer } = useMilltimeActions();
-
-  return useMutation({
-    mutationKey: ["milltime", "startStandaloneTimer"],
-    mutationFn: (body: StartStandaloneTimerPayload) =>
-      api.post("milltime/timer/standalone", {
-        json: body,
-      }),
-    ...options,
-    onMutate: (vars) => {
-      queryClient.resetQueries({
-        queryKey: milltimeQueries.getTimer().queryKey,
-      });
-      options?.onMutate?.(vars);
-    },
-    onSuccess: (data, v, c) => {
-      queryClient.invalidateQueries({
-        queryKey: milltimeQueries.timerBaseKey,
-      });
-      setTimer({
-        visible: true,
-        state: "running",
-        timeSeconds: 0,
-      });
-
-      options?.onSuccess?.(data, v, c);
-    },
-  });
-}
-
-function useStopTimer(
-  options?: DefaultMutationOptions<{ timerType: TimerType }>,
-) {
+function useStopTimer(options?: DefaultMutationOptions<void>) {
   const queryClient = useQueryClient();
   const { setTimer } = useMilltimeActions();
 
   return useMutation({
     mutationKey: ["milltime", "stopTimer"],
-    mutationFn: (body: { timerType: TimerType }) =>
-      body.timerType === "Milltime"
-        ? api.delete("milltime/timer")
-        : api.delete("milltime/timer/standalone"),
+    mutationFn: () => api.delete("milltime/timer"),
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
@@ -138,17 +97,11 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
   return useMutation({
     mutationKey: ["milltime", "saveTimer"],
     mutationFn: (body: SaveTimerPayload) =>
-      body.timerType === "Milltime"
-        ? api.put("milltime/timer", {
-            json: {
-              userNote: body.userNote,
-            },
-          })
-        : api.put("milltime/timer/standalone", {
-            json: {
-              userNote: body.userNote,
-            },
-          }),
+      api.put("milltime/timer", {
+        json: {
+          userNote: body.userNote,
+        },
+      }),
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.resetQueries({
@@ -181,27 +134,6 @@ function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
     mutationKey: ["milltime", "editTimer"],
     mutationFn: (body: EditTimerPayload) =>
       api.put("milltime/update-timer", {
-        json: body,
-      }),
-    ...options,
-    onSuccess: (data, v, c) => {
-      queryClient.invalidateQueries({
-        queryKey: milltimeQueries.getTimer().queryKey,
-      });
-      options?.onSuccess?.(data, v, c);
-    },
-  });
-}
-
-function useEditStandaloneTimer(
-  options?: DefaultMutationOptions<EditStandaloneTimerPayload>,
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationKey: ["milltime", "editStandaloneTimer"],
-    mutationFn: (body: EditStandaloneTimerPayload) =>
-      api.put("milltime/update-timer/standalone", {
         json: body,
       }),
     ...options,
@@ -294,34 +226,18 @@ export const authenticateSchema = z.object({
 export type AuthenticateBody = z.infer<typeof authenticateSchema>;
 
 export type StartTimerPayload = {
-  activity: string;
-  activityName: string;
-  projectId: string;
-  projectName: string;
-  userNote?: string;
-  regDay: string;
-  weekNumber: number;
-  inputTime?: string;
-  projTime?: string;
-};
-
-export type StartStandaloneTimerPayload = {
   userNote?: string;
   projectId?: string;
   projectName?: string;
   activityId?: string;
   activityName?: string;
 };
+
 export type SaveTimerPayload = {
-  timerType: TimerType;
   userNote?: string;
 };
 
 export type EditTimerPayload = {
-  userNote: string;
-};
-
-export type EditStandaloneTimerPayload = {
   userNote?: string;
   projectId?: string;
   projectName?: string;
@@ -354,7 +270,6 @@ export type UpdateTimeEntryPayload = {
   id: string;
   note: string;
   hours: number;
-  // Add other fields as necessary
 };
 
 export type CreateProjectRegistrationPayload = {

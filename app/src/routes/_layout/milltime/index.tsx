@@ -116,8 +116,8 @@ function MilltimeComponent() {
   }, [timeEntries, search]);
 
   const { state: timerState } = useMilltimeTimer();
-  const { mutate: startStandaloneTimer, isPending: isStartingStandaloneTimer } =
-    milltimeMutations.useStartStandaloneTimer();
+  const { mutate: startTimer, isPending: isStartingTimer } =
+    milltimeMutations.useStartTimer();
   const { mutate: createProjectRegistration } =
     milltimeMutations.useCreateProjectRegistration({
       onSuccess: () => {
@@ -130,7 +130,7 @@ function MilltimeComponent() {
   const [isNewEntryOpen, setIsNewEntryOpen] = React.useState(false);
 
   const onStartTimer = React.useCallback(() => {
-    startStandaloneTimer({
+    startTimer({
       userNote: "First timer of the week...",
       ...buildRememberedTimerParams({
         rememberLastProject,
@@ -138,7 +138,7 @@ function MilltimeComponent() {
         lastActivity,
       }),
     });
-  }, [rememberLastProject, lastProject, lastActivity, startStandaloneTimer]);
+  }, [rememberLastProject, lastProject, lastActivity, startTimer]);
 
   return (
     <div className="min-h-screen">
@@ -182,9 +182,9 @@ function MilltimeComponent() {
                   {timerState !== "running" && (
                     <Button
                       variant="outline"
-                      disabled={isStartingStandaloneTimer}
+                      disabled={isStartingTimer}
                       onClick={() =>
-                        startStandaloneTimer({
+                        startTimer({
                           userNote: "Try Ctrl+K to start a timer next time",
                           ...buildRememberedTimerParams({
                             rememberLastProject,

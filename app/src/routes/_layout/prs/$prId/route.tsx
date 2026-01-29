@@ -62,10 +62,10 @@ function PRDetailsDialog() {
   });
   const timer = timerResponse?.timer;
 
-  const { mutateAsync: startStandaloneTimer } =
-    milltimeMutations.useStartStandaloneTimer();
-  const { mutateAsync: editStandaloneTimer } =
-    milltimeMutations.useEditStandaloneTimer();
+  const { mutateAsync: startTimer } =
+    milltimeMutations.useStartTimer();
+  const { mutateAsync: editTimer } =
+    milltimeMutations.useEditTimer();
 
   const buildTimeReportText = (mode: "review" | "develop") => {
     const workItem = pr?.workItems.at(0);
@@ -94,18 +94,18 @@ function PRDetailsDialog() {
     if (!timerQuerySuccess) return;
 
     try {
-      if (timer?.timerType === "Standalone") {
-        // Update existing standalone timer note
-        await editStandaloneTimer({ userNote: text });
+      if (timer) {
+        // Update existing timer note
+        await editTimer({ userNote: text });
         toast.success(
           <div className="flex flex-row items-center">
             <TimerIcon className="mr-2 inline-block" size="1.25rem" />
             Timer note updated
           </div>,
         );
-      } else if (timer === null) {
-        // No active timer - start a new standalone timer
-        await startStandaloneTimer({ userNote: text });
+      } else {
+        // No active timer - start a new timer
+        await startTimer({ userNote: text });
         toast.success(
           <div className="flex flex-row items-center">
             <TimerIcon className="mr-2 inline-block" size="1.25rem" />
@@ -113,7 +113,6 @@ function PRDetailsDialog() {
           </div>,
         );
       }
-      // If timer is Milltime type, do nothing (deprecated)
     } catch {
       // Silently fail - clipboard copy already succeeded
     }

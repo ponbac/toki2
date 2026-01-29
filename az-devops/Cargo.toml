@@ -16,7 +16,7 @@ azure_devops_rust_api = { version = "0.28.0", features = [
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 thiserror = "2.0.12"
-time = { version = "0.3.31", features = ["serde", "parsing"] }
+time = { version = "0.3.47", features = ["serde", "parsing"] }
 tokio = { version = "1.35.1", features = ["full"] }
 tracing = { version = "0.1.40", features = ["attributes"] }
 typespec = "0.4.0"
