@@ -5,10 +5,10 @@ use crate::{
     app_state::AppState,
     auth::AuthSession,
     domain::{
-        models::{StartTimerRequest, TimerSource},
+        models::StartTimerRequest,
         ports::inbound::TimeTrackingService,
     },
-    repositories::{self, DatabaseTimer, TimerRepository, TimerType},
+    repositories::{self, DatabaseTimer, TimerRepository},
 };
 
 use axum::{extract::State, http::StatusCode, Json};
@@ -83,9 +83,7 @@ fn database_timer_to_response(timer: &DatabaseTimer) -> TimerResponse {
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
 
-    // All timers are now Standalone type
     TimerResponse {
-        timer_type: TimerSource::Standalone,
         start_time: timer.start_time,
         project_id: timer.project_id.clone(),
         project_name: timer.project_name.clone(),
@@ -164,7 +162,6 @@ pub async fn start_timer(
         activity_id: Some(body.activity),
         activity_name: Some(body.activity_name),
         note: body.user_note.unwrap_or_default(),
-        timer_type: TimerType::Standalone,
     };
 
     if let Err(e) = app_state.milltime_repo.create_timer(&new_timer).await {
@@ -212,7 +209,6 @@ pub async fn start_standalone_timer(
         activity_id: body.activity_id,
         activity_name: body.activity_name,
         note: body.user_note.unwrap_or_default(),
-        timer_type: TimerType::Standalone,
     };
 
     match app_state.milltime_repo.create_timer(&new_timer).await {

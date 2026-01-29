@@ -13,9 +13,7 @@ use crate::domain::{
     ports::outbound::TimerHistoryRepository,
     TimeTrackingError,
 };
-use crate::repositories::{
-    DatabaseTimer, FinishedDatabaseTimer, TimerRepository, TimerRepositoryImpl, TimerType,
-};
+use crate::repositories::{DatabaseTimer, FinishedDatabaseTimer, TimerRepository, TimerRepositoryImpl};
 
 /// Adapter that implements TimerHistoryRepository using PostgreSQL.
 pub struct PostgresTimerHistoryAdapter<R = TimerRepositoryImpl> {
@@ -72,7 +70,6 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
             activity_name: entry.activity_name.clone(),
             note: entry.note.clone(),
             registration_id: entry.registration_id.clone(),
-            timer_type: domain_source_to_db(entry.source),
         };
 
         let id = self
@@ -117,10 +114,11 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
 
 /// Convert a database timer to a domain TimerHistoryEntry.
 fn db_timer_to_domain(timer: DatabaseTimer) -> TimerHistoryEntry {
+    // All timers are now Standalone - timer_type column has been removed
     let mut entry = TimerHistoryEntry::new(
         timer.id,
         timer.user_id,
-        db_type_to_domain_source(timer.timer_type),
+        TimerSource::Standalone,
         timer.start_time,
         timer.created_at,
     );
@@ -146,16 +144,4 @@ fn db_timer_to_domain(timer: DatabaseTimer) -> TimerHistoryEntry {
     }
 
     entry
-}
-
-/// Convert database TimerType to domain TimerSource.
-///
-/// All timers are now Standalone - legacy Milltime values are mapped to Standalone.
-fn db_type_to_domain_source(_timer_type: TimerType) -> TimerSource {
-    TimerSource::Standalone
-}
-
-/// Convert domain TimerSource to database TimerType.
-fn domain_source_to_db(_source: TimerSource) -> TimerType {
-    TimerType::Standalone
 }

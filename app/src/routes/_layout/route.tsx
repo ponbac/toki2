@@ -69,7 +69,7 @@ function MilltimeTimerProvider() {
         open={newTimerDialogOpen}
         onOpenChange={setNewTimerDialogOpen}
       />
-      {!!timer && timer.timerType === "Standalone" && (
+      {!!timer && (
         <TimerEditDialog
           open={editTimerDialogOpen}
           onOpenChange={setEditTimerDialogOpen}

@@ -94,8 +94,8 @@ function PRDetailsDialog() {
     if (!timerQuerySuccess) return;
 
     try {
-      if (timer?.timerType === "Standalone") {
-        // Update existing standalone timer note
+      if (timer) {
+        // Update existing timer note
         await editStandaloneTimer({ userNote: text });
         toast.success(
           <div className="flex flex-row items-center">
@@ -103,8 +103,8 @@ function PRDetailsDialog() {
             Timer note updated
           </div>,
         );
-      } else if (timer === null) {
-        // No active timer - start a new standalone timer
+      } else {
+        // No active timer - start a new timer
         await startStandaloneTimer({ userNote: text });
         toast.success(
           <div className="flex flex-row items-center">
@@ -113,7 +113,6 @@ function PRDetailsDialog() {
           </div>,
         );
       }
-      // If timer is Milltime type, do nothing (deprecated)
     } catch {
       // Silently fail - clipboard copy already succeeded
     }

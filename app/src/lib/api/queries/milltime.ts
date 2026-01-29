@@ -66,15 +66,12 @@ export const milltimeQueries = {
     }),
 };
 
-export type TimerType = "Standalone";
-
 export type GetTimerResponse = {
   timer: TimerResponse | null;
 };
 
-/** Active timer response - unified for both Milltime and Standalone timers. */
+/** Active timer response - all timers are standalone now. */
 export type TimerResponse = {
-  timerType: TimerType;
   startTime: string;
   projectId: string | null;
   projectName: string | null;
@@ -89,7 +86,6 @@ export type TimerResponse = {
 /** Timer history entry from the database. */
 export type TimerHistoryEntry = {
   id: number;
-  timerType: TimerType;
   registrationId: string | null;
   userId: number;
   startTime: string;
