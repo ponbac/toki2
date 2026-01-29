@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 use crate::domain::{
     models::{
         ActivityId, NewTimerHistoryEntry, ProjectId, TimerHistoryEntry, TimerHistoryId,
-        TimerSource, UserId,
+        UserId,
     },
     ports::outbound::TimerHistoryRepository,
     TimeTrackingError,
@@ -114,11 +114,9 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
 
 /// Convert a database timer to a domain TimerHistoryEntry.
 fn db_timer_to_domain(timer: DatabaseTimer) -> TimerHistoryEntry {
-    // All timers are now Standalone - timer_type column has been removed
     let mut entry = TimerHistoryEntry::new(
         timer.id,
         timer.user_id,
-        TimerSource::Standalone,
         timer.start_time,
         timer.created_at,
     );

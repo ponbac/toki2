@@ -1,12 +1,11 @@
 -- Remove deprecated Milltime timer type
--- All timers are now Standalone type
+-- Delete all milltime timers and drop the timer_type column entirely
 
--- First, update any existing 'milltime' timer_type values to 'standalone'
-UPDATE timer_history SET timer_type = 'standalone' WHERE timer_type = 'milltime';
+-- Delete any milltime timer entries (user doesn't need to keep them)
+DELETE FROM timer_history WHERE timer_type = 'milltime';
 
--- Drop the old constraint and add a new one that only allows 'standalone'
+-- Drop the constraint
 ALTER TABLE timer_history DROP CONSTRAINT IF EXISTS timer_history_timer_type_check;
-ALTER TABLE timer_history ADD CONSTRAINT timer_history_timer_type_check CHECK (timer_type = 'standalone');
 
--- Update default to be explicit about standalone
-ALTER TABLE timer_history ALTER COLUMN timer_type SET DEFAULT 'standalone';
+-- Drop the column entirely - the concept of timer types is deprecated
+ALTER TABLE timer_history DROP COLUMN IF EXISTS timer_type;

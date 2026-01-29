@@ -1,15 +1,14 @@
 use chrono::Datelike;
 use time::OffsetDateTime;
 
-use crate::domain::models::{Activity, ActiveTimer, AttestLevel, Project, ProjectId, TimeEntry, TimeInfo, TimerSource};
+use crate::domain::models::{Activity, ActiveTimer, AttestLevel, Project, ProjectId, TimeEntry, TimeInfo};
 
 /// Convert a Milltime TimerRegistration to a domain ActiveTimer.
 pub fn to_domain_active_timer(timer: milltime::TimerRegistration) -> ActiveTimer {
     let started_at = parse_milltime_datetime(&timer.start_time)
         .unwrap_or_else(|| OffsetDateTime::now_utc());
 
-    // All timers are now Standalone type
-    let mut active_timer = ActiveTimer::new(TimerSource::Standalone, started_at)
+    let mut active_timer = ActiveTimer::new(started_at)
         .with_note(timer.user_note);
 
     if !timer.project_id.is_empty() {
