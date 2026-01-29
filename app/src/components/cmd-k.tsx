@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import { milltimeQueries, TimerType } from "@/lib/api/queries/milltime";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { toast } from "sonner";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import {
@@ -182,7 +182,6 @@ function ActionsCommandGroup(props: { close: () => void }) {
             disabled={saveTimerDisabled}
             onSelect={() => {
               saveTimer({
-                timerType: timer?.timerType ?? ("Unreachable" as TimerType),
                 userNote: timer?.note ?? "",
               });
               props.close();

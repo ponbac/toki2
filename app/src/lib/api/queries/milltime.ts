@@ -66,7 +66,7 @@ export const milltimeQueries = {
     }),
 };
 
-export type TimerType = "Milltime" | "Standalone";
+export type TimerType = "Standalone";
 
 export type GetTimerResponse = {
   timer: TimerResponse | null;

@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
 import { z } from "zod";
-import { milltimeQueries, TimerType } from "../queries/milltime";
+import { milltimeQueries } from "../queries/milltime";
 import { useMilltimeActions } from "@/hooks/useMilltimeStore";
 
 export const milltimeMutations = {
@@ -103,18 +103,13 @@ function useStartStandaloneTimer(
   });
 }
 
-function useStopTimer(
-  options?: DefaultMutationOptions<{ timerType: TimerType }>,
-) {
+function useStopTimer(options?: DefaultMutationOptions<void>) {
   const queryClient = useQueryClient();
   const { setTimer } = useMilltimeActions();
 
   return useMutation({
     mutationKey: ["milltime", "stopTimer"],
-    mutationFn: (body: { timerType: TimerType }) =>
-      body.timerType === "Milltime"
-        ? api.delete("milltime/timer")
-        : api.delete("milltime/timer/standalone"),
+    mutationFn: () => api.delete("milltime/timer/standalone"),
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.invalidateQueries({
@@ -138,17 +133,11 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
   return useMutation({
     mutationKey: ["milltime", "saveTimer"],
     mutationFn: (body: SaveTimerPayload) =>
-      body.timerType === "Milltime"
-        ? api.put("milltime/timer", {
-            json: {
-              userNote: body.userNote,
-            },
-          })
-        : api.put("milltime/timer/standalone", {
-            json: {
-              userNote: body.userNote,
-            },
-          }),
+      api.put("milltime/timer/standalone", {
+        json: {
+          userNote: body.userNote,
+        },
+      }),
     ...options,
     onSuccess: (data, v, c) => {
       queryClient.resetQueries({
@@ -313,7 +302,6 @@ export type StartStandaloneTimerPayload = {
   activityName?: string;
 };
 export type SaveTimerPayload = {
-  timerType: TimerType;
   userNote?: string;
 };
 
