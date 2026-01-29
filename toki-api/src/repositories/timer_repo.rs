@@ -52,10 +52,13 @@ impl TimerRepositoryImpl {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, EnumString, Display, PartialEq, Eq, Clone)]
+/// Timer type stored in the database.
+///
+/// Only Standalone timers are supported. The Milltime timer type
+/// has been deprecated and removed.
+#[derive(Debug, Serialize, Deserialize, EnumString, Display, PartialEq, Eq, Clone, Default)]
 pub enum TimerType {
-    #[strum(ascii_case_insensitive, serialize = "milltime")]
-    Milltime,
+    #[default]
     #[strum(ascii_case_insensitive, serialize = "standalone")]
     Standalone,
 }
@@ -63,8 +66,8 @@ pub enum TimerType {
 impl From<String> for TimerType {
     fn from(value: String) -> Self {
         match value.to_lowercase().as_str() {
-            "milltime" => TimerType::Milltime,
-            "standalone" => TimerType::Standalone,
+            // Accept both "standalone" and legacy "milltime" values for backwards compatibility
+            "standalone" | "milltime" => TimerType::Standalone,
             _ => panic!("Invalid timer type"),
         }
     }

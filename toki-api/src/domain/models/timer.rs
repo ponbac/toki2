@@ -3,18 +3,20 @@ use time::{Date, Duration, OffsetDateTime};
 
 use super::{ActivityId, ProjectId, TimerHistoryId, UserId};
 
-/// Source/type of a timer (where it was started).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Source/type of a timer.
+///
+/// Currently only Standalone timers are supported.
+/// The Milltime timer type has been deprecated and removed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub enum TimerSource {
-    Milltime,
+    #[default]
     Standalone,
 }
 
 impl std::fmt::Display for TimerSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TimerSource::Milltime => write!(f, "Milltime"),
             TimerSource::Standalone => write!(f, "Standalone"),
         }
     }
@@ -25,8 +27,8 @@ impl std::str::FromStr for TimerSource {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "milltime" => Ok(TimerSource::Milltime),
-            "standalone" => Ok(TimerSource::Standalone),
+            // Accept both "standalone" and legacy "milltime" values for backwards compatibility
+            "standalone" | "milltime" => Ok(TimerSource::Standalone),
             _ => Err(format!("Unknown timer source: {}", s)),
         }
     }

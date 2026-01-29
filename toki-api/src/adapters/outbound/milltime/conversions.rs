@@ -8,7 +8,8 @@ pub fn to_domain_active_timer(timer: milltime::TimerRegistration) -> ActiveTimer
     let started_at = parse_milltime_datetime(&timer.start_time)
         .unwrap_or_else(|| OffsetDateTime::now_utc());
 
-    let mut active_timer = ActiveTimer::new(TimerSource::Milltime, started_at)
+    // All timers are now Standalone type
+    let mut active_timer = ActiveTimer::new(TimerSource::Standalone, started_at)
         .with_note(timer.user_note);
 
     if !timer.project_id.is_empty() {

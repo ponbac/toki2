@@ -47,35 +47,29 @@ pub async fn get_timer(
     let db_timer = app_state.milltime_repo.active_timer(&user.id).await;
 
     match (mt_timer, db_timer) {
-        // Milltime timer exists - use it
+        // Milltime timer exists - use it (displayed as Standalone now)
         (Ok(Some(timer)), _) => Ok((
             jar,
             Json(GetTimerResponse {
                 timer: Some(timer.into()),
             }),
         )),
-        // No Milltime timer but standalone timer exists
-        (Ok(None), Ok(Some(db_timer))) if db_timer.timer_type == TimerType::Standalone => Ok((
+        // Database timer exists - use it
+        (Ok(None), Ok(Some(db_timer))) => Ok((
             jar,
             Json(GetTimerResponse {
                 timer: Some(database_timer_to_response(&db_timer)),
             }),
         )),
-        (Err(e), Ok(Some(db_timer))) if db_timer.timer_type == TimerType::Standalone => {
-            tracing::warn!("failed to fetch milltime timer, but found standalone in db: {:?}", e);
+        // Milltime fetch failed but we have a database timer - use it
+        (Err(e), Ok(Some(db_timer))) => {
+            tracing::warn!("failed to fetch milltime timer, but found timer in db: {:?}", e);
             Ok((
                 jar,
                 Json(GetTimerResponse {
                     timer: Some(database_timer_to_response(&db_timer)),
                 }),
             ))
-        }
-        // Milltime timer in DB but not on Milltime - cleanup stale entry
-        (Err(_), Ok(Some(db_timer))) if db_timer.timer_type == TimerType::Milltime => {
-            if let Err(e) = app_state.milltime_repo.delete_active_timer(&user.id).await {
-                tracing::error!("failed to delete stale timer: {:?}", e);
-            }
-            Ok((jar, Json(GetTimerResponse { timer: None })))
         }
         // No timer found anywhere
         _ => Ok((jar, Json(GetTimerResponse { timer: None }))),
@@ -89,11 +83,9 @@ fn database_timer_to_response(timer: &DatabaseTimer) -> TimerResponse {
     let minutes = (total_seconds % 3600) / 60;
     let seconds = total_seconds % 60;
 
+    // All timers are now Standalone type
     TimerResponse {
-        timer_type: match timer.timer_type {
-            TimerType::Milltime => TimerSource::Milltime,
-            TimerType::Standalone => TimerSource::Standalone,
-        },
+        timer_type: TimerSource::Standalone,
         start_time: timer.start_time,
         project_id: timer.project_id.clone(),
         project_name: timer.project_name.clone(),
@@ -172,7 +164,7 @@ pub async fn start_timer(
         activity_id: Some(body.activity),
         activity_name: Some(body.activity_name),
         note: body.user_note.unwrap_or_default(),
-        timer_type: TimerType::Milltime,
+        timer_type: TimerType::Standalone,
     };
 
     if let Err(e) = app_state.milltime_repo.create_timer(&new_timer).await {

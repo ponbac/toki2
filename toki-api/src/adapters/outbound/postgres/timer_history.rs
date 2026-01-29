@@ -149,17 +149,13 @@ fn db_timer_to_domain(timer: DatabaseTimer) -> TimerHistoryEntry {
 }
 
 /// Convert database TimerType to domain TimerSource.
-fn db_type_to_domain_source(timer_type: TimerType) -> TimerSource {
-    match timer_type {
-        TimerType::Milltime => TimerSource::Milltime,
-        TimerType::Standalone => TimerSource::Standalone,
-    }
+///
+/// All timers are now Standalone - legacy Milltime values are mapped to Standalone.
+fn db_type_to_domain_source(_timer_type: TimerType) -> TimerSource {
+    TimerSource::Standalone
 }
 
 /// Convert domain TimerSource to database TimerType.
-fn domain_source_to_db(source: TimerSource) -> TimerType {
-    match source {
-        TimerSource::Milltime => TimerType::Milltime,
-        TimerSource::Standalone => TimerType::Standalone,
-    }
+fn domain_source_to_db(_source: TimerSource) -> TimerType {
+    TimerType::Standalone
 }
