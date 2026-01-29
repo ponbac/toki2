@@ -33,6 +33,42 @@ app/            # React frontend
 - **AppState**: Shared state container passed via Axum extractors
 - **RepoDiffer workers**: Background tasks polling ADO for PR changes, communicating via mpsc channels
 - **SQLx offline mode**: `.sqlx/` caches query metadata. Run `cargo sqlx prepare` after changing SQL queries
+- **Hexagonal architecture for time tracking**: See below
+
+### Time Tracking Architecture (Hexagonal)
+
+The time tracking system uses hexagonal architecture to decouple from Milltime:
+
+```
+toki-api/src/
+├── domain/
+│   ├── models/           # Domain types (ActiveTimer, TimeEntry, Project, etc.)
+│   ├── ports/
+│   │   ├── inbound/      # TimeTrackingService trait (use cases)
+│   │   └── outbound/     # TimeTrackingClient, TimerHistoryRepository traits
+│   ├── services/         # TimeTrackingServiceImpl (business logic)
+│   └── error.rs          # TimeTrackingError
+└── adapters/
+    ├── inbound/http/     # TimeTrackingServiceExt, HTTP response types
+    └── outbound/
+        ├── milltime/     # MilltimeAdapter (implements TimeTrackingClient)
+        └── postgres/     # PostgresTimerHistoryAdapter (implements TimerHistoryRepository)
+```
+
+**Key traits:**
+- `TimeTrackingClient` (outbound): Interface for time tracking providers (timer, projects, calendar)
+- `TimerHistoryRepository` (outbound): Interface for local timer history storage
+- `TimeTrackingService` (inbound): Use cases for HTTP handlers
+- `TimeTrackingServiceExt`: Creates service instances from HTTP cookies
+
+**Per-request service creation:** The service is created per-request from cookies (not stored in AppState) because credentials are user-specific. The service merges provider data with local timer history for accurate start/end times.
+
+**Adding a new time tracking provider:**
+1. Create adapter in `adapters/outbound/new_provider/`
+2. Implement `TimeTrackingClient` trait for your adapter
+3. Update `TimeTrackingServiceExt` in `adapters/inbound/http/time_tracking.rs` to use your adapter
+
+**Current state:** Calendar routes (`routes/milltime/calendar.rs`) use the hexagonal architecture via `TimeTrackingService`. Timer routes are not yet migrated. HTTP responses use dedicated response types that convert from domain models.
 
 ### Frontend
 
