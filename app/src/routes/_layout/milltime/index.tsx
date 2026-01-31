@@ -125,7 +125,14 @@ function MilltimeComponent() {
         <div className={`min-h-screen`}>
           <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
             <header className="mb-8 flex flex-col gap-4 md:h-12 md:flex-row md:items-center md:justify-between">
-              <h1 className="text-2xl font-bold md:text-3xl">Milltime</h1>
+              <a
+                href={import.meta.env.VITE_MILLTIME_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-2xl font-bold hover:underline md:text-3xl"
+              >
+                Milltime
+              </a>
               <div className="flex gap-4">
                 {timerState !== "running" && (
                   <Button
