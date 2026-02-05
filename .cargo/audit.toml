@@ -1,0 +1,14 @@
+# Security audit configuration
+# https://rustsec.org/
+
+[advisories]
+ignore = [
+    # RSA timing sidechannel (Marvin Attack) - no patch available yet.
+    # Risk accepted: only used for web-push signatures, attack requires
+    # network observation of many signing operations.
+    "RUSTSEC-2023-0071",
+    
+    # idna Punycode handling - transitive dep via cookie_store -> reqwest@0.11.
+    # Can't update without changing reqwest versions. Low risk for this use case.
+    "RUSTSEC-2024-0421",
+]

@@ -57,6 +57,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires ENCRYPTION_KEY env var"]
     fn test_encryption() {
         dotenvy::from_path(".env.local").ok();
 

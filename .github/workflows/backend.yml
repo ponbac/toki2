@@ -1,0 +1,76 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "toki-api/**"
+      - "az-devops/**"
+      - "milltime/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "toki-api/**"
+      - "az-devops/**"
+      - "milltime/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/backend.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: sccache
+  SQLX_OFFLINE: "true"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Run tests
+        run: cargo test --all-features
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: ""
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run cargo-audit
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

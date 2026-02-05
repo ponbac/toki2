@@ -279,6 +279,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
     async fn test_get_open_pull_requests() {
         let repo_client = get_repo_client().await;
         let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
@@ -287,6 +288,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
     async fn test_get_pull_request_threads() {
         let repo_client = get_repo_client().await;
         let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
@@ -301,6 +303,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
     async fn test_get_pull_request_commits() {
         let repo_client = get_repo_client().await;
         let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
@@ -317,6 +320,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
     async fn test_get_work_items() {
         let repo_client = get_repo_client().await;
 
@@ -339,6 +343,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
     async fn test_get_graph_users() {
         let repo_client = get_repo_client().await;
         let identities = repo_client.get_graph_users().await.unwrap();
@@ -346,6 +351,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
     async fn test_get_git_identities() {
         let repo_client = get_repo_client().await;
         let identities = repo_client.get_git_identities().await.unwrap();

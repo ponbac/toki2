@@ -1,3 +1,4 @@
+/* eslint-disable react-compiler/react-compiler */
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
