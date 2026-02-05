@@ -25,14 +25,14 @@ export const useMilltimeData = (options?: {
     reset();
   }
 
-  const result = useMemo(() => {
-    return {
+  const result = useMemo(
+    () => ({
       projects,
       activities,
       isAuthenticated,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options?.projectId, projects, activities, isAuthenticated]);
+    }),
+    [projects, activities, isAuthenticated]
+  );
 
   return result;
 };

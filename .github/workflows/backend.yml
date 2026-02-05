@@ -24,6 +24,7 @@ env:
   RUST_BACKTRACE: 1
   SCCACHE_GHA_ENABLED: "true"
   RUSTC_WRAPPER: sccache
+  SQLX_OFFLINE: "true"
 
 jobs:
   lint:
