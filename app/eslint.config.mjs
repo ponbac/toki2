@@ -19,7 +19,7 @@ const compat = new FlatCompat({
 
 export default [
   {
-    ignores: ["**/dist", "**/.eslintrc.cjs"],
+    ignores: ["**/dist", "**/.eslintrc.cjs", "**/src/components/ui"],
   },
   ...pluginRouter.configs["flat/recommended"],
   ...fixupConfigRules(
