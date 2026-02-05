@@ -36,6 +36,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Combobox } from "@/components/combobox";
+import { useMilltimeData } from "@/hooks/useMilltimeData";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
@@ -514,6 +516,28 @@ function EditEntryCard(props: {
     props.entry.endTime ? dayjs(props.entry.endTime).format("HH:mm") : "",
   );
 
+  // Project and activity state
+  const [projectId, setProjectId] = useState(props.entry.projectId);
+  const [projectName, setProjectName] = useState(props.entry.projectName);
+  const [activityId, setActivityId] = useState(props.entry.activityId);
+  const [activityName, setActivityName] = useState(props.entry.activityName);
+
+  const { projects, activities } = useMilltimeData({
+    projectId,
+    enabled: true,
+  });
+
+  // When project changes, reset activity if it's not valid for the new project
+  useEffect(() => {
+    if (activities && activityId) {
+      const validActivity = activities.find((a) => a.activity === activityId);
+      if (!validActivity) {
+        setActivityId("");
+        setActivityName("");
+      }
+    }
+  }, [activities, activityId]);
+
   // Keep time range and total time in sync
   const updateTimeRange = (start: string, end: string) => {
     setStartTime(start);
@@ -582,10 +606,10 @@ function EditEntryCard(props: {
     updateTimeEntry({
       projectRegistrationId: props.entry.registrationId,
       userNote: note ?? "",
-      projectId: props.entry.projectId,
-      projectName: props.entry.projectName,
-      activityId: props.entry.activityId,
-      activityName: props.entry.activityName,
+      projectId: projectId,
+      projectName: projectName,
+      activityId: activityId,
+      activityName: activityName,
       startTime: startDateTime.toISOString(),
       endTime: endDateTime.toISOString(),
       regDay: selectedDate,
@@ -606,17 +630,72 @@ function EditEntryCard(props: {
     }
   };
 
+  const handleProjectChange = (newProjectId: string) => {
+    const selectedProject = projects?.find(
+      (p) => p.projectId.toString() === newProjectId,
+    );
+    if (selectedProject) {
+      setProjectId(newProjectId);
+      setProjectName(selectedProject.projectName);
+      // Reset activity when project changes
+      setActivityId("");
+      setActivityName("");
+    }
+  };
+
+  const handleActivityChange = (newActivityName: string) => {
+    const selectedActivity = activities?.find(
+      (a) => a.activityName === newActivityName,
+    );
+    if (selectedActivity) {
+      setActivityId(selectedActivity.activity);
+      setActivityName(selectedActivity.activityName);
+    }
+  };
+
   return (
     <div>
       <CardHeader>
-        <CardTitle>
-          Edit Entry{" "}
-          <span className="text-muted-foreground">
-            ({props.entry.projectName} - {props.entry.activityName})
-          </span>
-        </CardTitle>
+        <CardTitle>Edit Entry</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Project</label>
+            <Combobox
+              items={
+                projects?.map((p) => ({
+                  value: p.projectId.toString(),
+                  label: p.projectName,
+                })) || []
+              }
+              placeholder="Select project..."
+              searchPlaceholder="Search projects..."
+              onSelect={handleProjectChange}
+              emptyMessage="No projects found"
+              value={projectId}
+              onChange={handleProjectChange}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Activity</label>
+            <Combobox
+              items={
+                activities?.map((a) => ({
+                  value: a.activityName,
+                  label: a.activityName,
+                })) || []
+              }
+              placeholder="Select activity..."
+              searchPlaceholder="Search activities..."
+              onSelect={handleActivityChange}
+              emptyMessage="No activities found"
+              disabled={!projectId}
+              value={activityName}
+              onChange={handleActivityChange}
+            />
+          </div>
+        </div>
         <div>
           <label className="block text-sm font-medium">Day</label>
           <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
@@ -744,6 +823,8 @@ function EditEntryCard(props: {
             onClick={handleSave}
             disabled={
               isUpdatingTimeEntry ||
+              !projectId ||
+              !activityId ||
               !startTime ||
               (!endTime && hours === 0 && minutes === 0)
             }
