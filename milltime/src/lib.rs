@@ -38,6 +38,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_fetch_time_period_info() {
         let client = initialize_client().await;
         let date_filter: DateFilter = "2024-01-01,2024-12-31".parse().unwrap();
@@ -47,6 +48,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_fetch_user_calendar() {
         let client = initialize_client().await;
         let date_filter: DateFilter = "2024-01-01,2024-09-21".parse().unwrap();
@@ -56,6 +58,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_fetch_project_search() {
         let client = initialize_client().await;
         let search_filter = ProjectSearchFilter::new("Overview".to_string());
@@ -67,6 +70,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_fetch_activities() {
         let client = initialize_client().await;
         let activity_filter = ActivityFilter::new(
@@ -82,6 +86,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_fetch_time_info() {
         let client = initialize_client().await;
         let date_filter: DateFilter = "2024-04-15,2024-04-21".parse().unwrap();
@@ -91,6 +96,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_fetch_timer() {
         let client = initialize_client().await;
         let timer_result = client.fetch_timer().await;
@@ -107,6 +113,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_start_timer() {
         let client = initialize_client().await;
         let options: StartTimerOptions = StartTimerOptions {
@@ -126,12 +133,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_stop_timer() {
         let client = initialize_client().await;
         client.stop_timer().await.expect("Failed to stop timer")
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_save_timer() {
         let client = initialize_client().await;
         let payload = SaveTimerPayload {
@@ -147,6 +156,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_edit_timer() {
         let client = initialize_client().await;
         let payload = EditTimerPayload {
@@ -160,6 +170,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_new_project_registration() {
         let client = initialize_client().await;
         let payload = ProjectRegistrationPayload::new(
@@ -183,6 +194,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_edit_project_registration() {
         let client = initialize_client().await;
         let payload = ProjectRegistrationEditPayload::new(
