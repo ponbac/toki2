@@ -604,6 +604,8 @@ function EditEntryCard(props: {
       regDay: selectedDate,
       weekNumber: getWeekNumber(new Date(selectedDate)),
       originalRegDay: dayjs(props.entry.date).format("YYYY-MM-DD"),
+      originalProjectId: props.entry.projectId,
+      originalActivityId: props.entry.activityId,
     });
   };
 

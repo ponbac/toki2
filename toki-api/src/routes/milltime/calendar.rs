@@ -175,6 +175,8 @@ pub struct EditProjectRegistrationPayload {
     week_number: i32,
     user_note: String,
     original_reg_day: Option<String>,
+    original_project_id: Option<String>,
+    original_activity_id: Option<String>,
 }
 
 #[instrument(name = "edit_project_registration", skip(jar, app_state))]
@@ -216,10 +218,23 @@ pub async fn edit_project_registration(
         .map(|orig| *orig != payload.reg_day)
         .unwrap_or(false);
 
+    let project_or_activity_changed = payload
+        .original_project_id
+        .as_ref()
+        .map(|orig| *orig != payload.project_id)
+        .unwrap_or(false)
+        || payload
+            .original_activity_id
+            .as_ref()
+            .map(|orig| *orig != payload.activity_id)
+            .unwrap_or(false);
+
     let timer_repo = app_state.milltime_repo;
 
-    if regday_changed {
-        // Create new registration with new day
+    // Milltime API doesn't support changing project/activity via PUT,
+    // so we need to delete and recreate the registration
+    if regday_changed || project_or_activity_changed {
+        // Create new registration with new day/activity
         let new_payload = milltime::ProjectRegistrationPayload::new(
             milltime_client.user_id().to_string(),
             payload.project_id.clone(),
@@ -271,7 +286,7 @@ pub async fn edit_project_registration(
             .delete_project_registration(payload.project_registration_id.clone())
             .await?;
     } else {
-        // Day unchanged -> regular edit in Milltime
+        // Day/activity unchanged -> regular edit in Milltime
         let mt_payload = milltime::ProjectRegistrationEditPayload::new(
             payload.project_registration_id.clone(),
             milltime_client.user_id().to_string(),
