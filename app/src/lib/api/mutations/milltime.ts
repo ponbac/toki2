@@ -342,6 +342,8 @@ export type EditProjectRegistrationPayload = {
   weekNumber: number;
   userNote: string;
   originalRegDay?: string;
+  originalProjectId?: string;
+  originalActivityId?: string;
 };
 
 export type DeleteProjectRegistrationPayload = {
