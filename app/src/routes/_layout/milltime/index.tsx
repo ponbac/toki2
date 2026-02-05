@@ -1,11 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,8 +30,13 @@ import {
 } from "@/hooks/useMilltimeStore";
 import { useMilltimeActions } from "@/hooks/useMilltimeStore";
 import { NotLockedAlert } from "./-components/not-locked-alert";
-import { TimerIcon } from "lucide-react";
-import { Plus } from "lucide-react";
+import {
+  TimerIcon,
+  Plus,
+  Clock,
+  ExternalLink,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
 import { NewEntryDialog } from "./-components/new-entry-dialog";
 
@@ -48,10 +47,10 @@ export const Route = createFileRoute("/_layout/milltime/")({
         milltimeQueries.timeEntries({
           from: format(
             startOfWeek(new Date(), { weekStartsOn: 1 }),
-            "yyyy-MM-dd",
+            "yyyy-MM-dd"
           ),
           to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-        }),
+        })
       );
     } catch (error) {
       console.error(error);
@@ -62,7 +61,7 @@ export const Route = createFileRoute("/_layout/milltime/")({
 
 const mergeSameDayPersistedAtom = atomWithStorage(
   "milltime-mergeSameDay",
-  false,
+  false
 );
 
 function MilltimeComponent() {
@@ -76,7 +75,7 @@ function MilltimeComponent() {
   });
   const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
   const [rememberLastProject, setRememberLastProject] = useAtom(
-    rememberLastProjectAtom,
+    rememberLastProjectAtom
   );
   const lastProject = useAtomValue(lastProjectAtom);
   const lastActivity = useAtomValue(lastActivityAtom);
@@ -95,7 +94,7 @@ function MilltimeComponent() {
       ? timeEntries.filter((entry) =>
           `${entry.note} ${entry.projectName} ${entry.activityName}`
             .toLowerCase()
-            .includes(search.toLowerCase()),
+            .includes(search.toLowerCase())
         )
       : [];
   }, [timeEntries, search]);
@@ -115,111 +114,127 @@ function MilltimeComponent() {
   const [isNewEntryOpen, setIsNewEntryOpen] = React.useState(false);
 
   return (
-    <div>
+    <div className="min-h-screen">
       {!isAuthenticated ? (
         <LoginForm
           onSubmit={authenticate}
           isAuthenticating={isAuthenticating}
         />
       ) : (
-        <div className={`min-h-screen`}>
-          <div className="mx-auto w-[95%] max-w-[100rem] px-4 py-8">
-            <header className="mb-8 flex flex-col gap-4 md:h-12 md:flex-row md:items-center md:justify-between">
-              <a
-                href={import.meta.env.VITE_MILLTIME_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-2xl font-bold hover:underline md:text-3xl"
-              >
-                Milltime
-              </a>
-              <div className="flex gap-4">
-                {timerState !== "running" && (
-                  <Button
-                    variant="outline"
-                    disabled={isStartingStandaloneTimer}
-                    onClick={() =>
-                      startStandaloneTimer({
-                        userNote: "Try Ctrl+K to start a timer next time",
-                        ...buildRememberedTimerParams({
-                          rememberLastProject,
-                          lastProject,
-                          lastActivity,
-                        }),
-                      })
-                    }
-                    className="w-full md:w-auto"
+        <div className="animate-fade-in">
+          {/* Hero Header */}
+          <header className="relative overflow-hidden border-b border-border/50 bg-gradient-to-b from-card/80 to-background px-6 pb-6 pt-8">
+            {/* Background decoration */}
+            <div className="pointer-events-none absolute inset-0 overflow-hidden">
+              <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/5 blur-3xl" />
+              <div className="absolute -left-20 top-20 h-48 w-48 rounded-full bg-primary/3 blur-2xl" />
+            </div>
+
+            <div className="relative mx-auto max-w-[1600px]">
+              <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+                {/* Title section */}
+                <div className="space-y-2">
+                  <a
+                    href={import.meta.env.VITE_MILLTIME_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group inline-flex items-center gap-2"
                   >
-                    <TimerIcon className="mr-1 h-4 w-4" />
-                    Start New Timer
-                  </Button>
-                )}
-                <Button
-                  variant="default"
-                  onClick={() => setIsNewEntryOpen(true)}
-                >
-                  <Plus className="mr-1 h-4 w-4" />
-                  New Entry
-                </Button>
-              </div>
-            </header>
-            <NotLockedAlert />
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <DateRangeSelector
-                    dateRange={dateRange}
-                    setDateRange={setDateRange}
-                  />
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center">
-                    <MergeEntriesSwitch
-                      mergeSameDay={mergeSameDay}
-                      setMergeSameDay={setMergeSameDay}
-                    />
-                    <SearchBar search={search} setSearch={setSearch} />
-                    <MilltimeSettings
-                      rememberLastProject={rememberLastProject}
-                      setRememberLastProject={setRememberLastProject}
-                    />
-                  </div>
+                    <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
+                      <span className="text-gradient">Milltime</span>
+                    </h1>
+                    <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                  </a>
+                  <p className="text-sm text-muted-foreground">
+                    Track your time, stay productive
+                  </p>
                 </div>
+
+                {/* Action buttons */}
+                <div className="flex flex-wrap gap-3">
+                  {timerState !== "running" && (
+                    <Button
+                      variant="outline"
+                      disabled={isStartingStandaloneTimer}
+                      onClick={() =>
+                        startStandaloneTimer({
+                          userNote: "Try Ctrl+K to start a timer next time",
+                          ...buildRememberedTimerParams({
+                            rememberLastProject,
+                            lastProject,
+                            lastActivity,
+                          }),
+                        })
+                      }
+                      className="group h-11 gap-2 rounded-xl border-border/50 bg-card/50 px-5 shadow-sm backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-card hover:shadow-glow-sm"
+                    >
+                      <TimerIcon className="h-4 w-4 transition-transform group-hover:scale-110" />
+                      <span>Start Timer</span>
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => setIsNewEntryOpen(true)}
+                    className="btn-glow h-11 gap-2 rounded-xl bg-primary px-5 font-semibold text-primary-foreground shadow-md transition-all hover:bg-primary/90 hover:shadow-glow"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>New Entry</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Content */}
+          <main className="mx-auto max-w-[1600px] px-6 py-8">
+            <NotLockedAlert />
+
+            {/* Controls Bar */}
+            <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <DateRangeSelector
+                dateRange={dateRange}
+                setDateRange={setDateRange}
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <MergeEntriesSwitch
+                  mergeSameDay={mergeSameDay}
+                  setMergeSameDay={setMergeSameDay}
+                />
+                <SearchBar search={search} setSearch={setSearch} />
+                <MilltimeSettings
+                  rememberLastProject={rememberLastProject}
+                  setRememberLastProject={setRememberLastProject}
+                />
+              </div>
+            </div>
+
+            {/* Content Grid */}
+            <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_380px]">
+              {/* Time Entries */}
+              <div className="min-w-0">
                 {timeEntries?.length ? (
                   <TimeEntriesList
                     timeEntries={filteredTimeEntries ?? []}
                     mergeSameDay={mergeSameDay}
                   />
                 ) : (
-                  <div className="flex h-full flex-col items-center justify-center">
-                    <p className="text-xl font-semibold">
-                      No time entries found
-                    </p>
-                    <p className="text-center text-sm text-muted-foreground">
-                      Try changing the filters or{" "}
-                      {timerState === "running" ? (
-                        <span className="">saving your current timer</span>
-                      ) : (
-                        <span
-                          className="underline transition-colors hover:cursor-pointer hover:text-primary"
-                          onClick={() =>
-                            startStandaloneTimer({
-                              userNote: "First timer of the week...",
-                            })
-                          }
-                        >
-                          starting a new timer
-                        </span>
-                      )}
-                      .
-                    </p>
-                  </div>
+                  <EmptyState
+                    timerState={timerState}
+                    onStartTimer={() =>
+                      startStandaloneTimer({
+                        userNote: "First timer of the week...",
+                      })
+                    }
+                  />
                 )}
               </div>
-              <div className="flex flex-col gap-4">
+
+              {/* Sidebar */}
+              <aside className="space-y-6">
                 <TimeStats />
                 {!!timeEntries?.length && <Summary timeEntries={timeEntries} />}
-              </div>
+              </aside>
             </div>
-          </div>
+          </main>
         </div>
       )}
       <NewEntryDialog
@@ -233,58 +248,124 @@ function MilltimeComponent() {
   );
 }
 
+function EmptyState(props: {
+  timerState: string | undefined;
+  onStartTimer: () => void;
+}) {
+  return (
+    <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-card/30 p-12 text-center">
+      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+        <Clock className="h-8 w-8 text-primary" />
+      </div>
+      <h3 className="mb-2 font-display text-xl font-semibold">
+        No time entries yet
+      </h3>
+      <p className="mb-6 max-w-sm text-sm text-muted-foreground">
+        {props.timerState === "running"
+          ? "Your timer is running. Save it when you're ready."
+          : "Start tracking your time to see your entries here."}
+      </p>
+      {props.timerState !== "running" && (
+        <Button
+          onClick={props.onStartTimer}
+          className="btn-glow gap-2 rounded-xl"
+        >
+          <Sparkles className="h-4 w-4" />
+          Start Your First Timer
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function LoginForm(props: {
   onSubmit: (credentials: { username: string; password: string }) => void;
   isAuthenticating: boolean;
 }) {
   return (
-    <form
-      className="flex min-h-screen items-center justify-center"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target as HTMLFormElement);
-        const username = formData.get("username") as string;
-        const password = formData.get("password") as string;
+    <div className="flex min-h-screen items-center justify-center p-4">
+      {/* Background decorations */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute left-1/4 top-1/4 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-primary/5 blur-2xl" />
+      </div>
 
-        props.onSubmit({
-          username,
-          password,
-        });
-      }}
-    >
-      <Card className="mx-auto max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-xl">Authenticate</CardTitle>
-          <CardDescription>
-            Allow Toki to access your Milltime account.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                name="username"
-                type="text"
-                placeholder="pbac"
-                required
-              />
+      <form
+        className="relative w-full max-w-md"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const formData = new FormData(e.target as HTMLFormElement);
+          const username = formData.get("username") as string;
+          const password = formData.get("password") as string;
+
+          props.onSubmit({
+            username,
+            password,
+          });
+        }}
+      >
+        <Card className="card-elevated overflow-hidden rounded-2xl border-border/50">
+          {/* Header with gradient */}
+          <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent px-8 pb-6 pt-8">
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxjaXJjbGUgZmlsbD0iY3VycmVudENvbG9yIiBjeD0iMiIgY3k9IjIiIHI9IjEiIG9wYWNpdHk9IjAuMSIvPjwvZz48L3N2Zz4=')] opacity-50" />
+            <div className="relative">
+              <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-primary/20">
+                <TimerIcon className="h-6 w-6 text-primary" />
+              </div>
+              <h2 className="font-display text-2xl font-bold tracking-tight">
+                Connect to Milltime
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Enter your credentials to sync your time entries
+              </p>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" name="password" type="password" />
-            </div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={props.isAuthenticating}
-            >
-              Authenticate
-            </Button>
           </div>
-        </CardContent>
-      </Card>
-    </form>
+
+          <CardContent className="p-8">
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="username" className="text-sm font-medium">
+                  Username
+                </Label>
+                <Input
+                  id="username"
+                  name="username"
+                  type="text"
+                  placeholder="Enter your username"
+                  required
+                  className="h-11 rounded-xl border-border/50 bg-muted/30 transition-all focus:border-primary/50 focus:bg-background"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-medium">
+                  Password
+                </Label>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  className="h-11 rounded-xl border-border/50 bg-muted/30 transition-all focus:border-primary/50 focus:bg-background"
+                />
+              </div>
+              <Button
+                type="submit"
+                className="btn-glow h-11 w-full rounded-xl font-semibold"
+                disabled={props.isAuthenticating}
+              >
+                {props.isAuthenticating ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
+                    Authenticating...
+                  </span>
+                ) : (
+                  "Authenticate"
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </form>
+    </div>
   );
 }

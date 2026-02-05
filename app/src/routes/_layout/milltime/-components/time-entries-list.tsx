@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { AttestLevel, TimeEntry } from "@/lib/api/queries/milltime";
 import { cn, formatHoursAsHoursMinutes, getWeekNumber } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -23,6 +16,9 @@ import {
   TrashIcon,
   PlayIcon,
   CalendarIcon,
+  ChevronRight,
+  Clock,
+  Briefcase,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -87,11 +83,10 @@ export function TimeEntriesList(props: {
             });
           });
           mergedEntries[dateKey] = Object.values(
-            mergedByProjectActivityAndNote,
+            mergedByProjectActivityAndNote
           );
         });
 
-        // sort merged entries by largest end time
         Object.values(mergedEntries).forEach((entries) => {
           entries.sort((a, b) => {
             const aMaxTime = a.timePeriods.reduce((max, period) => {
@@ -109,11 +104,10 @@ export function TimeEntriesList(props: {
         });
 
         return Object.entries(mergedEntries).sort(
-          ([a], [b]) => new Date(b).getTime() - new Date(a).getTime(),
+          ([a], [b]) => new Date(b).getTime() - new Date(a).getTime()
         );
       }
 
-      // sort entries within each day
       Object.values(groups).forEach((dayEntries) => {
         dayEntries.sort((a, b) => {
           const aTime = a.endTime ? new Date(a.endTime).getTime() : 0;
@@ -123,15 +117,14 @@ export function TimeEntriesList(props: {
       });
 
       return Object.entries(groups).sort(
-        ([a], [b]) => new Date(b).getTime() - new Date(a).getTime(),
+        ([a], [b]) => new Date(b).getTime() - new Date(a).getTime()
       );
     }, [props.timeEntries, props.mergeSameDay]);
 
   const overlapMap = useMemo(() => {
-    // Disable overlap calculation if too many entries (performance safeguard)
     const totalVisible = groupedEntries.reduce(
       (sum, [, entries]) => sum + entries.length,
-      0,
+      0
     );
     if (totalVisible > 250) return {};
 
@@ -149,7 +142,7 @@ export function TimeEntriesList(props: {
                       start: new Date(p.startTime).getTime(),
                       end: new Date(p.endTime).getTime(),
                     }
-                  : null,
+                  : null
               )
               .filter(Boolean) as Array<{
               id: string;
@@ -177,7 +170,6 @@ export function TimeEntriesList(props: {
           j < intervals.length && intervals[j].start < curr.end;
           j++
         ) {
-          // Skip when only second-level difference inside same displayed minute
           const currEndMinute = Math.floor(curr.end / 60000);
           const nextStartMinute = Math.floor(intervals[j].start / 60000);
           if (nextStartMinute === currEndMinute) continue;
@@ -187,7 +179,6 @@ export function TimeEntriesList(props: {
         }
       });
 
-      // Prevent impossible singleton overlap indicators
       if (dayOverlaps.size > 1) {
         dayOverlaps.forEach((id) => {
           result[id] = true;
@@ -199,65 +190,77 @@ export function TimeEntriesList(props: {
   }, [groupedEntries]);
 
   return (
-    <div className="mt-8 space-y-8">
-      {groupedEntries.map(([dateKey, dayEntries]) => (
-        <div key={dateKey}>
-          <h2 className="mb-4 text-lg font-semibold">
-            {dayjs(dateKey).format("dddd")}
-            <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
-              {dayjs(dateKey).format("MMMM D, YYYY")}
-            </span>
-          </h2>
-          <div className="space-y-4">
-            {dayEntries.map((entry) => (
-              <motion.div key={entry.registrationId} layout>
-                <Card>
-                  <AnimatePresence mode="wait">
-                    {editingEntryId === entry.registrationId ? (
-                      <motion.div
-                        key="edit"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <EditEntryCard
-                          entry={
-                            isMergedTimeEntry(entry)
-                              ? {
-                                  ...entry,
-                                  startTime: entry.timePeriods[0].startTime,
-                                  endTime: entry.timePeriods[0].endTime,
-                                }
-                              : entry
-                          }
-                          onSaved={() => {
-                            setEditingEntryId(null);
-                          }}
-                          onCancel={() => setEditingEntryId(null)}
-                        />
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="view"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <ViewEntryCard
-                          entry={entry}
-                          onEdit={() => setEditingEntryId(entry.registrationId)}
-                          overlapMap={overlapMap}
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </Card>
-              </motion.div>
-            ))}
+    <div className="space-y-10">
+      {groupedEntries.map(([dateKey, dayEntries], groupIndex) => (
+        <motion.div
+          key={dateKey}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: groupIndex * 0.1 }}
+        >
+          {/* Day Header */}
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <span className="font-display text-lg font-bold">
+                {dayjs(dateKey).format("DD")}
+              </span>
+            </div>
+            <div>
+              <h2 className="font-display text-lg font-semibold leading-tight">
+                {dayjs(dateKey).format("dddd")}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {dayjs(dateKey).format("MMMM YYYY")}
+              </p>
+            </div>
+            <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              <span className="time-display">
+                {formatHoursAsHoursMinutes(
+                  dayEntries.reduce((sum, e) => sum + e.hours, 0)
+                )}
+              </span>
+            </div>
           </div>
-        </div>
+
+          {/* Entries for this day */}
+          <div className="space-y-3">
+            <AnimatePresence mode="popLayout">
+              {dayEntries.map((entry, entryIndex) => (
+                <motion.div
+                  key={entry.registrationId}
+                  layout
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  transition={{ duration: 0.2, delay: entryIndex * 0.03 }}
+                >
+                  {editingEntryId === entry.registrationId ? (
+                    <EditEntryCard
+                      entry={
+                        isMergedTimeEntry(entry)
+                          ? {
+                              ...entry,
+                              startTime: entry.timePeriods[0].startTime,
+                              endTime: entry.timePeriods[0].endTime,
+                            }
+                          : entry
+                      }
+                      onSaved={() => setEditingEntryId(null)}
+                      onCancel={() => setEditingEntryId(null)}
+                    />
+                  ) : (
+                    <ViewEntryCard
+                      entry={entry}
+                      onEdit={() => setEditingEntryId(entry.registrationId)}
+                      overlapMap={overlapMap}
+                    />
+                  )}
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </motion.div>
       ))}
     </div>
   );
@@ -277,12 +280,9 @@ function ViewEntryCard(props: {
 
   const handleStartAgain = () => {
     const entry = props.entry;
-
-    // Determine if a standalone timer is currently active based on fetched timer
     const isStandaloneActive = timerState === "running";
 
     if (isStandaloneActive) {
-      // Update existing standalone timer metadata only
       editStandaloneAsync({
         userNote: entry.note ?? "",
         projectId: entry.projectId,
@@ -290,16 +290,11 @@ function ViewEntryCard(props: {
         activityId: entry.activityId,
         activityName: entry.activityName,
       })
-        .then(() => {
-          toast.success("Timer updated");
-        })
-        .catch(() => {
-          toast.error("Failed to update timer");
-        });
+        .then(() => toast.success("Timer updated"))
+        .catch(() => toast.error("Failed to update timer"));
       return;
     }
 
-    // No active standalone timer -> start a new one then edit metadata
     startStandaloneAsync({ userNote: entry.note ?? "" })
       .then(() =>
         editStandaloneAsync({
@@ -307,15 +302,12 @@ function ViewEntryCard(props: {
           projectName: entry.projectName,
           activityId: entry.activityId,
           activityName: entry.activityName,
-        }),
+        })
       )
-      .then(() => {
-        toast.success("Timer started");
-      })
-      .catch(() => {
-        toast.error("Failed to start timer");
-      });
+      .then(() => toast.success("Timer started"))
+      .catch(() => toast.error("Failed to start timer"));
   };
+
   const entry = props.entry;
   const isMerged = isMergedTimeEntry(entry);
   const mergedPeriodsWithTimes = isMerged
@@ -338,9 +330,11 @@ function ViewEntryCard(props: {
         return acc;
       }, [])
     : [];
-  const hasMultipleMergedPeriods = mergedPeriodsWithTimes.length > 1;
+  const isLocked = isMerged
+    ? entry.timePeriods.every((p) => p.attestLevel !== AttestLevel.None)
+    : entry.attestLevel !== AttestLevel.None;
 
-  const renderStartStopTimes = () => {
+  const renderTimeRange = () => {
     if (isMerged) {
       if (mergedPeriodsWithTimes.length === 0) return null;
 
@@ -349,32 +343,39 @@ function ViewEntryCard(props: {
         const periodId = `${entry.registrationId}-p${period.index}`;
         const isOverlap = props.overlapMap[periodId];
         return (
-          <div className="flex items-center gap-1 text-base text-muted-foreground">
-            <span>{dayjs(period.startTime).format("HH:mm")}</span>
-            <span>-</span>
-            <span>{dayjs(period.endTime).format("HH:mm")}</span>
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <span className="time-display">
+              {dayjs(period.startTime).format("HH:mm")}
+            </span>
+            <ChevronRight className="h-3 w-3" />
+            <span className="time-display">
+              {dayjs(period.endTime).format("HH:mm")}
+            </span>
             {isOverlap && <OverlapWarning />}
           </div>
         );
       }
 
       return (
-        <div className="flex max-h-28 flex-col gap-1 overflow-hidden text-sm text-muted-foreground">
-          {mergedPeriodsWithTimes.map((period) => {
+        <div className="flex max-h-20 flex-col gap-0.5 overflow-hidden text-sm text-muted-foreground">
+          {mergedPeriodsWithTimes.slice(0, 3).map((period) => {
             const periodId = `${entry.registrationId}-p${period.index}`;
             const isOverlap = props.overlapMap[periodId];
             return (
-              <p
-                key={periodId}
-                className="flex items-center gap-1 text-sm text-muted-foreground"
-              >
-                {dayjs(period.startTime).format("HH:mm")}
-                {" - "}
-                {dayjs(period.endTime).format("HH:mm")}
-                {isOverlap && <OverlapWarning className="size-4" />}
-              </p>
+              <div key={periodId} className="flex items-center gap-1">
+                <span className="time-display text-xs">
+                  {dayjs(period.startTime).format("HH:mm")} -{" "}
+                  {dayjs(period.endTime).format("HH:mm")}
+                </span>
+                {isOverlap && <OverlapWarning className="h-3 w-3" />}
+              </div>
             );
           })}
+          {mergedPeriodsWithTimes.length > 3 && (
+            <span className="text-xs text-muted-foreground/70">
+              +{mergedPeriodsWithTimes.length - 3} more
+            </span>
+          )}
         </div>
       );
     }
@@ -382,115 +383,118 @@ function ViewEntryCard(props: {
     if (!entry.endTime) return null;
 
     return (
-      <div className="flex items-center gap-1 text-base text-muted-foreground">
-        <span>{entry.startTime && dayjs(entry.startTime).format("HH:mm")}</span>
-        <span>-</span>
-        <span>{entry.endTime && dayjs(entry.endTime).format("HH:mm")}</span>
+      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <span className="time-display">
+          {entry.startTime && dayjs(entry.startTime).format("HH:mm")}
+        </span>
+        <ChevronRight className="h-3 w-3" />
+        <span className="time-display">
+          {entry.endTime && dayjs(entry.endTime).format("HH:mm")}
+        </span>
         {props.overlapMap[entry.registrationId] && <OverlapWarning />}
       </div>
     );
   };
 
-  const renderEditControl = () => {
-    if (isMerged) {
-      const canEditSinglePeriod =
-        entry.timePeriods.length === 1 &&
-        entry.timePeriods.at(0)?.attestLevel === AttestLevel.None;
-
-      if (!canEditSinglePeriod)
-        return entry.timePeriods.every(
-          (period) => period.attestLevel !== AttestLevel.None,
-        ) ? (
-          <LockIcon className="size-4 text-muted-foreground" />
-        ) : null;
-
-      return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={props.onEdit}
-              className="size-8"
-            >
-              <PencilIcon className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Edit entry</TooltipContent>
-        </Tooltip>
-      );
-    }
-
-    if (entry.attestLevel === AttestLevel.None) {
-      return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={props.onEdit}
-              className="size-8"
-            >
-              <PencilIcon className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Edit entry</TooltipContent>
-        </Tooltip>
-      );
-    }
-
-    return <LockIcon className="size-4 text-muted-foreground" />;
-  };
-
   return (
-    <div>
-      <CardHeader className="pb-0">
-        <div className="flex w-full items-start justify-between gap-6">
-          <div className="flex min-w-0 flex-1 flex-col">
-            <CardTitle className="truncate leading-tight">
-              <span className="inline-flex min-w-0 items-center">
-                <span className="truncate">{entry.projectName}</span>
-                <span className="ml-2 shrink-0 text-base text-muted-foreground">
-                  ({entry.activityName})
-                </span>
-              </span>
-            </CardTitle>
-            <CardDescription>
-              {formatHoursAsHoursMinutes(entry.hours)}
-            </CardDescription>
-          </div>
+    <div
+      className={cn(
+        "group relative overflow-hidden rounded-xl border border-border/50 bg-card/50 p-4 transition-all duration-300",
+        "hover:border-border hover:bg-card hover:shadow-elevated",
+        isLocked && "bg-muted/30"
+      )}
+    >
+      {/* Subtle gradient overlay on hover */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/0 to-primary/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-hover:from-primary/[0.02] group-hover:to-transparent" />
+
+      <div className="relative flex gap-4">
+        {/* Project indicator */}
+        <div className="flex flex-col items-center">
           <div
             className={cn(
-              "flex shrink-0 gap-3",
-              !isMerged || !hasMultipleMergedPeriods
-                ? "items-center"
-                : "items-start",
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+              isLocked
+                ? "bg-muted text-muted-foreground"
+                : "bg-primary/10 text-primary"
             )}
           >
-            <div className="flex items-center gap-1">
-              {renderEditControl()}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleStartAgain}
-                    disabled={isStarting}
-                    className="group size-8"
-                  >
-                    <PlayIcon className="size-4 transition-colors group-hover:stroke-primary" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Start again</TooltipContent>
-              </Tooltip>
-            </div>
-            {renderStartStopTimes()}
+            {isLocked ? (
+              <LockIcon className="h-4 w-4" />
+            ) : (
+              <Briefcase className="h-4 w-4" />
+            )}
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="pt-3">
-        <p className="font-mono text-base">{entry.note}</p>
-      </CardContent>
+
+        {/* Main content */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              {/* Project name */}
+              <h3 className="truncate font-semibold leading-tight">
+                {entry.projectName}
+              </h3>
+              {/* Activity */}
+              <p className="text-sm text-muted-foreground">
+                {entry.activityName}
+              </p>
+            </div>
+
+            {/* Duration badge - hidden on hover, replaced by action buttons */}
+            <div className="shrink-0">
+              <div className="rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary transition-opacity group-hover:opacity-0">
+                <span className="time-display">
+                  {formatHoursAsHoursMinutes(entry.hours)}
+                </span>
+              </div>
+              {/* Action buttons - appear on hover in same position */}
+              <div className="absolute right-4 top-4 flex items-center gap-1 rounded-lg border border-border/50 bg-card p-1 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                {!isLocked && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={props.onEdit}
+                        className="h-7 w-7 rounded-md p-0 hover:bg-primary/10 hover:text-primary"
+                      >
+                        <PencilIcon className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Edit entry</TooltipContent>
+                  </Tooltip>
+                )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleStartAgain}
+                      disabled={isStarting}
+                      className="h-7 w-7 rounded-md p-0 hover:bg-primary/10 hover:text-primary"
+                    >
+                      <PlayIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Start again</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+          </div>
+
+          {/* Note */}
+          {entry.note && (
+            <p className="mt-2 line-clamp-2 font-mono text-sm text-foreground/80">
+              {entry.note}
+            </p>
+          )}
+
+          {/* Time range */}
+          <div className="mt-2">
+            {renderTimeRange()}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -503,20 +507,19 @@ function EditEntryCard(props: {
   const [note, setNote] = useState(props.entry.note);
   const [hours, setHours] = useState(Math.floor(props.entry.hours));
   const [minutes, setMinutes] = useState(
-    Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60),
+    Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60)
   );
   const [selectedDate, setSelectedDate] = useState(props.entry.date);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [startTime, setStartTime] = useState(
     props.entry.startTime
       ? dayjs(props.entry.startTime).format("HH:mm")
-      : "06:00",
+      : "06:00"
   );
   const [endTime, setEndTime] = useState(
-    props.entry.endTime ? dayjs(props.entry.endTime).format("HH:mm") : "",
+    props.entry.endTime ? dayjs(props.entry.endTime).format("HH:mm") : ""
   );
 
-  // Project and activity state
   const [projectId, setProjectId] = useState(props.entry.projectId);
   const [projectName, setProjectName] = useState(props.entry.projectName);
   const [activityId, setActivityId] = useState(props.entry.activityId);
@@ -527,7 +530,6 @@ function EditEntryCard(props: {
     enabled: true,
   });
 
-  // Keep time range and total time in sync
   const updateTimeRange = (start: string, end: string) => {
     setStartTime(start);
     setEndTime(end);
@@ -552,15 +554,10 @@ function EditEntryCard(props: {
 
   const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
     milltimeMutations.useEditProjectRegistration({
-      onSuccess: () => {
-        props.onSaved();
-      },
-      onError: () => {
-        toast.error(`Failed to update time entry, try again later`);
-      },
+      onSuccess: () => props.onSaved(),
+      onError: () => toast.error(`Failed to update time entry, try again later`),
     });
 
-  // Initialize or recompute endTime based on hours/minutes and startTime when missing
   useEffect(() => {
     if (startTime && !endTime && (hours > 0 || minutes > 0)) {
       const startDate = dayjs(`2000-01-01T${startTime}`);
@@ -575,9 +572,7 @@ function EditEntryCard(props: {
         props.onSaved();
         toast.success("Time entry deleted successfully");
       },
-      onError: () => {
-        toast.error("Failed to delete time entry, try again later");
-      },
+      onError: () => toast.error("Failed to delete time entry, try again later"),
     });
 
   const handleSave = () => {
@@ -612,7 +607,7 @@ function EditEntryCard(props: {
   const handleDelete = () => {
     if (
       window.confirm(
-        "Are you sure you want to delete this time entry? This action cannot be undone.",
+        "Are you sure you want to delete this time entry? This action cannot be undone."
       )
     ) {
       deleteTimeEntry({
@@ -623,12 +618,11 @@ function EditEntryCard(props: {
 
   const handleProjectChange = (newProjectId: string) => {
     const selectedProject = projects?.find(
-      (p) => p.projectId.toString() === newProjectId,
+      (p) => p.projectId.toString() === newProjectId
     );
     if (selectedProject) {
       setProjectId(newProjectId);
       setProjectName(selectedProject.projectName);
-      // Reset activity when project changes
       setActivityId("");
       setActivityName("");
     }
@@ -636,7 +630,7 @@ function EditEntryCard(props: {
 
   const handleActivityChange = (newActivityId: string) => {
     const selectedActivity = activities?.find(
-      (a) => a.activity === newActivityId,
+      (a) => a.activity === newActivityId
     );
     if (selectedActivity) {
       setActivityId(selectedActivity.activity);
@@ -645,14 +639,18 @@ function EditEntryCard(props: {
   };
 
   return (
-    <div>
-      <CardHeader>
-        <CardTitle>Edit Entry</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="flex flex-col gap-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium">Project</label>
+    <div className="overflow-hidden rounded-xl border border-primary/30 bg-card shadow-glow-sm">
+      {/* Header */}
+      <div className="border-b border-border/50 bg-primary/5 px-5 py-4">
+        <h3 className="font-display text-lg font-semibold">Edit Entry</h3>
+      </div>
+
+      {/* Content */}
+      <div className="space-y-5 p-5">
+        {/* Project & Activity */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Project</label>
             <Combobox
               items={
                 projects?.map((p) => ({
@@ -668,8 +666,8 @@ function EditEntryCard(props: {
               onChange={handleProjectChange}
             />
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">Activity</label>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Activity</label>
             <Combobox
               items={
                 activities?.map((a) => ({
@@ -687,15 +685,17 @@ function EditEntryCard(props: {
             />
           </div>
         </div>
+
+        {/* Date */}
         <div>
-          <label className="block text-sm font-medium">Day</label>
+          <label className="mb-2 block text-sm font-medium">Date</label>
           <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
-                className="mt-1 w-[240px] justify-start"
+                className="w-full justify-start rounded-xl border-border/50 bg-muted/30 font-normal hover:bg-muted/50 sm:w-[240px]"
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
+                <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
                 {dayjs(selectedDate).format("ddd, MMM D, YYYY")}
               </Button>
             </PopoverTrigger>
@@ -715,77 +715,74 @@ function EditEntryCard(props: {
             </PopoverContent>
           </Popover>
         </div>
-        <div>
-          <label className="block text-sm font-medium">Note</label>
+
+        {/* Note */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Note</label>
           <Input
             value={note ?? ""}
             onChange={(e) => setNote(e.target.value)}
-            className="mt-1"
+            className="rounded-xl border-border/50 bg-muted/30"
+            placeholder="What did you work on?"
           />
         </div>
 
-        <div className="relative flex gap-12">
-          <div className="space-y-4">
-            <h3 className="font-medium">Range</h3>
-            <div className="flex gap-4">
-              <div className="w-32">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Start Time
-                </label>
+        {/* Time inputs */}
+        <div className="flex flex-wrap items-end gap-6">
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Time Range
+            </h4>
+            <div className="flex gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Start</label>
                 <Input
                   type="time"
                   value={startTime}
                   onChange={(e) => updateTimeRange(e.target.value, endTime)}
-                  className="mt-1"
+                  className="w-28 rounded-lg border-border/50 bg-muted/30 time-display"
                 />
               </div>
-              <div className="w-32">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  End Time
-                </label>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">End</label>
                 <Input
                   type="time"
                   value={endTime}
                   onChange={(e) => updateTimeRange(startTime, e.target.value)}
-                  className="mt-1"
+                  className="w-28 rounded-lg border-border/50 bg-muted/30 time-display"
                 />
               </div>
             </div>
           </div>
 
-          <Separator
-            orientation="vertical"
-            className="mb-[6px] h-[80px] self-end"
-          />
+          <Separator orientation="vertical" className="hidden h-16 sm:block" />
 
-          <div className="space-y-4">
-            <h3 className="font-medium">Total</h3>
-            <div className="flex gap-4">
-              <div className="w-24">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Hours
-                </label>
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Duration
+            </h4>
+            <div className="flex gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Hours</label>
                 <Input
                   type="number"
                   value={hours}
                   onChange={(e) =>
                     updateTotalTime(parseInt(e.target.value), minutes)
                   }
-                  className="mt-1"
+                  className="w-20 rounded-lg border-border/50 bg-muted/30"
                   min={0}
                 />
               </div>
-              <div className="w-24">
-                <label className="block text-sm font-medium text-muted-foreground">
-                  Minutes
-                </label>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Minutes</label>
                 <Input
                   type="number"
                   value={minutes}
                   onChange={(e) =>
                     updateTotalTime(hours, parseInt(e.target.value))
                   }
-                  className="mt-1"
+                  className="w-20 rounded-lg border-border/50 bg-muted/30"
                   min={0}
                   max={59}
                 />
@@ -793,20 +790,27 @@ function EditEntryCard(props: {
             </div>
           </div>
         </div>
-      </CardContent>
-      <div className="flex justify-between p-4">
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between border-t border-border/50 bg-muted/20 px-5 py-4">
         <Button
+          variant="ghost"
           size="sm"
-          variant="outline"
           onClick={handleDelete}
           disabled={isDeletingTimeEntry || isUpdatingTimeEntry}
-          className="group"
+          className="gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
         >
-          <TrashIcon className="size-4 transition-colors group-hover:text-destructive" />
+          <TrashIcon className="h-4 w-4" />
           Delete
         </Button>
-        <div className="flex gap-4">
-          <Button size="sm" variant="outline" onClick={props.onCancel}>
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={props.onCancel}
+            className="rounded-lg"
+          >
             Cancel
           </Button>
           <Button
@@ -819,8 +823,9 @@ function EditEntryCard(props: {
               !startTime ||
               (!endTime && hours === 0 && minutes === 0)
             }
+            className="btn-glow gap-2 rounded-lg"
           >
-            <SaveIcon className="size-4" />
+            <SaveIcon className="h-4 w-4" />
             Save
           </Button>
         </div>
@@ -830,7 +835,7 @@ function EditEntryCard(props: {
 }
 
 function isMergedTimeEntry(
-  entry: TimeEntry | MergedTimeEntry,
+  entry: TimeEntry | MergedTimeEntry
 ): entry is MergedTimeEntry {
   return "timePeriods" in entry;
 }
@@ -840,12 +845,10 @@ function OverlapWarning(props: { className?: string }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <AlertTriangleIcon
-          className={cn("ml-0.5 size-5 text-primary", props.className)}
+          className={cn("h-4 w-4 text-amber-500", props.className)}
         />
       </TooltipTrigger>
-      <TooltipContent>
-        Overlapping time interval with another entry
-      </TooltipContent>
+      <TooltipContent>Overlapping time interval</TooltipContent>
     </Tooltip>
   );
 }
