@@ -197,6 +197,7 @@ fn decode_session_id(session_id: &str) -> Result<(JWTHeader, JWTPayload), Box<dy
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct JWTHeader {
     alg: String,
     sub: String,
@@ -204,6 +205,7 @@ struct JWTHeader {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct JWTPayload {
     exp: u64,
     iat: u64,
