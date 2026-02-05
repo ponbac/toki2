@@ -32,7 +32,7 @@ app/            # React frontend
 - **Repository pattern**: Database access via traits (`UserRepository`, etc.) with `*Impl` implementations
 - **AppState**: Shared state container passed via Axum extractors
 - **RepoDiffer workers**: Background tasks polling ADO for PR changes, communicating via mpsc channels
-- **SQLx offline mode**: `.sqlx/` caches query metadata. Run `cargo sqlx prepare` after changing SQL queries
+- **SQLx offline mode**: `.sqlx/` caches query metadata. Set `SQLX_OFFLINE=true` to compile without a live DB. Run `cargo sqlx prepare` after changing SQL queries
 
 ### Frontend
 
@@ -43,23 +43,29 @@ app/            # React frontend
 
 ## Development
 
-```bash
-# Backend (fresh DB setup if needed)
-cd toki-api && ./scripts/init_db.sh
-bacon run
+Use `just` to run common commands (run `just` to see all available recipes):
 
-# Frontend
-cd app && bun dev
+```bash
+just dev        # Run both backend and frontend
+
+# Or individually:
+just init-db    # Initialize database (first time setup)
+just run        # Run backend
+just app        # Run frontend dev server
 ```
 
 ## Verifying Changes
 
 ```bash
-# Backend - verify Rust changes compile
-cargo check
+just check-all  # Verify everything (backend + frontend)
 
-# Frontend - verify TypeScript and linting
-cd app && bun tsc && bun lint
+# Or individually:
+just check      # Backend - verify Rust compiles
+just tsc        # Frontend - TypeScript check
+just lint       # Frontend - ESLint
+
+# Without a running database, use SQLX_OFFLINE=true:
+SQLX_OFFLINE=true just check
 ```
 
 ## Important Notes
