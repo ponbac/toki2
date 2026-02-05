@@ -15,7 +15,9 @@ import {
   DrumIcon,
   FolderGit2,
   GitPullRequestIcon,
+  Loader2,
   TimerIcon,
+  BriefcaseIcon,
 } from "lucide-react";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -35,9 +37,13 @@ import {
   rememberLastProjectAtom,
   buildRememberedTimerParams,
 } from "@/lib/milltime-preferences";
+import { SearchResult } from "@/lib/api/queries/search";
+import { useDebounce } from "@/hooks/useDebounce";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
+  const [searchInput, setSearchInput] = React.useState("");
+  const debouncedSearchInput = useDebounce(searchInput, 300);
 
   const close = () => setOpen(false);
 
@@ -53,13 +59,28 @@ export function CmdK() {
     return () => document.removeEventListener("keydown", down);
   }, []);
 
+  React.useEffect(() => {
+    if (!open) {
+      setSearchInput("");
+    }
+  }, [open]);
+
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Type a command or search..." />
+      <CommandInput
+        placeholder="Type a command or search..."
+        value={searchInput}
+        onValueChange={setSearchInput}
+      />
       <CommandList className="max-w-2xl">
         <CommandEmpty>No results found.</CommandEmpty>
         <PagesCommandGroup close={close} />
         <ActionsCommandGroup close={close} />
+        <SearchCommandGroup
+          close={close}
+          searchQuery={debouncedSearchInput}
+          isDebouncing={searchInput !== debouncedSearchInput}
+        />
         <PRCommandGroup close={close} />
       </CommandList>
     </CommandDialog>
@@ -218,7 +239,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
 function PRCommandGroup(props: { close: () => void }) {
   const navigate = useNavigate();
 
-  const { data: pullRequests } = useQuery(queries.listPullRequests());
+  const { data: pullRequests } = useQuery(queries.pullRequests.listPullRequests());
 
   return (
     <CommandGroup heading="Pull requests">
@@ -261,4 +282,102 @@ function PRCommandGroup(props: { close: () => void }) {
 
 function pullRequestValue(pr: ListPullRequest) {
   return `!${pr.id} ${pr.title} ${pr.repoName} ${pr.createdBy.displayName} ${pr.workItems.map((wi) => `#${wi.id}`).join(" ")}`;
+}
+
+function SearchCommandGroup(props: {
+  close: () => void;
+  searchQuery: string;
+  isDebouncing: boolean;
+}) {
+  const navigate = useNavigate();
+
+  const { data: searchResults, isLoading, isFetching, isError } = useQuery(
+    queries.search.search(props.searchQuery, 10)
+  );
+
+  if (!props.searchQuery && !props.isDebouncing) {
+    return null;
+  }
+
+  if (isLoading || props.isDebouncing) {
+    return (
+      <CommandGroup heading="Search results">
+        <CommandItem disabled>
+          <div className="flex flex-row items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Searching...
+          </div>
+        </CommandItem>
+      </CommandGroup>
+    );
+  }
+
+  if (isError) {
+    return (
+      <CommandGroup heading="Search results">
+        <CommandItem disabled>
+          <span className="text-destructive">Search failed. Try again.</span>
+        </CommandItem>
+      </CommandGroup>
+    );
+  }
+
+  if (!searchResults || searchResults.length === 0) {
+    return null;
+  }
+
+  return (
+    <CommandGroup
+      heading={
+        <span className="flex items-center gap-2">
+          Search results
+          {isFetching && (
+            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+          )}
+        </span>
+      }
+    >
+      {searchResults.map((result) => (
+        <CommandItem
+          key={`${result.sourceType}-${result.externalId}`}
+          value={searchResultValue(result)}
+          onSelect={() => {
+            if (result.sourceType === "Pr") {
+              navigate({
+                to: "/prs/$prId",
+                params: { prId: result.externalId.toString() },
+              });
+            } else {
+              window.open(result.url, "_blank", "noopener,noreferrer");
+            }
+            props.close();
+          }}
+        >
+          <div className="flex w-full flex-row items-center justify-between gap-2 truncate">
+            <div className="flex max-w-[75%] flex-row items-center gap-2">
+              {result.sourceType === "Pr" ? (
+                <GitPullRequestIcon className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <BriefcaseIcon className="h-4 w-4 text-muted-foreground" />
+              )}
+              <span className="text-muted-foreground">
+                {result.sourceType === "Pr" ? "!" : "#"}
+                {result.externalId}
+              </span>
+              <span className="truncate">{result.title}</span>
+            </div>
+            {result.authorName && (
+              <span className="text-xs text-muted-foreground">
+                {result.authorName}
+              </span>
+            )}
+          </div>
+        </CommandItem>
+      ))}
+    </CommandGroup>
+  );
+}
+
+function searchResultValue(result: SearchResult) {
+  return `${result.sourceType === "Pr" ? "!" : "#"}${result.externalId} ${result.title} ${result.authorName ?? ""}`;
 }

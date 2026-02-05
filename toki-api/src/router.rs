@@ -36,7 +36,8 @@ pub async fn create(
         .nest("/differs", routes::differs::router())
         .nest("/repositories", routes::repositories::router())
         .nest("/notifications", routes::notifications::router())
-        .nest("/milltime", routes::milltime::router());
+        .nest("/milltime", routes::milltime::router())
+        .nest("/search", routes::search::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
@@ -62,6 +63,10 @@ pub async fn create(
     // Start all the differ threads (if in production)
     #[cfg(not(debug_assertions))]
     app_state.start_all_differs().await;
+
+    // Start search indexer background task (if in production)
+    #[cfg(not(debug_assertions))]
+    app_state.start_search_indexer();
 
     // Finally, wrap the app with tracing layer, state and CORS
     let cors = CorsLayer::new()

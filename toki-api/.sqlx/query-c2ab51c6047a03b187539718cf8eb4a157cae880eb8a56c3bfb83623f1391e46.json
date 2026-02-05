@@ -1,0 +1,175 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                source_type as \"source_type: SearchSource\",\n                source_id,\n                external_id,\n                title,\n                description,\n                content,\n                organization,\n                project,\n                repo_name,\n                status,\n                author_id,\n                author_name,\n                assigned_to_id,\n                assigned_to_name,\n                priority,\n                item_type,\n                is_draft,\n                created_at,\n                updated_at,\n                closed_at,\n                url,\n                parent_id,\n                linked_work_items\n            FROM search_documents\n            WHERE source_type = $1 AND source_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_type: SearchSource",
+        "type_info": {
+          "Custom": {
+            "name": "search_source",
+            "kind": {
+              "Enum": [
+                "pr",
+                "work_item"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "external_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "organization",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "project",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "repo_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "author_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "author_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "assigned_to_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "assigned_to_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "priority",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "item_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "is_draft",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "closed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "parent_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 22,
+        "name": "linked_work_items",
+        "type_info": "Int4Array"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "search_source",
+            "kind": {
+              "Enum": [
+                "pr",
+                "work_item"
+              ]
+            }
+          }
+        },
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c2ab51c6047a03b187539718cf8eb4a157cae880eb8a56c3bfb83623f1391e46"
+}

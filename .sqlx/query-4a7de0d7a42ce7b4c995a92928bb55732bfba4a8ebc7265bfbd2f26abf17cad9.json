@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO search_documents (\n                source_type, source_id, external_id, title, description, content,\n                organization, project, repo_name, status,\n                author_id, author_name, assigned_to_id, assigned_to_name,\n                priority, item_type, is_draft,\n                created_at, updated_at, closed_at,\n                url, parent_id, linked_work_items, embedding\n            ) VALUES (\n                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,\n                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,\n                $21, $22, $23, $24\n            )\n            ON CONFLICT (source_type, source_id) DO UPDATE SET\n                title = EXCLUDED.title,\n                description = EXCLUDED.description,\n                content = EXCLUDED.content,\n                status = EXCLUDED.status,\n                author_id = EXCLUDED.author_id,\n                author_name = EXCLUDED.author_name,\n                assigned_to_id = EXCLUDED.assigned_to_id,\n                assigned_to_name = EXCLUDED.assigned_to_name,\n                priority = EXCLUDED.priority,\n                item_type = EXCLUDED.item_type,\n                is_draft = EXCLUDED.is_draft,\n                updated_at = EXCLUDED.updated_at,\n                closed_at = EXCLUDED.closed_at,\n                linked_work_items = EXCLUDED.linked_work_items,\n                embedding = EXCLUDED.embedding,\n                indexed_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "search_source",
+            "kind": {
+              "Enum": [
+                "pr",
+                "work_item"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Int4",
+        "Int4Array",
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a7de0d7a42ce7b4c995a92928bb55732bfba4a8ebc7265bfbd2f26abf17cad9"
+}

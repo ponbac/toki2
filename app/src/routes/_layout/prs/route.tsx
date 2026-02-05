@@ -28,8 +28,8 @@ export const Route = createFileRoute("/_layout/prs")({
   shouldReload: false,
   loader: async ({ context }) => {
     await Promise.all([
-      context.queryClient.ensureQueryData(queries.me()),
-      context.queryClient.ensureQueryData(queries.listPullRequests()),
+      context.queryClient.ensureQueryData(queries.user.me()),
+      context.queryClient.ensureQueryData(queries.pullRequests.listPullRequests()),
     ]);
   },
   component: PrsComponent,
@@ -40,9 +40,9 @@ function PrsComponent() {
   const { searchString, filterAuthor, filterReviewer, filterBlocking } =
     Route.useSearch();
 
-  const { data: user } = useSuspenseQuery(queries.me());
+  const { data: user } = useSuspenseQuery(queries.user.me());
   const { data: pullRequests } = useSuspenseQuery({
-    ...queries.listPullRequests(),
+    ...queries.pullRequests.listPullRequests(),
     refetchInterval: 60 * 1000,
   });
 

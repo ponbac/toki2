@@ -3,13 +3,15 @@ import { pullRequestsQueries } from "./pullRequests";
 import { commitsQueries } from "./commits";
 import { milltimeQueries } from "./milltime";
 import { userQueries } from "./user";
+import { searchQueries } from "./search";
 
 export const queries = {
-  ...userQueries,
-  ...differsQueries,
-  ...pullRequestsQueries,
-  ...commitsQueries,
-  ...milltimeQueries,
+  user: userQueries,
+  differs: differsQueries,
+  pullRequests: pullRequestsQueries,
+  commits: commitsQueries,
+  milltime: milltimeQueries,
+  search: searchQueries,
 };
 
 export type RepoKey<T = object> = T & {

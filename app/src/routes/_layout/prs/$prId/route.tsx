@@ -41,7 +41,7 @@ import { milltimeMutations } from "@/lib/api/mutations/milltime";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(queries.listPullRequests()),
+    context.queryClient.ensureQueryData(queries.pullRequests.listPullRequests()),
   component: PRDetailsDialog,
 });
 
@@ -51,7 +51,7 @@ function PRDetailsDialog() {
   const navigate = useNavigate({ from: Route.fullPath });
 
   const { data: pr } = useSuspenseQuery({
-    ...queries.listPullRequests(),
+    ...queries.pullRequests.listPullRequests(),
     select: (data) => data.find((pr) => pr.id === +prId),
   });
 

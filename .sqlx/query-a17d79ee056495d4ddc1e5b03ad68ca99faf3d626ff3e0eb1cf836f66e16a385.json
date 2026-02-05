@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, email, full_name, picture, access_token, roles\n            FROM users\n            WHERE id = $1\n            ",
+  "query": "\n            INSERT INTO users (email, full_name, picture, access_token, roles)\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT(email) DO UPDATE\n            SET full_name = EXCLUDED.full_name,\n                picture = EXCLUDED.picture,\n                access_token = EXCLUDED.access_token\n            RETURNING id, email, full_name, picture, access_token, roles, session_auth_hash\n            ",
   "describe": {
     "columns": [
       {
@@ -32,11 +32,20 @@
         "ordinal": 5,
         "name": "roles",
         "type_info": "TextArray"
+      },
+      {
+        "ordinal": 6,
+        "name": "session_auth_hash",
+        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Int4"
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray"
       ]
     },
     "nullable": [
@@ -45,8 +54,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "6247813c0b5c62947b577514ca1569b32ede7c85b1f9a2f301c2582d58068d6b"
+  "hash": "a17d79ee056495d4ddc1e5b03ad68ca99faf3d626ff3e0eb1cf836f66e16a385"
 }

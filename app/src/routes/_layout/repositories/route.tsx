@@ -22,8 +22,8 @@ const repositoriesSearchSchema = z.object({
 export const Route = createFileRoute("/_layout/repositories")({
   validateSearch: repositoriesSearchSchema,
   loader: ({ context }) => {
-    context.queryClient.ensureQueryData(queries.me());
-    context.queryClient.ensureQueryData(queries.differs());
+    context.queryClient.ensureQueryData(queries.user.me());
+    context.queryClient.ensureQueryData(queries.differs.differs());
   },
   component: RepositoriesComponent,
 });
@@ -32,11 +32,11 @@ function RepositoriesComponent() {
   const { searchString } = Route.useSearch();
 
   const { data: isAdmin } = useSuspenseQuery({
-    ...queries.me(),
+    ...queries.user.me(),
     select: (data) => data.roles.includes("Admin"),
   });
   const { data, dataUpdatedAt } = useSuspenseQuery({
-    ...queries.differs(),
+    ...queries.differs.differs(),
     refetchInterval: 15 * 1000,
   });
 
