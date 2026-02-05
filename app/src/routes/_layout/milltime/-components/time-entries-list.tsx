@@ -660,7 +660,7 @@ function EditEntryCard(props: {
               }
               placeholder="Select project..."
               searchPlaceholder="Search projects..."
-              onSelect={handleProjectChange}
+              onSelect={() => {}}
               emptyMessage="No projects found"
               value={projectId}
               onChange={handleProjectChange}
@@ -677,7 +677,7 @@ function EditEntryCard(props: {
               }
               placeholder="Select activity..."
               searchPlaceholder="Search activities..."
-              onSelect={handleActivityChange}
+              onSelect={() => {}}
               emptyMessage="No activities found"
               disabled={!projectId}
               value={activityId}
