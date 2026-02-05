@@ -205,6 +205,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires real Milltime connection"]
     async fn test_delete_project_registration() {
         let client = initialize_client().await;
         // Note: Use a valid project registration ID that can be safely deleted

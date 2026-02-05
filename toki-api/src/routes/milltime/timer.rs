@@ -32,6 +32,7 @@ impl From<milltime::TimerRegistration> for MilltimeTimerWrapper {
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum TokiTimer {
     Milltime(MilltimeTimerWrapper),
     Standalone(repositories::DatabaseTimer),

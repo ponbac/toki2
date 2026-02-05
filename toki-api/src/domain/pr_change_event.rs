@@ -47,7 +47,7 @@ impl PRChangeEvent {
                         .comments
                         .first()
                         .and_then(|comment| comment.content.as_ref())
-                        .map_or(false, |content| !Self::is_ignored_message_content(&content))
+                        .map_or(false, |content| !Self::is_ignored_message_content(content))
             }
             PRChangeEvent::ThreadUpdated(thread) => {
                 let most_recent_author = &thread.most_recent_comment().author;

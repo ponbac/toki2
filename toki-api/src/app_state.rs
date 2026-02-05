@@ -45,6 +45,7 @@ impl IntoResponse for AppStateError {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AppState {
     pub app_url: Url,
     pub api_url: Url,
@@ -171,6 +172,7 @@ impl AppState {
             .ok_or(AppStateError::RepoClientNotFound(key))
     }
 
+    #[allow(dead_code)]
     pub async fn start_all_differs(&self) {
         let differs = self.differs.read().await;
         for key in differs.keys() {
@@ -258,6 +260,7 @@ impl AppState {
         })
     }
 
+    #[allow(dead_code)]
     pub fn host_domain(&self) -> String {
         self.api_url.host_str().unwrap_or("localhost").to_string()
     }
