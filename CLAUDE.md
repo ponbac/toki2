@@ -32,7 +32,7 @@ app/            # React frontend
 - **Repository pattern**: Database access via traits (`UserRepository`, etc.) with `*Impl` implementations
 - **AppState**: Shared state container passed via Axum extractors
 - **RepoDiffer workers**: Background tasks polling ADO for PR changes, communicating via mpsc channels
-- **SQLx offline mode**: `.sqlx/` caches query metadata. Run `cargo sqlx prepare` after changing SQL queries
+- **SQLx offline mode**: `.sqlx/` caches query metadata. Set `SQLX_OFFLINE=true` to compile without a live DB. Run `cargo sqlx prepare` after changing SQL queries
 
 ### Frontend
 
@@ -55,8 +55,8 @@ cd app && bun dev
 ## Verifying Changes
 
 ```bash
-# Backend - verify Rust changes compile
-cargo check
+# Backend - verify Rust changes compile (requires DB or offline mode)
+SQLX_OFFLINE=true cargo check
 
 # Frontend - verify TypeScript and linting
 cd app && bun tsc && bun lint
