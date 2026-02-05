@@ -527,17 +527,6 @@ function EditEntryCard(props: {
     enabled: true,
   });
 
-  // When project changes, reset activity if it's not valid for the new project
-  useEffect(() => {
-    if (activities && activityId) {
-      const validActivity = activities.find((a) => a.activity === activityId);
-      if (!validActivity) {
-        setActivityId("");
-        setActivityName("");
-      }
-    }
-  }, [activities, activityId]);
-
   // Keep time range and total time in sync
   const updateTimeRange = (start: string, end: string) => {
     setStartTime(start);
@@ -643,9 +632,9 @@ function EditEntryCard(props: {
     }
   };
 
-  const handleActivityChange = (newActivityName: string) => {
+  const handleActivityChange = (newActivityId: string) => {
     const selectedActivity = activities?.find(
-      (a) => a.activityName === newActivityName,
+      (a) => a.activity === newActivityId,
     );
     if (selectedActivity) {
       setActivityId(selectedActivity.activity);
@@ -682,7 +671,7 @@ function EditEntryCard(props: {
             <Combobox
               items={
                 activities?.map((a) => ({
-                  value: a.activityName,
+                  value: a.activity,
                   label: a.activityName,
                 })) || []
               }
@@ -691,7 +680,7 @@ function EditEntryCard(props: {
               onSelect={handleActivityChange}
               emptyMessage="No activities found"
               disabled={!projectId}
-              value={activityName}
+              value={activityId}
               onChange={handleActivityChange}
             />
           </div>
