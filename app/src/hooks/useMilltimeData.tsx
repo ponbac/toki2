@@ -1,3 +1,4 @@
+/* eslint-disable react-compiler/react-compiler */
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -25,14 +26,14 @@ export const useMilltimeData = (options?: {
     reset();
   }
 
-  const result = useMemo(
-    () => ({
+  const result = useMemo(() => {
+    return {
       projects,
       activities,
       isAuthenticated,
-    }),
-    [projects, activities, isAuthenticated]
-  );
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options?.projectId, projects, activities, isAuthenticated]);
 
   return result;
 };
