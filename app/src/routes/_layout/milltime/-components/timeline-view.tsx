@@ -7,6 +7,7 @@ import {
   startOfWeek,
   addDays,
   isToday,
+  startOfDay,
 } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Clock, PlayIcon } from "lucide-react";
@@ -94,7 +95,7 @@ function positionEntries(
         totalColumns: 1,
         mockTimes: true,
       });
-      currentHour += duration + 0.15;
+      currentHour += duration + 0.04;
     });
   }
 
@@ -154,7 +155,7 @@ function computeGridBounds(entries: TimeEntry[]): {
     untimedByDate.forEach((dayEntries) => {
       let mockEnd = MOCK_START_HOUR;
       dayEntries.forEach((e) => {
-        mockEnd += Math.max(e.hours, 0.5) + 0.15;
+        mockEnd += Math.max(e.hours, 0.5) + 0.04;
       });
       latest = Math.max(latest, mockEnd);
     });
@@ -342,8 +343,8 @@ function TimelineBlock({
           style={{
             top: entry.topPx,
             height: entry.heightPx,
-            left: `calc(${leftPercent}% + 2px)`,
-            width: `calc(${columnWidth}% - 4px)`,
+            left: `calc(${leftPercent}% + 6px)`,
+            width: `calc(${columnWidth}% - 12px)`,
             backgroundColor: withAlpha(color, 0.18),
             borderColor: withAlpha(color, 0.4),
             boxShadow: `0 1px 4px ${withAlpha(color, 0.15)}`,
@@ -511,33 +512,40 @@ function DayColumn({
 
 export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
   const [mode, setMode] = useState<TimelineMode>("week");
-  const [selectedDayOffset, setSelectedDayOffset] = useState(() => {
-    const ws = startOfWeek(parseISO(dateRange.from), { weekStartsOn: 1 });
-    const today = new Date();
-    const diffDays = Math.floor(
-      (today.getTime() - ws.getTime()) / (1000 * 60 * 60 * 24),
-    );
-    return Math.max(0, Math.min(4, diffDays));
+
+  const rangeFrom = useMemo(() => parseISO(dateRange.from), [dateRange.from]);
+  const rangeTo = useMemo(() => parseISO(dateRange.to), [dateRange.to]);
+
+  // Week view: track which week is displayed
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+    const from = parseISO(dateRange.from);
+    const to = parseISO(dateRange.to);
+    const today = startOfDay(new Date());
+    const target = today >= from && today <= to ? today : from;
+    return startOfWeek(target, { weekStartsOn: 1 });
   });
+
+  // Day view: track selected date
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const from = parseISO(dateRange.from);
+    const to = parseISO(dateRange.to);
+    const today = startOfDay(new Date());
+    return today >= from && today <= to ? today : from;
+  });
+
+  // Reset when dateRange changes
+  useEffect(() => {
+    const from = parseISO(dateRange.from);
+    const to = parseISO(dateRange.to);
+    const today = startOfDay(new Date());
+    const target = today >= from && today <= to ? today : from;
+    setCurrentWeekStart(startOfWeek(target, { weekStartsOn: 1 }));
+    setSelectedDate(target);
+  }, [dateRange.from, dateRange.to]);
 
   const colorMap = useMemo(
     () => buildProjectColorMap(timeEntries),
     [timeEntries],
-  );
-
-  const weekStart = useMemo(
-    () => startOfWeek(parseISO(dateRange.from), { weekStartsOn: 1 }),
-    [dateRange.from],
-  );
-
-  const weekDays = useMemo(
-    () => Array.from({ length: 5 }, (_, i) => addDays(weekStart, i)),
-    [weekStart],
-  );
-
-  const selectedDay = useMemo(
-    () => addDays(weekStart, selectedDayOffset),
-    [weekStart, selectedDayOffset],
   );
 
   // Pre-group entries by date so we don't filter per day
@@ -552,16 +560,65 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     return map;
   }, [timeEntries]);
 
-  // Compute grid bounds from entries visible in the current view
-  const selectedDayKey = useMemo(
-    () => format(selectedDay, "yyyy-MM-dd"),
-    [selectedDay],
+  const weekDays = useMemo(() => {
+    const days: Date[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = addDays(currentWeekStart, i);
+      const key = format(day, "yyyy-MM-dd");
+      // Always include Mon-Fri; include Sat/Sun only if they have entries
+      if (i < 5 || entriesByDate.has(key)) {
+        days.push(day);
+      }
+    }
+    return days;
+  }, [currentWeekStart, entriesByDate]);
+
+  // Multi-week navigation
+  const isMultiWeek = useMemo(() => {
+    const firstWeek = startOfWeek(rangeFrom, { weekStartsOn: 1 });
+    const lastWeek = startOfWeek(rangeTo, { weekStartsOn: 1 });
+    return firstWeek.getTime() !== lastWeek.getTime();
+  }, [rangeFrom, rangeTo]);
+
+  const canGoPrevWeek = useMemo(
+    () => addDays(currentWeekStart, -7) >= startOfWeek(rangeFrom, { weekStartsOn: 1 }),
+    [currentWeekStart, rangeFrom],
   );
 
+  const canGoNextWeek = useMemo(
+    () => addDays(currentWeekStart, 7) <= startOfWeek(rangeTo, { weekStartsOn: 1 }),
+    [currentWeekStart, rangeTo],
+  );
+
+  // Day navigation
+  const canGoPrevDay = useMemo(
+    () => addDays(selectedDate, -1) >= rangeFrom,
+    [selectedDate, rangeFrom],
+  );
+
+  const canGoNextDay = useMemo(
+    () => addDays(selectedDate, 1) <= rangeTo,
+    [selectedDate, rangeTo],
+  );
+
+  const selectedDayKey = useMemo(
+    () => format(selectedDate, "yyyy-MM-dd"),
+    [selectedDate],
+  );
+
+  // Only use entries visible in current view for grid bounds
   const visibleEntries = useMemo(() => {
-    if (mode === "week") return timeEntries;
+    if (mode === "week") {
+      const entries: TimeEntry[] = [];
+      weekDays.forEach((day) => {
+        const key = format(day, "yyyy-MM-dd");
+        const dayEntries = entriesByDate.get(key);
+        if (dayEntries) entries.push(...dayEntries);
+      });
+      return entries;
+    }
     return entriesByDate.get(selectedDayKey) ?? [];
-  }, [mode, timeEntries, entriesByDate, selectedDayKey]);
+  }, [mode, weekDays, entriesByDate, selectedDayKey]);
 
   const { startHour, endHour } = useMemo(
     () => computeGridBounds(visibleEntries),
@@ -569,7 +626,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
   );
 
   const positionedByDay = useMemo(() => {
-    const days = mode === "week" ? weekDays : [selectedDay];
+    const days = mode === "week" ? weekDays : [selectedDate];
     const map = new Map<string, PositionedEntry[]>();
     days.forEach((day) => {
       const key = format(day, "yyyy-MM-dd");
@@ -577,7 +634,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
       map.set(key, positionEntries(dayEntries, startHour));
     });
     return map;
-  }, [entriesByDate, mode, weekDays, selectedDay, startHour]);
+  }, [entriesByDate, mode, weekDays, selectedDate, startHour]);
 
   const totalHours = endHour - startHour;
   const gridHeight = totalHours * HOUR_HEIGHT_PX;
@@ -605,29 +662,50 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {mode === "week" && isMultiWeek && (
+            <div className="mr-2 flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentWeekStart((prev) => addDays(prev, -7))}
+                disabled={!canGoPrevWeek}
+                className="h-7 w-7 p-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[130px] text-center text-sm font-medium">
+                {format(currentWeekStart, "MMM d")} – {format(weekDays[weekDays.length - 1], "MMM d")}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentWeekStart((prev) => addDays(prev, 7))}
+                disabled={!canGoNextWeek}
+                className="h-7 w-7 p-0"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
           {mode === "day" && (
             <div className="mr-2 flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  setSelectedDayOffset(Math.max(0, selectedDayOffset - 1))
-                }
-                disabled={selectedDayOffset === 0}
+                onClick={() => setSelectedDate((prev) => addDays(prev, -1))}
+                disabled={!canGoPrevDay}
                 className="h-7 w-7 p-0"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="min-w-[100px] text-center text-sm font-medium">
-                {format(selectedDay, "EEE, MMM d")}
+                {format(selectedDate, "EEE, MMM d")}
               </span>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  setSelectedDayOffset(Math.min(4, selectedDayOffset + 1))
-                }
-                disabled={selectedDayOffset === 4}
+                onClick={() => setSelectedDate((prev) => addDays(prev, 1))}
+                disabled={!canGoNextDay}
                 className="h-7 w-7 p-0"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -663,17 +741,24 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-3 border-b border-border/20 px-5 py-2.5">
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-b border-border/20 px-5 py-2.5">
         {[...colorMap.entries()].map(([project, color]) => (
-          <div key={project} className="flex items-center gap-1.5">
-            <div
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: color }}
-            />
-            <span className="max-w-[120px] truncate text-[11px] text-muted-foreground">
+          <Tooltip key={project}>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="max-w-[200px] truncate text-[11px] text-muted-foreground">
+                  {project}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
               {project}
-            </span>
-          </div>
+            </TooltipContent>
+          </Tooltip>
         ))}
       </div>
 
@@ -698,7 +783,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
             <AnimatePresence mode="wait">
               {mode === "week" ? (
                 <motion.div
-                  key="week"
+                  key={`week-${format(currentWeekStart, "yyyy-MM-dd")}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -724,7 +809,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                 </motion.div>
               ) : (
                 <motion.div
-                  key={`day-${selectedDayOffset}`}
+                  key={`day-${selectedDayKey}`}
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
@@ -732,12 +817,8 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                   className="flex flex-1"
                 >
                   <DayColumn
-                    date={selectedDay}
-                    entries={
-                      positionedByDay.get(
-                        format(selectedDay, "yyyy-MM-dd"),
-                      ) || []
-                    }
+                    date={selectedDate}
+                    entries={positionedByDay.get(selectedDayKey) || []}
                     colorMap={colorMap}
                     gridHeight={gridHeight}
                     startHour={startHour}
