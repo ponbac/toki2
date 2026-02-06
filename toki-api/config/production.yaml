@@ -4,6 +4,7 @@ application:
   api_url: "https://toki-api.spinit.se"
   cookie_domain: ".spinit.se"
   disable_auth: false
+  cors_allowed_origin_suffix: "-ponbacs-projects.vercel.app"
 database:
   require_ssl: true
 auth:

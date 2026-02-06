@@ -9,7 +9,7 @@ use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, T
 use sqlx::PgPool;
 use time::Duration;
 use tower_http::{
-    cors::CorsLayer,
+    cors::{AllowOrigin, CorsLayer},
     trace::{DefaultMakeSpan, TraceLayer},
 };
 use tower_sessions_moka_store::MokaStore;
@@ -64,11 +64,22 @@ pub async fn create(
     app_state.start_all_differs().await;
 
     // Finally, wrap the app with tracing layer, state and CORS
+    let app_url = config.application.app_url.clone();
+    let allowed_suffix = config.application.cors_allowed_origin_suffix.clone();
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers(["content-type".parse().unwrap()])
         .allow_credentials(true)
-        .allow_origin([config.application.app_url.parse().unwrap()]);
+        .allow_origin(AllowOrigin::predicate(move |origin, _| {
+            let origin_str = origin.to_str().unwrap_or_default();
+            if origin_str == app_url {
+                return true;
+            }
+            if let Some(ref suffix) = allowed_suffix {
+                return origin_str.starts_with("https://") && origin_str.ends_with(suffix.as_str());
+            }
+            false
+        }));
     app_with_auth
         .with_state(app_state)
         .layer(cors)

@@ -22,6 +22,8 @@ pub struct ApplicationSettings {
     pub api_url: String,
     pub cookie_domain: String,
     pub disable_auth: bool,
+    #[serde(default)]
+    pub cors_allowed_origin_suffix: Option<String>,
 }
 
 #[serde_as]
