@@ -79,7 +79,7 @@ function positionEntries(
       ...entry,
       topPx,
       heightPx: Math.max(MIN_BLOCK_PX, naturalHeight),
-      endPx: topPx + naturalHeight,
+      endPx: Math.max(0, endH * HOUR_HEIGHT_PX),
       column: 0,
       totalColumns: 1,
       mockTimes: false,
@@ -97,7 +97,7 @@ function positionEntries(
         ...entry,
         topPx,
         heightPx: Math.max(MIN_BLOCK_PX, naturalHeight),
-        endPx: topPx + naturalHeight,
+        endPx: Math.max(0, (currentHour + duration) * HOUR_HEIGHT_PX),
         column: 0,
         totalColumns: 1,
         mockTimes: true,
@@ -168,25 +168,25 @@ function positionEntries(
     }
   }
 
-  // Push-down pass: prevent visual overlap for adjacent entries in the same column.
-  // MIN_BLOCK_PX can inflate short entries beyond their actual end time, causing
-  // visual overlap with the next entry even though they don't overlap in time.
-  const byColumn = new Map<number, number[]>();
-  for (let i = 0; i < sorted.length; i++) {
-    const col = sorted[i].column;
-    const arr = byColumn.get(col) || [];
-    arr.push(i);
-    byColumn.set(col, arr);
-  }
-  for (const indices of byColumn.values()) {
-    indices.sort((a, b) => sorted[a].topPx - sorted[b].topPx);
-    for (let k = 1; k < indices.length; k++) {
-      const prev = sorted[indices[k - 1]];
-      const curr = sorted[indices[k]];
-      const prevBottom = prev.topPx + prev.heightPx;
-      if (prevBottom > curr.topPx) {
-        curr.topPx = prevBottom;
+  // Push-down pass: prevent visual overlap between entries that share horizontal space.
+  // MIN_BLOCK_PX can inflate short entries beyond their actual end time. Entries from
+  // different clusters can share horizontal space (e.g. full-width entry above a
+  // half-width clustered entry), so we check actual horizontal range overlap.
+  for (let i = 1; i < sorted.length; i++) {
+    const curr = sorted[i];
+    const currLeft = curr.column / curr.totalColumns;
+    const currRight = (curr.column + 1) / curr.totalColumns;
+    let maxBottom = 0;
+    for (let j = 0; j < i; j++) {
+      const prev = sorted[j];
+      const prevLeft = prev.column / prev.totalColumns;
+      const prevRight = (prev.column + 1) / prev.totalColumns;
+      if (prevLeft < currRight && currLeft < prevRight) {
+        maxBottom = Math.max(maxBottom, prev.topPx + prev.heightPx);
       }
+    }
+    if (maxBottom > curr.topPx) {
+      curr.topPx = maxBottom;
     }
   }
 
