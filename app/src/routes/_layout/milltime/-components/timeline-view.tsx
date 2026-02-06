@@ -99,23 +99,65 @@ function positionEntries(
     });
   }
 
-  // Resolve overlaps
+  // Resolve overlaps using cluster-based approach
   const sorted = positioned.sort((a, b) => a.topPx - b.topPx);
+
+  // Build overlap clusters: groups of entries that transitively overlap
+  const clusterOf = new Map<number, number>(); // index -> cluster id
+  let nextCluster = 0;
+
   for (let i = 0; i < sorted.length; i++) {
-    const overlapping = sorted.filter(
-      (other, j) =>
-        j < i &&
-        other.topPx < sorted[i].topPx + sorted[i].heightPx &&
-        other.topPx + other.heightPx > sorted[i].topPx,
-    );
-    if (overlapping.length > 0) {
-      const usedColumns = new Set(overlapping.map((o) => o.column));
+    let cluster = -1;
+    for (let j = 0; j < i; j++) {
+      if (
+        sorted[j].topPx + sorted[j].heightPx > sorted[i].topPx &&
+        sorted[j].topPx < sorted[i].topPx + sorted[i].heightPx
+      ) {
+        const jCluster = clusterOf.get(j)!;
+        if (cluster === -1) {
+          cluster = jCluster;
+        } else if (cluster !== jCluster) {
+          // Merge clusters
+          const oldCluster = jCluster;
+          for (const [idx, c] of clusterOf) {
+            if (c === oldCluster) clusterOf.set(idx, cluster);
+          }
+        }
+      }
+    }
+    clusterOf.set(i, cluster === -1 ? nextCluster++ : cluster);
+  }
+
+  // Group entries by cluster
+  const clusters = new Map<number, number[]>();
+  for (const [idx, c] of clusterOf) {
+    const arr = clusters.get(c) || [];
+    arr.push(idx);
+    clusters.set(c, arr);
+  }
+
+  // Assign columns within each cluster
+  for (const members of clusters.values()) {
+    if (members.length <= 1) continue;
+    members.sort((a, b) => sorted[a].topPx - sorted[b].topPx);
+    for (const idx of members) {
+      const usedColumns = new Set<number>();
+      for (const other of members) {
+        if (
+          other !== idx &&
+          sorted[other].topPx < sorted[idx].topPx + sorted[idx].heightPx &&
+          sorted[other].topPx + sorted[other].heightPx > sorted[idx].topPx
+        ) {
+          usedColumns.add(sorted[other].column);
+        }
+      }
       let col = 0;
       while (usedColumns.has(col)) col++;
-      sorted[i].column = col;
-      const maxCol = Math.max(col, ...overlapping.map((o) => o.column)) + 1;
-      overlapping.forEach((o) => (o.totalColumns = maxCol));
-      sorted[i].totalColumns = maxCol;
+      sorted[idx].column = col;
+    }
+    const maxCol = Math.max(...members.map((idx) => sorted[idx].column)) + 1;
+    for (const idx of members) {
+      sorted[idx].totalColumns = maxCol;
     }
   }
 
@@ -295,6 +337,7 @@ const PlayButton = React.memo(function PlayButton({
 
   return (
     <button
+      type="button"
       onClick={handleStartAgain}
       disabled={isStarting}
       className={cn(
@@ -715,6 +758,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
 
           <div className="flex overflow-hidden rounded-lg border border-border/50 bg-muted/30">
             <button
+              type="button"
               onClick={() => setMode("day")}
               className={cn(
                 "px-3 py-1.5 text-xs font-medium transition-all",
@@ -726,6 +770,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
               Day
             </button>
             <button
+              type="button"
               onClick={() => setMode("week")}
               className={cn(
                 "px-3 py-1.5 text-xs font-medium transition-all",

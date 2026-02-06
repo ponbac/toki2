@@ -222,6 +222,7 @@ function MilltimeComponent() {
                 {/* View Toggle */}
                 <div className="flex">
                   <button
+                    type="button"
                     onClick={() => setViewMode("list")}
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
@@ -234,6 +235,7 @@ function MilltimeComponent() {
                     List
                   </button>
                   <button
+                    type="button"
                     onClick={() => setViewMode("timeline")}
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",

@@ -15,7 +15,12 @@ export const MergeEntriesSwitch = (props: {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center gap-2 px-2" tabIndex={0}>
+          <div
+            className="flex items-center gap-2 px-2"
+            tabIndex={0}
+            role="group"
+            aria-label="Merge same-day entries"
+          >
             <Switch
               id="merge-same-day"
               checked={props.mergeSameDay}
