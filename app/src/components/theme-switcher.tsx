@@ -13,6 +13,7 @@ export function ThemeSwitcher() {
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>
         <button
+          type="button"
           onClick={toggle}
           className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-all duration-300 hover:bg-primary/10 hover:text-foreground"
           aria-label={label}
