@@ -2,88 +2,96 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Nordic Precision Design System */
+
 @layer base {
   :root {
-    /* White */
-    --background: 0 0% 100%;
-    /* Very dark gray */
-    --foreground: 20 14.3% 4.1%;
-    /* White */
-    --card: 0 0% 100%;
-    /* Very dark gray */
-    --card-foreground: 20 14.3% 4.1%;
-    /* White */
-    --popover: 0 0% 100%;
-    /* Very dark gray */
-    --popover-foreground: 20 14.3% 4.1%;
-    /* Orange */
-    --primary: 24.6 95% 53.1%;
-    /* Very light grayish yellow */
-    --primary-foreground: 60 9.1% 97.8%;
-    /* Very light grayish yellow */
-    --secondary: 60 4.8% 95.9%;
-    /* Very dark grayish orange */
-    --secondary-foreground: 24 9.8% 10%;
-    /* Very light grayish yellow */
-    --muted: 60 4.8% 95.9%;
-    /* Dark grayish orange */
-    --muted-foreground: 25 5.3% 44.7%;
-    /* Very light grayish yellow */
-    --accent: 60 4.8% 95.9%;
-    /* Very dark grayish orange */
-    --accent-foreground: 24 9.8% 10%;
-    /* Bright red */
-    --destructive: 0 84.2% 60.2%;
-    /* Very light grayish yellow */
-    --destructive-foreground: 60 9.1% 97.8%;
-    /* Very light gray */
-    --border: 20 5.9% 90%;
-    /* Very light gray */
-    --input: 20 5.9% 90%;
-    /* Orange */
-    --ring: 24.6 95% 53.1%;
-    --radius: 0.5rem;
+    /* Light mode - Quiet warmth with amber accents */
+    --background: 36 10% 95%;
+    --foreground: 30 10% 16%;
+
+    --card: 37 14% 98%;
+    --card-foreground: 30 10% 16%;
+
+    --popover: 38 16% 99%;
+    --popover-foreground: 30 10% 16%;
+
+    /* Amber primary — warm but not overwhelming */
+    --primary: 36 82% 46%;
+    --primary-foreground: 40 20% 98%;
+
+    /* Warm neutral secondary */
+    --secondary: 34 8% 90%;
+    --secondary-foreground: 30 10% 24%;
+
+    --muted: 34 7% 91%;
+    --muted-foreground: 30 6% 40%;
+
+    --accent: 30 8% 90%;
+    --accent-foreground: 30 10% 20%;
+
+    --destructive: 2 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 34 8% 85%;
+    --input: 34 9% 89%;
+    --ring: 36 82% 46%;
+
+    --radius: 0.75rem;
+
+    /* Custom tokens */
+    --glow: 36 82% 46%;
+    --surface-elevated: 38 18% 99%;
+    --text-primary: 30 10% 16%;
+    --text-secondary: 30 6% 40%;
+    --text-tertiary: 28 4% 52%;
+
+    /* Gradient tokens */
+    --gradient-warm: linear-gradient(135deg, hsl(36 82% 46% / 0.08) 0%, hsl(24 75% 42% / 0.04) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(37 14% 98%) 0%, hsl(36 10% 96%) 100%);
   }
 
   .dark {
-    /* Very dark gray */
-    --background: 20 14.3% 4.1%;
-    /* Very light grayish yellow */
-    --foreground: 60 9.1% 97.8%;
-    /* Very dark gray */
-    --card: 20 14.3% 4.1%;
-    /* Very light grayish yellow */
-    --card-foreground: 60 9.1% 97.8%;
-    /* Very dark gray */
-    --popover: 20 14.3% 4.1%;
-    /* Very light grayish yellow */
-    --popover-foreground: 60 9.1% 97.8%;
-    /* Dark orange */
-    --primary: 20.5 90.2% 48.2%;
-    /* Very light grayish yellow */
-    --primary-foreground: 60 9.1% 97.8%;
-    /* Very dark grayish orange */
-    --secondary: 12 6.5% 15.1%;
-    /* Very light grayish yellow */
-    --secondary-foreground: 60 9.1% 97.8%;
-    /* Very dark grayish orange */
-    --muted: 12 6.5% 15.1%;
-    /* Light grayish orange */
-    --muted-foreground: 24 5.4% 63.9%;
-    /* Very dark grayish orange */
-    --accent: 12 6.5% 15.1%;
-    /* Very light grayish yellow */
-    --accent-foreground: 60 9.1% 97.8%;
-    /* Dark red */
-    --destructive: 0 72.2% 50.6%;
-    /* Very light grayish yellow */
-    --destructive-foreground: 60 9.1% 97.8%;
-    /* Very dark grayish orange */
-    --border: 12 6.5% 15.1%;
-    /* Very dark grayish orange */
-    --input: 12 6.5% 15.1%;
-    /* Dark orange */
-    --ring: 20.5 90.2% 48.2%;
+    /* Dark mode - Deep slate with warm amber */
+    --background: 222 25% 8%;
+    --foreground: 40 20% 92%;
+
+    --card: 222 22% 11%;
+    --card-foreground: 40 20% 92%;
+
+    --popover: 222 22% 11%;
+    --popover-foreground: 40 20% 92%;
+
+    /* Vibrant amber for dark mode */
+    --primary: 38 95% 55%;
+    --primary-foreground: 222 25% 8%;
+
+    --secondary: 222 18% 16%;
+    --secondary-foreground: 40 15% 85%;
+
+    --muted: 222 18% 14%;
+    --muted-foreground: 40 10% 55%;
+
+    --accent: 222 18% 16%;
+    --accent-foreground: 40 15% 90%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 222 15% 18%;
+    --input: 222 18% 14%;
+    --ring: 38 95% 55%;
+
+    /* Custom tokens dark */
+    --glow: 38 95% 55%;
+    --surface-elevated: 222 20% 13%;
+    --text-primary: 40 20% 92%;
+    --text-secondary: 40 10% 60%;
+    --text-tertiary: 40 8% 45%;
+
+    /* Gradient tokens dark */
+    --gradient-warm: linear-gradient(135deg, hsl(38 95% 55% / 0.08) 0%, hsl(24 90% 50% / 0.03) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(222 22% 12%) 0%, hsl(222 22% 10%) 100%);
   }
 }
 
@@ -91,7 +99,175 @@
   * {
     @apply border-border;
   }
+
+  html {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--glow) / 0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 100%, hsl(var(--glow) / 0.04), transparent);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  /* Glass morphism card effect */
+  .card-elevated {
+    background: var(--gradient-card);
+    border: 1px solid hsl(var(--border) / 0.5);
+    box-shadow:
+      0 1px 2px hsl(var(--foreground) / 0.03),
+      0 4px 8px hsl(var(--foreground) / 0.04),
+      0 0 0 1px hsl(var(--border) / 0.1) inset;
+  }
+
+  .dark .card-elevated {
+    box-shadow:
+      0 1px 2px hsl(0 0% 0% / 0.2),
+      0 4px 12px hsl(0 0% 0% / 0.25),
+      0 0 0 1px hsl(var(--glow) / 0.05) inset,
+      0 0 40px -10px hsl(var(--glow) / 0.1);
+  }
+
+  /* Glow button effect */
+  .btn-glow {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-glow::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.5), hsl(var(--primary) / 0.2));
+    border-radius: inherit;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: -1;
+    filter: blur(12px);
+  }
+
+  .btn-glow:hover::before {
+    opacity: 1;
+  }
+
+  /* Text gradient */
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(38 85% 60%) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted-foreground) / 0.1) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  /* Subtle border glow on hover */
+  .hover-glow {
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  }
+
+  .hover-glow:hover {
+    border-color: hsl(var(--primary) / 0.3);
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.1),
+      0 4px 20px hsl(var(--primary) / 0.08);
+  }
+
+  /* Number/stat display */
+  .stat-number {
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Time display styling */
+  .time-display {
+    font-family: 'IBM Plex Mono', monospace;
+    font-feature-settings: "tnum";
+    letter-spacing: 0.02em;
+  }
+
+  /* Style time input icons for dark mode */
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+
+  input[type="time"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+
+  /* Light mode - don't invert */
+  :root input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: none;
+  }
+
+  .dark input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+  }
+}
+
+@layer utilities {
+  /* Animation delay utilities */
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
+  .animation-delay-500 { animation-delay: 500ms; }
+
+  /* Stagger children animation */
+  .stagger-children > * {
+    animation: fadeSlideUp 0.5s ease-out backwards;
+  }
+
+  .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+  .stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+  .stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+  .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+  .stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+  .stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+
+  @keyframes fadeSlideUp {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Subtle pulse */
+  @keyframes subtle-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .animate-subtle-pulse {
+    animation: subtle-pulse 2s ease-in-out infinite;
   }
 }

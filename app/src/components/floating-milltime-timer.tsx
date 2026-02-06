@@ -4,7 +4,6 @@ import { Button } from "./ui/button";
 import {
   CalendarClockIcon,
   EditIcon,
-  Maximize2Icon,
   Minimize2Icon,
   PiggyBankIcon,
   SaveIcon,
@@ -185,31 +184,35 @@ export const FloatingMilltimeTimer = () => {
 
   return visible ? (
     <>
+      {isMinimized ? (
+        <button
+          type="button"
+          onClick={() => setIsMinimized(false)}
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 md:left-auto md:right-4 md:translate-x-0 flex items-center gap-2.5 rounded-full border border-border/50 bg-card/95 px-4 py-2 shadow-elevated-lg backdrop-blur-xl transition-all hover:shadow-elevated-xl hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+        >
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+          </span>
+          <span className="text-sm font-semibold tabular-nums tracking-tight text-foreground">
+            {hours}:{minutes}:{seconds}
+          </span>
+          {(timer?.projectName || timer?.note) && (
+            <span className="max-w-[120px] truncate text-xs text-muted-foreground">
+              {timer?.note || timer?.projectName}
+            </span>
+          )}
+        </button>
+      ) : (
       <div
-        className={cn(
-          "fixed bottom-4 left-1/2 w-[90%] -translate-x-1/2 rounded-lg bg-gray-900/95 p-4 shadow-lg sm:w-[400px] md:left-auto md:right-4 md:translate-x-0",
-          {
-            "w-fit min-w-[170px] px-2 py-1": isMinimized,
-          },
-        )}
+        className="fixed bottom-4 left-1/2 w-[90%] -translate-x-1/2 rounded-lg border border-border/50 bg-card/95 p-4 shadow-elevated-lg backdrop-blur-xl sm:w-[400px] md:left-auto md:right-4 md:translate-x-0"
       >
         <div className="flex flex-col items-center justify-between space-y-1">
           <div className="flex w-full items-center justify-between gap-2">
-            <div
-              className={cn(
-                "text-4xl font-bold tracking-tighter text-gray-900 dark:text-gray-50",
-                {
-                  "text-2xl": isMinimized,
-                },
-              )}
-            >
+            <div className="text-4xl font-bold tracking-tighter text-foreground">
               {hours}:{minutes}:{seconds}
             </div>
-            <div
-              className={cn("flex items-center space-x-2", {
-                hidden: isMinimized,
-              })}
-            >
+            <div className="flex items-center space-x-2">
               {timer?.activityName && timer.projectName ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -279,7 +282,7 @@ export const FloatingMilltimeTimer = () => {
                           timer.timerType === "Milltime")
                       }
                     >
-                      <SaveIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                      <SaveIcon className="h-6 w-6 text-muted-foreground" />
                       <span className="sr-only">Save</span>
                     </Button>
                   </TooltipTrigger>
@@ -297,7 +300,7 @@ export const FloatingMilltimeTimer = () => {
                       onClick={() => setIsEditDialogOpen(true)}
                       disabled={isSavingTimer || isStoppingTimer}
                     >
-                      <EditIcon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                      <EditIcon className="h-6 w-6 text-muted-foreground" />
                       <span className="sr-only">Edit</span>
                     </Button>
                   </TooltipTrigger>
@@ -317,7 +320,7 @@ export const FloatingMilltimeTimer = () => {
                     }
                     disabled={isSavingTimer || isStoppingTimer}
                   >
-                    <Trash2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                    <Trash2Icon className="h-6 w-6 text-muted-foreground" />
                     <span className="sr-only">Delete</span>
                   </Button>
                 </TooltipTrigger>
@@ -330,47 +333,20 @@ export const FloatingMilltimeTimer = () => {
                     size="icon"
                     onClick={() => setIsMinimized(true)}
                   >
-                    <Minimize2Icon className="h-6 w-6 text-gray-500 dark:text-gray-400" />
+                    <Minimize2Icon className="h-6 w-6 text-muted-foreground" />
                     <span className="sr-only">Minimize</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Minimize</TooltipContent>
               </Tooltip>
             </div>
-            <div
-              className={cn("hidden", {
-                flex: isMinimized,
-              })}
-            >
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsMinimized(false)}
-                  >
-                    <Maximize2Icon className="size-4 text-gray-500 dark:text-gray-400" />
-                    <span className="sr-only">Maximize</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Maximize</TooltipContent>
-              </Tooltip>
-            </div>
           </div>
-          <div
-            className={cn("flex w-full flex-col gap-2", {
-              hidden: isMinimized,
-            })}
-          >
+          <div className="flex w-full flex-col gap-2">
             <div className="flex w-full flex-col">
               <h2 className="text-sm">{timer?.projectName}</h2>
               <h3 className="text-xs">{timer?.activityName}</h3>
             </div>
-            <div
-              className={cn("w-full", {
-                hidden: isMinimized,
-              })}
-            >
+            <div className="w-full">
               <div className="relative">
                 <Input
                   type="text"
@@ -387,7 +363,7 @@ export const FloatingMilltimeTimer = () => {
                       : undefined
                   }
                   className={cn(
-                    "w-full rounded-md border border-gray-300 px-4 py-2 pr-10 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-50",
+                    "w-full rounded-md border border-border px-4 py-2 pr-10 text-foreground bg-background",
                   )}
                 />
                 <Popover open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
@@ -418,7 +394,7 @@ export const FloatingMilltimeTimer = () => {
                   </Tooltip>
                   <PopoverContent
                     align="end"
-                    className="w-[42rem] bg-gray-900/95 p-2"
+                    className="w-[42rem] bg-card/95 backdrop-blur-xl p-2"
                   >
                     <TimerHistory
                       scrollAreaClassName="min-h-72"
@@ -447,16 +423,15 @@ export const FloatingMilltimeTimer = () => {
               </div>
             </div>
           </div>
-          {!isMinimized && (
-            <TimeSummary
-              className="pt-2"
-              timerHours={Number.parseInt(hours)}
-              timerMinutes={Number.parseInt(minutes)}
-              timerSeconds={Number.parseInt(seconds)}
-            />
-          )}
+          <TimeSummary
+            className="pt-2"
+            timerHours={Number.parseInt(hours)}
+            timerMinutes={Number.parseInt(minutes)}
+            timerSeconds={Number.parseInt(seconds)}
+          />
         </div>
       </div>
+      )}
       <TimerEditDialog
         key={`${isEditDialogOpen}`}
         open={isEditDialogOpen}

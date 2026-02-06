@@ -7,8 +7,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import { Separator } from "./ui/separator";
-import { buttonVariants } from "./ui/button";
 import { Link, LinkProps } from "@tanstack/react-router";
 import { ScrollArea } from "./ui/scroll-area";
 import { router } from "@/main";
@@ -16,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { userQueries } from "@/lib/api/queries/user";
 import { NotificationsPopover } from "./notifications-popover/notifications-popover";
+import { ThemeSwitcher } from "./theme-switcher";
 
 type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
@@ -49,21 +48,43 @@ type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 export function SideNavWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col md:flex-row">
-      <div className="fixed left-0 right-0 top-0 z-50 flex h-14 flex-row border-b bg-background md:h-full md:w-14 md:flex-col md:items-stretch md:border-b-0 md:border-r">
-        <div className="flex w-full flex-row justify-center space-x-2 px-4 md:h-auto md:flex-col md:space-x-0 md:space-y-2 md:px-0 md:py-2">
-          <div className="flex h-full items-center justify-center md:h-[52px]">
+      {/* Navigation Bar */}
+      <div className="fixed left-0 right-0 top-0 z-50 flex h-14 flex-row border-b border-border/50 bg-background/80 backdrop-blur-xl md:h-full md:w-[72px] md:flex-col md:items-stretch md:border-b-0 md:border-r md:bg-card/50">
+        {/* Subtle glow effect at top */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent md:inset-y-0 md:left-0 md:h-full md:w-px md:bg-gradient-to-b" />
+
+        <div className="flex w-full flex-row items-center justify-center gap-1 px-3 md:h-auto md:flex-col md:gap-2 md:px-0 md:py-4">
+          {/* Logo/Avatar section */}
+          <div className="flex h-full items-center justify-center md:mb-2 md:h-auto">
             <AvatarMenu />
           </div>
-          <div className="flex h-full items-center justify-center md:h-[52px]">
+
+          {/* Notifications */}
+          <div className="flex h-full items-center justify-center md:h-auto">
             <NotificationsPopover />
           </div>
-          <div className="flex h-full items-center justify-center md:hidden">
-            <Separator orientation="vertical" className="h-6" />
-          </div>
+
+          {/* Divider */}
+          <div className="mx-2 h-6 w-px bg-border/50 md:mx-0 md:my-3 md:h-px md:w-8" />
+
+          {/* Navigation items */}
           <Nav links={MENU_ITEMS} />
+
+          {/* Theme switcher - inline on mobile */}
+          <div className="flex h-full items-center justify-center md:hidden">
+            <div className="mx-1 h-6 w-px bg-border/50" />
+            <ThemeSwitcher />
+          </div>
+        </div>
+
+        {/* Theme switcher at bottom - desktop */}
+        <div className="absolute bottom-4 left-1/2 hidden -translate-x-1/2 md:block">
+          <ThemeSwitcher />
         </div>
       </div>
-      <div className="mt-14 flex-1 md:ml-16 md:mt-0">
+
+      {/* Main content area */}
+      <div className="mt-14 flex-1 md:ml-[72px] md:mt-0">
         <ScrollArea className="h-[calc(100vh-3.5rem)] md:h-screen">
           {children}
         </ScrollArea>
@@ -84,8 +105,8 @@ function Nav({
   }[];
 }) {
   return (
-    <div className="flex h-full items-center md:h-auto md:flex-col md:gap-4">
-      <nav className="flex flex-row items-center space-x-2 md:flex-col md:space-x-0 md:space-y-2">
+    <div className="flex h-full items-center md:h-auto md:flex-col md:gap-1">
+      <nav className="flex flex-row items-center gap-1 md:flex-col md:gap-1">
         {links.map((link, index) => (
           <NavLink
             key={index}
@@ -119,26 +140,36 @@ function NavLink({
       <TooltipTrigger asChild>
         <Link
           to={link.to}
-          className={cn("size-9")}
+          className={cn(
+            "group relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-300",
+            "hover:bg-primary/10"
+          )}
           activeOptions={{ exact: true, includeSearch: false }}
           activeProps={{
             className: cn(
-              buttonVariants({ variant: "default", size: "icon" }),
-              "dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-white",
+              "bg-primary/15 text-primary",
+              "before:absolute before:inset-0 before:rounded-xl before:ring-1 before:ring-primary/20",
+              "after:absolute after:-left-[1px] after:top-1/2 after:hidden after:h-6 after:w-[3px] after:-translate-y-1/2 after:rounded-r-full after:bg-primary md:after:block"
             ),
           }}
           inactiveProps={{
-            className: buttonVariants({ variant: "ghost", size: "icon" }),
+            className:
+              "text-muted-foreground hover:text-foreground",
           }}
         >
-          <link.icon className="scale-125" />
+          <link.icon className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" />
           <span className="sr-only">{title}</span>
         </Link>
       </TooltipTrigger>
-      <TooltipContent side="right" className="flex items-center gap-4">
+      <TooltipContent
+        side="right"
+        className="flex items-center gap-3 rounded-lg border-border/50 bg-card/95 px-3 py-2 font-medium shadow-elevated backdrop-blur-sm"
+      >
         {title}
         {label && (
-          <span className="ml-auto text-muted-foreground">{label}</span>
+          <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            {label}
+          </span>
         )}
       </TooltipContent>
     </Tooltip>
@@ -153,7 +184,7 @@ function AvatarMenu() {
 
   const avatarNumber = React.useMemo(
     () => Math.floor(Math.random() * 649 + 1),
-    [],
+    []
   );
   const avatarUrl = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${avatarNumber}.png`;
 
@@ -163,10 +194,14 @@ function AvatarMenu() {
     .join("");
 
   return (
-    <div>
-      <Avatar className="size-10 bg-accent">
-        <AvatarImage src={avatarUrl} />
-        <AvatarFallback>{initials}</AvatarFallback>
+    <div className="group relative">
+      {/* Glow effect behind avatar */}
+      <div className="absolute inset-0 rounded-full bg-primary/20 opacity-0 blur-md transition-opacity duration-300 group-hover:opacity-100" />
+      <Avatar className="relative h-10 w-10 rounded-xl border border-border/50 bg-card shadow-sm transition-all duration-300 group-hover:border-primary/30 group-hover:shadow-glow-sm">
+        <AvatarImage src={avatarUrl} className="rounded-xl" />
+        <AvatarFallback className="rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 text-sm font-semibold">
+          {initials}
+        </AvatarFallback>
       </Avatar>
     </div>
   );

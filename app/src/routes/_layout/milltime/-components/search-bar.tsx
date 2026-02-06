@@ -1,5 +1,3 @@
-"use client";
-
 import { SearchIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useRef } from "react";
@@ -11,16 +9,16 @@ export function SearchBar(props: {
   const ref = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="relative">
+    <div className="relative flex items-center">
       <SearchIcon
-        className="absolute left-2 top-1/2 size-4 -translate-y-1/2 transform text-gray-400 hover:cursor-pointer"
+        className="absolute left-2.5 size-3.5 text-muted-foreground/60 hover:cursor-pointer"
         onClick={() => ref.current?.focus()}
       />
       <Input
         ref={ref}
         type="text"
         placeholder="Search entries..."
-        className="w-64 pl-8"
+        className="h-8 w-48 border-0 bg-transparent pl-8 text-xs shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
         value={props.search}
         onChange={(e) => props.setSearch(e.target.value)}
       />
