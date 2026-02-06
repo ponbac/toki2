@@ -14,14 +14,20 @@ export const MergeEntriesSwitch = (props: {
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger>
-          <div className="flex items-center space-x-2">
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-2 px-2">
             <Switch
               id="merge-same-day"
               checked={props.mergeSameDay}
               onCheckedChange={props.setMergeSameDay}
+              className="scale-90"
             />
-            <Label htmlFor="merge-same-day">Merge entries</Label>
+            <Label
+              htmlFor="merge-same-day"
+              className="cursor-pointer text-xs text-muted-foreground"
+            >
+              Merge
+            </Label>
           </div>
         </TooltipTrigger>
         <TooltipContent>

@@ -16,24 +16,11 @@ import { format, parseISO, getISODay } from "date-fns";
 import { formatHoursAsHoursMinutes } from "@/lib/utils";
 import { match } from "ts-pattern";
 import { BarChart3, PieChartIcon } from "lucide-react";
+import { COLORS } from "./colors";
 
 type SummaryProps = {
   timeEntries: Array<TimeEntry>;
 };
-
-// Refined color palette - warm amber to teal spectrum
-const COLORS = [
-  "hsl(38 95% 55%)",   // Primary amber
-  "hsl(172 66% 50%)",  // Teal
-  "hsl(262 83% 58%)",  // Purple
-  "hsl(350 89% 60%)",  // Rose
-  "hsl(142 71% 45%)",  // Emerald
-  "hsl(217 91% 60%)",  // Blue
-  "hsl(45 93% 58%)",   // Yellow
-  "hsl(280 68% 60%)",  // Violet
-  "hsl(195 74% 50%)",  // Cyan
-  "hsl(24 95% 55%)",   // Orange
-];
 
 export function Summary({ timeEntries }: SummaryProps) {
   const totalHours = useMemo(

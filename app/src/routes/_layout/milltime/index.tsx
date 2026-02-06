@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,9 +37,12 @@ import {
   Clock,
   ExternalLink,
   Sparkles,
+  List,
+  CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
 import { NewEntryDialog } from "./-components/new-entry-dialog";
+import { TimelineView } from "./-components/timeline-view";
 
 export const Route = createFileRoute("/_layout/milltime/")({
   loader: async ({ context }) => {
@@ -64,6 +68,11 @@ const mergeSameDayPersistedAtom = atomWithStorage(
   false
 );
 
+const viewModePersistedAtom = atomWithStorage<"list" | "timeline">(
+  "milltime-viewMode",
+  "list"
+);
+
 function MilltimeComponent() {
   const { authenticate } = useMilltimeActions();
   const isAuthenticating = useMilltimeIsAuthenticating();
@@ -74,6 +83,7 @@ function MilltimeComponent() {
     to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
   });
   const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
+  const [viewMode, setViewMode] = useAtom(viewModePersistedAtom);
   const [rememberLastProject, setRememberLastProject] = useAtom(
     rememberLastProjectAtom
   );
@@ -194,12 +204,54 @@ function MilltimeComponent() {
                 dateRange={dateRange}
                 setDateRange={setDateRange}
               />
-              <div className="flex flex-wrap items-center gap-3">
-                <MergeEntriesSwitch
-                  mergeSameDay={mergeSameDay}
-                  setMergeSameDay={setMergeSameDay}
-                />
+              <div className="flex items-center gap-1 rounded-xl border border-border/50 bg-card/40 p-1 backdrop-blur-sm">
+                {/* View Toggle */}
+                <div className="flex">
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                      viewMode === "list"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    )}
+                  >
+                    <List className="h-3.5 w-3.5" />
+                    List
+                  </button>
+                  <button
+                    onClick={() => setViewMode("timeline")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                      viewMode === "timeline"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    )}
+                  >
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    Timeline
+                  </button>
+                </div>
+                {/* Divider + Merge (always rendered, fades when not list) */}
+                <div
+                  className={cn(
+                    "flex items-center transition-opacity duration-200",
+                    viewMode === "list"
+                      ? "opacity-100"
+                      : "pointer-events-none opacity-0"
+                  )}
+                >
+                  <div className="mx-1 h-5 w-px bg-border/50" />
+                  <MergeEntriesSwitch
+                    mergeSameDay={mergeSameDay}
+                    setMergeSameDay={setMergeSameDay}
+                  />
+                </div>
+                {/* Divider + Search */}
+                <div className="mx-1 h-5 w-px bg-border/50" />
                 <SearchBar search={search} setSearch={setSearch} />
+                {/* Divider + Settings */}
+                <div className="mx-1 h-5 w-px bg-border/50" />
                 <MilltimeSettings
                   rememberLastProject={rememberLastProject}
                   setRememberLastProject={setRememberLastProject}
@@ -212,10 +264,17 @@ function MilltimeComponent() {
               {/* Time Entries */}
               <div className="min-w-0">
                 {timeEntries?.length ? (
-                  <TimeEntriesList
-                    timeEntries={filteredTimeEntries ?? []}
-                    mergeSameDay={mergeSameDay}
-                  />
+                  viewMode === "timeline" ? (
+                    <TimelineView
+                      timeEntries={filteredTimeEntries ?? []}
+                      dateRange={dateRange}
+                    />
+                  ) : (
+                    <TimeEntriesList
+                      timeEntries={filteredTimeEntries ?? []}
+                      mergeSameDay={mergeSameDay}
+                    />
+                  )
                 ) : (
                   <EmptyState
                     timerState={timerState}
