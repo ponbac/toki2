@@ -18,7 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { COLORS } from "./colors";
+import { COLORS, withAlpha, buildProjectColorMap } from "./colors";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import { useMilltimeTimer } from "@/hooks/useMilltimeStore";
 import { toast } from "sonner";
@@ -36,29 +36,6 @@ const MOCK_START_HOUR = 8; // untimed entries stack from 08:00
 const HOUR_HEIGHT_PX = 80;
 const MIN_BLOCK_PX = 36;
 
-/** Convert `hsl(38 95% 55%)` to `hsl(38 95% 55% / alpha)` */
-function withAlpha(hslColor: string, alpha: number): string {
-  return hslColor.replace(")", ` / ${alpha})`);
-}
-
-function buildProjectColorMap(entries: TimeEntry[]): Map<string, string> {
-  const projects = [...new Set(entries.map((e) => e.projectName))];
-  const projectHours = new Map<string, number>();
-  entries.forEach((e) => {
-    projectHours.set(
-      e.projectName,
-      (projectHours.get(e.projectName) || 0) + e.hours,
-    );
-  });
-  projects.sort(
-    (a, b) => (projectHours.get(b) || 0) - (projectHours.get(a) || 0),
-  );
-  const colorMap = new Map<string, string>();
-  projects.forEach((project, i) => {
-    colorMap.set(project, COLORS[i % COLORS.length]);
-  });
-  return colorMap;
-}
 
 type PositionedEntry = TimeEntry & {
   topPx: number;
@@ -522,7 +499,14 @@ function DayColumn({
 
 export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
   const [mode, setMode] = useState<TimelineMode>("week");
-  const [selectedDayOffset, setSelectedDayOffset] = useState(0);
+  const [selectedDayOffset, setSelectedDayOffset] = useState(() => {
+    const ws = startOfWeek(parseISO(dateRange.from), { weekStartsOn: 1 });
+    const today = new Date();
+    const diffDays = Math.floor(
+      (today.getTime() - ws.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    return Math.max(0, Math.min(4, diffDays));
+  });
 
   const colorMap = useMemo(
     () => buildProjectColorMap(timeEntries),

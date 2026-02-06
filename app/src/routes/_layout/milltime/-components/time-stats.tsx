@@ -20,9 +20,10 @@ export const TimeStats = () => {
 
   const workedHours = timeInfo ? timeInfo.workedPeriodTime : 0;
   const scheduledHours = timeInfo ? timeInfo.scheduledPeriodTime : 40;
-  const percentageCompleted = timeInfo
-    ? (timeInfo.workedPeriodTime / timeInfo.scheduledPeriodTime) * 100
-    : 0;
+  const percentageCompleted =
+    timeInfo && timeInfo.scheduledPeriodTime > 0
+      ? (timeInfo.workedPeriodTime / timeInfo.scheduledPeriodTime) * 100
+      : 0;
   const flexTime = timeInfo?.flexTimeCurrent ?? 0;
   const isAhead = percentageCompleted >= 100;
 

@@ -20,6 +20,8 @@ import {
   Clock,
   Briefcase,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { buildProjectStyleMap, withAlpha } from "./colors";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Tooltip,
@@ -120,6 +122,11 @@ export function TimeEntriesList(props: {
         ([a], [b]) => new Date(b).getTime() - new Date(a).getTime()
       );
     }, [props.timeEntries, props.mergeSameDay]);
+
+  const projectStyleMap = useMemo(
+    () => buildProjectStyleMap(props.timeEntries),
+    [props.timeEntries],
+  );
 
   const overlapMap = useMemo(() => {
     const totalVisible = groupedEntries.reduce(
@@ -254,6 +261,8 @@ export function TimeEntriesList(props: {
                       entry={entry}
                       onEdit={() => setEditingEntryId(entry.registrationId)}
                       overlapMap={overlapMap}
+                      projectColor={projectStyleMap.get(entry.projectName)?.color}
+                      ProjectIcon={projectStyleMap.get(entry.projectName)?.Icon}
                     />
                   )}
                 </motion.div>
@@ -270,6 +279,8 @@ function ViewEntryCard(props: {
   entry: TimeEntry | MergedTimeEntry;
   onEdit: () => void;
   overlapMap: Record<string, boolean>;
+  projectColor?: string;
+  ProjectIcon?: LucideIcon;
 }) {
   const { mutateAsync: startStandaloneAsync, isPending: isStarting } =
     milltimeMutations.useStartStandaloneTimer();
@@ -413,16 +424,23 @@ function ViewEntryCard(props: {
           <div
             className={cn(
               "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-              isLocked
-                ? "bg-muted text-muted-foreground"
-                : "bg-primary/10 text-primary"
+              isLocked && "bg-muted text-muted-foreground",
             )}
+            style={
+              !isLocked && props.projectColor
+                ? {
+                    backgroundColor: withAlpha(props.projectColor, 0.15),
+                    color: props.projectColor,
+                  }
+                : !isLocked
+                  ? { backgroundColor: "hsl(var(--primary) / 0.1)", color: "hsl(var(--primary))" }
+                  : undefined
+            }
           >
-            {isLocked ? (
-              <LockIcon className="h-4 w-4" />
-            ) : (
-              <Briefcase className="h-4 w-4" />
-            )}
+            {(() => {
+              const Icon = isLocked ? LockIcon : (props.ProjectIcon ?? Briefcase);
+              return <Icon className="h-4 w-4" />;
+            })()}
           </div>
         </div>
 
@@ -442,7 +460,20 @@ function ViewEntryCard(props: {
 
             {/* Duration badge - hidden on hover, replaced by action buttons */}
             <div className="shrink-0">
-              <div className="rounded-lg bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary transition-opacity group-hover:opacity-0">
+              <div
+                className="rounded-lg px-3 py-1.5 text-sm font-semibold transition-opacity group-hover:opacity-0"
+                style={
+                  props.projectColor
+                    ? {
+                        backgroundColor: withAlpha(props.projectColor, 0.15),
+                        color: props.projectColor,
+                      }
+                    : {
+                        backgroundColor: "hsl(var(--primary) / 0.1)",
+                        color: "hsl(var(--primary))",
+                      }
+                }
+              >
                 <span className="time-display">
                   {formatHoursAsHoursMinutes(entry.hours)}
                 </span>
@@ -490,9 +521,10 @@ function ViewEntryCard(props: {
           )}
 
           {/* Time range */}
-          <div className="mt-2">
-            {renderTimeRange()}
-          </div>
+          {(() => {
+            const timeRange = renderTimeRange();
+            return timeRange ? <div className="mt-2">{timeRange}</div> : null;
+          })()}
         </div>
       </div>
     </div>
