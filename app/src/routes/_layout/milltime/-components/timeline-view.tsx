@@ -40,6 +40,7 @@ const MIN_BLOCK_PX = 36;
 type PositionedEntry = TimeEntry & {
   topPx: number;
   heightPx: number;
+  endPx: number; // actual time-based end position (without MIN_BLOCK_PX inflation)
   column: number;
   totalColumns: number;
   mockTimes: boolean;
@@ -72,10 +73,13 @@ function positionEntries(
       start.getHours() + start.getMinutes() / 60 - gridStartHour;
     const endH = end.getHours() + end.getMinutes() / 60 - gridStartHour;
 
+    const naturalHeight = (endH - startH) * HOUR_HEIGHT_PX;
+    const topPx = Math.max(0, startH * HOUR_HEIGHT_PX);
     positioned.push({
       ...entry,
-      topPx: Math.max(0, startH * HOUR_HEIGHT_PX),
-      heightPx: Math.max(MIN_BLOCK_PX, (endH - startH) * HOUR_HEIGHT_PX),
+      topPx,
+      heightPx: Math.max(MIN_BLOCK_PX, naturalHeight),
+      endPx: topPx + naturalHeight,
       column: 0,
       totalColumns: 1,
       mockTimes: false,
@@ -87,10 +91,13 @@ function positionEntries(
     let currentHour = MOCK_START_HOUR - gridStartHour;
     withoutTimes.forEach((entry) => {
       const duration = Math.max(entry.hours, 0.5);
+      const topPx = Math.max(0, currentHour * HOUR_HEIGHT_PX);
+      const naturalHeight = duration * HOUR_HEIGHT_PX;
       positioned.push({
         ...entry,
-        topPx: Math.max(0, currentHour * HOUR_HEIGHT_PX),
-        heightPx: Math.max(MIN_BLOCK_PX, duration * HOUR_HEIGHT_PX),
+        topPx,
+        heightPx: Math.max(MIN_BLOCK_PX, naturalHeight),
+        endPx: topPx + naturalHeight,
         column: 0,
         totalColumns: 1,
         mockTimes: true,
@@ -110,8 +117,8 @@ function positionEntries(
     let cluster = -1;
     for (let j = 0; j < i; j++) {
       if (
-        sorted[j].topPx + sorted[j].heightPx > sorted[i].topPx &&
-        sorted[j].topPx < sorted[i].topPx + sorted[i].heightPx
+        sorted[j].endPx > sorted[i].topPx &&
+        sorted[j].topPx < sorted[i].endPx
       ) {
         const jCluster = clusterOf.get(j)!;
         if (cluster === -1) {
@@ -145,8 +152,8 @@ function positionEntries(
       for (const other of members) {
         if (
           other !== idx &&
-          sorted[other].topPx < sorted[idx].topPx + sorted[idx].heightPx &&
-          sorted[other].topPx + sorted[other].heightPx > sorted[idx].topPx
+          sorted[other].topPx < sorted[idx].endPx &&
+          sorted[other].endPx > sorted[idx].topPx
         ) {
           usedColumns.add(sorted[other].column);
         }
