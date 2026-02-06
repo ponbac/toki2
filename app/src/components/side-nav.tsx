@@ -4,7 +4,6 @@ import {
   FolderGit2,
   GitPullRequest,
   TimerIcon,
-  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -15,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { userQueries } from "@/lib/api/queries/user";
 import { NotificationsPopover } from "./notifications-popover/notifications-popover";
+import { ThemeSwitcher } from "./theme-switcher";
 
 type LinkDestination = LinkProps<typeof router>["to"];
 const MENU_ITEMS = [
@@ -69,11 +69,17 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
 
           {/* Navigation items */}
           <Nav links={MENU_ITEMS} />
+
+          {/* Theme switcher - inline on mobile */}
+          <div className="flex h-full items-center justify-center md:hidden">
+            <div className="mx-1 h-6 w-px bg-border/50" />
+            <ThemeSwitcher />
+          </div>
         </div>
 
-        {/* Decorative bottom element */}
-        <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 md:block">
-          <Sparkles className="h-4 w-4 text-primary/30" />
+        {/* Theme switcher at bottom - desktop */}
+        <div className="absolute bottom-4 left-1/2 hidden -translate-x-1/2 md:block">
+          <ThemeSwitcher />
         </div>
       </div>
 

@@ -7,49 +7,49 @@
 
 @layer base {
   :root {
-    /* Light mode - Warm cream with amber accents */
-    --background: 40 33% 98%;
-    --foreground: 220 20% 16%;
+    /* Light mode - Quiet warmth with amber accents */
+    --background: 36 10% 95%;
+    --foreground: 30 10% 16%;
 
-    --card: 40 30% 99%;
-    --card-foreground: 220 20% 16%;
+    --card: 37 14% 98%;
+    --card-foreground: 30 10% 16%;
 
-    --popover: 40 30% 99%;
-    --popover-foreground: 220 20% 16%;
+    --popover: 38 16% 99%;
+    --popover-foreground: 30 10% 16%;
 
-    /* Warm amber/honey primary */
-    --primary: 38 92% 50%;
-    --primary-foreground: 220 20% 10%;
+    /* Amber primary — warm but not overwhelming */
+    --primary: 36 82% 46%;
+    --primary-foreground: 40 20% 98%;
 
-    /* Soft sage secondary */
-    --secondary: 160 12% 92%;
-    --secondary-foreground: 220 15% 25%;
+    /* Warm neutral secondary */
+    --secondary: 34 8% 90%;
+    --secondary-foreground: 30 10% 24%;
 
-    --muted: 40 20% 94%;
-    --muted-foreground: 220 10% 46%;
+    --muted: 34 7% 91%;
+    --muted-foreground: 30 6% 40%;
 
-    --accent: 160 15% 94%;
-    --accent-foreground: 220 15% 20%;
+    --accent: 30 8% 90%;
+    --accent-foreground: 30 10% 20%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 2 72% 46%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 40 15% 88%;
-    --input: 40 20% 92%;
-    --ring: 38 92% 50%;
+    --border: 34 8% 85%;
+    --input: 34 9% 89%;
+    --ring: 36 82% 46%;
 
     --radius: 0.75rem;
 
     /* Custom tokens */
-    --glow: 38 92% 50%;
-    --surface-elevated: 40 40% 100%;
-    --text-primary: 220 20% 16%;
-    --text-secondary: 220 10% 46%;
-    --text-tertiary: 220 8% 62%;
+    --glow: 36 82% 46%;
+    --surface-elevated: 38 18% 99%;
+    --text-primary: 30 10% 16%;
+    --text-secondary: 30 6% 40%;
+    --text-tertiary: 28 4% 52%;
 
     /* Gradient tokens */
-    --gradient-warm: linear-gradient(135deg, hsl(38 92% 50% / 0.1) 0%, hsl(24 90% 48% / 0.05) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(40 30% 99%) 0%, hsl(40 25% 97%) 100%);
+    --gradient-warm: linear-gradient(135deg, hsl(36 82% 46% / 0.08) 0%, hsl(24 75% 42% / 0.04) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(37 14% 98%) 0%, hsl(36 10% 96%) 100%);
   }
 
   .dark {
