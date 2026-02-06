@@ -60,7 +60,7 @@ function sortProjectsByHours(
       (projectHours.get(e.projectName) || 0) + e.hours,
     );
   });
-  const projects = [...new Set(entries.map((e) => e.projectName))];
+  const projects = [...projectHours.keys()];
   projects.sort(
     (a, b) => (projectHours.get(b) || 0) - (projectHours.get(a) || 0),
   );

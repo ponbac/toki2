@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { formatHoursMinutes } from "@/lib/utils";
@@ -9,12 +10,21 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+const PROGRESS_GLOW_STYLE = {
+  filter: "drop-shadow(0 0 6px hsl(var(--primary) / 0.4))",
+} as const;
+
 export const TimeStats = () => {
+  const now = new Date();
+  const from = format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd");
+  const to = format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd");
+  const queryOpts = useMemo(
+    () => milltimeQueries.timeInfo({ from, to }),
+    [from, to],
+  );
+
   const { data: timeInfo } = useQuery({
-    ...milltimeQueries.timeInfo({
-      from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-      to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-    }),
+    ...queryOpts,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -69,11 +79,9 @@ export const TimeStats = () => {
                 stroke="hsl(var(--primary))"
                 strokeWidth="8"
                 strokeLinecap="round"
-                strokeDasharray={`${Math.min(percentageCompleted, 100) * 3.52} 352`}
+                strokeDasharray={`${(Math.min(percentageCompleted, 100) * 3.52).toFixed(2)} 352`}
                 className="transition-all duration-1000 ease-out"
-                style={{
-                  filter: "drop-shadow(0 0 6px hsl(var(--primary) / 0.4))",
-                }}
+                style={PROGRESS_GLOW_STYLE}
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">

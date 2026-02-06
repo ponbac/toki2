@@ -64,11 +64,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, [theme]);
 
-  // Apply on mount
-  React.useEffect(() => {
-    applyTheme(resolvedTheme);
-  }, [resolvedTheme]);
-
   const value = React.useMemo(
     () => ({ theme, resolvedTheme, setTheme }),
     [theme, resolvedTheme, setTheme],

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { TimeEntry } from "@/lib/api/queries/milltime";
 import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import {
@@ -7,7 +7,6 @@ import {
   startOfWeek,
   addDays,
   isToday,
-  isSameDay,
 } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Clock, PlayIcon } from "lucide-react";
@@ -46,11 +45,9 @@ type PositionedEntry = TimeEntry & {
 };
 
 function positionEntries(
-  entries: TimeEntry[],
-  date: Date,
+  dayEntries: TimeEntry[],
   gridStartHour: number,
 ): PositionedEntry[] {
-  const dayEntries = entries.filter((e) => isSameDay(parseISO(e.date), date));
   if (dayEntries.length === 0) return [];
 
   const withTimes: TimeEntry[] = [];
@@ -135,30 +132,26 @@ function computeGridBounds(entries: TimeEntry[]): {
 
   let earliest = Infinity;
   let latest = -Infinity;
+  // Group untimed entries by date in the same pass
+  const untimedByDate = new Map<string, TimeEntry[]>();
 
   entries.forEach((entry) => {
-    if (entry.startTime) {
+    if (entry.startTime && entry.endTime) {
       const s = parseISO(entry.startTime);
       earliest = Math.min(earliest, s.getHours() + s.getMinutes() / 60);
-    }
-    if (entry.endTime) {
       const e = parseISO(entry.endTime);
       latest = Math.max(latest, e.getHours() + e.getMinutes() / 60);
+    } else {
+      const arr = untimedByDate.get(entry.date) || [];
+      arr.push(entry);
+      untimedByDate.set(entry.date, arr);
     }
   });
 
   // Account for untimed entries (mock-positioned from MOCK_START_HOUR)
-  const untimed = entries.filter((e) => !e.startTime || !e.endTime);
-  if (untimed.length > 0) {
+  if (untimedByDate.size > 0) {
     earliest = Math.min(earliest, MOCK_START_HOUR);
-    // Group by date to compute per-day mock end
-    const byDate = new Map<string, TimeEntry[]>();
-    untimed.forEach((e) => {
-      const arr = byDate.get(e.date) || [];
-      arr.push(e);
-      byDate.set(e.date, arr);
-    });
-    byDate.forEach((dayEntries) => {
+    untimedByDate.forEach((dayEntries) => {
       let mockEnd = MOCK_START_HOUR;
       dayEntries.forEach((e) => {
         mockEnd += Math.max(e.hours, 0.5) + 0.15;
@@ -230,9 +223,16 @@ function NowIndicator({
   date: Date;
   startHour: number;
 }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    if (!isToday(date)) return;
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, [date]);
+
   if (!isToday(date)) return null;
 
-  const now = new Date();
   const currentHour =
     now.getHours() + now.getMinutes() / 60 - startHour;
 
@@ -249,25 +249,13 @@ function NowIndicator({
   );
 }
 
-function TimelineBlock({
+const PlayButton = React.memo(function PlayButton({
   entry,
-  color,
   isWeekView,
 }: {
   entry: PositionedEntry;
-  color: string;
   isWeekView: boolean;
 }) {
-  const columnWidth = 100 / entry.totalColumns;
-  const leftPercent = entry.column * columnWidth;
-
-  const startTime = entry.startTime
-    ? format(parseISO(entry.startTime), "HH:mm")
-    : null;
-  const endTime = entry.endTime
-    ? format(parseISO(entry.endTime), "HH:mm")
-    : null;
-
   const { mutateAsync: startStandaloneAsync, isPending: isStarting } =
     milltimeMutations.useStartStandaloneTimer();
   const { mutateAsync: editStandaloneAsync } =
@@ -305,6 +293,41 @@ function TimelineBlock({
   };
 
   return (
+    <button
+      onClick={handleStartAgain}
+      disabled={isStarting}
+      className={cn(
+        "absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-card/95 opacity-0 shadow-sm backdrop-blur-sm transition-opacity",
+        "hover:bg-primary/10 hover:text-primary",
+        "group-hover/block:opacity-100",
+        isWeekView && "h-5 w-5 right-0.5 top-0.5",
+      )}
+    >
+      <PlayIcon className={cn("h-3 w-3", isWeekView && "h-2.5 w-2.5")} />
+    </button>
+  );
+});
+
+function TimelineBlock({
+  entry,
+  color,
+  isWeekView,
+}: {
+  entry: PositionedEntry;
+  color: string;
+  isWeekView: boolean;
+}) {
+  const columnWidth = 100 / entry.totalColumns;
+  const leftPercent = entry.column * columnWidth;
+
+  const startTime = entry.startTime
+    ? format(parseISO(entry.startTime), "HH:mm")
+    : null;
+  const endTime = entry.endTime
+    ? format(parseISO(entry.endTime), "HH:mm")
+    : null;
+
+  return (
     <Tooltip>
       <TooltipTrigger asChild>
         <motion.div
@@ -331,18 +354,7 @@ function TimelineBlock({
             style={{ backgroundColor: color }}
           />
           {/* Play button overlay on hover */}
-          <button
-            onClick={handleStartAgain}
-            disabled={isStarting}
-            className={cn(
-              "absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-card/95 opacity-0 shadow-sm backdrop-blur-sm transition-opacity",
-              "hover:bg-primary/10 hover:text-primary",
-              "group-hover/block:opacity-100",
-              isWeekView && "h-5 w-5 right-0.5 top-0.5",
-            )}
-          >
-            <PlayIcon className={cn("h-3 w-3", isWeekView && "h-2.5 w-2.5")} />
-          </button>
+          <PlayButton entry={entry} isWeekView={isWeekView} />
           <div className="flex h-full flex-col justify-start overflow-hidden pl-2.5 pr-1.5 py-1">
             <p
               className={cn(
@@ -528,11 +540,28 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     [weekStart, selectedDayOffset],
   );
 
+  // Pre-group entries by date so we don't filter per day
+  const entriesByDate = useMemo(() => {
+    const map = new Map<string, TimeEntry[]>();
+    timeEntries.forEach((e) => {
+      const key = e.date.slice(0, 10);
+      const arr = map.get(key) || [];
+      arr.push(e);
+      map.set(key, arr);
+    });
+    return map;
+  }, [timeEntries]);
+
   // Compute grid bounds from entries visible in the current view
+  const selectedDayKey = useMemo(
+    () => format(selectedDay, "yyyy-MM-dd"),
+    [selectedDay],
+  );
+
   const visibleEntries = useMemo(() => {
     if (mode === "week") return timeEntries;
-    return timeEntries.filter((e) => isSameDay(parseISO(e.date), selectedDay));
-  }, [mode, timeEntries, selectedDay]);
+    return entriesByDate.get(selectedDayKey) ?? [];
+  }, [mode, timeEntries, entriesByDate, selectedDayKey]);
 
   const { startHour, endHour } = useMemo(
     () => computeGridBounds(visibleEntries),
@@ -544,10 +573,11 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     const map = new Map<string, PositionedEntry[]>();
     days.forEach((day) => {
       const key = format(day, "yyyy-MM-dd");
-      map.set(key, positionEntries(timeEntries, day, startHour));
+      const dayEntries = entriesByDate.get(key) ?? [];
+      map.set(key, positionEntries(dayEntries, startHour));
     });
     return map;
-  }, [timeEntries, mode, weekDays, selectedDay, startHour]);
+  }, [entriesByDate, mode, weekDays, selectedDay, startHour]);
 
   const totalHours = endHour - startHour;
   const gridHeight = totalHours * HOUR_HEIGHT_PX;

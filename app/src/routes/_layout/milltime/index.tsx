@@ -41,8 +41,11 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
+import { LoadingSpinner } from "@/components/loading-spinner";
 import { NewEntryDialog } from "./-components/new-entry-dialog";
-import { TimelineView } from "./-components/timeline-view";
+const TimelineView = React.lazy(() =>
+  import("./-components/timeline-view").then((m) => ({ default: m.TimelineView }))
+);
 
 export const Route = createFileRoute("/_layout/milltime/")({
   loader: async ({ context }) => {
@@ -78,10 +81,10 @@ function MilltimeComponent() {
   const isAuthenticating = useMilltimeIsAuthenticating();
   const { isAuthenticated } = useMilltimeData();
 
-  const [dateRange, setDateRange] = React.useState({
+  const [dateRange, setDateRange] = React.useState(() => ({
     from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
     to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-  });
+  }));
   const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
   const [viewMode, setViewMode] = useAtom(viewModePersistedAtom);
   const [rememberLastProject, setRememberLastProject] = useAtom(
@@ -122,6 +125,17 @@ function MilltimeComponent() {
     });
 
   const [isNewEntryOpen, setIsNewEntryOpen] = React.useState(false);
+
+  const onStartTimer = React.useCallback(() => {
+    startStandaloneTimer({
+      userNote: "First timer of the week...",
+      ...buildRememberedTimerParams({
+        rememberLastProject,
+        lastProject,
+        lastActivity,
+      }),
+    });
+  }, [rememberLastProject, lastProject, lastActivity, startStandaloneTimer]);
 
   return (
     <div className="min-h-screen">
@@ -265,10 +279,18 @@ function MilltimeComponent() {
               <div className="min-w-0">
                 {timeEntries?.length ? (
                   viewMode === "timeline" ? (
-                    <TimelineView
-                      timeEntries={filteredTimeEntries ?? []}
-                      dateRange={dateRange}
-                    />
+                    <React.Suspense
+                      fallback={
+                        <div className="flex min-h-[400px] items-center justify-center rounded-2xl border border-border/50 bg-card/30">
+                          <LoadingSpinner className="size-8" />
+                        </div>
+                      }
+                    >
+                      <TimelineView
+                        timeEntries={filteredTimeEntries ?? []}
+                        dateRange={dateRange}
+                      />
+                    </React.Suspense>
                   ) : (
                     <TimeEntriesList
                       timeEntries={filteredTimeEntries ?? []}
@@ -278,11 +300,7 @@ function MilltimeComponent() {
                 ) : (
                   <EmptyState
                     timerState={timerState}
-                    onStartTimer={() =>
-                      startStandaloneTimer({
-                        userNote: "First timer of the week...",
-                      })
-                    }
+                    onStartTimer={onStartTimer}
                   />
                 )}
               </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { AttestLevel, TimeEntry } from "@/lib/api/queries/milltime";
 import { cn, formatHoursAsHoursMinutes, getWeekNumber } from "@/lib/utils";
@@ -90,19 +90,16 @@ export function TimeEntriesList(props: {
         });
 
         Object.values(mergedEntries).forEach((entries) => {
-          entries.sort((a, b) => {
-            const aMaxTime = a.timePeriods.reduce((max, period) => {
+          const maxTimeCache = new Map<MergedTimeEntry, number>();
+          entries.forEach((entry) => {
+            const maxTime = entry.timePeriods.reduce((max, period) => {
               return period.endTime
                 ? Math.max(max, new Date(period.endTime).getTime())
                 : max;
             }, 0);
-            const bMaxTime = b.timePeriods.reduce((max, period) => {
-              return period.endTime
-                ? Math.max(max, new Date(period.endTime).getTime())
-                : max;
-            }, 0);
-            return bMaxTime - aMaxTime;
+            maxTimeCache.set(entry, maxTime);
           });
+          entries.sort((a, b) => maxTimeCache.get(b)! - maxTimeCache.get(a)!);
         });
 
         return Object.entries(mergedEntries).sort(
@@ -275,12 +272,12 @@ export function TimeEntriesList(props: {
   );
 }
 
-function ViewEntryCard(props: {
-  entry: TimeEntry | MergedTimeEntry;
-  onEdit: () => void;
-  overlapMap: Record<string, boolean>;
-  projectColor?: string;
-  ProjectIcon?: LucideIcon;
+const StartAgainButton = React.memo(function StartAgainButton(props: {
+  note: string;
+  projectId: string;
+  projectName: string;
+  activityId: string;
+  activityName: string;
 }) {
   const { mutateAsync: startStandaloneAsync, isPending: isStarting } =
     milltimeMutations.useStartStandaloneTimer();
@@ -290,35 +287,59 @@ function ViewEntryCard(props: {
   const { state: timerState } = useMilltimeTimer();
 
   const handleStartAgain = () => {
-    const entry = props.entry;
     const isStandaloneActive = timerState === "running";
 
     if (isStandaloneActive) {
       editStandaloneAsync({
-        userNote: entry.note ?? "",
-        projectId: entry.projectId,
-        projectName: entry.projectName,
-        activityId: entry.activityId,
-        activityName: entry.activityName,
+        userNote: props.note,
+        projectId: props.projectId,
+        projectName: props.projectName,
+        activityId: props.activityId,
+        activityName: props.activityName,
       })
         .then(() => toast.success("Timer updated"))
         .catch(() => toast.error("Failed to update timer"));
       return;
     }
 
-    startStandaloneAsync({ userNote: entry.note ?? "" })
+    startStandaloneAsync({ userNote: props.note })
       .then(() =>
         editStandaloneAsync({
-          projectId: entry.projectId,
-          projectName: entry.projectName,
-          activityId: entry.activityId,
-          activityName: entry.activityName,
+          projectId: props.projectId,
+          projectName: props.projectName,
+          activityId: props.activityId,
+          activityName: props.activityName,
         })
       )
       .then(() => toast.success("Timer started"))
       .catch(() => toast.error("Failed to start timer"));
   };
 
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleStartAgain}
+          disabled={isStarting}
+          className="h-7 w-7 rounded-md p-0 hover:bg-primary/10 hover:text-primary"
+        >
+          <PlayIcon className="h-3.5 w-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Start again</TooltipContent>
+    </Tooltip>
+  );
+});
+
+function ViewEntryCard(props: {
+  entry: TimeEntry | MergedTimeEntry;
+  onEdit: () => void;
+  overlapMap: Record<string, boolean>;
+  projectColor?: string;
+  ProjectIcon?: LucideIcon;
+}) {
   const entry = props.entry;
   const isMerged = isMergedTimeEntry(entry);
   const mergedPeriodsWithTimes = isMerged
@@ -344,6 +365,8 @@ function ViewEntryCard(props: {
   const isLocked = isMerged
     ? entry.timePeriods.every((p) => p.attestLevel !== AttestLevel.None)
     : entry.attestLevel !== AttestLevel.None;
+
+  const Icon = isLocked ? LockIcon : (props.ProjectIcon ?? Briefcase);
 
   const renderTimeRange = () => {
     if (isMerged) {
@@ -407,6 +430,8 @@ function ViewEntryCard(props: {
     );
   };
 
+  const timeRange = renderTimeRange();
+
   return (
     <div
       className={cn(
@@ -437,10 +462,7 @@ function ViewEntryCard(props: {
                   : undefined
             }
           >
-            {(() => {
-              const Icon = isLocked ? LockIcon : (props.ProjectIcon ?? Briefcase);
-              return <Icon className="h-4 w-4" />;
-            })()}
+            <Icon className="h-4 w-4" />
           </div>
         </div>
 
@@ -495,20 +517,13 @@ function ViewEntryCard(props: {
                     <TooltipContent>Edit entry</TooltipContent>
                   </Tooltip>
                 )}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleStartAgain}
-                      disabled={isStarting}
-                      className="h-7 w-7 rounded-md p-0 hover:bg-primary/10 hover:text-primary"
-                    >
-                      <PlayIcon className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Start again</TooltipContent>
-                </Tooltip>
+                <StartAgainButton
+                  note={entry.note ?? ""}
+                  projectId={entry.projectId}
+                  projectName={entry.projectName}
+                  activityId={entry.activityId}
+                  activityName={entry.activityName}
+                />
               </div>
             </div>
           </div>
@@ -521,10 +536,7 @@ function ViewEntryCard(props: {
           )}
 
           {/* Time range */}
-          {(() => {
-            const timeRange = renderTimeRange();
-            return timeRange ? <div className="mt-2">{timeRange}</div> : null;
-          })()}
+          {timeRange ? <div className="mt-2">{timeRange}</div> : null}
         </div>
       </div>
     </div>
@@ -548,9 +560,24 @@ function EditEntryCard(props: {
       ? dayjs(props.entry.startTime).format("HH:mm")
       : "06:00"
   );
-  const [endTime, setEndTime] = useState(
-    props.entry.endTime ? dayjs(props.entry.endTime).format("HH:mm") : ""
-  );
+  const [endTime, setEndTime] = useState(() => {
+    if (props.entry.endTime) return dayjs(props.entry.endTime).format("HH:mm");
+    const initialStart = props.entry.startTime
+      ? dayjs(props.entry.startTime).format("HH:mm")
+      : "06:00";
+    const initialHours = Math.floor(props.entry.hours);
+    const initialMinutes = Math.round(
+      (props.entry.hours - Math.floor(props.entry.hours)) * 60
+    );
+    if (initialStart && (initialHours > 0 || initialMinutes > 0)) {
+      const startDate = dayjs(`2000-01-01T${initialStart}`);
+      return startDate
+        .add(initialHours, "hour")
+        .add(initialMinutes, "minute")
+        .format("HH:mm");
+    }
+    return "";
+  });
 
   const [projectId, setProjectId] = useState(props.entry.projectId);
   const [projectName, setProjectName] = useState(props.entry.projectName);
@@ -589,14 +616,6 @@ function EditEntryCard(props: {
       onSuccess: () => props.onSaved(),
       onError: () => toast.error(`Failed to update time entry, try again later`),
     });
-
-  useEffect(() => {
-    if (startTime && !endTime && (hours > 0 || minutes > 0)) {
-      const startDate = dayjs(`2000-01-01T${startTime}`);
-      const endDate = startDate.add(hours, "hour").add(minutes, "minute");
-      setEndTime(endDate.format("HH:mm"));
-    }
-  }, [startTime, endTime, hours, minutes]);
 
   const { mutate: deleteTimeEntry, isPending: isDeletingTimeEntry } =
     milltimeMutations.useDeleteProjectRegistration({

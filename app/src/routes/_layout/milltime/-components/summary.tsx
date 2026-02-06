@@ -18,6 +18,11 @@ import { match } from "ts-pattern";
 import { BarChart3, PieChartIcon } from "lucide-react";
 import { COLORS } from "./colors";
 
+const AXIS_TICK_STYLE = { fill: "hsl(var(--muted-foreground))", fontSize: 11 };
+const X_AXIS_LINE_STYLE = { stroke: "hsl(var(--border))" };
+const TOOLTIP_CURSOR_STYLE = { fill: "hsl(var(--muted) / 0.5)" };
+const BAR_TOP_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
+
 type SummaryProps = {
   timeEntries: Array<TimeEntry>;
 };
@@ -27,10 +32,6 @@ export function Summary({ timeEntries }: SummaryProps) {
     () => timeEntries.reduce((sum, entry) => sum + entry.hours, 0),
     [timeEntries]
   );
-
-  const nUniqueProjects = useMemo(() => {
-    return new Set(timeEntries.map((entry) => entry.projectName)).size;
-  }, [timeEntries]);
 
   const projectData = useMemo(() => {
     const projectHours = timeEntries.reduce(
@@ -55,6 +56,8 @@ export function Summary({ timeEntries }: SummaryProps) {
       }))
       .sort((a, b) => b.value - a.value);
   }, [timeEntries]);
+
+  const nUniqueProjects = projectData.length;
 
   const dailyData = useMemo(() => {
     const dailyProjectHours = timeEntries.reduce(
@@ -90,22 +93,17 @@ export function Summary({ timeEntries }: SummaryProps) {
     );
 
     return Object.entries(dailyProjectHours)
-      .map(([day, { dayIndex, projects }]) => ({
-        name: day,
-        dayIndex,
-        ...projectNames.reduce(
-          (acc, project) => ({
-            ...acc,
-            [project]: projects[project] || 0,
-          }),
-          {}
-        ),
-      }))
-      .sort((a, b) => a.dayIndex - b.dayIndex)
-      .map(({ name, ...rest }) => ({
-        name,
-        ...rest,
-      }));
+      .map(([day, { dayIndex, projects }]) => {
+        const entry: Record<string, string | number> = {
+          name: day,
+          dayIndex,
+        };
+        for (const project of projectNames) {
+          entry[project] = projects[project] || 0;
+        }
+        return entry;
+      })
+      .sort((a, b) => (a.dayIndex as number) - (b.dayIndex as number));
   }, [timeEntries]);
 
   return (
@@ -127,9 +125,9 @@ export function Summary({ timeEntries }: SummaryProps) {
               </h3>
               <p className="text-sm text-muted-foreground">
                 {timeEntries.length} {timeEntries.length === 1 ? "entry" : "entries"}
-                {nUniqueProjects > 0 && (
+                {nUniqueProjects > 0 ? (
                   <> across {nUniqueProjects} {nUniqueProjects === 1 ? "project" : "projects"}</>
-                )}
+                ) : null}
               </p>
             </div>
           </div>
@@ -186,11 +184,11 @@ export function Summary({ timeEntries }: SummaryProps) {
                 </span>
               </div>
             ))}
-            {projectData.length > 4 && (
+            {projectData.length > 4 ? (
               <span className="text-xs text-muted-foreground">
                 +{projectData.length - 4} more
               </span>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -207,19 +205,19 @@ export function Summary({ timeEntries }: SummaryProps) {
               <BarChart data={dailyData} barCategoryGap="20%">
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  tick={AXIS_TICK_STYLE}
+                  axisLine={X_AXIS_LINE_STYLE}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                  tick={AXIS_TICK_STYLE}
                   axisLine={false}
                   tickLine={false}
                   width={30}
                 />
                 <Tooltip
                   content={<DailyHoursTooltip />}
-                  cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
+                  cursor={TOOLTIP_CURSOR_STYLE}
                 />
                 {projectData.map((project, index) => (
                   <Bar
@@ -227,7 +225,7 @@ export function Summary({ timeEntries }: SummaryProps) {
                     dataKey={project.name}
                     stackId="a"
                     fill={COLORS[index % COLORS.length]}
-                    radius={index === projectData.length - 1 ? [4, 4, 0, 0] : 0}
+                    radius={index === projectData.length - 1 ? BAR_TOP_RADIUS : 0}
                   />
                 ))}
               </BarChart>
@@ -301,11 +299,11 @@ function DailyHoursTooltip(props: TooltipProps<number, string>) {
               </span>
             </div>
           ))}
-          {nonZeroEntries.length > 5 && (
+          {nonZeroEntries.length > 5 ? (
             <p className="text-xs text-muted-foreground">
               +{nonZeroEntries.length - 5} more
             </p>
-          )}
+          ) : null}
         </div>
         <div className="mt-2 border-t border-border/50 pt-2">
           <div className="flex items-center justify-between text-sm">
