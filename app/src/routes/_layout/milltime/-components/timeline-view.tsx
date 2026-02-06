@@ -168,6 +168,28 @@ function positionEntries(
     }
   }
 
+  // Push-down pass: prevent visual overlap for adjacent entries in the same column.
+  // MIN_BLOCK_PX can inflate short entries beyond their actual end time, causing
+  // visual overlap with the next entry even though they don't overlap in time.
+  const byColumn = new Map<number, number[]>();
+  for (let i = 0; i < sorted.length; i++) {
+    const col = sorted[i].column;
+    const arr = byColumn.get(col) || [];
+    arr.push(i);
+    byColumn.set(col, arr);
+  }
+  for (const indices of byColumn.values()) {
+    indices.sort((a, b) => sorted[a].topPx - sorted[b].topPx);
+    for (let k = 1; k < indices.length; k++) {
+      const prev = sorted[indices[k - 1]];
+      const curr = sorted[indices[k]];
+      const prevBottom = prev.topPx + prev.heightPx;
+      if (prevBottom > curr.topPx) {
+        curr.topPx = prevBottom;
+      }
+    }
+  }
+
   return sorted;
 }
 
