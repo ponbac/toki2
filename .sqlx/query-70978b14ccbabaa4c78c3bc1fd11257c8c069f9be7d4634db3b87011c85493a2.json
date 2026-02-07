@@ -1,0 +1,135 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH bm25_results AS (\n                SELECT\n                    id,\n                    ts_rank_cd(search_vector, websearch_to_tsquery('english', $1)) as score,\n                    ROW_NUMBER() OVER (\n                        ORDER BY ts_rank_cd(search_vector, websearch_to_tsquery('english', $1)) DESC\n                    ) as rank\n                FROM search_documents\n                WHERE ($1 = '' OR search_vector @@ websearch_to_tsquery('english', $1))\n                  AND ($2::search_source IS NULL OR source_type = $2)\n                  AND ($3::text IS NULL OR organization = $3)\n                  AND ($4::text IS NULL OR project = $4)\n                  AND ($5::text[] IS NULL OR status = ANY($5))\n                  AND ($6::int[] IS NULL OR priority = ANY($6))\n                  AND ($7::text[] IS NULL OR item_type = ANY($7))\n                  AND ($8::bool IS NULL OR is_draft = $8)\n                  AND ($9::timestamptz IS NULL OR updated_at >= $9)\n                LIMIT 100\n            ),\n            vector_results AS (\n                SELECT\n                    id,\n                    1 - (embedding <=> $10) as score,\n                    ROW_NUMBER() OVER (\n                        ORDER BY embedding <=> $10\n                    ) as rank\n                FROM search_documents\n                WHERE embedding IS NOT NULL\n                  AND ($2::search_source IS NULL OR source_type = $2)\n                  AND ($3::text IS NULL OR organization = $3)\n                  AND ($4::text IS NULL OR project = $4)\n                  AND ($5::text[] IS NULL OR status = ANY($5))\n                  AND ($6::int[] IS NULL OR priority = ANY($6))\n                  AND ($7::text[] IS NULL OR item_type = ANY($7))\n                  AND ($8::bool IS NULL OR is_draft = $8)\n                  AND ($9::timestamptz IS NULL OR updated_at >= $9)\n                LIMIT 100\n            ),\n            rrf_combined AS (\n                SELECT\n                    COALESCE(b.id, v.id) as id,\n                    (COALESCE(1.0 / (60 + b.rank), 0) + COALESCE(1.0 / (60 + v.rank), 0))::float8 as rrf_score\n                FROM bm25_results b\n                FULL OUTER JOIN vector_results v ON b.id = v.id\n            )\n            SELECT\n                d.id,\n                d.source_type as \"source_type: SearchSource\",\n                d.source_id,\n                d.external_id,\n                d.title,\n                d.description,\n                d.status,\n                d.priority,\n                d.item_type,\n                d.author_name,\n                d.url,\n                d.created_at,\n                d.updated_at,\n                r.rrf_score as score\n            FROM rrf_combined r\n            JOIN search_documents d ON d.id = r.id\n            ORDER BY r.rrf_score DESC\n            LIMIT $11\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "source_type: SearchSource",
+        "type_info": {
+          "Custom": {
+            "name": "search_source",
+            "kind": {
+              "Enum": [
+                "pr",
+                "work_item"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "external_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "priority",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "item_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "author_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "score",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        {
+          "Custom": {
+            "name": "search_source",
+            "kind": {
+              "Enum": [
+                "pr",
+                "work_item"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Text",
+        "TextArray",
+        "Int4Array",
+        "TextArray",
+        "Bool",
+        "Timestamptz",
+        {
+          "Custom": {
+            "name": "vector",
+            "kind": "Simple"
+          }
+        },
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "70978b14ccbabaa4c78c3bc1fd11257c8c069f9be7d4634db3b87011c85493a2"
+}

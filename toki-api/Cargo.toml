@@ -14,7 +14,7 @@ serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 serde_with = "3.4.0"
 tokio = { version = "1.35.1", features = ["full"] }
-time = { version = "0.3.31", features = ["serde", "parsing"] }
+time = { version = "0.3.47", features = ["serde", "parsing"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 axum = { version = "0.7.3", features = ["ws", "macros"] }
 axum-extra = { version = "0.9.1", features = ["typed-header", "cookie"] }
@@ -42,9 +42,11 @@ sqlx = { version = "0.8.0", features = [
 ] }
 axum-login = "0.16.0"
 thiserror = "1.0"
+regex = "1.10"
 oauth2 = "4.4.2"
 reqwest = { version = "0.12.5", features = ["json"] }
 async-trait = "0.1.77"
+pgvector = { version = "0.4", features = ["sqlx"] }
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
 web-push = "0.10.1"
 url = "2.5.0"
@@ -53,3 +55,4 @@ base64 = "0.22.1"
 strum_macros = "0.26.4"
 tower-sessions-moka-store = "0.14"
 tower-sessions-sqlx-store = { version = "0.14.2", features = ["postgres"] }
+genai = "0.5.3"

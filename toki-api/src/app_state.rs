@@ -16,6 +16,10 @@ use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
     domain::{
+        search::{
+            embedder::GeminiEmbedder, repository::PgSearchRepository,
+            run_search_index_worker, IndexerConfig, SearchService,
+        },
         CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
         RepoDifferMessage, RepoKey,
     },
@@ -61,6 +65,8 @@ pub struct AppState {
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
     web_push_client: IsahcWebPushClient,
     notification_handler: Arc<NotificationHandler>,
+    search_service: Option<Arc<SearchService<GeminiEmbedder, PgSearchRepository>>>,
+    embedder: Option<GeminiEmbedder>,
 }
 
 impl AppState {
@@ -101,6 +107,26 @@ impl AppState {
             web_push_client.clone(),
         ));
 
+        // Initialize embedder and search service if GEMINI_API_KEY is set
+        let embedder = match GeminiEmbedder::try_from_env() {
+            Some(Ok(embedder)) => {
+                tracing::info!("GEMINI_API_KEY found, initializing search service");
+                Some(embedder)
+            }
+            Some(Err(e)) => {
+                tracing::error!("Failed to create Gemini embedder: {}", e);
+                None
+            }
+            None => {
+                tracing::warn!("GEMINI_API_KEY not set, search service disabled");
+                None
+            }
+        };
+        let search_service = embedder.as_ref().map(|embedder| {
+            let repository = PgSearchRepository::new(db_pool.clone());
+            Arc::new(SearchService::with_defaults(embedder.clone(), repository))
+        });
+
         let mut differs = HashMap::new();
         let differ_txs = clients
             .iter()
@@ -137,6 +163,8 @@ impl AppState {
             differs: Arc::new(RwLock::new(differs)),
             web_push_client,
             notification_handler,
+            search_service,
+            embedder,
         }
     }
 
@@ -263,5 +291,33 @@ impl AppState {
     #[allow(dead_code)]
     pub fn host_domain(&self) -> String {
         self.api_url.host_str().unwrap_or("localhost").to_string()
+    }
+
+    #[allow(dead_code)]
+    pub fn start_search_indexer(&self) {
+        let embedder = match &self.embedder {
+            Some(e) => e.clone(),
+            None => {
+                tracing::info!("Embedder not configured, skipping search indexer");
+                return;
+            }
+        };
+
+        let db_pool = self.db_pool.clone();
+        let repo_clients = self.repo_clients.clone();
+        let interval = Duration::from_secs(3600); // 1 hour
+        let config = IndexerConfig::default();
+
+        tokio::spawn(run_search_index_worker(
+            db_pool,
+            repo_clients,
+            embedder,
+            interval,
+            config,
+        ));
+    }
+
+    pub fn search_service(&self) -> Option<&SearchService<GeminiEmbedder, PgSearchRepository>> {
+        self.search_service.as_ref().map(|s| s.as_ref())
     }
 }

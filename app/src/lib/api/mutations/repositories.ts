@@ -22,7 +22,7 @@ function useAddRepository(options?: DefaultMutationOptions<AddRepositoryBody>) {
       }),
     ...options,
     onSuccess: (data, vars, ctx) => {
-      queryClient.invalidateQueries(queries.differs());
+      queryClient.invalidateQueries(queries.differs.differs());
       options?.onSuccess?.(data, vars, ctx);
     },
   });
@@ -43,7 +43,7 @@ function useFollowRepository(
       }),
     ...options,
     onMutate: (vars) => {
-      queryClient.setQueryData(queries.differs().queryKey, (old) => {
+      queryClient.setQueryData(queries.differs.differs().queryKey, (old) => {
         if (!old) return old;
 
         const idx = old.findIndex(
@@ -62,7 +62,7 @@ function useFollowRepository(
       options?.onMutate?.(vars);
     },
     onSettled: (data, err, vars, ctx) => {
-      queryClient.invalidateQueries(queries.differs());
+      queryClient.invalidateQueries(queries.differs.differs());
       queryClient.invalidateQueries({
         queryKey: pullRequestsQueries.baseKey,
       });
@@ -84,7 +84,7 @@ function useDeleteRepository(
       }),
     ...options,
     onSuccess: (data, vars, ctx) => {
-      queryClient.invalidateQueries(queries.differs());
+      queryClient.invalidateQueries(queries.differs.differs());
       queryClient.invalidateQueries({
         queryKey: pullRequestsQueries.baseKey,
       });

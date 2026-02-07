@@ -1,0 +1,129 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                source_type as \"source_type: SearchSource\",\n                source_id,\n                external_id,\n                title,\n                description,\n                status,\n                priority,\n                item_type,\n                author_name,\n                url,\n                created_at,\n                updated_at,\n                ts_rank_cd(search_vector, websearch_to_tsquery('english', $1))::float8 as score\n            FROM search_documents\n            WHERE ($1 = '' OR search_vector @@ websearch_to_tsquery('english', $1))\n              AND ($2::search_source IS NULL OR source_type = $2)\n              AND ($3::text IS NULL OR organization = $3)\n              AND ($4::text IS NULL OR project = $4)\n              AND ($5::text[] IS NULL OR status = ANY($5))\n              AND ($6::int[] IS NULL OR priority = ANY($6))\n              AND ($7::text[] IS NULL OR item_type = ANY($7))\n              AND ($8::bool IS NULL OR is_draft = $8)\n              AND ($9::timestamptz IS NULL OR updated_at >= $9)\n            ORDER BY score DESC\n            LIMIT $10\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "source_type: SearchSource",
+        "type_info": {
+          "Custom": {
+            "name": "search_source",
+            "kind": {
+              "Enum": [
+                "pr",
+                "work_item"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "external_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "priority",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "item_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "author_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "score",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        {
+          "Custom": {
+            "name": "search_source",
+            "kind": {
+              "Enum": [
+                "pr",
+                "work_item"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Text",
+        "TextArray",
+        "Int4Array",
+        "TextArray",
+        "Bool",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "36b083362a76c963febf90ab0b2723fcb0511b89b85e9d1f39f01a9c15120aee"
+}

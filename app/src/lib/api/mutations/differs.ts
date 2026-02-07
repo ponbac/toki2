@@ -18,10 +18,10 @@ function useStartDiffers(options?: DefaultMutationOptions<RepoKey>) {
       }),
     ...options,
     onMutate: (repoKey) => {
-      queryClient.cancelQueries(queries.differs());
-      const previous = queryClient.getQueryData(queries.differs().queryKey);
+      queryClient.cancelQueries(queries.differs.differs());
+      const previous = queryClient.getQueryData(queries.differs.differs().queryKey);
 
-      queryClient.setQueryData(queries.differs().queryKey, (old) => {
+      queryClient.setQueryData(queries.differs.differs().queryKey, (old) => {
         if (!old) return undefined;
 
         const differ = old.find(
@@ -45,11 +45,11 @@ function useStartDiffers(options?: DefaultMutationOptions<RepoKey>) {
       return { previous };
     },
     onError: (err, vars, ctx) => {
-      queryClient.setQueryData(queries.differs().queryKey, ctx?.previous);
+      queryClient.setQueryData(queries.differs.differs().queryKey, ctx?.previous);
       options?.onError?.(err, vars, ctx);
     },
     onSuccess: (data, vars, ctx) => {
-      queryClient.invalidateQueries(queries.differs());
+      queryClient.invalidateQueries(queries.differs.differs());
       queryClient.invalidateQueries({
         queryKey: pullRequestsQueries.baseKey,
       });
@@ -69,10 +69,10 @@ function useStopDiffers(options?: DefaultMutationOptions<RepoKey>) {
       }),
     ...options,
     onMutate: (repoKey) => {
-      queryClient.cancelQueries(queries.differs());
-      const previous = queryClient.getQueryData(queries.differs().queryKey);
+      queryClient.cancelQueries(queries.differs.differs());
+      const previous = queryClient.getQueryData(queries.differs.differs().queryKey);
 
-      queryClient.setQueryData(queries.differs().queryKey, (old) => {
+      queryClient.setQueryData(queries.differs.differs().queryKey, (old) => {
         if (!old) return undefined;
 
         const differ = old.find(
@@ -96,11 +96,11 @@ function useStopDiffers(options?: DefaultMutationOptions<RepoKey>) {
       return { previous };
     },
     onError: (err, vars, ctx) => {
-      queryClient.setQueryData(queries.differs().queryKey, ctx?.previous);
+      queryClient.setQueryData(queries.differs.differs().queryKey, ctx?.previous);
       options?.onError?.(err, vars, ctx);
     },
     onSuccess: (data, vars, ctx) => {
-      queryClient.invalidateQueries(queries.differs());
+      queryClient.invalidateQueries(queries.differs.differs());
       options?.onSuccess?.(data, vars, ctx);
     },
   });

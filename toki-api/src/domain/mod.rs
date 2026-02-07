@@ -10,6 +10,7 @@ mod repo_config;
 mod repo_differ;
 mod repo_key;
 mod repository;
+pub mod search;
 mod user;
 
 pub use email::*;
