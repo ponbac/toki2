@@ -164,41 +164,6 @@
     background-clip: text;
   }
 
-  /* Shimmer loading effect */
-  .shimmer {
-    background: linear-gradient(
-      90deg,
-      hsl(var(--muted)) 0%,
-      hsl(var(--muted-foreground) / 0.1) 50%,
-      hsl(var(--muted)) 100%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-  }
-
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
-
-  /* Subtle border glow on hover */
-  .hover-glow {
-    transition: box-shadow 0.3s ease, border-color 0.3s ease;
-  }
-
-  .hover-glow:hover {
-    border-color: hsl(var(--primary) / 0.3);
-    box-shadow:
-      0 0 0 1px hsl(var(--primary) / 0.1),
-      0 4px 20px hsl(var(--primary) / 0.08);
-  }
-
-  /* Number/stat display */
-  .stat-number {
-    font-feature-settings: "tnum";
-    font-variant-numeric: tabular-nums;
-  }
-
   /* Time display styling */
   .time-display {
     font-family: 'IBM Plex Mono', monospace;
@@ -225,49 +190,5 @@
 
   .dark input[type="time"]::-webkit-calendar-picker-indicator {
     filter: invert(0.7);
-  }
-}
-
-@layer utilities {
-  /* Animation delay utilities */
-  .animation-delay-100 { animation-delay: 100ms; }
-  .animation-delay-200 { animation-delay: 200ms; }
-  .animation-delay-300 { animation-delay: 300ms; }
-  .animation-delay-400 { animation-delay: 400ms; }
-  .animation-delay-500 { animation-delay: 500ms; }
-
-  /* Stagger children animation */
-  .stagger-children > * {
-    animation: fadeSlideUp 0.5s ease-out backwards;
-  }
-
-  .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-  .stagger-children > *:nth-child(2) { animation-delay: 50ms; }
-  .stagger-children > *:nth-child(3) { animation-delay: 100ms; }
-  .stagger-children > *:nth-child(4) { animation-delay: 150ms; }
-  .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
-  .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
-  .stagger-children > *:nth-child(7) { animation-delay: 300ms; }
-  .stagger-children > *:nth-child(8) { animation-delay: 350ms; }
-
-  @keyframes fadeSlideUp {
-    from {
-      opacity: 0;
-      transform: translateY(12px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  /* Subtle pulse */
-  @keyframes subtle-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-
-  .animate-subtle-pulse {
-    animation: subtle-pulse 2s ease-in-out infinite;
   }
 }
