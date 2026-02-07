@@ -19,13 +19,12 @@ import {
 } from "lucide-react";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import { milltimeQueries, TimerType } from "@/lib/api/queries/milltime";
+import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { toast } from "sonner";
 import { milltimeMutations } from "@/lib/api/mutations/milltime";
 import {
   useMilltimeTimer,
   useMilltimeActions,
-  useMilltimeIsAuthenticated,
 } from "@/hooks/useMilltimeStore";
 import { useTitleStore } from "@/hooks/useTitleStore";
 import { useAtomValue } from "jotai/react";
@@ -100,9 +99,8 @@ function PagesCommandGroup(props: { close: () => void }) {
 function ActionsCommandGroup(props: { close: () => void }) {
   const { removeSegment } = useTitleStore();
   const { state: timerState } = useMilltimeTimer();
-  const { setNewTimerDialogOpen, setLoginDialogOpen, setEditTimerDialogOpen } =
+  const { setEditTimerDialogOpen } =
     useMilltimeActions();
-  const isAuthenticatedToMilltime = useMilltimeIsAuthenticated();
 
   const lastProject = useAtomValue(lastProjectAtom);
   const lastActivity = useAtomValue(lastActivityAtom);
@@ -115,14 +113,14 @@ function ActionsCommandGroup(props: { close: () => void }) {
   });
   const timer = timerResponse?.timer;
 
-  const { mutate: startStandaloneTimer } =
-    milltimeMutations.useStartStandaloneTimer();
+  const { mutate: startTimer } =
+    milltimeMutations.useStartTimer();
 
   const { mutate: saveTimer } = milltimeMutations.useSaveTimer({
     onSuccess: () => {
       toast.success("Timer successfully saved to Milltime");
       removeSegment("timer");
-      startStandaloneTimer({
+      startTimer({
         userNote: "Continuing my work...",
         ...buildRememberedTimerParams({
           rememberLastProject,
@@ -141,7 +139,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
         <>
           <CommandItem
             onSelect={() => {
-              startStandaloneTimer({
+              startTimer({
                 userNote: "Doing something important...",
                 ...buildRememberedTimerParams({
                   rememberLastProject,
@@ -157,24 +155,6 @@ function ActionsCommandGroup(props: { close: () => void }) {
               Start empty timer
             </div>
           </CommandItem>
-          <CommandItem
-            disabled
-            onSelect={() => {
-              // TODO: should probably extract this to some kind of guard hook
-              if (isAuthenticatedToMilltime) {
-                setNewTimerDialogOpen(true);
-                props.close();
-              } else {
-                setLoginDialogOpen(true);
-                props.close();
-              }
-            }}
-          >
-            <div className="flex flex-row items-center gap-2 line-through">
-              <TimerIcon className="h-1 w-1" />
-              Start Milltime timer
-            </div>
-          </CommandItem>
         </>
       ) : (
         <>
@@ -182,7 +162,6 @@ function ActionsCommandGroup(props: { close: () => void }) {
             disabled={saveTimerDisabled}
             onSelect={() => {
               saveTimer({
-                timerType: timer?.timerType ?? ("Unreachable" as TimerType),
                 userNote: timer?.note ?? "",
               });
               props.close();

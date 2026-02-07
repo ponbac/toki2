@@ -328,18 +328,18 @@ const PlayButton = React.memo(function PlayButton({
   entry: PositionedEntry;
   isWeekView: boolean;
 }) {
-  const { mutateAsync: startStandaloneAsync, isPending: isStarting } =
-    milltimeMutations.useStartStandaloneTimer();
-  const { mutateAsync: editStandaloneAsync } =
-    milltimeMutations.useEditStandaloneTimer();
+  const { mutateAsync: startTimerAsync, isPending: isStarting } =
+    milltimeMutations.useStartTimer();
+  const { mutateAsync: editTimerAsync } =
+    milltimeMutations.useEditTimer();
   const { state: timerState } = useMilltimeTimer();
 
   const handleStartAgain = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const isStandaloneActive = timerState === "running";
+    const isTimerActive = timerState === "running";
 
-    if (isStandaloneActive) {
-      editStandaloneAsync({
+    if (isTimerActive) {
+      editTimerAsync({
         userNote: entry.note ?? "",
         projectId: entry.projectId,
         projectName: entry.projectName,
@@ -351,9 +351,9 @@ const PlayButton = React.memo(function PlayButton({
       return;
     }
 
-    startStandaloneAsync({ userNote: entry.note ?? "" })
+    startTimerAsync({ userNote: entry.note ?? "" })
       .then(() =>
-        editStandaloneAsync({
+        editTimerAsync({
           projectId: entry.projectId,
           projectName: entry.projectName,
           activityId: entry.activityId,

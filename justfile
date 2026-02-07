@@ -29,7 +29,7 @@ init-db:
 
 # Prepare SQLx offline query data (run after changing SQL queries)
 sqlx-prepare:
-    cd toki-api && cargo sqlx prepare
+    cargo sqlx prepare --workspace
 
 # === Frontend (React/TS) ===
 

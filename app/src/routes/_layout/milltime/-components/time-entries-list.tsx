@@ -279,18 +279,18 @@ const StartAgainButton = React.memo(function StartAgainButton(props: {
   activityId: string;
   activityName: string;
 }) {
-  const { mutateAsync: startStandaloneAsync, isPending: isStarting } =
-    milltimeMutations.useStartStandaloneTimer();
-  const { mutateAsync: editStandaloneAsync } =
-    milltimeMutations.useEditStandaloneTimer();
+  const { mutateAsync: startTimerAsync, isPending: isStarting } =
+    milltimeMutations.useStartTimer();
+  const { mutateAsync: editTimerAsync } =
+    milltimeMutations.useEditTimer();
 
   const { state: timerState } = useMilltimeTimer();
 
   const handleStartAgain = () => {
-    const isStandaloneActive = timerState === "running";
+    const isTimerActive = timerState === "running";
 
-    if (isStandaloneActive) {
-      editStandaloneAsync({
+    if (isTimerActive) {
+      editTimerAsync({
         userNote: props.note,
         projectId: props.projectId,
         projectName: props.projectName,
@@ -302,9 +302,9 @@ const StartAgainButton = React.memo(function StartAgainButton(props: {
       return;
     }
 
-    startStandaloneAsync({ userNote: props.note })
+    startTimerAsync({ userNote: props.note })
       .then(() =>
-        editStandaloneAsync({
+        editTimerAsync({
           projectId: props.projectId,
           projectName: props.projectName,
           activityId: props.activityId,
