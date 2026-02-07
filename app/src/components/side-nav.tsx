@@ -85,7 +85,7 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
 
       {/* Main content area */}
       <div className="mt-14 flex-1 md:ml-[72px] md:mt-0">
-        <ScrollArea className="h-[calc(100vh-3.5rem)] md:h-screen">
+        <ScrollArea className="h-[calc(100vh-3.5rem)] md:h-screen [&>div>div]:!block">
           {children}
         </ScrollArea>
       </div>

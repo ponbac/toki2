@@ -50,7 +50,7 @@ export const RepoCard = (props: {
   return (
     <Card
       className={cn(
-        "flex h-56 w-[25rem] flex-col justify-between",
+        "flex h-56 w-full flex-col justify-between sm:w-[25rem]",
         props.differ.isInvalid && "border border-destructive",
         !props.isAdmin && "h-44",
       )}

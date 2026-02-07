@@ -60,7 +60,7 @@ function RepositoriesComponent() {
   );
 
   return (
-    <main className="flex w-full items-center justify-center p-8">
+    <main className="flex w-full items-center justify-center p-4 md:p-8">
       <div className="flex flex-col items-center justify-center gap-4">
         <TopBar />
         <div className="flex w-full flex-col gap-4">
@@ -152,7 +152,7 @@ function TopBar() {
           className={cn(buttonVariants({ variant: "outline" }), "gap-1")}
         >
           <Plus size="1.25rem" />
-          Add repository
+          <span className="hidden sm:inline">Add repository</span>
         </Link>
       </div>
     </div>

@@ -43,6 +43,7 @@ import {
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { NewEntryDialog } from "./-components/new-entry-dialog";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 const TimelineView = React.lazy(() =>
   import("./-components/timeline-view").then((m) => ({ default: m.TimelineView }))
 );
@@ -86,7 +87,9 @@ function MilltimeComponent() {
     to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
   }));
   const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
-  const [viewMode, setViewMode] = useAtom(viewModePersistedAtom);
+  const [storedViewMode, setViewMode] = useAtom(viewModePersistedAtom);
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const viewMode = isDesktop ? storedViewMode : "list";
   const [rememberLastProject, setRememberLastProject] = useAtom(
     rememberLastProjectAtom
   );
@@ -219,8 +222,8 @@ function MilltimeComponent() {
                 setDateRange={setDateRange}
               />
               <div className="flex items-center gap-1 rounded-xl border border-border/50 bg-card/40 p-1 backdrop-blur-sm">
-                {/* View Toggle */}
-                <div className="flex">
+                {/* View Toggle — hidden on mobile (always list) */}
+                <div className="hidden md:flex">
                   <button
                     type="button"
                     onClick={() => setViewMode("list")}
@@ -257,7 +260,7 @@ function MilltimeComponent() {
                       : "pointer-events-none opacity-0"
                   )}
                 >
-                  <div className="mx-1 h-5 w-px bg-border/50" />
+                  <div className="mx-1 hidden h-5 w-px bg-border/50 md:block" />
                   <MergeEntriesSwitch
                     mergeSameDay={mergeSameDay}
                     setMergeSameDay={setMergeSameDay}

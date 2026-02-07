@@ -90,7 +90,7 @@ export function NewEntryDialog(props: {
         if (!open) reset();
       }}
     >
-      <DialogContent className="w-full max-w-2xl">
+      <DialogContent className="max-w-2xl">
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {

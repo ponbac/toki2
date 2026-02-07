@@ -202,7 +202,7 @@ function Threads(props: { pullRequest: ListPullRequest }) {
 
   return (
     <ScrollArea className="max-h-[60vh] max-w-5xl">
-      <div className="flex flex-col">
+      <div className="flex min-w-0 flex-col overflow-hidden">
         {activeThreads.map((thread) => (
           <Thread key={thread.id} thread={thread} users={allUsers} />
         ))}
@@ -243,10 +243,10 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
   }
 
   return (
-    <Accordion type="single" collapsible className="w-full">
+    <Accordion type="single" collapsible className="w-full overflow-hidden">
       <AccordionItem value={firstComment.id.toString()}>
         <AccordionTrigger>
-          <div className="flex max-w-[58rem] flex-col">
+          <div className="flex min-w-0 max-w-full flex-col sm:max-w-[58rem]">
             <div className="flex flex-row items-center gap-2">
               <AzureAvatar
                 user={firstComment.author}
@@ -260,14 +260,14 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
                 </span>
               </h1>
             </div>
-            <article className="prose-sm truncate text-left dark:prose-invert">
+            <article className="prose-sm line-clamp-2 text-left dark:prose-invert">
               <Markdown>{firstComment.content.split("\n").at(0)}</Markdown>
             </article>
           </div>
         </AccordionTrigger>
-        <AccordionContent className="flex flex-col gap-4">
+        <AccordionContent className="flex min-w-0 flex-col gap-4">
           {nonDeletedComments.map((comment) => (
-            <div key={comment.id} className="flex flex-col gap-2">
+            <div key={comment.id} className="flex min-w-0 flex-col gap-2">
               <div
                 key={comment.id}
                 className="flex flex-row items-center gap-2"
@@ -284,7 +284,7 @@ function Thread(props: { thread: PullRequestThread; users: Array<User> }) {
                   </span>
                 </h1>
               </div>
-              <article className="prose max-w-[80ch] dark:prose-invert">
+              <article className="prose max-w-full overflow-hidden break-words dark:prose-invert sm:max-w-[80ch]">
                 <Markdown>{comment.content}</Markdown>
               </article>
             </div>

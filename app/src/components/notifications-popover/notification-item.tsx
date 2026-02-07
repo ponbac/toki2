@@ -23,7 +23,7 @@ export function NotificationItem(props: {
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="max-w-[26rem] flex-1">
+        <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex items-center gap-2">
             <ColoredNotificationIconWithTooltip
               type={props.notification.notificationType}
@@ -32,7 +32,7 @@ export function NotificationItem(props: {
               {props.notification.title}
             </span>
           </div>
-          <div className="text-sm text-muted-foreground">
+          <div className="truncate text-sm text-muted-foreground">
             {props.notification.message}
           </div>
         </div>
@@ -73,13 +73,9 @@ export function NotificationItem(props: {
           })}
         </div>
         {!!props.repository && (
-          <div className="flex items-center gap-0.5 font-mono">
-            <span>{props.repository.organization}</span>
-            <span>/</span>
-            <span>{props.repository.project}</span>
-            <span>/</span>
-            <span>{props.repository.repoName}</span>
-          </div>
+          <span className="truncate font-mono">
+            {props.repository.organization}/{props.repository.project}/{props.repository.repoName}
+          </span>
         )}
       </div>
     </div>

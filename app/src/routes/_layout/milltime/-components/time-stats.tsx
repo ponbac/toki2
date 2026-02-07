@@ -1,9 +1,13 @@
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { milltimeQueries } from "@/lib/api/queries/milltime";
 import { formatHoursMinutes } from "@/lib/utils";
 import { endOfWeek, format, startOfWeek } from "date-fns";
-import { CalendarClockIcon, PiggyBankIcon, TrendingUp, Sparkles } from "lucide-react";
+import {
+  CalendarClockIcon,
+  PiggyBankIcon,
+  TrendingUp,
+  Sparkles,
+} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -15,16 +19,11 @@ const PROGRESS_GLOW_STYLE = {
 } as const;
 
 export const TimeStats = () => {
-  const now = new Date();
-  const from = format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd");
-  const to = format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd");
-  const queryOpts = useMemo(
-    () => milltimeQueries.timeInfo({ from, to }),
-    [from, to],
-  );
-
   const { data: timeInfo } = useQuery({
-    ...queryOpts,
+    ...milltimeQueries.timeInfo({
+      from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+    }),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -49,7 +48,8 @@ export const TimeStats = () => {
           <div>
             <h3 className="font-display text-lg font-semibold">This Week</h3>
             <p className="text-sm text-muted-foreground">
-              {formatHoursMinutes(workedHours)} of {formatHoursMinutes(scheduledHours)}
+              {formatHoursMinutes(workedHours)} of{" "}
+              {formatHoursMinutes(scheduledHours)}
             </p>
           </div>
         </div>
@@ -89,7 +89,7 @@ export const TimeStats = () => {
                 {percentageCompleted.toFixed(0)}%
               </span>
               {isAhead && (
-                <Sparkles className="mt-1 h-4 w-4 text-primary animate-pulse-slow" />
+                <Sparkles className="mt-1 h-4 w-4 animate-pulse-slow text-primary" />
               )}
             </div>
           </div>
@@ -107,7 +107,9 @@ export const TimeStats = () => {
                   </span>
                 </div>
                 <p className="time-display text-xl font-semibold">
-                  {formatHoursMinutes(Math.max(0, timeInfo?.periodTimeLeft ?? 0))}
+                  {formatHoursMinutes(
+                    Math.max(0, timeInfo?.periodTimeLeft ?? 0),
+                  )}
                 </p>
               </div>
             </TooltipTrigger>
