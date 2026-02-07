@@ -394,7 +394,7 @@ export const FloatingMilltimeTimer = () => {
                   </Tooltip>
                   <PopoverContent
                     align="end"
-                    className="w-[42rem] bg-card/95 backdrop-blur-xl p-2"
+                    className="w-[calc(100vw-2rem)] bg-card/95 backdrop-blur-xl p-2 sm:w-[42rem]"
                   >
                     <TimerHistory
                       scrollAreaClassName="min-h-72"

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { Button } from "@/components/ui/button";
 import { User } from "@/lib/api/queries/user";
+import { PrCardList } from "./-components/pr-card-list";
 
 const pullRequestsSearchSchema = z.object({
   searchString: z.string().optional().catch(""),
@@ -68,25 +69,44 @@ function PrsComponent() {
   );
 
   return (
-    <main className="flex w-full items-center justify-center p-8">
-      <div className="flex w-[95%] max-w-[110rem] flex-col items-center justify-center gap-4">
+    <main className="flex w-full items-center justify-center p-4 md:p-8">
+      <div className="flex w-full max-w-[110rem] flex-col items-center justify-center gap-4 md:w-[95%]">
         <TopBar />
-        <DataTable
-          data={filteredData}
-          columns={columns}
-          onRowClick={(row) =>
-            navigate({
-              to: `/prs/$prId`,
-              params: { prId: `${row.id}` },
-              search: {
-                searchString,
-                filterAuthor,
-                filterReviewer,
-                filterBlocking,
-              },
-            })
-          }
-        />
+        <div className="hidden w-full md:block">
+          <DataTable
+            data={filteredData}
+            columns={columns}
+            onRowClick={(row) =>
+              navigate({
+                to: `/prs/$prId`,
+                params: { prId: `${row.id}` },
+                search: {
+                  searchString,
+                  filterAuthor,
+                  filterReviewer,
+                  filterBlocking,
+                },
+              })
+            }
+          />
+        </div>
+        <div className="w-full md:hidden">
+          <PrCardList
+            data={filteredData}
+            onCardClick={(pr) =>
+              navigate({
+                to: `/prs/$prId`,
+                params: { prId: `${pr.id}` },
+                search: {
+                  searchString,
+                  filterAuthor,
+                  filterReviewer,
+                  filterBlocking,
+                },
+              })
+            }
+          />
+        </div>
       </div>
       <Outlet />
     </main>
@@ -136,7 +156,7 @@ function TopBar() {
           Open pull requests in your followed repositories are shown here.
         </h2>
       </div>
-      <div className="flex gap-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
         <div className="relative flex w-full items-center">
           <SearchCode
             onClick={() => inputRef.current?.focus()}
@@ -159,30 +179,32 @@ function TopBar() {
             className="pl-8"
           />
         </div>
-        <Button
-          variant={filterAuthor ? "default" : "outline"}
-          onClick={() => toggleFilter("author")}
-          className="flex items-center gap-2"
-        >
-          <UserIcon className="size-4" />
-          My PRs
-        </Button>
-        <Button
-          variant={filterReviewer ? "default" : "outline"}
-          onClick={() => toggleFilter("reviewer")}
-          className="flex items-center gap-2"
-        >
-          <NotebookPenIcon className="size-4" />
-          Reviews
-        </Button>
-        <Button
-          variant={filterBlocking ? "default" : "outline"}
-          onClick={() => toggleFilter("blocking")}
-          className="flex items-center gap-2"
-        >
-          <ShieldAlertIcon className="size-4" />
-          Blocking
-        </Button>
+        <div className="flex gap-2 sm:gap-4">
+          <Button
+            variant={filterAuthor ? "default" : "outline"}
+            onClick={() => toggleFilter("author")}
+            className="flex items-center gap-2"
+          >
+            <UserIcon className="size-4" />
+            <span className="hidden sm:inline">My PRs</span>
+          </Button>
+          <Button
+            variant={filterReviewer ? "default" : "outline"}
+            onClick={() => toggleFilter("reviewer")}
+            className="flex items-center gap-2"
+          >
+            <NotebookPenIcon className="size-4" />
+            <span className="hidden sm:inline">Reviews</span>
+          </Button>
+          <Button
+            variant={filterBlocking ? "default" : "outline"}
+            onClick={() => toggleFilter("blocking")}
+            className="flex items-center gap-2"
+          >
+            <ShieldAlertIcon className="size-4" />
+            <span className="hidden sm:inline">Blocking</span>
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ import { NotificationSettingsDropdown } from "./notification-settings-dropdown";
 import { Switch } from "@/components/ui/switch";
 import { atomWithStorage } from "jotai/utils";
 import { useAtom } from "jotai/react";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 const persistedHideViewedAtom = atomWithStorage<boolean>(
   "notifications-hide-viewed",
@@ -27,6 +28,7 @@ const persistedHideViewedAtom = atomWithStorage<boolean>(
 export function NotificationsPopover() {
   const { addSegment, removeSegment } = useTitleStore();
   const [hideViewed, setHideViewed] = useAtom(persistedHideViewedAtom);
+  const isDesktop = useMediaQuery("(min-width: 640px)");
 
   const { data: notifications = [] } = useQuery({
     ...notificationsQueries.notifications({
@@ -77,8 +79,13 @@ export function NotificationsPopover() {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[32rem] p-0" align="start" side="right">
-        <div className="flex items-center justify-between border-b p-3">
+      <PopoverContent
+        className="w-[calc(100vw-2rem)] p-0 sm:w-[32rem]"
+        align={isDesktop ? "start" : "center"}
+        side={isDesktop ? "right" : "bottom"}
+        collisionPadding={16}
+      >
+        <div className="flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-0">
           <div className="flex items-center gap-2 font-semibold">
             <span>Notifications</span>
             {hasUnviewedNotifications && (

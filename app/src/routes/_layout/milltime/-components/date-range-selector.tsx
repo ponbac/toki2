@@ -23,6 +23,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 export function DateRangeSelector(props: {
   dateRange: { from: string; to: string };
@@ -32,6 +33,7 @@ export function DateRangeSelector(props: {
     from: parseISO(props.dateRange.from),
     to: parseISO(props.dateRange.to),
   };
+  const isSmScreen = useMediaQuery("(min-width: 640px)");
   const thisWeekRange = {
     from: startOfWeek(new Date(), { weekStartsOn: 1 }),
     to: endOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -49,14 +51,14 @@ export function DateRangeSelector(props: {
   const thisWeekSelected = rangeIsEqual(dateRange, thisWeekRange);
 
   return (
-    <div className="flex flex-row items-center gap-2">
+    <div className="flex flex-row flex-wrap items-center gap-2">
       <Popover>
         <PopoverTrigger asChild>
           <Button
             id="date"
             variant="outline"
             className={cn(
-              "w-[300px] justify-start text-left font-normal",
+              "w-full justify-start text-left font-normal sm:w-[300px]",
               !dateRange.from && "text-muted-foreground",
             )}
           >
@@ -86,7 +88,7 @@ export function DateRangeSelector(props: {
             defaultMonth={dateRange.from}
             selected={dateRange}
             onSelect={handleRangeSelect}
-            numberOfMonths={2}
+            numberOfMonths={isSmScreen ? 2 : 1}
             weekStartsOn={1}
           />
         </PopoverContent>
@@ -161,7 +163,7 @@ function PresetRangeButtons(props: {
   };
 
   return (
-    <div className="flex flex-row justify-center gap-4 px-2 pt-2">
+    <div className="flex flex-row flex-wrap justify-center gap-2 px-2 pt-2">
       {Object.keys(ranges).map((preset) => (
         <PresetRangeButton
           key={preset}
