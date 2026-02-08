@@ -173,20 +173,20 @@ export function Summary({ timeEntries }: SummaryProps) {
           </div>
           {/* Legend */}
           <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1">
-            {projectData.slice(0, 4).map((project, index) => (
+            {projectData.slice(0, 6).map((project, index) => (
               <div key={project.name} className="flex items-center gap-1.5">
                 <div
-                  className="h-2.5 w-2.5 rounded-full"
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ backgroundColor: COLORS[index % COLORS.length] }}
                 />
-                <span className="text-xs text-muted-foreground truncate max-w-[100px]">
+                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
                   {project.name}
                 </span>
               </div>
             ))}
-            {projectData.length > 4 ? (
+            {projectData.length > 6 ? (
               <span className="text-xs text-muted-foreground">
-                +{projectData.length - 4} more
+                +{projectData.length - 6} more
               </span>
             ) : null}
           </div>
