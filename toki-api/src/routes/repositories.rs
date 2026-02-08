@@ -18,6 +18,8 @@ use crate::{
     AppState,
 };
 
+use super::ApiError;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", delete(delete_repository))
@@ -52,7 +54,7 @@ async fn follow_repository(
     auth_session: AuthSession,
     State(app_state): State<AppState>,
     Json(body): Json<FollowRepositoryBody>,
-) -> Result<Json<()>, (StatusCode, String)> {
+) -> Result<Json<()>, ApiError> {
     let user_id = auth_session.user.expect("user not found").id;
 
     let repo_key = RepoKey::new(&body.organization, &body.project, &body.repo_name);
@@ -60,13 +62,7 @@ async fn follow_repository(
 
     user_repo
         .follow_repository(user_id, &repo_key, body.follow)
-        .await
-        .map_err(|err| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to follow repository: {}", err),
-            )
-        })?;
+        .await?;
 
     Ok(Json(()))
 }
@@ -103,7 +99,7 @@ struct AddRepositoryResponse {
 async fn add_repository(
     State(app_state): State<AppState>,
     Json(body): Json<AddRepositoryBody>,
-) -> Result<Json<AddRepositoryResponse>, (StatusCode, String)> {
+) -> Result<Json<AddRepositoryResponse>, ApiError> {
     let repo_client = RepoClient::new(
         &body.repo_name,
         &body.organization,
@@ -111,12 +107,7 @@ async fn add_repository(
         &body.token,
     )
     .await
-    .map_err(|err| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("Failed to create repository: {}", err),
-        )
-    })?;
+    .map_err(|err| ApiError::bad_request(format!("Failed to create repository: {}", err)))?;
 
     let repository_repo = app_state.repository_repo.clone();
     let new_repo = NewRepository::new(
@@ -125,15 +116,7 @@ async fn add_repository(
         body.repo_name.clone(),
         body.token.clone(),
     );
-    let id = repository_repo
-        .upsert_repository(&new_repo)
-        .await
-        .map_err(|err| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to insert repository: {}", err),
-            )
-        })?;
+    let id = repository_repo.upsert_repository(&new_repo).await?;
 
     let key = RepoKey::from(&body);
     app_state.insert_repo(key.clone(), repo_client).await;
@@ -163,19 +146,11 @@ struct DeleteRepositoryBody {
 async fn delete_repository(
     State(app_state): State<AppState>,
     Json(body): Json<DeleteRepositoryBody>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, ApiError> {
     let repo_key = RepoKey::new(&body.organization, &body.project, &body.repo_name);
     let repository_repo = app_state.repository_repo.clone();
 
-    repository_repo
-        .delete_repository(&repo_key)
-        .await
-        .map_err(|err| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to delete repository: {}", err),
-            )
-        })?;
+    repository_repo.delete_repository(&repo_key).await?;
 
     app_state.delete_repo(repo_key).await;
 

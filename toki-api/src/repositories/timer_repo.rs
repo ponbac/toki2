@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
+use async_trait::async_trait;
+use serde::Serialize;
 use sqlx::PgPool;
-use strum::{Display, EnumString};
 
 use super::repo_error::RepositoryError;
 
+#[async_trait]
 pub trait TimerRepository {
     async fn get_timer_history(&self, user_id: &i32)
         -> Result<Vec<DatabaseTimer>, RepositoryError>;
@@ -50,28 +51,9 @@ impl TimerRepositoryImpl {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, EnumString, Display, PartialEq, Eq, Clone)]
-pub enum TimerType {
-    #[strum(ascii_case_insensitive, serialize = "milltime")]
-    Milltime,
-    #[strum(ascii_case_insensitive, serialize = "standalone")]
-    Standalone,
-}
-
-impl From<String> for TimerType {
-    fn from(value: String) -> Self {
-        match value.to_lowercase().as_str() {
-            "milltime" => TimerType::Milltime,
-            "standalone" => TimerType::Standalone,
-            _ => panic!("Invalid timer type"),
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseTimer {
-    pub timer_type: TimerType,
     pub id: i32,
     pub registration_id: Option<String>,
     pub user_id: i32,
@@ -90,7 +72,6 @@ pub struct DatabaseTimer {
 
 pub struct NewDatabaseTimer {
     pub user_id: i32,
-    pub timer_type: TimerType,
     pub start_time: time::OffsetDateTime,
     pub project_id: Option<String>,
     pub project_name: Option<String>,
@@ -119,9 +100,9 @@ pub struct FinishedDatabaseTimer {
     pub activity_name: Option<String>,
     pub note: String,
     pub registration_id: String,
-    pub timer_type: TimerType,
 }
 
+#[async_trait]
 impl TimerRepository for TimerRepositoryImpl {
     async fn get_timer_history(
         &self,
@@ -130,7 +111,7 @@ impl TimerRepository for TimerRepositoryImpl {
         let timers = sqlx::query_as!(
             DatabaseTimer,
             r#"
-            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id, timer_type
+            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id
             FROM timer_history
             WHERE user_id = $1
             "#,
@@ -143,58 +124,42 @@ impl TimerRepository for TimerRepositoryImpl {
     }
 
     async fn active_timer(&self, user_id: &i32) -> Result<Option<DatabaseTimer>, RepositoryError> {
-        let single_timer = sqlx::query_as!(
+        let timer = sqlx::query_as!(
             DatabaseTimer,
             r#"
-            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id, timer_type
+            SELECT id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, created_at, registration_id
             FROM timer_history
             WHERE user_id = $1 AND end_time IS NULL
+            ORDER BY created_at DESC
+            LIMIT 1
             "#,
             user_id
         )
         .fetch_optional(&self.pool)
-        .await;
+        .await?;
 
-        match single_timer {
-            Ok(timer) => Ok(timer),
-            Err(sqlx::Error::RowNotFound) => Ok(None),
-            Err(e) => {
-                // multiple rows found, delete all but the most recent
-                let most_recent_timer_id = sqlx::query!(
-                    r#"
-                    SELECT id
-                    FROM timer_history
-                    WHERE user_id = $1 AND end_time IS NULL
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                    "#,
-                    user_id
-                )
-                .fetch_one(&self.pool)
-                .await?
-                .id;
-
-                sqlx::query!(
-                    r#"
-                    DELETE FROM timer_history
-                    WHERE user_id = $1 AND end_time IS NULL AND id != $2
-                    "#,
-                    user_id,
-                    most_recent_timer_id
-                )
-                .execute(&self.pool)
-                .await?;
-
-                Err(e.into())
-            }
+        // Clean up duplicate active timers (keep only the most recent one)
+        if let Some(ref active) = timer {
+            sqlx::query!(
+                r#"
+                DELETE FROM timer_history
+                WHERE user_id = $1 AND end_time IS NULL AND id != $2
+                "#,
+                user_id,
+                active.id
+            )
+            .execute(&self.pool)
+            .await?;
         }
+
+        Ok(timer)
     }
 
     async fn create_timer(&self, timer: &NewDatabaseTimer) -> Result<i32, RepositoryError> {
         let id = sqlx::query!(
             r#"
-            INSERT INTO timer_history (user_id, start_time, project_id, project_name, activity_id, activity_name, note, timer_type)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO timer_history (user_id, start_time, project_id, project_name, activity_id, activity_name, note)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id
             "#,
             timer.user_id,
@@ -203,8 +168,7 @@ impl TimerRepository for TimerRepositoryImpl {
             timer.project_name,
             timer.activity_id,
             timer.activity_name,
-            timer.note,
-            timer.timer_type.to_string()
+            timer.note
         )
         .fetch_one(&self.pool)
         .await?
@@ -347,9 +311,9 @@ impl TimerRepository for TimerRepositoryImpl {
         let id = sqlx::query!(
             r#"
             INSERT INTO timer_history (
-                user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, registration_id, timer_type
+                user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note, registration_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id
             "#,
             timer.user_id,
@@ -360,8 +324,7 @@ impl TimerRepository for TimerRepositoryImpl {
             timer.activity_id,
             timer.activity_name,
             timer.note,
-            timer.registration_id,
-            timer.timer_type.to_string()
+            timer.registration_id
         )
         .fetch_one(&self.pool)
         .await?

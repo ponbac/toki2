@@ -1,23 +1,21 @@
 import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { MilltimeLoginDialog } from "@/components/milltime-login-dialog";
-import { FloatingMilltimeTimer } from "@/components/floating-milltime-timer";
-import { MilltimeTimerDialog } from "@/components/milltime-timer-dialog";
+import { TimeTrackingLoginDialog } from "@/components/time-tracking-login-dialog";
+import { FloatingTimer } from "@/components/floating-timer";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { TimerEditDialog } from "@/components/timer-edit-dialog";
-import { milltimeQueries } from "@/lib/api/queries/milltime";
+import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery } from "@tanstack/react-query";
 import {
-  useMilltimeActions,
-  useMilltimeEditTimerDialogOpen,
-  useMilltimeIsAuthenticated,
-  useMilltimeLoginDialogOpen,
-  useMilltimeNewTimerDialogOpen,
-} from "@/hooks/useMilltimeStore";
+  useTimeTrackingActions,
+  useTimeTrackingEditTimerDialogOpen,
+  useTimeTrackingIsAuthenticated,
+  useTimeTrackingLoginDialogOpen,
+} from "@/hooks/useTimeTrackingStore";
 
 export const Route = createFileRoute("/_layout")({
   component: LayoutComponent,
@@ -42,34 +40,29 @@ function LayoutComponent() {
         }}
       />
       <CmdK />
-      <MilltimeTimerProvider />
+      <TimerProvider />
     </TooltipProvider>
   );
 }
 
-function MilltimeTimerProvider() {
-  const isAuthenticated = useMilltimeIsAuthenticated();
+function TimerProvider() {
+  const isAuthenticated = useTimeTrackingIsAuthenticated();
 
-  const newTimerDialogOpen = useMilltimeNewTimerDialogOpen();
-  const editTimerDialogOpen = useMilltimeEditTimerDialogOpen();
-  const loginDialogOpen = useMilltimeLoginDialogOpen();
-  const { setNewTimerDialogOpen, setLoginDialogOpen, setEditTimerDialogOpen } =
-    useMilltimeActions();
+  const editTimerDialogOpen = useTimeTrackingEditTimerDialogOpen();
+  const loginDialogOpen = useTimeTrackingLoginDialogOpen();
+  const { setLoginDialogOpen, setEditTimerDialogOpen } =
+    useTimeTrackingActions();
 
   const { data: timerResponse } = useQuery({
-    ...milltimeQueries.getTimer(),
+    ...timeTrackingQueries.getTimer(),
     enabled: false,
   });
   const timer = timerResponse?.timer;
 
   return isAuthenticated ? (
     <>
-      <FloatingMilltimeTimer />
-      <MilltimeTimerDialog
-        open={newTimerDialogOpen}
-        onOpenChange={setNewTimerDialogOpen}
-      />
-      {!!timer && timer.timerType === "Standalone" && (
+      <FloatingTimer />
+      {!!timer && (
         <TimerEditDialog
           open={editTimerDialogOpen}
           onOpenChange={setEditTimerDialogOpen}
@@ -78,7 +71,7 @@ function MilltimeTimerProvider() {
       )}
     </>
   ) : (
-    <MilltimeLoginDialog
+    <TimeTrackingLoginDialog
       open={loginDialogOpen}
       onOpenChange={setLoginDialogOpen}
     />

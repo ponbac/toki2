@@ -49,6 +49,28 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+// Migrate localStorage keys renamed in the milltime → time-tracking rename.
+// Safe to remove once all users have loaded the app at least once after this change.
+const LOCAL_STORAGE_KEY_MIGRATIONS: [string, string][] = [
+  ["milltime-lastProject", "time-tracking-lastProject"],
+  ["milltime-lastActivity", "time-tracking-lastActivity"],
+  ["milltime-rememberLastProject", "time-tracking-rememberLastProject"],
+  ["milltime-mergeSameDay", "time-tracking-mergeSameDay"],
+  ["milltime-viewMode", "time-tracking-viewMode"],
+  [
+    "milltime-previous-week-alert-disabled",
+    "time-tracking-previous-week-alert-disabled",
+  ],
+];
+
+for (const [oldKey, newKey] of LOCAL_STORAGE_KEY_MIGRATIONS) {
+  const value = localStorage.getItem(oldKey);
+  if (value !== null) {
+    localStorage.setItem(newKey, value);
+    localStorage.removeItem(oldKey);
+  }
+}
+
 ReactDOM.createRoot(document.getElementById("app")!).render(
   <React.StrictMode>
     <ThemeProvider>

@@ -57,11 +57,6 @@
         "ordinal": 10,
         "name": "registration_id",
         "type_info": "Text"
-      },
-      {
-        "ordinal": 11,
-        "name": "timer_type",
-        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -80,8 +75,7 @@
       true,
       true,
       false,
-      true,
-      false
+      true
     ]
   },
   "hash": "3d077b8a8d0216e788a8a1faab0fb29716d20a4b433e742e6eb1b790f5837c34"

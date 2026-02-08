@@ -19,6 +19,8 @@ use crate::{
     repositories::UserRepository,
 };
 
+use super::ApiError;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/start", post(start_differ))
@@ -116,16 +118,12 @@ async fn get_differs(
 async fn start_differ(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let sender = app_state
-        .get_differ_sender(body)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+) -> Result<StatusCode, ApiError> {
+    let sender = app_state.get_differ_sender(body).await?;
 
     let _ = sender
         .send(RepoDifferMessage::Start(Duration::from_secs(300)))
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()));
+        .await;
 
     Ok(StatusCode::OK)
 }
@@ -134,16 +132,10 @@ async fn start_differ(
 async fn stop_differ(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let sender = app_state
-        .get_differ_sender(body)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+) -> Result<StatusCode, ApiError> {
+    let sender = app_state.get_differ_sender(body).await?;
 
-    let _ = sender
-        .send(RepoDifferMessage::Stop)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()));
+    let _ = sender.send(RepoDifferMessage::Stop).await;
 
     Ok(StatusCode::OK)
 }
@@ -152,16 +144,10 @@ async fn stop_differ(
 async fn force_update(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let sender = app_state
-        .get_differ_sender(body)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+) -> Result<StatusCode, ApiError> {
+    let sender = app_state.get_differ_sender(body).await?;
 
-    let _ = sender
-        .send(RepoDifferMessage::ForceUpdate)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()));
+    let _ = sender.send(RepoDifferMessage::ForceUpdate).await;
 
     Ok(StatusCode::OK)
 }

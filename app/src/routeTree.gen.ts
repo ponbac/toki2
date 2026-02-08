@@ -16,7 +16,7 @@ import { Route as LayoutRouteImport } from "./routes/_layout/route"
 import { Route as LayoutIndexImport } from "./routes/_layout/index"
 import { Route as LayoutRepositoriesRouteImport } from "./routes/_layout/repositories/route"
 import { Route as LayoutPrsRouteImport } from "./routes/_layout/prs/route"
-import { Route as LayoutMilltimeIndexImport } from "./routes/_layout/milltime/index"
+import { Route as LayoutTimeTrackingIndexImport } from "./routes/_layout/time-tracking/index"
 import { Route as LayoutRepositoriesAddRouteImport } from "./routes/_layout/repositories/add/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
 import { Route as LayoutRepositoriesNotificationsRepoIdRouteImport } from "./routes/_layout/repositories/notifications/$repoId/route"
@@ -52,9 +52,9 @@ const LayoutPrsRouteRoute = LayoutPrsRouteImport.update({
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
-const LayoutMilltimeIndexRoute = LayoutMilltimeIndexImport.update({
-  id: "/milltime/",
-  path: "/milltime/",
+const LayoutTimeTrackingIndexRoute = LayoutTimeTrackingIndexImport.update({
+  id: "/time-tracking/",
+  path: "/time-tracking/",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
@@ -132,11 +132,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutRepositoriesAddRouteImport
       parentRoute: typeof LayoutRepositoriesRouteImport
     }
-    "/_layout/milltime/": {
-      id: "/_layout/milltime/"
-      path: "/milltime"
-      fullPath: "/milltime"
-      preLoaderRoute: typeof LayoutMilltimeIndexImport
+    "/_layout/time-tracking/": {
+      id: "/_layout/time-tracking/"
+      path: "/time-tracking"
+      fullPath: "/time-tracking"
+      preLoaderRoute: typeof LayoutTimeTrackingIndexImport
       parentRoute: typeof LayoutRouteImport
     }
     "/_layout/repositories/notifications/$repoId": {
@@ -184,14 +184,14 @@ interface LayoutRouteRouteChildren {
   LayoutPrsRouteRoute: typeof LayoutPrsRouteRouteWithChildren
   LayoutRepositoriesRouteRoute: typeof LayoutRepositoriesRouteRouteWithChildren
   LayoutIndexRoute: typeof LayoutIndexRoute
-  LayoutMilltimeIndexRoute: typeof LayoutMilltimeIndexRoute
+  LayoutTimeTrackingIndexRoute: typeof LayoutTimeTrackingIndexRoute
 }
 
 const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutPrsRouteRoute: LayoutPrsRouteRouteWithChildren,
   LayoutRepositoriesRouteRoute: LayoutRepositoriesRouteRouteWithChildren,
   LayoutIndexRoute: LayoutIndexRoute,
-  LayoutMilltimeIndexRoute: LayoutMilltimeIndexRoute,
+  LayoutTimeTrackingIndexRoute: LayoutTimeTrackingIndexRoute,
 }
 
 const LayoutRouteRouteWithChildren = LayoutRouteRoute._addFileChildren(
@@ -206,7 +206,7 @@ export interface FileRoutesByFullPath {
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
-  "/milltime": typeof LayoutMilltimeIndexRoute
+  "/time-tracking": typeof LayoutTimeTrackingIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
@@ -217,7 +217,7 @@ export interface FileRoutesByTo {
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
-  "/milltime": typeof LayoutMilltimeIndexRoute
+  "/time-tracking": typeof LayoutTimeTrackingIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
@@ -230,7 +230,7 @@ export interface FileRoutesById {
   "/_layout/": typeof LayoutIndexRoute
   "/_layout/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/_layout/repositories/add": typeof LayoutRepositoriesAddRouteRoute
-  "/_layout/milltime/": typeof LayoutMilltimeIndexRoute
+  "/_layout/time-tracking/": typeof LayoutTimeTrackingIndexRoute
   "/_layout/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
 
@@ -244,7 +244,7 @@ export interface FileRouteTypes {
     | "/"
     | "/prs/$prId"
     | "/repositories/add"
-    | "/milltime"
+    | "/time-tracking"
     | "/repositories/notifications/$repoId"
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -254,7 +254,7 @@ export interface FileRouteTypes {
     | "/"
     | "/prs/$prId"
     | "/repositories/add"
-    | "/milltime"
+    | "/time-tracking"
     | "/repositories/notifications/$repoId"
   id:
     | "__root__"
@@ -265,7 +265,7 @@ export interface FileRouteTypes {
     | "/_layout/"
     | "/_layout/prs/$prId"
     | "/_layout/repositories/add"
-    | "/_layout/milltime/"
+    | "/_layout/time-tracking/"
     | "/_layout/repositories/notifications/$repoId"
   fileRoutesById: FileRoutesById
 }
@@ -300,7 +300,7 @@ export const routeTree = rootRoute
         "/_layout/prs",
         "/_layout/repositories",
         "/_layout/",
-        "/_layout/milltime/"
+        "/_layout/time-tracking/"
       ]
     },
     "/login": {
@@ -333,8 +333,8 @@ export const routeTree = rootRoute
       "filePath": "_layout/repositories/add/route.tsx",
       "parent": "/_layout/repositories"
     },
-    "/_layout/milltime/": {
-      "filePath": "_layout/milltime/index.tsx",
+    "/_layout/time-tracking/": {
+      "filePath": "_layout/time-tracking/index.tsx",
       "parent": "/_layout"
     },
     "/_layout/repositories/notifications/$repoId": {

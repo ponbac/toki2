@@ -6,7 +6,7 @@ export const Route = createFileRoute("/_layout/")({
     // Tailwind MD breakpoint
     if (screenWidth < 768) {
       throw redirect({
-        to: "/milltime",
+        to: "/time-tracking",
       });
     }
 

@@ -9,12 +9,12 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import React from "react";
-import { useMilltimeData } from "@/hooks/useMilltimeData";
+import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
 import { Combobox } from "./combobox";
 import { flushSync } from "react-dom";
 import { Input } from "./ui/input";
-import { milltimeMutations } from "@/lib/api/mutations/milltime";
-import { DatabaseTimer } from "@/lib/api/queries/milltime";
+import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import { TimerResponse } from "@/lib/api/queries/time-tracking";
 import { TimerHistory } from "./timer-history";
 import dayjs from "dayjs";
 import { Label } from "./ui/label";
@@ -22,7 +22,7 @@ import { Label } from "./ui/label";
 export const TimerEditDialog = (props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  timer: DatabaseTimer;
+  timer: TimerResponse;
 }) => {
   const [projectId, setProjectId] = React.useState<string | undefined>(
     props.timer?.projectId ?? undefined,
@@ -37,7 +37,7 @@ export const TimerEditDialog = (props: {
     props.timer?.startTime,
   );
 
-  const { projects, activities } = useMilltimeData({
+  const { projects, activities } = useTimeTrackingData({
     projectId: projectId,
     enabled: props.open,
   });
@@ -52,7 +52,7 @@ export const TimerEditDialog = (props: {
   );
 
   const { mutate: updateTimerMutate } =
-    milltimeMutations.useEditStandaloneTimer({
+    timeTrackingMutations.useEditTimer({
       onSuccess: () => {
         props.onOpenChange(false);
       },

@@ -36,8 +36,8 @@ import {
 } from "@/components/ui/accordion";
 import React from "react";
 import { PRNotificationSettings } from "../-components/pr-notification-settings";
-import { milltimeQueries } from "@/lib/api/queries/milltime";
-import { milltimeMutations } from "@/lib/api/mutations/milltime";
+import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
+import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
@@ -57,15 +57,13 @@ function PRDetailsDialog() {
 
   // Timer state and mutations
   const { data: timerResponse, isSuccess: timerQuerySuccess } = useQuery({
-    ...milltimeQueries.getTimer(),
+    ...timeTrackingQueries.getTimer(),
     retry: false,
   });
   const timer = timerResponse?.timer;
 
-  const { mutateAsync: startStandaloneTimer } =
-    milltimeMutations.useStartStandaloneTimer();
-  const { mutateAsync: editStandaloneTimer } =
-    milltimeMutations.useEditStandaloneTimer();
+  const { mutateAsync: startTimer } = timeTrackingMutations.useStartTimer();
+  const { mutateAsync: editTimer } = timeTrackingMutations.useEditTimer();
 
   const buildTimeReportText = (mode: "review" | "develop") => {
     const workItem = pr?.workItems.at(0);
@@ -94,9 +92,9 @@ function PRDetailsDialog() {
     if (!timerQuerySuccess) return;
 
     try {
-      if (timer?.timerType === "Standalone") {
-        // Update existing standalone timer note
-        await editStandaloneTimer({ userNote: text });
+      if (timer) {
+        // Update existing timer note
+        await editTimer({ userNote: text });
         toast.success(
           <div className="flex flex-row items-center">
             <TimerIcon className="mr-2 inline-block" size="1.25rem" />
@@ -104,8 +102,8 @@ function PRDetailsDialog() {
           </div>,
         );
       } else if (timer === null) {
-        // No active timer - start a new standalone timer
-        await startStandaloneTimer({ userNote: text });
+        // No active timer - start a new timer
+        await startTimer({ userNote: text });
         toast.success(
           <div className="flex flex-row items-center">
             <TimerIcon className="mr-2 inline-block" size="1.25rem" />
@@ -113,9 +111,9 @@ function PRDetailsDialog() {
           </div>,
         );
       }
-      // If timer is Milltime type, do nothing (deprecated)
     } catch {
       // Silently fail - clipboard copy already succeeded
+      console.warn("Found no active timer to update");
     }
   };
 
