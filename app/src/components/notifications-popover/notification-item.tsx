@@ -25,9 +25,11 @@ export function NotificationItem(props: {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="mb-0.5 flex items-start gap-2">
-            <ColoredNotificationIconWithTooltip
-              type={props.notification.notificationType}
-            />
+            <span className="shrink-0 pt-0.5">
+              <ColoredNotificationIconWithTooltip
+                type={props.notification.notificationType}
+              />
+            </span>
             <span className="min-w-0 font-medium">
               {props.notification.title}
             </span>
