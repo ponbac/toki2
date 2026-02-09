@@ -107,7 +107,7 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-foreground font-sans font-medium;
     background-image:
       radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--glow) / 0.08), transparent),
       radial-gradient(ellipse 60% 40% at 100% 100%, hsl(var(--glow) / 0.04), transparent);
