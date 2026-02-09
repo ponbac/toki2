@@ -95,7 +95,7 @@ export function NotificationsPopover() {
                   onClick={() => markAllViewed()}
                   disabled={isMarkingAllViewed}
                 >
-                  <span className="text-primary-foreground underline transition-colors hover:text-primary">
+                  <span className="text-primary underline transition-colors hover:text-primary/70">
                     mark all as read
                   </span>
                 </button>
