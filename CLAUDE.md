@@ -9,8 +9,9 @@ Toki2 is a time tracking and Azure DevOps integration platform:
 
 ## Tech Stack
 
-**Backend (Rust)**: Axum, SQLx (PostgreSQL), Tokio, azure_devops_rust_api, web-push  
+**Backend (Rust)**: Axum, SQLx (PostgreSQL), Tokio, azure_devops_rust_api, web-push
 **Frontend (React/TS)**: Vite, TanStack Router + Query, Zustand, shadcn/ui, Tailwind
+**Package manager**: Bun — never use npm or npx, always use `bun` / `bunx`
 
 ## Project Structure
 

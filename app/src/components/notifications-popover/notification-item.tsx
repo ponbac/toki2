@@ -23,20 +23,20 @@ export function NotificationItem(props: {
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="mb-0.5 flex items-center gap-2">
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="mb-0.5 flex items-start gap-2">
             <ColoredNotificationIconWithTooltip
               type={props.notification.notificationType}
             />
-            <span className="truncate font-medium">
+            <span className="min-w-0 font-medium">
               {props.notification.title}
             </span>
           </div>
-          <div className="truncate text-sm text-muted-foreground">
+          <div className="text-sm text-muted-foreground">
             {props.notification.message}
           </div>
         </div>
-        <div className="flex items-center gap-1 self-start">
+        <div className="flex shrink-0 items-center gap-1 self-start">
           {props.notification.viewedAt ? (
             <CheckCircle2 className="h-4 w-4 text-muted-foreground/50" />
           ) : (
@@ -62,8 +62,8 @@ export function NotificationItem(props: {
           )}
         </div>
       </div>
-      <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
-        <div>
+      <div className="flex items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
+        <span className="shrink-0">
           {new Date(props.notification.createdAt).toLocaleString("sv-SE", {
             year: "numeric",
             month: "2-digit",
@@ -71,9 +71,9 @@ export function NotificationItem(props: {
             hour: "2-digit",
             minute: "2-digit",
           })}
-        </div>
+        </span>
         {!!props.repository && (
-          <span className="truncate font-mono">
+          <span className="min-w-0 truncate font-mono">
             {props.repository.organization}/{props.repository.project}/{props.repository.repoName}
           </span>
         )}
