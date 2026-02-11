@@ -41,14 +41,9 @@ import {
   CalendarDays,
 } from "lucide-react"
 import { toast } from "sonner"
-import { LoadingSpinner } from "@/components/loading-spinner"
 import { NewEntryDialog } from "./-components/new-entry-dialog"
 import { useMediaQuery } from "@/hooks/useMediaQuery"
-const TimelineView = React.lazy(() =>
-  import("./-components/timeline-view").then((m) => ({
-    default: m.TimelineView,
-  })),
-)
+import { TimelineView } from "./-components/timeline-view"
 
 export const Route = createFileRoute("/_layout/time-tracking/")({
   loader: async ({ context }) => {
@@ -286,18 +281,10 @@ function TimeTrackingPage() {
               <div className="min-w-0">
                 {timeEntries?.length ? (
                   viewMode === "timeline" ? (
-                    <React.Suspense
-                      fallback={
-                        <div className="flex min-h-[400px] items-center justify-center rounded-2xl border border-border/50 bg-card/30">
-                          <LoadingSpinner className="size-8" />
-                        </div>
-                      }
-                    >
-                      <TimelineView
-                        timeEntries={filteredTimeEntries ?? []}
-                        dateRange={dateRange}
-                      />
-                    </React.Suspense>
+                    <TimelineView
+                      timeEntries={filteredTimeEntries ?? []}
+                      dateRange={dateRange}
+                    />
                   ) : (
                     <TimeEntriesList
                       timeEntries={filteredTimeEntries ?? []}
