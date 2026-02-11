@@ -505,16 +505,23 @@ function ViewEntryCard(props: {
                 {!isLocked && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={props.onEdit}
-                        className="h-7 w-7 rounded-md p-0 hover:bg-primary/10 hover:text-primary"
-                      >
-                        <PencilIcon className="h-3.5 w-3.5" />
-                      </Button>
+                      <span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={props.onEdit}
+                          disabled={isMerged && entry.timePeriods.length > 1}
+                          className="h-7 w-7 rounded-md p-0 hover:bg-primary/10 hover:text-primary"
+                        >
+                          <PencilIcon className="h-3.5 w-3.5" />
+                        </Button>
+                      </span>
                     </TooltipTrigger>
-                    <TooltipContent>Edit entry</TooltipContent>
+                    <TooltipContent>
+                      {isMerged && entry.timePeriods.length > 1
+                        ? "Unmerge to edit"
+                        : "Edit entry"}
+                    </TooltipContent>
                   </Tooltip>
                 )}
                 <StartAgainButton
