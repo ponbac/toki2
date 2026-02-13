@@ -1,10 +1,8 @@
 import React, { useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { AttestLevel, TimeEntry } from "@/lib/api/queries/time-tracking";
-import { cn, formatHoursAsHoursMinutes, getWeekNumber } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
+import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
 import { toast } from "sonner";
@@ -12,10 +10,7 @@ import {
   AlertTriangleIcon,
   LockIcon,
   PencilIcon,
-  SaveIcon,
-  TrashIcon,
   PlayIcon,
-  CalendarIcon,
   ChevronRight,
   Clock,
   Briefcase,
@@ -28,14 +23,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { Combobox } from "@/components/combobox";
-import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
+import { TimeEntryEditContent } from "./time-entry-edit-content";
 
 type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
@@ -240,7 +228,7 @@ export function TimeEntriesList(props: {
                   transition={{ duration: 0.2, delay: entryIndex * 0.03 }}
                 >
                   {editingEntryId === entry.registrationId ? (
-                    <EditEntryCard
+                    <TimeEntryEditContent
                       entry={
                         isMergedTimeEntry(entry)
                           ? {
@@ -252,6 +240,7 @@ export function TimeEntriesList(props: {
                       }
                       onSaved={() => setEditingEntryId(null)}
                       onCancel={() => setEditingEntryId(null)}
+                      variant="inline"
                     />
                   ) : (
                     <ViewEntryCard
@@ -544,348 +533,6 @@ function ViewEntryCard(props: {
 
           {/* Time range */}
           {timeRange ? <div className="mt-2">{timeRange}</div> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EditEntryCard(props: {
-  entry: TimeEntry;
-  onSaved: () => void;
-  onCancel: () => void;
-}) {
-  const [note, setNote] = useState(props.entry.note);
-  const [hours, setHours] = useState(Math.floor(props.entry.hours));
-  const [minutes, setMinutes] = useState(
-    Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60)
-  );
-  const [selectedDate, setSelectedDate] = useState(props.entry.date);
-  const [isDateOpen, setIsDateOpen] = useState(false);
-  const [startTime, setStartTime] = useState(
-    props.entry.startTime
-      ? dayjs(props.entry.startTime).format("HH:mm")
-      : "06:00"
-  );
-  const [endTime, setEndTime] = useState(() => {
-    if (props.entry.endTime) return dayjs(props.entry.endTime).format("HH:mm");
-    const initialStart = props.entry.startTime
-      ? dayjs(props.entry.startTime).format("HH:mm")
-      : "06:00";
-    const initialHours = Math.floor(props.entry.hours);
-    const initialMinutes = Math.round(
-      (props.entry.hours - Math.floor(props.entry.hours)) * 60
-    );
-    if (initialStart && (initialHours > 0 || initialMinutes > 0)) {
-      const startDate = dayjs(`2000-01-01T${initialStart}`);
-      return startDate
-        .add(initialHours, "hour")
-        .add(initialMinutes, "minute")
-        .format("HH:mm");
-    }
-    return "";
-  });
-
-  const [projectId, setProjectId] = useState(props.entry.projectId);
-  const [projectName, setProjectName] = useState(props.entry.projectName);
-  const [activityId, setActivityId] = useState(props.entry.activityId);
-  const [activityName, setActivityName] = useState(props.entry.activityName);
-
-  const { projects, activities } = useTimeTrackingData({
-    projectId,
-    enabled: true,
-  });
-
-  const updateTimeRange = (start: string, end: string) => {
-    setStartTime(start);
-    setEndTime(end);
-    if (start && end) {
-      const startDate = dayjs(`2000-01-01T${start}`);
-      const endDate = dayjs(`2000-01-01T${end}`);
-      const diffHours = endDate.diff(startDate, "hour", true);
-      setHours(Math.floor(diffHours));
-      setMinutes(Math.round((diffHours - Math.floor(diffHours)) * 60));
-    }
-  };
-
-  const updateTotalTime = (h: number, m: number) => {
-    setHours(h);
-    setMinutes(m);
-    if (startTime) {
-      const startDate = dayjs(`2000-01-01T${startTime}`);
-      const endDate = startDate.add(h, "hour").add(m, "minute");
-      setEndTime(endDate.format("HH:mm"));
-    }
-  };
-
-  const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
-    timeTrackingMutations.useEditProjectRegistration({
-      onSuccess: () => props.onSaved(),
-      onError: () => toast.error(`Failed to update time entry, try again later`),
-    });
-
-  const { mutate: deleteTimeEntry, isPending: isDeletingTimeEntry } =
-    timeTrackingMutations.useDeleteProjectRegistration({
-      onSuccess: () => {
-        props.onSaved();
-        toast.success("Time entry deleted successfully");
-      },
-      onError: () => toast.error("Failed to delete time entry, try again later"),
-    });
-
-  const handleSave = () => {
-    const startDateTime = dayjs(`${selectedDate}T${startTime}`);
-    const computedEndTime = endTime
-      ? endTime
-      : startTime
-        ? dayjs(`2000-01-01T${startTime}`)
-            .add(hours, "hour")
-            .add(minutes, "minute")
-            .format("HH:mm")
-        : "";
-    const endDateTime = dayjs(`${selectedDate}T${computedEndTime}`);
-
-    updateTimeEntry({
-      projectRegistrationId: props.entry.registrationId,
-      userNote: note ?? "",
-      projectId: projectId,
-      projectName: projectName,
-      activityId: activityId,
-      activityName: activityName,
-      startTime: startDateTime.toISOString(),
-      endTime: endDateTime.toISOString(),
-      regDay: selectedDate,
-      weekNumber: getWeekNumber(new Date(selectedDate)),
-      originalRegDay: dayjs(props.entry.date).format("YYYY-MM-DD"),
-      originalProjectId: props.entry.projectId,
-      originalActivityId: props.entry.activityId,
-    });
-  };
-
-  const handleDelete = () => {
-    if (
-      window.confirm(
-        "Are you sure you want to delete this time entry? This action cannot be undone."
-      )
-    ) {
-      deleteTimeEntry({
-        projectRegistrationId: props.entry.registrationId,
-      });
-    }
-  };
-
-  const handleProjectChange = (newProjectId: string) => {
-    const selectedProject = projects?.find(
-      (p) => p.projectId.toString() === newProjectId
-    );
-    if (selectedProject) {
-      setProjectId(newProjectId);
-      setProjectName(selectedProject.projectName);
-      setActivityId("");
-      setActivityName("");
-    }
-  };
-
-  const handleActivityChange = (newActivityId: string) => {
-    const selectedActivity = activities?.find(
-      (a) => a.activity === newActivityId
-    );
-    if (selectedActivity) {
-      setActivityId(selectedActivity.activity);
-      setActivityName(selectedActivity.activityName);
-    }
-  };
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-primary/30 bg-card shadow-glow-sm">
-      {/* Header */}
-      <div className="border-b border-border/50 bg-primary/5 px-5 py-4">
-        <h3 className="font-display text-lg font-semibold">Edit Entry</h3>
-      </div>
-
-      {/* Content */}
-      <div className="space-y-5 p-5">
-        {/* Project & Activity */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Project</label>
-            <Combobox
-              items={
-                projects?.map((p) => ({
-                  value: p.projectId.toString(),
-                  label: p.projectName,
-                })) || []
-              }
-              placeholder="Select project..."
-              searchPlaceholder="Search projects..."
-              onSelect={() => {}}
-              emptyMessage="No projects found"
-              value={projectId}
-              onChange={handleProjectChange}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Activity</label>
-            <Combobox
-              items={
-                activities?.map((a) => ({
-                  value: a.activity,
-                  label: a.activityName,
-                })) || []
-              }
-              placeholder="Select activity..."
-              searchPlaceholder="Search activities..."
-              onSelect={() => {}}
-              emptyMessage="No activities found"
-              disabled={!projectId}
-              value={activityId}
-              onChange={handleActivityChange}
-            />
-          </div>
-        </div>
-
-        {/* Date */}
-        <div>
-          <label className="mb-2 block text-sm font-medium">Date</label>
-          <Popover open={isDateOpen} onOpenChange={setIsDateOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className="w-full justify-start rounded-xl border-border/50 bg-muted/30 font-normal hover:bg-muted/50 sm:w-[240px]"
-              >
-                <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-                {dayjs(selectedDate).format("ddd, MMM D, YYYY")}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={new Date(selectedDate)}
-                onSelect={(d) => {
-                  if (d) {
-                    setSelectedDate(dayjs(d).format("YYYY-MM-DD"));
-                    setIsDateOpen(false);
-                  }
-                }}
-                weekStartsOn={1}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
-
-        {/* Note */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Note</label>
-          <Input
-            value={note ?? ""}
-            onChange={(e) => setNote(e.target.value)}
-            className="rounded-xl border-border/50 bg-muted/30"
-            placeholder="What did you work on?"
-          />
-        </div>
-
-        {/* Time inputs */}
-        <div className="flex flex-wrap items-end gap-6">
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">
-              Time Range
-            </h4>
-            <div className="flex gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Start</label>
-                <Input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => updateTimeRange(e.target.value, endTime)}
-                  className="w-28 rounded-lg border-border/50 bg-muted/30 time-display"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">End</label>
-                <Input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => updateTimeRange(startTime, e.target.value)}
-                  className="w-28 rounded-lg border-border/50 bg-muted/30 time-display"
-                />
-              </div>
-            </div>
-          </div>
-
-          <Separator orientation="vertical" className="hidden h-16 sm:block" />
-
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">
-              Duration
-            </h4>
-            <div className="flex gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Hours</label>
-                <Input
-                  type="number"
-                  value={hours}
-                  onChange={(e) =>
-                    updateTotalTime(parseInt(e.target.value), minutes)
-                  }
-                  className="w-20 rounded-lg border-border/50 bg-muted/30"
-                  min={0}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Minutes</label>
-                <Input
-                  type="number"
-                  value={minutes}
-                  onChange={(e) =>
-                    updateTotalTime(hours, parseInt(e.target.value))
-                  }
-                  className="w-20 rounded-lg border-border/50 bg-muted/30"
-                  min={0}
-                  max={59}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between border-t border-border/50 bg-muted/20 px-5 py-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleDelete}
-          disabled={isDeletingTimeEntry || isUpdatingTimeEntry}
-          className="gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
-        >
-          <TrashIcon className="h-4 w-4" />
-          Delete
-        </Button>
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={props.onCancel}
-            className="rounded-lg"
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={
-              isUpdatingTimeEntry ||
-              !projectId ||
-              !activityId ||
-              !startTime ||
-              (!endTime && hours === 0 && minutes === 0)
-            }
-            className="btn-glow gap-2 rounded-lg"
-          >
-            <SaveIcon className="h-4 w-4" />
-            Save
-          </Button>
         </div>
       </div>
     </div>

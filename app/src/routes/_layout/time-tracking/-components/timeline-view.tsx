@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { TimeEntry } from "@/lib/api/queries/time-tracking";
+import { AttestLevel, TimeEntry } from "@/lib/api/queries/time-tracking";
 import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import {
   format,
@@ -22,6 +22,7 @@ import { COLORS, withAlpha, buildProjectColorMap } from "./colors";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
 import { toast } from "sonner";
+import { TimeEntryEditDialog } from "./time-entry-edit-dialog";
 
 type TimelineViewProps = {
   timeEntries: TimeEntry[];
@@ -385,10 +386,14 @@ function TimelineBlock({
   entry,
   color,
   isWeekView,
+  isEditable,
+  onClick,
 }: {
   entry: PositionedEntry;
   color: string;
   isWeekView: boolean;
+  isEditable: boolean;
+  onClick?: () => void;
 }) {
   const columnWidth = 100 / entry.totalColumns;
   const leftPercent = entry.column * columnWidth;
@@ -407,9 +412,10 @@ function TimelineBlock({
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.25 }}
+          onClick={isEditable ? onClick : undefined}
           className={cn(
-            "group/block absolute z-10 cursor-pointer overflow-hidden rounded-lg border transition-all duration-200",
-            "hover:z-30 hover:shadow-lg",
+            "group/block absolute z-10 overflow-hidden rounded-lg border transition-all duration-200",
+            isEditable ? "cursor-pointer hover:z-30 hover:shadow-lg" : "cursor-default",
             entry.mockTimes && "border-dashed opacity-85",
           )}
           style={{
@@ -497,6 +503,9 @@ function TimelineBlock({
               Estimated position (no start/end time)
             </p>
           )}
+          {!isEditable && (
+            <p className="text-[10px] text-muted-foreground/60">Locked entry</p>
+          )}
         </div>
       </TooltipContent>
     </Tooltip>
@@ -512,6 +521,7 @@ function DayColumn({
   endHour,
   isWeekView,
   isOnly,
+  onEntryClick,
 }: {
   date: Date;
   entries: PositionedEntry[];
@@ -521,6 +531,7 @@ function DayColumn({
   endHour: number;
   isWeekView: boolean;
   isOnly: boolean;
+  onEntryClick: (entry: PositionedEntry) => void;
 }) {
   const dayTotal = entries.reduce((sum, e) => sum + e.hours, 0);
   const today = isToday(date);
@@ -575,6 +586,8 @@ function DayColumn({
             entry={entry}
             color={colorMap.get(entry.projectName) || COLORS[0]}
             isWeekView={isWeekView}
+            isEditable={entry.attestLevel === AttestLevel.None}
+            onClick={() => onEntryClick(entry)}
           />
         ))}
       </div>
@@ -584,6 +597,7 @@ function DayColumn({
 
 export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
   const [mode, setMode] = useState<TimelineMode>("week");
+  const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
 
   const rangeFrom = useMemo(() => parseISO(dateRange.from), [dateRange.from]);
   const rangeTo = useMemo(() => parseISO(dateRange.to), [dateRange.to]);
@@ -718,6 +732,11 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     });
     return total;
   }, [positionedByDay]);
+
+  const handleEntryClick = (entry: PositionedEntry) => {
+    if (entry.attestLevel !== AttestLevel.None) return;
+    setEditingEntry(entry);
+  };
 
   return (
     <div className="card-elevated overflow-hidden rounded-2xl">
@@ -877,6 +896,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                         endHour={endHour}
                         isWeekView={true}
                         isOnly={false}
+                        onEntryClick={handleEntryClick}
                       />
                     );
                   })}
@@ -899,6 +919,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                     endHour={endHour}
                     isWeekView={false}
                     isOnly={true}
+                    onEntryClick={handleEntryClick}
                   />
                 </motion.div>
               )}
@@ -907,6 +928,14 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
+      <TimeEntryEditDialog
+        entry={editingEntry}
+        open={editingEntry !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingEntry(null);
+        }}
+        onSaved={() => setEditingEntry(null)}
+      />
     </div>
   );
 }
