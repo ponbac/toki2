@@ -22,7 +22,7 @@ struct ErrorBody {
 use crate::{
     adapters::inbound::http::TimeTrackingServiceError,
     app_state::AppStateError,
-    domain::TimeTrackingError,
+    domain::{AvatarError, TimeTrackingError},
     repositories::RepositoryError,
 };
 
@@ -114,9 +114,8 @@ impl From<AppStateError> for ApiError {
 impl From<TimeTrackingError> for ApiError {
     fn from(err: TimeTrackingError) -> Self {
         match err {
-            TimeTrackingError::AuthenticationFailed => {
-                Self::unauthorized("Authentication failed").with_code(ErrorCode::TimeTrackingAuthenticationFailed)
-            }
+            TimeTrackingError::AuthenticationFailed => Self::unauthorized("Authentication failed")
+                .with_code(ErrorCode::TimeTrackingAuthenticationFailed),
             TimeTrackingError::TimerNotFound | TimeTrackingError::NoTimerRunning => {
                 Self::not_found(err.to_string())
             }
@@ -134,6 +133,26 @@ impl From<TimeTrackingServiceError> for ApiError {
             api_error.with_code(ErrorCode::TimeTrackingAuthenticationFailed)
         } else {
             api_error
+        }
+    }
+}
+
+impl From<AvatarError> for ApiError {
+    fn from(err: AvatarError) -> Self {
+        match err {
+            AvatarError::NotFound => Self::not_found("avatar not found"),
+            AvatarError::InvalidImage => Self::bad_request("invalid image payload"),
+            AvatarError::PayloadTooLarge => Self::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "avatar payload exceeds limit",
+            ),
+            AvatarError::UnsupportedMediaType => {
+                Self::new(StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported media type")
+            }
+            AvatarError::Storage(message) => {
+                tracing::error!("Avatar operation failed: {}", message);
+                Self::internal("avatar operation failed")
+            }
         }
     }
 }

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                users.id as \"id!\",\n                lower(users.email) as \"email!\",\n                user_avatars.updated_at as \"updated_at!\"\n            FROM users\n            INNER JOIN user_avatars ON user_avatars.user_id = users.id\n            WHERE lower(users.email) = ANY($1)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "email!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "04c8c52260afee0e9406e2529f7c8d3a0ba771673818cb33460391a2e27d545d"
+}

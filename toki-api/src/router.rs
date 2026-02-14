@@ -20,10 +20,11 @@ use tower_sessions_sqlx_store::PostgresStore;
 type SessionStore = CachingSessionStore<MokaStore, PostgresStore>;
 
 use crate::{
+    adapters::outbound::{media::WebpAvatarProcessor, postgres::PostgresAvatarRepository},
     app_state::AppState,
     auth::{self, AuthBackend},
     config::Settings,
-    domain::RepoConfig,
+    domain::{ports::inbound::AvatarService, services::AvatarServiceImpl, RepoConfig},
     factory::MilltimeServiceFactory,
     routes,
 };
@@ -39,7 +40,8 @@ pub async fn create(
         .nest("/differs", routes::differs::router())
         .nest("/repositories", routes::repositories::router())
         .nest("/notifications", routes::notifications::router())
-        .nest("/time-tracking", routes::time_tracking::router());
+        .nest("/time-tracking", routes::time_tracking::router())
+        .nest("/users", routes::users::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
@@ -57,6 +59,13 @@ pub async fn create(
         connection_pool.clone(),
     ));
     let time_tracking_factory = Arc::new(MilltimeServiceFactory::new(timer_repo));
+    let avatar_repository = Arc::new(PostgresAvatarRepository::new(connection_pool.clone()));
+    let avatar_processor = Arc::new(WebpAvatarProcessor);
+    let avatar_service: Arc<dyn AvatarService> = Arc::new(AvatarServiceImpl::new(
+        avatar_repository,
+        avatar_processor,
+        config.application.api_url.clone(),
+    ));
 
     // Create app state
     let app_state = AppState::new(
@@ -66,6 +75,7 @@ pub async fn create(
         connection_pool.clone(),
         repo_configs,
         time_tracking_factory,
+        avatar_service,
     )
     .await;
 

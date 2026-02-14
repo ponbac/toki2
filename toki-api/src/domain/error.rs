@@ -28,3 +28,18 @@ impl TimeTrackingError {
         Self::Unknown(msg.into())
     }
 }
+
+/// Errors that can occur during avatar operations.
+#[derive(Debug, Error)]
+pub enum AvatarError {
+    #[error("avatar not found")]
+    NotFound,
+    #[error("invalid image payload")]
+    InvalidImage,
+    #[error("avatar payload exceeds limit")]
+    PayloadTooLarge,
+    #[error("unsupported media type")]
+    UnsupportedMediaType,
+    #[error("avatar storage error: {0}")]
+    Storage(String),
+}

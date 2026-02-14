@@ -72,18 +72,35 @@ mod get {
 
     use crate::{
         auth::backend::{AuthSession, Credentials},
-        domain::User,
+        domain::{models::UserId, User},
     };
 
     use super::*;
 
-    pub async fn me(auth_session: AuthSession) -> Result<Json<User>, StatusCode> {
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(crate) struct MeResponse {
+        #[serde(flatten)]
+        user: User,
+        avatar_url: Option<String>,
+    }
+
+    pub async fn me(
+        auth_session: AuthSession,
+        State(app_state): State<AppState>,
+    ) -> Result<Json<MeResponse>, StatusCode> {
         let user = match auth_session.user {
             Some(user) => user,
             None => return Err(StatusCode::UNAUTHORIZED),
         };
 
-        Ok(Json(user))
+        let avatar_url = app_state
+            .avatar_service
+            .get_avatar_url(&UserId::from(user.id))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        Ok(Json(MeResponse { user, avatar_url }))
     }
 
     #[instrument(name = "auth_callback", skip(auth_session, session, app_state))]

@@ -18,4 +18,5 @@ export type User = {
   picture: string;
   accessToken: string;
   roles: Role[];
+  avatarUrl: string | null;
 };
