@@ -1,7 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-};
+use axum::{extract::State, http::StatusCode};
 use axum_extra::extract::CookieJar;
 use serde::Deserialize;
 use tracing::instrument;

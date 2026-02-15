@@ -48,7 +48,8 @@ pub async fn list_activities(
         .get_activities(&project_id.into(), date_range)
         .await?;
 
-    let response: Vec<ActivityResponse> = activities.into_iter().map(ActivityResponse::from).collect();
+    let response: Vec<ActivityResponse> =
+        activities.into_iter().map(ActivityResponse::from).collect();
 
     Ok((jar, Json(response)))
 }

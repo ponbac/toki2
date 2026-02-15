@@ -135,8 +135,8 @@ impl NotificationHandler {
                         continue;
                     }
 
-                    let push_notification = event
-                        .to_push_notification(&diff.pr.pull_request_base, &diff.pr.url);
+                    let push_notification =
+                        event.to_push_notification(&diff.pr.pull_request_base, &diff.pr.url);
                     let db_notification = Notification {
                         id: 0, // Will be set by database
                         user_id: user.id,

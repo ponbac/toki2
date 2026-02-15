@@ -17,8 +17,8 @@ use tokio::sync::RwLock;
 use crate::{
     adapters::{
         inbound::http::{
-            TimeTrackingServiceError, TimeTrackingServiceFactory,
-            WorkItemServiceError, WorkItemServiceFactory,
+            TimeTrackingServiceError, TimeTrackingServiceFactory, WorkItemServiceError,
+            WorkItemServiceFactory,
         },
         outbound::{
             azure_devops::AzureDevOpsWorkItemAdapter,
@@ -57,8 +57,7 @@ impl TimeTrackingServiceFactory for MilltimeServiceFactory {
 
         let adapter = MilltimeAdapter::new(credentials);
         let history_adapter = PostgresTimerHistoryAdapter::new(self.timer_repo.clone());
-        let service =
-            TimeTrackingServiceImpl::new(Arc::new(adapter), Arc::new(history_adapter));
+        let service = TimeTrackingServiceImpl::new(Arc::new(adapter), Arc::new(history_adapter));
 
         Ok((Box::new(service), jar))
     }
@@ -71,9 +70,7 @@ impl TimeTrackingServiceFactory for MilltimeServiceFactory {
     ) -> Result<CookieJar, TimeTrackingServiceError> {
         let credentials = milltime::Credentials::new(username, password)
             .await
-            .map_err(|_| {
-                TimeTrackingServiceError::unauthorized("Invalid credentials")
-            })?;
+            .map_err(|_| TimeTrackingServiceError::unauthorized("Invalid credentials"))?;
 
         let encrypted_password = MilltimePassword::new(password.to_string()).to_encrypted();
 
@@ -122,13 +119,13 @@ async fn extract_credentials(
     }
 
     // Fall back to username/password authentication
-    let user_cookie = jar.get("mt_user").ok_or_else(|| {
-        TimeTrackingServiceError::unauthorized("missing mt_user cookie")
-    })?;
+    let user_cookie = jar
+        .get("mt_user")
+        .ok_or_else(|| TimeTrackingServiceError::unauthorized("missing mt_user cookie"))?;
 
-    let pass_cookie = jar.get("mt_password").ok_or_else(|| {
-        TimeTrackingServiceError::unauthorized("missing mt_password cookie")
-    })?;
+    let pass_cookie = jar
+        .get("mt_password")
+        .ok_or_else(|| TimeTrackingServiceError::unauthorized("missing mt_password cookie"))?;
 
     let decrypted_pass = MilltimePassword::from_encrypted(pass_cookie.value().to_string());
 

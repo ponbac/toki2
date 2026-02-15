@@ -64,11 +64,12 @@ impl<R: AvatarRepository, P: AvatarProcessor> AvatarService for AvatarServiceImp
         }
 
         let processor = Arc::clone(&self.processor);
-        let processed = tokio::task::spawn_blocking(move || {
-            processor.process(&image, content_type.as_deref())
-        })
-        .await
-        .map_err(|err| AvatarError::Storage(format!("avatar processing task failed: {err}")))??;
+        let processed =
+            tokio::task::spawn_blocking(move || processor.process(&image, content_type.as_deref()))
+                .await
+                .map_err(|err| {
+                    AvatarError::Storage(format!("avatar processing task failed: {err}"))
+                })??;
 
         self.repository.set_avatar(user_id, &processed).await
     }

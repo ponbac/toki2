@@ -56,6 +56,7 @@ function BoardPage() {
         ...prev,
         organization: target.organization,
         project: target.project,
+        iterationPath: undefined,
       }),
       replace: true,
     });

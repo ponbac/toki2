@@ -11,8 +11,7 @@ use azure_devops_rust_api::{
             WorkItemClassificationNode,
         },
     },
-    work,
-    Credential,
+    work, Credential,
 };
 use time::OffsetDateTime;
 use tokio::sync::Semaphore;
@@ -307,12 +306,7 @@ impl RepoClient {
         let root_node = self
             .work_item_client
             .classification_nodes_client()
-            .get(
-                &self.organization,
-                &self.project,
-                "iterations",
-                "",
-            )
+            .get(&self.organization, &self.project, "iterations", "")
             .depth(depth.unwrap_or(10))
             .await?;
 
@@ -413,6 +407,24 @@ impl RepoClient {
                 })
             })
             .collect())
+    }
+
+    /// Get current team iterations using the Work API timeframe filter.
+    ///
+    /// This relies on Azure DevOps team's sprint settings (`$timeframe=current`)
+    /// and is more reliable than deriving "current" solely from classification node dates.
+    pub async fn get_current_team_iteration_paths(
+        &self,
+        team: &str,
+    ) -> Result<Vec<String>, RepoClientError> {
+        let list = self
+            .work_client
+            .iterations_client()
+            .list(&self.organization, &self.project, team)
+            .timeframe("current")
+            .await?;
+
+        Ok(list.value.into_iter().filter_map(|it| it.path).collect())
     }
 
     /// Get taskboard work item column assignments for a given team and iteration.
@@ -522,9 +534,12 @@ fn parse_date_string(s: &str) -> Option<OffsetDateTime> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use time::{Duration, Time};
 
     async fn get_repo_client() -> RepoClient {
-        dotenvy::from_filename(".env.local").ok();
+        dotenvy::from_filename(".env.local")
+            .or_else(|_| dotenvy::from_filename("az-devops/.env.local"))
+            .ok();
 
         RepoClient::new(
             &std::env::var("ADO_REPO").unwrap(),
@@ -534,6 +549,21 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    fn effective_finish(finish: OffsetDateTime) -> OffsetDateTime {
+        if finish.time() == Time::MIDNIGHT {
+            finish + Duration::days(1) - Duration::nanoseconds(1)
+        } else {
+            finish
+        }
+    }
+
+    fn is_iteration_current(iteration: &Iteration, now: OffsetDateTime) -> bool {
+        match (iteration.start_date, iteration.finish_date) {
+            (Some(start), Some(finish)) => now >= start && now <= effective_finish(finish),
+            _ => false,
+        }
     }
 
     #[tokio::test]
@@ -613,10 +643,11 @@ mod tests {
         // Verify the normalized path works with WIQL.
         let iteration = iterations.last().unwrap();
         let raw_path = &iteration.path;
-        let normalized = raw_path
-            .strip_prefix('\\')
-            .unwrap_or(raw_path)
-            .replacen("\\Iteration\\", "\\", 1);
+        let normalized =
+            raw_path
+                .strip_prefix('\\')
+                .unwrap_or(raw_path)
+                .replacen("\\Iteration\\", "\\", 1);
 
         println!("Raw path: '{raw_path}' -> Normalized: '{normalized}'");
 
@@ -635,6 +666,69 @@ mod tests {
             .unwrap();
 
         println!("Found {} work items in '{normalized}'", ids.len());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
+    async fn test_get_iterations_current_sprint_diagnostics() {
+        let repo_client = get_repo_client().await;
+        let team = format!("{} Team", repo_client.project());
+        let now = OffsetDateTime::now_utc();
+
+        let iterations = repo_client.get_iterations(None).await.unwrap();
+        assert!(!iterations.is_empty(), "No iterations returned");
+
+        let current_team_paths = repo_client
+            .get_current_team_iteration_paths(&team)
+            .await
+            .unwrap();
+        assert!(
+            !current_team_paths.is_empty(),
+            "No current team iteration paths returned for team '{team}'"
+        );
+
+        for path in &current_team_paths {
+            println!("Current team iteration path from API: {path}");
+        }
+
+        let current: Vec<_> = iterations
+            .iter()
+            .filter(|iteration| is_iteration_current(iteration, now))
+            .collect();
+
+        for iteration in &current {
+            println!(
+                "Current iteration candidate: name='{}', path='{}', start={:?}, finish={:?}",
+                iteration.name, iteration.path, iteration.start_date, iteration.finish_date
+            );
+        }
+
+        if current.is_empty() {
+            println!(
+                "No current iteration found by date ranges. This indicates a date metadata gap \
+                 (or different semantics), so team timeframe API should be used as source of truth."
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
+    async fn test_get_current_team_iteration_paths() {
+        let repo_client = get_repo_client().await;
+        let team = format!("{} Team", repo_client.project());
+        let current_paths = repo_client
+            .get_current_team_iteration_paths(&team)
+            .await
+            .unwrap();
+
+        for path in &current_paths {
+            println!("Current team iteration path: {path}");
+        }
+
+        assert!(
+            !current_paths.is_empty(),
+            "No current team iteration paths returned for team '{team}'"
+        );
     }
 
     #[tokio::test]

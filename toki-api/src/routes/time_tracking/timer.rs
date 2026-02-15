@@ -180,27 +180,26 @@ pub async fn edit_timer(
         })
         .transpose()?;
 
-    let mut updated_timer =
-        ActiveTimer::new(parsed_start_time.unwrap_or(current_timer.started_at));
+    let mut updated_timer = ActiveTimer::new(parsed_start_time.unwrap_or(current_timer.started_at));
 
     // Merge: use provided values or fall back to current timer
     if let (Some(pid), Some(pname)) = (
-        body.project_id.or(current_timer.project_id.map(|p| p.to_string())),
+        body.project_id
+            .or(current_timer.project_id.map(|p| p.to_string())),
         body.project_name.or(current_timer.project_name),
     ) {
         updated_timer = updated_timer.with_project(pid, pname);
     }
 
     if let (Some(aid), Some(aname)) = (
-        body.activity_id.or(current_timer.activity_id.map(|a| a.to_string())),
+        body.activity_id
+            .or(current_timer.activity_id.map(|a| a.to_string())),
         body.activity_name.or(current_timer.activity_name),
     ) {
         updated_timer = updated_timer.with_activity(aid, aname);
     }
 
-    let note = body
-        .user_note
-        .unwrap_or(current_timer.note);
+    let note = body.user_note.unwrap_or(current_timer.note);
     updated_timer = updated_timer.with_note(note);
 
     service.edit_timer(&user.id, &updated_timer).await?;

@@ -148,9 +148,7 @@ async fn delete_push_subscription(
         return Err(ApiError::not_found("Push subscription not found"));
     }
 
-    push_subscription_repo
-        .delete_push_subscription(&id)
-        .await?;
+    push_subscription_repo.delete_push_subscription(&id).await?;
 
     Ok(StatusCode::OK)
 }
@@ -212,7 +210,9 @@ async fn mark_notification_viewed(
 ) -> Result<StatusCode, ApiError> {
     let notification_repo = app_state.notification_repo.clone();
 
-    notification_repo.mark_as_viewed(id, user.id.as_i32()).await?;
+    notification_repo
+        .mark_as_viewed(id, user.id.as_i32())
+        .await?;
 
     Ok(StatusCode::OK)
 }
@@ -285,12 +285,9 @@ async fn update_preferences(
     Path(repository_id): Path<i32>,
     Json(rule): Json<NotificationRule>,
 ) -> Result<StatusCode, ApiError> {
-
     // Validate that the rule belongs to the authenticated user
     if rule.user_id != user.id.as_i32() {
-        return Err(ApiError::forbidden(
-            "Cannot modify rules for other users",
-        ));
+        return Err(ApiError::forbidden("Cannot modify rules for other users"));
     }
 
     // Validate that the repository_id in the path matches the rule
@@ -326,7 +323,11 @@ async fn get_pr_exceptions(
     let notification_repo = app_state.notification_repo.clone();
 
     let exceptions = notification_repo
-        .get_pr_exceptions(user.id.as_i32(), params.repository_id, params.pull_request_id)
+        .get_pr_exceptions(
+            user.id.as_i32(),
+            params.repository_id,
+            params.pull_request_id,
+        )
         .await?;
 
     Ok(Json(exceptions))
@@ -346,10 +347,13 @@ async fn set_pr_exception(
     State(app_state): State<AppState>,
     Json(payload): Json<UpdateExceptionPayload>,
 ) -> Result<Json<PrNotificationException>, ApiError> {
-
     let notification_repo = app_state.notification_repo.clone();
     let existing_exceptions = notification_repo
-        .get_pr_exceptions(user.id.as_i32(), payload.repository_id, params.pull_request_id)
+        .get_pr_exceptions(
+            user.id.as_i32(),
+            payload.repository_id,
+            params.pull_request_id,
+        )
         .await?;
 
     let existing_exception = existing_exceptions
@@ -375,9 +379,7 @@ async fn set_pr_exception(
         enabled: payload.enabled,
     };
 
-    let updated_exception = notification_repo
-        .set_pr_exception(&new_exception)
-        .await?;
+    let updated_exception = notification_repo.set_pr_exception(&new_exception).await?;
 
     Ok(Json(updated_exception))
 }

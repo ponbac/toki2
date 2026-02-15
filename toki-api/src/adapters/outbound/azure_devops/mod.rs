@@ -1,7 +1,7 @@
 mod conversions;
 mod urls;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use async_trait::async_trait;
@@ -32,6 +32,26 @@ impl AzureDevOpsWorkItemAdapter {
 #[async_trait]
 impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
     async fn get_iterations(&self) -> Result<Vec<Iteration>, WorkItemError> {
+        let team = format!("{} Team", self.client.project());
+        let current_paths: HashSet<String> = match self
+            .client
+            .get_current_team_iteration_paths(&team)
+            .await
+        {
+            Ok(paths) => paths
+                .into_iter()
+                .map(|path| normalize_iteration_path(&path))
+                .collect(),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    team = %team,
+                    "Failed to fetch current team iteration paths; falling back to date-based current detection"
+                );
+                HashSet::new()
+            }
+        };
+
         let ado_iterations = self
             .client
             .get_iterations(None)
@@ -41,6 +61,12 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         Ok(ado_iterations
             .into_iter()
             .map(to_domain_iteration)
+            .map(|mut iteration| {
+                if current_paths.contains(&iteration.path) {
+                    iteration.is_current = true;
+                }
+                iteration
+            })
             .collect())
     }
 
@@ -257,6 +283,11 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 
         Ok((markdown, has_images))
     }
+}
+
+fn normalize_iteration_path(path: &str) -> String {
+    let path = path.strip_prefix('\\').unwrap_or(path);
+    path.replacen("\\Iteration\\", "\\", 1)
 }
 
 /// Build a Markdown document from a work item and its comments, for LLM consumption.

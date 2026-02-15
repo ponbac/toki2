@@ -4,10 +4,7 @@ use async_trait::async_trait;
 
 use crate::domain::{
     models::{BoardState, Iteration, WorkItem},
-    ports::{
-        inbound::WorkItemService,
-        outbound::WorkItemProvider,
-    },
+    ports::{inbound::WorkItemService, outbound::WorkItemProvider},
     WorkItemError,
 };
 

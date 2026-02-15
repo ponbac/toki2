@@ -1,4 +1,4 @@
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime, Time};
 
 use crate::domain::models::{
     BoardState, Iteration, PullRequestRef, WorkItem, WorkItemCategory, WorkItemComment,
@@ -122,21 +122,42 @@ pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -
 /// but `System.IterationPath` on work items uses `Project\Sprint 1`.
 /// We normalize here so the domain model uses the WIQL-compatible format.
 pub fn to_domain_iteration(ado: az_devops::Iteration) -> Iteration {
-    let now = OffsetDateTime::now_utc();
-    let is_current = match (ado.start_date, ado.finish_date) {
-        (Some(start), Some(finish)) => now >= start && now <= finish,
-        _ => false,
-    };
+    to_domain_iteration_at(ado, OffsetDateTime::now_utc())
+}
 
+fn to_domain_iteration_at(ado: az_devops::Iteration, now: OffsetDateTime) -> Iteration {
+    let start_date = ado.start_date;
+    let finish_date = ado.finish_date;
+    let is_current = is_iteration_current(start_date, finish_date, now);
     let path = normalize_iteration_path(&ado.path);
 
     Iteration {
         id: ado.id.to_string(),
         name: ado.name,
         path,
-        start_date: ado.start_date,
-        finish_date: ado.finish_date,
+        start_date,
+        finish_date,
         is_current,
+    }
+}
+
+fn effective_finish(finish: OffsetDateTime) -> OffsetDateTime {
+    if finish.time() == Time::MIDNIGHT {
+        // ADO finish dates are often stored as midnight; treat those as inclusive end-of-day.
+        finish + Duration::days(1) - Duration::nanoseconds(1)
+    } else {
+        finish
+    }
+}
+
+fn is_iteration_current(
+    start_date: Option<OffsetDateTime>,
+    finish_date: Option<OffsetDateTime>,
+    now: OffsetDateTime,
+) -> bool {
+    match (start_date, finish_date) {
+        (Some(start), Some(finish)) => now >= start && now <= effective_finish(finish),
+        _ => false,
     }
 }
 
@@ -398,8 +419,70 @@ mod tests {
 
     #[test]
     fn test_parse_pr_artifact_url_missing_parts() {
-        assert!(
-            parse_pr_artifact_url("vstfs:///Git/PullRequestId/abc%2Fdef", "myorg").is_none()
-        );
+        assert!(parse_pr_artifact_url("vstfs:///Git/PullRequestId/abc%2Fdef", "myorg").is_none());
+    }
+
+    #[test]
+    fn test_to_domain_iteration_treats_midnight_finish_as_end_of_day() {
+        let iteration = az_devops::Iteration {
+            id: 123,
+            name: "Sprint 35".to_string(),
+            path: "\\MyProject\\Iteration\\Sprint 35".to_string(),
+            start_date: Some(
+                OffsetDateTime::parse(
+                    "2026-02-02T00:00:00Z",
+                    &time::format_description::well_known::Rfc3339,
+                )
+                .unwrap(),
+            ),
+            finish_date: Some(
+                OffsetDateTime::parse(
+                    "2026-02-15T00:00:00Z",
+                    &time::format_description::well_known::Rfc3339,
+                )
+                .unwrap(),
+            ),
+        };
+
+        let now = OffsetDateTime::parse(
+            "2026-02-15T12:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap();
+
+        let domain = to_domain_iteration_at(iteration, now);
+        assert!(domain.is_current);
+    }
+
+    #[test]
+    fn test_to_domain_iteration_is_not_current_after_end_of_finish_day() {
+        let iteration = az_devops::Iteration {
+            id: 124,
+            name: "Sprint 35".to_string(),
+            path: "\\MyProject\\Iteration\\Sprint 35".to_string(),
+            start_date: Some(
+                OffsetDateTime::parse(
+                    "2026-02-02T00:00:00Z",
+                    &time::format_description::well_known::Rfc3339,
+                )
+                .unwrap(),
+            ),
+            finish_date: Some(
+                OffsetDateTime::parse(
+                    "2026-02-15T00:00:00Z",
+                    &time::format_description::well_known::Rfc3339,
+                )
+                .unwrap(),
+            ),
+        };
+
+        let now = OffsetDateTime::parse(
+            "2026-02-16T00:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap();
+
+        let domain = to_domain_iteration_at(iteration, now);
+        assert!(!domain.is_current);
     }
 }

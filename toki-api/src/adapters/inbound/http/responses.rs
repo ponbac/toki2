@@ -247,14 +247,8 @@ impl From<WorkItem> for WorkItemResponse {
             related: item.related.into_iter().map(Into::into).collect(),
             pull_requests: item.pull_requests.into_iter().map(Into::into).collect(),
             url: item.url,
-            created_at: item
-                .created_at
-                .format(&format)
-                .unwrap_or_default(),
-            changed_at: item
-                .changed_at
-                .format(&format)
-                .unwrap_or_default(),
+            created_at: item.created_at.format(&format).unwrap_or_default(),
+            changed_at: item.changed_at.format(&format).unwrap_or_default(),
         }
     }
 }
@@ -343,12 +337,8 @@ impl From<Iteration> for IterationResponse {
             id: iteration.id,
             name: iteration.name,
             path: iteration.path,
-            start_date: iteration
-                .start_date
-                .and_then(|d| d.format(&format).ok()),
-            finish_date: iteration
-                .finish_date
-                .and_then(|d| d.format(&format).ok()),
+            start_date: iteration.start_date.and_then(|d| d.format(&format).ok()),
+            finish_date: iteration.finish_date.and_then(|d| d.format(&format).ok()),
             is_current: iteration.is_current,
         }
     }

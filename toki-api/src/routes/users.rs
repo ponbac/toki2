@@ -64,10 +64,7 @@ async fn delete_my_avatar(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
-    app_state
-        .avatar_service
-        .delete_avatar(&user.id)
-        .await?;
+    app_state.avatar_service.delete_avatar(&user.id).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

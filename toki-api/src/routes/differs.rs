@@ -45,10 +45,7 @@ struct Differ {
 }
 
 #[instrument(name = "get_differs")]
-async fn get_differs(
-    user: AuthUser,
-    State(app_state): State<AppState>,
-) -> Json<Vec<Differ>> {
+async fn get_differs(user: AuthUser, State(app_state): State<AppState>) -> Json<Vec<Differ>> {
     let user_repo = app_state.user_repo.clone();
     let repositories_repo = app_state.repository_repo.clone();
     let all_repos = repositories_repo

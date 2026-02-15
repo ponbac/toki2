@@ -10,6 +10,34 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Route } from "../route";
+import type { Iteration } from "@/lib/api/queries/workItems";
+
+function getEffectiveFinishTimeMs(finishDate: string): number {
+  const finish = new Date(finishDate);
+  const isMidnightUtc =
+    finish.getUTCHours() === 0 &&
+    finish.getUTCMinutes() === 0 &&
+    finish.getUTCSeconds() === 0 &&
+    finish.getUTCMilliseconds() === 0;
+
+  // ADO often stores finish dates at midnight; treat those as end-of-day inclusive.
+  return isMidnightUtc ? finish.getTime() + 24 * 60 * 60 * 1000 - 1 : finish.getTime();
+}
+
+function isCurrentIteration(iteration: Iteration, nowMs: number): boolean {
+  if (iteration.isCurrent) return true;
+
+  if (!iteration.startDate && !iteration.finishDate) return false;
+
+  const startMs = iteration.startDate
+    ? new Date(iteration.startDate).getTime()
+    : Number.NEGATIVE_INFINITY;
+  const finishMs = iteration.finishDate
+    ? getEffectiveFinishTimeMs(iteration.finishDate)
+    : Number.POSITIVE_INFINITY;
+
+  return nowMs >= startMs && nowMs <= finishMs;
+}
 
 export function SprintSelector({
   organization,
@@ -26,20 +54,43 @@ export function SprintSelector({
     queries.iterations(organization, project),
   );
 
-  // Auto-select the current iteration on first load
+  // Keep URL sprint selection valid, defaulting to current sprint when missing/invalid.
   useEffect(() => {
-    if (!selectedIterationPath && iterations.length > 0) {
-      const current = iterations.find((i) => i.isCurrent);
-      if (current) {
-        navigate({
-          search: (prev) => ({
-            ...prev,
-            iterationPath: current.path,
-          }),
-        });
-      }
+    if (iterations.length === 0) return;
+    const nowMs = Date.now();
+
+    const selectedExists = selectedIterationPath
+      ? iterations.some((iteration) => iteration.path === selectedIterationPath)
+      : false;
+
+    if (selectedExists) return;
+
+    const currentIteration = iterations.find((iteration) =>
+      isCurrentIteration(iteration, nowMs),
+    );
+    if (currentIteration) {
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          iterationPath: currentIteration.path,
+        }),
+        replace: true,
+      });
+      return;
+    }
+
+    if (selectedIterationPath) {
+      navigate({
+        search: (prev) => ({
+          ...prev,
+          iterationPath: undefined,
+        }),
+        replace: true,
+      });
     }
   }, [iterations, selectedIterationPath, navigate]);
+
+  const nowMsForRender = Date.now();
 
   return (
     <Select
@@ -57,18 +108,15 @@ export function SprintSelector({
         <SelectValue placeholder="Select a sprint..." />
       </SelectTrigger>
       <SelectContent>
-        {iterations.map((iteration) => (
-          <SelectItem key={iteration.id} value={iteration.path}>
-            <div className="flex items-center gap-2">
-              <span>{iteration.name}</span>
-              {iteration.isCurrent && (
-                <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                  Current
-                </span>
-              )}
-            </div>
-          </SelectItem>
-        ))}
+        {iterations.map((iteration) => {
+          const current = isCurrentIteration(iteration, nowMsForRender);
+          return (
+            <SelectItem key={iteration.id} value={iteration.path}>
+              {iteration.name}
+              {current ? " (Current)" : ""}
+            </SelectItem>
+          );
+        })}
       </SelectContent>
     </Select>
   );
