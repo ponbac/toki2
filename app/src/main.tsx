@@ -6,6 +6,10 @@ import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "./hooks/useTheme";
+import {
+  RouterErrorScreen,
+  RouterNotFoundScreen,
+} from "./components/router-error-screen";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,7 +25,8 @@ export type RouterContext = {
 
 export const router = createRouter({
   routeTree,
-  defaultNotFoundComponent: () => "404 Not Found",
+  defaultErrorComponent: RouterErrorScreen,
+  defaultNotFoundComponent: RouterNotFoundScreen,
   context: {
     queryClient,
   },
