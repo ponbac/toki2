@@ -30,4 +30,13 @@ pub trait WorkItemService: Send + Sync + 'static {
         &self,
         work_item_id: &str,
     ) -> Result<(String, bool), WorkItemError>;
+
+    /// Move a work item to a target board column.
+    async fn move_work_item_to_column(
+        &self,
+        work_item_id: &str,
+        target_column_name: &str,
+        iteration_path: Option<&str>,
+        team: Option<&str>,
+    ) -> Result<(), WorkItemError>;
 }

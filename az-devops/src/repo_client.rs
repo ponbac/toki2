@@ -486,6 +486,7 @@ impl RepoClient {
                     TaskboardWorkItemColumnAssignment {
                         column_id: item.column_id,
                         column_name,
+                        state: item.state,
                     },
                 );
             }
@@ -499,6 +500,40 @@ impl RepoClient {
         );
 
         Ok(map)
+    }
+
+    /// Move a work item card to a new taskboard column.
+    pub async fn move_taskboard_work_item_to_column(
+        &self,
+        team: &str,
+        iteration_id: &str,
+        work_item_id: i32,
+        target_column_name: &str,
+    ) -> Result<(), RepoClientError> {
+        let mut body = work::models::UpdateTaskboardWorkItemColumn::new();
+        body.new_column = Some(target_column_name.to_string());
+
+        self.work_client
+            .taskboard_work_items_client()
+            .update(
+                &self.organization,
+                body,
+                &self.project,
+                team,
+                iteration_id,
+                work_item_id,
+            )
+            .await?;
+
+        debug!(
+            team = team,
+            iteration_id = iteration_id,
+            work_item_id = work_item_id,
+            target_column = target_column_name,
+            "Moved taskboard work item to new column"
+        );
+
+        Ok(())
     }
 }
 
@@ -523,6 +558,7 @@ pub struct TaskboardColumnDefinition {
 pub struct TaskboardWorkItemColumnAssignment {
     pub column_id: Option<String>,
     pub column_name: String,
+    pub state: Option<String>,
 }
 
 /// Recursively flatten a `WorkItemClassificationNode` tree into a `Vec<Iteration>`.
@@ -620,6 +656,39 @@ mod tests {
             (Some(start), Some(finish)) => now >= start && now <= effective_finish(finish),
             _ => false,
         }
+    }
+
+    fn normalize_column_name(name: &str) -> String {
+        name.trim().to_ascii_lowercase()
+    }
+
+    async fn wait_for_column_assignment(
+        repo_client: &RepoClient,
+        team: &str,
+        iteration_id: &str,
+        work_item_id: i32,
+        expected_column: &str,
+    ) -> Result<Option<String>, RepoClientError> {
+        let expected = normalize_column_name(expected_column);
+
+        for attempt in 0..5 {
+            let assignments = repo_client
+                .get_taskboard_work_item_columns(team, iteration_id)
+                .await?;
+
+            if let Some(assignment) = assignments.get(&work_item_id) {
+                let actual = normalize_column_name(&assignment.column_name);
+                if actual == expected {
+                    return Ok(Some(assignment.column_name.clone()));
+                }
+            }
+
+            if attempt < 4 {
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+        }
+
+        Ok(None)
     }
 
     #[tokio::test]
@@ -890,5 +959,124 @@ mod tests {
         }
 
         assert!(!columns.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection and mutates taskboard state"]
+    async fn test_move_taskboard_work_item_round_trip() {
+        let repo_client = get_repo_client().await;
+        let team = format!("{} Team", repo_client.project());
+        let iterations = repo_client.get_team_iterations(&team).await.unwrap();
+        assert!(
+            !iterations.is_empty(),
+            "No team iterations returned for team '{team}'"
+        );
+
+        let columns = repo_client.get_taskboard_columns(&team).await.unwrap();
+        assert!(
+            columns.len() >= 2,
+            "Need at least two columns to test move operation"
+        );
+
+        let mut selected_iteration = None;
+        let mut assignments = HashMap::new();
+        for iteration in iterations.iter().rev() {
+            let candidate_assignments = repo_client
+                .get_taskboard_work_item_columns(&team, &iteration.id)
+                .await
+                .unwrap();
+            if !candidate_assignments.is_empty() {
+                selected_iteration = Some((iteration.id.clone(), iteration.name.clone()));
+                assignments = candidate_assignments;
+                break;
+            }
+        }
+        let (iteration_id, iteration_name) = selected_iteration.expect(
+            "No taskboard assignments available in any team iteration; cannot perform move test",
+        );
+
+        let candidate = assignments.iter().find_map(|(work_item_id, assignment)| {
+            let state = assignment.state.as_deref()?.trim();
+            if state.is_empty() {
+                return None;
+            }
+
+            assignments
+                .values()
+                .find(|other| {
+                    other
+                        .state
+                        .as_deref()
+                        .map(str::trim)
+                        .is_some_and(|other_state| {
+                            other_state.eq_ignore_ascii_case(state)
+                                && normalize_column_name(&other.column_name)
+                                    != normalize_column_name(&assignment.column_name)
+                        })
+                })
+                .map(|target| {
+                    (
+                        *work_item_id,
+                        assignment.column_name.clone(),
+                        target.column_name.clone(),
+                        state.to_string(),
+                    )
+                })
+        });
+
+        let Some((work_item_id, original_column, target_column, state_name)) = candidate else {
+            panic!("Could not find a same-state move candidate across different columns");
+        };
+
+        println!(
+            "Round-trip move candidate: work item #{work_item_id}, state='{}', '{}' -> '{}' (team='{}', iteration='{}')",
+            state_name, original_column, target_column, team, iteration_name
+        );
+
+        repo_client
+            .move_taskboard_work_item_to_column(&team, &iteration_id, work_item_id, &target_column)
+            .await
+            .unwrap();
+
+        let moved = wait_for_column_assignment(
+            &repo_client,
+            &team,
+            &iteration_id,
+            work_item_id,
+            &target_column,
+        )
+        .await
+        .unwrap()
+        .is_some();
+
+        let restore_result = repo_client
+            .move_taskboard_work_item_to_column(&team, &iteration_id, work_item_id, &original_column)
+            .await;
+        assert!(
+            restore_result.is_ok(),
+            "Failed to restore original column '{}': {:?}",
+            original_column,
+            restore_result.err()
+        );
+
+        let restored = wait_for_column_assignment(
+            &repo_client,
+            &team,
+            &iteration_id,
+            work_item_id,
+            &original_column,
+        )
+        .await
+        .unwrap()
+        .is_some();
+
+        assert!(
+            moved,
+            "Work item #{work_item_id} was not observed in target column '{target_column}' after move"
+        );
+        assert!(
+            restored,
+            "Work item #{work_item_id} was not restored to original column '{original_column}'"
+        );
     }
 }

@@ -1,5 +1,13 @@
 import { AzureAvatar } from "@/components/azure-avatar";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -7,7 +15,14 @@ import {
 import { cn } from "@/lib/utils";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import { CopyWorkItem } from "./copy-work-item";
-import { GitPullRequest, GitBranch, Check, ExternalLink } from "lucide-react";
+import {
+  GitPullRequest,
+  GitBranch,
+  Check,
+  ExternalLink,
+  Loader2,
+  MoreVertical,
+} from "lucide-react";
 import { useState, useCallback } from "react";
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
@@ -43,12 +58,30 @@ function slugify(title: string): string {
 
 export function BoardCard({
   item,
+  columnId,
+  columns,
   organization,
   project,
+  isMoving,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+  onMoveToColumn,
 }: {
   item: BoardWorkItem;
+  columnId: string;
+  columns: { id: string; name: string }[];
   organization: string;
   project: string;
+  isMoving: boolean;
+  isDragging: boolean;
+  onDragStart: (itemId: string, sourceColumnId: string) => void;
+  onDragEnd: () => void;
+  onMoveToColumn: (
+    itemId: string,
+    sourceColumnId: string,
+    targetColumnId: string,
+  ) => void;
 }) {
   const colors = CATEGORY_COLORS[item.category] ?? {
     bg: "bg-muted",
@@ -69,12 +102,26 @@ export function BoardCard({
     },
     [branchName],
   );
+  const moveTargets = columns.filter((column) => column.id !== columnId);
 
   return (
     <div
+      draggable={!isMoving}
+      onDragStart={(event) => {
+        if (isMoving) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", item.id);
+        onDragStart(item.id, columnId);
+      }}
+      onDragEnd={onDragEnd}
       className={cn(
         "group relative rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm",
         isPriorityOne && "bg-red-500/[0.06]",
+        isDragging && "opacity-50",
+        isMoving && "cursor-progress",
       )}
     >
       {isPriorityOne && (
@@ -141,6 +188,45 @@ export function BoardCard({
         )}
 
         <div className="ml-auto flex items-center gap-0.5">
+          {/* Move menu - shown on hover */}
+          <div className="opacity-0 transition-opacity group-hover:opacity-100">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isMoving}
+                >
+                  {isMoving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <MoreVertical className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Move to...</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {moveTargets.length === 0 ? (
+                  <DropdownMenuItem disabled>No other columns</DropdownMenuItem>
+                ) : (
+                  moveTargets.map((column) => (
+                    <DropdownMenuItem
+                      key={column.id}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onMoveToColumn(item.id, columnId, column.id);
+                      }}
+                      disabled={isMoving}
+                    >
+                      {column.name}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           {/* Branch copy - shown on hover */}
           <div className="opacity-0 transition-opacity group-hover:opacity-100">
             <Tooltip>

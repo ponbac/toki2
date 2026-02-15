@@ -1,9 +1,10 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
+import { mutations } from "@/lib/api/mutations/mutations";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
   boardColumnScopeKey,
@@ -12,6 +13,12 @@ import {
   categoryFilterAtom,
 } from "../-lib/board-preferences";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+
+type DragState = {
+  itemId: string;
+  sourceColumnId: string;
+};
 
 function normalizeColumnName(name: string) {
   return name.trim().toLowerCase();
@@ -67,8 +74,12 @@ export function BoardView({
     }),
   );
   const { data: user } = useSuspenseQuery(queries.me());
+  const { mutateAsync: moveBoardItem } = mutations.useMoveBoardItem();
   const memberFilter = useAtomValue(memberFilterAtom);
   const categoryFilter = useAtomValue(categoryFilterAtom);
+  const [movingItemIds, setMovingItemIds] = useState<string[]>([]);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
   const [hiddenColumnsByScope, setHiddenColumnsByScope] = useAtom(
     hiddenColumnsByScopeAtom,
   );
@@ -83,6 +94,10 @@ export function BoardView({
   const hiddenColumnIdSet = useMemo(
     () => new Set(hiddenColumnIds),
     [hiddenColumnIds],
+  );
+  const movingItemIdSet = useMemo(
+    () => new Set(movingItemIds),
+    [movingItemIds],
   );
 
   // Extract unique assignees for the member multi-select
@@ -151,6 +166,14 @@ export function BoardView({
       items: itemsByColumn.get(column.id) ?? [],
     }));
   }, [board.columns, filteredItems]);
+  const allColumns = useMemo(
+    () => columnsWithItems.map((column) => ({ id: column.id, name: column.name })),
+    [columnsWithItems],
+  );
+  const boardItemsById = useMemo(
+    () => new Map(board.items.map((item) => [item.id, item])),
+    [board.items],
+  );
 
   const visibleColumns = useMemo(
     () =>
@@ -192,6 +215,93 @@ export function BoardView({
     });
   }, [columnScope, setHiddenColumnsByScope]);
 
+  const moveItem = useCallback(
+    async (itemId: string, sourceColumnId: string, targetColumnId: string) => {
+      if (sourceColumnId === targetColumnId) {
+        return;
+      }
+
+      if (movingItemIdSet.has(itemId)) {
+        return;
+      }
+
+      const currentItem = boardItemsById.get(itemId);
+      const targetColumn = allColumns.find((column) => column.id === targetColumnId);
+      if (!currentItem || !targetColumn) {
+        return;
+      }
+
+      setMovingItemIds((prev) =>
+        prev.includes(itemId) ? prev : [...prev, itemId],
+      );
+
+      try {
+        await moveBoardItem({
+          organization,
+          project,
+          workItemId: itemId,
+          targetColumnName: targetColumn.name,
+          iterationPath,
+          team,
+        });
+      } catch {
+        toast.error("Failed to move work item.");
+      } finally {
+        setMovingItemIds((prev) => prev.filter((id) => id !== itemId));
+      }
+    },
+    [
+      allColumns,
+      boardItemsById,
+      iterationPath,
+      moveBoardItem,
+      movingItemIdSet,
+      organization,
+      project,
+      team,
+    ],
+  );
+
+  const handleCardDragStart = useCallback(
+    (itemId: string, sourceColumnId: string) => {
+      if (movingItemIdSet.has(itemId)) {
+        return;
+      }
+      setDragState({ itemId, sourceColumnId });
+      setDragOverColumnId(sourceColumnId);
+    },
+    [movingItemIdSet],
+  );
+
+  const handleCardDragEnd = useCallback(() => {
+    setDragState(null);
+    setDragOverColumnId(null);
+  }, []);
+
+  const handleColumnDragOver = useCallback((columnId: string) => {
+    setDragOverColumnId(columnId);
+  }, []);
+
+  const handleColumnDrop = useCallback(
+    (columnId: string) => {
+      if (!dragState) {
+        return;
+      }
+
+      void moveItem(dragState.itemId, dragState.sourceColumnId, columnId);
+      setDragState(null);
+      setDragOverColumnId(null);
+    },
+    [dragState, moveItem],
+  );
+
+  const handleMoveItem = useCallback(
+    (itemId: string, sourceColumnId: string, targetColumnId: string) => {
+      void moveItem(itemId, sourceColumnId, targetColumnId);
+    },
+    [moveItem],
+  );
+
   return (
     <div className="flex w-full flex-col gap-3">
       <div className="mx-auto w-full max-w-[110rem] md:w-[95%]">
@@ -220,12 +330,24 @@ export function BoardView({
         ) : (
           <div className="flex h-full w-full gap-4 overflow-x-auto pb-2">
             {visibleColumns.map((column) => (
-              <div key={column.id} className="min-h-0 min-w-[20rem] flex-1">
+              <div key={column.id} className="h-full min-h-0 min-w-[20rem] flex-1">
                 <BoardColumn
+                  columnId={column.id}
                   title={column.name}
                   items={column.items}
+                  allColumns={allColumns}
                   organization={organization}
                   project={project}
+                  isDropTarget={
+                    dragState !== null && dragOverColumnId === column.id
+                  }
+                  draggingItemId={dragState?.itemId ?? null}
+                  movingItemIdSet={movingItemIdSet}
+                  onCardDragStart={handleCardDragStart}
+                  onCardDragEnd={handleCardDragEnd}
+                  onColumnDragOver={handleColumnDragOver}
+                  onColumnDrop={handleColumnDrop}
+                  onMoveItem={handleMoveItem}
                 />
               </div>
             ))}

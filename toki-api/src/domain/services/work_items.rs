@@ -86,6 +86,32 @@ impl<P: WorkItemProvider> WorkItemService for WorkItemServiceImpl<P> {
     ) -> Result<(String, bool), WorkItemError> {
         self.provider.format_work_item_for_llm(work_item_id).await
     }
+
+    async fn move_work_item_to_column(
+        &self,
+        work_item_id: &str,
+        target_column_name: &str,
+        iteration_path: Option<&str>,
+        team: Option<&str>,
+    ) -> Result<(), WorkItemError> {
+        let work_item_id = work_item_id.trim();
+        if work_item_id.is_empty() {
+            return Err(WorkItemError::InvalidInput(
+                "work_item_id cannot be empty".to_string(),
+            ));
+        }
+
+        let target_column_name = target_column_name.trim();
+        if target_column_name.is_empty() {
+            return Err(WorkItemError::InvalidInput(
+                "target_column_name cannot be empty".to_string(),
+            ));
+        }
+
+        self.provider
+            .move_work_item_to_column(work_item_id, target_column_name, iteration_path, team)
+            .await
+    }
 }
 
 fn fallback_columns() -> Vec<BoardColumn> {
@@ -242,7 +268,7 @@ fn synthetic_column_id(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
     use time::OffsetDateTime;
@@ -259,6 +285,15 @@ mod tests {
         items: Vec<WorkItem>,
         columns: Vec<BoardColumn>,
         assignments: HashMap<String, BoardColumnAssignment>,
+        move_calls: Arc<Mutex<Vec<MoveCall>>>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct MoveCall {
+        work_item_id: String,
+        target_column_name: String,
+        iteration_path: Option<String>,
+        team: Option<String>,
     }
 
     #[async_trait]
@@ -307,6 +342,22 @@ mod tests {
             _work_item_id: &str,
         ) -> Result<(String, bool), WorkItemError> {
             Ok((String::new(), false))
+        }
+
+        async fn move_work_item_to_column(
+            &self,
+            work_item_id: &str,
+            target_column_name: &str,
+            iteration_path: Option<&str>,
+            team: Option<&str>,
+        ) -> Result<(), WorkItemError> {
+            self.move_calls.lock().unwrap().push(MoveCall {
+                work_item_id: work_item_id.to_string(),
+                target_column_name: target_column_name.to_string(),
+                iteration_path: iteration_path.map(str::to_string),
+                team: team.map(str::to_string),
+            });
+            Ok(())
         }
     }
 
@@ -393,6 +444,7 @@ mod tests {
                 order: 10,
             }],
             assignments,
+            ..Default::default()
         };
         let service = WorkItemServiceImpl::new(Arc::new(provider));
 
@@ -437,5 +489,45 @@ mod tests {
         let item_ids: Vec<_> = board.items.iter().map(|item| item.id.as_str()).collect();
 
         assert_eq!(item_ids, vec!["3", "2", "1"]);
+    }
+
+    #[tokio::test]
+    async fn move_work_item_validates_input() {
+        let service = WorkItemServiceImpl::new(Arc::new(MockProvider::default()));
+
+        let empty_id_err = service
+            .move_work_item_to_column("   ", "Done", None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(empty_id_err, WorkItemError::InvalidInput(_)));
+
+        let empty_column_err = service
+            .move_work_item_to_column("123", "   ", None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(empty_column_err, WorkItemError::InvalidInput(_)));
+    }
+
+    #[tokio::test]
+    async fn move_work_item_delegates_to_provider() {
+        let provider = MockProvider::default();
+        let move_calls = provider.move_calls.clone();
+        let service = WorkItemServiceImpl::new(Arc::new(provider));
+
+        service
+            .move_work_item_to_column("  42  ", "  In Progress  ", Some("Project\\Sprint 1"), Some("Team A"))
+            .await
+            .unwrap();
+
+        let calls = move_calls.lock().unwrap();
+        assert_eq!(
+            calls.as_slice(),
+            [MoveCall {
+                work_item_id: "42".to_string(),
+                target_column_name: "In Progress".to_string(),
+                iteration_path: Some("Project\\Sprint 1".to_string()),
+                team: Some("Team A".to_string()),
+            }]
+        );
     }
 }

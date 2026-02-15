@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use axum::{
     extract::{Query, State},
-    routing::get,
+    http::StatusCode,
+    routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -45,6 +46,17 @@ pub struct FormatForLlmQuery {
     pub organization: String,
     pub project: String,
     pub work_item_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveWorkItemBody {
+    pub organization: String,
+    pub project: String,
+    pub work_item_id: String,
+    pub target_column_name: String,
+    pub iteration_path: Option<String>,
+    pub team: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +124,38 @@ async fn format_for_llm(
         markdown,
         has_images,
     }))
+}
+
+#[instrument(
+    name = "POST /work-items/move",
+    skip(app_state, body),
+    fields(
+        organization = %body.organization,
+        project = %body.project,
+        work_item_id = %body.work_item_id,
+        target_column_name = %body.target_column_name
+    )
+)]
+async fn move_work_item(
+    _user: AuthUser,
+    State(app_state): State<AppState>,
+    Json(body): Json<MoveWorkItemBody>,
+) -> Result<StatusCode, ApiError> {
+    let service = app_state
+        .work_item_factory
+        .create_service(&body.organization, &body.project)
+        .await?;
+
+    service
+        .move_work_item_to_column(
+            &body.work_item_id,
+            &body.target_column_name,
+            body.iteration_path.as_deref(),
+            body.team.as_deref(),
+        )
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn apply_avatar_overrides_to_work_items(
@@ -246,4 +290,5 @@ pub fn router() -> Router<AppState> {
         .route("/iterations", get(get_iterations))
         .route("/board", get(get_board))
         .route("/format-for-llm", get(format_for_llm))
+        .route("/move", post(move_work_item))
 }

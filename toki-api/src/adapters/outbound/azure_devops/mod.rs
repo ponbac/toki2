@@ -304,6 +304,53 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 
         Ok((markdown, has_images))
     }
+
+    async fn move_work_item_to_column(
+        &self,
+        work_item_id: &str,
+        target_column_name: &str,
+        iteration_path: Option<&str>,
+        team: Option<&str>,
+    ) -> Result<(), WorkItemError> {
+        let work_item_id: i32 = work_item_id.trim().parse().map_err(|_| {
+            WorkItemError::InvalidInput(format!("Invalid work item ID: {work_item_id}"))
+        })?;
+
+        let target_column_name = target_column_name.trim();
+        if target_column_name.is_empty() {
+            return Err(WorkItemError::InvalidInput(
+                "target column name cannot be empty".to_string(),
+            ));
+        }
+
+        let team = resolve_team_name(team, self.client.project());
+        let iteration = self
+            .resolve_taskboard_iteration(iteration_path, &team)
+            .await?;
+        let columns = self
+            .client
+            .get_taskboard_columns(&team)
+            .await
+            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+        let target_column = columns
+            .iter()
+            .find(|column| column.name.eq_ignore_ascii_case(target_column_name))
+            .ok_or_else(|| {
+                WorkItemError::InvalidInput(format!(
+                    "Unknown board column '{target_column_name}'"
+                ))
+            })?;
+
+        self.client
+            .move_taskboard_work_item_to_column(
+                &team,
+                &iteration.id,
+                work_item_id,
+                &target_column.name,
+            )
+            .await
+            .map_err(|e| WorkItemError::ProviderError(e.to_string()))
+    }
 }
 
 fn normalize_iteration_path(path: &str) -> String {
@@ -493,39 +540,9 @@ impl AzureDevOpsWorkItemAdapter {
         team: Option<&str>,
     ) -> Result<HashMap<String, BoardColumnAssignment>, WorkItemError> {
         let team = resolve_team_name(team, self.client.project());
-
-        // Use the work API's team iterations (which have GUID IDs)
-        // rather than classification nodes (which have numeric IDs).
-        // The taskboard API requires the GUID iteration ID.
-        let iterations = self
-            .client
-            .get_team_iterations(&team)
-            .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
-
-        let iteration = match iteration_path {
-            Some(path) => {
-                // The iteration_path from the frontend is in WIQL format: "Project\Sprint 35"
-                // Team iterations have paths like "\Project\Iteration\Sprint 35"
-                // Normalize both for comparison.
-                let normalized = path.strip_prefix('\\').unwrap_or(path);
-                let normalized = normalized.replacen("\\Iteration\\", "\\", 1);
-
-                iterations.iter().find(|it| {
-                    let it_path = it.path.strip_prefix('\\').unwrap_or(&it.path);
-                    let it_normalized = it_path.replacen("\\Iteration\\", "\\", 1);
-                    it_normalized == normalized
-                })
-            }
-            None => {
-                // Without a path, just use the last iteration (most recent)
-                iterations.last()
-            }
-        };
-
-        let iteration = iteration.ok_or_else(|| {
-            WorkItemError::ProviderError("No matching iteration found for taskboard lookup".into())
-        })?;
+        let iteration = self
+            .resolve_taskboard_iteration(iteration_path, &team)
+            .await?;
 
         tracing::debug!(
             iteration_name = %iteration.name,
@@ -552,6 +569,34 @@ impl AzureDevOpsWorkItemAdapter {
                 )
             })
             .collect())
+    }
+
+    async fn resolve_taskboard_iteration(
+        &self,
+        iteration_path: Option<&str>,
+        team: &str,
+    ) -> Result<az_devops::TeamIteration, WorkItemError> {
+        // Use the work API's team iterations (with GUID IDs) because
+        // the taskboard endpoints require GUID iteration IDs.
+        let iterations = self
+            .client
+            .get_team_iterations(team)
+            .await
+            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+
+        let iteration = match iteration_path {
+            Some(path) => {
+                let normalized = normalize_iteration_path(path);
+                iterations
+                    .into_iter()
+                    .find(|it| normalize_iteration_path(&it.path) == normalized)
+            }
+            None => iterations.into_iter().last(),
+        };
+
+        iteration.ok_or_else(|| {
+            WorkItemError::ProviderError("No matching iteration found for taskboard lookup".into())
+        })
     }
 }
 

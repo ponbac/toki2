@@ -160,6 +160,7 @@ impl From<AvatarError> for ApiError {
 impl From<WorkItemError> for ApiError {
     fn from(err: WorkItemError) -> Self {
         match err {
+            WorkItemError::InvalidInput(_) => Self::bad_request(err.to_string()),
             WorkItemError::ProviderError(_) => Self::internal(err.to_string()),
         }
     }
