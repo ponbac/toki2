@@ -28,6 +28,8 @@ export type BoardWorkItem = {
   id: string;
   title: string;
   boardState: "todo" | "inProgress" | "done";
+  boardColumnId: string | null;
+  boardColumnName: string | null;
   category: "userStory" | "bug" | "task" | "feature" | "epic" | string;
   stateName: string;
   priority: number | null;
@@ -44,6 +46,17 @@ export type BoardWorkItem = {
   url: string;
   createdAt: string;
   changedAt: string;
+};
+
+export type BoardColumn = {
+  id: string;
+  name: string;
+  order: number;
+};
+
+export type BoardResponse = {
+  columns: BoardColumn[];
+  items: BoardWorkItem[];
 };
 
 export type Iteration = {
@@ -93,7 +106,7 @@ export const workItemsQueries = {
               Object.entries(params).filter(([, v]) => v !== undefined),
             ),
           })
-          .json<Array<BoardWorkItem>>(),
+          .json<BoardResponse>(),
       enabled: !!params.organization && !!params.project,
     }),
   formatForLlm: (params: {

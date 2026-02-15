@@ -7,4 +7,6 @@ pub use azure_devops_rust_api::git::models::git_pull_request::MergeStatus;
 pub use models::*;
 pub use repo_client::RepoClient;
 pub use repo_client::RepoClientError;
+pub use repo_client::TaskboardColumnDefinition;
+pub use repo_client::TaskboardWorkItemColumnAssignment;
 pub use repo_client::TeamIteration;

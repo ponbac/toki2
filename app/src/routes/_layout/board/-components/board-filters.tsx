@@ -5,7 +5,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useAtom } from "jotai";
-import { Users, ChevronDown, Check } from "lucide-react";
+import { Users, ChevronDown, Check, Columns3 } from "lucide-react";
 import {
   memberFilterAtom,
   categoryFilterAtom,
@@ -28,8 +28,16 @@ const MEMBER_MODES: { value: MemberFilter["mode"]; label: string }[] = [
 
 export function BoardFilters({
   members,
+  columns,
+  hiddenColumnIds,
+  onToggleColumn,
+  onShowAllColumns,
 }: {
   members: { email: string; displayName: string }[];
+  columns: { id: string; name: string; count: number }[];
+  hiddenColumnIds: string[];
+  onToggleColumn: (columnId: string) => void;
+  onShowAllColumns: () => void;
 }) {
   const [memberFilter, setMemberFilter] = useAtom(memberFilterAtom);
   const [categoryFilter, setCategoryFilter] = useAtom(categoryFilterAtom);
@@ -50,6 +58,12 @@ export function BoardFilters({
         : [...prev.selectedEmails, email],
     }));
   };
+
+  const hiddenColumns = new Set(hiddenColumnIds);
+  const hiddenColumnsCount = columns.filter((column) =>
+    hiddenColumns.has(column.id),
+  ).length;
+  const visibleColumnsCount = columns.length - hiddenColumnsCount;
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -121,6 +135,63 @@ export function BoardFilters({
           </Popover>
         )}
       </div>
+
+      {/* Divider */}
+      <div className="h-5 w-px bg-border/50" />
+
+      {/* Column visibility filter */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+            <Columns3 className="h-3.5 w-3.5" />
+            Columns
+            <span className="text-muted-foreground">
+              {visibleColumnsCount}/{columns.length}
+            </span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-2" align="start">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <span className="text-xs font-medium text-muted-foreground">
+              Visible columns
+            </span>
+            <button
+              onClick={onShowAllColumns}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Show all
+            </button>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {columns.map((column) => {
+              const visible = !hiddenColumns.has(column.id);
+              return (
+                <button
+                  key={column.id}
+                  onClick={() => onToggleColumn(column.id)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                >
+                  <div
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                      visible
+                        ? "border-primary bg-primary"
+                        : "border-muted-foreground/30"
+                    }`}
+                  >
+                    {visible && (
+                      <Check className="h-3 w-3 text-primary-foreground" />
+                    )}
+                  </div>
+                  <span className="truncate">{column.name}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {column.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
 
       {/* Divider */}
       <div className="h-5 w-px bg-border/50" />

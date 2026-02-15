@@ -10,6 +10,7 @@ use super::urls::AzureDevOpsUrl;
 /// Convert an Azure DevOps work item to a domain work item.
 pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -> WorkItem {
     let board_state = map_board_state(ado.board_column.as_deref(), &ado.state);
+    let board_column_name = ado.board_column.clone();
     let category = map_category(&ado.item_type);
 
     let assigned_to = ado.assigned_to.map(|identity| WorkItemPerson {
@@ -97,6 +98,8 @@ pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -
         id,
         title: ado.title,
         board_state,
+        board_column_id: None,
+        board_column_name,
         category,
         state_name: ado.state,
         priority: ado.priority,

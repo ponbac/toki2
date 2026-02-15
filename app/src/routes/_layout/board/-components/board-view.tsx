@@ -3,12 +3,49 @@ import { queries } from "@/lib/api/queries/queries";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
-import { useMemo } from "react";
-import { useAtomValue } from "jotai";
+import { useCallback, useMemo } from "react";
+import { useAtom, useAtomValue } from "jotai";
 import {
+  boardColumnScopeKey,
+  hiddenColumnsByScopeAtom,
   memberFilterAtom,
   categoryFilterAtom,
 } from "../-lib/board-preferences";
+import { Button } from "@/components/ui/button";
+
+function normalizeColumnName(name: string) {
+  return name.trim().toLowerCase();
+}
+
+function resolveColumnIdForItem(
+  item: BoardWorkItem,
+  knownColumnIds: Set<string>,
+  columnIdsByName: Map<string, string>,
+) {
+  if (item.boardColumnId && knownColumnIds.has(item.boardColumnId)) {
+    return item.boardColumnId;
+  }
+
+  if (item.boardColumnName) {
+    const byName = columnIdsByName.get(normalizeColumnName(item.boardColumnName));
+    if (byName) {
+      return byName;
+    }
+  }
+
+  const fallbackIdByState: Record<BoardWorkItem["boardState"], string> = {
+    todo: "todo",
+    inProgress: "inProgress",
+    done: "done",
+  };
+
+  const fallbackColumnId = fallbackIdByState[item.boardState];
+  if (knownColumnIds.has(fallbackColumnId)) {
+    return fallbackColumnId;
+  }
+
+  return undefined;
+}
 
 export function BoardView({
   organization,
@@ -21,7 +58,7 @@ export function BoardView({
   iterationPath?: string;
   team?: string;
 }) {
-  const { data: items } = useSuspenseQuery(
+  const { data: board } = useSuspenseQuery(
     queries.board({
       organization,
       project,
@@ -32,11 +69,26 @@ export function BoardView({
   const { data: user } = useSuspenseQuery(queries.me());
   const memberFilter = useAtomValue(memberFilterAtom);
   const categoryFilter = useAtomValue(categoryFilterAtom);
+  const [hiddenColumnsByScope, setHiddenColumnsByScope] = useAtom(
+    hiddenColumnsByScopeAtom,
+  );
+  const columnScope = useMemo(
+    () => boardColumnScopeKey({ organization, project, team }),
+    [organization, project, team],
+  );
+  const hiddenColumnIds = useMemo(
+    () => hiddenColumnsByScope[columnScope] ?? [],
+    [hiddenColumnsByScope, columnScope],
+  );
+  const hiddenColumnIdSet = useMemo(
+    () => new Set(hiddenColumnIds),
+    [hiddenColumnIds],
+  );
 
   // Extract unique assignees for the member multi-select
   const members = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const item of items) {
+    for (const item of board.items) {
       if (item.assignedTo?.uniqueName) {
         seen.set(item.assignedTo.uniqueName, item.assignedTo.displayName);
       }
@@ -44,11 +96,11 @@ export function BoardView({
     return Array.from(seen.entries())
       .map(([email, displayName]) => ({ email, displayName }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [items]);
+  }, [board.items]);
 
   // Apply filters
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+    return board.items.filter((item) => {
       // Category filter
       if (!categoryFilter.includes(item.category)) return false;
 
@@ -66,37 +118,119 @@ export function BoardView({
 
       return true;
     });
-  }, [items, categoryFilter, memberFilter, user.email]);
+  }, [board.items, categoryFilter, memberFilter, user.email]);
 
-  const columns = useMemo(() => {
-    const todo: BoardWorkItem[] = [];
-    const inProgress: BoardWorkItem[] = [];
-    const done: BoardWorkItem[] = [];
+  const columnsWithItems = useMemo(() => {
+    const columns = [...board.columns].sort(
+      (a, b) => a.order - b.order || a.name.localeCompare(b.name),
+    );
+    const knownColumnIds = new Set(columns.map((column) => column.id));
+    const columnIdsByName = new Map(
+      columns.map((column) => [normalizeColumnName(column.name), column.id]),
+    );
+    const itemsByColumn = new Map<string, BoardWorkItem[]>(
+      columns.map((column) => [column.id, []]),
+    );
 
     for (const item of filteredItems) {
-      switch (item.boardState) {
-        case "todo":
-          todo.push(item);
-          break;
-        case "inProgress":
-          inProgress.push(item);
-          break;
-        case "done":
-          done.push(item);
-          break;
+      const columnId = resolveColumnIdForItem(
+        item,
+        knownColumnIds,
+        columnIdsByName,
+      );
+
+      if (!columnId) {
+        continue;
       }
+
+      itemsByColumn.get(columnId)?.push(item);
     }
 
-    return { todo, inProgress, done };
-  }, [filteredItems]);
+    return columns.map((column) => ({
+      ...column,
+      items: itemsByColumn.get(column.id) ?? [],
+    }));
+  }, [board.columns, filteredItems]);
+
+  const visibleColumns = useMemo(
+    () =>
+      columnsWithItems.filter((column) => !hiddenColumnIdSet.has(column.id)),
+    [columnsWithItems, hiddenColumnIdSet],
+  );
+
+  const toggleColumnVisibility = useCallback(
+    (columnId: string) => {
+      setHiddenColumnsByScope((prev) => {
+        const current = new Set(prev[columnScope] ?? []);
+        if (current.has(columnId)) {
+          current.delete(columnId);
+        } else {
+          current.add(columnId);
+        }
+
+        if (current.size === 0) {
+          const next = { ...prev };
+          delete next[columnScope];
+          return next;
+        }
+
+        return { ...prev, [columnScope]: Array.from(current) };
+      });
+    },
+    [columnScope, setHiddenColumnsByScope],
+  );
+
+  const showAllColumns = useCallback(() => {
+    setHiddenColumnsByScope((prev) => {
+      if (!(columnScope in prev)) {
+        return prev;
+      }
+
+      const next = { ...prev };
+      delete next[columnScope];
+      return next;
+    });
+  }, [columnScope, setHiddenColumnsByScope]);
 
   return (
-    <div className="flex flex-col gap-3">
-      <BoardFilters members={members} />
-      <div className="grid h-[calc(100vh-15rem)] grid-cols-1 gap-4 md:grid-cols-3">
-        <BoardColumn title="To Do" items={columns.todo} organization={organization} project={project} />
-        <BoardColumn title="In Progress" items={columns.inProgress} organization={organization} project={project} />
-        <BoardColumn title="Done" items={columns.done} organization={organization} project={project} />
+    <div className="flex w-full flex-col gap-3">
+      <div className="mx-auto w-full max-w-[110rem] md:w-[95%]">
+        <BoardFilters
+          members={members}
+          columns={columnsWithItems.map((column) => ({
+            id: column.id,
+            name: column.name,
+            count: column.items.length,
+          }))}
+          hiddenColumnIds={hiddenColumnIds}
+          onToggleColumn={toggleColumnVisibility}
+          onShowAllColumns={showAllColumns}
+        />
+      </div>
+      <div className="h-[calc(100vh-15rem)] w-full">
+        {visibleColumns.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-border/40 bg-muted/20">
+            <p className="text-sm text-muted-foreground">
+              All columns are hidden.
+            </p>
+            <Button size="sm" onClick={showAllColumns}>
+              Show all columns
+            </Button>
+          </div>
+        ) : (
+          <div className="flex h-full w-full gap-4 overflow-x-auto pb-2">
+            {visibleColumns.map((column) => (
+              <div key={column.id} className="min-h-0 min-w-[20rem] flex-1">
+                <BoardColumn
+                  title={column.name}
+                  items={column.items}
+                  organization={organization}
+                  project={project}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ use std::fmt::Write;
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{Iteration, WorkItem, WorkItemComment},
+    models::{BoardColumn, BoardColumnAssignment, Iteration, WorkItem, WorkItemComment},
     ports::outbound::WorkItemProvider,
     WorkItemError,
 };
@@ -139,19 +139,40 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .collect())
     }
 
-    async fn get_taskboard_columns(
+    async fn get_board_columns(
         &self,
         iteration_path: Option<&str>,
         team: Option<&str>,
-    ) -> HashMap<String, String> {
-        let result = self.get_taskboard_columns_inner(iteration_path, team).await;
+    ) -> Vec<BoardColumn> {
+        let result = self.get_board_columns_inner(iteration_path, team).await;
+
+        match result {
+            Ok(columns) => columns,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to fetch taskboard column definitions"
+                );
+                vec![]
+            }
+        }
+    }
+
+    async fn get_taskboard_column_assignments(
+        &self,
+        iteration_path: Option<&str>,
+        team: Option<&str>,
+    ) -> HashMap<String, BoardColumnAssignment> {
+        let result = self
+            .get_taskboard_column_assignments_inner(iteration_path, team)
+            .await;
 
         match result {
             Ok(map) => map,
             Err(e) => {
                 tracing::warn!(
                     error = %e,
-                    "Failed to fetch taskboard columns, falling back to state-based mapping"
+                    "Failed to fetch taskboard work item assignments, falling back to state-based mapping"
                 );
                 HashMap::new()
             }
@@ -438,16 +459,40 @@ fn build_llm_markdown(
 }
 
 impl AzureDevOpsWorkItemAdapter {
-    /// Inner implementation for `get_taskboard_columns` that returns a Result,
+    /// Inner implementation for `get_board_columns` that returns a Result,
+    /// allowing the trait method to catch errors and return an empty vector.
+    async fn get_board_columns_inner(
+        &self,
+        _iteration_path: Option<&str>,
+        team: Option<&str>,
+    ) -> Result<Vec<BoardColumn>, WorkItemError> {
+        let team = resolve_team_name(team, self.client.project());
+        let columns = self
+            .client
+            .get_taskboard_columns(&team)
+            .await
+            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+
+        Ok(columns
+            .into_iter()
+            .map(|column| BoardColumn {
+                id: column
+                    .id
+                    .unwrap_or_else(|| synthetic_column_id_from_name(&column.name)),
+                name: column.name,
+                order: column.order,
+            })
+            .collect())
+    }
+
+    /// Inner implementation for `get_taskboard_column_assignments` that returns a Result,
     /// allowing the trait method to catch errors and return an empty map.
-    async fn get_taskboard_columns_inner(
+    async fn get_taskboard_column_assignments_inner(
         &self,
         iteration_path: Option<&str>,
         team: Option<&str>,
-    ) -> Result<HashMap<String, String>, WorkItemError> {
-        let team = team
-            .map(|t| t.to_string())
-            .unwrap_or_else(|| format!("{} Team", self.client.project()));
+    ) -> Result<HashMap<String, BoardColumnAssignment>, WorkItemError> {
+        let team = resolve_team_name(team, self.client.project());
 
         // Use the work API's team iterations (which have GUID IDs)
         // rather than classification nodes (which have numeric IDs).
@@ -489,15 +534,46 @@ impl AzureDevOpsWorkItemAdapter {
             "Looking up taskboard columns"
         );
 
-        let columns = self
+        let assignments = self
             .client
             .get_taskboard_work_item_columns(&team, &iteration.id)
             .await
             .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
 
-        Ok(columns
+        Ok(assignments
             .into_iter()
-            .map(|(id, col)| (id.to_string(), col))
+            .map(|(id, assignment)| {
+                (
+                    id.to_string(),
+                    BoardColumnAssignment {
+                        column_id: assignment.column_id,
+                        column_name: assignment.column_name,
+                    },
+                )
+            })
             .collect())
+    }
+}
+
+fn resolve_team_name(team: Option<&str>, project: &str) -> String {
+    team.map(|t| t.to_string())
+        .unwrap_or_else(|| format!("{project} Team"))
+}
+
+fn synthetic_column_id_from_name(name: &str) -> String {
+    let mut id = String::with_capacity(name.len() + 5);
+    id.push_str("name:");
+    for ch in name.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            id.push(ch.to_ascii_lowercase());
+        } else {
+            id.push('-');
+        }
+    }
+
+    if id == "name:" {
+        "name:unknown".to_string()
+    } else {
+        id
     }
 }

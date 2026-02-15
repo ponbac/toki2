@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{Iteration, WorkItem},
+    models::{BoardData, Iteration},
     WorkItemError,
 };
 
@@ -16,14 +16,12 @@ pub trait WorkItemService: Send + Sync + 'static {
     /// Get all iterations (sprints) for the project.
     async fn get_iterations(&self) -> Result<Vec<Iteration>, WorkItemError>;
 
-    /// Get work items for the board, optionally filtered by iteration and team.
-    ///
-    /// Returns items sorted by board state, then by priority.
-    async fn get_board_items(
+    /// Get board columns and work items, optionally filtered by iteration and team.
+    async fn get_board_data(
         &self,
         iteration_path: Option<&str>,
         team: Option<&str>,
-    ) -> Result<Vec<WorkItem>, WorkItemError>;
+    ) -> Result<BoardData, WorkItemError>;
 
     /// Format a work item with comments as Markdown for LLM consumption.
     ///

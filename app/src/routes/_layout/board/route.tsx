@@ -70,8 +70,8 @@ function BoardPage() {
   }, [organization, project, setLastViewedProject]);
 
   return (
-    <main className="flex w-full items-center justify-center p-4 md:p-8">
-      <div className="flex w-full max-w-[110rem] flex-col gap-4 md:w-[95%]">
+    <main className="flex w-full flex-col gap-4 p-4 md:p-8">
+      <div className="mx-auto flex w-full max-w-[110rem] flex-col gap-4 md:w-[95%]">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold">Board</h1>
@@ -103,33 +103,33 @@ function BoardPage() {
             </Suspense>
           )}
         </div>
-
-        {/* Board content */}
-        {!organization || !project ? (
-          <div className="flex h-[60vh] items-center justify-center">
-            <p className="text-muted-foreground">
-              {projects.length === 0
-                ? "No projects available. Follow some repositories first."
-                : "Select a project to view its board."}
-            </p>
-          </div>
-        ) : (
-          <Suspense
-            fallback={
-              <div className="flex h-[60vh] items-center justify-center">
-                <LoadingSpinner className="size-8" />
-              </div>
-            }
-          >
-            <BoardView
-              organization={organization}
-              project={project}
-              iterationPath={iterationPath}
-              team={team}
-            />
-          </Suspense>
-        )}
       </div>
+
+      {/* Board content */}
+      {!organization || !project ? (
+        <div className="mx-auto flex h-[60vh] w-full max-w-[110rem] items-center justify-center md:w-[95%]">
+          <p className="text-muted-foreground">
+            {projects.length === 0
+              ? "No projects available. Follow some repositories first."
+              : "Select a project to view its board."}
+          </p>
+        </div>
+      ) : (
+        <Suspense
+          fallback={
+            <div className="flex h-[60vh] items-center justify-center">
+              <LoadingSpinner className="size-8" />
+            </div>
+          }
+        >
+          <BoardView
+            organization={organization}
+            project={project}
+            iterationPath={iterationPath}
+            team={team}
+          />
+        </Suspense>
+      )}
     </main>
   );
 }

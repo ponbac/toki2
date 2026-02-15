@@ -10,7 +10,7 @@ use tracing::instrument;
 
 use crate::{
     adapters::inbound::http::{
-        FormatForLlmResponse, IterationResponse, WorkItemProjectResponse, WorkItemResponse,
+        BoardResponse, FormatForLlmResponse, IterationResponse, WorkItemProjectResponse,
     },
     app_state::AppState,
     auth::AuthUser,
@@ -82,17 +82,17 @@ async fn get_board(
     _user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<BoardQuery>,
-) -> Result<Json<Vec<WorkItemResponse>>, ApiError> {
+) -> Result<Json<BoardResponse>, ApiError> {
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
         .await?;
-    let mut items = service
-        .get_board_items(query.iteration_path.as_deref(), query.team.as_deref())
+    let mut board_data = service
+        .get_board_data(query.iteration_path.as_deref(), query.team.as_deref())
         .await?;
-    apply_avatar_overrides_to_work_items(&app_state, &mut items).await?;
+    apply_avatar_overrides_to_work_items(&app_state, &mut board_data.items).await?;
 
-    Ok(Json(items.into_iter().map(Into::into).collect()))
+    Ok(Json(board_data.into()))
 }
 
 #[instrument(name = "GET /work-items/format-for-llm")]

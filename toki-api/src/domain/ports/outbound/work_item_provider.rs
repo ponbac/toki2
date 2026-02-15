@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{Iteration, WorkItem, WorkItemComment},
+    models::{BoardColumn, BoardColumnAssignment, Iteration, WorkItem, WorkItemComment},
     WorkItemError,
 };
 
@@ -34,18 +34,27 @@ pub trait WorkItemProvider: Send + Sync + 'static {
     /// Get full work item details for a batch of IDs.
     async fn get_work_items(&self, ids: &[String]) -> Result<Vec<WorkItem>, WorkItemError>;
 
+    /// Get ordered board columns for the current sprint taskboard.
+    ///
+    /// Returns an empty vector on failure (non-fatal).
+    async fn get_board_columns(
+        &self,
+        iteration_path: Option<&str>,
+        team: Option<&str>,
+    ) -> Vec<BoardColumn>;
+
     /// Get sprint taskboard column assignments for work items in an iteration.
     ///
-    /// Returns a map of work_item_id → column_name (e.g. "Ready for development").
+    /// Returns a map of work_item_id → assigned column data.
     /// This reflects the actual taskboard column, which may differ from `System.State`
     /// when the sprint taskboard is customized.
     ///
     /// Returns an empty map on failure (non-fatal).
-    async fn get_taskboard_columns(
+    async fn get_taskboard_column_assignments(
         &self,
         iteration_path: Option<&str>,
         team: Option<&str>,
-    ) -> HashMap<String, String>;
+    ) -> HashMap<String, BoardColumnAssignment>;
 
     /// Get comments on a work item.
     #[allow(dead_code)]

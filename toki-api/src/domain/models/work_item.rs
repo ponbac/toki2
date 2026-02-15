@@ -11,6 +11,8 @@ pub struct WorkItem {
     pub id: String,
     pub title: String,
     pub board_state: BoardState,
+    pub board_column_id: Option<String>,
+    pub board_column_name: Option<String>,
     pub category: WorkItemCategory,
     /// The original state string from the provider (e.g. "Active", "New").
     pub state_name: String,
@@ -36,7 +38,7 @@ pub struct WorkItem {
 ///
 /// Providers map their specific states (e.g. ADO "Active", GitHub "open")
 /// to one of these three columns in the adapter layer.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 pub enum BoardState {
     Todo,
@@ -56,6 +58,48 @@ impl BoardState {
             _ => Self::InProgress,
         }
     }
+
+    /// Legacy column ID used in fallback mode.
+    pub fn fallback_column_id(self) -> &'static str {
+        match self {
+            Self::Todo => "todo",
+            Self::InProgress => "inProgress",
+            Self::Done => "done",
+        }
+    }
+
+    /// Legacy column display name used in fallback mode.
+    pub fn fallback_column_name(self) -> &'static str {
+        match self {
+            Self::Todo => "To Do",
+            Self::InProgress => "In Progress",
+            Self::Done => "Done",
+        }
+    }
+}
+
+/// A board column in provider-defined display order.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardColumn {
+    pub id: String,
+    pub name: String,
+    pub order: i32,
+}
+
+/// Work item board payload (columns + items).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardData {
+    pub columns: Vec<BoardColumn>,
+    pub items: Vec<WorkItem>,
+}
+
+/// Column assignment for a single work item.
+#[derive(Debug, Clone)]
+pub struct BoardColumnAssignment {
+    pub column_id: Option<String>,
+    pub column_name: String,
 }
 
 /// The category/type of a work item.

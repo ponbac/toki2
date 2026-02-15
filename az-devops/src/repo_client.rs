@@ -427,16 +427,51 @@ impl RepoClient {
         Ok(list.value.into_iter().filter_map(|it| it.path).collect())
     }
 
+    /// Get ordered taskboard column definitions for a given team.
+    pub async fn get_taskboard_columns(
+        &self,
+        team: &str,
+    ) -> Result<Vec<TaskboardColumnDefinition>, RepoClientError> {
+        let response = self
+            .work_client
+            .taskboard_columns_client()
+            .get(&self.organization, &self.project, team)
+            .await?;
+
+        let mut columns = Vec::with_capacity(response.columns.len());
+        for (idx, column) in response.columns.into_iter().enumerate() {
+            let Some(name) = column.name else {
+                continue;
+            };
+            let trimmed_name = name.trim();
+            if trimmed_name.is_empty() {
+                continue;
+            }
+
+            columns.push(TaskboardColumnDefinition {
+                id: column.id.filter(|id| !id.trim().is_empty()),
+                name: trimmed_name.to_string(),
+                order: column.order.unwrap_or((idx as i32) * 10),
+            });
+        }
+
+        columns.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
+
+        debug!("Got {} taskboard columns for team={}", columns.len(), team,);
+
+        Ok(columns)
+    }
+
     /// Get taskboard work item column assignments for a given team and iteration.
     ///
-    /// Returns a map of work_item_id → column_name, e.g. `{3303: "Ready for development"}`.
+    /// Returns a map of work_item_id → assigned column details.
     /// This uses the sprint taskboard API which has per-work-item column assignments
     /// that differ from `System.State` when the taskboard is customized.
     pub async fn get_taskboard_work_item_columns(
         &self,
         team: &str,
         iteration_id: &str,
-    ) -> Result<HashMap<i32, String>, RepoClientError> {
+    ) -> Result<HashMap<i32, TaskboardWorkItemColumnAssignment>, RepoClientError> {
         let items = self
             .work_client
             .taskboard_work_items_client()
@@ -445,8 +480,14 @@ impl RepoClient {
 
         let mut map = HashMap::new();
         for item in items.value {
-            if let (Some(id), Some(column)) = (item.work_item_id, item.column) {
-                map.insert(id, column);
+            if let (Some(id), Some(column_name)) = (item.work_item_id, item.column) {
+                map.insert(
+                    id,
+                    TaskboardWorkItemColumnAssignment {
+                        column_id: item.column_id,
+                        column_name,
+                    },
+                );
             }
         }
 
@@ -467,6 +508,21 @@ pub struct TeamIteration {
     pub id: String,
     pub name: String,
     pub path: String,
+}
+
+/// A taskboard column definition.
+#[derive(Clone, Debug)]
+pub struct TaskboardColumnDefinition {
+    pub id: Option<String>,
+    pub name: String,
+    pub order: i32,
+}
+
+/// Taskboard column assignment for a single work item.
+#[derive(Clone, Debug)]
+pub struct TaskboardWorkItemColumnAssignment {
+    pub column_id: Option<String>,
+    pub column_name: String,
 }
 
 /// Recursively flatten a `WorkItemClassificationNode` tree into a `Vec<Iteration>`.
@@ -827,7 +883,10 @@ mod tests {
 
         println!("=== Taskboard work item columns ===");
         for (id, col) in &columns {
-            println!("  Work item #{id}: {col}");
+            println!(
+                "  Work item #{id}: {} ({:?})",
+                col.column_name, col.column_id
+            );
         }
 
         assert!(!columns.is_empty());

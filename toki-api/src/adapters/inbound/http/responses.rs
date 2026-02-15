@@ -6,9 +6,9 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::domain::models::{
-    ActiveTimer, Activity, AttestLevel, BoardState, Iteration, Project, PullRequestRef, TimeEntry,
-    TimeInfo, TimerHistoryEntry, WorkItem, WorkItemCategory, WorkItemPerson, WorkItemProject,
-    WorkItemRef,
+    ActiveTimer, Activity, AttestLevel, BoardColumn, BoardData, BoardState, Iteration, Project,
+    PullRequestRef, TimeEntry, TimeInfo, TimerHistoryEntry, WorkItem, WorkItemCategory,
+    WorkItemPerson, WorkItemProject, WorkItemRef,
 };
 
 /// Response for the get timer endpoint.
@@ -208,6 +208,8 @@ pub struct WorkItemResponse {
     pub id: String,
     pub title: String,
     pub board_state: BoardState,
+    pub board_column_id: Option<String>,
+    pub board_column_name: Option<String>,
     pub category: WorkItemCategory,
     pub state_name: String,
     pub priority: Option<i32>,
@@ -233,6 +235,8 @@ impl From<WorkItem> for WorkItemResponse {
             id: item.id,
             title: item.title,
             board_state: item.board_state,
+            board_column_id: item.board_column_id,
+            board_column_name: item.board_column_name,
             category: item.category,
             state_name: item.state_name,
             priority: item.priority,
@@ -249,6 +253,42 @@ impl From<WorkItem> for WorkItemResponse {
             url: item.url,
             created_at: item.created_at.format(&format).unwrap_or_default(),
             changed_at: item.changed_at.format(&format).unwrap_or_default(),
+        }
+    }
+}
+
+/// A board column.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardColumnResponse {
+    pub id: String,
+    pub name: String,
+    pub order: i32,
+}
+
+impl From<BoardColumn> for BoardColumnResponse {
+    fn from(column: BoardColumn) -> Self {
+        Self {
+            id: column.id,
+            name: column.name,
+            order: column.order,
+        }
+    }
+}
+
+/// Board response payload (columns + items).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardResponse {
+    pub columns: Vec<BoardColumnResponse>,
+    pub items: Vec<WorkItemResponse>,
+}
+
+impl From<BoardData> for BoardResponse {
+    fn from(board_data: BoardData) -> Self {
+        Self {
+            columns: board_data.columns.into_iter().map(Into::into).collect(),
+            items: board_data.items.into_iter().map(Into::into).collect(),
         }
     }
 }
