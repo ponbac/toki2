@@ -32,22 +32,21 @@ type MoveBoardItemMutationContext = {
 };
 
 function toOptimisticBoardState(columnName: string): BoardWorkItem["boardState"] {
-  const normalized = normalizeColumnName(columnName);
   if (
-    normalized === "new" ||
-    normalized === "proposed" ||
-    normalized === "to do" ||
-    normalized === "approved" ||
-    normalized === "ready for development"
+    columnName === "New" ||
+    columnName === "Proposed" ||
+    columnName === "To Do" ||
+    columnName === "Approved" ||
+    columnName === "Ready for development"
   ) {
     return "todo";
   }
 
   if (
-    normalized === "done" ||
-    normalized === "closed" ||
-    normalized === "completed" ||
-    normalized === "removed"
+    columnName === "Done" ||
+    columnName === "Closed" ||
+    columnName === "Completed" ||
+    columnName === "Removed"
   ) {
     return "done";
   }
