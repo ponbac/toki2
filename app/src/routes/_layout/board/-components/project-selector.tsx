@@ -20,21 +20,24 @@ export function ProjectSelector({
 }) {
   const navigate = useNavigate({ from: Route.fullPath });
 
-  const currentValue =
-    selectedOrg && selectedProject
-      ? `${selectedOrg}/${selectedProject}`
-      : undefined;
+  const selectedIndex = projects.findIndex(
+    (project) =>
+      project.organization === selectedOrg && project.project === selectedProject,
+  );
+  const currentValue = selectedIndex >= 0 ? String(selectedIndex) : "";
 
   return (
     <Select
-      value={currentValue ?? ""}
+      value={currentValue}
       onValueChange={(value) => {
-        const [org, project] = value.split("/");
+        const project = projects[Number(value)];
+        if (!project) return;
+
         navigate({
           search: (prev) => ({
             ...prev,
-            organization: org,
-            project,
+            organization: project.organization,
+            project: project.project,
             // Reset iteration when project changes
             iterationPath: undefined,
           }),
@@ -45,10 +48,10 @@ export function ProjectSelector({
         <SelectValue placeholder="Select a project..." />
       </SelectTrigger>
       <SelectContent>
-        {projects.map((p) => {
-          const key = `${p.organization}/${p.project}`;
+        {projects.map((project, index) => {
+          const key = `${project.organization}/${project.project}`;
           return (
-            <SelectItem key={key} value={key}>
+            <SelectItem key={key} value={String(index)}>
               {key}
             </SelectItem>
           );

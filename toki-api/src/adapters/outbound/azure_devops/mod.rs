@@ -591,11 +591,30 @@ impl AzureDevOpsWorkItemAdapter {
                     .into_iter()
                     .find(|it| normalize_iteration_path(&it.path) == normalized)
             }
-            None => iterations.into_iter().last(),
+            None => {
+                let current_paths: HashSet<String> = self
+                    .client
+                    .get_current_team_iteration_paths(team)
+                    .await
+                    .map_err(|e| WorkItemError::ProviderError(e.to_string()))?
+                    .into_iter()
+                    .map(|path| normalize_iteration_path(&path))
+                    .collect();
+
+                iterations.into_iter().find(|it| {
+                    let normalized = normalize_iteration_path(&it.path);
+                    current_paths.contains(&normalized)
+                })
+            }
         };
 
-        iteration.ok_or_else(|| {
-            WorkItemError::ProviderError("No matching iteration found for taskboard lookup".into())
+        iteration.ok_or_else(|| match iteration_path {
+            Some(path) => WorkItemError::ProviderError(format!(
+                "No matching iteration found for taskboard lookup (path: {path})"
+            )),
+            None => WorkItemError::ProviderError(
+                "No current team iteration found for taskboard lookup".into(),
+            ),
         })
     }
 }

@@ -240,6 +240,19 @@ fn normalize_email(email: &str) -> Option<String> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
+
+pub fn router() -> Router<AppState> {
+    Router::new()
+        .route("/projects", get(get_projects))
+        .route("/iterations", get(get_iterations))
+        .route("/board", get(get_board))
+        .route("/format-for-llm", get(format_for_llm))
+        .route("/move", post(move_work_item))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -278,17 +291,4 @@ mod tests {
             Some("https://custom.example.com/avatar.png")
         );
     }
-}
-
-// ---------------------------------------------------------------------------
-// Router
-// ---------------------------------------------------------------------------
-
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/projects", get(get_projects))
-        .route("/iterations", get(get_iterations))
-        .route("/board", get(get_board))
-        .route("/format-for-llm", get(format_for_llm))
-        .route("/move", post(move_work_item))
 }
