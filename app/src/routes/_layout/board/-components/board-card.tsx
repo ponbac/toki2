@@ -4,6 +4,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import { CopyWorkItem } from "./copy-work-item";
 import { GitPullRequest, GitBranch, Check, ExternalLink } from "lucide-react";
@@ -64,6 +65,7 @@ export function BoardCard({
   };
   const categoryLabel = CATEGORY_LABELS[item.category] ?? item.category;
   const priority = item.priority != null ? PRIORITY_INDICATORS[item.priority] : null;
+  const isPriorityOne = item.priority === 1;
   const branchName = `feature/${item.id}-${slugify(item.title)}`;
 
   const [branchCopied, setBranchCopied] = useState(false);
@@ -78,7 +80,16 @@ export function BoardCard({
   );
 
   return (
-    <div className="group rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm">
+    <div
+      className={cn(
+        "group relative rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm",
+        isPriorityOne && "bg-red-500/[0.06]",
+      )}
+    >
+      {isPriorityOne && (
+        <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-red-300/90 to-transparent" />
+      )}
+
       {/* Top row: type badge + id + actions */}
       <div className="mb-1.5 flex items-center gap-2">
         <span
@@ -86,6 +97,25 @@ export function BoardCard({
         >
           {categoryLabel}
         </span>
+
+        {item.tags.length > 0 && (
+          <div className="flex items-center gap-1">
+            {item.tags.slice(0, 2).map((tag) => (
+              <span
+                key={tag}
+                className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+            {item.tags.length > 2 && (
+              <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                +{item.tags.length - 2}
+              </span>
+            )}
+          </div>
+        )}
+
         <a
           href={item.url}
           target="_blank"
@@ -183,30 +213,18 @@ export function BoardCard({
         )}
 
         {priority && (
-          <span className={`text-xs ${priority.className}`}>
+          <span
+            className={cn(
+              "text-xs",
+              priority.className,
+              isPriorityOne &&
+                "rounded-full border border-red-400/50 bg-red-500/10 px-1.5 py-0.5",
+            )}
+          >
             {priority.label}
           </span>
         )}
       </div>
-
-      {/* Tags */}
-      {item.tags.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {item.tags.slice(0, 3).map((tag) => (
-            <span
-              key={tag}
-              className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground"
-            >
-              {tag}
-            </span>
-          ))}
-          {item.tags.length > 3 && (
-            <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              +{item.tags.length - 3}
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }
