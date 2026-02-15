@@ -8,7 +8,7 @@ import {
 } from "@/lib/board-columns";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
   boardColumnScopeKey,
@@ -150,10 +150,10 @@ export function BoardView({
     () => columnsWithItems.map((column) => ({ id: column.id, name: column.name })),
     [columnsWithItems],
   );
-  const boardItemsById = useMemo(
-    () => new Map(board.items.map((item) => [item.id, item])),
-    [board.items],
-  );
+  const allColumnsRef = useRef(allColumns);
+  useEffect(() => {
+    allColumnsRef.current = allColumns;
+  }, [allColumns]);
 
   const visibleColumns = useMemo(
     () =>
@@ -205,9 +205,10 @@ export function BoardView({
         return;
       }
 
-      const currentItem = boardItemsById.get(itemId);
-      const targetColumn = allColumns.find((column) => column.id === targetColumnId);
-      if (!currentItem || !targetColumn) {
+      const targetColumn = allColumnsRef.current.find(
+        (column) => column.id === targetColumnId,
+      );
+      if (!targetColumn) {
         return;
       }
 
@@ -233,8 +234,6 @@ export function BoardView({
       }
     },
     [
-      allColumns,
-      boardItemsById,
       iterationPath,
       moveBoardItem,
       organization,

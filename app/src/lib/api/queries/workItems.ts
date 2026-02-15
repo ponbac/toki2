@@ -107,7 +107,6 @@ export const workItemsQueries = {
             ),
           })
           .json<BoardResponse>(),
-      enabled: !!params.organization && !!params.project,
     }),
   formatForLlm: (params: {
     organization: string;
