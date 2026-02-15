@@ -104,7 +104,7 @@ pub struct BoardColumnAssignment {
 
 /// The category/type of a work item.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(from = "String", into = "String")]
 pub enum WorkItemCategory {
     UserStory,
     Bug,
@@ -112,6 +112,32 @@ pub enum WorkItemCategory {
     Feature,
     Epic,
     Other(String),
+}
+
+impl From<WorkItemCategory> for String {
+    fn from(value: WorkItemCategory) -> Self {
+        match value {
+            WorkItemCategory::UserStory => "userStory".to_string(),
+            WorkItemCategory::Bug => "bug".to_string(),
+            WorkItemCategory::Task => "task".to_string(),
+            WorkItemCategory::Feature => "feature".to_string(),
+            WorkItemCategory::Epic => "epic".to_string(),
+            WorkItemCategory::Other(other) => other,
+        }
+    }
+}
+
+impl From<String> for WorkItemCategory {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "userStory" | "User Story" | "UserStory" => Self::UserStory,
+            "bug" | "Bug" => Self::Bug,
+            "task" | "Task" => Self::Task,
+            "feature" | "Feature" => Self::Feature,
+            "epic" | "Epic" => Self::Epic,
+            _ => Self::Other(value),
+        }
+    }
 }
 
 impl std::fmt::Display for WorkItemCategory {
@@ -186,4 +212,34 @@ pub struct WorkItemComment {
 pub struct WorkItemProject {
     pub organization: String,
     pub project: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WorkItemCategory;
+
+    #[test]
+    fn work_item_category_serializes_known_variant_as_string() {
+        let category = WorkItemCategory::UserStory;
+        let json = serde_json::to_string(&category).expect("serialize category");
+        assert_eq!(json, "\"userStory\"");
+    }
+
+    #[test]
+    fn work_item_category_serializes_other_variant_as_plain_string() {
+        let category = WorkItemCategory::Other("Issue".to_string());
+        let json = serde_json::to_string(&category).expect("serialize category");
+        assert_eq!(json, "\"Issue\"");
+    }
+
+    #[test]
+    fn work_item_category_deserializes_known_and_other_values() {
+        let known: WorkItemCategory =
+            serde_json::from_str("\"task\"").expect("deserialize known category");
+        let other: WorkItemCategory =
+            serde_json::from_str("\"Issue\"").expect("deserialize other category");
+
+        assert_eq!(known, WorkItemCategory::Task);
+        assert_eq!(other, WorkItemCategory::Other("Issue".to_string()));
+    }
 }

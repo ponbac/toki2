@@ -15,7 +15,6 @@ import { Route as LoginImport } from "./routes/login"
 import { Route as LayoutRouteImport } from "./routes/_layout/route"
 import { Route as LayoutIndexImport } from "./routes/_layout/index"
 import { Route as LayoutMilltimeImport } from "./routes/_layout/milltime"
-import { Route as LayoutErrorTestImport } from "./routes/_layout/error-test"
 import { Route as LayoutRepositoriesRouteImport } from "./routes/_layout/repositories/route"
 import { Route as LayoutPrsRouteImport } from "./routes/_layout/prs/route"
 import { Route as LayoutBoardRouteImport } from "./routes/_layout/board/route"
@@ -46,12 +45,6 @@ const LayoutIndexRoute = LayoutIndexImport.update({
 const LayoutMilltimeRoute = LayoutMilltimeImport.update({
   id: "/milltime",
   path: "/milltime",
-  getParentRoute: () => LayoutRouteRoute,
-} as any)
-
-const LayoutErrorTestRoute = LayoutErrorTestImport.update({
-  id: "/error-test",
-  path: "/error-test",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
@@ -139,13 +132,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutRepositoriesRouteImport
       parentRoute: typeof LayoutRouteImport
     }
-    "/_layout/error-test": {
-      id: "/_layout/error-test"
-      path: "/error-test"
-      fullPath: "/error-test"
-      preLoaderRoute: typeof LayoutErrorTestImport
-      parentRoute: typeof LayoutRouteImport
-    }
     "/_layout/milltime": {
       id: "/_layout/milltime"
       path: "/milltime"
@@ -226,7 +212,6 @@ interface LayoutRouteRouteChildren {
   LayoutBoardRouteRoute: typeof LayoutBoardRouteRoute
   LayoutPrsRouteRoute: typeof LayoutPrsRouteRouteWithChildren
   LayoutRepositoriesRouteRoute: typeof LayoutRepositoriesRouteRouteWithChildren
-  LayoutErrorTestRoute: typeof LayoutErrorTestRoute
   LayoutMilltimeRoute: typeof LayoutMilltimeRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutTimeTrackingIndexRoute: typeof LayoutTimeTrackingIndexRoute
@@ -236,7 +221,6 @@ const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutBoardRouteRoute: LayoutBoardRouteRoute,
   LayoutPrsRouteRoute: LayoutPrsRouteRouteWithChildren,
   LayoutRepositoriesRouteRoute: LayoutRepositoriesRouteRouteWithChildren,
-  LayoutErrorTestRoute: LayoutErrorTestRoute,
   LayoutMilltimeRoute: LayoutMilltimeRoute,
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutTimeTrackingIndexRoute: LayoutTimeTrackingIndexRoute,
@@ -252,7 +236,6 @@ export interface FileRoutesByFullPath {
   "/board": typeof LayoutBoardRouteRoute
   "/prs": typeof LayoutPrsRouteRouteWithChildren
   "/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
-  "/error-test": typeof LayoutErrorTestRoute
   "/milltime": typeof LayoutMilltimeRoute
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
@@ -266,7 +249,6 @@ export interface FileRoutesByTo {
   "/board": typeof LayoutBoardRouteRoute
   "/prs": typeof LayoutPrsRouteRouteWithChildren
   "/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
-  "/error-test": typeof LayoutErrorTestRoute
   "/milltime": typeof LayoutMilltimeRoute
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
@@ -282,7 +264,6 @@ export interface FileRoutesById {
   "/_layout/board": typeof LayoutBoardRouteRoute
   "/_layout/prs": typeof LayoutPrsRouteRouteWithChildren
   "/_layout/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
-  "/_layout/error-test": typeof LayoutErrorTestRoute
   "/_layout/milltime": typeof LayoutMilltimeRoute
   "/_layout/": typeof LayoutIndexRoute
   "/_layout/prs/$prId": typeof LayoutPrsPrIdRouteRoute
@@ -299,7 +280,6 @@ export interface FileRouteTypes {
     | "/board"
     | "/prs"
     | "/repositories"
-    | "/error-test"
     | "/milltime"
     | "/"
     | "/prs/$prId"
@@ -312,7 +292,6 @@ export interface FileRouteTypes {
     | "/board"
     | "/prs"
     | "/repositories"
-    | "/error-test"
     | "/milltime"
     | "/"
     | "/prs/$prId"
@@ -326,7 +305,6 @@ export interface FileRouteTypes {
     | "/_layout/board"
     | "/_layout/prs"
     | "/_layout/repositories"
-    | "/_layout/error-test"
     | "/_layout/milltime"
     | "/_layout/"
     | "/_layout/prs/$prId"
@@ -366,7 +344,6 @@ export const routeTree = rootRoute
         "/_layout/board",
         "/_layout/prs",
         "/_layout/repositories",
-        "/_layout/error-test",
         "/_layout/milltime",
         "/_layout/",
         "/_layout/time-tracking/"
@@ -393,10 +370,6 @@ export const routeTree = rootRoute
         "/_layout/repositories/add",
         "/_layout/repositories/notifications/$repoId"
       ]
-    },
-    "/_layout/error-test": {
-      "filePath": "_layout/error-test.tsx",
-      "parent": "/_layout"
     },
     "/_layout/milltime": {
       "filePath": "_layout/milltime.tsx",

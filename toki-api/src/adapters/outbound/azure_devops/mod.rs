@@ -83,12 +83,14 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             Some(path) => {
                 let path = path.strip_prefix('\\').unwrap_or(path);
                 let path = path.replacen("\\Iteration\\", "\\", 1);
+                // WIQL uses single-quoted string literals, so escape user-provided single quotes.
+                let escaped_path = path.replace('\'', "''");
                 format!(
                     "SELECT [System.Id] FROM WorkItems \
                      WHERE [System.TeamProject] = @project \
                      AND [System.IterationPath] UNDER '{}' \
                      ORDER BY [Microsoft.VSTS.Common.Priority] asc",
-                    path
+                    escaped_path
                 )
             }
             None => {

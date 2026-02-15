@@ -2,9 +2,13 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
 import { mutations } from "@/lib/api/mutations/mutations";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
+import {
+  normalizeColumnName,
+  resolveColumnIdForItem,
+} from "@/lib/board-columns";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
   boardColumnScopeKey,
@@ -20,39 +24,13 @@ type DragState = {
   sourceColumnId: string;
 };
 
-function normalizeColumnName(name: string) {
-  return name.trim().toLowerCase();
-}
-
-function resolveColumnIdForItem(
-  item: BoardWorkItem,
-  knownColumnIds: Set<string>,
-  columnIdsByName: Map<string, string>,
-) {
-  if (item.boardColumnId && knownColumnIds.has(item.boardColumnId)) {
-    return item.boardColumnId;
-  }
-
-  if (item.boardColumnName) {
-    const byName = columnIdsByName.get(normalizeColumnName(item.boardColumnName));
-    if (byName) {
-      return byName;
-    }
-  }
-
-  const fallbackIdByState: Record<BoardWorkItem["boardState"], string> = {
-    todo: "todo",
-    inProgress: "inProgress",
-    done: "done",
-  };
-
-  const fallbackColumnId = fallbackIdByState[item.boardState];
-  if (knownColumnIds.has(fallbackColumnId)) {
-    return fallbackColumnId;
-  }
-
-  return undefined;
-}
+const TOGGLEABLE_CATEGORIES = new Set([
+  "userStory",
+  "bug",
+  "task",
+  "feature",
+  "epic",
+]);
 
 export function BoardView({
   organization,
@@ -78,6 +56,7 @@ export function BoardView({
   const memberFilter = useAtomValue(memberFilterAtom);
   const categoryFilter = useAtomValue(categoryFilterAtom);
   const [movingItemIds, setMovingItemIds] = useState<string[]>([]);
+  const movingItemIdsRef = useRef(new Set<string>());
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
   const [hiddenColumnsByScope, setHiddenColumnsByScope] = useAtom(
@@ -117,7 +96,8 @@ export function BoardView({
   const filteredItems = useMemo(() => {
     return board.items.filter((item) => {
       // Category filter
-      if (!categoryFilter.includes(item.category)) return false;
+      const categoryHasToggle = TOGGLEABLE_CATEGORIES.has(item.category);
+      if (categoryHasToggle && !categoryFilter.includes(item.category)) return false;
 
       // Member filter
       if (memberFilter.mode === "mine") {
@@ -221,7 +201,7 @@ export function BoardView({
         return;
       }
 
-      if (movingItemIdSet.has(itemId)) {
+      if (movingItemIdsRef.current.has(itemId)) {
         return;
       }
 
@@ -231,6 +211,7 @@ export function BoardView({
         return;
       }
 
+      movingItemIdsRef.current.add(itemId);
       setMovingItemIds((prev) =>
         prev.includes(itemId) ? prev : [...prev, itemId],
       );
@@ -247,6 +228,7 @@ export function BoardView({
       } catch {
         toast.error("Failed to move work item.");
       } finally {
+        movingItemIdsRef.current.delete(itemId);
         setMovingItemIds((prev) => prev.filter((id) => id !== itemId));
       }
     },
@@ -255,7 +237,6 @@ export function BoardView({
       boardItemsById,
       iterationPath,
       moveBoardItem,
-      movingItemIdSet,
       organization,
       project,
       team,
@@ -264,13 +245,13 @@ export function BoardView({
 
   const handleCardDragStart = useCallback(
     (itemId: string, sourceColumnId: string) => {
-      if (movingItemIdSet.has(itemId)) {
+      if (movingItemIdsRef.current.has(itemId)) {
         return;
       }
       setDragState({ itemId, sourceColumnId });
       setDragOverColumnId(sourceColumnId);
     },
-    [movingItemIdSet],
+    [],
   );
 
   const handleCardDragEnd = useCallback(() => {

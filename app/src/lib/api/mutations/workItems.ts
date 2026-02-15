@@ -2,6 +2,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api";
 import {
+  normalizeColumnName,
+  resolveColumnIdForItem,
+} from "@/lib/board-columns";
+import {
   type BoardColumn,
   type BoardResponse,
   type BoardWorkItem,
@@ -26,40 +30,6 @@ type MoveBoardItemMutationContext = {
   boardQueryKey: readonly unknown[];
   previousBoard?: BoardResponse;
 };
-
-function normalizeColumnName(name: string) {
-  return name.trim().toLowerCase();
-}
-
-function resolveColumnIdForItem(
-  item: BoardWorkItem,
-  knownColumnIds: Set<string>,
-  columnIdsByName: Map<string, string>,
-) {
-  if (item.boardColumnId && knownColumnIds.has(item.boardColumnId)) {
-    return item.boardColumnId;
-  }
-
-  if (item.boardColumnName) {
-    const byName = columnIdsByName.get(normalizeColumnName(item.boardColumnName));
-    if (byName) {
-      return byName;
-    }
-  }
-
-  const fallbackIdByState: Record<BoardWorkItem["boardState"], string> = {
-    todo: "todo",
-    inProgress: "inProgress",
-    done: "done",
-  };
-
-  const fallbackColumnId = fallbackIdByState[item.boardState];
-  if (knownColumnIds.has(fallbackColumnId)) {
-    return fallbackColumnId;
-  }
-
-  return undefined;
-}
 
 function toOptimisticBoardState(columnName: string): BoardWorkItem["boardState"] {
   const normalized = normalizeColumnName(columnName);
