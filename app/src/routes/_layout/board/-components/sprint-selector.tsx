@@ -27,14 +27,11 @@ function getEffectiveFinishTimeMs(finishDate: string): number {
 function isCurrentIteration(iteration: Iteration, nowMs: number): boolean {
   if (iteration.isCurrent) return true;
 
-  if (!iteration.startDate && !iteration.finishDate) return false;
+  // Match backend semantics: date-range fallback is only valid when both dates exist.
+  if (!iteration.startDate || !iteration.finishDate) return false;
 
-  const startMs = iteration.startDate
-    ? new Date(iteration.startDate).getTime()
-    : Number.NEGATIVE_INFINITY;
-  const finishMs = iteration.finishDate
-    ? getEffectiveFinishTimeMs(iteration.finishDate)
-    : Number.POSITIVE_INFINITY;
+  const startMs = new Date(iteration.startDate).getTime();
+  const finishMs = getEffectiveFinishTimeMs(iteration.finishDate);
 
   return nowMs >= startMs && nowMs <= finishMs;
 }
