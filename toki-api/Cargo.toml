@@ -16,7 +16,7 @@ serde_with = "3.4.0"
 tokio = { version = "1.35.1", features = ["full"] }
 time = { version = "0.3.47", features = ["serde", "parsing"] }
 chrono = { version = "0.4.38", features = ["serde"] }
-axum = { version = "0.7.3", features = ["ws", "macros"] }
+axum = { version = "0.7.3", features = ["ws", "macros", "multipart"] }
 axum-extra = { version = "0.9.1", features = ["typed-header", "cookie"] }
 config = "0.14.0"
 tracing = { version = "0.1.40", features = ["attributes"] }
@@ -53,3 +53,5 @@ base64 = "0.22.1"
 strum_macros = "0.26.4"
 tower-sessions-moka-store = "0.14"
 tower-sessions-sqlx-store = { version = "0.14.2", features = ["postgres"] }
+image = { version = "0.25.9", features = ["jpeg", "png"] }
+webp = "0.3.1"

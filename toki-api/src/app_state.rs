@@ -17,8 +17,8 @@ use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 use crate::{
     adapters::inbound::http::TimeTrackingServiceFactory,
     domain::{
-        CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
-        RepoDifferMessage, RepoKey,
+        ports::inbound::AvatarService, CachedIdentities, NotificationHandler, PullRequest,
+        RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey,
     },
     repositories::{
         NotificationRepositoryImpl, PushSubscriptionRepositoryImpl, RepoRepositoryImpl,
@@ -57,6 +57,7 @@ pub struct AppState {
     pub push_subscriptions_repo: Arc<PushSubscriptionRepositoryImpl>,
     pub notification_repo: Arc<NotificationRepositoryImpl>,
     pub time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
+    pub avatar_service: Arc<dyn AvatarService>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
@@ -72,6 +73,7 @@ impl AppState {
         db_pool: PgPool,
         repo_configs: Vec<RepoConfig>,
         time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
+        avatar_service: Arc<dyn AvatarService>,
     ) -> Self {
         let client_futures = repo_configs
             .into_iter()
@@ -134,6 +136,7 @@ impl AppState {
             push_subscriptions_repo: Arc::new(PushSubscriptionRepositoryImpl::new(db_pool.clone())),
             notification_repo: Arc::new(NotificationRepositoryImpl::new(db_pool.clone())),
             time_tracking_factory,
+            avatar_service,
             repo_clients: Arc::new(RwLock::new(clients)),
             differ_txs: Arc::new(Mutex::new(differ_txs)),
             differs: Arc::new(RwLock::new(differs)),

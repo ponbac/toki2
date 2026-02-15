@@ -37,6 +37,7 @@ export type ListPullRequest = {
   approvedBy: Reviewer[];
   waitingForUserReview: boolean;
   reviewRequired: boolean;
+  avatarOverrides: AvatarOverride[];
 };
 
 export type PullRequest = {
@@ -71,6 +72,11 @@ export type User = {
   id: string;
   displayName: string;
   uniqueName: string;
+  avatarUrl: string;
+};
+
+export type AvatarOverride = {
+  email: string;
   avatarUrl: string;
 };
 
