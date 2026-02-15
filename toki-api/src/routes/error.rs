@@ -20,9 +20,9 @@ struct ErrorBody {
 }
 
 use crate::{
-    adapters::inbound::http::TimeTrackingServiceError,
+    adapters::inbound::http::{TimeTrackingServiceError, WorkItemServiceError},
     app_state::AppStateError,
-    domain::{AvatarError, TimeTrackingError},
+    domain::{AvatarError, TimeTrackingError, WorkItemError},
     repositories::RepositoryError,
 };
 
@@ -154,5 +154,19 @@ impl From<AvatarError> for ApiError {
                 Self::internal("avatar operation failed")
             }
         }
+    }
+}
+
+impl From<WorkItemError> for ApiError {
+    fn from(err: WorkItemError) -> Self {
+        match err {
+            WorkItemError::ProviderError(_) => Self::internal(err.to_string()),
+        }
+    }
+}
+
+impl From<WorkItemServiceError> for ApiError {
+    fn from(err: WorkItemServiceError) -> Self {
+        Self::new(err.status, err.message)
     }
 }

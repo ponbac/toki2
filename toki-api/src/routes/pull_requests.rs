@@ -15,7 +15,7 @@ use tracing::instrument;
 
 use crate::{
     app_state::AppStateError,
-    auth::AuthSession,
+    auth::AuthUser,
     domain::{models::AvatarOverride, PullRequest, RepoKey},
     repositories::UserRepository,
     AppState,
@@ -46,7 +46,7 @@ impl From<&OpenPullRequestsQuery> for RepoKey {
     }
 }
 
-#[instrument(name = "GET /pull-requests", skip(app_state))]
+#[instrument(name = "GET /pull-requests")]
 async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
@@ -79,16 +79,16 @@ async fn open_pull_requests(
     Ok(Json(pull_requests))
 }
 
-#[instrument(name = "GET /cached-pull-requests", skip(auth_session, app_state))]
+#[instrument(name = "GET /cached-pull-requests")]
 async fn cached_pull_requests(
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<PullRequest>>, ApiError> {
-    let followed_prs = get_followed_pull_requests(&auth_session, &app_state).await?;
+    let followed_prs = get_followed_pull_requests(&app_state, &user).await?;
     Ok(Json(followed_prs))
 }
 
-#[instrument(name = "GET /most-recent-commits", skip(app_state))]
+#[instrument(name = "GET /most-recent-commits")]
 async fn most_recent_commits(
     State(app_state): State<AppState>,
     Query(query): Query<RepoKey>,
@@ -119,6 +119,7 @@ struct ListPullRequest {
     organization: String,
     project: String,
     repo_name: String,
+    url: String,
     id: i32,
     title: String,
     created_by: az_devops::Identity,
@@ -147,6 +148,7 @@ impl ListPullRequest {
             organization: pr.organization,
             project: pr.project,
             repo_name: pr.repo_name,
+            url: pr.url,
             id: pr.pull_request_base.id,
             title: pr.pull_request_base.title,
             created_by: pr.pull_request_base.created_by,
@@ -167,19 +169,17 @@ impl ListPullRequest {
     }
 }
 
-#[instrument(name = "GET /pull-requests/list", skip(auth_session, app_state))]
+#[instrument(name = "GET /pull-requests/list")]
 async fn list_pull_requests(
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<ListPullRequest>>, ApiError> {
-    let mut followed_prs = get_followed_pull_requests(&auth_session, &app_state).await?;
+    let mut followed_prs = get_followed_pull_requests(&app_state, &user).await?;
     followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
 
     let mut list_prs = followed_prs
         .into_iter()
-        .map(|pr| {
-            ListPullRequest::from_pull_request(pr, &auth_session.user.as_ref().unwrap().email)
-        })
+        .map(|pr| ListPullRequest::from_pull_request(pr, &user.email))
         .collect::<Vec<_>>();
 
     enrich_avatar_overrides(&app_state, &mut list_prs).await?;
@@ -191,12 +191,11 @@ async fn list_pull_requests(
 ///
 /// This function will fetch the cached pull requests from the cache and replace the mentions in the threads with names instead of ids.
 async fn get_followed_pull_requests(
-    auth_session: &AuthSession,
     app_state: &AppState,
+    user: &AuthUser,
 ) -> Result<Vec<PullRequest>, ApiError> {
-    let user_id = auth_session.user.as_ref().expect("user not found").id;
     let user_repo = app_state.user_repo.clone();
-    let followed_repos = user_repo.followed_repositories(&user_id).await?;
+    let followed_repos = user_repo.followed_repositories(user.id.as_ref()).await?;
 
     let mut followed_prs = vec![];
     for repo_key in &followed_repos {

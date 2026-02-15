@@ -17,6 +17,7 @@ import { Route as LayoutIndexImport } from "./routes/_layout/index"
 import { Route as LayoutMilltimeImport } from "./routes/_layout/milltime"
 import { Route as LayoutRepositoriesRouteImport } from "./routes/_layout/repositories/route"
 import { Route as LayoutPrsRouteImport } from "./routes/_layout/prs/route"
+import { Route as LayoutBoardRouteImport } from "./routes/_layout/board/route"
 import { Route as LayoutTimeTrackingIndexImport } from "./routes/_layout/time-tracking/index"
 import { Route as LayoutRepositoriesAddRouteImport } from "./routes/_layout/repositories/add/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
@@ -56,6 +57,12 @@ const LayoutRepositoriesRouteRoute = LayoutRepositoriesRouteImport.update({
 const LayoutPrsRouteRoute = LayoutPrsRouteImport.update({
   id: "/prs",
   path: "/prs",
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
+
+const LayoutBoardRouteRoute = LayoutBoardRouteImport.update({
+  id: "/board",
+  path: "/board",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
@@ -103,6 +110,13 @@ declare module "@tanstack/react-router" {
       fullPath: "/login"
       preLoaderRoute: typeof LoginImport
       parentRoute: typeof rootRoute
+    }
+    "/_layout/board": {
+      id: "/_layout/board"
+      path: "/board"
+      fullPath: "/board"
+      preLoaderRoute: typeof LayoutBoardRouteImport
+      parentRoute: typeof LayoutRouteImport
     }
     "/_layout/prs": {
       id: "/_layout/prs"
@@ -195,6 +209,7 @@ const LayoutRepositoriesRouteRouteWithChildren =
   )
 
 interface LayoutRouteRouteChildren {
+  LayoutBoardRouteRoute: typeof LayoutBoardRouteRoute
   LayoutPrsRouteRoute: typeof LayoutPrsRouteRouteWithChildren
   LayoutRepositoriesRouteRoute: typeof LayoutRepositoriesRouteRouteWithChildren
   LayoutMilltimeRoute: typeof LayoutMilltimeRoute
@@ -203,6 +218,7 @@ interface LayoutRouteRouteChildren {
 }
 
 const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
+  LayoutBoardRouteRoute: LayoutBoardRouteRoute,
   LayoutPrsRouteRoute: LayoutPrsRouteRouteWithChildren,
   LayoutRepositoriesRouteRoute: LayoutRepositoriesRouteRouteWithChildren,
   LayoutMilltimeRoute: LayoutMilltimeRoute,
@@ -217,6 +233,7 @@ const LayoutRouteRouteWithChildren = LayoutRouteRoute._addFileChildren(
 export interface FileRoutesByFullPath {
   "": typeof LayoutRouteRouteWithChildren
   "/login": typeof LoginRoute
+  "/board": typeof LayoutBoardRouteRoute
   "/prs": typeof LayoutPrsRouteRouteWithChildren
   "/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
   "/milltime": typeof LayoutMilltimeRoute
@@ -229,6 +246,7 @@ export interface FileRoutesByFullPath {
 
 export interface FileRoutesByTo {
   "/login": typeof LoginRoute
+  "/board": typeof LayoutBoardRouteRoute
   "/prs": typeof LayoutPrsRouteRouteWithChildren
   "/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
   "/milltime": typeof LayoutMilltimeRoute
@@ -243,6 +261,7 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   "/_layout": typeof LayoutRouteRouteWithChildren
   "/login": typeof LoginRoute
+  "/_layout/board": typeof LayoutBoardRouteRoute
   "/_layout/prs": typeof LayoutPrsRouteRouteWithChildren
   "/_layout/repositories": typeof LayoutRepositoriesRouteRouteWithChildren
   "/_layout/milltime": typeof LayoutMilltimeRoute
@@ -258,6 +277,7 @@ export interface FileRouteTypes {
   fullPaths:
     | ""
     | "/login"
+    | "/board"
     | "/prs"
     | "/repositories"
     | "/milltime"
@@ -269,6 +289,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/login"
+    | "/board"
     | "/prs"
     | "/repositories"
     | "/milltime"
@@ -281,6 +302,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/_layout"
     | "/login"
+    | "/_layout/board"
     | "/_layout/prs"
     | "/_layout/repositories"
     | "/_layout/milltime"
@@ -319,6 +341,7 @@ export const routeTree = rootRoute
     "/_layout": {
       "filePath": "_layout/route.tsx",
       "children": [
+        "/_layout/board",
         "/_layout/prs",
         "/_layout/repositories",
         "/_layout/milltime",
@@ -328,6 +351,10 @@ export const routeTree = rootRoute
     },
     "/login": {
       "filePath": "login.tsx"
+    },
+    "/_layout/board": {
+      "filePath": "_layout/board/route.tsx",
+      "parent": "/_layout"
     },
     "/_layout/prs": {
       "filePath": "_layout/prs/route.tsx",

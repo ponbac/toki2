@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
 use crate::{
-    auth::{AuthBackend, AuthSession},
+    auth::{AuthBackend, AuthUser},
     domain::{RepoDifferMessage, RepoKey, Repository, Role},
     repositories::{NewRepository, RepoRepository, UserRepository},
     AppState,
@@ -29,7 +29,7 @@ pub fn router() -> Router<AppState> {
         .route("/follow", post(follow_repository))
 }
 
-#[instrument(name = "GET /repositories", skip(app_state))]
+#[instrument(name = "GET /repositories")]
 async fn get_repositories(State(app_state): State<AppState>) -> Json<Vec<Repository>> {
     let repository_repo = app_state.repository_repo.clone();
     let repos = repository_repo
@@ -49,19 +49,17 @@ struct FollowRepositoryBody {
     follow: bool,
 }
 
-#[instrument(name = "POST /repositories/follow", skip(auth_session, app_state))]
+#[instrument(name = "POST /repositories/follow")]
 async fn follow_repository(
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<FollowRepositoryBody>,
 ) -> Result<Json<()>, ApiError> {
-    let user_id = auth_session.user.expect("user not found").id;
-
     let repo_key = RepoKey::new(&body.organization, &body.project, &body.repo_name);
     let user_repo = app_state.user_repo.clone();
 
     user_repo
-        .follow_repository(user_id, &repo_key, body.follow)
+        .follow_repository(user.id.as_i32(), &repo_key, body.follow)
         .await?;
 
     Ok(Json(()))
@@ -89,7 +87,7 @@ struct AddRepositoryResponse {
 
 #[instrument(
     name = "POST /repositories",
-    skip(app_state, body),
+    skip(body),
     fields(
         organization = %body.organization,
         project = %body.project,
@@ -142,7 +140,7 @@ struct DeleteRepositoryBody {
     repo_name: String,
 }
 
-#[instrument(name = "DELETE /repositories", skip(app_state))]
+#[instrument(name = "DELETE /repositories")]
 async fn delete_repository(
     State(app_state): State<AppState>,
     Json(body): Json<DeleteRepositoryBody>,

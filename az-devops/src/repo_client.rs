@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use azure_devops_rust_api::{
@@ -6,13 +6,19 @@ use azure_devops_rust_api::{
     graph::{self, models::GraphUser},
     wit::{
         self,
-        models::{work_item_batch_get_request::Expand, WorkItemBatchGetRequest},
+        models::{
+            work_item_batch_get_request::Expand, Wiql, WorkItemBatchGetRequest,
+            WorkItemClassificationNode,
+        },
     },
+    work,
     Credential,
 };
+use time::OffsetDateTime;
 use tokio::sync::Semaphore;
+use tracing::debug;
 
-use crate::{models::PullRequest, Identity, Thread, WorkItem};
+use crate::{Identity, Iteration, PullRequest, Thread, WorkItem, WorkItemComment};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoClientError {
@@ -26,6 +32,7 @@ pub enum RepoClientError {
 pub struct RepoClient {
     git_client: git::Client,
     work_item_client: wit::Client,
+    work_client: work::Client,
     graph_client: graph::Client,
     organization: String,
     project: String,
@@ -43,6 +50,7 @@ impl RepoClient {
         let credential = Credential::from_pat(pat.to_owned());
         let git_client = git::ClientBuilder::new(credential.clone()).build();
         let work_item_client = wit::ClientBuilder::new(credential.clone()).build();
+        let work_client = work::ClientBuilder::new(credential.clone()).build();
         let graph_client = graph::ClientBuilder::new(credential).build();
 
         let repo = git_client
@@ -58,11 +66,20 @@ impl RepoClient {
         Ok(Self {
             git_client,
             work_item_client,
+            work_client,
             graph_client,
             organization: organization.to_owned(),
             project: project.to_owned(),
             repo_id: repo.id,
         })
+    }
+
+    pub fn organization(&self) -> &str {
+        &self.organization
+    }
+
+    pub fn project(&self) -> &str {
+        &self.project
     }
 
     pub async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, RepoClientError> {
@@ -163,7 +180,7 @@ impl RepoClient {
         Ok(work_item_refs
             .into_iter()
             .filter_map(|r| r.id)
-            .map(|id| id.parse().unwrap())
+            .filter_map(|id| id.parse().ok())
             .collect())
     }
 
@@ -186,19 +203,130 @@ impl RepoClient {
         Ok(commits)
     }
 
-    pub async fn get_work_items(&self, ids: Vec<i32>) -> Result<Vec<WorkItem>, RepoClientError> {
-        let mut batch_request = WorkItemBatchGetRequest::new();
-        batch_request.expand = Some(Expand::Relations);
-        batch_request.ids = ids;
-
-        let work_items = self
+    /// Fetch comments on a work item.
+    ///
+    /// The SDK's `CommentList` deserialization can fail on empty responses because
+    /// `WorkItemTrackingResourceReference::url` is required but the API omits it.
+    /// We catch deserialization errors and return an empty vec as a fallback.
+    pub async fn get_work_item_comments(
+        &self,
+        work_item_id: i32,
+    ) -> Result<Vec<WorkItemComment>, RepoClientError> {
+        let result = self
             .work_item_client
-            .work_items_client()
-            .get_work_items_batch(&self.organization, batch_request, &self.project)
-            .await?
-            .value;
+            .comments_client()
+            .get_comments(&self.organization, &self.project, work_item_id)
+            .await;
 
-        Ok(work_items.into_iter().map(WorkItem::from).collect())
+        match result {
+            Ok(comment_list) => Ok(comment_list
+                .comments
+                .into_iter()
+                .map(WorkItemComment::from)
+                .collect()),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("deserialize") {
+                    tracing::debug!(
+                        work_item_id,
+                        "Comments deserialization failed (likely empty), returning empty vec"
+                    );
+                    Ok(vec![])
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
+    pub async fn get_work_items(&self, ids: Vec<i32>) -> Result<Vec<WorkItem>, RepoClientError> {
+        const BATCH_SIZE: usize = 200;
+
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut all_work_items = Vec::with_capacity(ids.len());
+
+        for chunk in ids.chunks(BATCH_SIZE) {
+            let mut batch_request = WorkItemBatchGetRequest::new();
+            batch_request.expand = Some(Expand::Relations);
+            batch_request.ids = chunk.to_vec();
+
+            let work_items = self
+                .work_item_client
+                .work_items_client()
+                .get_work_items_batch(&self.organization, batch_request, &self.project)
+                .await?
+                .value;
+
+            all_work_items.extend(work_items.into_iter().map(WorkItem::from));
+        }
+
+        Ok(all_work_items)
+    }
+
+    /// Query work item IDs using WIQL (Work Item Query Language).
+    ///
+    /// The `team` parameter is required for WIQL macros like `@currentIteration`.
+    /// If unsure, pass the project name as the team.
+    pub async fn query_work_item_ids_wiql(
+        &self,
+        query: &str,
+        team: &str,
+    ) -> Result<Vec<i32>, RepoClientError> {
+        let wiql = Wiql {
+            query: Some(query.to_string()),
+        };
+
+        let result = self
+            .work_item_client
+            .wiql_client()
+            .query_by_wiql(&self.organization, wiql, &self.project, team)
+            .await?;
+
+        let ids: Vec<i32> = result.work_items.into_iter().filter_map(|r| r.id).collect();
+
+        debug!(
+            "WIQL query returned {} work item IDs for {}/{}",
+            ids.len(),
+            self.organization,
+            self.project
+        );
+
+        Ok(ids)
+    }
+
+    /// Get all iterations for the project, flattened from the classification node tree.
+    ///
+    /// `depth` controls how deep to traverse the tree (defaults to 10).
+    pub async fn get_iterations(
+        &self,
+        depth: Option<i32>,
+    ) -> Result<Vec<Iteration>, RepoClientError> {
+        let root_node = self
+            .work_item_client
+            .classification_nodes_client()
+            .get(
+                &self.organization,
+                &self.project,
+                "iterations",
+                "",
+            )
+            .depth(depth.unwrap_or(10))
+            .await?;
+
+        let mut iterations = Vec::new();
+        flatten_classification_nodes(&root_node, &mut iterations);
+
+        debug!(
+            "Found {} iterations for {}/{}",
+            iterations.len(),
+            self.organization,
+            self.project
+        );
+
+        Ok(iterations)
     }
 
     // TODO: how to handle continuation token?
@@ -259,6 +387,136 @@ impl RepoClient {
 
         Ok(identities.into_iter().collect())
     }
+
+    /// Get team iterations (sprints) from the work API.
+    ///
+    /// Unlike `get_iterations()` which returns classification nodes with numeric IDs,
+    /// this returns team-scoped iterations with GUID IDs that the taskboard API requires.
+    pub async fn get_team_iterations(
+        &self,
+        team: &str,
+    ) -> Result<Vec<TeamIteration>, RepoClientError> {
+        let list = self
+            .work_client
+            .iterations_client()
+            .list(&self.organization, &self.project, team)
+            .await?;
+
+        Ok(list
+            .value
+            .into_iter()
+            .filter_map(|it| {
+                Some(TeamIteration {
+                    id: it.id?,
+                    name: it.name.unwrap_or_default(),
+                    path: it.path.unwrap_or_default(),
+                })
+            })
+            .collect())
+    }
+
+    /// Get taskboard work item column assignments for a given team and iteration.
+    ///
+    /// Returns a map of work_item_id → column_name, e.g. `{3303: "Ready for development"}`.
+    /// This uses the sprint taskboard API which has per-work-item column assignments
+    /// that differ from `System.State` when the taskboard is customized.
+    pub async fn get_taskboard_work_item_columns(
+        &self,
+        team: &str,
+        iteration_id: &str,
+    ) -> Result<HashMap<i32, String>, RepoClientError> {
+        let items = self
+            .work_client
+            .taskboard_work_items_client()
+            .list(&self.organization, &self.project, team, iteration_id)
+            .await?;
+
+        let mut map = HashMap::new();
+        for item in items.value {
+            if let (Some(id), Some(column)) = (item.work_item_id, item.column) {
+                map.insert(id, column);
+            }
+        }
+
+        debug!(
+            "Got {} taskboard column assignments for team={}, iteration={}",
+            map.len(),
+            team,
+            iteration_id
+        );
+
+        Ok(map)
+    }
+}
+
+/// A team iteration from the work API, with a GUID ID.
+#[derive(Clone, Debug)]
+pub struct TeamIteration {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
+
+/// Recursively flatten a `WorkItemClassificationNode` tree into a `Vec<Iteration>`.
+///
+/// Each node's `attributes` JSON may contain `startDate` and `finishDate` fields
+/// as ISO 8601 date strings.
+fn flatten_classification_nodes(
+    node: &WorkItemClassificationNode,
+    iterations: &mut Vec<Iteration>,
+) {
+    // Only include nodes that have an id (skip the root if it's just a container)
+    if let Some(id) = node.id {
+        let name = node.name.clone().unwrap_or_default();
+        let path = node.path.clone().unwrap_or_default();
+
+        let (start_date, finish_date) = extract_iteration_dates(&node.attributes);
+
+        iterations.push(Iteration {
+            id,
+            name,
+            path,
+            start_date,
+            finish_date,
+        });
+    }
+
+    for child in &node.children {
+        flatten_classification_nodes(child, iterations);
+    }
+}
+
+/// Extract start and finish dates from the classification node's `attributes` JSON.
+///
+/// The attributes object may look like:
+/// ```json
+/// { "startDate": "2024-01-15T00:00:00Z", "finishDate": "2024-01-29T00:00:00Z" }
+/// ```
+fn extract_iteration_dates(
+    attributes: &Option<serde_json::Value>,
+) -> (Option<OffsetDateTime>, Option<OffsetDateTime>) {
+    let Some(attrs) = attributes else {
+        return (None, None);
+    };
+
+    let start_date = attrs
+        .get("startDate")
+        .and_then(|v| v.as_str())
+        .and_then(parse_date_string);
+
+    let finish_date = attrs
+        .get("finishDate")
+        .and_then(|v| v.as_str())
+        .and_then(parse_date_string);
+
+    (start_date, finish_date)
+}
+
+/// Parse a date string from Azure DevOps into an `OffsetDateTime`.
+///
+/// Supports ISO 8601 / RFC 3339 format (e.g. "2024-01-15T00:00:00Z").
+fn parse_date_string(s: &str) -> Option<OffsetDateTime> {
+    OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
 }
 
 #[cfg(test)]
@@ -344,6 +602,43 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires real Azure DevOps connection"]
+    async fn test_wiql_query_with_iteration_path() {
+        let repo_client = get_repo_client().await;
+
+        let iterations = repo_client.get_iterations(None).await.unwrap();
+        assert!(!iterations.is_empty());
+
+        // Classification node paths use "\Project\Iteration\Sprint N" format,
+        // but System.IterationPath on work items uses "Project\Sprint N".
+        // Verify the normalized path works with WIQL.
+        let iteration = iterations.last().unwrap();
+        let raw_path = &iteration.path;
+        let normalized = raw_path
+            .strip_prefix('\\')
+            .unwrap_or(raw_path)
+            .replacen("\\Iteration\\", "\\", 1);
+
+        println!("Raw path: '{raw_path}' -> Normalized: '{normalized}'");
+
+        let query = format!(
+            "SELECT [System.Id] FROM WorkItems \
+             WHERE [System.TeamProject] = @project \
+             AND [System.IterationPath] UNDER '{}' \
+             ORDER BY [Microsoft.VSTS.Common.Priority] asc",
+            normalized
+        );
+
+        // Empty team string works; the SDK omits it from the URL
+        let ids = repo_client
+            .query_work_item_ids_wiql(&query, "")
+            .await
+            .unwrap();
+
+        println!("Found {} work items in '{normalized}'", ids.len());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
     async fn test_get_graph_users() {
         let repo_client = get_repo_client().await;
         let identities = repo_client.get_graph_users().await.unwrap();
@@ -364,5 +659,83 @@ mod tests {
         }
 
         assert!(!identities.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
+    async fn test_get_work_item_comments() {
+        let repo_client = get_repo_client().await;
+
+        // Use work item 3072 which we know exists from the failing request
+        let comments = repo_client.get_work_item_comments(3072).await.unwrap();
+
+        println!("Found {} comments on work item #3072", comments.len());
+        for comment in &comments {
+            println!(
+                "  Comment #{}: by {} at {} (deleted={}), text={:.80}",
+                comment.id,
+                comment.author_name,
+                comment.created_at,
+                comment.is_deleted,
+                comment.text,
+            );
+        }
+
+        // Even if there are no comments, the call should succeed (not deserialize-fail)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
+    async fn test_get_work_item_comments_empty() {
+        let repo_client = get_repo_client().await;
+
+        // Fetch a work item that is unlikely to have comments — use WIQL to find one
+        let ids = repo_client
+            .query_work_item_ids_wiql(
+                "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.CreatedDate] asc",
+                "",
+            )
+            .await
+            .unwrap();
+
+        // Try the first work item (oldest, likely no comments)
+        if let Some(&id) = ids.first() {
+            let comments = repo_client.get_work_item_comments(id).await.unwrap();
+            println!(
+                "Work item #{id}: {} comments (should handle empty gracefully)",
+                comments.len()
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
+    async fn test_board_columns() {
+        let repo_client = get_repo_client().await;
+
+        let team = format!("{} Team", repo_client.project());
+
+        // Get team iterations (with GUID IDs needed by taskboard API)
+        let iterations = repo_client.get_team_iterations(&team).await.unwrap();
+        assert!(!iterations.is_empty());
+
+        let iteration = iterations.last().unwrap();
+        println!(
+            "Using iteration: {} (id: {}, path: {})",
+            iteration.name, iteration.id, iteration.path
+        );
+
+        // Test the taskboard work item columns
+        let columns = repo_client
+            .get_taskboard_work_item_columns(&team, &iteration.id)
+            .await
+            .unwrap();
+
+        println!("=== Taskboard work item columns ===");
+        for (id, col) in &columns {
+            println!("  Work item #{id}: {col}");
+        }
+
+        assert!(!columns.is_empty());
     }
 }

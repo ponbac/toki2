@@ -12,7 +12,7 @@ use crate::{
 
 use super::CookieJarResult;
 
-#[instrument(name = "list_projects", skip(jar, app_state))]
+#[instrument(name = "list_projects", skip(jar))]
 pub async fn list_projects(
     State(app_state): State<AppState>,
     jar: CookieJar,
@@ -29,7 +29,7 @@ pub async fn list_projects(
     Ok((jar, Json(response)))
 }
 
-#[instrument(name = "list_activities", skip(jar, app_state))]
+#[instrument(name = "list_activities", skip(jar))]
 pub async fn list_activities(
     Path(project_id): Path<String>,
     State(app_state): State<AppState>,

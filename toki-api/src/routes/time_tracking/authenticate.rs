@@ -17,7 +17,7 @@ pub struct AuthenticatePayload {
     password: String,
 }
 
-#[instrument(name = "authenticate", skip(jar, app_state))]
+#[instrument(name = "authenticate", skip(jar))]
 pub async fn authenticate(
     State(app_state): State<AppState>,
     jar: CookieJar,

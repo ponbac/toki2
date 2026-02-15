@@ -136,7 +136,7 @@ impl NotificationHandler {
                     }
 
                     let push_notification = event
-                        .to_push_notification(&diff.pr.pull_request_base, &diff.pr.azure_url());
+                        .to_push_notification(&diff.pr.pull_request_base, &diff.pr.url);
                     let db_notification = Notification {
                         id: 0, // Will be set by database
                         user_id: user.id,
@@ -168,7 +168,7 @@ impl NotificationHandler {
                                 let message = event.to_web_push_message(
                                     sub,
                                     &diff.pr.pull_request_base,
-                                    &diff.pr.azure_url(),
+                                    &diff.pr.url,
                                 );
                                 push_futures.push(self.web_push_client.send(message));
                             }

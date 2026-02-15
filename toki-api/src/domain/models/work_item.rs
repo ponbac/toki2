@@ -1,0 +1,145 @@
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+
+/// A provider-agnostic work item.
+///
+/// IDs are strings to support both Azure DevOps numeric IDs ("12345")
+/// and future GitHub Issues ("owner/repo#42").
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkItem {
+    pub id: String,
+    pub title: String,
+    pub board_state: BoardState,
+    pub category: WorkItemCategory,
+    /// The original state string from the provider (e.g. "Active", "New").
+    pub state_name: String,
+    pub priority: Option<i32>,
+    pub assigned_to: Option<WorkItemPerson>,
+    pub created_by: Option<WorkItemPerson>,
+    pub description: Option<String>,
+    pub acceptance_criteria: Option<String>,
+    pub iteration_path: Option<String>,
+    pub area_path: Option<String>,
+    pub tags: Vec<String>,
+    pub parent: Option<WorkItemRef>,
+    pub related: Vec<WorkItemRef>,
+    pub pull_requests: Vec<PullRequestRef>,
+    pub url: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub changed_at: OffsetDateTime,
+}
+
+/// Simplified board column state.
+///
+/// Providers map their specific states (e.g. ADO "Active", GitHub "open")
+/// to one of these three columns in the adapter layer.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub enum BoardState {
+    Todo,
+    InProgress,
+    Done,
+}
+
+impl BoardState {
+    /// Map a sprint taskboard column name to a board state.
+    ///
+    /// This covers common ADO taskboard column names. Unknown columns
+    /// default to `InProgress` since most custom columns represent active work.
+    pub fn from_taskboard_column(column: &str) -> Self {
+        match column {
+            "New" | "Proposed" | "To Do" | "Approved" | "Ready for development" => Self::Todo,
+            "Done" | "Closed" | "Completed" | "Removed" => Self::Done,
+            _ => Self::InProgress,
+        }
+    }
+}
+
+/// The category/type of a work item.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkItemCategory {
+    UserStory,
+    Bug,
+    Task,
+    Feature,
+    Epic,
+    Other(String),
+}
+
+impl std::fmt::Display for WorkItemCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UserStory => write!(f, "User Story"),
+            Self::Bug => write!(f, "Bug"),
+            Self::Task => write!(f, "Task"),
+            Self::Feature => write!(f, "Feature"),
+            Self::Epic => write!(f, "Epic"),
+            Self::Other(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+/// A person associated with a work item (assignee, creator, etc.).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkItemPerson {
+    pub display_name: String,
+    pub unique_name: Option<String>,
+    pub image_url: Option<String>,
+}
+
+/// A lightweight reference to another work item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkItemRef {
+    pub id: String,
+    pub title: Option<String>,
+}
+
+/// A sprint/iteration in the project.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Iteration {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub start_date: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub finish_date: Option<OffsetDateTime>,
+    pub is_current: bool,
+}
+
+/// A reference to a pull request linked to a work item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestRef {
+    pub id: String,
+    pub repository_id: String,
+    pub project_id: String,
+    pub url: String,
+}
+
+/// A comment on a work item (converted from provider HTML to Markdown).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkItemComment {
+    pub id: String,
+    /// Comment text as Markdown (converted from HTML).
+    pub text: String,
+    pub author_name: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+}
+
+/// A project that has work items (identified by organization + project name).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkItemProject {
+    pub organization: String,
+    pub project: String,
+}

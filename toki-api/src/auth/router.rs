@@ -103,7 +103,7 @@ mod get {
         Ok(Json(MeResponse { user, avatar_url }))
     }
 
-    #[instrument(name = "auth_callback", skip(auth_session, session, app_state))]
+    #[instrument(name = "auth_callback", skip(auth_session, session))]
     pub async fn callback(
         mut auth_session: AuthSession,
         session: Session,

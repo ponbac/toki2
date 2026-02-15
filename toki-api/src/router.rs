@@ -41,7 +41,8 @@ pub async fn create(
         .nest("/repositories", routes::repositories::router())
         .nest("/notifications", routes::notifications::router())
         .nest("/time-tracking", routes::time_tracking::router())
-        .nest("/users", routes::users::router());
+        .nest("/users", routes::users::router())
+        .nest("/work-items", routes::work_items::router());
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {

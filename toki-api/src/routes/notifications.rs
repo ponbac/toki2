@@ -16,7 +16,7 @@ use tracing::instrument;
 
 use crate::{
     app_state::AppState,
-    auth::AuthSession,
+    auth::AuthUser,
     domain::{Notification, NotificationRule, PrNotificationException, PushNotification},
     repositories::NewPushSubscription,
 };
@@ -58,18 +58,17 @@ pub struct SubscribePayload {
     device_name: Option<String>,
 }
 
-#[instrument(name = "subscribe", skip(auth_session, app_state))]
+#[instrument(name = "subscribe")]
 async fn subscribe(
-    auth_session: AuthSession,
+    user: AuthUser,
     client_hints: ClientHints,
     State(app_state): State<AppState>,
     Json(body): Json<SubscribePayload>,
 ) -> Result<StatusCode, ApiError> {
-    let user_id = auth_session.user.expect("user not found").id;
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let new_push_subscription = NewPushSubscription {
-        user_id,
+        user_id: user.id.as_i32(),
         device: body
             .device_name
             .unwrap_or_else(|| client_hints.identifier()),
@@ -91,18 +90,17 @@ struct IsSubscribedPayload {
     device_name: Option<String>,
 }
 
-#[instrument(name = "is_subscribed", skip(app_state, user))]
+#[instrument(name = "is_subscribed")]
 async fn is_subscribed(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     client_hints: ClientHints,
     State(app_state): State<AppState>,
     Json(body): Json<IsSubscribedPayload>,
 ) -> Result<Json<bool>, ApiError> {
-    let user = user.expect("user not found");
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let user_subscriptions = push_subscription_repo
-        .get_user_push_subscriptions(&user.id)
+        .get_user_push_subscriptions(user.id.as_ref())
         .await?;
 
     let device_name = body
@@ -115,16 +113,15 @@ async fn is_subscribed(
     Ok(Json(is_subscribed_with_device_name))
 }
 
-#[instrument(name = "get_push_subscriptions", skip(app_state, user))]
+#[instrument(name = "get_push_subscriptions")]
 async fn get_push_subscriptions(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<PushSubscriptionInfo>>, ApiError> {
-    let user = user.expect("user not found");
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let subscriptions = push_subscription_repo
-        .get_user_push_subscriptions(&user.id)
+        .get_user_push_subscriptions(user.id.as_ref())
         .await?;
 
     Ok(Json(
@@ -135,17 +132,16 @@ async fn get_push_subscriptions(
     ))
 }
 
-#[instrument(name = "delete_push_subscription", skip(app_state))]
+#[instrument(name = "delete_push_subscription")]
 async fn delete_push_subscription(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    let user = user.expect("user not found");
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let user_push_subscriptions = push_subscription_repo
-        .get_user_push_subscriptions(&user.id)
+        .get_user_push_subscriptions(user.id.as_ref())
         .await?;
 
     if !user_push_subscriptions.iter().any(|sub| sub.id == id) {
@@ -159,7 +155,7 @@ async fn delete_push_subscription(
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "test_push", skip(app_state))]
+#[instrument(name = "test_push")]
 async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, ApiError> {
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
     let subscribers = push_subscription_repo.get_push_subscriptions().await?;
@@ -192,16 +188,15 @@ pub struct NotificationParams {
 }
 
 async fn get_notifications(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     Query(params): Query<NotificationParams>,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<Notification>>, ApiError> {
-    let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     let notifications = notification_repo
         .get_user_notifications(
-            user.id,
+            user.id.as_i32(),
             params.include_viewed.unwrap_or(false),
             params.max_age_days.unwrap_or(30),
         )
@@ -211,57 +206,53 @@ async fn get_notifications(
 }
 
 async fn mark_notification_viewed(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     Path(id): Path<i32>,
     State(app_state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
-    let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
-    notification_repo.mark_as_viewed(id, user.id).await?;
+    notification_repo.mark_as_viewed(id, user.id.as_i32()).await?;
 
     Ok(StatusCode::OK)
 }
 
 async fn mark_all_notifications_viewed(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
-    let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     notification_repo
-        .mark_all_notifications_viewed(user.id)
+        .mark_all_notifications_viewed(user.id.as_i32())
         .await?;
 
     Ok(StatusCode::OK)
 }
 
 async fn delete_notification(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     Path(id): Path<i32>,
     State(app_state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
-    let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     notification_repo
-        .delete_notification(id, user.id)
+        .delete_notification(id, user.id.as_i32())
         .await?;
 
     Ok(StatusCode::OK)
 }
 
 async fn get_preferences(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
     Path(repository_id): Path<i32>,
 ) -> Result<Json<Vec<NotificationRule>>, ApiError> {
-    let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     let existing_rules = notification_repo
-        .get_repository_rules(user.id, repository_id)
+        .get_repository_rules(user.id.as_i32(), repository_id)
         .await?;
 
     let rules_map: HashMap<DbNotificationType, NotificationRule> = existing_rules
@@ -276,7 +267,7 @@ async fn get_preferences(
                 .cloned()
                 .unwrap_or_else(|| NotificationRule {
                     id: 0, // Indicates a default, non-DB rule
-                    user_id: user.id,
+                    user_id: user.id.as_i32(),
                     repository_id,
                     notification_type,
                     enabled: notification_type.default_enabled(),
@@ -289,15 +280,14 @@ async fn get_preferences(
 }
 
 async fn update_preferences(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
     Path(repository_id): Path<i32>,
     Json(rule): Json<NotificationRule>,
 ) -> Result<StatusCode, ApiError> {
-    let user = user.expect("user not found");
 
     // Validate that the rule belongs to the authenticated user
-    if rule.user_id != user.id {
+    if rule.user_id != user.id.as_i32() {
         return Err(ApiError::forbidden(
             "Cannot modify rules for other users",
         ));
@@ -329,15 +319,14 @@ struct RemovePrExceptionPath {
 }
 
 async fn get_pr_exceptions(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     Path(params): Path<PrExceptionPath>,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<PrNotificationException>>, ApiError> {
-    let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     let exceptions = notification_repo
-        .get_pr_exceptions(user.id, params.repository_id, params.pull_request_id)
+        .get_pr_exceptions(user.id.as_i32(), params.repository_id, params.pull_request_id)
         .await?;
 
     Ok(Json(exceptions))
@@ -352,16 +341,15 @@ struct UpdateExceptionPayload {
 }
 
 async fn set_pr_exception(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     Path(params): Path<PrExceptionPath>,
     State(app_state): State<AppState>,
     Json(payload): Json<UpdateExceptionPayload>,
 ) -> Result<Json<PrNotificationException>, ApiError> {
-    let user = user.expect("user not found");
 
     let notification_repo = app_state.notification_repo.clone();
     let existing_exceptions = notification_repo
-        .get_pr_exceptions(user.id, payload.repository_id, params.pull_request_id)
+        .get_pr_exceptions(user.id.as_i32(), payload.repository_id, params.pull_request_id)
         .await?;
 
     let existing_exception = existing_exceptions
@@ -371,7 +359,7 @@ async fn set_pr_exception(
 
     // Validate that the exception belongs to the authenticated user
     if let Some(existing_exception) = &existing_exception {
-        if existing_exception.user_id != user.id {
+        if existing_exception.user_id != user.id.as_i32() {
             return Err(ApiError::forbidden(
                 "Cannot modify exceptions for other users",
             ));
@@ -380,7 +368,7 @@ async fn set_pr_exception(
 
     let new_exception = PrNotificationException {
         id: 0, // DB will assign actual ID, fix this later...
-        user_id: user.id,
+        user_id: user.id.as_i32(),
         repository_id: payload.repository_id,
         pull_request_id: params.pull_request_id,
         notification_type: payload.notification_type,
@@ -395,16 +383,15 @@ async fn set_pr_exception(
 }
 
 async fn remove_pr_exception(
-    AuthSession { user, .. }: AuthSession,
+    user: AuthUser,
     Path(params): Path<RemovePrExceptionPath>,
     State(app_state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
-    let user = user.expect("user not found");
     let notification_repo = app_state.notification_repo.clone();
 
     notification_repo
         .remove_pr_exception(
-            user.id,
+            user.id.as_i32(),
             params.repository_id,
             params.pull_request_id,
             params.notification_type,

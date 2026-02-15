@@ -15,11 +15,12 @@ use url::Url;
 use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
-    adapters::inbound::http::TimeTrackingServiceFactory,
+    adapters::inbound::http::{TimeTrackingServiceFactory, WorkItemServiceFactory},
     domain::{
         ports::inbound::AvatarService, CachedIdentities, NotificationHandler, PullRequest,
         RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey,
     },
+    factory::AzureDevOpsWorkItemServiceFactory,
     repositories::{
         NotificationRepositoryImpl, PushSubscriptionRepositoryImpl, RepoRepositoryImpl,
         UserRepositoryImpl,
@@ -58,11 +59,18 @@ pub struct AppState {
     pub notification_repo: Arc<NotificationRepositoryImpl>,
     pub time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
     pub avatar_service: Arc<dyn AvatarService>,
+    pub work_item_factory: Arc<dyn WorkItemServiceFactory>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
     differ_txs: Arc<Mutex<HashMap<RepoKey, Sender<RepoDifferMessage>>>>,
     web_push_client: IsahcWebPushClient,
     notification_handler: Arc<NotificationHandler>,
+}
+
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState").finish_non_exhaustive()
+    }
 }
 
 impl AppState {
@@ -126,18 +134,26 @@ impl AppState {
             })
             .collect::<HashMap<_, _>>();
 
+        let repo_clients = Arc::new(RwLock::new(clients));
+        let user_repo = Arc::new(UserRepositoryImpl::new(db_pool.clone()));
+
+        let work_item_factory: Arc<dyn WorkItemServiceFactory> = Arc::new(
+            AzureDevOpsWorkItemServiceFactory::new(repo_clients.clone(), user_repo.clone()),
+        );
+
         Self {
             app_url: Url::parse(&app_url).expect("Invalid app URL"),
             api_url: Url::parse(&api_url).expect("Invalid API URL"),
             cookie_domain,
             db_pool: Arc::new(db_pool.clone()),
-            user_repo: Arc::new(UserRepositoryImpl::new(db_pool.clone())),
+            user_repo,
             repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),
             push_subscriptions_repo: Arc::new(PushSubscriptionRepositoryImpl::new(db_pool.clone())),
             notification_repo: Arc::new(NotificationRepositoryImpl::new(db_pool.clone())),
             time_tracking_factory,
             avatar_service,
-            repo_clients: Arc::new(RwLock::new(clients)),
+            work_item_factory,
+            repo_clients,
             differ_txs: Arc::new(Mutex::new(differ_txs)),
             differs: Arc::new(RwLock::new(differs)),
             web_push_client,
