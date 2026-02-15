@@ -28,7 +28,7 @@ export const workItemsMutations = {
 
 type MoveBoardItemMutationContext = {
   boardQueryKey: readonly unknown[];
-  previousBoard?: BoardResponse;
+  previousItem?: BoardWorkItem;
 };
 
 function toOptimisticBoardState(columnName: string): BoardWorkItem["boardState"] {
@@ -131,6 +131,9 @@ function useMoveBoardItem(
 
       await queryClient.cancelQueries({ queryKey: boardQueryKey });
       const previousBoard = queryClient.getQueryData<BoardResponse>(boardQueryKey);
+      const previousItem = previousBoard?.items.find(
+        (item) => item.id === vars.workItemId,
+      );
 
       if (previousBoard) {
         const targetColumn = previousBoard.columns.find(
@@ -163,14 +166,24 @@ function useMoveBoardItem(
 
       const context: MoveBoardItemMutationContext = {
         boardQueryKey,
-        previousBoard,
+        previousItem,
       };
       await options?.onMutate?.(vars);
       return context;
     },
     onError: (err, vars, ctx) => {
-      if (ctx?.previousBoard) {
-        queryClient.setQueryData(ctx.boardQueryKey, ctx.previousBoard);
+      if (ctx?.previousItem) {
+        const board = queryClient.getQueryData<BoardResponse>(ctx.boardQueryKey);
+        if (board) {
+          const restoredItems = board.items.map((item) =>
+            item.id === ctx.previousItem?.id ? ctx.previousItem : item,
+          );
+
+          queryClient.setQueryData<BoardResponse>(ctx.boardQueryKey, {
+            ...board,
+            items: sortItemsByColumnAndPriority(restoredItems, board.columns),
+          });
+        }
       }
       options?.onError?.(err, vars, ctx);
     },

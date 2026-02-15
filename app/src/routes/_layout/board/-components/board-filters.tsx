@@ -11,14 +11,7 @@ import {
   categoryFilterAtom,
   type MemberFilter,
 } from "../-lib/board-preferences";
-
-const CATEGORY_OPTIONS = [
-  { value: "userStory", label: "Story", bg: "bg-blue-500/15", text: "text-blue-400", border: "border-blue-500/30" },
-  { value: "bug", label: "Bug", bg: "bg-red-500/15", text: "text-red-400", border: "border-red-500/30" },
-  { value: "task", label: "Task", bg: "bg-yellow-500/15", text: "text-yellow-400", border: "border-yellow-500/30" },
-  { value: "feature", label: "Feature", bg: "bg-purple-500/15", text: "text-purple-400", border: "border-purple-500/30" },
-  { value: "epic", label: "Epic", bg: "bg-orange-500/15", text: "text-orange-400", border: "border-orange-500/30" },
-] as const;
+import { BOARD_CATEGORY_OPTIONS } from "../-lib/category-meta";
 
 const MEMBER_MODES: { value: MemberFilter["mode"]; label: string }[] = [
   { value: "mine", label: "My Items" },
@@ -198,7 +191,7 @@ export function BoardFilters({
 
       {/* Category filter chips */}
       <div className="flex flex-wrap items-center gap-1.5">
-        {CATEGORY_OPTIONS.map((cat) => {
+        {BOARD_CATEGORY_OPTIONS.map((cat) => {
           const active = categoryFilter.includes(cat.value);
           return (
             <button

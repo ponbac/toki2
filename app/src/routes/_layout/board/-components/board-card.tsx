@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
+import { BOARD_CATEGORY_OPTIONS } from "../-lib/category-meta";
 import { CopyWorkItem } from "./copy-work-item";
 import {
   GitPullRequest,
@@ -25,21 +26,9 @@ import {
 } from "lucide-react";
 import { useState, useCallback } from "react";
 
-const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
-  userStory: { bg: "bg-blue-500/15", text: "text-blue-400" },
-  bug: { bg: "bg-red-500/15", text: "text-red-400" },
-  task: { bg: "bg-yellow-500/15", text: "text-yellow-400" },
-  feature: { bg: "bg-purple-500/15", text: "text-purple-400" },
-  epic: { bg: "bg-orange-500/15", text: "text-orange-400" },
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  userStory: "Story",
-  bug: "Bug",
-  task: "Task",
-  feature: "Feature",
-  epic: "Epic",
-};
+const CATEGORY_META_BY_VALUE = Object.fromEntries(
+  BOARD_CATEGORY_OPTIONS.map((option) => [option.value, option]),
+) as Record<string, (typeof BOARD_CATEGORY_OPTIONS)[number] | undefined>;
 
 const PRIORITY_INDICATORS: Record<number, { label: string; className: string }> = {
   1: { label: "P1", className: "text-red-400 font-semibold" },
@@ -83,11 +72,14 @@ export function BoardCard({
     targetColumnId: string,
   ) => void;
 }) {
-  const colors = CATEGORY_COLORS[item.category] ?? {
+  const categoryMeta = CATEGORY_META_BY_VALUE[item.category];
+  const colors = categoryMeta
+    ? { bg: categoryMeta.bg, text: categoryMeta.text }
+    : {
     bg: "bg-muted",
     text: "text-muted-foreground",
   };
-  const categoryLabel = CATEGORY_LABELS[item.category] ?? item.category;
+  const categoryLabel = categoryMeta?.label ?? item.category;
   const priority = item.priority != null ? PRIORITY_INDICATORS[item.priority] : null;
   const isPriorityOne = item.priority === 1;
   const branchName = `feature/${item.id}-${slugify(item.title)}`;
