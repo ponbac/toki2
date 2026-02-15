@@ -5,7 +5,7 @@ use crate::domain::models::{
     WorkItemPerson, WorkItemRef,
 };
 
-use super::urls::AzureDevOpsUrl;
+use super::{normalize_iteration_path, urls::AzureDevOpsUrl};
 
 /// Convert an Azure DevOps work item to a domain work item.
 pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -> WorkItem {
@@ -162,15 +162,6 @@ fn is_iteration_current(
         (Some(start), Some(finish)) => now >= start && now <= effective_finish(finish),
         _ => false,
     }
-}
-
-/// Normalize a classification node path to the `System.IterationPath` format.
-///
-/// Classification nodes: `\Project\Iteration\Sprint 1`
-/// System.IterationPath:  `Project\Sprint 1`
-fn normalize_iteration_path(path: &str) -> String {
-    let path = path.strip_prefix('\\').unwrap_or(path);
-    path.replacen("\\Iteration\\", "\\", 1)
 }
 
 /// Map an Azure DevOps work item to a `BoardState`.
