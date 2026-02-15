@@ -4,7 +4,7 @@ use std::{cmp::Ordering, collections::HashMap};
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{BoardColumn, BoardData, BoardState, Iteration, WorkItem},
+    models::{synthetic_column_id_from_name, BoardColumn, BoardData, BoardState, Iteration, WorkItem},
     ports::{inbound::WorkItemService, outbound::WorkItemProvider},
     WorkItemError,
 };
@@ -178,7 +178,7 @@ fn ensure_items_have_matching_columns(items: &mut [WorkItem], columns: &mut Vec<
                 continue;
             }
 
-            let synthetic_id = synthetic_column_id(&name);
+            let synthetic_id = synthetic_column_id_from_name(&name);
             max_order += 10;
             columns.push(BoardColumn {
                 id: synthetic_id.clone(),
@@ -245,24 +245,6 @@ fn sort_items_by_column_and_priority(items: &mut [WorkItem], columns: &[BoardCol
 
 fn normalize_name(name: &str) -> String {
     name.trim().to_ascii_lowercase()
-}
-
-fn synthetic_column_id(name: &str) -> String {
-    let mut id = String::with_capacity(name.len() + 5);
-    id.push_str("name:");
-    for ch in name.trim().chars() {
-        if ch.is_ascii_alphanumeric() {
-            id.push(ch.to_ascii_lowercase());
-        } else {
-            id.push('-');
-        }
-    }
-
-    if id == "name:" {
-        "name:unknown".to_string()
-    } else {
-        id
-    }
 }
 
 #[cfg(test)]

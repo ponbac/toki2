@@ -78,6 +78,25 @@ impl BoardState {
     }
 }
 
+/// Build a synthetic stable column id when the provider does not supply one.
+pub fn synthetic_column_id_from_name(name: &str) -> String {
+    let mut id = String::with_capacity(name.len() + 5);
+    id.push_str("name:");
+    for ch in name.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            id.push(ch.to_ascii_lowercase());
+        } else {
+            id.push('-');
+        }
+    }
+
+    if id == "name:" {
+        "name:unknown".to_string()
+    } else {
+        id
+    }
+}
+
 /// A board column in provider-defined display order.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

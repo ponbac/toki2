@@ -7,7 +7,10 @@ use std::fmt::Write;
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{BoardColumn, BoardColumnAssignment, Iteration, WorkItem, WorkItemComment},
+    models::{
+        synthetic_column_id_from_name, BoardColumn, BoardColumnAssignment, Iteration, WorkItem,
+        WorkItemComment,
+    },
     ports::outbound::WorkItemProvider,
     WorkItemError,
 };
@@ -624,22 +627,4 @@ impl AzureDevOpsWorkItemAdapter {
 fn resolve_team_name(team: Option<&str>, project: &str) -> String {
     team.map(|t| t.to_string())
         .unwrap_or_else(|| format!("{project} Team"))
-}
-
-fn synthetic_column_id_from_name(name: &str) -> String {
-    let mut id = String::with_capacity(name.len() + 5);
-    id.push_str("name:");
-    for ch in name.trim().chars() {
-        if ch.is_ascii_alphanumeric() {
-            id.push(ch.to_ascii_lowercase());
-        } else {
-            id.push('-');
-        }
-    }
-
-    if id == "name:" {
-        "name:unknown".to_string()
-    } else {
-        id
-    }
 }
