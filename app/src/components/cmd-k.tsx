@@ -15,6 +15,7 @@ import {
   DrumIcon,
   FolderGit2,
   GitPullRequestIcon,
+  KanbanSquare,
   TimerIcon,
 } from "lucide-react";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
@@ -67,6 +68,7 @@ export function CmdK() {
 
 const PAGES = [
   { title: "Pull requests", to: "/prs", icon: GitPullRequestIcon },
+  { title: "Board", to: "/board", icon: KanbanSquare },
   { title: "Time Tracking", to: "/time-tracking", icon: TimerIcon },
   { title: "Repositories", to: "/repositories", icon: FolderGit2 },
 ] as const;

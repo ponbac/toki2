@@ -18,6 +18,7 @@ use crate::{
     auth::AuthUser,
     domain::{PullRequest, RepoKey},
     repositories::UserRepository,
+    routes::email::normalize_email,
     AppState,
 };
 
@@ -351,21 +352,13 @@ fn apply_avatar_override_to_identity(
     }
 }
 
-fn normalize_email(email: &str) -> Option<String> {
-    let normalized = email.trim().to_lowercase();
-
-    if normalized.is_empty() {
-        None
-    } else {
-        Some(normalized)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
-    use super::{apply_avatar_override_to_identity, normalize_email};
+    use crate::routes::email::normalize_email;
+
+    use super::apply_avatar_override_to_identity;
 
     #[test]
     fn normalize_email_trims_and_lowercases() {

@@ -16,6 +16,7 @@ use crate::{
     app_state::AppState,
     auth::AuthUser,
     domain::models::WorkItem,
+    routes::email::normalize_email,
 };
 
 use super::ApiError;
@@ -231,15 +232,6 @@ fn apply_avatar_override_to_work_item_person(
     }
 }
 
-fn normalize_email(email: &str) -> Option<String> {
-    let normalized = email.trim().to_lowercase();
-    if normalized.is_empty() {
-        None
-    } else {
-        Some(normalized)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -258,8 +250,9 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::domain::models::WorkItemPerson;
+    use crate::routes::email::normalize_email;
 
-    use super::{apply_avatar_override_to_work_item_person, normalize_email};
+    use super::apply_avatar_override_to_work_item_person;
 
     #[test]
     fn normalize_email_trims_and_lowercases() {
