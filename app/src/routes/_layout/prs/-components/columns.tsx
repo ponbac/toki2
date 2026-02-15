@@ -16,10 +16,8 @@ import {
   UserXIcon,
   ClockAlertIcon,
 } from "lucide-react";
-import { buildAvatarOverrideMap, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { StatusIcon } from "./status-icon";
-
-const avatarOverrideMapCache = new WeakMap<ListPullRequest, Record<string, string>>();
 
 export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
   return [
@@ -96,18 +94,10 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
           displayName.length > LIMIT
             ? displayName.slice(0, LIMIT) + "..."
             : displayName;
-        const avatarOverrideMap = getAvatarOverrideMap(row.original);
-        const authorOverride = resolveAvatarOverride(
-          row.original.createdBy.uniqueName,
-          avatarOverrideMap,
-        );
 
         return (
           <div className="flex flex-row items-center justify-center gap-2 2xl:justify-start">
-            <AzureAvatar
-              user={row.original.createdBy}
-              overrideAvatarUrl={authorOverride}
-            />
+            <AzureAvatar user={row.original.createdBy} />
             <span className="hidden text-nowrap 2xl:block">
               <ConditionalTooltip
                 condition={displayName.length > LIMIT}
@@ -195,7 +185,6 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
 
         const waitingForYourReview = row.original.waitingForUserReview;
         const reviewRequired = row.original.reviewRequired;
-        const avatarOverrideMap = getAvatarOverrideMap(row.original);
 
         return (
           <div className="flex flex-row items-center gap-2">
@@ -204,10 +193,6 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
                 key={reviewer.identity.id}
                 user={reviewer.identity}
                 className="border-2 border-green-600"
-                overrideAvatarUrl={resolveAvatarOverride(
-                  reviewer.identity.uniqueName,
-                  avatarOverrideMap,
-                )}
               />
             ))}
             {blockedBy.map((reviewer) => (
@@ -215,10 +200,6 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
                 key={reviewer.identity.id}
                 user={reviewer.identity}
                 className="border-2 border-red-600"
-                overrideAvatarUrl={resolveAvatarOverride(
-                  reviewer.identity.uniqueName,
-                  avatarOverrideMap,
-                )}
               />
             ))}
             {waitingForYourReview && (
@@ -264,24 +245,4 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
       },
     },
   ];
-}
-
-function resolveAvatarOverride(
-  uniqueName: string,
-  avatarOverrides: Record<string, string>,
-) {
-  return avatarOverrides[uniqueName.toLowerCase()];
-}
-
-function getAvatarOverrideMap(
-  pullRequest: ListPullRequest,
-): Record<string, string> {
-  const cached = avatarOverrideMapCache.get(pullRequest);
-  if (cached) {
-    return cached;
-  }
-
-  const avatarOverrideMap = buildAvatarOverrideMap(pullRequest.avatarOverrides);
-  avatarOverrideMapCache.set(pullRequest, avatarOverrideMap);
-  return avatarOverrideMap;
 }

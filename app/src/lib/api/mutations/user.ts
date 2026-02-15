@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { pullRequestsQueries } from "../queries/pullRequests";
+import { workItemsQueries } from "../queries/workItems";
 import type { DefaultMutationOptions } from "./mutations";
 
 export type UploadAvatarVars = { file: File };
@@ -26,6 +27,7 @@ export function useUploadAvatar(
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries({ queryKey: ["me"] });
       queryClient.invalidateQueries({ queryKey: pullRequestsQueries.baseKey });
+      queryClient.invalidateQueries({ queryKey: workItemsQueries.baseKey });
       options?.onSuccess?.(data, vars, ctx);
     },
   });
@@ -41,6 +43,7 @@ export function useDeleteAvatar(options?: DefaultMutationOptions<void>) {
     onSuccess: (data, vars, ctx) => {
       queryClient.invalidateQueries({ queryKey: ["me"] });
       queryClient.invalidateQueries({ queryKey: pullRequestsQueries.baseKey });
+      queryClient.invalidateQueries({ queryKey: workItemsQueries.baseKey });
       options?.onSuccess?.(data, vars, ctx);
     },
   });

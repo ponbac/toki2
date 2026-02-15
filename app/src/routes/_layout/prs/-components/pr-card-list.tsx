@@ -1,6 +1,5 @@
 import { AzureAvatar } from "@/components/azure-avatar";
 import { ListPullRequest } from "@/lib/api/queries/pullRequests";
-import { buildAvatarOverrideMap } from "@/lib/utils";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { CopySlashIcon, PickaxeIcon } from "lucide-react";
@@ -14,7 +13,6 @@ export function PrCardList(props: {
   return (
     <div className="flex flex-col gap-2">
       {props.data.map((pr) => {
-        const avatarOverrideMap = buildAvatarOverrideMap(pr.avatarOverrides);
         return (
           <button
             type="button"
@@ -24,13 +22,7 @@ export function PrCardList(props: {
           >
             {/* Row 1: Avatar + Title + Status icons */}
             <div className="flex items-start gap-2">
-              <AzureAvatar
-                user={pr.createdBy}
-                className="mt-0.5 size-[26px] shrink-0"
-                overrideAvatarUrl={
-                  avatarOverrideMap[pr.createdBy.uniqueName.toLowerCase()]
-                }
-              />
+              <AzureAvatar user={pr.createdBy} className="mt-0.5 size-[26px] shrink-0" />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">
                 {pr.title}
               </span>
@@ -60,9 +52,6 @@ export function PrCardList(props: {
                     key={r.identity.id}
                     user={r.identity}
                     className="size-[22px] border-2 border-green-600"
-                    overrideAvatarUrl={
-                      avatarOverrideMap[r.identity.uniqueName.toLowerCase()]
-                    }
                   />
                 ))}
                 {pr.blockedBy.map((r) => (
@@ -70,9 +59,6 @@ export function PrCardList(props: {
                     key={r.identity.id}
                     user={r.identity}
                     className="size-[22px] border-2 border-red-600"
-                    overrideAvatarUrl={
-                      avatarOverrideMap[r.identity.uniqueName.toLowerCase()]
-                    }
                   />
                 ))}
               </div>

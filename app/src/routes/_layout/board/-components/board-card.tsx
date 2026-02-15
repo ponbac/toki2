@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { AzureAvatar } from "@/components/azure-avatar";
 import {
   Tooltip,
   TooltipContent,
@@ -32,15 +32,6 @@ const PRIORITY_INDICATORS: Record<number, { label: string; className: string }> 
   3: { label: "P3", className: "text-yellow-400" },
   4: { label: "P4", className: "text-muted-foreground" },
 };
-
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
 
 function slugify(title: string): string {
   return title
@@ -191,14 +182,16 @@ export function BoardCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex items-center gap-1.5">
-                <Avatar className="h-5 w-5">
-                  {item.assignedTo.imageUrl && (
-                    <AvatarImage src={item.assignedTo.imageUrl} />
-                  )}
-                  <AvatarFallback className="text-[8px]">
-                    {getInitials(item.assignedTo.displayName)}
-                  </AvatarFallback>
-                </Avatar>
+                <AzureAvatar
+                  disableTooltip
+                  className="size-6"
+                  user={{
+                    id: item.assignedTo.uniqueName ?? item.assignedTo.displayName,
+                    displayName: item.assignedTo.displayName,
+                    uniqueName: item.assignedTo.uniqueName ?? item.assignedTo.displayName,
+                    avatarUrl: item.assignedTo.imageUrl,
+                  }}
+                />
                 <span className="max-w-[120px] truncate text-xs text-muted-foreground">
                   {item.assignedTo.displayName}
                 </span>
