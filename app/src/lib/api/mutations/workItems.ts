@@ -28,7 +28,7 @@ export const workItemsMutations = {
 
 type MoveBoardItemMutationContext = {
   boardQueryKey: readonly unknown[];
-  previousItem?: BoardWorkItem;
+  previousBoard?: BoardResponse;
 };
 
 const NUMERIC_ID_PATTERN = /^\d+$/;
@@ -151,9 +151,6 @@ function useMoveBoardItem(
 
       await queryClient.cancelQueries({ queryKey: boardQueryKey });
       const previousBoard = queryClient.getQueryData<BoardResponse>(boardQueryKey);
-      const previousItem = previousBoard?.items.find(
-        (item) => item.id === vars.workItemId,
-      );
 
       if (previousBoard) {
         const targetColumn = previousBoard.columns.find(
@@ -186,24 +183,17 @@ function useMoveBoardItem(
 
       const context: MoveBoardItemMutationContext = {
         boardQueryKey,
-        previousItem,
+        previousBoard,
       };
       await options?.onMutate?.(vars);
       return context;
     },
     onError: (err, vars, ctx) => {
-      if (ctx?.previousItem) {
-        const board = queryClient.getQueryData<BoardResponse>(ctx.boardQueryKey);
-        if (board) {
-          const restoredItems = board.items.map((item) =>
-            item.id === ctx.previousItem?.id ? ctx.previousItem : item,
-          );
-
-          queryClient.setQueryData<BoardResponse>(ctx.boardQueryKey, {
-            ...board,
-            items: sortItemsByColumnAndPriority(restoredItems, board.columns),
-          });
-        }
+      if (ctx?.previousBoard) {
+        queryClient.setQueryData<BoardResponse>(
+          ctx.boardQueryKey,
+          ctx.previousBoard,
+        );
       }
       options?.onError?.(err, vars, ctx);
     },

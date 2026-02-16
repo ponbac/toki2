@@ -8,7 +8,7 @@ import {
 } from "@/lib/board-columns";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
   boardColumnScopeKey,
@@ -151,9 +151,7 @@ export function BoardView({
     [columnsWithItems],
   );
   const allColumnsRef = useRef(allColumns);
-  useEffect(() => {
-    allColumnsRef.current = allColumns;
-  }, [allColumns]);
+  allColumnsRef.current = allColumns;
 
   const visibleColumns = useMemo(
     () =>

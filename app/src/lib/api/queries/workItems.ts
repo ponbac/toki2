@@ -99,6 +99,7 @@ export const workItemsQueries = {
   }) =>
     queryOptions({
       queryKey: [...workItemsQueries.baseKey, "board", params],
+      refetchInterval: 60 * 1000,
       queryFn: async () =>
         api
           .get("work-items/board", {
