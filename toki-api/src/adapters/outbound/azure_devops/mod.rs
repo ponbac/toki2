@@ -382,6 +382,12 @@ fn build_llm_markdown(
     writeln!(md, ">").unwrap();
     writeln!(
         md,
+        "> Respond in English. The work item details and comments may be in Swedish; use them as source context but keep your final response in English."
+    )
+    .unwrap();
+    writeln!(md, ">").unwrap();
+    writeln!(
+        md,
         "> You can use the `az boards` CLI to fetch more context:"
     )
     .unwrap();
