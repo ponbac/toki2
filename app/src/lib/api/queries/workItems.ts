@@ -22,6 +22,21 @@ export type PullRequestRef = {
   repositoryId: string;
   projectId: string;
   url: string;
+  title?: string;
+  sourceBranch?: string;
+  approvalStatus?: PullRequestApprovalStatus;
+};
+
+export type PullRequestReviewer = {
+  id: string;
+  displayName: string;
+  uniqueName: string;
+  avatarUrl: string | null;
+};
+
+export type PullRequestApprovalStatus = {
+  approvedBy: PullRequestReviewer[];
+  blockedBy: PullRequestReviewer[];
 };
 
 export type BoardWorkItem = {

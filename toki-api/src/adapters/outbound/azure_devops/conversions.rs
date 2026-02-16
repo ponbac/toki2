@@ -242,7 +242,8 @@ fn parse_pr_artifact_url(url: &str, org: &str) -> Option<PullRequestRef> {
     let prefix = "vstfs:///Git/PullRequestId/";
     let payload = url.strip_prefix(prefix)?;
     // Payload is URL-encoded: {projectId}%2F{repoId}%2F{prId}
-    let decoded = payload.replace("%2F", "/");
+    // Azure can emit lowercase hex escapes ("%2f"), so accept both.
+    let decoded = payload.replace("%2F", "/").replace("%2f", "/");
     let mut parts = decoded.splitn(3, '/');
     let project_id = parts.next()?.to_string();
     let repository_id = parts.next()?.to_string();
@@ -383,6 +384,19 @@ mod tests {
     #[test]
     fn test_parse_pr_artifact_url_valid() {
         let url = "vstfs:///Git/PullRequestId/abc-project%2Frepo-123%2F42";
+        let pr = parse_pr_artifact_url(url, "myorg").unwrap();
+        assert_eq!(pr.project_id, "abc-project");
+        assert_eq!(pr.repository_id, "repo-123");
+        assert_eq!(pr.id, "42");
+        assert_eq!(
+            pr.url,
+            "https://dev.azure.com/myorg/abc-project/_git/repo-123/pullrequest/42"
+        );
+    }
+
+    #[test]
+    fn test_parse_pr_artifact_url_valid_with_lowercase_encoding() {
+        let url = "vstfs:///Git/PullRequestId/abc-project%2frepo-123%2f42";
         let pr = parse_pr_artifact_url(url, "myorg").unwrap();
         assert_eq!(pr.project_id, "abc-project");
         assert_eq!(pr.repository_id, "repo-123");

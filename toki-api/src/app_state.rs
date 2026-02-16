@@ -174,6 +174,11 @@ impl AppState {
             .ok_or(AppStateError::RepoClientNotFound(key))
     }
 
+    pub async fn get_repo_keys(&self) -> Vec<RepoKey> {
+        let repo_clients = self.repo_clients.read().await;
+        repo_clients.keys().cloned().collect()
+    }
+
     pub async fn get_repo_differs(&self) -> Vec<Arc<RepoDiffer>> {
         let differs = self.differs.read().await;
 

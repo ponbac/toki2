@@ -11,11 +11,16 @@ use tracing::instrument;
 
 use crate::{
     adapters::inbound::http::{
-        BoardResponse, FormatForLlmResponse, IterationResponse, WorkItemProjectResponse,
+        BoardResponse, FormatForLlmResponse, IterationResponse, PullRequestApprovalStatusResponse,
+        PullRequestRefResponse, PullRequestReviewerResponse, WorkItemProjectResponse,
+        WorkItemResponse,
     },
     app_state::AppState,
     auth::AuthUser,
-    domain::models::WorkItem,
+    domain::{
+        models::{BoardData, PullRequestRef, WorkItem},
+        RepoKey,
+    },
     routes::email::normalize_email,
 };
 
@@ -58,6 +63,30 @@ pub struct MoveWorkItemBody {
     pub target_column_name: String,
     pub iteration_path: Option<String>,
     pub team: Option<String>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct PullRequestApprovalIndexKey {
+    work_item_id: String,
+    pull_request_id: String,
+    repository_id: String,
+}
+
+impl PullRequestApprovalIndexKey {
+    fn new(work_item_id: &str, pull_request_id: &str, repository_id: &str) -> Self {
+        Self {
+            work_item_id: work_item_id.to_string(),
+            pull_request_id: pull_request_id.to_string(),
+            repository_id: repository_id.to_ascii_lowercase(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PullRequestRefEnrichment {
+    title: String,
+    source_branch: String,
+    approval_status: PullRequestApprovalStatusResponse,
 }
 
 // ---------------------------------------------------------------------------
@@ -104,8 +133,11 @@ async fn get_board(
         .get_board_data(query.iteration_path.as_deref(), query.team.as_deref())
         .await?;
     apply_avatar_overrides_to_work_items(&app_state, &mut board_data.items).await?;
+    let approval_index =
+        build_pull_request_approval_index(&app_state, &query, &board_data.items).await?;
+    let response = board_response_from_enriched_board(board_data, &approval_index);
 
-    Ok(Json(board_data.into()))
+    Ok(Json(response))
 }
 
 #[instrument(name = "GET /work-items/format-for-llm")]
@@ -157,6 +189,170 @@ async fn move_work_item(
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn build_pull_request_approval_index(
+    app_state: &AppState,
+    query: &BoardQuery,
+    board_items: &[WorkItem],
+) -> Result<HashMap<PullRequestApprovalIndexKey, PullRequestRefEnrichment>, ApiError> {
+    let referenced_repository_ids = board_items
+        .iter()
+        .flat_map(|item| {
+            item.pull_requests
+                .iter()
+                .map(|pr| pr.repository_id.to_ascii_lowercase())
+        })
+        .collect::<HashSet<_>>();
+    if referenced_repository_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let referenced_pr_ids = board_items
+        .iter()
+        .flat_map(|item| item.pull_requests.iter().map(|pr| pr.id.clone()))
+        .collect::<HashSet<_>>();
+    let referenced_work_item_ids = board_items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<HashSet<_>>();
+
+    let mut enrichment_by_pr_ref = HashMap::new();
+    let board_scope_repos = app_state.get_repo_keys().await;
+
+    for repo_key in board_scope_repos {
+        if !repo_matches_board_scope(&repo_key, query) {
+            continue;
+        }
+
+        let repo_client = match app_state.get_repo_client(repo_key.clone()).await {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::debug!(
+                    error = %error,
+                    repo_key = %repo_key,
+                    "Skipping board PR approval enrichment for repo without active client"
+                );
+                continue;
+            }
+        };
+        let repository_id = repo_client.repo_id().to_ascii_lowercase();
+        if !referenced_repository_ids.contains(&repository_id) {
+            continue;
+        }
+
+        let cached_pull_requests = match app_state.get_cached_pull_requests(repo_key.clone()).await
+        {
+            Ok(Some(prs)) => prs,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::debug!(
+                    error = %error,
+                    repo_key = %repo_key,
+                    "Skipping board PR approval enrichment for repo without cache"
+                );
+                continue;
+            }
+        };
+
+        for pull_request in cached_pull_requests {
+            let pull_request_id = pull_request.pull_request_base.id.to_string();
+            if !referenced_pr_ids.contains(&pull_request_id) {
+                continue;
+            }
+
+            let blocked_by = pull_request.blocked_by(&pull_request.threads);
+            let approved_by = pull_request.approved_by();
+
+            let enrichment = PullRequestRefEnrichment {
+                title: pull_request.pull_request_base.title.clone(),
+                source_branch: pull_request.pull_request_base.source_branch.clone(),
+                approval_status: PullRequestApprovalStatusResponse {
+                    approved_by: approved_by
+                        .into_iter()
+                        .map(|reviewer| to_pull_request_reviewer_response(reviewer.identity))
+                        .collect(),
+                    blocked_by: blocked_by
+                        .into_iter()
+                        .map(|reviewer| to_pull_request_reviewer_response(reviewer.identity))
+                        .collect(),
+                },
+            };
+
+            for work_item in &pull_request.work_items {
+                let work_item_id = work_item.id.to_string();
+                if !referenced_work_item_ids.contains(&work_item_id) {
+                    continue;
+                }
+                let key = PullRequestApprovalIndexKey::new(
+                    &work_item_id,
+                    &pull_request_id,
+                    &repository_id,
+                );
+                enrichment_by_pr_ref
+                    .entry(key)
+                    .or_insert_with(|| enrichment.clone());
+            }
+        }
+    }
+
+    Ok(enrichment_by_pr_ref)
+}
+
+fn repo_matches_board_scope(repo_key: &RepoKey, query: &BoardQuery) -> bool {
+    repo_key
+        .organization
+        .eq_ignore_ascii_case(&query.organization)
+        && repo_key.project.eq_ignore_ascii_case(&query.project)
+}
+
+fn to_pull_request_reviewer_response(identity: az_devops::Identity) -> PullRequestReviewerResponse {
+    PullRequestReviewerResponse {
+        id: identity.id,
+        display_name: identity.display_name,
+        unique_name: identity.unique_name,
+        avatar_url: identity.avatar_url,
+    }
+}
+
+fn board_response_from_enriched_board(
+    board_data: BoardData,
+    approval_index: &HashMap<PullRequestApprovalIndexKey, PullRequestRefEnrichment>,
+) -> BoardResponse {
+    BoardResponse {
+        columns: board_data.columns.into_iter().map(Into::into).collect(),
+        items: board_data
+            .items
+            .into_iter()
+            .map(|item| {
+                let item_id = item.id.clone();
+                let pull_requests = item.pull_requests.clone();
+                let mut item_response: WorkItemResponse = item.into();
+                item_response.pull_requests = pull_requests
+                    .into_iter()
+                    .map(|pr_ref| enrich_pull_request_ref(&item_id, pr_ref, approval_index))
+                    .collect();
+                item_response
+            })
+            .collect(),
+    }
+}
+
+fn enrich_pull_request_ref(
+    work_item_id: &str,
+    pr_ref: PullRequestRef,
+    approval_index: &HashMap<PullRequestApprovalIndexKey, PullRequestRefEnrichment>,
+) -> PullRequestRefResponse {
+    let key = PullRequestApprovalIndexKey::new(work_item_id, &pr_ref.id, &pr_ref.repository_id);
+    let mut pr_response: PullRequestRefResponse = pr_ref.into();
+
+    if let Some(enriched) = approval_index.get(&key) {
+        pr_response.title = Some(enriched.title.clone());
+        pr_response.source_branch = Some(enriched.source_branch.clone());
+        pr_response.approval_status = Some(enriched.approval_status.clone());
+    }
+
+    pr_response
 }
 
 async fn apply_avatar_overrides_to_work_items(
@@ -248,11 +444,20 @@ pub fn router() -> Router<AppState> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use time::OffsetDateTime;
 
-    use crate::domain::models::WorkItemPerson;
     use crate::routes::email::normalize_email;
+    use crate::{
+        adapters::inbound::http::PullRequestApprovalStatusResponse,
+        domain::models::{
+            BoardData, BoardState, PullRequestRef, WorkItem, WorkItemCategory, WorkItemPerson,
+        },
+    };
 
-    use super::apply_avatar_override_to_work_item_person;
+    use super::{
+        apply_avatar_override_to_work_item_person, board_response_from_enriched_board,
+        PullRequestApprovalIndexKey, PullRequestRefEnrichment, PullRequestReviewerResponse,
+    };
 
     #[test]
     fn normalize_email_trims_and_lowercases() {
@@ -283,5 +488,101 @@ mod tests {
             person.image_url.as_deref(),
             Some("https://custom.example.com/avatar.png")
         );
+    }
+
+    #[test]
+    fn pull_request_approval_index_key_normalizes_repository_id() {
+        let key = PullRequestApprovalIndexKey::new("123", "42", "REPO-GUID-ABC");
+        assert_eq!(key.repository_id, "repo-guid-abc");
+    }
+
+    #[test]
+    fn board_response_from_enriched_board_applies_pr_enrichment() {
+        let board = BoardData {
+            columns: vec![],
+            items: vec![sample_work_item()],
+        };
+
+        let mut approval_index = HashMap::new();
+        approval_index.insert(
+            PullRequestApprovalIndexKey::new("123", "42", "repo-guid"),
+            PullRequestRefEnrichment {
+                title: "Improve board drag behavior".to_string(),
+                source_branch: "refs/heads/123/improve-board-drag-behavior".to_string(),
+                approval_status: PullRequestApprovalStatusResponse {
+                    approved_by: vec![PullRequestReviewerResponse {
+                        id: "reviewer-1".to_string(),
+                        display_name: "Reviewer One".to_string(),
+                        unique_name: "reviewer.one@example.com".to_string(),
+                        avatar_url: Some("https://avatars.example.com/1.png".to_string()),
+                    }],
+                    blocked_by: vec![],
+                },
+            },
+        );
+
+        let response = board_response_from_enriched_board(board, &approval_index);
+        let pull_request = &response.items[0].pull_requests[0];
+
+        assert_eq!(
+            pull_request.title.as_deref(),
+            Some("Improve board drag behavior")
+        );
+        assert_eq!(
+            pull_request.source_branch.as_deref(),
+            Some("refs/heads/123/improve-board-drag-behavior")
+        );
+        let approval_status = pull_request
+            .approval_status
+            .as_ref()
+            .expect("approval status");
+        assert_eq!(approval_status.approved_by.len(), 1);
+        assert!(approval_status.blocked_by.is_empty());
+    }
+
+    #[test]
+    fn board_response_from_enriched_board_leaves_unmatched_pr_unenriched() {
+        let board = BoardData {
+            columns: vec![],
+            items: vec![sample_work_item()],
+        };
+
+        let response = board_response_from_enriched_board(board, &HashMap::new());
+        let pull_request = &response.items[0].pull_requests[0];
+
+        assert!(pull_request.title.is_none());
+        assert!(pull_request.source_branch.is_none());
+        assert!(pull_request.approval_status.is_none());
+    }
+
+    fn sample_work_item() -> WorkItem {
+        WorkItem {
+            id: "123".to_string(),
+            title: "Sample work item".to_string(),
+            board_state: BoardState::Todo,
+            board_column_id: None,
+            board_column_name: None,
+            category: WorkItemCategory::Task,
+            state_name: "New".to_string(),
+            priority: Some(1),
+            assigned_to: None,
+            created_by: None,
+            description: None,
+            acceptance_criteria: None,
+            iteration_path: None,
+            area_path: None,
+            tags: vec![],
+            parent: None,
+            related: vec![],
+            pull_requests: vec![PullRequestRef {
+                id: "42".to_string(),
+                repository_id: "REPO-GUID".to_string(),
+                project_id: "project-guid".to_string(),
+                url: "https://dev.azure.com/org/project/_git/repo/pullrequest/42".to_string(),
+            }],
+            url: "https://dev.azure.com/org/project/_workitems/edit/123".to_string(),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            changed_at: OffsetDateTime::UNIX_EPOCH,
+        }
     }
 }
