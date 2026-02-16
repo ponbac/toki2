@@ -70,8 +70,7 @@ fn render_history_view(frame: &mut Frame, app: &App) {
     let title = Paragraph::new("Timer History")
         .style(
             Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+                .fg(Color::Cyan),
         )
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
@@ -101,8 +100,7 @@ fn render_history_view(frame: &mut Frame, app: &App) {
             items.push(ListItem::new(Line::from(vec![Span::styled(
                 date_label,
                 Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(Color::DarkGray),
             )])));
 
             last_date = Some(entry_date);
@@ -244,7 +242,6 @@ fn render_project_selection(frame: &mut Frame, app: &App) {
             let style = if i == app.filtered_project_index {
                 Style::default()
                     .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -333,7 +330,6 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
             let style = if i == app.filtered_activity_index {
                 Style::default()
                     .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -389,8 +385,7 @@ fn render_header(frame: &mut Frame, area: ratatui::layout::Rect) {
     let title = Paragraph::new("Toki Timer TUI")
         .style(
             Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+                .fg(Color::Yellow),
         )
         .alignment(Alignment::Center)
         .block(
@@ -418,7 +413,6 @@ fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         // Magenta border when focused (takes priority)
         Style::default()
             .fg(Color::Magenta)
-            .add_modifier(Modifier::BOLD)
     } else if is_running {
         // Green border when running and not focused
         Style::default().fg(Color::Green)
@@ -430,8 +424,7 @@ fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
     let timer = Paragraph::new(timer_text)
         .style(
             Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
+                .fg(Color::White),
         )
         .alignment(Alignment::Left)
         .block(
@@ -457,8 +450,7 @@ fn render_project(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         // Magenta border and white text when focused (takes priority)
         (
             Style::default()
-                .fg(Color::Magenta)
-                .add_modifier(Modifier::BOLD),
+                .fg(Color::Magenta),
             Color::White,
         )
     } else if !is_empty {
@@ -498,7 +490,6 @@ fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App)
     let border_style = if is_focused {
         Style::default()
             .fg(Color::Magenta)
-            .add_modifier(Modifier::BOLD)
     } else if !is_empty {
         // Green border when annotation has content and not focused
         Style::default().fg(Color::Green)
@@ -697,8 +688,7 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
     let title = Paragraph::new("Edit Annotation")
         .style(
             Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+                .fg(Color::Cyan),
         )
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
@@ -768,7 +758,6 @@ fn render_save_action_dialog(frame: &mut Frame, app: &App) {
             let style = if action == app.selected_save_action {
                 Style::default()
                     .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
