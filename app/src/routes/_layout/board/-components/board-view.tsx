@@ -146,18 +146,17 @@ export function BoardView({
       items: itemsByColumn.get(column.id) ?? [],
     }));
   }, [board.columns, filteredItems]);
+  const visibleColumns = useMemo(
+    () =>
+      columnsWithItems.filter((column) => !hiddenColumnIdSet.has(column.id)),
+    [columnsWithItems, hiddenColumnIdSet],
+  );
   const allColumns = useMemo(
     () => columnsWithItems.map((column) => ({ id: column.id, name: column.name })),
     [columnsWithItems],
   );
   const allColumnsRef = useRef(allColumns);
   allColumnsRef.current = allColumns;
-
-  const visibleColumns = useMemo(
-    () =>
-      columnsWithItems.filter((column) => !hiddenColumnIdSet.has(column.id)),
-    [columnsWithItems, hiddenColumnIdSet],
-  );
 
   const toggleColumnVisibility = useCallback(
     (columnId: string) => {

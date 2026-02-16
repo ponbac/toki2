@@ -64,10 +64,19 @@ function BoardPage() {
 
   // Persist project selection
   useEffect(() => {
-    if (organization && project) {
-      setLastViewedProject({ organization, project });
+    if (!organization || !project) {
+      return;
     }
-  }, [organization, project, setLastViewedProject]);
+
+    if (
+      lastViewedProject?.organization === organization &&
+      lastViewedProject.project === project
+    ) {
+      return;
+    }
+
+    setLastViewedProject({ organization, project });
+  }, [organization, project, lastViewedProject, setLastViewedProject]);
 
   return (
     <main className="flex w-full flex-col gap-4 p-4 md:p-8">

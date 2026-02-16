@@ -7,7 +7,7 @@ const FALLBACK_COLUMN_ID_BY_STATE: Record<BoardWorkItem["boardState"], string> =
 };
 
 export function normalizeColumnName(name: string) {
-  return name.trim().toLowerCase();
+  return name.trim().replace(/[A-Z]/g, (character) => character.toLowerCase());
 }
 
 export function resolveColumnIdForItem(
