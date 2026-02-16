@@ -283,6 +283,8 @@ fn render_project_selection(frame: &mut Frame, app: &App) {
         Span::raw(": Navigate  "),
         Span::styled("Enter", Style::default().fg(Color::Yellow)),
         Span::raw(": Select  "),
+        Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
+        Span::raw(": Clear  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
         Span::raw(": Cancel"),
     ];
@@ -299,36 +301,36 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
-            Constraint::Length(3), // Header
+            Constraint::Length(3), // Search input
             Constraint::Min(0),    // Activity list
             Constraint::Length(3), // Controls
         ])
         .split(frame.size());
 
-    // Header
-    let title_text = if let Some(project) = &app.selected_project {
-        format!("Select Activity for {}", project.name)
+    // Search input box
+    let search_text = if app.activity_search_input.is_empty() {
+        "Type to search...".to_string()
     } else {
-        "Select Activity".to_string()
+        format!("{}_", app.activity_search_input)
     };
-
-    let title = Paragraph::new(title_text)
-        .style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(title, chunks[0]);
+    let search_box = Paragraph::new(search_text)
+        .style(Style::default().fg(Color::White))
+        .alignment(Alignment::Left)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Search ")
+                .padding(Padding::horizontal(1)),
+        );
+    frame.render_widget(search_box, chunks[0]);
 
     // Activity list
     let items: Vec<ListItem> = app
-        .activities
+        .filtered_activities
         .iter()
         .enumerate()
         .map(|(i, activity)| {
-            let style = if i == app.selected_activity_index {
+            let style = if i == app.filtered_activity_index {
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD)
@@ -340,11 +342,22 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
         })
         .collect();
 
+    // Show count: filtered / total
+    let title = if app.activity_search_input.is_empty() {
+        format!(" Activities ({}) ", app.activities.len())
+    } else {
+        format!(
+            " Activities ({}/{}) ",
+            app.filtered_activities.len(),
+            app.activities.len()
+        )
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Activities")
+                .title(title)
                 .padding(Padding::horizontal(1)),
         )
         .style(Style::default());
@@ -353,17 +366,21 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
 
     // Controls
     let controls_text = vec![
+        Span::styled("Type", Style::default().fg(Color::Yellow)),
+        Span::raw(": Filter  "),
         Span::styled("↑↓", Style::default().fg(Color::Yellow)),
         Span::raw(": Navigate  "),
         Span::styled("Enter", Style::default().fg(Color::Yellow)),
         Span::raw(": Select  "),
+        Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
+        Span::raw(": Clear  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
         Span::raw(": Cancel"),
     ];
 
     let controls = Paragraph::new(Line::from(controls_text))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Controls"));
+        .block(Block::default().borders(Borders::ALL).title(" Controls "));
 
     frame.render_widget(controls, chunks[2]);
 }
@@ -630,7 +647,10 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Start  "),
         Span::styled("Ctrl+S", Style::default().fg(Color::Yellow)),
         Span::raw(": Save  "),
-        Span::styled("Tab / ↑↓ / j/k", Style::default().fg(Color::Yellow)),
+        Span::styled(
+            "Tab/Shift+Tab / ↑↓ / j/k",
+            Style::default().fg(Color::Yellow),
+        ),
         Span::raw(": Navigate"),
     ];
 

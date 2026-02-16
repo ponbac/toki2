@@ -61,6 +61,11 @@ pub struct App {
     pub filtered_projects: Vec<TestProject>,
     pub filtered_project_index: usize,
 
+    // Fuzzy finding for activities
+    pub activity_search_input: String,
+    pub filtered_activities: Vec<TestActivity>,
+    pub filtered_activity_index: usize,
+
     // Save action selection
     pub selected_save_action: SaveAction,
 
@@ -94,6 +99,9 @@ impl App {
             project_search_input: String::new(),
             filtered_projects: projects.clone(),
             filtered_project_index: 0,
+            activity_search_input: String::new(),
+            filtered_activities: Vec::new(),
+            filtered_activity_index: 0,
             selected_save_action: SaveAction::ContinueSameProject,
             description_input: String::new(),
             editing_description: false,
@@ -237,9 +245,9 @@ impl App {
                 }
             }
             View::SelectActivity => {
-                if !self.activities.is_empty() {
-                    self.selected_activity_index =
-                        (self.selected_activity_index + 1) % self.activities.len();
+                if !self.filtered_activities.is_empty() {
+                    self.filtered_activity_index =
+                        (self.filtered_activity_index + 1) % self.filtered_activities.len();
                 }
             }
             View::History => {
@@ -265,11 +273,11 @@ impl App {
                 }
             }
             View::SelectActivity => {
-                if !self.activities.is_empty() {
-                    self.selected_activity_index = if self.selected_activity_index == 0 {
-                        self.activities.len() - 1
+                if !self.filtered_activities.is_empty() {
+                    self.filtered_activity_index = if self.filtered_activity_index == 0 {
+                        self.filtered_activities.len() - 1
                     } else {
-                        self.selected_activity_index - 1
+                        self.filtered_activity_index - 1
                     };
                 }
             }
@@ -292,13 +300,17 @@ impl App {
                     self.activities = get_test_activities(&project.id);
                     self.selected_activity_index = 0;
                     self.selected_activity = None;
+                    // Initialize filtered activities and clear search
+                    self.activity_search_input.clear();
+                    self.filtered_activities = self.activities.clone();
+                    self.filtered_activity_index = 0;
                     self.set_status(format!("Selected project: {}", project.name));
                     // Automatically show activity selection
                     self.navigate_to(View::SelectActivity);
                 }
             }
             View::SelectActivity => {
-                if let Some(activity) = self.activities.get(self.selected_activity_index) {
+                if let Some(activity) = self.filtered_activities.get(self.filtered_activity_index) {
                     self.selected_activity = Some(activity.clone());
                     self.set_status(format!("Selected activity: {}", activity.name));
                     // If annotation is default, auto-open editor
@@ -438,6 +450,54 @@ impl App {
     pub fn search_input_clear(&mut self) {
         self.project_search_input.clear();
         self.filter_projects();
+    }
+
+    /// Filter activities based on search input using fuzzy matching (only for selected project)
+    pub fn filter_activities(&mut self) {
+        use fuzzy_matcher::skim::SkimMatcherV2;
+        use fuzzy_matcher::FuzzyMatcher;
+
+        if self.activity_search_input.is_empty() {
+            // Empty search - show all activities for selected project
+            self.filtered_activities = self.activities.clone();
+            self.filtered_activity_index = 0;
+            return;
+        }
+
+        let matcher = SkimMatcherV2::default();
+        let mut scored_activities: Vec<(TestActivity, i64)> = self
+            .activities
+            .iter()
+            .filter_map(|activity| {
+                matcher
+                    .fuzzy_match(&activity.name, &self.activity_search_input)
+                    .map(|score| (activity.clone(), score))
+            })
+            .collect();
+
+        // Sort by score descending (best matches first)
+        scored_activities.sort_by(|a, b| b.1.cmp(&a.1));
+
+        self.filtered_activities = scored_activities.into_iter().map(|(a, _)| a).collect();
+        self.filtered_activity_index = 0;
+    }
+
+    /// Handle character input for activity search
+    pub fn activity_search_input_char(&mut self, c: char) {
+        self.activity_search_input.push(c);
+        self.filter_activities();
+    }
+
+    /// Handle backspace for activity search
+    pub fn activity_search_input_backspace(&mut self) {
+        self.activity_search_input.pop();
+        self.filter_activities();
+    }
+
+    /// Clear activity search input
+    pub fn activity_search_input_clear(&mut self) {
+        self.activity_search_input.clear();
+        self.filter_activities();
     }
 
     /// Navigate to next save action option

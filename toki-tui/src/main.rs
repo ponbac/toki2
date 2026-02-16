@@ -97,8 +97,8 @@ async fn run_app(
                 match &app.current_view {
                     app::View::SelectProject => {
                         match key.code {
-                            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+U clears search input
+                            KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                // Ctrl+X clears search input
                                 app.search_input_clear();
                             }
                             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && c != 'q' && c != 'Q' && c != 'j' && c != 'k' => {
@@ -122,6 +122,17 @@ async fn run_app(
                     }
                     app::View::SelectActivity => {
                         match key.code {
+                            KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                // Ctrl+X clears search input
+                                app.activity_search_input_clear();
+                            }
+                            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && c != 'q' && c != 'Q' && c != 'j' && c != 'k' => {
+                                // Type to search (except for navigation/quit keys)
+                                app.activity_search_input_char(c);
+                            }
+                            KeyCode::Backspace => {
+                                app.activity_search_input_backspace();
+                            }
                             KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
                             KeyCode::Down | KeyCode::Char('j') => app.select_next(),
                             KeyCode::Enter => {
@@ -213,9 +224,13 @@ async fn run_app(
                                     app.navigate_to(app::View::SaveAction);
                                 }
                             }
-                            // Tab: Navigate between boxes
+                            // Tab: Navigate forward between boxes
                             KeyCode::Tab => {
                                 app.focus_next();
+                            }
+                            // Shift+Tab (BackTab): Navigate backward between boxes
+                            KeyCode::BackTab => {
+                                app.focus_previous();
                             }
                             // Arrow keys: Navigate between boxes
                             KeyCode::Down => {

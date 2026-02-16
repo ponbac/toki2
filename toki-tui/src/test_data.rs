@@ -47,7 +47,7 @@ impl TestActivity {
 /// Get test projects for demo user
 pub fn get_test_projects() -> Vec<TestProject> {
     vec![
-        TestProject::new("proj_1", "Toki2 Development").with_code("TOKI-2"),
+        TestProject::new("proj_1", "Nordic Crisis Manager").with_code("NCM"),
         TestProject::new("proj_2", "Azure DevOps Integration").with_code("ADO-INT"),
         TestProject::new("proj_3", "TUI Development").with_code("TUI"),
         TestProject::new("proj_4", "Internal Tools").with_code("TOOLS"),
@@ -63,6 +63,7 @@ pub fn get_test_activities(project_id: &str) -> Vec<TestActivity> {
             TestActivity::new("act_1_2", "Frontend Development", project_id),
             TestActivity::new("act_1_3", "Bug Fixes", project_id),
             TestActivity::new("act_1_4", "Code Review", project_id),
+            TestActivity::new("act_1_5", "UI/UX development", project_id),
         ],
         "proj_2" => vec![
             TestActivity::new("act_2_1", "API Integration", project_id),
