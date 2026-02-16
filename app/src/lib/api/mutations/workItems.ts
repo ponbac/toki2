@@ -31,6 +31,33 @@ type MoveBoardItemMutationContext = {
   previousItem?: BoardWorkItem;
 };
 
+const NUMERIC_ID_PATTERN = /^\d+$/;
+
+function compareWorkItemIds(a: string, b: string): number {
+  if (NUMERIC_ID_PATTERN.test(a) && NUMERIC_ID_PATTERN.test(b)) {
+    const normalizedA = a.replace(/^0+(?=\d)/, "");
+    const normalizedB = b.replace(/^0+(?=\d)/, "");
+    if (normalizedA.length !== normalizedB.length) {
+      return normalizedA.length - normalizedB.length;
+    }
+    if (normalizedA < normalizedB) {
+      return -1;
+    }
+    if (normalizedA > normalizedB) {
+      return 1;
+    }
+    return 0;
+  }
+
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
+}
+
 function toOptimisticBoardState(columnName: string): BoardWorkItem["boardState"] {
   if (
     columnName === "New" ||
@@ -91,13 +118,7 @@ function sortItemsByColumnAndPriority(
       return 1;
     }
 
-    if (a.id < b.id) {
-      return -1;
-    }
-    if (a.id > b.id) {
-      return 1;
-    }
-    return 0;
+    return compareWorkItemIds(a.id, b.id);
   });
 }
 

@@ -239,7 +239,7 @@ fn sort_items_by_column_and_priority(items: &mut [WorkItem], columns: &[BoardCol
                 (None, Some(_)) => Ordering::Greater,
                 (None, None) => Ordering::Equal,
             })
-            .then_with(|| a.id.cmp(&b.id))
+            .then_with(|| compare_work_item_ids(&a.id, &b.id))
     });
 }
 
@@ -247,8 +247,32 @@ fn normalize_name(name: &str) -> String {
     name.trim().to_ascii_lowercase()
 }
 
+fn compare_work_item_ids(a: &str, b: &str) -> Ordering {
+    let a_is_numeric = !a.is_empty() && a.as_bytes().iter().all(u8::is_ascii_digit);
+    let b_is_numeric = !b.is_empty() && b.as_bytes().iter().all(u8::is_ascii_digit);
+
+    if a_is_numeric && b_is_numeric {
+        let a_normalized = {
+            let trimmed = a.trim_start_matches('0');
+            if trimmed.is_empty() { "0" } else { trimmed }
+        };
+        let b_normalized = {
+            let trimmed = b.trim_start_matches('0');
+            if trimmed.is_empty() { "0" } else { trimmed }
+        };
+
+        return a_normalized
+            .len()
+            .cmp(&b_normalized.len())
+            .then_with(|| a_normalized.cmp(b_normalized));
+    }
+
+    a.cmp(b)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::cmp::Ordering;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
@@ -260,6 +284,19 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn compare_work_item_ids_uses_numeric_order_for_numeric_ids() {
+        assert_eq!(compare_work_item_ids("9", "10"), Ordering::Less);
+        assert_eq!(compare_work_item_ids("10", "9"), Ordering::Greater);
+        assert_eq!(compare_work_item_ids("010", "10"), Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_work_item_ids_falls_back_to_lexicographic_for_non_numeric_ids() {
+        assert_eq!(compare_work_item_ids("abc-10", "abc-2"), Ordering::Less);
+        assert_eq!(compare_work_item_ids("owner/repo#2", "owner/repo#10"), Ordering::Greater);
+    }
 
     #[derive(Clone, Default)]
     struct MockProvider {
