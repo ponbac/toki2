@@ -337,6 +337,9 @@ pub struct PullRequestRefResponse {
     pub repository_id: String,
     pub project_id: String,
     pub url: String,
+    pub title: Option<String>,
+    pub source_branch: Option<String>,
+    pub approval_status: Option<PullRequestApprovalStatusResponse>,
 }
 
 impl From<PullRequestRef> for PullRequestRefResponse {
@@ -346,8 +349,27 @@ impl From<PullRequestRef> for PullRequestRefResponse {
             repository_id: pr.repository_id,
             project_id: pr.project_id,
             url: pr.url,
+            title: None,
+            source_branch: None,
+            approval_status: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestApprovalStatusResponse {
+    pub approved_by: Vec<PullRequestReviewerResponse>,
+    pub blocked_by: Vec<PullRequestReviewerResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestReviewerResponse {
+    pub id: String,
+    pub display_name: String,
+    pub unique_name: String,
+    pub avatar_url: Option<String>,
 }
 
 /// Response for the format-for-llm endpoint.

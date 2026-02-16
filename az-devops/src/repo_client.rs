@@ -81,6 +81,10 @@ impl RepoClient {
         &self.project
     }
 
+    pub fn repo_id(&self) -> &str {
+        &self.repo_id
+    }
+
     pub async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, RepoClientError> {
         let pull_requests = self
             .git_client
@@ -1050,7 +1054,12 @@ mod tests {
         .is_some();
 
         let restore_result = repo_client
-            .move_taskboard_work_item_to_column(&team, &iteration_id, work_item_id, &original_column)
+            .move_taskboard_work_item_to_column(
+                &team,
+                &iteration_id,
+                work_item_id,
+                &original_column,
+            )
             .await;
         assert!(
             restore_result.is_ok(),

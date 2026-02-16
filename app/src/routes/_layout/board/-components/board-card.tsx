@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import { BOARD_CATEGORY_OPTIONS } from "../-lib/category-meta";
 import { CopyWorkItem } from "./copy-work-item";
+import { PrApprovalHoverCard } from "./pr-approval-hover-card";
 import {
-  GitPullRequest,
   GitBranch,
   Check,
   ExternalLink,
@@ -30,19 +30,18 @@ const CATEGORY_META_BY_VALUE = Object.fromEntries(
   BOARD_CATEGORY_OPTIONS.map((option) => [option.value, option]),
 ) as Record<string, (typeof BOARD_CATEGORY_OPTIONS)[number] | undefined>;
 
-const PRIORITY_INDICATORS: Record<number, { label: string; className: string }> = {
+const PRIORITY_INDICATORS: Record<
+  number,
+  { label: string; className: string }
+> = {
   1: { label: "P1", className: "text-red-400 font-semibold" },
   2: { label: "P2", className: "text-orange-400 font-medium" },
   3: { label: "P3", className: "text-yellow-400" },
   4: { label: "P4", className: "text-muted-foreground" },
 };
 
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50);
+function trimBranch(branch: string): string {
+  return branch.replace("refs/heads/", "");
 }
 
 export function BoardCard({
@@ -76,17 +75,24 @@ export function BoardCard({
   const colors = categoryMeta
     ? { bg: categoryMeta.bg, text: categoryMeta.text }
     : {
-    bg: "bg-muted",
-    text: "text-muted-foreground",
-  };
+        bg: "bg-muted",
+        text: "text-muted-foreground",
+      };
   const categoryLabel = categoryMeta?.label ?? item.category;
-  const priority = item.priority != null ? PRIORITY_INDICATORS[item.priority] : null;
+  const priority =
+    item.priority != null ? PRIORITY_INDICATORS[item.priority] : null;
   const isPriorityOne = item.priority === 1;
-  const branchName = `feature/${item.id}-${slugify(item.title)}`;
+  const sourceBranch = item.pullRequests
+    ?.map((pullRequest) => pullRequest.sourceBranch)
+    .find((branch): branch is string => !!branch);
+  const branchName = sourceBranch ? trimBranch(sourceBranch) : null;
 
   const [branchCopied, setBranchCopied] = useState(false);
   const handleCopyBranch = useCallback(
     async (e: React.MouseEvent) => {
+      if (!branchName) {
+        return;
+      }
       e.stopPropagation();
       await navigator.clipboard.writeText(branchName);
       setBranchCopied(true);
@@ -159,24 +165,7 @@ export function BoardCard({
 
         {/* PR indicator - always visible */}
         {item.pullRequests && item.pullRequests.length > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <a
-                href={item.pullRequests[0].url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center text-green-500 hover:text-green-400"
-              >
-                <GitPullRequest className="h-3.5 w-3.5" />
-              </a>
-            </TooltipTrigger>
-            <TooltipContent>
-              {item.pullRequests.length === 1
-                ? `PR #${item.pullRequests[0].id}`
-                : `${item.pullRequests.length} PRs linked`}
-            </TooltipContent>
-          </Tooltip>
+          <PrApprovalHoverCard pullRequests={item.pullRequests} />
         )}
 
         <div className="ml-auto flex items-center gap-0.5">
@@ -219,26 +208,28 @@ export function BoardCard({
             </DropdownMenu>
           </div>
 
-          {/* Branch copy - shown on hover */}
-          <div className="opacity-0 transition-opacity group-hover:opacity-100">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={handleCopyBranch}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  {branchCopied ? (
-                    <Check className="h-3.5 w-3.5 text-green-500" />
-                  ) : (
-                    <GitBranch className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {branchCopied ? "Copied!" : branchName}
-              </TooltipContent>
-            </Tooltip>
-          </div>
+          {/* Branch copy - shown on hover only when PR source branch is available */}
+          {branchName && (
+            <div className="opacity-0 transition-opacity group-hover:opacity-100">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleCopyBranch}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    {branchCopied ? (
+                      <Check className="h-3.5 w-3.5 text-green-500" />
+                    ) : (
+                      <GitBranch className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {branchCopied ? "Copied!" : branchName}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
 
           {/* Copy work item - shown on hover */}
           <div className="opacity-0 transition-opacity group-hover:opacity-100">
@@ -264,9 +255,11 @@ export function BoardCard({
                   disableTooltip
                   className="size-6"
                   user={{
-                    id: item.assignedTo.uniqueName ?? item.assignedTo.displayName,
+                    id:
+                      item.assignedTo.uniqueName ?? item.assignedTo.displayName,
                     displayName: item.assignedTo.displayName,
-                    uniqueName: item.assignedTo.uniqueName ?? item.assignedTo.displayName,
+                    uniqueName:
+                      item.assignedTo.uniqueName ?? item.assignedTo.displayName,
                     avatarUrl: item.assignedTo.imageUrl,
                   }}
                 />
