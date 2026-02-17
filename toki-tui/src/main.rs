@@ -283,6 +283,14 @@ async fn run_app(
                                     }
                                 }
                             }
+                            // T: Toggle timer size
+                            KeyCode::Char('t') | KeyCode::Char('T') => {
+                                app.toggle_timer_size();
+                            }
+                            // Ctrl+X: Clear timer and reset to default state
+                            KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                app.clear_timer();
+                            }
                             _ => {}
                         }
                     }

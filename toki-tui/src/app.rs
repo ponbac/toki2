@@ -34,6 +34,12 @@ pub enum FocusedBox {
     Description,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TimerSize {
+    Normal,
+    Large,
+}
+
 pub struct App {
     pub running: bool,
     pub timer_state: TimerState,
@@ -43,6 +49,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub current_view: View,
     pub focused_box: FocusedBox,
+    pub timer_size: TimerSize,
 
     // Timer history
     pub timer_history: Vec<TimerHistoryEntry>,
@@ -88,6 +95,7 @@ impl App {
             status_message: None,
             current_view: View::Timer,
             focused_box: FocusedBox::Timer,
+            timer_size: TimerSize::Normal,
             timer_history: Vec::new(),
             history_scroll: 0,
             projects: projects.clone(),
@@ -111,6 +119,26 @@ impl App {
 
     pub fn quit(&mut self) {
         self.running = false;
+    }
+
+    /// Toggle timer size between Normal and Large
+    pub fn toggle_timer_size(&mut self) {
+        self.timer_size = match self.timer_size {
+            TimerSize::Normal => TimerSize::Large,
+            TimerSize::Large => TimerSize::Normal,
+        };
+    }
+
+    /// Clear timer and reset to default state
+    pub fn clear_timer(&mut self) {
+        self.timer_state = TimerState::Stopped;
+        self.absolute_start = None;
+        self.local_start = None;
+        self.selected_project = None;
+        self.selected_activity = None;
+        self.description_input = String::new();
+        self.description_is_default = true;
+        self.status_message = Some("Timer cleared".to_string());
     }
 
     /// Start a new timer

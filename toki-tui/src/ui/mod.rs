@@ -19,17 +19,23 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 fn render_timer_view(frame: &mut Frame, app: &App) {
+    // Timer box height depends on timer size
+    let timer_height = match app.timer_size {
+        crate::app::TimerSize::Normal => 3,
+        crate::app::TimerSize::Large => 11, // 1 top padding + 5 ASCII art + 1 spacing + 1 status + 1 bottom padding + 2 borders
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
-            Constraint::Length(3), // Header
-            Constraint::Length(3), // Timer display
-            Constraint::Length(3), // Project info
-            Constraint::Length(3), // Description
-            Constraint::Min(5),    // Today's history
-            Constraint::Length(3), // Status
-            Constraint::Length(4), // Controls (2 rows)
+            Constraint::Length(3),            // Header
+            Constraint::Length(timer_height), // Timer display (dynamic)
+            Constraint::Length(3),            // Project info
+            Constraint::Length(3),            // Description
+            Constraint::Min(5),               // Today's history
+            Constraint::Length(3),            // Status
+            Constraint::Length(4),            // Controls (2 rows)
         ])
         .split(frame.size());
 
@@ -68,10 +74,7 @@ fn render_history_view(frame: &mut Frame, app: &App) {
 
     // Header
     let title = Paragraph::new("Timer History")
-        .style(
-            Style::default()
-                .fg(Color::Cyan),
-        )
+        .style(Style::default().fg(Color::Cyan))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(title, chunks[0]);
@@ -99,8 +102,7 @@ fn render_history_view(frame: &mut Frame, app: &App) {
 
             items.push(ListItem::new(Line::from(vec![Span::styled(
                 date_label,
-                Style::default()
-                    .fg(Color::DarkGray),
+                Style::default().fg(Color::DarkGray),
             )])));
 
             last_date = Some(entry_date);
@@ -240,8 +242,7 @@ fn render_project_selection(frame: &mut Frame, app: &App) {
             };
 
             let style = if i == app.filtered_project_index {
-                Style::default()
-                    .fg(Color::Yellow)
+                Style::default().fg(Color::Yellow)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -328,8 +329,7 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
         .enumerate()
         .map(|(i, activity)| {
             let style = if i == app.filtered_activity_index {
-                Style::default()
-                    .fg(Color::Yellow)
+                Style::default().fg(Color::Yellow)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -383,10 +383,7 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
 
 fn render_header(frame: &mut Frame, area: ratatui::layout::Rect) {
     let title = Paragraph::new("Toki Timer TUI")
-        .style(
-            Style::default()
-                .fg(Color::Yellow),
-        )
+        .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center)
         .block(
             Block::default()
@@ -398,44 +395,82 @@ fn render_header(frame: &mut Frame, area: ratatui::layout::Rect) {
 }
 
 fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
+    use crate::app::TimerSize;
+
     let is_running = matches!(app.timer_state, crate::app::TimerState::Running);
-
-    let timer_text = match app.timer_state {
-        crate::app::TimerState::Running => {
-            let elapsed = app.format_elapsed();
-            format!("{} ⏵ (running)", elapsed)
-        }
-        crate::app::TimerState::Stopped => "00:00:00 (not running)".to_string(),
-    };
-
     let is_focused = app.focused_box == crate::app::FocusedBox::Timer;
+
     let border_style = if is_focused {
-        // Magenta border when focused (takes priority)
-        Style::default()
-            .fg(Color::Magenta)
+        Style::default().fg(Color::Magenta)
     } else if is_running {
-        // Green border when running and not focused
         Style::default().fg(Color::Green)
     } else {
-        // Default border when stopped and not focused
         Style::default()
     };
 
-    let timer = Paragraph::new(timer_text)
-        .style(
-            Style::default()
-                .fg(Color::White),
-        )
-        .alignment(Alignment::Left)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Timer ")
-                .border_style(border_style)
-                .padding(ratatui::widgets::Padding::horizontal(1)),
-        );
+    match app.timer_size {
+        TimerSize::Normal => {
+            // Original normal-sized timer
+            let timer_text = match app.timer_state {
+                crate::app::TimerState::Running => {
+                    let elapsed = app.format_elapsed();
+                    format!("{} ⏵ (running)", elapsed)
+                }
+                crate::app::TimerState::Stopped => "00:00:00 (not running)".to_string(),
+            };
 
-    frame.render_widget(timer, area);
+            let timer = Paragraph::new(timer_text)
+                .style(Style::default().fg(Color::White))
+                .alignment(Alignment::Left)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Timer ")
+                        .border_style(border_style)
+                        .padding(ratatui::widgets::Padding::horizontal(1)),
+                );
+
+            frame.render_widget(timer, area);
+        }
+        TimerSize::Large => {
+            // Large ASCII art timer
+            let time_str = match app.timer_state {
+                crate::app::TimerState::Running => app.format_elapsed(),
+                crate::app::TimerState::Stopped => "00:00:00".to_string(),
+            };
+
+            let status = match app.timer_state {
+                crate::app::TimerState::Running => "⏵ Running",
+                crate::app::TimerState::Stopped => "Not running",
+            };
+
+            // Add top padding
+            let mut lines = vec![Line::from("")];
+
+            // Add large time digits
+            lines.extend(render_large_time(&time_str));
+
+            // Add spacing and status
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                status,
+                Style::default().fg(Color::White),
+            )]));
+
+            // Add bottom padding
+            lines.push(Line::from(""));
+
+            let timer = Paragraph::new(lines).alignment(Alignment::Center).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Timer ")
+                    .border_style(border_style)
+                    .padding(ratatui::widgets::Padding::horizontal(1)),
+            );
+
+            frame.render_widget(timer, area);
+        }
+    }
 }
 
 fn render_project(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
@@ -448,11 +483,7 @@ fn render_project(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
 
     let (border_style, text_color) = if is_focused {
         // Magenta border and white text when focused (takes priority)
-        (
-            Style::default()
-                .fg(Color::Magenta),
-            Color::White,
-        )
+        (Style::default().fg(Color::Magenta), Color::White)
     } else if !is_empty {
         // Green border when project/activity selected and not focused
         (Style::default().fg(Color::Green), Color::White)
@@ -488,8 +519,7 @@ fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App)
 
     let is_focused = app.focused_box == crate::app::FocusedBox::Description;
     let border_style = if is_focused {
-        Style::default()
-            .fg(Color::Magenta)
+        Style::default().fg(Color::Magenta)
     } else if !is_empty {
         // Green border when annotation has content and not focused
         Style::default().fg(Color::Green)
@@ -638,6 +668,8 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Start  "),
         Span::styled("Ctrl+S", Style::default().fg(Color::Yellow)),
         Span::raw(": Save  "),
+        Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
+        Span::raw(": Clear  "),
         Span::styled(
             "Tab/Shift+Tab / ↑↓ / j/k",
             Style::default().fg(Color::Yellow),
@@ -652,6 +684,8 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Annotation (add/edit)  "),
         Span::styled("H", Style::default().fg(Color::Yellow)),
         Span::raw(": History  "),
+        Span::styled("T", Style::default().fg(Color::Yellow)),
+        Span::raw(": Toggle timer size  "),
         Span::styled("Q", Style::default().fg(Color::Yellow)),
         Span::raw(": Quit"),
     ];
@@ -686,10 +720,7 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
 
     // Header
     let title = Paragraph::new("Edit Annotation")
-        .style(
-            Style::default()
-                .fg(Color::Cyan),
-        )
+        .style(Style::default().fg(Color::Cyan))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(title, chunks[0]);
@@ -756,8 +787,7 @@ fn render_save_action_dialog(frame: &mut Frame, app: &App) {
             };
 
             let style = if action == app.selected_save_action {
-                Style::default()
-                    .fg(Color::Yellow)
+                Style::default().fg(Color::Yellow)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -795,4 +825,167 @@ fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
             Constraint::Length((r.width.saturating_sub(width)) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+/// Digit patterns (5x5 grid, 1 = filled, 0 = empty)
+const DIGIT_SIZE: usize = 5;
+
+#[rustfmt::skip]
+const DIGIT_0: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 1, 1, 1,
+    1, 1, 0, 1, 1,
+    1, 1, 0, 1, 1,
+    1, 1, 0, 1, 1,
+    1, 1, 1, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_1: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    0, 0, 0, 1, 1,
+    0, 0, 0, 1, 1,
+    0, 0, 0, 1, 1,
+    0, 0, 0, 1, 1,
+    0, 0, 0, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_2: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 1, 1, 1,
+    0, 0, 0, 1, 1,
+    1, 1, 1, 1, 1,
+    1, 1, 0, 0, 0,
+    1, 1, 1, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_3: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 1, 1, 1,
+    0, 0, 0, 1, 1,
+    1, 1, 1, 1, 1,
+    0, 0, 0, 1, 1,
+    1, 1, 1, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_4: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 0, 1, 1,
+    1, 1, 0, 1, 1,
+    1, 1, 1, 1, 1,
+    0, 0, 0, 1, 1,
+    0, 0, 0, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_5: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 1, 1, 1,
+    1, 1, 0, 0, 0,
+    1, 1, 1, 1, 1,
+    0, 0, 0, 1, 1,
+    1, 1, 1, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_6: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 1, 1, 1,
+    1, 1, 0, 0, 0,
+    1, 1, 1, 1, 1,
+    1, 1, 0, 1, 1,
+    1, 1, 1, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_7: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 1, 1, 1,
+    0, 0, 0, 1, 1,
+    0, 0, 0, 1, 1,
+    0, 0, 0, 1, 1,
+    0, 0, 0, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_8: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 1, 1, 1,
+    1, 1, 0, 1, 1,
+    1, 1, 1, 1, 1,
+    1, 1, 0, 1, 1,
+    1, 1, 1, 1, 1,
+];
+
+#[rustfmt::skip]
+const DIGIT_9: [u8; DIGIT_SIZE * DIGIT_SIZE] = [
+    1, 1, 1, 1, 1,
+    1, 1, 0, 1, 1,
+    1, 1, 1, 1, 1,
+    0, 0, 0, 1, 1,
+    1, 1, 1, 1, 1,
+];
+
+/// Get the pattern for a digit (0-9)
+fn get_digit_pattern(digit: char) -> &'static [u8; DIGIT_SIZE * DIGIT_SIZE] {
+    match digit {
+        '0' => &DIGIT_0,
+        '1' => &DIGIT_1,
+        '2' => &DIGIT_2,
+        '3' => &DIGIT_3,
+        '4' => &DIGIT_4,
+        '5' => &DIGIT_5,
+        '6' => &DIGIT_6,
+        '7' => &DIGIT_7,
+        '8' => &DIGIT_8,
+        '9' => &DIGIT_9,
+        _ => &DIGIT_0, // fallback
+    }
+}
+
+/// Render time string as large block digits
+fn render_large_time(time_str: &str) -> Vec<Line<'_>> {
+    let symbol = "█";
+
+    // Parse time string (HH:MM:SS) into individual digits and colons
+    let chars: Vec<char> = time_str.chars().collect();
+
+    let mut lines = vec![String::new(); DIGIT_SIZE];
+
+    for ch in chars {
+        if ch == ':' {
+            // Render colon (2 blocks vertically centered, wider spacing)
+            lines[0].push_str("   ");
+            lines[1].push_str(" ██");
+            lines[2].push_str("   ");
+            lines[3].push_str(" ██");
+            lines[4].push_str("   ");
+            lines[0].push_str("  "); // spacing after colon
+            lines[1].push_str("  ");
+            lines[2].push_str("  ");
+            lines[3].push_str("  ");
+            lines[4].push_str("  ");
+        } else if ch.is_ascii_digit() {
+            // Render digit
+            let pattern = get_digit_pattern(ch);
+            for row in 0..DIGIT_SIZE {
+                for col in 0..DIGIT_SIZE {
+                    let idx = row * DIGIT_SIZE + col;
+                    if pattern[idx] == 1 {
+                        lines[row].push_str(symbol);
+                    } else {
+                        lines[row].push(' ');
+                    }
+                }
+                lines[row].push(' '); // spacing between digits
+            }
+        }
+    }
+
+    // Convert strings to styled Lines
+    lines
+        .into_iter()
+        .map(|line| {
+            Line::from(Span::styled(
+                line,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        })
+        .collect()
 }
