@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use axum::{
+    body::Body,
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, HeaderValue, StatusCode},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -19,6 +21,7 @@ use crate::{
     auth::AuthUser,
     domain::{
         models::{BoardData, PullRequestRef, WorkItem},
+        WorkItemError,
         RepoKey,
     },
     routes::email::normalize_email,
@@ -56,6 +59,14 @@ pub struct FormatForLlmQuery {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkItemImageQuery {
+    pub organization: String,
+    pub project: String,
+    pub image_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MoveWorkItemBody {
     pub organization: String,
     pub project: String,
@@ -88,6 +99,9 @@ struct PullRequestRefEnrichment {
     source_branch: String,
     approval_status: PullRequestApprovalStatusResponse,
 }
+
+const DEFAULT_WORK_ITEM_IMAGE_MIME: &str = "application/octet-stream";
+const WORK_ITEM_IMAGE_CACHE_CONTROL: &str = "private, max-age=3600";
 
 // ---------------------------------------------------------------------------
 // Route handlers
@@ -157,6 +171,41 @@ async fn format_for_llm(
         markdown,
         has_images,
     }))
+}
+
+#[instrument(name = "GET /work-items/image")]
+async fn get_image(
+    _user: AuthUser,
+    State(app_state): State<AppState>,
+    Query(query): Query<WorkItemImageQuery>,
+) -> Result<Response, ApiError> {
+    let service = app_state
+        .work_item_factory
+        .create_service(&query.organization, &query.project)
+        .await?;
+    let image = service
+        .fetch_image(&query.image_url)
+        .await
+        .map_err(map_work_item_image_error)?;
+
+    let mut response = Response::new(Body::from(image.bytes));
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(
+            image
+                .content_type
+                .as_deref()
+                .unwrap_or(DEFAULT_WORK_ITEM_IMAGE_MIME),
+        )
+        .unwrap_or_else(|_| HeaderValue::from_static(DEFAULT_WORK_ITEM_IMAGE_MIME)),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(WORK_ITEM_IMAGE_CACHE_CONTROL),
+    );
+
+    Ok(response)
 }
 
 #[instrument(
@@ -355,6 +404,28 @@ fn enrich_pull_request_ref(
     pr_response
 }
 
+fn map_work_item_image_error(error: WorkItemError) -> ApiError {
+    match error {
+        WorkItemError::InvalidInput(message) => {
+            if message.to_ascii_lowercase().contains("exceeds") {
+                ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, message)
+            } else {
+                ApiError::bad_request(message)
+            }
+        }
+        WorkItemError::ProviderError(message) => {
+            let lower = message.to_ascii_lowercase();
+            if lower.contains("not found") || lower.contains("404") {
+                ApiError::not_found("work item image not found")
+            } else if lower.contains("forbidden") || lower.contains("403") {
+                ApiError::forbidden("access to work item image was denied")
+            } else {
+                ApiError::internal(message)
+            }
+        }
+    }
+}
+
 async fn apply_avatar_overrides_to_work_items(
     app_state: &AppState,
     items: &mut [WorkItem],
@@ -437,6 +508,7 @@ pub fn router() -> Router<AppState> {
         .route("/projects", get(get_projects))
         .route("/iterations", get(get_iterations))
         .route("/board", get(get_board))
+        .route("/image", get(get_image))
         .route("/format-for-llm", get(format_for_llm))
         .route("/move", post(move_work_item))
 }

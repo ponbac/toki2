@@ -4,7 +4,10 @@ use std::{cmp::Ordering, collections::HashMap};
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{synthetic_column_id_from_name, BoardColumn, BoardData, BoardState, Iteration, WorkItem},
+    models::{
+        synthetic_column_id_from_name, BoardColumn, BoardData, BoardState, Iteration, WorkItem,
+        WorkItemImage,
+    },
     ports::{inbound::WorkItemService, outbound::WorkItemProvider},
     WorkItemError,
 };
@@ -85,6 +88,10 @@ impl<P: WorkItemProvider> WorkItemService for WorkItemServiceImpl<P> {
         work_item_id: &str,
     ) -> Result<(String, bool), WorkItemError> {
         self.provider.format_work_item_for_llm(work_item_id).await
+    }
+
+    async fn fetch_image(&self, image_url: &str) -> Result<WorkItemImage, WorkItemError> {
+        self.provider.fetch_image(image_url).await
     }
 
     async fn move_work_item_to_column(
@@ -361,6 +368,13 @@ mod tests {
             _work_item_id: &str,
         ) -> Result<(String, bool), WorkItemError> {
             Ok((String::new(), false))
+        }
+
+        async fn fetch_image(&self, _image_url: &str) -> Result<WorkItemImage, WorkItemError> {
+            Ok(WorkItemImage {
+                bytes: vec![],
+                content_type: Some("image/png".to_string()),
+            })
         }
 
         async fn move_work_item_to_column(

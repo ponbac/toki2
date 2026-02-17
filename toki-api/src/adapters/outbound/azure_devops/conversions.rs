@@ -33,8 +33,10 @@ pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -
         image_url: identity.avatar_url,
     });
 
-    let description = ado.description.as_deref().map(strip_html);
-    let acceptance_criteria = ado.acceptance_criteria.as_deref().map(strip_html);
+    // Keep provider rich text for board/API consumers that want high-fidelity rendering.
+    // Markdown conversion is still used for LLM formatting and comments.
+    let description = ado.description.clone();
+    let acceptance_criteria = ado.acceptance_criteria.clone();
 
     let tags = ado
         .tags
@@ -326,6 +328,22 @@ mod tests {
     #[test]
     fn test_strip_html_nbsp() {
         assert_eq!(strip_html("hello&nbsp;world"), "hello world");
+    }
+
+    #[test]
+    fn test_html_to_markdown_preserves_list_readability() {
+        let html = "<p>Skapa en företagskund med all information</p><ol><li>Skapa kund</li><li>Välj typ Företag</li></ol>";
+        let markdown = html_to_markdown(html);
+
+        assert!(markdown.contains("Skapa en företagskund med all information"));
+        assert!(markdown.contains("Skapa kund"));
+        assert!(markdown.contains("Välj typ Företag"));
+        assert!(markdown.lines().count() > 1);
+    }
+
+    #[test]
+    fn test_html_to_markdown_handles_plain_text() {
+        assert_eq!(html_to_markdown("plain text"), "plain text");
     }
 
     #[test]
