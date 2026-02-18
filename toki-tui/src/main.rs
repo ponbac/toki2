@@ -357,8 +357,18 @@ async fn run_app(
                             // Enter: activate focused box or start timer if Timer box selected
                             KeyCode::Enter => {
                                 if app.today_edit_state.is_some() {
-                                    // In edit mode, Enter on Project/Activity/Note opens modal
-                                    handle_today_edit_enter(app);
+                                    // Check if focused on time field - clear it for direct re-entry
+                                    if let Some(state) = &app.today_edit_state {
+                                        match state.focused_field {
+                                            app::TodayEditField::StartTime | app::TodayEditField::EndTime => {
+                                                app.today_edit_clear_time();
+                                            }
+                                            _ => {
+                                                // In edit mode, Enter on Project/Activity/Note opens modal
+                                                handle_today_edit_enter(app);
+                                            }
+                                        }
+                                    }
                                 } else {
                                     match app.focused_box {
                                         app::FocusedBox::Timer => {
@@ -390,12 +400,13 @@ async fn run_app(
                             // Escape to exit edit mode
                             KeyCode::Esc => {
                                 if app.today_edit_state.is_some() {
-                                    // Validate and save
+                                    // Check validation
                                     if let Some(error) = app.today_edit_validate() {
-                                        // Show error, don't exit
-                                        if let Some(state) = &mut app.today_edit_state {
-                                            state.validation_error = Some(error);
-                                        }
+                                        // Revert invalid times and show error
+                                        app.today_edit_revert_invalid_times();
+                                        app.set_status(format!("Edit cancelled: {}", error));
+                                        app.exit_today_edit_mode();
+                                        app.focused_box = app::FocusedBox::Today;
                                     } else {
                                         // Save changes via API
                                         handle_today_edit_save(app, db).await?;

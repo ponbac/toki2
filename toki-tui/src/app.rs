@@ -63,6 +63,8 @@ pub struct TodayEditState {
     pub entry_id: i32,
     pub start_time_input: String,
     pub end_time_input: String,
+    pub original_start_time: String,
+    pub original_end_time: String,
     pub project_id: Option<String>,
     pub project_name: Option<String>,
     pub activity_id: Option<String>,
@@ -368,8 +370,10 @@ impl App {
 
                 self.today_edit_state = Some(TodayEditState {
                     entry_id: entry.id,
-                    start_time_input: start_str,
-                    end_time_input: end_str,
+                    start_time_input: start_str.clone(),
+                    end_time_input: end_str.clone(),
+                    original_start_time: start_str,
+                    original_end_time: end_str,
                     project_id: entry.project_id.clone(),
                     project_name: entry.project_name.clone(),
                     activity_id: entry.activity_id.clone(),
@@ -433,10 +437,21 @@ impl App {
                         state.start_time_input.clear();
                     }
                     if c.is_ascii_digit() {
-                        state.start_time_input.push(c);
-                        // Auto-insert colon after 2 digits
-                        if state.start_time_input.len() == 2 {
-                            state.start_time_input.push(':');
+                        // Leading zero inference: if typing 3-9 as first digit, prepend 0 and add colon
+                        if state.start_time_input.is_empty() {
+                            if c >= '3' && c <= '9' {
+                                state.start_time_input.push('0');
+                                state.start_time_input.push(c);
+                                state.start_time_input.push(':');
+                            } else {
+                                state.start_time_input.push(c);
+                            }
+                        } else {
+                            state.start_time_input.push(c);
+                            // Auto-insert colon after 2 digits
+                            if state.start_time_input.len() == 2 {
+                                state.start_time_input.push(':');
+                            }
                         }
                     }
                 }
@@ -446,10 +461,21 @@ impl App {
                         state.end_time_input.clear();
                     }
                     if c.is_ascii_digit() {
-                        state.end_time_input.push(c);
-                        // Auto-insert colon after 2 digits
-                        if state.end_time_input.len() == 2 {
-                            state.end_time_input.push(':');
+                        // Leading zero inference: if typing 3-9 as first digit, prepend 0 and add colon
+                        if state.end_time_input.is_empty() {
+                            if c >= '3' && c <= '9' {
+                                state.end_time_input.push('0');
+                                state.end_time_input.push(c);
+                                state.end_time_input.push(':');
+                            } else {
+                                state.end_time_input.push(c);
+                            }
+                        } else {
+                            state.end_time_input.push(c);
+                            // Auto-insert colon after 2 digits
+                            if state.end_time_input.len() == 2 {
+                                state.end_time_input.push(':');
+                            }
                         }
                     }
                 }
@@ -501,6 +527,34 @@ impl App {
                     state.end_time_input.clear();
                 }
                 _ => {}
+            }
+        }
+    }
+
+    /// Check if a time string is valid HH:MM format
+    fn is_valid_time_format(time_str: &str) -> bool {
+        if time_str.len() != 5 || time_str.chars().nth(2) != Some(':') {
+            return false;
+        }
+        let parts: Vec<&str> = time_str.split(':').collect();
+        if parts.len() != 2 {
+            return false;
+        }
+        if let (Ok(hours), Ok(mins)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+            hours <= 23 && mins <= 59
+        } else {
+            false
+        }
+    }
+
+    /// Revert invalid time inputs to original values
+    pub fn today_edit_revert_invalid_times(&mut self) {
+        if let Some(state) = &mut self.today_edit_state {
+            if !Self::is_valid_time_format(&state.start_time_input) {
+                state.start_time_input = state.original_start_time.clone();
+            }
+            if !Self::is_valid_time_format(&state.end_time_input) {
+                state.end_time_input = state.original_end_time.clone();
             }
         }
     }

@@ -391,7 +391,7 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
 }
 
 fn render_header(frame: &mut Frame, area: ratatui::layout::Rect) {
-    let title = Paragraph::new("Toki Timer TUI")
+    let title = Paragraph::new("Toki Time Tracking TUI")
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center)
         .block(
@@ -661,19 +661,19 @@ fn build_display_row(
 
     // Build styled line with colors
     let mut spans = vec![
-        // Time range in Cyan
+        // Time range
         Span::styled(
             format!("{} - {} ", start_str, end_time_str),
-            Style::default().fg(Color::White),
+            Style::default().fg(Color::Yellow),
         ),
-        // Duration in Yellow
-        Span::styled(duration_display, Style::default().fg(Color::Yellow)),
-        // Pipe separator in Dark Gray
+        // Duration
+        Span::styled(duration_display, Style::default().fg(Color::Magenta)),
+        // Pipe separator
         Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-        // Project - Activity in White
+        // Project - Activity
         Span::styled(
             format!("{} - {}", project, activity),
-            Style::default().fg(Color::White),
+            Style::default().fg(Color::Cyan),
         ),
     ];
 
@@ -683,11 +683,11 @@ fn build_display_row(
         spans.push(Span::styled(note_display, Style::default().fg(Color::Gray)));
     }
 
-    // Apply focus styling: yellow background with black text
+    // Apply focus styling: magenta background with black text
     if is_focused {
         let focused_style = Style::default()
             .fg(Color::Black)
-            .bg(Color::Yellow)
+            .bg(Color::Magenta)
             .add_modifier(Modifier::BOLD);
         return Line::from(vec![Span::styled(
             spans.iter().map(|s| s.content.as_ref()).collect::<String>(),
@@ -716,9 +716,9 @@ fn build_edit_row<'a>(
     let start_style = match edit_state.focused_field {
         TodayEditField::StartTime => Style::default()
             .fg(Color::Black)
-            .bg(Color::Yellow)
+            .bg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Yellow),
+        _ => Style::default().fg(Color::Magenta),
     };
     spans.push(Span::styled(start_value, start_style));
 
@@ -734,9 +734,9 @@ fn build_edit_row<'a>(
     let end_style = match edit_state.focused_field {
         TodayEditField::EndTime => Style::default()
             .fg(Color::Black)
-            .bg(Color::Yellow)
+            .bg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Yellow),
+        _ => Style::default().fg(Color::Magenta),
     };
     spans.push(Span::styled(end_value, end_style));
 
@@ -748,9 +748,9 @@ fn build_edit_row<'a>(
     let project_style = match edit_state.focused_field {
         TodayEditField::Project => Style::default()
             .fg(Color::Black)
-            .bg(Color::Yellow)
+            .bg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Yellow),
+        _ => Style::default().fg(Color::Magenta),
     };
     spans.push(Span::styled(project_value, project_style));
 
@@ -765,9 +765,9 @@ fn build_edit_row<'a>(
     let activity_style = match edit_state.focused_field {
         TodayEditField::Activity => Style::default()
             .fg(Color::Black)
-            .bg(Color::Yellow)
+            .bg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Yellow),
+        _ => Style::default().fg(Color::Magenta),
     };
     spans.push(Span::styled(activity_value, activity_style));
 
@@ -786,9 +786,9 @@ fn build_edit_row<'a>(
     let note_style = match edit_state.focused_field {
         TodayEditField::Note => Style::default()
             .fg(Color::Black)
-            .bg(Color::Yellow)
+            .bg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Yellow),
+        _ => Style::default().fg(Color::Magenta),
     };
     spans.push(Span::styled(note_value, note_style));
 
@@ -799,21 +799,33 @@ fn render_status(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
     let contextual_status = app.get_contextual_status();
     let status_text = app.status_message.as_deref().unwrap_or(&contextual_status);
 
-    // Check if status is an error/warning
-    let is_error = status_text.to_lowercase().contains("error")
-        || status_text.to_lowercase().contains("warning")
-        || status_text.to_lowercase().contains("no active timer")
-        || status_text.to_lowercase().contains("cannot save")
-        || status_text.to_lowercase().contains("please select");
+    // Determine message type based on content
+    let status_lower = status_text.to_lowercase();
+    let is_error = status_lower.contains("error")
+        || status_lower.contains("warning")
+        || status_lower.contains("no active timer")
+        || status_lower.contains("cannot save")
+        || status_lower.contains("please select")
+        || status_lower.contains("cancelled");
 
-    let border_style = if is_error {
-        Style::default().fg(Color::Red)
+    let is_success = status_lower.contains("updated")
+        || status_lower.contains("saved")
+        || status_lower.contains("success")
+        || status_lower.contains("started")
+        || status_lower.contains("stopped")
+        || status_lower.contains("cleared")
+        || status_lower.contains("loaded");
+
+    let (border_style, text_color) = if is_error {
+        (Style::default().fg(Color::Red), Color::Red)
+    } else if is_success {
+        (Style::default().fg(Color::Green), Color::Green)
     } else {
-        Style::default()
+        (Style::default().fg(Color::White), Color::White)
     };
 
     let status = Paragraph::new(status_text)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(text_color))
         .alignment(Alignment::Left)
         .block(
             Block::default()
