@@ -13,6 +13,7 @@ use axum_extra::extract::CookieJar;
 use az_devops::RepoClient;
 use time::{Duration, OffsetDateTime};
 use tokio::sync::RwLock;
+use url::Url;
 
 use crate::{
     adapters::{
@@ -157,16 +158,19 @@ async fn extract_credentials(
 pub struct AzureDevOpsWorkItemServiceFactory {
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     user_repo: Arc<UserRepositoryImpl>,
+    api_base_url: Url,
 }
 
 impl AzureDevOpsWorkItemServiceFactory {
     pub fn new(
         repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
         user_repo: Arc<UserRepositoryImpl>,
+        api_base_url: Url,
     ) -> Self {
         Self {
             repo_clients,
             user_repo,
+            api_base_url,
         }
     }
 }
@@ -190,7 +194,7 @@ impl WorkItemServiceFactory for AzureDevOpsWorkItemServiceFactory {
             })?;
 
         // 2. Create adapter and service
-        let adapter = AzureDevOpsWorkItemAdapter::new(client);
+        let adapter = AzureDevOpsWorkItemAdapter::new(client, self.api_base_url.clone());
         let service = WorkItemServiceImpl::new(Arc::new(adapter));
         Ok(Box::new(service))
     }

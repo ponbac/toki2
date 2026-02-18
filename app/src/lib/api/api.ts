@@ -2,7 +2,7 @@ import { useTimeTrackingStore } from "@/hooks/useTimeTrackingStore";
 import { router } from "@/main";
 import ky from "ky";
 
-export const API_URL =
+const API_URL =
   import.meta.env.MODE === "development"
     ? "http://localhost:8080"
     : "https://toki-api.spinit.se";

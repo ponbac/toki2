@@ -21,8 +21,7 @@ use crate::{
     auth::AuthUser,
     domain::{
         models::{BoardData, PullRequestRef, WorkItem},
-        WorkItemError,
-        RepoKey,
+        RepoKey, WorkItemError,
     },
     routes::email::normalize_email,
 };
@@ -640,6 +639,7 @@ mod tests {
             assigned_to: None,
             created_by: None,
             description: None,
+            description_rendered_html: None,
             acceptance_criteria: None,
             iteration_path: None,
             area_path: None,

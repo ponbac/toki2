@@ -155,9 +155,7 @@ export function BoardCard({
         <WorkItemDescriptionHoverCard
           id={item.id}
           url={item.url}
-          description={item.description}
-          organization={organization}
-          project={project}
+          descriptionRenderedHtml={item.descriptionRenderedHtml}
         />
 
         {/* PR indicator - always visible */}

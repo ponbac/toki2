@@ -136,14 +136,18 @@ impl AppState {
 
         let repo_clients = Arc::new(RwLock::new(clients));
         let user_repo = Arc::new(UserRepositoryImpl::new(db_pool.clone()));
+        let parsed_api_url = Url::parse(&api_url).expect("Invalid API URL");
 
-        let work_item_factory: Arc<dyn WorkItemServiceFactory> = Arc::new(
-            AzureDevOpsWorkItemServiceFactory::new(repo_clients.clone(), user_repo.clone()),
-        );
+        let work_item_factory: Arc<dyn WorkItemServiceFactory> =
+            Arc::new(AzureDevOpsWorkItemServiceFactory::new(
+                repo_clients.clone(),
+                user_repo.clone(),
+                parsed_api_url.clone(),
+            ));
 
         Self {
             app_url: Url::parse(&app_url).expect("Invalid app URL"),
-            api_url: Url::parse(&api_url).expect("Invalid API URL"),
+            api_url: parsed_api_url,
             cookie_domain,
             db_pool: Arc::new(db_pool.clone()),
             user_repo,

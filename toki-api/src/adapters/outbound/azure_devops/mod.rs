@@ -24,14 +24,18 @@ use self::conversions::{
 /// Adapter that wraps an Azure DevOps `RepoClient` to implement the `WorkItemProvider` port.
 pub struct AzureDevOpsWorkItemAdapter {
     client: az_devops::RepoClient,
+    api_base_url: Url,
 }
 
 const MAX_WORK_ITEM_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 
 impl AzureDevOpsWorkItemAdapter {
     /// Create a new adapter wrapping the given `RepoClient`.
-    pub fn new(client: az_devops::RepoClient) -> Self {
-        Self { client }
+    pub fn new(client: az_devops::RepoClient, api_base_url: Url) -> Self {
+        Self {
+            client,
+            api_base_url,
+        }
     }
 }
 
@@ -143,7 +147,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 
         Ok(ado_items
             .into_iter()
-            .map(|ado| to_domain_work_item(ado, org, project))
+            .map(|ado| to_domain_work_item(ado, org, project, &self.api_base_url))
             .collect())
     }
 
@@ -243,7 +247,8 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         // Convert to domain model
         let org = self.client.organization();
         let project = self.client.project();
-        let mut domain_item = to_domain_work_item(ado_item.clone(), org, project);
+        let mut domain_item =
+            to_domain_work_item(ado_item.clone(), org, project, &self.api_base_url);
 
         // Batch-fetch titles for parent & related work items
         let ref_ids: Vec<i32> = domain_item
@@ -380,9 +385,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .iter()
             .find(|column| column.name.eq_ignore_ascii_case(target_column_name))
             .ok_or_else(|| {
-                WorkItemError::InvalidInput(format!(
-                    "Unknown board column '{target_column_name}'"
-                ))
+                WorkItemError::InvalidInput(format!("Unknown board column '{target_column_name}'"))
             })?;
 
         self.client
@@ -434,9 +437,9 @@ fn parse_ado_attachment_url(
         .path_segments()
         .ok_or_else(|| WorkItemError::InvalidInput("Image URL path is invalid".to_string()))?;
 
-    let organization = segments
-        .next()
-        .ok_or_else(|| WorkItemError::InvalidInput("Image URL organization is missing".to_string()))?;
+    let organization = segments.next().ok_or_else(|| {
+        WorkItemError::InvalidInput("Image URL organization is missing".to_string())
+    })?;
     if !organization.eq_ignore_ascii_case(expected_organization) {
         return Err(WorkItemError::InvalidInput(
             "Image URL organization does not match board organization".to_string(),
@@ -493,9 +496,20 @@ fn parse_ado_attachment_url(
     })
 }
 
+pub(super) fn is_allowed_ado_attachment_url(image_url: &str, expected_organization: &str) -> bool {
+    parse_ado_attachment_url(image_url, expected_organization).is_ok()
+}
+
 fn resolve_image_content_type(content_type: Option<&str>, bytes: &[u8]) -> Option<String> {
     let normalized = content_type
-        .map(|value| value.split(';').next().unwrap_or(value).trim().to_ascii_lowercase())
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or(value)
+                .trim()
+                .to_ascii_lowercase()
+        })
         .filter(|value| !value.is_empty());
 
     if let Some(ref mime) = normalized {
@@ -815,10 +829,7 @@ mod tests {
         )
         .expect("expected valid attachment url");
 
-        assert_eq!(
-            parsed.attachment_id,
-            "683f8fad-56a3-43a0-b268-9ffd026dde6e"
-        );
+        assert_eq!(parsed.attachment_id, "683f8fad-56a3-43a0-b268-9ffd026dde6e");
         assert_eq!(parsed.file_name.as_deref(), Some("image.png"));
     }
 

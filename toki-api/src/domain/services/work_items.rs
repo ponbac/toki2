@@ -261,11 +261,19 @@ fn compare_work_item_ids(a: &str, b: &str) -> Ordering {
     if a_is_numeric && b_is_numeric {
         let a_normalized = {
             let trimmed = a.trim_start_matches('0');
-            if trimmed.is_empty() { "0" } else { trimmed }
+            if trimmed.is_empty() {
+                "0"
+            } else {
+                trimmed
+            }
         };
         let b_normalized = {
             let trimmed = b.trim_start_matches('0');
-            if trimmed.is_empty() { "0" } else { trimmed }
+            if trimmed.is_empty() {
+                "0"
+            } else {
+                trimmed
+            }
         };
 
         return a_normalized
@@ -302,7 +310,10 @@ mod tests {
     #[test]
     fn compare_work_item_ids_falls_back_to_lexicographic_for_non_numeric_ids() {
         assert_eq!(compare_work_item_ids("abc-10", "abc-2"), Ordering::Less);
-        assert_eq!(compare_work_item_ids("owner/repo#2", "owner/repo#10"), Ordering::Greater);
+        assert_eq!(
+            compare_work_item_ids("owner/repo#2", "owner/repo#10"),
+            Ordering::Greater
+        );
     }
 
     #[derive(Clone, Default)]
@@ -411,6 +422,7 @@ mod tests {
             }),
             created_by: None,
             description: None,
+            description_rendered_html: None,
             acceptance_criteria: None,
             iteration_path: None,
             area_path: None,
@@ -548,7 +560,12 @@ mod tests {
         let service = WorkItemServiceImpl::new(Arc::new(provider));
 
         service
-            .move_work_item_to_column("  42  ", "  In Progress  ", Some("Project\\Sprint 1"), Some("Team A"))
+            .move_work_item_to_column(
+                "  42  ",
+                "  In Progress  ",
+                Some("Project\\Sprint 1"),
+                Some("Team A"),
+            )
             .await
             .unwrap();
 

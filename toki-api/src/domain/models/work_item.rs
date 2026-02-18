@@ -21,6 +21,8 @@ pub struct WorkItem {
     pub created_by: Option<WorkItemPerson>,
     /// Provider rich-text description markup (HTML for Azure DevOps).
     pub description: Option<String>,
+    /// Sanitized, render-ready HTML for UI consumers.
+    pub description_rendered_html: Option<String>,
     /// Provider rich-text acceptance criteria markup (HTML for Azure DevOps).
     pub acceptance_criteria: Option<String>,
     pub iteration_path: Option<String>,
