@@ -232,7 +232,7 @@ fn remove_img_without_src(value: &str) -> String {
 
     while index < value.len() {
         let tail = &value[index..];
-        let Some(relative_img_start) = tail.to_ascii_lowercase().find("<img") else {
+        let Some(relative_img_start) = find_ascii_case_insensitive(tail, b"<img") else {
             result.push_str(tail);
             break;
         };
@@ -247,7 +247,7 @@ fn remove_img_without_src(value: &str) -> String {
         };
         let tag_end = img_start + relative_tag_end + 1;
         let tag = &value[img_start..tag_end];
-        let has_src = tag.to_ascii_lowercase().contains("src=");
+        let has_src = find_ascii_case_insensitive(tag, b"src=").is_some();
         if has_src {
             result.push_str(tag);
         }
@@ -256,6 +256,17 @@ fn remove_img_without_src(value: &str) -> String {
     }
 
     result
+}
+
+fn find_ascii_case_insensitive(haystack: &str, needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    haystack
+        .as_bytes()
+        .windows(needle.len())
+        .position(|window| window.eq_ignore_ascii_case(needle))
 }
 
 /// Convert an Azure DevOps iteration to a domain iteration.

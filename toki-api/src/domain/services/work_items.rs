@@ -474,7 +474,6 @@ mod tests {
                 order: 10,
             }],
             assignments,
-            ..Default::default()
         };
         let service = WorkItemServiceImpl::new(Arc::new(provider));
 

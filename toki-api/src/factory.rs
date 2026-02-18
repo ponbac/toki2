@@ -186,7 +186,10 @@ impl WorkItemServiceFactory for AzureDevOpsWorkItemServiceFactory {
         let clients = self.repo_clients.read().await;
         let client = clients
             .iter()
-            .find(|(key, _)| key.organization == organization && key.project == project)
+            .find(|(key, _)| {
+                key.organization.eq_ignore_ascii_case(organization)
+                    && key.project.eq_ignore_ascii_case(project)
+            })
             .map(|(_, client)| client.clone())
             .ok_or_else(|| WorkItemServiceError {
                 status: StatusCode::NOT_FOUND,

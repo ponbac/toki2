@@ -129,7 +129,11 @@ export function BoardCard({
       {/* Top row: type badge + id + actions */}
       <div className="mb-1.5 flex items-center gap-2">
         <span
-          className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ${colors.bg} ${colors.text}`}
+          className={cn(
+            "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+            colors.bg,
+            colors.text,
+          )}
         >
           {categoryLabel}
         </span>

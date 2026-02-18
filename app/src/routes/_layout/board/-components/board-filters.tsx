@@ -12,6 +12,7 @@ import {
   type MemberFilter,
 } from "../-lib/board-preferences";
 import { BOARD_CATEGORY_OPTIONS } from "../-lib/category-meta";
+import { cn } from "@/lib/utils";
 
 const MEMBER_MODES: { value: MemberFilter["mode"]; label: string }[] = [
   { value: "mine", label: "My Items" },
@@ -70,11 +71,12 @@ export function BoardFilters({
               onClick={() =>
                 setMemberFilter((prev) => ({ ...prev, mode: mode.value }))
               }
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                 memberFilter.mode === mode.value
                   ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+                  : "text-muted-foreground hover:text-foreground",
+              )}
             >
               {mode.label}
             </button>
@@ -104,11 +106,12 @@ export function BoardFilters({
                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
                     >
                       <div
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                        className={cn(
+                          "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border",
                           selected
                             ? "border-primary bg-primary"
-                            : "border-muted-foreground/30"
-                        }`}
+                            : "border-muted-foreground/30",
+                        )}
                       >
                         {selected && (
                           <Check className="h-3 w-3 text-primary-foreground" />
@@ -165,11 +168,12 @@ export function BoardFilters({
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
                 >
                   <div
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                    className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border",
                       visible
                         ? "border-primary bg-primary"
-                        : "border-muted-foreground/30"
-                    }`}
+                        : "border-muted-foreground/30",
+                    )}
                   >
                     {visible && (
                       <Check className="h-3 w-3 text-primary-foreground" />
@@ -197,11 +201,12 @@ export function BoardFilters({
             <button
               key={cat.value}
               onClick={() => toggleCategory(cat.value)}
-              className={`rounded-md border px-2 py-0.5 text-xs font-medium transition-colors ${
+              className={cn(
+                "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors",
                 active
-                  ? `${cat.bg} ${cat.text} ${cat.border}`
-                  : "border-border/30 text-muted-foreground/50"
-              }`}
+                  ? [cat.bg, cat.text, cat.border]
+                  : "border-border/30 text-muted-foreground/50",
+              )}
             >
               {cat.label}
             </button>
