@@ -25,9 +25,11 @@ export function ProjectSelector({
       project.organization === selectedOrg && project.project === selectedProject,
   );
   const currentValue = selectedIndex >= 0 ? String(selectedIndex) : "";
+  const hasProjects = projects.length > 0;
 
   return (
     <Select
+      disabled={!hasProjects}
       value={currentValue}
       onValueChange={(value) => {
         const project = projects[Number(value)];
