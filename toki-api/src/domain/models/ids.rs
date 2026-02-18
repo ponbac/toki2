@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// A validated user identifier.
 ///
 /// Wraps i32 to match the database SERIAL type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct UserId(i32);
 
 impl UserId {

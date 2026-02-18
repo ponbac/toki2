@@ -112,7 +112,7 @@ async fn get_projects(
 ) -> Result<Json<Vec<WorkItemProjectResponse>>, ApiError> {
     let projects = app_state
         .work_item_factory
-        .get_available_projects(user.id.as_i32())
+        .get_available_projects(user.id)
         .await?;
     Ok(Json(projects.into_iter().map(Into::into).collect()))
 }

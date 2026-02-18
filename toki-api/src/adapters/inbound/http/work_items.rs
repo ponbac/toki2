@@ -6,7 +6,10 @@
 use async_trait::async_trait;
 use axum::http::StatusCode;
 
-use crate::domain::{models::WorkItemProject, ports::inbound::WorkItemService};
+use crate::domain::{
+    models::{UserId, WorkItemProject},
+    ports::inbound::WorkItemService,
+};
 
 /// Error returned when creating a WorkItemService or fetching projects fails.
 #[derive(Debug)]
@@ -36,6 +39,6 @@ pub trait WorkItemServiceFactory: Send + Sync + 'static {
     /// Get all projects the user has access to (cross-project).
     async fn get_available_projects(
         &self,
-        user_id: i32,
+        user_id: UserId,
     ) -> Result<Vec<WorkItemProject>, WorkItemServiceError>;
 }

@@ -28,7 +28,7 @@ use crate::{
         },
     },
     domain::{
-        models::WorkItemProject,
+        models::{UserId, WorkItemProject},
         ports::inbound::{TimeTrackingService, WorkItemService},
         services::{TimeTrackingServiceImpl, WorkItemServiceImpl},
         RepoKey,
@@ -201,12 +201,12 @@ impl WorkItemServiceFactory for AzureDevOpsWorkItemServiceFactory {
 
     async fn get_available_projects(
         &self,
-        user_id: i32,
+        user_id: UserId,
     ) -> Result<Vec<WorkItemProject>, WorkItemServiceError> {
         // Get followed repositories for this user
         let repos = self
             .user_repo
-            .followed_repositories(&user_id)
+            .followed_repositories(user_id)
             .await
             .map_err(|e| WorkItemServiceError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,

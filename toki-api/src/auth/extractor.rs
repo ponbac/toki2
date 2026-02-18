@@ -12,9 +12,8 @@ use super::AuthSession;
 /// This replaces the pattern of extracting `AuthSession` and then manually
 /// unwrapping `.user` with `.expect()` or `.ok_or()` in every handler.
 ///
-/// The `id` field is a [`UserId`] constructed at extraction time, shadowing
-/// `User.id` (which is `i32`) through `Deref`. Handlers that need `i32` can
-/// use `user.id.as_i32()`.
+/// The `id` field mirrors `User.id` as a typed [`UserId`] through `Deref`.
+/// Handlers that need a primitive can use `user.id.as_i32()`.
 ///
 /// Safe to log — `User`'s `Debug` impl redacts sensitive fields.
 #[derive(Debug, Clone)]
@@ -48,9 +47,6 @@ where
             .user
             .ok_or_else(|| ApiError::unauthorized("Not authenticated"))?;
 
-        Ok(AuthUser {
-            id: UserId::from(user.id),
-            user,
-        })
+        Ok(AuthUser { id: user.id, user })
     }
 }

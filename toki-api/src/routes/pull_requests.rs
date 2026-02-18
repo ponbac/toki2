@@ -193,7 +193,7 @@ async fn get_followed_pull_requests(
     user: &AuthUser,
 ) -> Result<Vec<PullRequest>, ApiError> {
     let user_repo = app_state.user_repo.clone();
-    let followed_repos = user_repo.followed_repositories(user.id.as_ref()).await?;
+    let followed_repos = user_repo.followed_repositories(user.id).await?;
 
     let mut followed_prs = vec![];
     for repo_key in &followed_repos {

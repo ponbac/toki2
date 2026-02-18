@@ -72,7 +72,7 @@ mod get {
 
     use crate::{
         auth::backend::{AuthSession, Credentials},
-        domain::{models::UserId, User},
+        domain::User,
     };
 
     use super::*;
@@ -96,7 +96,7 @@ mod get {
 
         let avatar_url = app_state
             .avatar_service
-            .get_avatar_url(&UserId::from(user.id))
+            .get_avatar_url(&user.id)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

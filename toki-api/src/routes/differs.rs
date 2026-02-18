@@ -53,7 +53,7 @@ async fn get_differs(user: AuthUser, State(app_state): State<AppState>) -> Json<
         .await
         .expect("Failed to query all repos");
     let followed_repos = user_repo
-        .followed_repositories(user.id.as_ref())
+        .followed_repositories(user.id)
         .await
         .expect("Failed to query followed repos");
 

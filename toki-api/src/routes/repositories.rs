@@ -59,7 +59,7 @@ async fn follow_repository(
     let user_repo = app_state.user_repo.clone();
 
     user_repo
-        .follow_repository(user.id.as_i32(), &repo_key, body.follow)
+        .follow_repository(user.id, &repo_key, body.follow)
         .await?;
 
     Ok(Json(()))
