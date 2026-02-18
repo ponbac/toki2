@@ -5,9 +5,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useAtom } from "jotai";
+import { useEffect, type SetStateAction } from "react";
 import { Users, ChevronDown, Check, Columns3 } from "lucide-react";
 import {
-  memberFilterAtom,
   categoryFilterAtom,
   type MemberFilter,
 } from "../-lib/board-preferences";
@@ -21,20 +21,27 @@ const MEMBER_MODES: { value: MemberFilter["mode"]; label: string }[] = [
 ];
 
 export function BoardFilters({
+  memberFilter,
+  setMemberFilter,
   members,
   columns,
   hiddenColumnIds,
   onToggleColumn,
   onShowAllColumns,
 }: {
+  memberFilter: MemberFilter;
+  setMemberFilter: (update: SetStateAction<MemberFilter>) => void;
   members: { email: string; displayName: string }[];
   columns: { id: string; name: string; count: number }[];
   hiddenColumnIds: string[];
   onToggleColumn: (columnId: string) => void;
   onShowAllColumns: () => void;
 }) {
-  const [memberFilter, setMemberFilter] = useAtom(memberFilterAtom);
   const [categoryFilter, setCategoryFilter] = useAtom(categoryFilterAtom);
+
+  useEffect(() => {
+    setCategoryFilter((prev) => (prev.includes("other") ? prev : [...prev, "other"]));
+  }, [setCategoryFilter]);
 
   const toggleCategory = (category: string) => {
     setCategoryFilter((prev) =>
@@ -45,10 +52,15 @@ export function BoardFilters({
   };
 
   const toggleMember = (email: string) => {
+    const normalizedEmail = email.toLowerCase();
     setMemberFilter((prev) => ({
       ...prev,
-      selectedEmails: prev.selectedEmails.includes(email)
-        ? prev.selectedEmails.filter((e) => e !== email)
+      selectedEmails: prev.selectedEmails.some(
+        (candidate) => candidate.toLowerCase() === normalizedEmail,
+      )
+        ? prev.selectedEmails.filter(
+            (candidate) => candidate.toLowerCase() !== normalizedEmail,
+          )
         : [...prev.selectedEmails, email],
     }));
   };
@@ -96,8 +108,9 @@ export function BoardFilters({
             <PopoverContent className="w-64 p-2" align="start">
               <div className="max-h-60 overflow-y-auto">
                 {members.map((member) => {
-                  const selected = memberFilter.selectedEmails.includes(
-                    member.email,
+                  const selected = memberFilter.selectedEmails.some(
+                    (candidate) =>
+                      candidate.toLowerCase() === member.email.toLowerCase(),
                   );
                   return (
                     <button

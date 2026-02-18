@@ -426,7 +426,7 @@ fn extract_id_from_url(url: &str) -> String {
 
 /// Check if an HTML string contains `<img` tags (case-insensitive).
 pub fn html_contains_images(html: &str) -> bool {
-    html.to_ascii_lowercase().contains("<img")
+    find_ascii_case_insensitive(html, b"<img").is_some()
 }
 
 /// Convert HTML to Markdown using htmd.

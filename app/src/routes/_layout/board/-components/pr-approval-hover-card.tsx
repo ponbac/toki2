@@ -12,6 +12,7 @@ import {
   ExternalLink,
   GitPullRequest,
   MinusCircle,
+  PickaxeIcon,
 } from "lucide-react";
 import { type ReactNode } from "react";
 
@@ -20,6 +21,10 @@ export function PrApprovalHoverCard({
 }: {
   pullRequests: PullRequestRef[];
 }) {
+  const allDraft =
+    pullRequests.length > 0 &&
+    pullRequests.every((pullRequest) => pullRequest.isDraft === true);
+
   return (
     <HoverCard openDelay={120} closeDelay={160}>
       <HoverCardTrigger asChild>
@@ -29,9 +34,18 @@ export function PrApprovalHoverCard({
           rel="noopener noreferrer"
           onClick={(event) => event.stopPropagation()}
           aria-label={`Show pull request approvals for PR ${pullRequests[0].id}`}
-          className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-500 transition-colors hover:border-emerald-500/60 hover:bg-emerald-500/15 hover:text-emerald-400"
+          className={cn(
+            "inline-flex items-center rounded-md border px-1.5 py-0.5 transition-colors",
+            allDraft
+              ? "border-blue-500/30 bg-blue-500/10 text-blue-400 hover:border-blue-500/60 hover:bg-blue-500/15 hover:text-blue-300"
+              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-500 hover:border-emerald-500/60 hover:bg-emerald-500/15 hover:text-emerald-400",
+          )}
         >
-          <GitPullRequest className="h-3.5 w-3.5" />
+          {allDraft ? (
+            <PickaxeIcon className="h-3.5 w-3.5" />
+          ) : (
+            <GitPullRequest className="h-3.5 w-3.5" />
+          )}
         </a>
       </HoverCardTrigger>
       <HoverCardContent
@@ -54,6 +68,7 @@ export function PrApprovalHoverCard({
 
         <div className="max-h-80 overflow-y-auto">
           {pullRequests.map((pullRequest) => {
+            const isDraft = pullRequest.isDraft === true;
             const approvalStatus = pullRequest.approvalStatus;
             const approvedCount = approvalStatus?.approvedBy.length ?? 0;
             const blockedCount = approvalStatus?.blockedBy.length ?? 0;
@@ -73,9 +88,18 @@ export function PrApprovalHoverCard({
                   className="group/link flex items-start justify-between gap-2 text-left"
                 >
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold leading-tight text-foreground">
-                      PR #{pullRequest.id}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="text-xs font-semibold leading-tight text-foreground">
+                        PR #{pullRequest.id}
+                      </p>
+                      {isDraft && (
+                        <StatusTag
+                          tone="draft"
+                          icon={<PickaxeIcon className="h-3.5 w-3.5" />}
+                          label="Draft"
+                        />
+                      )}
+                    </div>
                     <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
                       {pullRequest.title?.trim() || "Pull request details"}
                     </p>
@@ -148,7 +172,7 @@ function StatusTag({
 }: {
   icon: ReactNode;
   label: string;
-  tone: "approved" | "blocked";
+  tone: "approved" | "blocked" | "draft";
 }) {
   return (
     <span
@@ -156,6 +180,7 @@ function StatusTag({
         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
         tone === "approved" && "bg-emerald-500/15 text-emerald-500",
         tone === "blocked" && "bg-red-500/15 text-red-500",
+        tone === "draft" && "bg-blue-500/15 text-blue-400",
       )}
     >
       {icon}

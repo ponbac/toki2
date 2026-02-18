@@ -4,7 +4,6 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { ExternalLink } from "lucide-react";
-import { useState } from "react";
 
 export function WorkItemDescriptionHoverCard({
   id,
@@ -16,15 +15,9 @@ export function WorkItemDescriptionHoverCard({
   descriptionRenderedHtml: string | null;
 }) {
   const hasDescription = Boolean(descriptionRenderedHtml);
-  const [open, setOpen] = useState(false);
 
   return (
-    <HoverCard
-      open={open}
-      onOpenChange={setOpen}
-      openDelay={120}
-      closeDelay={160}
-    >
+    <HoverCard openDelay={120} closeDelay={160}>
       <HoverCardTrigger asChild>
         <a
           href={url}

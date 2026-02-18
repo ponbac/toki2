@@ -27,6 +27,8 @@ pub enum RepoClientError {
     AzureCoreError(#[from] azure_core::Error),
     #[error("Repository not found: {0}")]
     RepoNotFound(String),
+    #[error("Response payload exceeds {max_bytes} bytes (actual: {actual_bytes} bytes)")]
+    PayloadTooLarge { actual_bytes: u64, max_bytes: usize },
 }
 
 #[derive(Clone)]
@@ -276,6 +278,7 @@ impl RepoClient {
         &self,
         attachment_id: &str,
         file_name: Option<&str>,
+        max_download_bytes: Option<usize>,
     ) -> Result<(Vec<u8>, Option<String>), RepoClientError> {
         let mut request = self
             .work_item_client
@@ -288,17 +291,37 @@ impl RepoClient {
         }
 
         let raw_response = request.send().await?.into_raw_response();
-        let content_type = raw_response
-            .headers()
-            .iter()
-            .find_map(|(name, value)| {
-                if name.as_str().eq_ignore_ascii_case("content-type") {
-                    Some(value.as_str().to_string())
-                } else {
-                    None
-                }
-            });
+        let mut content_type = None;
+        let mut content_length = None;
+        for (name, value) in raw_response.headers().iter() {
+            if name.as_str().eq_ignore_ascii_case("content-type") {
+                content_type = Some(value.as_str().to_string());
+                continue;
+            }
+
+            if name.as_str().eq_ignore_ascii_case("content-length") {
+                content_length = value.as_str().parse::<u64>().ok();
+            }
+        }
+
+        if let (Some(max_bytes), Some(actual_bytes)) = (max_download_bytes, content_length) {
+            if actual_bytes > max_bytes as u64 {
+                return Err(RepoClientError::PayloadTooLarge {
+                    actual_bytes,
+                    max_bytes,
+                });
+            }
+        }
+
         let bytes: azure_core::Bytes = raw_response.into_raw_body().collect().await?;
+        if let Some(max_bytes) = max_download_bytes {
+            if bytes.len() > max_bytes {
+                return Err(RepoClientError::PayloadTooLarge {
+                    actual_bytes: bytes.len() as u64,
+                    max_bytes,
+                });
+            }
+        }
 
         Ok((bytes.to_vec(), content_type))
     }

@@ -58,29 +58,6 @@ function compareWorkItemIds(a: string, b: string): number {
   return 0;
 }
 
-function toOptimisticBoardState(columnName: string): BoardWorkItem["boardState"] {
-  if (
-    columnName === "New" ||
-    columnName === "Proposed" ||
-    columnName === "To Do" ||
-    columnName === "Approved" ||
-    columnName === "Ready for development"
-  ) {
-    return "todo";
-  }
-
-  if (
-    columnName === "Done" ||
-    columnName === "Closed" ||
-    columnName === "Completed" ||
-    columnName === "Removed"
-  ) {
-    return "done";
-  }
-
-  return "inProgress";
-}
-
 function sortItemsByColumnAndPriority(
   items: BoardWorkItem[],
   columns: BoardColumn[],
@@ -167,7 +144,6 @@ function useMoveBoardItem(
                   ...item,
                   boardColumnId: targetColumn.id,
                   boardColumnName: targetColumn.name,
-                  boardState: toOptimisticBoardState(targetColumn.name),
                 },
           );
 

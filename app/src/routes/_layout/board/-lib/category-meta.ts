@@ -34,4 +34,11 @@ export const BOARD_CATEGORY_OPTIONS = [
     text: "text-orange-400",
     border: "border-orange-500/30",
   },
+  {
+    value: "other",
+    label: "Other",
+    bg: "bg-slate-500/15",
+    text: "text-slate-400",
+    border: "border-slate-500/30",
+  },
 ] as const;

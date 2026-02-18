@@ -1,4 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, LazyLock},
+    time::{Duration, Instant},
+};
 
 use axum::{
     body::Body,
@@ -8,7 +12,9 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use futures_util::future::join_all;
 use serde::Deserialize;
+use tokio::sync::RwLock;
 use tracing::instrument;
 
 use crate::{
@@ -20,7 +26,7 @@ use crate::{
     app_state::AppState,
     auth::AuthUser,
     domain::{
-        models::{BoardData, PullRequestRef, WorkItem},
+        models::{BoardData, PullRequestRef, WorkItem, WorkItemProject},
         Email, RepoKey, WorkItemError,
     },
 };
@@ -95,11 +101,22 @@ impl PullRequestApprovalIndexKey {
 struct PullRequestRefEnrichment {
     title: String,
     source_branch: String,
+    is_draft: bool,
     approval_status: PullRequestApprovalStatusResponse,
 }
 
 const DEFAULT_WORK_ITEM_IMAGE_MIME: &str = "application/octet-stream";
 const WORK_ITEM_IMAGE_CACHE_CONTROL: &str = "private, max-age=3600";
+const AVAILABLE_PROJECTS_CACHE_TTL: Duration = Duration::from_secs(30);
+
+#[derive(Clone)]
+struct CachedAvailableProjects {
+    fetched_at: Instant,
+    projects: Vec<WorkItemProject>,
+}
+
+static AVAILABLE_PROJECTS_CACHE: LazyLock<RwLock<HashMap<i32, CachedAvailableProjects>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 // ---------------------------------------------------------------------------
 // Route handlers
@@ -110,18 +127,17 @@ async fn get_projects(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<WorkItemProjectResponse>>, ApiError> {
-    let projects = app_state
-        .work_item_factory
-        .get_available_projects(user.id)
-        .await?;
+    let projects = get_available_projects_cached(&app_state, &user).await?;
     Ok(Json(projects.into_iter().map(Into::into).collect()))
 }
 
 #[instrument(name = "GET /work-items/iterations")]
 async fn get_iterations(
+    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<ProjectQuery>,
 ) -> Result<Json<Vec<IterationResponse>>, ApiError> {
+    ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
@@ -132,9 +148,11 @@ async fn get_iterations(
 
 #[instrument(name = "GET /work-items/board")]
 async fn get_board(
+    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<BoardQuery>,
 ) -> Result<Json<BoardResponse>, ApiError> {
+    ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
@@ -152,9 +170,11 @@ async fn get_board(
 
 #[instrument(name = "GET /work-items/format-for-llm")]
 async fn format_for_llm(
+    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<FormatForLlmQuery>,
 ) -> Result<Json<FormatForLlmResponse>, ApiError> {
+    ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
@@ -170,9 +190,11 @@ async fn format_for_llm(
 
 #[instrument(name = "GET /work-items/image")]
 async fn get_image(
+    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<WorkItemImageQuery>,
 ) -> Result<Response, ApiError> {
+    ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
@@ -212,9 +234,11 @@ async fn get_image(
     )
 )]
 async fn move_work_item(
+    user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<MoveWorkItemBody>,
 ) -> Result<StatusCode, ApiError> {
+    ensure_user_has_project_access(&app_state, &user, &body.organization, &body.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&body.organization, &body.project)
@@ -230,6 +254,61 @@ async fn move_work_item(
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_available_projects_cached(
+    app_state: &AppState,
+    user: &AuthUser,
+) -> Result<Vec<WorkItemProject>, ApiError> {
+    let user_id = user.id.as_i32();
+    let now = Instant::now();
+
+    {
+        let cache = AVAILABLE_PROJECTS_CACHE.read().await;
+        if let Some(cached) = cache.get(&user_id) {
+            if now.duration_since(cached.fetched_at) <= AVAILABLE_PROJECTS_CACHE_TTL {
+                return Ok(cached.projects.clone());
+            }
+        }
+    }
+
+    let projects = app_state
+        .work_item_factory
+        .get_available_projects(user.id)
+        .await?;
+
+    {
+        let mut cache = AVAILABLE_PROJECTS_CACHE.write().await;
+        cache.insert(
+            user_id,
+            CachedAvailableProjects {
+                fetched_at: now,
+                projects: projects.clone(),
+            },
+        );
+    }
+
+    Ok(projects)
+}
+
+async fn ensure_user_has_project_access(
+    app_state: &AppState,
+    user: &AuthUser,
+    organization: &str,
+    project: &str,
+) -> Result<(), ApiError> {
+    let available_projects = get_available_projects_cached(app_state, user).await?;
+
+    let has_access = available_projects.iter().any(|candidate| {
+        candidate.organization.eq_ignore_ascii_case(organization)
+            && candidate.project.eq_ignore_ascii_case(project)
+    });
+
+    if has_access {
+        Ok(())
+    } else {
+        Err(ApiError::forbidden("You don't have access to this project"))
+    }
 }
 
 async fn build_pull_request_approval_index(
@@ -257,44 +336,54 @@ async fn build_pull_request_approval_index(
         .iter()
         .map(|item| item.id.clone())
         .collect::<HashSet<_>>();
+    let referenced_repository_ids = Arc::new(referenced_repository_ids);
 
     let mut enrichment_by_pr_ref = HashMap::new();
-    let board_scope_repos = app_state.get_repo_keys().await;
-
-    for repo_key in board_scope_repos {
-        if !repo_matches_board_scope(&repo_key, query) {
-            continue;
-        }
-
-        let repo_client = match app_state.get_repo_client(repo_key.clone()).await {
-            Ok(client) => client,
-            Err(error) => {
-                tracing::debug!(
-                    error = %error,
-                    repo_key = %repo_key,
-                    "Skipping board PR approval enrichment for repo without active client"
-                );
-                continue;
+    let board_scope_repos = app_state
+        .get_repo_keys()
+        .await
+        .into_iter()
+        .filter(|repo_key| repo_matches_board_scope(repo_key, query))
+        .collect::<Vec<_>>();
+    let cached_repo_pull_requests = join_all(board_scope_repos.into_iter().map(|repo_key| {
+        let referenced_repository_ids = Arc::clone(&referenced_repository_ids);
+        async move {
+            let repo_client = match app_state.get_repo_client(repo_key.clone()).await {
+                Ok(client) => client,
+                Err(error) => {
+                    tracing::debug!(
+                        error = %error,
+                        repo_key = %repo_key,
+                        "Skipping board PR approval enrichment for repo without active client"
+                    );
+                    return None;
+                }
+            };
+            let repository_id = repo_client.repo_id().to_ascii_lowercase();
+            if !referenced_repository_ids.contains(&repository_id) {
+                return None;
             }
-        };
-        let repository_id = repo_client.repo_id().to_ascii_lowercase();
-        if !referenced_repository_ids.contains(&repository_id) {
-            continue;
-        }
 
-        let cached_pull_requests = match app_state.get_cached_pull_requests(repo_key.clone()).await
-        {
-            Ok(Some(prs)) => prs,
-            Ok(None) => continue,
-            Err(error) => {
-                tracing::debug!(
-                    error = %error,
-                    repo_key = %repo_key,
-                    "Skipping board PR approval enrichment for repo without cache"
-                );
-                continue;
-            }
-        };
+            let cached_pull_requests =
+                match app_state.get_cached_pull_requests(repo_key.clone()).await {
+                    Ok(Some(prs)) => prs,
+                    Ok(None) => return None,
+                    Err(error) => {
+                        tracing::debug!(
+                            error = %error,
+                            repo_key = %repo_key,
+                            "Skipping board PR approval enrichment for repo without cache"
+                        );
+                        return None;
+                    }
+                };
+
+            Some((repository_id, cached_pull_requests))
+        }
+    }))
+    .await;
+
+    for (repository_id, cached_pull_requests) in cached_repo_pull_requests.into_iter().flatten() {
 
         for pull_request in cached_pull_requests {
             let pull_request_id = pull_request.pull_request_base.id.to_string();
@@ -308,6 +397,7 @@ async fn build_pull_request_approval_index(
             let enrichment = PullRequestRefEnrichment {
                 title: pull_request.pull_request_base.title.clone(),
                 source_branch: pull_request.pull_request_base.source_branch.clone(),
+                is_draft: pull_request.pull_request_base.is_draft,
                 approval_status: PullRequestApprovalStatusResponse {
                     approved_by: approved_by
                         .into_iter()
@@ -390,6 +480,7 @@ fn enrich_pull_request_ref(
     if let Some(enriched) = approval_index.get(&key) {
         pr_response.title = Some(enriched.title.clone());
         pr_response.source_branch = Some(enriched.source_branch.clone());
+        pr_response.is_draft = Some(enriched.is_draft);
         pr_response.approval_status = Some(enriched.approval_status.clone());
     }
 
@@ -605,6 +696,7 @@ mod tests {
             PullRequestRefEnrichment {
                 title: "Improve board drag behavior".to_string(),
                 source_branch: "refs/heads/123/improve-board-drag-behavior".to_string(),
+                is_draft: true,
                 approval_status: PullRequestApprovalStatusResponse {
                     approved_by: vec![PullRequestReviewerResponse {
                         id: "reviewer-1".to_string(),
@@ -628,6 +720,7 @@ mod tests {
             pull_request.source_branch.as_deref(),
             Some("refs/heads/123/improve-board-drag-behavior")
         );
+        assert_eq!(pull_request.is_draft, Some(true));
         let approval_status = pull_request
             .approval_status
             .as_ref()
@@ -648,6 +741,7 @@ mod tests {
 
         assert!(pull_request.title.is_none());
         assert!(pull_request.source_branch.is_none());
+        assert!(pull_request.is_draft.is_none());
         assert!(pull_request.approval_status.is_none());
     }
 

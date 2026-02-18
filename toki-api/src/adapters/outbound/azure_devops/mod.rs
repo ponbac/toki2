@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use async_trait::async_trait;
+use az_devops::RepoClientError;
 use url::Url;
 
 use crate::domain::{
@@ -113,16 +114,15 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             }
         };
 
-        // The WIQL API team parameter is required by the SDK but passing an empty
-        // string works (the SDK omits it from the URL). Using the project name
-        // does NOT work because the default team is typically "{Project} Team".
-        let team = team.unwrap_or("");
+        // Always provide a concrete team context so @currentIteration can resolve.
+        // If the caller doesn't provide one, default to "{Project} Team".
+        let team = resolve_team_name(team, self.client.project());
 
         tracing::debug!(wiql_query = %query, team = %team, "Executing WIQL query");
 
         let ids = self
             .client
-            .query_work_item_ids_wiql(&query, team)
+            .query_work_item_ids_wiql(&query, &team)
             .await
             .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
 
@@ -130,7 +130,20 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
     }
 
     async fn get_work_items(&self, ids: &[String]) -> Result<Vec<WorkItem>, WorkItemError> {
-        let int_ids: Vec<i32> = ids.iter().filter_map(|id| id.parse::<i32>().ok()).collect();
+        let int_ids: Vec<i32> = ids
+            .iter()
+            .filter_map(|id| match id.parse::<i32>() {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    tracing::warn!(
+                        work_item_id = %id,
+                        error = %error,
+                        "Skipping non-numeric work item ID"
+                    );
+                    None
+                }
+            })
+            .collect();
 
         if int_ids.is_empty() {
             return Ok(vec![]);
@@ -230,15 +243,17 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         let ado_item = ado_items.into_iter().next().ok_or_else(|| {
             WorkItemError::ProviderError(format!("Work item {work_item_id} not found"))
         })?;
+        let raw_description = ado_item.description.clone();
+        let raw_acceptance_criteria = ado_item.acceptance_criteria.clone();
 
         // Detect images in raw HTML before conversion
         let mut has_images = false;
-        if let Some(ref desc) = ado_item.description {
+        if let Some(desc) = raw_description.as_deref() {
             if html_contains_images(desc) {
                 has_images = true;
             }
         }
-        if let Some(ref ac) = ado_item.acceptance_criteria {
+        if let Some(ac) = raw_acceptance_criteria.as_deref() {
             if html_contains_images(ac) {
                 has_images = true;
             }
@@ -247,8 +262,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         // Convert to domain model
         let org = self.client.organization();
         let project = self.client.project();
-        let mut domain_item =
-            to_domain_work_item(ado_item.clone(), org, project, &self.api_base_url);
+        let mut domain_item = to_domain_work_item(ado_item, org, project, &self.api_base_url);
 
         // Batch-fetch titles for parent & related work items
         let ref_ids: Vec<i32> = domain_item
@@ -279,11 +293,8 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         }
 
         // Convert HTML fields to Markdown (richer than strip_html)
-        let description_md = ado_item.description.as_deref().map(html_to_markdown);
-        let acceptance_criteria_md = ado_item
-            .acceptance_criteria
-            .as_deref()
-            .map(html_to_markdown);
+        let description_md = raw_description.as_deref().map(html_to_markdown);
+        let acceptance_criteria_md = raw_acceptance_criteria.as_deref().map(html_to_markdown);
 
         // Fetch comments
         let ado_comments = self
@@ -326,9 +337,13 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 
         let (bytes, content_type) = self
             .client
-            .get_work_item_attachment(&attachment_id, file_name.as_deref())
+            .get_work_item_attachment(
+                &attachment_id,
+                file_name.as_deref(),
+                Some(MAX_WORK_ITEM_IMAGE_BYTES),
+            )
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(map_attachment_error)?;
 
         if bytes.is_empty() {
             return Err(WorkItemError::ProviderError(
@@ -403,6 +418,15 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 fn normalize_iteration_path(path: &str) -> String {
     let path = path.strip_prefix('\\').unwrap_or(path);
     path.replacen("\\Iteration\\", "\\", 1)
+}
+
+fn map_attachment_error(error: RepoClientError) -> WorkItemError {
+    match error {
+        RepoClientError::PayloadTooLarge { max_bytes, .. } => {
+            WorkItemError::InvalidInput(format!("Image payload exceeds {max_bytes} bytes"))
+        }
+        other => WorkItemError::ProviderError(other.to_string()),
+    }
 }
 
 #[derive(Debug)]
@@ -809,7 +833,9 @@ impl AzureDevOpsWorkItemAdapter {
 }
 
 fn resolve_team_name(team: Option<&str>, project: &str) -> String {
-    team.map(|t| t.to_string())
+    team.map(str::trim)
+        .filter(|team| !team.is_empty())
+        .map(str::to_string)
         .unwrap_or_else(|| format!("{project} Team"))
 }
 

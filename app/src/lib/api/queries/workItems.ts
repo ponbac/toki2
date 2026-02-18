@@ -24,6 +24,7 @@ export type PullRequestRef = {
   url: string;
   title?: string;
   sourceBranch?: string;
+  isDraft?: boolean;
   approvalStatus?: PullRequestApprovalStatus;
 };
 

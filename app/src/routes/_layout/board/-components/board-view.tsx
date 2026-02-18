@@ -8,13 +8,22 @@ import {
 } from "@/lib/board-columns";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
-import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type SetStateAction,
+} from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
+  DEFAULT_MEMBER_FILTER,
   boardColumnScopeKey,
+  boardProjectScopeKey,
   hiddenColumnsByScopeAtom,
-  memberFilterAtom,
+  memberFilterByScopeAtom,
   categoryFilterAtom,
+  type MemberFilter,
 } from "../-lib/board-preferences";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -30,6 +39,7 @@ const TOGGLEABLE_CATEGORIES = new Set([
   "task",
   "feature",
   "epic",
+  "other",
 ]);
 
 export function BoardView({
@@ -53,7 +63,43 @@ export function BoardView({
   );
   const { data: user } = useSuspenseQuery(queries.me());
   const { mutateAsync: moveBoardItem } = mutations.useMoveBoardItem();
-  const memberFilter = useAtomValue(memberFilterAtom);
+  const [memberFilterByScope, setMemberFilterByScope] = useAtom(
+    memberFilterByScopeAtom,
+  );
+  const memberFilterScope = useMemo(
+    () => boardProjectScopeKey({ organization, project }),
+    [organization, project],
+  );
+  const memberFilter = useMemo(
+    () => memberFilterByScope[memberFilterScope] ?? DEFAULT_MEMBER_FILTER,
+    [memberFilterByScope, memberFilterScope],
+  );
+  const setMemberFilter = useCallback(
+    (update: SetStateAction<MemberFilter>) => {
+      setMemberFilterByScope((prev) => {
+        const current = prev[memberFilterScope] ?? DEFAULT_MEMBER_FILTER;
+        const next =
+          typeof update === "function"
+            ? (update as (value: MemberFilter) => MemberFilter)(current)
+            : update;
+
+        if (
+          next.mode === DEFAULT_MEMBER_FILTER.mode &&
+          next.selectedEmails.length === 0
+        ) {
+          if (!(memberFilterScope in prev)) {
+            return prev;
+          }
+          const rest = { ...prev };
+          delete rest[memberFilterScope];
+          return rest;
+        }
+
+        return { ...prev, [memberFilterScope]: next };
+      });
+    },
+    [memberFilterScope, setMemberFilterByScope],
+  );
   const categoryFilter = useAtomValue(categoryFilterAtom);
   const [movingItemIds, setMovingItemIds] = useState<string[]>([]);
   const movingItemIdsRef = useRef(new Set<string>());
@@ -78,6 +124,10 @@ export function BoardView({
     () => new Set(movingItemIds),
     [movingItemIds],
   );
+  const selectedMemberEmailSet = useMemo(
+    () => new Set(memberFilter.selectedEmails.map((email) => email.toLowerCase())),
+    [memberFilter.selectedEmails],
+  );
 
   // Extract unique assignees for the member multi-select
   const members = useMemo(() => {
@@ -96,8 +146,10 @@ export function BoardView({
   const filteredItems = useMemo(() => {
     return board.items.filter((item) => {
       // Category filter
-      const categoryHasToggle = TOGGLEABLE_CATEGORIES.has(item.category);
-      if (categoryHasToggle && !categoryFilter.includes(item.category)) return false;
+      const normalizedCategory = TOGGLEABLE_CATEGORIES.has(item.category)
+        ? item.category
+        : "other";
+      if (!categoryFilter.includes(normalizedCategory)) return false;
 
       // Member filter
       if (memberFilter.mode === "mine") {
@@ -105,15 +157,15 @@ export function BoardView({
         if (assigneeEmail !== user.email.toLowerCase()) return false;
       } else if (memberFilter.mode === "custom") {
         if (memberFilter.selectedEmails.length > 0) {
-          const assigneeEmail = item.assignedTo?.uniqueName;
-          if (!assigneeEmail || !memberFilter.selectedEmails.includes(assigneeEmail))
+          const assigneeEmail = item.assignedTo?.uniqueName?.toLowerCase();
+          if (!assigneeEmail || !selectedMemberEmailSet.has(assigneeEmail))
             return false;
         }
       }
 
       return true;
     });
-  }, [board.items, categoryFilter, memberFilter, user.email]);
+  }, [board.items, categoryFilter, memberFilter, selectedMemberEmailSet, user.email]);
 
   const columnsWithItems = useMemo(() => {
     const columns = [...board.columns].sort(
@@ -283,6 +335,8 @@ export function BoardView({
     <div className="flex w-full flex-col gap-3">
       <div className="mx-auto w-full max-w-[110rem] md:w-[95%]">
         <BoardFilters
+          memberFilter={memberFilter}
+          setMemberFilter={setMemberFilter}
           members={members}
           columns={columnsWithItems.map((column) => ({
             id: column.id,

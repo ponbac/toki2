@@ -341,6 +341,7 @@ pub struct PullRequestRefResponse {
     pub url: String,
     pub title: Option<String>,
     pub source_branch: Option<String>,
+    pub is_draft: Option<bool>,
     pub approval_status: Option<PullRequestApprovalStatusResponse>,
 }
 
@@ -353,6 +354,7 @@ impl From<PullRequestRef> for PullRequestRefResponse {
             url: pr.url,
             title: None,
             source_branch: None,
+            is_draft: None,
             approval_status: None,
         }
     }

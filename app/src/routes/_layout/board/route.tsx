@@ -5,10 +5,11 @@ import { z } from "zod";
 import { ProjectSelector } from "./-components/project-selector";
 import { SprintSelector } from "./-components/sprint-selector";
 import { BoardView } from "./-components/board-view";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { useAtom } from "jotai";
 import { lastViewedProjectAtom } from "./-lib/board-preferences";
+import { resolveEffectiveIterationPath } from "./-lib/iterations";
 
 const boardSearchSchema = z.object({
   organization: z.string().optional(),
@@ -35,20 +36,27 @@ function BoardPage() {
   const [lastViewedProject, setLastViewedProject] = useAtom(
     lastViewedProjectAtom,
   );
+  const lastViewedProjectRef = useRef(lastViewedProject);
+
+  useEffect(() => {
+    lastViewedProjectRef.current = lastViewedProject;
+  }, [lastViewedProject]);
 
   // Auto-select last viewed project (or first available) when no project in URL
   useEffect(() => {
     if (organization && project) return;
     if (projects.length === 0) return;
 
+    const storedProject = lastViewedProjectRef.current;
     const target =
-      lastViewedProject &&
+      storedProject &&
       projects.some(
         (p) =>
-          p.organization === lastViewedProject.organization &&
-          p.project === lastViewedProject.project,
+          p.organization.toLowerCase() ===
+            storedProject.organization.toLowerCase() &&
+          p.project.toLowerCase() === storedProject.project.toLowerCase(),
       )
-        ? lastViewedProject
+        ? storedProject
         : projects[0];
 
     navigate({
@@ -60,7 +68,7 @@ function BoardPage() {
       }),
       replace: true,
     });
-  }, [organization, project, projects, lastViewedProject, navigate]);
+  }, [organization, project, projects, navigate]);
 
   // Persist project selection
   useEffect(() => {
@@ -69,8 +77,9 @@ function BoardPage() {
     }
 
     if (
-      lastViewedProject?.organization === organization &&
-      lastViewedProject.project === project
+      lastViewedProject?.organization.toLowerCase() ===
+        organization.toLowerCase() &&
+      lastViewedProject.project.toLowerCase() === project.toLowerCase()
     ) {
       return;
     }
@@ -131,7 +140,7 @@ function BoardPage() {
             </div>
           }
         >
-          <BoardView
+          <BoardViewWithResolvedIteration
             organization={organization}
             project={project}
             iterationPath={iterationPath}
@@ -140,5 +149,34 @@ function BoardPage() {
         </Suspense>
       )}
     </main>
+  );
+}
+
+function BoardViewWithResolvedIteration({
+  organization,
+  project,
+  iterationPath,
+  team,
+}: {
+  organization: string;
+  project: string;
+  iterationPath?: string;
+  team?: string;
+}) {
+  const { data: iterations } = useSuspenseQuery(
+    queries.iterations(organization, project),
+  );
+  const effectiveIterationPath = resolveEffectiveIterationPath(
+    iterations,
+    iterationPath,
+  );
+
+  return (
+    <BoardView
+      organization={organization}
+      project={project}
+      iterationPath={effectiveIterationPath}
+      team={team}
+    />
   );
 }
