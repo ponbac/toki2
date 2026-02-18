@@ -79,4 +79,44 @@ impl Database {
 
         Ok(timers)
     }
+
+    /// Update an existing timer entry
+    pub async fn update_timer_entry(
+        &self,
+        entry_id: i32,
+        start_time: OffsetDateTime,
+        end_time: OffsetDateTime,
+        project_id: Option<String>,
+        project_name: Option<String>,
+        activity_id: Option<String>,
+        activity_name: Option<String>,
+        note: Option<String>,
+    ) -> Result<TimerHistoryEntry> {
+        let entry = sqlx::query_as::<_, TimerHistoryEntry>(
+            r#"
+            UPDATE timer_history
+            SET start_time = $2,
+                end_time = $3,
+                project_id = $4,
+                project_name = $5,
+                activity_id = $6,
+                activity_name = $7,
+                note = $8
+            WHERE id = $1
+            RETURNING id, user_id, start_time, end_time, project_id, project_name, activity_id, activity_name, note
+            "#,
+        )
+        .bind(entry_id)
+        .bind(start_time)
+        .bind(end_time)
+        .bind(project_id)
+        .bind(project_name)
+        .bind(activity_id)
+        .bind(activity_name)
+        .bind(note)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(entry)
+    }
 }

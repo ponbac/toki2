@@ -1,7 +1,15 @@
 use crate::api::database::TimerHistoryEntry;
 use crate::test_data::{get_test_activities, get_test_projects, TestActivity, TestProject};
 use std::time::{Duration, Instant};
-use time::OffsetDateTime;
+use time::{OffsetDateTime, UtcOffset};
+
+fn to_local_time(dt: OffsetDateTime) -> OffsetDateTime {
+    if let Ok(local_offset) = UtcOffset::current_local_offset() {
+        dt.to_offset(local_offset)
+    } else {
+        dt
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TimerState {
@@ -32,12 +40,36 @@ pub enum FocusedBox {
     Timer,
     ProjectActivity,
     Description,
+    Today,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TimerSize {
     Normal,
     Large,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TodayEditField {
+    StartTime,
+    EndTime,
+    Project,
+    Activity,
+    Annotation,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TodayEditState {
+    pub entry_id: i32,
+    pub start_time_input: String,
+    pub end_time_input: String,
+    pub project_id: Option<String>,
+    pub project_name: Option<String>,
+    pub activity_id: Option<String>,
+    pub activity_name: Option<String>,
+    pub note: String,
+    pub focused_field: TodayEditField,
+    pub validation_error: Option<String>,
 }
 
 pub struct App {
@@ -80,6 +112,11 @@ pub struct App {
     pub description_input: String,
     pub editing_description: bool,
     pub description_is_default: bool,
+    pub saved_timer_note: Option<String>, // Saved when editing entry note to restore later
+
+    // Today box navigation
+    pub focused_today_index: Option<usize>,
+    pub today_edit_state: Option<TodayEditState>,
 }
 
 impl App {
@@ -114,6 +151,9 @@ impl App {
             description_input: String::new(),
             editing_description: false,
             description_is_default: true,
+            saved_timer_note: None,
+            focused_today_index: None,
+            today_edit_state: None,
         }
     }
 
@@ -215,8 +255,8 @@ impl App {
                     .unwrap_or(0);
             }
             View::EditDescription => {
-                // Clear default text on first edit, otherwise keep existing text
-                if self.description_is_default {
+                // If in Today edit mode, don't clear - the view handler will set it from edit_state
+                if self.description_is_default && self.today_edit_state.is_none() {
                     self.description_input.clear();
                     self.description_is_default = false;
                 }
@@ -235,16 +275,18 @@ impl App {
         self.focused_box = match self.focused_box {
             FocusedBox::Timer => FocusedBox::ProjectActivity,
             FocusedBox::ProjectActivity => FocusedBox::Description,
-            FocusedBox::Description => FocusedBox::Timer,
+            FocusedBox::Description => FocusedBox::Today,
+            FocusedBox::Today => FocusedBox::Timer,
         };
     }
 
     /// Move focus to previous box (vim-style k or up)
     pub fn focus_previous(&mut self) {
         self.focused_box = match self.focused_box {
-            FocusedBox::Timer => FocusedBox::Description,
+            FocusedBox::Timer => FocusedBox::Today,
             FocusedBox::ProjectActivity => FocusedBox::Timer,
             FocusedBox::Description => FocusedBox::ProjectActivity,
+            FocusedBox::Today => FocusedBox::Description,
         };
     }
 
@@ -260,7 +302,268 @@ impl App {
             FocusedBox::Description => {
                 self.navigate_to(View::EditDescription);
             }
+            FocusedBox::Today => {
+                self.enter_today_edit_mode();
+            }
         }
+    }
+
+    /// Move focus up in Today box, wrap to Description if at top
+    pub fn today_focus_up(&mut self) {
+        let today_count = self.todays_history().len();
+        if today_count == 0 {
+            self.focused_box = FocusedBox::Description;
+            self.focused_today_index = None;
+            return;
+        }
+
+        if let Some(idx) = self.focused_today_index {
+            if idx == 0 {
+                self.focused_box = FocusedBox::Description;
+                self.focused_today_index = None;
+            } else {
+                self.focused_today_index = Some(idx - 1);
+            }
+        } else {
+            self.focused_today_index = Some(today_count - 1);
+        }
+    }
+
+    /// Move focus down in Today box, wrap to Timer if at bottom
+    pub fn today_focus_down(&mut self) {
+        let today_count = self.todays_history().len();
+        if today_count == 0 {
+            self.focused_box = FocusedBox::Timer;
+            self.focused_today_index = None;
+            return;
+        }
+
+        if let Some(idx) = self.focused_today_index {
+            if idx >= today_count - 1 {
+                self.focused_box = FocusedBox::Timer;
+                self.focused_today_index = None;
+            } else {
+                self.focused_today_index = Some(idx + 1);
+            }
+        } else {
+            self.focused_today_index = Some(0);
+        }
+    }
+
+    /// Enter edit mode for the currently focused Today entry
+    pub fn enter_today_edit_mode(&mut self) {
+        if let Some(idx) = self.focused_today_index {
+            let todays = self.todays_history();
+            if let Some(entry) = todays.get(idx) {
+                let start_time = to_local_time(entry.start_time).time();
+                let start_str = format!("{:02}:{:02}", start_time.hour(), start_time.minute());
+
+                let end_str = entry
+                    .end_time
+                    .map(|et| {
+                        let t = to_local_time(et).time();
+                        format!("{:02}:{:02}", t.hour(), t.minute())
+                    })
+                    .unwrap_or_else(|| "00:00".to_string());
+
+                self.today_edit_state = Some(TodayEditState {
+                    entry_id: entry.id,
+                    start_time_input: start_str,
+                    end_time_input: end_str,
+                    project_id: entry.project_id.clone(),
+                    project_name: entry.project_name.clone(),
+                    activity_id: entry.activity_id.clone(),
+                    activity_name: entry.activity_name.clone(),
+                    note: entry.note.clone().unwrap_or_default(),
+                    focused_field: TodayEditField::StartTime,
+                    validation_error: None,
+                });
+            }
+        }
+    }
+
+    /// Exit edit mode and discard changes
+    pub fn exit_today_edit_mode(&mut self) {
+        self.today_edit_state = None;
+    }
+
+    /// Move to next field in edit mode
+    pub fn today_edit_next_field(&mut self) {
+        if let Some(state) = &mut self.today_edit_state {
+            state.focused_field = match state.focused_field {
+                TodayEditField::StartTime => TodayEditField::EndTime,
+                TodayEditField::EndTime => TodayEditField::Project,
+                TodayEditField::Project => TodayEditField::Activity,
+                TodayEditField::Activity => TodayEditField::Annotation,
+                TodayEditField::Annotation => TodayEditField::StartTime,
+            };
+            state.validation_error = None;
+        }
+    }
+
+    /// Move to previous field in edit mode
+    pub fn today_edit_prev_field(&mut self) {
+        if let Some(state) = &mut self.today_edit_state {
+            state.focused_field = match state.focused_field {
+                TodayEditField::StartTime => TodayEditField::Annotation,
+                TodayEditField::EndTime => TodayEditField::StartTime,
+                TodayEditField::Project => TodayEditField::EndTime,
+                TodayEditField::Activity => TodayEditField::Project,
+                TodayEditField::Annotation => TodayEditField::Activity,
+            };
+            state.validation_error = None;
+        }
+    }
+
+    /// Set the focused field in edit mode
+    pub fn today_edit_set_focused_field(&mut self, field: TodayEditField) {
+        if let Some(state) = &mut self.today_edit_state {
+            state.focused_field = field;
+            state.validation_error = None;
+        }
+    }
+
+    /// Handle character input in edit mode
+    pub fn today_edit_input_char(&mut self, c: char) {
+        if let Some(state) = &mut self.today_edit_state {
+            match state.focused_field {
+                TodayEditField::StartTime => {
+                    // Auto-clear if starting to type (field shows full time with brackets)
+                    if state.start_time_input.len() >= 5 {
+                        state.start_time_input.clear();
+                    }
+                    if c.is_ascii_digit() {
+                        state.start_time_input.push(c);
+                        // Auto-insert colon after 2 digits
+                        if state.start_time_input.len() == 2 {
+                            state.start_time_input.push(':');
+                        }
+                    }
+                }
+                TodayEditField::EndTime => {
+                    // Auto-clear if starting to type
+                    if state.end_time_input.len() >= 5 {
+                        state.end_time_input.clear();
+                    }
+                    if c.is_ascii_digit() {
+                        state.end_time_input.push(c);
+                        // Auto-insert colon after 2 digits
+                        if state.end_time_input.len() == 2 {
+                            state.end_time_input.push(':');
+                        }
+                    }
+                }
+                TodayEditField::Annotation => {
+                    state.note.push(c);
+                }
+                TodayEditField::Project | TodayEditField::Activity => {
+                    // These are handled via modals
+                }
+            }
+        }
+    }
+
+    /// Handle backspace in edit mode
+    pub fn today_edit_backspace(&mut self) {
+        if let Some(state) = &mut self.today_edit_state {
+            match state.focused_field {
+                TodayEditField::StartTime => {
+                    // Remove colon if present when backspacing
+                    if state.start_time_input.ends_with(':') {
+                        state.start_time_input.pop();
+                    }
+                    state.start_time_input.pop();
+                }
+                TodayEditField::EndTime => {
+                    if state.end_time_input.ends_with(':') {
+                        state.end_time_input.pop();
+                    }
+                    state.end_time_input.pop();
+                }
+                TodayEditField::Annotation => {
+                    state.note.pop();
+                }
+                TodayEditField::Project | TodayEditField::Activity => {
+                    // These are handled via modals
+                }
+            }
+        }
+    }
+
+    /// Clear the current time field for direct re-entry
+    pub fn today_edit_clear_time(&mut self) {
+        if let Some(state) = &mut self.today_edit_state {
+            match state.focused_field {
+                TodayEditField::StartTime => {
+                    state.start_time_input.clear();
+                }
+                TodayEditField::EndTime => {
+                    state.end_time_input.clear();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Validate edit state and return error if invalid
+    pub fn today_edit_validate(&self) -> Option<String> {
+        if let Some(state) = &self.today_edit_state {
+            // For empty times, just use default (00:00) - not an error
+            let start_time = if state.start_time_input.is_empty() {
+                "00:00"
+            } else {
+                &state.start_time_input
+            };
+
+            let end_time = if state.end_time_input.is_empty() {
+                "00:00"
+            } else {
+                &state.end_time_input
+            };
+
+            // Validate start time format (HH:MM)
+            if start_time.len() != 5 || start_time.chars().nth(2) != Some(':') {
+                return Some("Invalid start time format (use HH:MM)".to_string());
+            }
+
+            // Validate end time format (HH:MM)
+            if end_time.len() != 5 || end_time.chars().nth(2) != Some(':') {
+                return Some("Invalid end time format (use HH:MM)".to_string());
+            }
+
+            // Parse times
+            let start_parts: Vec<&str> = start_time.split(':').collect();
+            let end_parts: Vec<&str> = end_time.split(':').collect();
+
+            let start_hours: u32 = start_parts[0].parse().unwrap_or(0);
+            let start_mins: u32 = start_parts[1].parse().unwrap_or(0);
+            let end_hours: u32 = end_parts[0].parse().unwrap_or(0);
+            let end_mins: u32 = end_parts[1].parse().unwrap_or(0);
+
+            if start_hours > 23 || start_mins > 59 {
+                return Some("Invalid start time (hours 0-23, mins 0-59)".to_string());
+            }
+            if end_hours > 23 || end_mins > 59 {
+                return Some("Invalid end time (hours 0-23, mins 0-59)".to_string());
+            }
+
+            // Check end >= start
+            let start_total_mins = start_hours * 60 + start_mins;
+            let end_total_mins = end_hours * 60 + end_mins;
+
+            if end_total_mins < start_total_mins {
+                return Some("End time must be after start time".to_string());
+            }
+
+            None
+        } else {
+            None
+        }
+    }
+
+    /// Get the entry ID for the currently edited entry
+    pub fn today_edit_entry_id(&self) -> Option<i32> {
+        self.today_edit_state.as_ref().map(|s| s.entry_id)
     }
 
     /// Select next item in current list
