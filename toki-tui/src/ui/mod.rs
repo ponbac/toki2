@@ -540,8 +540,8 @@ fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App)
     // Title with underlined A
     let title = vec![
         Span::raw(" "),
-        Span::styled("A", Style::default().add_modifier(Modifier::UNDERLINED)),
-        Span::raw("nnotation "),
+        Span::styled("N", Style::default().add_modifier(Modifier::UNDERLINED)),
+        Span::raw("ote "),
     ];
 
     let widget = Paragraph::new(description)
@@ -683,11 +683,11 @@ fn build_display_row(
         spans.push(Span::styled(note_display, Style::default().fg(Color::Gray)));
     }
 
-    // Apply focus styling: white background with black text
+    // Apply focus styling: yellow background with black text
     if is_focused {
         let focused_style = Style::default()
             .fg(Color::Black)
-            .bg(Color::White)
+            .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD);
         return Line::from(vec![Span::styled(
             spans.iter().map(|s| s.content.as_ref()).collect::<String>(),
@@ -716,9 +716,9 @@ fn build_edit_row<'a>(
     let start_style = match edit_state.focused_field {
         TodayEditField::StartTime => Style::default()
             .fg(Color::Black)
-            .bg(Color::White)
+            .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::White),
+        _ => Style::default().fg(Color::Yellow),
     };
     spans.push(Span::styled(start_value, start_style));
 
@@ -734,9 +734,9 @@ fn build_edit_row<'a>(
     let end_style = match edit_state.focused_field {
         TodayEditField::EndTime => Style::default()
             .fg(Color::Black)
-            .bg(Color::White)
+            .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::White),
+        _ => Style::default().fg(Color::Yellow),
     };
     spans.push(Span::styled(end_value, end_style));
 
@@ -748,9 +748,9 @@ fn build_edit_row<'a>(
     let project_style = match edit_state.focused_field {
         TodayEditField::Project => Style::default()
             .fg(Color::Black)
-            .bg(Color::White)
+            .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::White),
+        _ => Style::default().fg(Color::Yellow),
     };
     spans.push(Span::styled(project_value, project_style));
 
@@ -765,9 +765,9 @@ fn build_edit_row<'a>(
     let activity_style = match edit_state.focused_field {
         TodayEditField::Activity => Style::default()
             .fg(Color::Black)
-            .bg(Color::White)
+            .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::White),
+        _ => Style::default().fg(Color::Yellow),
     };
     spans.push(Span::styled(activity_value, activity_style));
 
@@ -784,11 +784,11 @@ fn build_edit_row<'a>(
         }
     );
     let note_style = match edit_state.focused_field {
-        TodayEditField::Annotation => Style::default()
+        TodayEditField::Note => Style::default()
             .fg(Color::Black)
-            .bg(Color::White)
+            .bg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::White),
+        _ => Style::default().fg(Color::Yellow),
     };
     spans.push(Span::styled(note_value, note_style));
 
@@ -846,8 +846,8 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
     let line2 = vec![
         Span::styled("P", Style::default().fg(Color::Yellow)),
         Span::raw(": Project  "),
-        Span::styled("A", Style::default().fg(Color::Yellow)),
-        Span::raw(": Annotation  "),
+        Span::styled("N", Style::default().fg(Color::Yellow)),
+        Span::raw(": Note  "),
         Span::styled("H", Style::default().fg(Color::Yellow)),
         Span::raw(": History  "),
         Span::styled("T", Style::default().fg(Color::Yellow)),
@@ -887,7 +887,7 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
         .split(frame.size());
 
     // Header
-    let title = Paragraph::new("Edit Annotation")
+    let title = Paragraph::new("Edit Note")
         .style(Style::default().fg(Color::Cyan))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
@@ -900,7 +900,7 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Annotation")
+                .title(" Note ")
                 .padding(Padding::horizontal(1)),
         );
     frame.render_widget(input, chunks[1]);

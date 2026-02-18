@@ -55,7 +55,7 @@ pub enum TodayEditField {
     EndTime,
     Project,
     Activity,
-    Annotation,
+    Note,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -394,8 +394,8 @@ impl App {
                 TodayEditField::StartTime => TodayEditField::EndTime,
                 TodayEditField::EndTime => TodayEditField::Project,
                 TodayEditField::Project => TodayEditField::Activity,
-                TodayEditField::Activity => TodayEditField::Annotation,
-                TodayEditField::Annotation => TodayEditField::StartTime,
+                TodayEditField::Activity => TodayEditField::Note,
+                TodayEditField::Note => TodayEditField::StartTime,
             };
             state.validation_error = None;
         }
@@ -405,11 +405,11 @@ impl App {
     pub fn today_edit_prev_field(&mut self) {
         if let Some(state) = &mut self.today_edit_state {
             state.focused_field = match state.focused_field {
-                TodayEditField::StartTime => TodayEditField::Annotation,
+                TodayEditField::StartTime => TodayEditField::Note,
                 TodayEditField::EndTime => TodayEditField::StartTime,
                 TodayEditField::Project => TodayEditField::EndTime,
                 TodayEditField::Activity => TodayEditField::Project,
-                TodayEditField::Annotation => TodayEditField::Activity,
+                TodayEditField::Note => TodayEditField::Activity,
             };
             state.validation_error = None;
         }
@@ -453,7 +453,7 @@ impl App {
                         }
                     }
                 }
-                TodayEditField::Annotation => {
+                TodayEditField::Note => {
                     state.note.push(c);
                 }
                 TodayEditField::Project | TodayEditField::Activity => {
@@ -480,7 +480,7 @@ impl App {
                     }
                     state.end_time_input.pop();
                 }
-                TodayEditField::Annotation => {
+                TodayEditField::Note => {
                     state.note.pop();
                 }
                 TodayEditField::Project | TodayEditField::Activity => {

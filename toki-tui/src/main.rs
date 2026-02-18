@@ -357,7 +357,7 @@ async fn run_app(
                             // Enter: activate focused box or start timer if Timer box selected
                             KeyCode::Enter => {
                                 if app.today_edit_state.is_some() {
-                                    // In edit mode, Enter on Project/Activity/Annotation opens modal
+                                    // In edit mode, Enter on Project/Activity/Note opens modal
                                     handle_today_edit_enter(app);
                                 } else {
                                     match app.focused_box {
@@ -413,8 +413,8 @@ async fn run_app(
                             KeyCode::Char('p') | KeyCode::Char('P') => {
                                 app.navigate_to(app::View::SelectProject);
                             }
-                            // A: Edit annotation/description
-                            KeyCode::Char('a') | KeyCode::Char('A') => {
+                            // N: Edit note
+                            KeyCode::Char('n') | KeyCode::Char('N') => {
                                 app.navigate_to(app::View::EditDescription);
                             }
                             // T: Toggle timer size
@@ -553,7 +553,7 @@ async fn handle_save_timer_with_action(app: &mut App, db: &api::Database) -> Res
 
 // Helper functions for Today edit mode
 
-/// Handle Enter key in Today edit mode - open modal for Project/Activity/Annotation or move to next field
+/// Handle Enter key in Today edit mode - open modal for Project/Activity/Note or move to next field
 fn handle_today_edit_enter(app: &mut App) {
     if let Some(state) = &app.today_edit_state {
         match state.focused_field {
@@ -569,7 +569,7 @@ fn handle_today_edit_enter(app: &mut App) {
                     app.set_status("Please select a project first".to_string());
                 }
             }
-            app::TodayEditField::Annotation => {
+            app::TodayEditField::Note => {
                 // Save running timer's note before overwriting with entry's note
                 app.saved_timer_note = Some(app.description_input.clone());
                 // Set description_input from the edit state before navigating
