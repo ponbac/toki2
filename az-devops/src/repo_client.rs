@@ -23,6 +23,8 @@ use crate::{Identity, Iteration, PullRequest, Thread, WorkItem, WorkItemComment}
 pub enum RepoClientError {
     #[error("Azure DevOps API error: {0}")]
     AzureDevOpsError(#[from] typespec::error::Error),
+    #[error("Azure Core API error: {0}")]
+    AzureCoreError(#[from] azure_core::Error),
     #[error("Repository not found: {0}")]
     RepoNotFound(String),
 }
@@ -267,6 +269,38 @@ impl RepoClient {
         }
 
         Ok(all_work_items)
+    }
+
+    /// Download a work item attachment by ID.
+    pub async fn get_work_item_attachment(
+        &self,
+        attachment_id: &str,
+        file_name: Option<&str>,
+    ) -> Result<(Vec<u8>, Option<String>), RepoClientError> {
+        let mut request = self
+            .work_item_client
+            .attachments_client()
+            .get(&self.organization, attachment_id, &self.project)
+            .download(true);
+
+        if let Some(file_name) = file_name {
+            request = request.file_name(file_name);
+        }
+
+        let raw_response = request.send().await?.into_raw_response();
+        let content_type = raw_response
+            .headers()
+            .iter()
+            .find_map(|(name, value)| {
+                if name.as_str().eq_ignore_ascii_case("content-type") {
+                    Some(value.as_str().to_string())
+                } else {
+                    None
+                }
+            });
+        let bytes: azure_core::Bytes = raw_response.into_raw_body().collect().await?;
+
+        Ok((bytes.to_vec(), content_type))
     }
 
     /// Query work item IDs using WIQL (Work Item Query Language).

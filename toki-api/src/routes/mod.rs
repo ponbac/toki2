@@ -1,5 +1,4 @@
 pub(crate) mod differs;
-pub(crate) mod email;
 pub(crate) mod error;
 pub(crate) mod notifications;
 pub(crate) mod pull_requests;

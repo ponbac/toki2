@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{BoardData, Iteration},
+    models::{BoardData, Iteration, WorkItemImage},
     WorkItemError,
 };
 
@@ -30,6 +30,9 @@ pub trait WorkItemService: Send + Sync + 'static {
         &self,
         work_item_id: &str,
     ) -> Result<(String, bool), WorkItemError>;
+
+    /// Fetch an image referenced by a work item description HTML payload.
+    async fn fetch_image(&self, image_url: &str) -> Result<WorkItemImage, WorkItemError>;
 
     /// Move a work item to a target board column.
     async fn move_work_item_to_column(

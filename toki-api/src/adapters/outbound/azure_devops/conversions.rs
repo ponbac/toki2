@@ -1,14 +1,23 @@
+use std::{borrow::Cow, collections::HashSet};
+
+use ammonia::{Builder, UrlRelative};
 use time::{Duration, OffsetDateTime, Time};
+use url::Url;
 
 use crate::domain::models::{
     BoardState, Iteration, PullRequestRef, WorkItem, WorkItemCategory, WorkItemComment,
     WorkItemPerson, WorkItemRef,
 };
 
-use super::{normalize_iteration_path, urls::AzureDevOpsUrl};
+use super::{is_allowed_ado_attachment_url, normalize_iteration_path, urls::AzureDevOpsUrl};
 
 /// Convert an Azure DevOps work item to a domain work item.
-pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -> WorkItem {
+pub fn to_domain_work_item(
+    ado: az_devops::WorkItem,
+    org: &str,
+    project: &str,
+    api_base_url: &Url,
+) -> WorkItem {
     let board_state = map_board_state(ado.board_column.as_deref(), &ado.state);
     let board_column_name = ado.board_column.clone();
     let category = map_category(&ado.item_type);
@@ -33,7 +42,13 @@ pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -
         image_url: identity.avatar_url,
     });
 
-    let description = ado.description.as_deref().map(strip_html);
+    // Preserve legacy plain-text contract for `description` while also exposing
+    // sanitized render-ready HTML via `description_rendered_html`.
+    let description_raw = ado.description.clone();
+    let description = description_raw.as_deref().map(strip_html);
+    let description_rendered_html = description_raw
+        .as_deref()
+        .map(|value| render_description_html(value, org, project, api_base_url));
     let acceptance_criteria = ado.acceptance_criteria.as_deref().map(strip_html);
 
     let tags = ado
@@ -106,6 +121,7 @@ pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -
         assigned_to,
         created_by,
         description,
+        description_rendered_html,
         acceptance_criteria,
         iteration_path: ado.iteration_path,
         area_path: ado.area_path,
@@ -117,6 +133,129 @@ pub fn to_domain_work_item(ado: az_devops::WorkItem, org: &str, project: &str) -
         created_at: ado.created_at,
         changed_at: ado.changed_at,
     }
+}
+
+fn render_description_html(value: &str, org: &str, project: &str, api_base_url: &Url) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    if !has_html_markup(trimmed) {
+        return escape_html(trimmed).replace('\n', "<br />");
+    }
+
+    sanitize_work_item_html(trimmed, org, project, api_base_url)
+}
+
+fn has_html_markup(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    for (idx, ch) in bytes.iter().enumerate() {
+        if *ch != b'<' {
+            continue;
+        }
+
+        let Some(next) = bytes.get(idx + 1) else {
+            continue;
+        };
+        if next.is_ascii_alphabetic() || *next == b'/' {
+            return true;
+        }
+    }
+    false
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn sanitize_work_item_html(value: &str, org: &str, project: &str, api_base_url: &Url) -> String {
+    let mut sanitizer = Builder::default();
+    sanitizer
+        .add_tag_attributes("a", &["target"])
+        .add_tag_attributes("img", &["loading", "decoding"])
+        .set_tag_attribute_value("a", "target", "_blank")
+        .set_tag_attribute_value("img", "loading", "lazy")
+        .set_tag_attribute_value("img", "decoding", "async")
+        .url_schemes(["http", "https"].into_iter().collect::<HashSet<_>>())
+        .url_relative(UrlRelative::Deny);
+
+    let api_base_url = api_base_url.clone();
+    let org = org.to_string();
+    let project = project.to_string();
+
+    sanitizer.attribute_filter(move |element, attribute, value| {
+        if element == "img" && attribute == "src" {
+            return rewrite_image_src_to_proxy(value, &org, &project, &api_base_url)
+                .map(Cow::Owned);
+        }
+
+        Some(Cow::Borrowed(value))
+    });
+
+    let sanitized = sanitizer.clean(value).to_string();
+    remove_img_without_src(&sanitized)
+}
+
+fn rewrite_image_src_to_proxy(
+    source: &str,
+    organization: &str,
+    project: &str,
+    api_base_url: &Url,
+) -> Option<String> {
+    let parsed = Url::parse(source).ok()?;
+    if parsed.scheme() != "https" {
+        return None;
+    }
+
+    if !is_allowed_ado_attachment_url(parsed.as_str(), organization) {
+        return None;
+    }
+
+    let mut proxy_url = api_base_url.join("work-items/image").ok()?;
+    proxy_url
+        .query_pairs_mut()
+        .append_pair("organization", organization)
+        .append_pair("project", project)
+        .append_pair("imageUrl", parsed.as_str());
+    Some(proxy_url.to_string())
+}
+
+fn remove_img_without_src(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    let mut index = 0;
+
+    while index < value.len() {
+        let tail = &value[index..];
+        let Some(relative_img_start) = tail.to_ascii_lowercase().find("<img") else {
+            result.push_str(tail);
+            break;
+        };
+
+        let img_start = index + relative_img_start;
+        result.push_str(&value[index..img_start]);
+
+        let tag_tail = &value[img_start..];
+        let Some(relative_tag_end) = tag_tail.find('>') else {
+            result.push_str(tag_tail);
+            break;
+        };
+        let tag_end = img_start + relative_tag_end + 1;
+        let tag = &value[img_start..tag_end];
+        let has_src = tag.to_ascii_lowercase().contains("src=");
+        if has_src {
+            result.push_str(tag);
+        }
+
+        index = tag_end;
+    }
+
+    result
 }
 
 /// Convert an Azure DevOps iteration to a domain iteration.
@@ -326,6 +465,60 @@ mod tests {
     #[test]
     fn test_strip_html_nbsp() {
         assert_eq!(strip_html("hello&nbsp;world"), "hello world");
+    }
+
+    #[test]
+    fn test_html_to_markdown_preserves_list_readability() {
+        let html = "<p>Skapa en företagskund med all information</p><ol><li>Skapa kund</li><li>Välj typ Företag</li></ol>";
+        let markdown = html_to_markdown(html);
+
+        assert!(markdown.contains("Skapa en företagskund med all information"));
+        assert!(markdown.contains("Skapa kund"));
+        assert!(markdown.contains("Välj typ Företag"));
+        assert!(markdown.lines().count() > 1);
+    }
+
+    #[test]
+    fn test_html_to_markdown_handles_plain_text() {
+        assert_eq!(html_to_markdown("plain text"), "plain text");
+    }
+
+    #[test]
+    fn test_render_description_html_escapes_plain_text() {
+        let api_base_url = Url::parse("https://toki-api.spinit.se").unwrap();
+        let rendered =
+            render_description_html("a < b\nsecond line", "myorg", "myproject", &api_base_url);
+
+        assert_eq!(rendered, "a &lt; b<br />second line");
+    }
+
+    #[test]
+    fn test_render_description_html_rewrites_ado_attachment_images() {
+        let api_base_url = Url::parse("https://toki-api.spinit.se").unwrap();
+        let rendered = render_description_html(
+            r#"<p>image <img src="https://dev.azure.com/lerumsdjur/Lerums%20Djursjukhus/_apis/wit/attachments/123?fileName=test.png"></p>"#,
+            "lerumsdjur",
+            "Lerums Djursjukhus",
+            &api_base_url,
+        );
+
+        assert!(rendered.contains("https://toki-api.spinit.se/work-items/image?"));
+        assert!(rendered.contains("organization=lerumsdjur"));
+        assert!(rendered.contains("project=Lerums+Djursjukhus"));
+        assert!(rendered.contains("imageUrl=https%3A%2F%2Fdev.azure.com%2Flerumsdjur%2FLerums%2520Djursjukhus%2F_apis%2Fwit%2Fattachments%2F123%3FfileName%3Dtest.png"));
+    }
+
+    #[test]
+    fn test_render_description_html_drops_non_ado_images() {
+        let api_base_url = Url::parse("https://toki-api.spinit.se").unwrap();
+        let rendered = render_description_html(
+            r#"<p>no image <img src="https://example.com/image.png"></p>"#,
+            "lerumsdjur",
+            "Lerums Djursjukhus",
+            &api_base_url,
+        );
+
+        assert!(!rendered.contains("<img"));
     }
 
     #[test]

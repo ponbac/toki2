@@ -51,6 +51,7 @@ export type BoardWorkItem = {
   assignedTo: WorkItemPerson | null;
   createdBy: WorkItemPerson | null;
   description: string | null;
+  descriptionRenderedHtml: string | null;
   acceptanceCriteria: string | null;
   iterationPath: string | null;
   areaPath: string | null;

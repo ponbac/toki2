@@ -19,7 +19,11 @@ pub struct WorkItem {
     pub priority: Option<i32>,
     pub assigned_to: Option<WorkItemPerson>,
     pub created_by: Option<WorkItemPerson>,
+    /// Provider rich-text description markup (HTML for Azure DevOps).
     pub description: Option<String>,
+    /// Sanitized, render-ready HTML for UI consumers.
+    pub description_rendered_html: Option<String>,
+    /// Provider rich-text acceptance criteria markup (HTML for Azure DevOps).
     pub acceptance_criteria: Option<String>,
     pub iteration_path: Option<String>,
     pub area_path: Option<String>,
@@ -231,6 +235,13 @@ pub struct WorkItemComment {
 pub struct WorkItemProject {
     pub organization: String,
     pub project: String,
+}
+
+/// Binary image payload fetched for a work item rich-text image reference.
+#[derive(Debug, Clone)]
+pub struct WorkItemImage {
+    pub bytes: Vec<u8>,
+    pub content_type: Option<String>,
 }
 
 #[cfg(test)]

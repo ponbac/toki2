@@ -5,11 +5,12 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use async_trait::async_trait;
+use url::Url;
 
 use crate::domain::{
     models::{
         synthetic_column_id_from_name, BoardColumn, BoardColumnAssignment, Iteration, WorkItem,
-        WorkItemComment,
+        WorkItemComment, WorkItemImage,
     },
     ports::outbound::WorkItemProvider,
     WorkItemError,
@@ -23,12 +24,18 @@ use self::conversions::{
 /// Adapter that wraps an Azure DevOps `RepoClient` to implement the `WorkItemProvider` port.
 pub struct AzureDevOpsWorkItemAdapter {
     client: az_devops::RepoClient,
+    api_base_url: Url,
 }
+
+const MAX_WORK_ITEM_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 
 impl AzureDevOpsWorkItemAdapter {
     /// Create a new adapter wrapping the given `RepoClient`.
-    pub fn new(client: az_devops::RepoClient) -> Self {
-        Self { client }
+    pub fn new(client: az_devops::RepoClient, api_base_url: Url) -> Self {
+        Self {
+            client,
+            api_base_url,
+        }
     }
 }
 
@@ -140,7 +147,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 
         Ok(ado_items
             .into_iter()
-            .map(|ado| to_domain_work_item(ado, org, project))
+            .map(|ado| to_domain_work_item(ado, org, project, &self.api_base_url))
             .collect())
     }
 
@@ -240,7 +247,8 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         // Convert to domain model
         let org = self.client.organization();
         let project = self.client.project();
-        let mut domain_item = to_domain_work_item(ado_item.clone(), org, project);
+        let mut domain_item =
+            to_domain_work_item(ado_item.clone(), org, project, &self.api_base_url);
 
         // Batch-fetch titles for parent & related work items
         let ref_ids: Vec<i32> = domain_item
@@ -310,6 +318,42 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         Ok((markdown, has_images))
     }
 
+    async fn fetch_image(&self, image_url: &str) -> Result<WorkItemImage, WorkItemError> {
+        let ParsedAttachmentUrl {
+            attachment_id,
+            file_name,
+        } = parse_ado_attachment_url(image_url, self.client.organization())?;
+
+        let (bytes, content_type) = self
+            .client
+            .get_work_item_attachment(&attachment_id, file_name.as_deref())
+            .await
+            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+
+        if bytes.is_empty() {
+            return Err(WorkItemError::ProviderError(
+                "Attachment payload was empty".to_string(),
+            ));
+        }
+
+        if bytes.len() > MAX_WORK_ITEM_IMAGE_BYTES {
+            return Err(WorkItemError::InvalidInput(format!(
+                "Image payload exceeds {} bytes",
+                MAX_WORK_ITEM_IMAGE_BYTES
+            )));
+        }
+
+        let resolved_content_type = resolve_image_content_type(content_type.as_deref(), &bytes)
+            .ok_or_else(|| {
+                WorkItemError::InvalidInput("Attachment is not a supported image".to_string())
+            })?;
+
+        Ok(WorkItemImage {
+            bytes,
+            content_type: Some(resolved_content_type),
+        })
+    }
+
     async fn move_work_item_to_column(
         &self,
         work_item_id: &str,
@@ -341,9 +385,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .iter()
             .find(|column| column.name.eq_ignore_ascii_case(target_column_name))
             .ok_or_else(|| {
-                WorkItemError::InvalidInput(format!(
-                    "Unknown board column '{target_column_name}'"
-                ))
+                WorkItemError::InvalidInput(format!("Unknown board column '{target_column_name}'"))
             })?;
 
         self.client
@@ -361,6 +403,142 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 fn normalize_iteration_path(path: &str) -> String {
     let path = path.strip_prefix('\\').unwrap_or(path);
     path.replacen("\\Iteration\\", "\\", 1)
+}
+
+#[derive(Debug)]
+struct ParsedAttachmentUrl {
+    attachment_id: String,
+    file_name: Option<String>,
+}
+
+fn parse_ado_attachment_url(
+    image_url: &str,
+    expected_organization: &str,
+) -> Result<ParsedAttachmentUrl, WorkItemError> {
+    let parsed = Url::parse(image_url)
+        .map_err(|_| WorkItemError::InvalidInput("Invalid image URL".to_string()))?;
+
+    if parsed.scheme() != "https" {
+        return Err(WorkItemError::InvalidInput(
+            "Image URL must use HTTPS".to_string(),
+        ));
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| WorkItemError::InvalidInput("Image URL is missing host".to_string()))?;
+    if !host.eq_ignore_ascii_case("dev.azure.com") {
+        return Err(WorkItemError::InvalidInput(
+            "Image URL must target dev.azure.com".to_string(),
+        ));
+    }
+
+    let mut segments = parsed
+        .path_segments()
+        .ok_or_else(|| WorkItemError::InvalidInput("Image URL path is invalid".to_string()))?;
+
+    let organization = segments.next().ok_or_else(|| {
+        WorkItemError::InvalidInput("Image URL organization is missing".to_string())
+    })?;
+    if !organization.eq_ignore_ascii_case(expected_organization) {
+        return Err(WorkItemError::InvalidInput(
+            "Image URL organization does not match board organization".to_string(),
+        ));
+    }
+
+    // Project segment (name or GUID) is required but not used in downstream lookup.
+    let _project = segments
+        .next()
+        .ok_or_else(|| WorkItemError::InvalidInput("Image URL project is missing".to_string()))?;
+    let api = segments
+        .next()
+        .ok_or_else(|| WorkItemError::InvalidInput("Image URL path is invalid".to_string()))?;
+    let wit = segments
+        .next()
+        .ok_or_else(|| WorkItemError::InvalidInput("Image URL path is invalid".to_string()))?;
+    let attachments = segments
+        .next()
+        .ok_or_else(|| WorkItemError::InvalidInput("Image URL path is invalid".to_string()))?;
+    let attachment_id = segments
+        .next()
+        .ok_or_else(|| WorkItemError::InvalidInput("Image attachment ID is missing".to_string()))?;
+
+    if !api.eq_ignore_ascii_case("_apis")
+        || !wit.eq_ignore_ascii_case("wit")
+        || !attachments.eq_ignore_ascii_case("attachments")
+        || attachment_id.is_empty()
+    {
+        return Err(WorkItemError::InvalidInput(
+            "Image URL is not a work item attachment URL".to_string(),
+        ));
+    }
+
+    if segments.any(|segment| !segment.is_empty()) {
+        return Err(WorkItemError::InvalidInput(
+            "Image URL has unexpected path segments".to_string(),
+        ));
+    }
+
+    let file_name = parsed
+        .query_pairs()
+        .find_map(|(key, value)| {
+            if key.eq_ignore_ascii_case("filename") {
+                Some(value.into_owned())
+            } else {
+                None
+            }
+        })
+        .filter(|value| !value.trim().is_empty());
+
+    Ok(ParsedAttachmentUrl {
+        attachment_id: attachment_id.to_string(),
+        file_name,
+    })
+}
+
+pub(super) fn is_allowed_ado_attachment_url(image_url: &str, expected_organization: &str) -> bool {
+    parse_ado_attachment_url(image_url, expected_organization).is_ok()
+}
+
+fn resolve_image_content_type(content_type: Option<&str>, bytes: &[u8]) -> Option<String> {
+    let normalized = content_type
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or(value)
+                .trim()
+                .to_ascii_lowercase()
+        })
+        .filter(|value| !value.is_empty());
+
+    if let Some(ref mime) = normalized {
+        if mime.starts_with("image/") {
+            return Some(mime.clone());
+        }
+    }
+
+    infer_image_content_type(bytes).map(str::to_string)
+}
+
+fn infer_image_content_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 8 && bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return Some("image/png");
+    }
+    if bytes.len() >= 3 && bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("image/jpeg");
+    }
+    if bytes.len() >= 6 && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")) {
+        return Some("image/gif");
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    if bytes.len() >= 2 && bytes.starts_with(b"BM") {
+        return Some("image/bmp");
+    }
+
+    None
 }
 
 /// Build a Markdown document from a work item and its comments, for LLM consumption.
@@ -633,4 +811,76 @@ impl AzureDevOpsWorkItemAdapter {
 fn resolve_team_name(team: Option<&str>, project: &str) -> String {
     team.map(|t| t.to_string())
         .unwrap_or_else(|| format!("{project} Team"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        parse_ado_attachment_url, resolve_image_content_type, ParsedAttachmentUrl,
+        MAX_WORK_ITEM_IMAGE_BYTES,
+    };
+    use crate::domain::WorkItemError;
+
+    #[test]
+    fn parse_ado_attachment_url_accepts_valid_url() {
+        let parsed = parse_ado_attachment_url(
+            "https://dev.azure.com/example-org/project-guid/_apis/wit/attachments/683f8fad-56a3-43a0-b268-9ffd026dde6e?fileName=image.png",
+            "example-org",
+        )
+        .expect("expected valid attachment url");
+
+        assert_eq!(parsed.attachment_id, "683f8fad-56a3-43a0-b268-9ffd026dde6e");
+        assert_eq!(parsed.file_name.as_deref(), Some("image.png"));
+    }
+
+    #[test]
+    fn parse_ado_attachment_url_rejects_wrong_host() {
+        let err = parse_ado_attachment_url(
+            "https://example.com/example-org/project/_apis/wit/attachments/abc",
+            "example-org",
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, WorkItemError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn parse_ado_attachment_url_rejects_wrong_org() {
+        let err = parse_ado_attachment_url(
+            "https://dev.azure.com/another-org/project/_apis/wit/attachments/abc",
+            "example-org",
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, WorkItemError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn resolve_image_content_type_prefers_valid_image_header() {
+        let resolved = resolve_image_content_type(Some("image/png; charset=utf-8"), b"test");
+        assert_eq!(resolved.as_deref(), Some("image/png"));
+    }
+
+    #[test]
+    fn resolve_image_content_type_infers_png_when_header_missing() {
+        let bytes = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00];
+        let resolved = resolve_image_content_type(None, &bytes);
+        assert_eq!(resolved.as_deref(), Some("image/png"));
+    }
+
+    #[test]
+    fn max_work_item_image_bytes_is_reasonable() {
+        assert_eq!(MAX_WORK_ITEM_IMAGE_BYTES, 5 * 1024 * 1024);
+    }
+
+    #[test]
+    fn parsed_attachment_url_struct_holds_fields() {
+        let parsed = ParsedAttachmentUrl {
+            attachment_id: "abc".to_string(),
+            file_name: Some("image.png".to_string()),
+        };
+
+        assert_eq!(parsed.attachment_id, "abc");
+        assert_eq!(parsed.file_name.as_deref(), Some("image.png"));
+    }
 }

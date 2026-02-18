@@ -17,10 +17,10 @@ import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import { BOARD_CATEGORY_OPTIONS } from "../-lib/category-meta";
 import { CopyWorkItem } from "./copy-work-item";
 import { PrApprovalHoverCard } from "./pr-approval-hover-card";
+import { WorkItemDescriptionHoverCard } from "./work-item-description-hover-card";
 import {
   GitBranch,
   Check,
-  ExternalLink,
   Loader2,
   MoreVertical,
 } from "lucide-react";
@@ -152,16 +152,11 @@ export function BoardCard({
           </div>
         )}
 
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
-        >
-          #{item.id}
-          <ExternalLink className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
-        </a>
+        <WorkItemDescriptionHoverCard
+          id={item.id}
+          url={item.url}
+          descriptionRenderedHtml={item.descriptionRenderedHtml}
+        />
 
         {/* PR indicator - always visible */}
         {item.pullRequests && item.pullRequests.length > 0 && (

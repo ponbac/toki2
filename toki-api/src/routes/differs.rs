@@ -44,7 +44,7 @@ struct Differ {
     is_invalid: bool,
 }
 
-#[instrument(name = "get_differs")]
+#[instrument]
 async fn get_differs(user: AuthUser, State(app_state): State<AppState>) -> Json<Vec<Differ>> {
     let user_repo = app_state.user_repo.clone();
     let repositories_repo = app_state.repository_repo.clone();
@@ -111,7 +111,7 @@ async fn get_differs(user: AuthUser, State(app_state): State<AppState>) -> Json<
     Json(differ_dtos)
 }
 
-#[instrument(name = "start_differ")]
+#[instrument]
 async fn start_differ(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
@@ -125,7 +125,7 @@ async fn start_differ(
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "stop_differ")]
+#[instrument]
 async fn stop_differ(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
@@ -137,7 +137,7 @@ async fn stop_differ(
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "force_update")]
+#[instrument]
 async fn force_update(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,

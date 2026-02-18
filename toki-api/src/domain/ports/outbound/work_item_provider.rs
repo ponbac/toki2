@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{BoardColumn, BoardColumnAssignment, Iteration, WorkItem, WorkItemComment},
+    models::{
+        BoardColumn, BoardColumnAssignment, Iteration, WorkItem, WorkItemComment, WorkItemImage,
+    },
     WorkItemError,
 };
 
@@ -72,6 +74,9 @@ pub trait WorkItemProvider: Send + Sync + 'static {
         &self,
         work_item_id: &str,
     ) -> Result<(String, bool), WorkItemError>;
+
+    /// Fetch an image referenced from a work item rich-text field.
+    async fn fetch_image(&self, image_url: &str) -> Result<WorkItemImage, WorkItemError>;
 
     /// Move a work item to a target taskboard column.
     async fn move_work_item_to_column(

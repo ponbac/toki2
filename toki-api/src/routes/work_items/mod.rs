@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use axum::{
+    body::Body,
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, HeaderValue, StatusCode},
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -19,9 +21,8 @@ use crate::{
     auth::AuthUser,
     domain::{
         models::{BoardData, PullRequestRef, WorkItem},
-        RepoKey,
+        Email, RepoKey, WorkItemError,
     },
-    routes::email::normalize_email,
 };
 
 use super::ApiError;
@@ -52,6 +53,14 @@ pub struct FormatForLlmQuery {
     pub organization: String,
     pub project: String,
     pub work_item_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkItemImageQuery {
+    pub organization: String,
+    pub project: String,
+    pub image_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -89,6 +98,9 @@ struct PullRequestRefEnrichment {
     approval_status: PullRequestApprovalStatusResponse,
 }
 
+const DEFAULT_WORK_ITEM_IMAGE_MIME: &str = "application/octet-stream";
+const WORK_ITEM_IMAGE_CACHE_CONTROL: &str = "private, max-age=3600";
+
 // ---------------------------------------------------------------------------
 // Route handlers
 // ---------------------------------------------------------------------------
@@ -107,7 +119,6 @@ async fn get_projects(
 
 #[instrument(name = "GET /work-items/iterations")]
 async fn get_iterations(
-    _user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<ProjectQuery>,
 ) -> Result<Json<Vec<IterationResponse>>, ApiError> {
@@ -121,7 +132,6 @@ async fn get_iterations(
 
 #[instrument(name = "GET /work-items/board")]
 async fn get_board(
-    _user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<BoardQuery>,
 ) -> Result<Json<BoardResponse>, ApiError> {
@@ -142,7 +152,6 @@ async fn get_board(
 
 #[instrument(name = "GET /work-items/format-for-llm")]
 async fn format_for_llm(
-    _user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<FormatForLlmQuery>,
 ) -> Result<Json<FormatForLlmResponse>, ApiError> {
@@ -159,9 +168,42 @@ async fn format_for_llm(
     }))
 }
 
+#[instrument(name = "GET /work-items/image")]
+async fn get_image(
+    State(app_state): State<AppState>,
+    Query(query): Query<WorkItemImageQuery>,
+) -> Result<Response, ApiError> {
+    let service = app_state
+        .work_item_factory
+        .create_service(&query.organization, &query.project)
+        .await?;
+    let image = service
+        .fetch_image(&query.image_url)
+        .await
+        .map_err(map_work_item_image_error)?;
+
+    let mut response = Response::new(Body::from(image.bytes));
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(
+            image
+                .content_type
+                .as_deref()
+                .unwrap_or(DEFAULT_WORK_ITEM_IMAGE_MIME),
+        )
+        .unwrap_or_else(|_| HeaderValue::from_static(DEFAULT_WORK_ITEM_IMAGE_MIME)),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(WORK_ITEM_IMAGE_CACHE_CONTROL),
+    );
+
+    Ok(response)
+}
+
 #[instrument(
     name = "POST /work-items/move",
-    skip(app_state, body),
     fields(
         organization = %body.organization,
         project = %body.project,
@@ -170,7 +212,6 @@ async fn format_for_llm(
     )
 )]
 async fn move_work_item(
-    _user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<MoveWorkItemBody>,
 ) -> Result<StatusCode, ApiError> {
@@ -355,6 +396,28 @@ fn enrich_pull_request_ref(
     pr_response
 }
 
+fn map_work_item_image_error(error: WorkItemError) -> ApiError {
+    match error {
+        WorkItemError::InvalidInput(message) => {
+            if message.to_ascii_lowercase().contains("exceeds") {
+                ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, message)
+            } else {
+                ApiError::bad_request(message)
+            }
+        }
+        WorkItemError::ProviderError(message) => {
+            let lower = message.to_ascii_lowercase();
+            if lower.contains("not found") || lower.contains("404") {
+                ApiError::not_found("work item image not found")
+            } else if lower.contains("forbidden") || lower.contains("403") {
+                ApiError::forbidden("access to work item image was denied")
+            } else {
+                ApiError::internal(message)
+            }
+        }
+    }
+}
+
 async fn apply_avatar_overrides_to_work_items(
     app_state: &AppState,
     items: &mut [WorkItem],
@@ -402,7 +465,7 @@ fn collect_work_item_person_email(
         return;
     };
 
-    if let Some(email) = normalize_email(unique_name) {
+    if let Some(email) = Email::normalize_lookup_key(unique_name) {
         emails.insert(email);
     }
 }
@@ -419,7 +482,7 @@ fn apply_avatar_override_to_work_item_person(
         return;
     };
 
-    let Some(email) = normalize_email(unique_name) else {
+    let Some(email) = Email::normalize_lookup_key(unique_name) else {
         return;
     };
 
@@ -437,6 +500,7 @@ pub fn router() -> Router<AppState> {
         .route("/projects", get(get_projects))
         .route("/iterations", get(get_iterations))
         .route("/board", get(get_board))
+        .route("/image", get(get_image))
         .route("/format-for-llm", get(format_for_llm))
         .route("/move", post(move_work_item))
 }
@@ -446,11 +510,13 @@ mod tests {
     use std::collections::HashMap;
     use time::OffsetDateTime;
 
-    use crate::routes::email::normalize_email;
     use crate::{
         adapters::inbound::http::PullRequestApprovalStatusResponse,
-        domain::models::{
-            BoardData, BoardState, PullRequestRef, WorkItem, WorkItemCategory, WorkItemPerson,
+        domain::{
+            models::{
+                BoardData, BoardState, PullRequestRef, WorkItem, WorkItemCategory, WorkItemPerson,
+            },
+            Email,
         },
     };
 
@@ -460,12 +526,20 @@ mod tests {
     };
 
     #[test]
-    fn normalize_email_trims_and_lowercases() {
+    fn normalize_lookup_key_trims_and_lowercases() {
         assert_eq!(
-            normalize_email("  USER@Example.com "),
+            Email::normalize_lookup_key("  USER@Example.com "),
             Some("user@example.com".to_string())
         );
-        assert_eq!(normalize_email(""), None);
+        assert_eq!(Email::normalize_lookup_key(""), None);
+    }
+
+    #[test]
+    fn normalize_lookup_key_falls_back_for_non_email_identity_values() {
+        assert_eq!(
+            Email::normalize_lookup_key("  Display Name  "),
+            Some("display name".to_string())
+        );
     }
 
     #[test]
@@ -479,6 +553,28 @@ mod tests {
         let mut avatar_by_email = HashMap::new();
         avatar_by_email.insert(
             "user@example.com".to_string(),
+            "https://custom.example.com/avatar.png".to_string(),
+        );
+
+        apply_avatar_override_to_work_item_person(Some(&mut person), &avatar_by_email);
+
+        assert_eq!(
+            person.image_url.as_deref(),
+            Some("https://custom.example.com/avatar.png")
+        );
+    }
+
+    #[test]
+    fn apply_avatar_override_to_work_item_person_supports_non_email_unique_name_fallback() {
+        let mut person = WorkItemPerson {
+            display_name: "Display Name".to_string(),
+            unique_name: Some("  Display Name  ".to_string()),
+            image_url: None,
+        };
+
+        let mut avatar_by_email = HashMap::new();
+        avatar_by_email.insert(
+            "display name".to_string(),
             "https://custom.example.com/avatar.png".to_string(),
         );
 
@@ -568,6 +664,7 @@ mod tests {
             assigned_to: None,
             created_by: None,
             description: None,
+            description_rendered_html: None,
             acceptance_criteria: None,
             iteration_path: None,
             area_path: None,

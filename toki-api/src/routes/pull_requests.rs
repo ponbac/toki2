@@ -16,9 +16,8 @@ use tracing::instrument;
 use crate::{
     app_state::AppStateError,
     auth::AuthUser,
-    domain::{PullRequest, RepoKey},
+    domain::{Email, PullRequest, RepoKey},
     repositories::UserRepository,
-    routes::email::normalize_email,
     AppState,
 };
 
@@ -301,7 +300,7 @@ fn collect_optional_identity_email(
 }
 
 fn collect_identity_email(emails: &mut HashSet<String>, identity: &az_devops::Identity) {
-    if let Some(email) = normalize_email(&identity.unique_name) {
+    if let Some(email) = Email::normalize_lookup_key(&identity.unique_name) {
         emails.insert(email);
     }
 }
@@ -343,7 +342,7 @@ fn apply_avatar_override_to_identity(
     identity: &mut az_devops::Identity,
     avatar_by_email: &HashMap<String, String>,
 ) {
-    let Some(email) = normalize_email(&identity.unique_name) else {
+    let Some(email) = Email::normalize_lookup_key(&identity.unique_name) else {
         return;
     };
 
@@ -356,17 +355,25 @@ fn apply_avatar_override_to_identity(
 mod tests {
     use std::collections::HashMap;
 
-    use crate::routes::email::normalize_email;
+    use crate::domain::Email;
 
     use super::apply_avatar_override_to_identity;
 
     #[test]
-    fn normalize_email_trims_and_lowercases() {
+    fn normalize_lookup_key_trims_and_lowercases() {
         assert_eq!(
-            normalize_email("  USER@Example.com  "),
+            Email::normalize_lookup_key("  USER@Example.com  "),
             Some("user@example.com".to_string())
         );
-        assert_eq!(normalize_email("   "), None);
+        assert_eq!(Email::normalize_lookup_key("   "), None);
+    }
+
+    #[test]
+    fn normalize_lookup_key_falls_back_for_non_email_identity_values() {
+        assert_eq!(
+            Email::normalize_lookup_key("  Display Name  "),
+            Some("display name".to_string())
+        );
     }
 
     #[test]
@@ -381,6 +388,29 @@ mod tests {
         let mut avatar_by_email = HashMap::new();
         avatar_by_email.insert(
             "user@example.com".to_string(),
+            "https://custom.example.com/avatar.png".to_string(),
+        );
+
+        apply_avatar_override_to_identity(&mut identity, &avatar_by_email);
+
+        assert_eq!(
+            identity.avatar_url.as_deref(),
+            Some("https://custom.example.com/avatar.png")
+        );
+    }
+
+    #[test]
+    fn apply_avatar_override_to_identity_supports_non_email_unique_name_fallback() {
+        let mut identity = az_devops::Identity {
+            id: "user-id".to_string(),
+            display_name: "Test User".to_string(),
+            unique_name: "  Display Name  ".to_string(),
+            avatar_url: None,
+        };
+
+        let mut avatar_by_email = HashMap::new();
+        avatar_by_email.insert(
+            "display name".to_string(),
             "https://custom.example.com/avatar.png".to_string(),
         );
 

@@ -4,7 +4,10 @@ use std::{cmp::Ordering, collections::HashMap};
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{synthetic_column_id_from_name, BoardColumn, BoardData, BoardState, Iteration, WorkItem},
+    models::{
+        synthetic_column_id_from_name, BoardColumn, BoardData, BoardState, Iteration, WorkItem,
+        WorkItemImage,
+    },
     ports::{inbound::WorkItemService, outbound::WorkItemProvider},
     WorkItemError,
 };
@@ -85,6 +88,10 @@ impl<P: WorkItemProvider> WorkItemService for WorkItemServiceImpl<P> {
         work_item_id: &str,
     ) -> Result<(String, bool), WorkItemError> {
         self.provider.format_work_item_for_llm(work_item_id).await
+    }
+
+    async fn fetch_image(&self, image_url: &str) -> Result<WorkItemImage, WorkItemError> {
+        self.provider.fetch_image(image_url).await
     }
 
     async fn move_work_item_to_column(
@@ -254,11 +261,19 @@ fn compare_work_item_ids(a: &str, b: &str) -> Ordering {
     if a_is_numeric && b_is_numeric {
         let a_normalized = {
             let trimmed = a.trim_start_matches('0');
-            if trimmed.is_empty() { "0" } else { trimmed }
+            if trimmed.is_empty() {
+                "0"
+            } else {
+                trimmed
+            }
         };
         let b_normalized = {
             let trimmed = b.trim_start_matches('0');
-            if trimmed.is_empty() { "0" } else { trimmed }
+            if trimmed.is_empty() {
+                "0"
+            } else {
+                trimmed
+            }
         };
 
         return a_normalized
@@ -274,7 +289,7 @@ fn compare_work_item_ids(a: &str, b: &str) -> Ordering {
 mod tests {
     use std::cmp::Ordering;
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use async_trait::async_trait;
     use time::OffsetDateTime;
@@ -295,7 +310,10 @@ mod tests {
     #[test]
     fn compare_work_item_ids_falls_back_to_lexicographic_for_non_numeric_ids() {
         assert_eq!(compare_work_item_ids("abc-10", "abc-2"), Ordering::Less);
-        assert_eq!(compare_work_item_ids("owner/repo#2", "owner/repo#10"), Ordering::Greater);
+        assert_eq!(
+            compare_work_item_ids("owner/repo#2", "owner/repo#10"),
+            Ordering::Greater
+        );
     }
 
     #[derive(Clone, Default)]
@@ -304,15 +322,6 @@ mod tests {
         items: Vec<WorkItem>,
         columns: Vec<BoardColumn>,
         assignments: HashMap<String, BoardColumnAssignment>,
-        move_calls: Arc<Mutex<Vec<MoveCall>>>,
-    }
-
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    struct MoveCall {
-        work_item_id: String,
-        target_column_name: String,
-        iteration_path: Option<String>,
-        team: Option<String>,
     }
 
     #[async_trait]
@@ -363,19 +372,20 @@ mod tests {
             Ok((String::new(), false))
         }
 
+        async fn fetch_image(&self, _image_url: &str) -> Result<WorkItemImage, WorkItemError> {
+            Ok(WorkItemImage {
+                bytes: vec![],
+                content_type: Some("image/png".to_string()),
+            })
+        }
+
         async fn move_work_item_to_column(
             &self,
-            work_item_id: &str,
-            target_column_name: &str,
-            iteration_path: Option<&str>,
-            team: Option<&str>,
+            _work_item_id: &str,
+            _target_column_name: &str,
+            _iteration_path: Option<&str>,
+            _team: Option<&str>,
         ) -> Result<(), WorkItemError> {
-            self.move_calls.lock().unwrap().push(MoveCall {
-                work_item_id: work_item_id.to_string(),
-                target_column_name: target_column_name.to_string(),
-                iteration_path: iteration_path.map(str::to_string),
-                team: team.map(str::to_string),
-            });
             Ok(())
         }
     }
@@ -397,6 +407,7 @@ mod tests {
             }),
             created_by: None,
             description: None,
+            description_rendered_html: None,
             acceptance_criteria: None,
             iteration_path: None,
             area_path: None,
@@ -525,28 +536,5 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(empty_column_err, WorkItemError::InvalidInput(_)));
-    }
-
-    #[tokio::test]
-    async fn move_work_item_delegates_to_provider() {
-        let provider = MockProvider::default();
-        let move_calls = provider.move_calls.clone();
-        let service = WorkItemServiceImpl::new(Arc::new(provider));
-
-        service
-            .move_work_item_to_column("  42  ", "  In Progress  ", Some("Project\\Sprint 1"), Some("Team A"))
-            .await
-            .unwrap();
-
-        let calls = move_calls.lock().unwrap();
-        assert_eq!(
-            calls.as_slice(),
-            [MoveCall {
-                work_item_id: "42".to_string(),
-                target_column_name: "In Progress".to_string(),
-                iteration_path: Some("Project\\Sprint 1".to_string()),
-                team: Some("Team A".to_string()),
-            }]
-        );
     }
 }

@@ -16,12 +16,31 @@ pub enum EmailError {
     InvalidDomainPart(String),
 }
 
+impl Email {
+    /// Normalizes an identity/email lookup key for avatar and cache lookups.
+    ///
+    /// If the input is a valid email, this returns the canonicalized email.
+    /// Otherwise, it falls back to a trimmed/lowercased raw string.
+    pub fn normalize_lookup_key(value: &str) -> Option<String> {
+        let normalized = value.trim();
+        if normalized.is_empty() {
+            return None;
+        }
+
+        match Self::try_from(normalized) {
+            Ok(email) => Some(email.0),
+            Err(_) => Some(normalized.to_lowercase()),
+        }
+    }
+}
+
 impl TryFrom<&str> for Email {
     type Error = EmailError;
 
     /// Validates a string and converts it into an `Email`.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let mut parts = value.split('@');
+        let normalized = value.trim();
+        let mut parts = normalized.split('@');
         let local_part = parts.next();
         let domain_part = parts.next();
         let extra_part = parts.next();
@@ -43,7 +62,7 @@ impl TryFrom<&str> for Email {
             return Err(EmailError::InvalidDomainPart(value.to_string()));
         }
 
-        Ok(Self(value.to_string()))
+        Ok(Self(normalized.to_lowercase()))
     }
 }
 
@@ -114,5 +133,32 @@ mod tests {
             Email::try_from("test@example").unwrap_err(),
             EmailError::InvalidDomainPart("test@example".to_string())
         );
+    }
+
+    #[test]
+    fn email_is_canonicalized_to_lowercase_and_trimmed() {
+        let email = Email::try_from("  USER@Example.com  ").expect("email should be valid");
+        assert_eq!(email.as_ref(), "user@example.com");
+    }
+
+    #[test]
+    fn normalize_lookup_key_uses_email_canonicalization_when_possible() {
+        assert_eq!(
+            Email::normalize_lookup_key(" USER@Example.com "),
+            Some("user@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_lookup_key_falls_back_to_raw_lowercased_value() {
+        assert_eq!(
+            Email::normalize_lookup_key("  Display Name  "),
+            Some("display name".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_lookup_key_rejects_empty_values() {
+        assert_eq!(Email::normalize_lookup_key("   "), None);
     }
 }
