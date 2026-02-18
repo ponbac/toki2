@@ -25,6 +25,7 @@ import {
   MoreVertical,
 } from "lucide-react";
 import { useState, useCallback } from "react";
+import { toast } from "sonner";
 
 const CATEGORY_META_BY_VALUE = Object.fromEntries(
   BOARD_CATEGORY_OPTIONS.map((option) => [option.value, option]),
@@ -94,9 +95,13 @@ export function BoardCard({
         return;
       }
       e.stopPropagation();
-      await navigator.clipboard.writeText(branchName);
-      setBranchCopied(true);
-      setTimeout(() => setBranchCopied(false), 2000);
+      try {
+        await navigator.clipboard.writeText(branchName);
+        setBranchCopied(true);
+        setTimeout(() => setBranchCopied(false), 2000);
+      } catch {
+        toast.error("Failed to copy branch name.");
+      }
     },
     [branchName],
   );
@@ -116,7 +121,7 @@ export function BoardCard({
       }}
       onDragEnd={onDragEnd}
       className={cn(
-        "group relative rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm",
+        "group relative min-w-0 rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm",
         isPriorityOne && "bg-red-500/[0.06]",
         isDragging && "opacity-50",
         isMoving && "cursor-progress",
@@ -167,9 +172,9 @@ export function BoardCard({
           <PrApprovalHoverCard pullRequests={item.pullRequests} />
         )}
 
-        <div className="ml-auto flex items-center gap-0.5">
+        <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           {/* Move menu - shown on hover */}
-          <div className="opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="pointer-events-auto">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -209,7 +214,7 @@ export function BoardCard({
 
           {/* Branch copy - shown on hover only when PR source branch is available */}
           {branchName && (
-            <div className="opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="pointer-events-auto">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -231,7 +236,7 @@ export function BoardCard({
           )}
 
           {/* Copy work item - shown on hover */}
-          <div className="opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="pointer-events-auto">
             <CopyWorkItem
               workItemId={item.id}
               organization={organization}
@@ -242,7 +247,9 @@ export function BoardCard({
       </div>
 
       {/* Title */}
-      <p className="mb-2 text-sm font-medium leading-snug">{item.title}</p>
+      <p className="mb-2 min-w-0 break-words text-sm font-medium leading-snug [overflow-wrap:anywhere]">
+        {item.title}
+      </p>
 
       {/* Bottom row: assignee + priority */}
       <div className="flex items-center justify-between">
@@ -258,7 +265,8 @@ export function BoardCard({
                       item.assignedTo.uniqueName ?? item.assignedTo.displayName,
                     displayName: item.assignedTo.displayName,
                     uniqueName:
-                      item.assignedTo.uniqueName ?? item.assignedTo.displayName,
+                      item.assignedTo.uniqueName ??
+                      `display-name:${item.assignedTo.displayName}`,
                     avatarUrl: item.assignedTo.imageUrl,
                   }}
                 />

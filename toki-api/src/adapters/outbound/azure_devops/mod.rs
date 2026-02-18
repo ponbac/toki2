@@ -208,9 +208,9 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         &self,
         work_item_id: &str,
     ) -> Result<Vec<WorkItemComment>, WorkItemError> {
-        let id: i32 = work_item_id.parse().map_err(|_| {
-            WorkItemError::ProviderError(format!("Invalid work item ID: {work_item_id}"))
-        })?;
+        let id: i32 = work_item_id
+            .parse()
+            .map_err(|_| WorkItemError::InvalidInput(format!("Invalid work item ID: {work_item_id}")))?;
 
         let ado_comments = self
             .client
@@ -229,9 +229,9 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         &self,
         work_item_id: &str,
     ) -> Result<(String, bool), WorkItemError> {
-        let id: i32 = work_item_id.parse().map_err(|_| {
-            WorkItemError::ProviderError(format!("Invalid work item ID: {work_item_id}"))
-        })?;
+        let id: i32 = work_item_id
+            .parse()
+            .map_err(|_| WorkItemError::InvalidInput(format!("Invalid work item ID: {work_item_id}")))?;
 
         // Fetch raw ADO work item (need raw HTML for image detection)
         let ado_items = self
@@ -565,6 +565,10 @@ fn infer_image_content_type(bytes: &[u8]) -> Option<&'static str> {
     None
 }
 
+fn escape_wiql_single_quoted(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
 /// Build a Markdown document from a work item and its comments, for LLM consumption.
 fn build_llm_markdown(
     item: &WorkItem,
@@ -575,6 +579,8 @@ fn build_llm_markdown(
     project: &str,
 ) -> String {
     let mut md = String::new();
+    let escaped_project_for_wiql = escape_wiql_single_quoted(project);
+
     // Instructions preamble with org/project context and az CLI examples
     writeln!(
         md,
@@ -605,11 +611,12 @@ fn build_llm_markdown(
 
     // Use the item's actual iteration path when available; fall back to a project-level query.
     if let Some(ref ip) = item.iteration_path {
+        let escaped_iteration_path_for_wiql = escape_wiql_single_quoted(ip);
         writeln!(
             md,
             "> az boards query --wiql \"SELECT [System.Id], [System.Title], [System.State] \
-             FROM WorkItems WHERE [System.TeamProject] = '{project}' \
-             AND [System.IterationPath] UNDER '{ip}'\" \
+             FROM WorkItems WHERE [System.TeamProject] = '{escaped_project_for_wiql}' \
+             AND [System.IterationPath] UNDER '{escaped_iteration_path_for_wiql}'\" \
              --org https://dev.azure.com/{org}"
         )
         .unwrap();
@@ -617,7 +624,7 @@ fn build_llm_markdown(
         writeln!(
             md,
             "> az boards query --wiql \"SELECT [System.Id], [System.Title], [System.State] \
-             FROM WorkItems WHERE [System.TeamProject] = '{project}'\" \
+             FROM WorkItems WHERE [System.TeamProject] = '{escaped_project_for_wiql}'\" \
              --org https://dev.azure.com/{org}"
         )
         .unwrap();

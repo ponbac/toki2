@@ -35,7 +35,7 @@ export function WorkItemDescriptionHoverCard({
         align="start"
         side="bottom"
         sideOffset={8}
-        className="w-[50rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border/60 bg-popover p-0 shadow-xl"
+        className="w-[34rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border/60 bg-popover p-0 shadow-xl"
       >
         <div className="border-b border-border/60 px-3 py-2">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -45,11 +45,12 @@ export function WorkItemDescriptionHoverCard({
         <div className="px-3 py-2.5">
           {hasDescription ? (
             <div className="max-h-[15rem] overflow-y-auto pr-1">
-              <article
-                className="prose prose-sm max-w-none break-words text-foreground dark:prose-invert prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-pre:whitespace-pre-wrap prose-a:text-primary prose-a:underline prose-blockquote:my-2 prose-blockquote:border-l prose-blockquote:border-border prose-blockquote:pl-3 prose-blockquote:text-foreground prose-img:my-2 prose-img:max-w-full prose-img:rounded-md prose-img:border prose-img:border-border"
-                onClick={(event) => event.stopPropagation()}
-                dangerouslySetInnerHTML={{ __html: descriptionRenderedHtml ?? "" }}
-              />
+                <article
+                  className="prose prose-sm max-w-none break-words text-foreground dark:prose-invert prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-pre:whitespace-pre-wrap prose-a:text-primary prose-a:underline prose-blockquote:my-2 prose-blockquote:border-l prose-blockquote:border-border prose-blockquote:pl-3 prose-blockquote:text-foreground prose-img:my-2 prose-img:max-w-full prose-img:rounded-md prose-img:border prose-img:border-border"
+                  onClick={(event) => event.stopPropagation()}
+                  // Sanitized server-side via ammonia in the work-item HTML conversion pipeline.
+                  dangerouslySetInnerHTML={{ __html: descriptionRenderedHtml ?? "" }}
+                />
             </div>
           ) : (
             <p className="text-xs italic text-muted-foreground">

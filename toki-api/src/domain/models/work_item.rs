@@ -56,9 +56,10 @@ impl BoardState {
     /// This covers common ADO taskboard column names. Unknown columns
     /// default to `InProgress` since most custom columns represent active work.
     pub fn from_taskboard_column(column: &str) -> Self {
-        match column {
-            "New" | "Proposed" | "To Do" | "Approved" | "Ready for development" => Self::Todo,
-            "Done" | "Closed" | "Completed" | "Removed" => Self::Done,
+        let normalized = column.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "new" | "proposed" | "to do" | "approved" | "ready for development" => Self::Todo,
+            "done" | "closed" | "completed" | "removed" => Self::Done,
             _ => Self::InProgress,
         }
     }
@@ -246,7 +247,7 @@ pub struct WorkItemImage {
 
 #[cfg(test)]
 mod tests {
-    use super::WorkItemCategory;
+    use super::{BoardState, WorkItemCategory};
 
     #[test]
     fn work_item_category_serializes_known_variant_as_string() {
@@ -271,5 +272,15 @@ mod tests {
 
         assert_eq!(known, WorkItemCategory::Task);
         assert_eq!(other, WorkItemCategory::Other("Issue".to_string()));
+    }
+
+    #[test]
+    fn board_state_from_taskboard_column_is_case_insensitive() {
+        assert_eq!(BoardState::from_taskboard_column("to do"), BoardState::Todo);
+        assert_eq!(BoardState::from_taskboard_column("DONE"), BoardState::Done);
+        assert_eq!(
+            BoardState::from_taskboard_column("Working"),
+            BoardState::InProgress
+        );
     }
 }

@@ -21,19 +21,30 @@ export function PrApprovalHoverCard({
 }: {
   pullRequests: PullRequestRef[];
 }) {
+  const primaryPullRequest = pullRequests[0];
+  if (!primaryPullRequest) {
+    return null;
+  }
+
   const allDraft =
     pullRequests.length > 0 &&
     pullRequests.every((pullRequest) => pullRequest.isDraft === true);
+  const contentAccentClass = allDraft
+    ? "border-blue-500/20"
+    : "border-emerald-500/20";
+  const headerAccentClass = allDraft
+    ? "from-blue-500/10 via-transparent to-sky-500/10"
+    : "from-emerald-500/10 via-transparent to-amber-500/10";
 
   return (
     <HoverCard openDelay={120} closeDelay={160}>
       <HoverCardTrigger asChild>
         <a
-          href={pullRequests[0].url}
+          href={primaryPullRequest.url}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(event) => event.stopPropagation()}
-          aria-label={`Show pull request approvals for PR ${pullRequests[0].id}`}
+          aria-label={`Show pull request approvals for PR ${primaryPullRequest.id}`}
           className={cn(
             "inline-flex items-center rounded-md border px-1.5 py-0.5 transition-colors",
             allDraft
@@ -52,11 +63,23 @@ export function PrApprovalHoverCard({
         align="start"
         side="bottom"
         sideOffset={8}
-        className="w-[22rem] overflow-hidden rounded-xl border border-emerald-500/20 bg-popover p-0 shadow-xl"
+        className={cn(
+          "w-[22rem] overflow-hidden rounded-xl border bg-popover p-0 shadow-xl",
+          contentAccentClass,
+        )}
       >
-        <div className="border-b border-border/60 bg-gradient-to-r from-emerald-500/10 via-transparent to-amber-500/10 px-3 py-2">
+        <div
+          className={cn(
+            "border-b border-border/60 bg-gradient-to-r px-3 py-2",
+            headerAccentClass,
+          )}
+        >
           <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            <GitPullRequest className="h-3.5 w-3.5 text-emerald-500" />
+            {allDraft ? (
+              <PickaxeIcon className="h-3.5 w-3.5 text-blue-400" />
+            ) : (
+              <GitPullRequest className="h-3.5 w-3.5 text-emerald-500" />
+            )}
             Pull Request Approvals
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">

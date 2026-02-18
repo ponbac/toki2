@@ -22,7 +22,8 @@ export function ProjectSelector({
 
   const selectedIndex = projects.findIndex(
     (project) =>
-      project.organization === selectedOrg && project.project === selectedProject,
+      project.organization.toLowerCase() === selectedOrg?.toLowerCase() &&
+      project.project.toLowerCase() === selectedProject?.toLowerCase(),
   );
   const currentValue = selectedIndex >= 0 ? String(selectedIndex) : "";
   const hasProjects = projects.length > 0;

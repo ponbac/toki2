@@ -108,6 +108,8 @@ struct PullRequestRefEnrichment {
 const DEFAULT_WORK_ITEM_IMAGE_MIME: &str = "application/octet-stream";
 const WORK_ITEM_IMAGE_CACHE_CONTROL: &str = "private, max-age=3600";
 const AVAILABLE_PROJECTS_CACHE_TTL: Duration = Duration::from_secs(30);
+const AVAILABLE_PROJECTS_CACHE_EVICT_AFTER: Duration = Duration::from_secs(30 * 60);
+const AVAILABLE_PROJECTS_CACHE_MAX_ENTRIES: usize = 2_048;
 
 #[derive(Clone)]
 struct CachedAvailableProjects {
@@ -279,6 +281,9 @@ async fn get_available_projects_cached(
 
     {
         let mut cache = AVAILABLE_PROJECTS_CACHE.write().await;
+        cache.retain(|_, cached| {
+            now.duration_since(cached.fetched_at) <= AVAILABLE_PROJECTS_CACHE_EVICT_AFTER
+        });
         cache.insert(
             user_id,
             CachedAvailableProjects {
@@ -286,6 +291,21 @@ async fn get_available_projects_cached(
                 projects: projects.clone(),
             },
         );
+
+        if cache.len() > AVAILABLE_PROJECTS_CACHE_MAX_ENTRIES {
+            let mut eviction_order = cache
+                .iter()
+                .map(|(cached_user_id, cached)| (*cached_user_id, cached.fetched_at))
+                .collect::<Vec<_>>();
+            eviction_order.sort_by_key(|(_, fetched_at)| *fetched_at);
+
+            let eviction_count = eviction_order
+                .len()
+                .saturating_sub(AVAILABLE_PROJECTS_CACHE_MAX_ENTRIES);
+            for (cached_user_id, _) in eviction_order.into_iter().take(eviction_count) {
+                cache.remove(&cached_user_id);
+            }
+        }
     }
 
     Ok(projects)
@@ -503,7 +523,8 @@ fn map_work_item_image_error(error: WorkItemError) -> ApiError {
             } else if lower.contains("forbidden") || lower.contains("403") {
                 ApiError::forbidden("access to work item image was denied")
             } else {
-                ApiError::internal(message)
+                tracing::error!("Work item image provider operation failed: {}", message);
+                ApiError::internal("work item image operation failed")
             }
         }
     }

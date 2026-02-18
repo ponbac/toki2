@@ -5,7 +5,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useAtom } from "jotai";
-import { useEffect, type SetStateAction } from "react";
+import { type SetStateAction } from "react";
 import { Users, ChevronDown, Check, Columns3 } from "lucide-react";
 import {
   categoryFilterAtom,
@@ -38,10 +38,6 @@ export function BoardFilters({
   onShowAllColumns: () => void;
 }) {
   const [categoryFilter, setCategoryFilter] = useAtom(categoryFilterAtom);
-
-  useEffect(() => {
-    setCategoryFilter((prev) => (prev.includes("other") ? prev : [...prev, "other"]));
-  }, [setCategoryFilter]);
 
   const toggleCategory = (category: string) => {
     setCategoryFilter((prev) =>

@@ -160,8 +160,11 @@ impl From<AvatarError> for ApiError {
 impl From<WorkItemError> for ApiError {
     fn from(err: WorkItemError) -> Self {
         match err {
-            WorkItemError::InvalidInput(_) => Self::bad_request(err.to_string()),
-            WorkItemError::ProviderError(_) => Self::internal(err.to_string()),
+            WorkItemError::InvalidInput(message) => Self::bad_request(message),
+            WorkItemError::ProviderError(message) => {
+                tracing::error!("Work item provider operation failed: {}", message);
+                Self::internal("work item provider operation failed")
+            }
         }
     }
 }

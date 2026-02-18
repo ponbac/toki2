@@ -322,11 +322,12 @@ fn is_iteration_current(
 /// though the underlying state may be "Active").
 fn map_board_state(board_column: Option<&str>, state: &str) -> BoardState {
     if let Some(col) = board_column {
-        match col {
-            "New" | "Proposed" | "To Do" | "Approved" | "Ready for development" => {
+        let column = col.trim().to_ascii_lowercase();
+        match column.as_str() {
+            "new" | "proposed" | "to do" | "approved" | "ready for development" => {
                 return BoardState::Todo;
             }
-            "Done" | "Closed" | "Completed" | "Removed" => {
+            "done" | "closed" | "completed" | "removed" => {
                 return BoardState::Done;
             }
             _ => {}

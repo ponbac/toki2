@@ -1,4 +1,8 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
 import { mutations } from "@/lib/api/mutations/mutations";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
@@ -53,14 +57,15 @@ export function BoardView({
   iterationPath?: string;
   team?: string;
 }) {
-  const { data: board } = useSuspenseQuery(
-    queries.board({
+  const { data: board } = useQuery({
+    ...queries.board({
       organization,
       project,
       iterationPath,
       team,
     }),
-  );
+    placeholderData: keepPreviousData,
+  });
   const { data: user } = useSuspenseQuery(queries.me());
   const { mutateAsync: moveBoardItem } = mutations.useMoveBoardItem();
   const [memberFilterByScope, setMemberFilterByScope] = useAtom(
@@ -101,8 +106,8 @@ export function BoardView({
     [memberFilterScope, setMemberFilterByScope],
   );
   const categoryFilter = useAtomValue(categoryFilterAtom);
-  const [movingItemIds, setMovingItemIds] = useState<string[]>([]);
   const movingItemIdsRef = useRef(new Set<string>());
+  const [, setMovingItemVersion] = useState(0);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
   const [hiddenColumnsByScope, setHiddenColumnsByScope] = useAtom(
@@ -120,19 +125,17 @@ export function BoardView({
     () => new Set(hiddenColumnIds),
     [hiddenColumnIds],
   );
-  const movingItemIdSet = useMemo(
-    () => new Set(movingItemIds),
-    [movingItemIds],
-  );
   const selectedMemberEmailSet = useMemo(
     () => new Set(memberFilter.selectedEmails.map((email) => email.toLowerCase())),
     [memberFilter.selectedEmails],
   );
+  const boardItems = useMemo(() => board?.items ?? [], [board]);
+  const boardColumns = useMemo(() => board?.columns ?? [], [board]);
 
   // Extract unique assignees for the member multi-select
   const members = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const item of board.items) {
+    for (const item of boardItems) {
       if (item.assignedTo?.uniqueName) {
         seen.set(item.assignedTo.uniqueName, item.assignedTo.displayName);
       }
@@ -140,11 +143,11 @@ export function BoardView({
     return Array.from(seen.entries())
       .map(([email, displayName]) => ({ email, displayName }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [board.items]);
+  }, [boardItems]);
 
   // Apply filters
   const filteredItems = useMemo(() => {
-    return board.items.filter((item) => {
+    return boardItems.filter((item) => {
       // Category filter
       const normalizedCategory = TOGGLEABLE_CATEGORIES.has(item.category)
         ? item.category
@@ -165,10 +168,10 @@ export function BoardView({
 
       return true;
     });
-  }, [board.items, categoryFilter, memberFilter, selectedMemberEmailSet, user.email]);
+  }, [boardItems, categoryFilter, memberFilter, selectedMemberEmailSet, user.email]);
 
   const columnsWithItems = useMemo(() => {
-    const columns = [...board.columns].sort(
+    const columns = [...boardColumns].sort(
       (a, b) => a.order - b.order || a.name.localeCompare(b.name),
     );
     const knownColumnIds = new Set(columns.map((column) => column.id));
@@ -197,7 +200,7 @@ export function BoardView({
       ...column,
       items: itemsByColumn.get(column.id) ?? [],
     }));
-  }, [board.columns, filteredItems]);
+  }, [boardColumns, filteredItems]);
   const visibleColumns = useMemo(
     () =>
       columnsWithItems.filter((column) => !hiddenColumnIdSet.has(column.id)),
@@ -262,9 +265,7 @@ export function BoardView({
       }
 
       movingItemIdsRef.current.add(itemId);
-      setMovingItemIds((prev) =>
-        prev.includes(itemId) ? prev : [...prev, itemId],
-      );
+      setMovingItemVersion((version) => version + 1);
 
       try {
         await moveBoardItem({
@@ -278,8 +279,9 @@ export function BoardView({
       } catch {
         toast.error("Failed to move work item.");
       } finally {
-        movingItemIdsRef.current.delete(itemId);
-        setMovingItemIds((prev) => prev.filter((id) => id !== itemId));
+        if (movingItemIdsRef.current.delete(itemId)) {
+          setMovingItemVersion((version) => version + 1);
+        }
       }
     },
     [
@@ -331,6 +333,14 @@ export function BoardView({
     [moveItem],
   );
 
+  if (!board) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <p className="text-sm text-muted-foreground">Loading board...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex w-full flex-col gap-3">
       <div className="mx-auto w-full max-w-[110rem] md:w-[95%]">
@@ -373,7 +383,7 @@ export function BoardView({
                     dragState !== null && dragOverColumnId === column.id
                   }
                   draggingItemId={dragState?.itemId ?? null}
-                  movingItemIdSet={movingItemIdSet}
+                  movingItemIdSet={movingItemIdsRef.current}
                   onCardDragStart={handleCardDragStart}
                   onCardDragEnd={handleCardDragEnd}
                   onColumnDragOver={handleColumnDragOver}
