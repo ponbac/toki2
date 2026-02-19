@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 azure_core = "0.25.0"
 azure_devops_rust_api = { version = "0.28.0", features = [
+    "core",
     "git",
     "pipelines",
     "wit",
@@ -16,6 +17,7 @@ azure_devops_rust_api = { version = "0.28.0", features = [
 ] }
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
+reqwest = { version = "0.12.15", default-features = false, features = ["json", "rustls-tls"] }
 thiserror = "2.0.12"
 time = { version = "0.3.47", features = ["serde", "parsing"] }
 tokio = { version = "1.35.1", features = ["full"] }

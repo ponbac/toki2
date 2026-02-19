@@ -145,7 +145,17 @@ async fn get_iterations(
     Ok(Json(iterations.into_iter().map(Into::into).collect()))
 }
 
-#[instrument(name = "GET /work-items/board")]
+#[instrument(
+    name = "GET /work-items/board",
+    skip(user, app_state),
+    fields(
+        user_id = %user.id,
+        organization = %query.organization,
+        project = %query.project,
+        iteration_path = ?query.iteration_path,
+        team = ?query.team,
+    )
+)]
 async fn get_board(
     user: AuthUser,
     State(app_state): State<AppState>,

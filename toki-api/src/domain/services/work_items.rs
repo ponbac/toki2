@@ -45,17 +45,21 @@ impl<P: WorkItemProvider> WorkItemService for WorkItemServiceImpl<P> {
             .query_work_item_ids(iteration_path, team)
             .await?;
 
-        let mut items = if ids.is_empty() {
-            vec![]
-        } else {
-            self.provider.get_work_items(&ids).await?
+        let fetch_items = async {
+            if ids.is_empty() {
+                Ok(vec![])
+            } else {
+                self.provider.get_work_items(&ids).await
+            }
         };
-
-        let mut columns = self.provider.get_board_columns(iteration_path, team).await;
-        let assignments = self
+        let fetch_columns = self.provider.get_board_columns(iteration_path, team);
+        let fetch_assignments = self
             .provider
-            .get_taskboard_column_assignments(iteration_path, team)
-            .await;
+            .get_taskboard_column_assignments(iteration_path, team);
+
+        let (items_result, mut columns, assignments) =
+            tokio::join!(fetch_items, fetch_columns, fetch_assignments);
+        let mut items = items_result?;
 
         for item in &mut items {
             if let Some(assignment) = assignments.get(&item.id) {
@@ -65,20 +69,52 @@ impl<P: WorkItemProvider> WorkItemService for WorkItemServiceImpl<P> {
             }
         }
 
+        let has_item_column_metadata = items.iter().any(|item| {
+            item.board_column_id
+                .as_deref()
+                .is_some_and(|id| !id.trim().is_empty())
+                || item
+                    .board_column_name
+                    .as_deref()
+                    .is_some_and(|name| !name.trim().is_empty())
+        });
+
         if columns.is_empty() {
-            columns = fallback_columns();
-            for item in &mut items {
-                item.board_column_id = Some(item.board_state.fallback_column_id().to_string());
-                item.board_column_name = Some(item.board_state.fallback_column_name().to_string());
+            if has_item_column_metadata {
+                // If taskboard column definitions are unavailable, derive columns from
+                // per-item board column metadata/assignments.
+                ensure_items_have_matching_columns(&mut items, &mut columns);
+            }
+
+            if columns.is_empty() {
+                columns = fallback_columns();
+                if !has_item_column_metadata {
+                    for item in &mut items {
+                        item.board_column_id =
+                            Some(item.board_state.fallback_column_id().to_string());
+                        item.board_column_name =
+                            Some(item.board_state.fallback_column_name().to_string());
+                    }
+                }
             }
         } else {
             columns.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
             columns.dedup_by(|a, b| a.id == b.id);
             ensure_items_have_matching_columns(&mut items, &mut columns);
-            columns.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
         }
+        columns.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
 
         sort_items_by_column_and_priority(&mut items, &columns);
+
+        tracing::debug!(
+            iteration_path = iteration_path.unwrap_or("<current>"),
+            team = team.unwrap_or("<default>"),
+            queried_ids = ids.len(),
+            item_count = items.len(),
+            column_count = columns.len(),
+            assignment_count = assignments.len(),
+            "Built work item board data"
+        );
 
         Ok(BoardData { columns, items })
     }
@@ -453,6 +489,61 @@ mod tests {
         assert_eq!(
             board.items[0].board_column_name.as_deref(),
             Some("In Progress")
+        );
+    }
+
+    #[tokio::test]
+    async fn derives_columns_from_item_metadata_when_board_columns_are_unavailable() {
+        let mut item_one = make_item("1", BoardState::InProgress, Some(2));
+        item_one.board_column_name = Some("Ready for Review".to_string());
+
+        let mut item_two = make_item("2", BoardState::Todo, Some(1));
+        item_two.board_column_name = Some("Selected for Development".to_string());
+
+        let provider = MockProvider {
+            ids: vec!["1".to_string(), "2".to_string()],
+            items: vec![item_one, item_two],
+            ..Default::default()
+        };
+        let service = WorkItemServiceImpl::new(Arc::new(provider));
+
+        let board = service.get_board_data(None, None).await.unwrap();
+
+        let review_id = synthetic_column_id_from_name("Ready for Review");
+        let selected_id = synthetic_column_id_from_name("Selected for Development");
+
+        assert_eq!(board.columns.len(), 2);
+        assert!(board
+            .columns
+            .iter()
+            .any(|col| col.id == review_id && col.name == "Ready for Review"));
+        assert!(board
+            .columns
+            .iter()
+            .any(|col| col.id == selected_id && col.name == "Selected for Development"));
+        assert!(!board
+            .columns
+            .iter()
+            .any(|col| matches!(col.id.as_str(), "todo" | "inProgress" | "done")));
+
+        let item_one = board.items.iter().find(|item| item.id == "1").unwrap();
+        assert_eq!(
+            item_one.board_column_id.as_deref(),
+            Some(review_id.as_str())
+        );
+        assert_eq!(
+            item_one.board_column_name.as_deref(),
+            Some("Ready for Review")
+        );
+
+        let item_two = board.items.iter().find(|item| item.id == "2").unwrap();
+        assert_eq!(
+            item_two.board_column_id.as_deref(),
+            Some(selected_id.as_str())
+        );
+        assert_eq!(
+            item_two.board_column_name.as_deref(),
+            Some("Selected for Development")
         );
     }
 

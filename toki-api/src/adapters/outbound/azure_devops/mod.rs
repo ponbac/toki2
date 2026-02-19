@@ -6,6 +6,7 @@ use std::fmt::Write;
 
 use async_trait::async_trait;
 use az_devops::RepoClientError;
+use tokio::sync::OnceCell;
 use url::Url;
 
 use crate::domain::{
@@ -26,6 +27,7 @@ use self::conversions::{
 pub struct AzureDevOpsWorkItemAdapter {
     client: az_devops::RepoClient,
     api_base_url: Url,
+    resolved_default_team: OnceCell<String>,
 }
 
 const MAX_WORK_ITEM_IMAGE_BYTES: usize = 5 * 1024 * 1024;
@@ -36,6 +38,7 @@ impl AzureDevOpsWorkItemAdapter {
         Self {
             client,
             api_base_url,
+            resolved_default_team: OnceCell::new(),
         }
     }
 }
@@ -67,7 +70,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .client
             .get_iterations(None)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(to_provider_error)?;
 
         Ok(ado_iterations
             .into_iter()
@@ -114,19 +117,30 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             }
         };
 
-        // Always provide a concrete team context so @currentIteration can resolve.
-        // If the caller doesn't provide one, default to "{Project} Team".
-        let team = resolve_team_name(team, self.client.project());
+        // For explicit iteration paths, use project-scope WIQL and avoid
+        // team-scoped WIQL routes.
+        if iteration_path.is_some() {
+            tracing::debug!(wiql_query = %query, "Executing project-scope WIQL query");
+            let ids = self
+                .client
+                .query_work_item_ids_wiql_project_scope(&query)
+                .await
+                .map_err(to_provider_error)?;
+            return Ok(format_work_item_ids(ids));
+        }
 
-        tracing::debug!(wiql_query = %query, team = %team, "Executing WIQL query");
-
+        let resolved_team = self.resolve_default_team(team).await?;
+        tracing::debug!(
+            wiql_query = %query,
+            team = %resolved_team,
+            "Executing team-scoped WIQL query"
+        );
         let ids = self
             .client
-            .query_work_item_ids_wiql(&query, &team)
+            .query_work_item_ids_wiql(&query, &resolved_team)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
-
-        Ok(ids.into_iter().map(|id| id.to_string()).collect())
+            .map_err(to_provider_error)?;
+        Ok(format_work_item_ids(ids))
     }
 
     async fn get_work_items(&self, ids: &[String]) -> Result<Vec<WorkItem>, WorkItemError> {
@@ -153,7 +167,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .client
             .get_work_items(int_ids)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(to_provider_error)?;
 
         let org = self.client.organization();
         let project = self.client.project();
@@ -166,10 +180,10 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 
     async fn get_board_columns(
         &self,
-        iteration_path: Option<&str>,
+        _iteration_path: Option<&str>,
         team: Option<&str>,
     ) -> Vec<BoardColumn> {
-        let result = self.get_board_columns_inner(iteration_path, team).await;
+        let result = self.get_board_columns_inner(team).await;
 
         match result {
             Ok(columns) => columns,
@@ -216,7 +230,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .client
             .get_work_item_comments(id)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(to_provider_error)?;
 
         Ok(ado_comments
             .into_iter()
@@ -238,7 +252,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .client
             .get_work_items(vec![id])
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(to_provider_error)?;
 
         let ado_item = ado_items.into_iter().next().ok_or_else(|| {
             WorkItemError::ProviderError(format!("Work item {work_item_id} not found"))
@@ -297,7 +311,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .client
             .get_work_item_comments(id)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(to_provider_error)?;
 
         // Check comment HTML for images too
         has_images = has_images
@@ -383,31 +397,34 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             ));
         }
 
-        let team = resolve_team_name(team, self.client.project());
+        let resolved_team = self.resolve_default_team(team).await?;
         let iteration = self
-            .resolve_taskboard_iteration(iteration_path, &team)
+            .resolve_taskboard_iteration(iteration_path, &resolved_team)
             .await?;
         let columns = self
             .client
-            .get_taskboard_columns(&team)
+            .get_taskboard_columns(&resolved_team)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
-        let target_column = columns
+            .map_err(to_provider_error)?;
+
+        let Some(target_column) = columns
             .iter()
             .find(|column| column.name.eq_ignore_ascii_case(target_column_name))
-            .ok_or_else(|| {
-                WorkItemError::InvalidInput(format!("Unknown board column '{target_column_name}'"))
-            })?;
+        else {
+            return Err(WorkItemError::InvalidInput(format!(
+                "Unknown board column '{target_column_name}'"
+            )));
+        };
 
         self.client
             .move_taskboard_work_item_to_column(
-                &team,
+                &resolved_team,
                 &iteration.id,
                 work_item_id,
                 &target_column.name,
             )
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))
+            .map_err(to_provider_error)
     }
 }
 
@@ -421,7 +438,7 @@ fn map_attachment_error(error: RepoClientError) -> WorkItemError {
         RepoClientError::PayloadTooLarge { max_bytes, .. } => {
             WorkItemError::InvalidInput(format!("Image payload exceeds {max_bytes} bytes"))
         }
-        other => WorkItemError::ProviderError(other.to_string()),
+        other => to_provider_error(other),
     }
 }
 
@@ -731,26 +748,16 @@ impl AzureDevOpsWorkItemAdapter {
     /// allowing the trait method to catch errors and return an empty vector.
     async fn get_board_columns_inner(
         &self,
-        _iteration_path: Option<&str>,
         team: Option<&str>,
     ) -> Result<Vec<BoardColumn>, WorkItemError> {
-        let team = resolve_team_name(team, self.client.project());
+        let resolved_team = self.resolve_default_team(team).await?;
         let columns = self
             .client
-            .get_taskboard_columns(&team)
+            .get_taskboard_columns(&resolved_team)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(to_provider_error)?;
 
-        Ok(columns
-            .into_iter()
-            .map(|column| BoardColumn {
-                id: column
-                    .id
-                    .unwrap_or_else(|| synthetic_column_id_from_name(&column.name)),
-                name: column.name,
-                order: column.order,
-            })
-            .collect())
+        Ok(map_taskboard_columns(columns))
     }
 
     /// Inner implementation for `get_taskboard_column_assignments` that returns a Result,
@@ -760,36 +767,60 @@ impl AzureDevOpsWorkItemAdapter {
         iteration_path: Option<&str>,
         team: Option<&str>,
     ) -> Result<HashMap<String, BoardColumnAssignment>, WorkItemError> {
-        let team = resolve_team_name(team, self.client.project());
+        let resolved_team = self.resolve_default_team(team).await?;
         let iteration = self
-            .resolve_taskboard_iteration(iteration_path, &team)
+            .resolve_taskboard_iteration(iteration_path, &resolved_team)
             .await?;
 
         tracing::debug!(
             iteration_name = %iteration.name,
             iteration_id = %iteration.id,
-            team = %team,
+            team = %resolved_team,
             "Looking up taskboard columns"
         );
 
         let assignments = self
             .client
-            .get_taskboard_work_item_columns(&team, &iteration.id)
+            .get_taskboard_work_item_columns(&resolved_team, &iteration.id)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(to_provider_error)?;
 
-        Ok(assignments
-            .into_iter()
-            .map(|(id, assignment)| {
-                (
-                    id.to_string(),
-                    BoardColumnAssignment {
-                        column_id: assignment.column_id,
-                        column_name: assignment.column_name,
-                    },
-                )
+        Ok(map_taskboard_assignments(assignments))
+    }
+
+    async fn resolve_default_team(&self, team: Option<&str>) -> Result<String, WorkItemError> {
+        if let Some(explicit_team) = team.map(str::trim).filter(|team| !team.is_empty()) {
+            return Ok(explicit_team.to_string());
+        }
+
+        let selected_team = self
+            .resolved_default_team
+            .get_or_try_init(|| async {
+                let project = self.client.project();
+                let project_teams = self
+                    .client
+                    .get_project_team_names()
+                    .await
+                    .map_err(to_provider_error)?;
+                let selected_team = select_default_project_team(project, &project_teams)
+                    .ok_or_else(|| {
+                        WorkItemError::ProviderError(format!(
+                            "No teams were found for project '{project}'"
+                        ))
+                    })?;
+
+                tracing::debug!(
+                    project = %project,
+                    team = %selected_team,
+                    team_count = project_teams.len(),
+                    "Resolved default taskboard team"
+                );
+
+                Ok(selected_team)
             })
-            .collect())
+            .await?;
+
+        Ok(selected_team.clone())
     }
 
     async fn resolve_taskboard_iteration(
@@ -803,7 +834,7 @@ impl AzureDevOpsWorkItemAdapter {
             .client
             .get_team_iterations(team)
             .await
-            .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
+            .map_err(to_provider_error)?;
 
         let iteration = match iteration_path {
             Some(path) => {
@@ -817,7 +848,7 @@ impl AzureDevOpsWorkItemAdapter {
                     .client
                     .get_current_team_iteration_paths(team)
                     .await
-                    .map_err(|e| WorkItemError::ProviderError(e.to_string()))?
+                    .map_err(to_provider_error)?
                     .into_iter()
                     .map(|path| normalize_iteration_path(&path))
                     .collect();
@@ -840,18 +871,61 @@ impl AzureDevOpsWorkItemAdapter {
     }
 }
 
-fn resolve_team_name(team: Option<&str>, project: &str) -> String {
-    team.map(str::trim)
-        .filter(|team| !team.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("{project} Team"))
+fn select_default_project_team(project: &str, project_teams: &[String]) -> Option<String> {
+    let default_team = format!("{project} Team");
+    if let Some(team) = project_teams
+        .iter()
+        .find(|team| team.eq_ignore_ascii_case(&default_team))
+    {
+        return Some(team.clone());
+    }
+
+    project_teams.first().cloned()
+}
+
+fn to_provider_error(error: impl ToString) -> WorkItemError {
+    WorkItemError::ProviderError(error.to_string())
+}
+
+fn map_taskboard_columns(columns: Vec<az_devops::TaskboardColumnDefinition>) -> Vec<BoardColumn> {
+    columns
+        .into_iter()
+        .map(|column| BoardColumn {
+            id: column
+                .id
+                .unwrap_or_else(|| synthetic_column_id_from_name(&column.name)),
+            name: column.name,
+            order: column.order,
+        })
+        .collect()
+}
+
+fn map_taskboard_assignments(
+    assignments: HashMap<i32, az_devops::TaskboardWorkItemColumnAssignment>,
+) -> HashMap<String, BoardColumnAssignment> {
+    assignments
+        .into_iter()
+        .map(|(id, assignment)| {
+            (
+                id.to_string(),
+                BoardColumnAssignment {
+                    column_id: assignment.column_id,
+                    column_name: assignment.column_name,
+                },
+            )
+        })
+        .collect()
+}
+
+fn format_work_item_ids(ids: Vec<i32>) -> Vec<String> {
+    ids.into_iter().map(|id| id.to_string()).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_ado_attachment_url, resolve_image_content_type, ParsedAttachmentUrl,
-        MAX_WORK_ITEM_IMAGE_BYTES,
+        parse_ado_attachment_url, resolve_image_content_type, select_default_project_team,
+        ParsedAttachmentUrl, MAX_WORK_ITEM_IMAGE_BYTES,
     };
     use crate::domain::WorkItemError;
 
@@ -916,5 +990,24 @@ mod tests {
 
         assert_eq!(parsed.attachment_id, "abc");
         assert_eq!(parsed.file_name.as_deref(), Some("image.png"));
+    }
+
+    #[test]
+    fn select_default_project_team_prefers_project_team() {
+        let teams = vec![
+            "Platform Team".to_string(),
+            "Space Ninjas Team".to_string(),
+            "Ops".to_string(),
+        ];
+
+        let selected = select_default_project_team("Space Ninjas", &teams);
+        assert_eq!(selected.as_deref(), Some("Space Ninjas Team"));
+    }
+
+    #[test]
+    fn select_default_project_team_falls_back_to_first_team() {
+        let teams = vec!["Platform Team".to_string(), "Ops".to_string()];
+        let selected = select_default_project_team("Space Ninjas", &teams);
+        assert_eq!(selected.as_deref(), Some("Platform Team"));
     }
 }

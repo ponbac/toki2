@@ -26,7 +26,7 @@ pub trait WorkItemProvider: Send + Sync + 'static {
     /// - `iteration_path`: Filter by iteration/sprint path (e.g. "Project\\Sprint 5").
     ///   If `None`, uses the current iteration.
     /// - `team`: Team context for WIQL macros like `@currentIteration`.
-    ///   If `None`, defaults to the project name.
+    ///   If `None`, the adapter resolves a deterministic default team for the project.
     async fn query_work_item_ids(
         &self,
         iteration_path: Option<&str>,
