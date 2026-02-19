@@ -7,7 +7,8 @@ use std::{
 use axum::{
     body::Body,
     extract::{Query, State},
-    http::{header, HeaderValue, StatusCode},
+    http::{header, HeaderValue, Request, StatusCode},
+    middleware::{from_fn, Next},
     response::Response,
     routing::{get, post},
     Json, Router,
@@ -135,11 +136,9 @@ async fn get_projects(
 
 #[instrument(name = "GET /work-items/iterations")]
 async fn get_iterations(
-    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<ProjectQuery>,
 ) -> Result<Json<Vec<IterationResponse>>, ApiError> {
-    ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
@@ -150,11 +149,9 @@ async fn get_iterations(
 
 #[instrument(name = "GET /work-items/board")]
 async fn get_board(
-    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<BoardQuery>,
 ) -> Result<Json<BoardResponse>, ApiError> {
-    ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
@@ -172,11 +169,9 @@ async fn get_board(
 
 #[instrument(name = "GET /work-items/format-for-llm")]
 async fn format_for_llm(
-    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<FormatForLlmQuery>,
 ) -> Result<Json<FormatForLlmResponse>, ApiError> {
-    ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
@@ -192,11 +187,9 @@ async fn format_for_llm(
 
 #[instrument(name = "GET /work-items/image")]
 async fn get_image(
-    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<WorkItemImageQuery>,
 ) -> Result<Response, ApiError> {
-    ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&query.organization, &query.project)
@@ -236,11 +229,9 @@ async fn get_image(
     )
 )]
 async fn move_work_item(
-    user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<MoveWorkItemBody>,
 ) -> Result<StatusCode, ApiError> {
-    ensure_user_has_project_access(&app_state, &user, &body.organization, &body.project).await?;
     let service = app_state
         .work_item_factory
         .create_service(&body.organization, &body.project)
@@ -331,6 +322,75 @@ async fn ensure_user_has_project_access(
     }
 }
 
+async fn project_scope_from_request(
+    request: &mut Request<Body>,
+) -> Result<(String, String), ApiError> {
+    if request.method() == axum::http::Method::GET {
+        let query = request
+            .uri()
+            .query()
+            .ok_or_else(|| ApiError::bad_request("organization and project are required"))?;
+        let mut organization = None;
+        let mut project = None;
+
+        for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+            if key == "organization" {
+                organization = Some(value.into_owned());
+            } else if key == "project" {
+                project = Some(value.into_owned());
+            }
+        }
+
+        let organization = organization
+            .ok_or_else(|| ApiError::bad_request("organization and project are required"))?;
+        let project = project
+            .ok_or_else(|| ApiError::bad_request("organization and project are required"))?;
+
+        return Ok((organization, project));
+    }
+
+    if request.method() == axum::http::Method::POST {
+        let body = std::mem::replace(request.body_mut(), Body::empty());
+        let bytes = axum::body::to_bytes(body, usize::MAX)
+            .await
+            .map_err(|_| ApiError::bad_request("Invalid JSON body"))?;
+
+        if bytes.is_empty() {
+            *request.body_mut() = Body::from(bytes);
+            return Err(ApiError::bad_request(
+                "organization and project are required",
+            ));
+        }
+
+        let body: MoveWorkItemBody = serde_json::from_slice(&bytes)
+            .map_err(|_| ApiError::bad_request("Invalid JSON body"))?;
+        *request.body_mut() = Body::from(bytes);
+
+        return Ok((body.organization, body.project));
+    }
+
+    Err(ApiError::bad_request(
+        "organization and project are required",
+    ))
+}
+
+async fn work_item_project_access_guard(
+    user: AuthUser,
+    mut request: Request<Body>,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let app_state = request
+        .extensions()
+        .get::<AppState>()
+        .cloned()
+        .ok_or_else(|| ApiError::internal("Missing application state"))?;
+    let (organization, project) = project_scope_from_request(&mut request).await?;
+
+    ensure_user_has_project_access(&app_state, &user, &organization, &project).await?;
+
+    Ok(next.run(request).await)
+}
+
 async fn build_pull_request_approval_index(
     app_state: &AppState,
     query: &BoardQuery,
@@ -404,7 +464,6 @@ async fn build_pull_request_approval_index(
     .await;
 
     for (repository_id, cached_pull_requests) in cached_repo_pull_requests.into_iter().flatten() {
-
         for pull_request in cached_pull_requests {
             let pull_request_id = pull_request.pull_request_base.id.to_string();
             if !referenced_pr_ids.contains(&pull_request_id) {
@@ -608,18 +667,23 @@ fn apply_avatar_override_to_work_item_person(
 // ---------------------------------------------------------------------------
 
 pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/projects", get(get_projects))
+    let project_guarded_routes = Router::new()
         .route("/iterations", get(get_iterations))
         .route("/board", get(get_board))
         .route("/image", get(get_image))
         .route("/format-for-llm", get(format_for_llm))
         .route("/move", post(move_work_item))
+        .route_layer(from_fn(work_item_project_access_guard));
+
+    Router::new()
+        .route("/projects", get(get_projects))
+        .merge(project_guarded_routes)
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+
     use time::OffsetDateTime;
 
     use crate::{
