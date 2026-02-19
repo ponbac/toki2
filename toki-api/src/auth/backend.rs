@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use async_trait::async_trait;
-use axum_login::{AuthnBackend, AuthzBackend, UserId};
+use axum_login::{AuthnBackend, AuthzBackend, UserId as SessionUserId};
 use oauth2::{
     basic::{BasicClient, BasicRequestTokenError},
     reqwest::{async_http_client, AsyncHttpClientError},
@@ -15,7 +15,7 @@ use serde::Deserialize;
 use sqlx::PgPool;
 
 use crate::{
-    domain::{Role, User},
+    domain::{models::UserId, Role, User},
     repositories::{NewUser, RepositoryError, UserRepository, UserRepositoryImpl},
 };
 
@@ -114,9 +114,12 @@ impl AuthnBackend for AuthBackend {
         Ok(Some(user))
     }
 
-    async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
+    async fn get_user(
+        &self,
+        user_id: &SessionUserId<Self>,
+    ) -> Result<Option<Self::User>, Self::Error> {
         let user_repo = UserRepositoryImpl::new(self.db.clone());
-        let user = user_repo.get_user(*user_id as i32).await?;
+        let user = user_repo.get_user(UserId::from(*user_id as i32)).await?;
 
         Ok(Some(user))
     }

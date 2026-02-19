@@ -12,6 +12,7 @@ pub struct PullRequest {
     pub organization: String,
     pub project: String,
     pub repo_name: String,
+    pub url: String,
     #[serde(flatten)]
     pub pull_request_base: az_devops::PullRequest,
     pub threads: Vec<az_devops::Thread>,
@@ -22,6 +23,7 @@ pub struct PullRequest {
 impl PullRequest {
     pub fn new(
         key: &RepoKey,
+        url: String,
         pull_request_base: az_devops::PullRequest,
         threads: Vec<az_devops::Thread>,
         commits: Vec<az_devops::GitCommitRef>,
@@ -31,18 +33,12 @@ impl PullRequest {
             organization: key.organization.clone(),
             project: key.project.clone(),
             repo_name: key.repo_name.clone(),
+            url,
             pull_request_base,
             threads,
             commits,
             work_items,
         }
-    }
-
-    pub fn azure_url(&self) -> String {
-        format!(
-            "https://dev.azure.com/{}/{}/_git/{}/pullrequest/{}",
-            self.organization, self.project, self.repo_name, self.pull_request_base.id
-        )
     }
 
     pub fn with_replaced_mentions(&self, id_to_email_map: &HashMap<String, String>) -> Self {

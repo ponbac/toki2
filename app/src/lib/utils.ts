@@ -1,7 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { RepoKey } from "./api/queries/queries";
-import { AvatarOverride } from "./api/queries/pullRequests";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -70,11 +69,4 @@ export function formatHoursMinutes(hours: number) {
   const formattedMins = String(mins).padStart(2, "0");
 
   return `${isNegative ? "-" : ""}${formattedHrs}:${formattedMins}`;
-}
-
-export function buildAvatarOverrideMap(overrides: AvatarOverride[]) {
-  return overrides.reduce<Record<string, string>>((acc, override) => {
-    acc[override.email.toLowerCase()] = override.avatarUrl;
-    return acc;
-  }, {});
 }

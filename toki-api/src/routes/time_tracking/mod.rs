@@ -9,8 +9,8 @@ use axum::{
 };
 use axum_extra::extract::CookieJar;
 
-use crate::app_state::AppState;
 use super::ApiError;
+use crate::app_state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -36,10 +36,7 @@ pub fn router() -> Router<AppState> {
                 .delete(timer::stop_timer)
                 .put(timer::save_timer),
         )
-        .route(
-            "/update-timer",
-            put(timer::edit_timer),
-        )
+        .route("/update-timer", put(timer::edit_timer))
 }
 
 type CookieJarResult<T> = Result<(CookieJar, T), ApiError>;

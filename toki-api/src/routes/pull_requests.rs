@@ -15,8 +15,8 @@ use tracing::instrument;
 
 use crate::{
     app_state::AppStateError,
-    auth::AuthSession,
-    domain::{models::AvatarOverride, PullRequest, RepoKey},
+    auth::AuthUser,
+    domain::{Email, PullRequest, RepoKey},
     repositories::UserRepository,
     AppState,
 };
@@ -46,7 +46,7 @@ impl From<&OpenPullRequestsQuery> for RepoKey {
     }
 }
 
-#[instrument(name = "GET /pull-requests", skip(app_state))]
+#[instrument(name = "GET /pull-requests")]
 async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
@@ -79,16 +79,17 @@ async fn open_pull_requests(
     Ok(Json(pull_requests))
 }
 
-#[instrument(name = "GET /cached-pull-requests", skip(auth_session, app_state))]
+#[instrument(name = "GET /cached-pull-requests")]
 async fn cached_pull_requests(
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<PullRequest>>, ApiError> {
-    let followed_prs = get_followed_pull_requests(&auth_session, &app_state).await?;
+    let mut followed_prs = get_followed_pull_requests(&app_state, &user).await?;
+    apply_avatar_overrides_to_pull_requests(&app_state, &mut followed_prs).await?;
     Ok(Json(followed_prs))
 }
 
-#[instrument(name = "GET /most-recent-commits", skip(app_state))]
+#[instrument(name = "GET /most-recent-commits")]
 async fn most_recent_commits(
     State(app_state): State<AppState>,
     Query(query): Query<RepoKey>,
@@ -119,6 +120,7 @@ struct ListPullRequest {
     organization: String,
     project: String,
     repo_name: String,
+    url: String,
     id: i32,
     title: String,
     created_by: az_devops::Identity,
@@ -135,7 +137,6 @@ struct ListPullRequest {
     approved_by: Vec<az_devops::IdentityWithVote>,
     waiting_for_user_review: bool,
     review_required: bool,
-    avatar_overrides: Vec<AvatarOverride>,
 }
 
 impl ListPullRequest {
@@ -147,6 +148,7 @@ impl ListPullRequest {
             organization: pr.organization,
             project: pr.project,
             repo_name: pr.repo_name,
+            url: pr.url,
             id: pr.pull_request_base.id,
             title: pr.pull_request_base.title,
             created_by: pr.pull_request_base.created_by,
@@ -162,27 +164,23 @@ impl ListPullRequest {
             approved_by,
             waiting_for_user_review,
             review_required,
-            avatar_overrides: Vec::new(),
         }
     }
 }
 
-#[instrument(name = "GET /pull-requests/list", skip(auth_session, app_state))]
+#[instrument(name = "GET /pull-requests/list")]
 async fn list_pull_requests(
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<ListPullRequest>>, ApiError> {
-    let mut followed_prs = get_followed_pull_requests(&auth_session, &app_state).await?;
+    let mut followed_prs = get_followed_pull_requests(&app_state, &user).await?;
+    apply_avatar_overrides_to_pull_requests(&app_state, &mut followed_prs).await?;
     followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
 
-    let mut list_prs = followed_prs
+    let list_prs = followed_prs
         .into_iter()
-        .map(|pr| {
-            ListPullRequest::from_pull_request(pr, &auth_session.user.as_ref().unwrap().email)
-        })
+        .map(|pr| ListPullRequest::from_pull_request(pr, &user.email))
         .collect::<Vec<_>>();
-
-    enrich_avatar_overrides(&app_state, &mut list_prs).await?;
 
     Ok(Json(list_prs))
 }
@@ -191,12 +189,11 @@ async fn list_pull_requests(
 ///
 /// This function will fetch the cached pull requests from the cache and replace the mentions in the threads with names instead of ids.
 async fn get_followed_pull_requests(
-    auth_session: &AuthSession,
     app_state: &AppState,
+    user: &AuthUser,
 ) -> Result<Vec<PullRequest>, ApiError> {
-    let user_id = auth_session.user.as_ref().expect("user not found").id;
     let user_repo = app_state.user_repo.clone();
-    let followed_repos = user_repo.followed_repositories(&user_id).await?;
+    let followed_repos = user_repo.followed_repositories(user.id).await?;
 
     let mut followed_prs = vec![];
     for repo_key in &followed_repos {
@@ -221,21 +218,18 @@ async fn get_followed_pull_requests(
     Ok(followed_prs)
 }
 
-async fn enrich_avatar_overrides(
+async fn apply_avatar_overrides_to_pull_requests(
     app_state: &AppState,
-    prs: &mut [ListPullRequest],
+    prs: &mut [PullRequest],
 ) -> Result<(), ApiError> {
     if prs.is_empty() {
         return Ok(());
     }
 
-    let mut per_pr_emails = Vec::with_capacity(prs.len());
     let mut unique_emails = HashSet::new();
 
     for pr in prs.iter() {
-        let emails = collect_pr_participant_emails(pr);
-        unique_emails.extend(emails.iter().cloned());
-        per_pr_emails.push(emails);
+        unique_emails.extend(collect_pr_participant_emails(pr));
     }
 
     if unique_emails.is_empty() {
@@ -253,45 +247,178 @@ async fn enrich_avatar_overrides(
         .map(|item| (item.email.to_lowercase(), item.avatar_url))
         .collect::<HashMap<_, _>>();
 
-    for (pr, emails) in prs.iter_mut().zip(per_pr_emails.into_iter()) {
-        pr.avatar_overrides = emails
-            .into_iter()
-            .filter_map(|email| {
-                avatar_by_email
-                    .get(&email)
-                    .map(|url| AvatarOverride::new(email, url.clone()))
-            })
-            .collect();
+    for pr in prs.iter_mut() {
+        apply_avatar_overrides_to_pull_request(pr, &avatar_by_email);
     }
 
     Ok(())
 }
 
-fn collect_pr_participant_emails(pr: &ListPullRequest) -> HashSet<String> {
+fn collect_pr_participant_emails(pr: &PullRequest) -> HashSet<String> {
     let mut emails = HashSet::new();
-    emails.insert(pr.created_by.unique_name.to_lowercase());
+    collect_identity_email(&mut emails, &pr.pull_request_base.created_by);
+    collect_optional_identity_email(
+        &mut emails,
+        pr.pull_request_base.auto_complete_set_by.as_ref(),
+    );
 
-    collect_identity_emails(&mut emails, &pr.reviewers);
-    collect_identity_emails(&mut emails, &pr.blocked_by);
-    collect_identity_emails(&mut emails, &pr.approved_by);
+    collect_identity_with_vote_emails(&mut emails, &pr.pull_request_base.reviewers);
 
     for thread in &pr.threads {
         for comment in &thread.comments {
-            emails.insert(comment.author.unique_name.to_lowercase());
+            collect_identity_email(&mut emails, &comment.author);
             for liker in &comment.liked_by {
-                emails.insert(liker.unique_name.to_lowercase());
+                collect_identity_email(&mut emails, liker);
             }
         }
+    }
+
+    for work_item in &pr.work_items {
+        collect_optional_identity_email(&mut emails, work_item.assigned_to.as_ref());
+        collect_optional_identity_email(&mut emails, work_item.created_by.as_ref());
     }
 
     emails
 }
 
-fn collect_identity_emails(
+fn collect_identity_with_vote_emails(
     emails: &mut HashSet<String>,
     identities: &[az_devops::IdentityWithVote],
 ) {
     for identity_with_vote in identities {
-        emails.insert(identity_with_vote.identity.unique_name.to_lowercase());
+        collect_identity_email(emails, &identity_with_vote.identity);
+    }
+}
+
+fn collect_optional_identity_email(
+    emails: &mut HashSet<String>,
+    identity: Option<&az_devops::Identity>,
+) {
+    if let Some(identity) = identity {
+        collect_identity_email(emails, identity);
+    }
+}
+
+fn collect_identity_email(emails: &mut HashSet<String>, identity: &az_devops::Identity) {
+    if let Some(email) = Email::normalize_lookup_key(&identity.unique_name) {
+        emails.insert(email);
+    }
+}
+
+fn apply_avatar_overrides_to_pull_request(
+    pr: &mut PullRequest,
+    avatar_by_email: &HashMap<String, String>,
+) {
+    apply_avatar_override_to_identity(&mut pr.pull_request_base.created_by, avatar_by_email);
+
+    if let Some(identity) = pr.pull_request_base.auto_complete_set_by.as_mut() {
+        apply_avatar_override_to_identity(identity, avatar_by_email);
+    }
+
+    for reviewer in &mut pr.pull_request_base.reviewers {
+        apply_avatar_override_to_identity(&mut reviewer.identity, avatar_by_email);
+    }
+
+    for thread in &mut pr.threads {
+        for comment in &mut thread.comments {
+            apply_avatar_override_to_identity(&mut comment.author, avatar_by_email);
+            for liker in &mut comment.liked_by {
+                apply_avatar_override_to_identity(liker, avatar_by_email);
+            }
+        }
+    }
+
+    for work_item in &mut pr.work_items {
+        if let Some(assigned_to) = work_item.assigned_to.as_mut() {
+            apply_avatar_override_to_identity(assigned_to, avatar_by_email);
+        }
+        if let Some(created_by) = work_item.created_by.as_mut() {
+            apply_avatar_override_to_identity(created_by, avatar_by_email);
+        }
+    }
+}
+
+fn apply_avatar_override_to_identity(
+    identity: &mut az_devops::Identity,
+    avatar_by_email: &HashMap<String, String>,
+) {
+    let Some(email) = Email::normalize_lookup_key(&identity.unique_name) else {
+        return;
+    };
+
+    if let Some(avatar_url) = avatar_by_email.get(&email) {
+        identity.avatar_url = Some(avatar_url.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::domain::Email;
+
+    use super::apply_avatar_override_to_identity;
+
+    #[test]
+    fn normalize_lookup_key_trims_and_lowercases() {
+        assert_eq!(
+            Email::normalize_lookup_key("  USER@Example.com  "),
+            Some("user@example.com".to_string())
+        );
+        assert_eq!(Email::normalize_lookup_key("   "), None);
+    }
+
+    #[test]
+    fn normalize_lookup_key_falls_back_for_non_email_identity_values() {
+        assert_eq!(
+            Email::normalize_lookup_key("  Display Name  "),
+            Some("display name".to_string())
+        );
+    }
+
+    #[test]
+    fn apply_avatar_override_to_identity_replaces_avatar_url() {
+        let mut identity = az_devops::Identity {
+            id: "user-id".to_string(),
+            display_name: "Test User".to_string(),
+            unique_name: "USER@example.com".to_string(),
+            avatar_url: Some("https://provider.example.com/avatar.png".to_string()),
+        };
+
+        let mut avatar_by_email = HashMap::new();
+        avatar_by_email.insert(
+            "user@example.com".to_string(),
+            "https://custom.example.com/avatar.png".to_string(),
+        );
+
+        apply_avatar_override_to_identity(&mut identity, &avatar_by_email);
+
+        assert_eq!(
+            identity.avatar_url.as_deref(),
+            Some("https://custom.example.com/avatar.png")
+        );
+    }
+
+    #[test]
+    fn apply_avatar_override_to_identity_supports_non_email_unique_name_fallback() {
+        let mut identity = az_devops::Identity {
+            id: "user-id".to_string(),
+            display_name: "Test User".to_string(),
+            unique_name: "  Display Name  ".to_string(),
+            avatar_url: None,
+        };
+
+        let mut avatar_by_email = HashMap::new();
+        avatar_by_email.insert(
+            "display name".to_string(),
+            "https://custom.example.com/avatar.png".to_string(),
+        );
+
+        apply_avatar_override_to_identity(&mut identity, &avatar_by_email);
+
+        assert_eq!(
+            identity.avatar_url.as_deref(),
+            Some("https://custom.example.com/avatar.png")
+        );
     }
 }

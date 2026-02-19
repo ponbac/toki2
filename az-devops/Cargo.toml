@@ -11,6 +11,7 @@ azure_devops_rust_api = { version = "0.28.0", features = [
     "git",
     "pipelines",
     "wit",
+    "work",
     "graph",
 ] }
 serde = { version = "1.0.193", features = ["derive"] }

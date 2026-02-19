@@ -14,7 +14,7 @@ use tracing::instrument;
 
 use crate::{
     app_state::AppState,
-    auth::AuthSession,
+    auth::AuthUser,
     domain::{RepoDifferMessage, RepoDifferStatus, RepoKey},
     repositories::UserRepository,
 };
@@ -44,11 +44,8 @@ struct Differ {
     is_invalid: bool,
 }
 
-#[instrument(name = "get_differs", skip(user, app_state))]
-async fn get_differs(
-    AuthSession { user, .. }: AuthSession,
-    State(app_state): State<AppState>,
-) -> Json<Vec<Differ>> {
+#[instrument]
+async fn get_differs(user: AuthUser, State(app_state): State<AppState>) -> Json<Vec<Differ>> {
     let user_repo = app_state.user_repo.clone();
     let repositories_repo = app_state.repository_repo.clone();
     let all_repos = repositories_repo
@@ -56,7 +53,7 @@ async fn get_differs(
         .await
         .expect("Failed to query all repos");
     let followed_repos = user_repo
-        .followed_repositories(&user.as_ref().expect("user should not be None").id)
+        .followed_repositories(user.id)
         .await
         .expect("Failed to query followed repos");
 
@@ -114,7 +111,7 @@ async fn get_differs(
     Json(differ_dtos)
 }
 
-#[instrument(name = "start_differ", skip(app_state))]
+#[instrument]
 async fn start_differ(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
@@ -128,7 +125,7 @@ async fn start_differ(
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "stop_differ", skip(app_state))]
+#[instrument]
 async fn stop_differ(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
@@ -140,7 +137,7 @@ async fn stop_differ(
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "force_update", skip(app_state))]
+#[instrument]
 async fn force_update(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,

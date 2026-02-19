@@ -14,6 +14,7 @@ pub struct WorkItem {
     pub parent_id: Option<i32>,
     pub title: String,
     pub state: String,
+    pub board_column: Option<String>,
     pub item_type: String,
     pub priority: Option<i32>,
     #[serde(with = "time::serde::rfc3339")]
@@ -23,6 +24,11 @@ pub struct WorkItem {
     pub assigned_to: Option<Identity>,
     pub created_by: Option<Identity>,
     pub relations: Vec<WorkItemRelation>,
+    pub description: Option<String>,
+    pub acceptance_criteria: Option<String>,
+    pub iteration_path: Option<String>,
+    pub area_path: Option<String>,
+    pub tags: Option<String>,
 }
 
 impl From<AzureWorkItem> for WorkItem {
@@ -45,6 +51,11 @@ impl From<AzureWorkItem> for WorkItem {
                 .and_then(|value| value.as_str())
                 .unwrap_or_default()
                 .to_owned(),
+            board_column: work_item
+                .fields
+                .get("System.BoardColumn")
+                .and_then(|value| value.as_str())
+                .map(|s| s.to_owned()),
             item_type: work_item
                 .fields
                 .get("System.WorkItemType")
@@ -80,6 +91,31 @@ impl From<AzureWorkItem> for WorkItem {
                 .into_iter()
                 .map(WorkItemRelation::from)
                 .collect(),
+            description: work_item
+                .fields
+                .get("System.Description")
+                .and_then(|value| value.as_str())
+                .map(|s| s.to_owned()),
+            acceptance_criteria: work_item
+                .fields
+                .get("Microsoft.VSTS.Common.AcceptanceCriteria")
+                .and_then(|value| value.as_str())
+                .map(|s| s.to_owned()),
+            iteration_path: work_item
+                .fields
+                .get("System.IterationPath")
+                .and_then(|value| value.as_str())
+                .map(|s| s.to_owned()),
+            area_path: work_item
+                .fields
+                .get("System.AreaPath")
+                .and_then(|value| value.as_str())
+                .map(|s| s.to_owned()),
+            tags: work_item
+                .fields
+                .get("System.Tags")
+                .and_then(|value| value.as_str())
+                .map(|s| s.to_owned()),
         }
     }
 }
@@ -137,6 +173,32 @@ impl From<AzureWorkItemRelation> for WorkItemRelation {
                 .to_owned(),
             relation_type: relation.link.rel,
             url: relation.link.url,
+        }
+    }
+}
+
+/// A comment on a work item, from the Azure DevOps Comments API.
+#[derive(Clone, Debug)]
+pub struct WorkItemComment {
+    pub id: i32,
+    /// Raw HTML text from Azure DevOps.
+    pub text: String,
+    pub author_name: String,
+    pub created_at: OffsetDateTime,
+    pub is_deleted: bool,
+}
+
+impl From<azure_devops_rust_api::wit::models::Comment> for WorkItemComment {
+    fn from(c: azure_devops_rust_api::wit::models::Comment) -> Self {
+        Self {
+            id: c.id.unwrap_or(0),
+            text: c.text.unwrap_or_default(),
+            author_name: c
+                .created_by
+                .and_then(|a| a.graph_subject_base.display_name)
+                .unwrap_or_else(|| "Unknown".to_string()),
+            created_at: c.created_date.unwrap_or_else(OffsetDateTime::now_utc),
+            is_deleted: c.is_deleted.unwrap_or(false),
         }
     }
 }

@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::domain::models::UserId;
 use axum_login::AuthUser;
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +33,7 @@ impl fmt::Display for Role {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
-    pub id: i32,
+    pub id: UserId,
     pub email: String,
     pub full_name: String,
     pub picture: String,
@@ -59,7 +60,7 @@ impl AuthUser for User {
     type Id = i64;
 
     fn id(&self) -> Self::Id {
-        self.id.into()
+        self.id.as_i32().into()
     }
 
     fn session_auth_hash(&self) -> &[u8] {

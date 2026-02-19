@@ -10,10 +10,8 @@ use tracing::instrument;
 use crate::{
     adapters::inbound::http::{TimeEntryResponse, TimeInfoResponse},
     app_state::AppState,
-    auth::AuthSession,
-    domain::models::{
-        ActivityId, CreateTimeEntryRequest, EditTimeEntryRequest, ProjectId, UserId,
-    },
+    auth::AuthUser,
+    domain::models::{ActivityId, CreateTimeEntryRequest, EditTimeEntryRequest, ProjectId},
     routes::ApiError,
 };
 
@@ -31,7 +29,7 @@ fn parse_date(s: &str) -> Result<time::Date, ApiError> {
         .map_err(|_| ApiError::bad_request(format!("could not parse date: {}", s)))
 }
 
-#[instrument(name = "get_time_info", skip(jar, app_state))]
+#[instrument(name = "get_time_info", skip(jar))]
 pub async fn get_time_info(
     jar: CookieJar,
     State(app_state): State<AppState>,
@@ -57,10 +55,10 @@ pub struct TimeEntriesQuery {
     unique: Option<bool>,
 }
 
-#[instrument(name = "get_time_entries", skip(jar, app_state, auth_session))]
+#[instrument(name = "get_time_entries", skip(jar))]
 pub async fn get_time_entries(
     jar: CookieJar,
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<TimeEntriesQuery>,
 ) -> CookieJarResult<Json<Vec<TimeEntryResponse>>> {
@@ -69,14 +67,11 @@ pub async fn get_time_entries(
         .create_service(jar, &app_state.cookie_domain)
         .await?;
 
-    let user = auth_session.user.expect("user not found");
-    let user_id = UserId::from(user.id);
-
     let from = parse_date(&query.from)?;
     let to = parse_date(&query.to)?;
 
     let time_entries = service
-        .get_time_entries(&user_id, (from, to), query.unique.unwrap_or(false))
+        .get_time_entries(&user.id, (from, to), query.unique.unwrap_or(false))
         .await?;
 
     let response: Vec<TimeEntryResponse> = time_entries.into_iter().map(Into::into).collect();
@@ -106,7 +101,7 @@ pub struct EditProjectRegistrationPayload {
     original_activity_id: Option<String>,
 }
 
-#[instrument(name = "edit_project_registration", skip(jar, app_state))]
+#[instrument(name = "edit_project_registration", skip(jar))]
 pub async fn edit_project_registration(
     jar: CookieJar,
     State(app_state): State<AppState>,
@@ -156,7 +151,7 @@ pub struct DeleteProjectRegistrationPayload {
     project_registration_id: String,
 }
 
-#[instrument(name = "delete_project_registration", skip(jar, app_state))]
+#[instrument(name = "delete_project_registration", skip(jar))]
 pub async fn delete_project_registration(
     jar: CookieJar,
     State(app_state): State<AppState>,
@@ -188,13 +183,10 @@ pub struct CreateProjectRegistrationPayload {
     user_note: String,
 }
 
-#[instrument(
-    name = "create_project_registration",
-    skip(jar, app_state, auth_session)
-)]
+#[instrument(name = "create_project_registration", skip(jar))]
 pub async fn create_project_registration(
     jar: CookieJar,
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
     Json(payload): Json<CreateProjectRegistrationPayload>,
 ) -> CookieJarResult<StatusCode> {
@@ -202,9 +194,6 @@ pub async fn create_project_registration(
         .time_tracking_factory
         .create_service(jar, &app_state.cookie_domain)
         .await?;
-
-    let user = auth_session.user.expect("user not found");
-    let user_id = UserId::from(user.id);
 
     let start_time = time::OffsetDateTime::parse(
         &payload.start_time,
@@ -230,7 +219,7 @@ pub async fn create_project_registration(
         note: payload.user_note,
     };
 
-    service.create_time_entry(&user_id, &request).await?;
+    service.create_time_entry(&user.id, &request).await?;
 
     Ok((jar, StatusCode::CREATED))
 }

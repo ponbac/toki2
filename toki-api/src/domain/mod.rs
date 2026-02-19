@@ -1,10 +1,9 @@
 mod email;
 mod error;
 pub mod models;
-pub mod ports;
-pub mod services;
 mod notification_handler;
 mod notification_preference;
+pub mod ports;
 mod pr_change_event;
 mod pull_request;
 mod push_notification;
@@ -13,7 +12,9 @@ mod repo_config;
 mod repo_differ;
 mod repo_key;
 mod repository;
+pub mod services;
 mod user;
+mod work_item_error;
 
 pub use email::*;
 pub use error::*;
@@ -28,3 +29,4 @@ pub use repo_differ::*;
 pub use repo_key::*;
 pub use repository::*;
 pub use user::*;
+pub use work_item_error::*;

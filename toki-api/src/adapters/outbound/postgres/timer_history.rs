@@ -212,12 +212,8 @@ fn db_timer_to_active_timer(timer: DatabaseTimer) -> ActiveTimer {
 
 /// Convert a database timer to a domain TimerHistoryEntry.
 fn db_timer_to_domain(timer: DatabaseTimer) -> TimerHistoryEntry {
-    let mut entry = TimerHistoryEntry::new(
-        timer.id,
-        timer.user_id,
-        timer.start_time,
-        timer.created_at,
-    );
+    let mut entry =
+        TimerHistoryEntry::new(timer.id, timer.user_id, timer.start_time, timer.created_at);
 
     if let Some(reg_id) = timer.registration_id {
         entry = entry.with_registration_id(reg_id);

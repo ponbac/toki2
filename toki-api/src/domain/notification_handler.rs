@@ -48,14 +48,16 @@ impl NotificationHandler {
             .map_err(|e| format!("Failed to get push subscriptions: {e}"))?;
 
         for user in users {
+            let user_id = user.id;
+            let user_id_i32 = user_id.as_i32();
             let following = self
                 .user_repo
-                .followed_repositories(&user.id)
+                .followed_repositories(user_id)
                 .await
                 .map_err(|e| {
                     format!(
                         "Failed to get followed repositories for user {}: {}",
-                        user.id, e
+                        user_id, e
                     )
                 })?;
 
@@ -67,7 +69,7 @@ impl NotificationHandler {
 
             let push_subscriptions_for_user: Vec<_> = push_subscriptions
                 .iter()
-                .filter(|sub| sub.user_id == user.id)
+                .filter(|sub| sub.user_id == user_id_i32)
                 .collect();
 
             let mut push_futures = vec![];
@@ -87,24 +89,24 @@ impl NotificationHandler {
                 // Get notification rules for this repository
                 let rules = self
                     .notification_repo
-                    .get_repository_rules(user.id, repo_id)
+                    .get_repository_rules(user_id_i32, repo_id)
                     .await
                     .map_err(|e| {
                         format!(
                             "Failed to get notification rules for user {} and repo {}: {}",
-                            user.id, repo_id, e
+                            user_id, repo_id, e
                         )
                     })?;
 
                 // Get PR-specific exceptions
                 let exceptions = self
                     .notification_repo
-                    .get_pr_exceptions(user.id, repo_id, pr_id)
+                    .get_pr_exceptions(user_id_i32, repo_id, pr_id)
                     .await
                     .map_err(|e| {
                         format!(
                             "Failed to get PR exceptions for user {} and PR {}: {}",
-                            user.id, pr_id, e
+                            user_id, pr_id, e
                         )
                     })?;
 
@@ -135,11 +137,11 @@ impl NotificationHandler {
                         continue;
                     }
 
-                    let push_notification = event
-                        .to_push_notification(&diff.pr.pull_request_base, &diff.pr.azure_url());
+                    let push_notification =
+                        event.to_push_notification(&diff.pr.pull_request_base, &diff.pr.url);
                     let db_notification = Notification {
                         id: 0, // Will be set by database
-                        user_id: user.id,
+                        user_id: user_id_i32,
                         repository_id: repo_id,
                         pull_request_id: pr_id,
                         notification_type,
@@ -168,7 +170,7 @@ impl NotificationHandler {
                                 let message = event.to_web_push_message(
                                     sub,
                                     &diff.pr.pull_request_base,
-                                    &diff.pr.azure_url(),
+                                    &diff.pr.url,
                                 );
                                 push_futures.push(self.web_push_client.send(message));
                             }

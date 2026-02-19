@@ -1,0 +1,193 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { api } from "../api";
+import {
+  normalizeColumnName,
+  resolveColumnIdForItem,
+} from "@/lib/board-columns";
+import {
+  type BoardColumn,
+  type BoardResponse,
+  type BoardWorkItem,
+  workItemsQueries,
+} from "../queries/workItems";
+import type { DefaultMutationOptions } from "./mutations";
+
+export type MoveBoardItemPayload = {
+  organization: string;
+  project: string;
+  workItemId: string;
+  targetColumnName: string;
+  iterationPath?: string;
+  team?: string;
+};
+
+export const workItemsMutations = {
+  useMoveBoardItem,
+};
+
+type MoveBoardItemMutationContext = {
+  boardQueryKey: readonly unknown[];
+  previousBoard?: BoardResponse;
+};
+
+const NUMERIC_ID_PATTERN = /^\d+$/;
+
+function compareWorkItemIds(a: string, b: string): number {
+  if (NUMERIC_ID_PATTERN.test(a) && NUMERIC_ID_PATTERN.test(b)) {
+    const normalizedA = a.replace(/^0+(?=\d)/, "");
+    const normalizedB = b.replace(/^0+(?=\d)/, "");
+    if (normalizedA.length !== normalizedB.length) {
+      return normalizedA.length - normalizedB.length;
+    }
+    if (normalizedA < normalizedB) {
+      return -1;
+    }
+    if (normalizedA > normalizedB) {
+      return 1;
+    }
+    return 0;
+  }
+
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
+}
+
+function sortItemsByColumnAndPriority(
+  items: BoardWorkItem[],
+  columns: BoardColumn[],
+): BoardWorkItem[] {
+  const orderedColumns = [...columns].sort(
+    (a, b) => a.order - b.order || a.name.localeCompare(b.name),
+  );
+  const knownColumnIds = new Set(orderedColumns.map((column) => column.id));
+  const columnIdsByName = new Map(
+    orderedColumns.map((column) => [normalizeColumnName(column.name), column.id]),
+  );
+  const columnRank = new Map(
+    orderedColumns.map((column, index) => [column.id, index]),
+  );
+
+  return [...items].sort((a, b) => {
+    const rankA = resolveColumnIdForItem(a, knownColumnIds, columnIdsByName);
+    const rankB = resolveColumnIdForItem(b, knownColumnIds, columnIdsByName);
+    const rankValueA = rankA ? (columnRank.get(rankA) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+    const rankValueB = rankB ? (columnRank.get(rankB) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+
+    if (rankValueA !== rankValueB) {
+      return rankValueA - rankValueB;
+    }
+
+    const pa = a.priority;
+    const pb = b.priority;
+    if (pa != null && pb != null && pa !== pb) {
+      return pa - pb;
+    }
+    if (pa != null && pb == null) {
+      return -1;
+    }
+    if (pa == null && pb != null) {
+      return 1;
+    }
+
+    return compareWorkItemIds(a.id, b.id);
+  });
+}
+
+function useMoveBoardItem(
+  options?: DefaultMutationOptions<
+    MoveBoardItemPayload,
+    Response,
+    unknown,
+    MoveBoardItemMutationContext
+  >,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["work-items", "move"],
+    mutationFn: (body: MoveBoardItemPayload) =>
+      api.post("work-items/move", {
+        json: body,
+      }),
+    ...options,
+    onMutate: async (vars) => {
+      const boardQueryKey = workItemsQueries
+        .board({
+          organization: vars.organization,
+          project: vars.project,
+          iterationPath: vars.iterationPath,
+          team: vars.team,
+        })
+        .queryKey;
+
+      await queryClient.cancelQueries({ queryKey: boardQueryKey });
+      const previousBoard = queryClient.getQueryData<BoardResponse>(boardQueryKey);
+
+      if (previousBoard) {
+        const targetColumn = previousBoard.columns.find(
+          (column) =>
+            normalizeColumnName(column.name) ===
+            normalizeColumnName(vars.targetColumnName),
+        );
+
+        if (targetColumn) {
+          const updatedItems = previousBoard.items.map((item) =>
+            item.id !== vars.workItemId
+              ? item
+              : {
+                  ...item,
+                  boardColumnId: targetColumn.id,
+                  boardColumnName: targetColumn.name,
+                },
+          );
+
+          queryClient.setQueryData<BoardResponse>(boardQueryKey, {
+            ...previousBoard,
+            items: sortItemsByColumnAndPriority(
+              updatedItems,
+              previousBoard.columns,
+            ),
+          });
+        }
+      }
+
+      const context: MoveBoardItemMutationContext = {
+        boardQueryKey,
+        previousBoard,
+      };
+      await options?.onMutate?.(vars);
+      return context;
+    },
+    onError: (err, vars, ctx) => {
+      if (ctx?.previousBoard) {
+        queryClient.setQueryData<BoardResponse>(
+          ctx.boardQueryKey,
+          ctx.previousBoard,
+        );
+      }
+      options?.onError?.(err, vars, ctx);
+    },
+    onSuccess: (data, vars, ctx) => {
+      options?.onSuccess?.(data, vars, ctx);
+    },
+    onSettled: (data, err, vars, ctx) => {
+      queryClient.invalidateQueries({
+        queryKey: ctx?.boardQueryKey ?? workItemsQueries
+          .board({
+            organization: vars.organization,
+            project: vars.project,
+            iterationPath: vars.iterationPath,
+            team: vars.team,
+          })
+          .queryKey,
+      });
+      options?.onSettled?.(data, err, vars, ctx);
+    },
+  });
+}

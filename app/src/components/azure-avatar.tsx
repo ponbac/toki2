@@ -18,27 +18,17 @@ export function AzureAvatar({
   user,
   disableTooltip,
   className,
-  overrideAvatarUrl,
 }: {
   user: User;
   disableTooltip?: boolean;
   className?: string;
-  overrideAvatarUrl?: string;
 }) {
   return disableTooltip ? (
-    <AvatarComponent
-      user={user}
-      className={className}
-      overrideAvatarUrl={overrideAvatarUrl}
-    />
+    <AvatarComponent user={user} className={className} />
   ) : (
     <Tooltip>
       <TooltipTrigger>
-        <AvatarComponent
-          user={user}
-          className={className}
-          overrideAvatarUrl={overrideAvatarUrl}
-        />
+        <AvatarComponent user={user} className={className} />
       </TooltipTrigger>
       <TooltipContent>
         <div className="text-sm font-medium">{user.displayName}</div>
@@ -50,7 +40,6 @@ export function AzureAvatar({
 function AvatarComponent(props: {
   user: User;
   className?: string;
-  overrideAvatarUrl?: string;
 }) {
   const { resolvedTheme } = useTheme();
   const enablePokemonAvatarFallback = useAtomValue(
@@ -66,12 +55,11 @@ function AvatarComponent(props: {
 
   const avatarSources = React.useMemo(
     () => buildAvatarSources({
-      preferredSources: [props.overrideAvatarUrl, props.user.avatarUrl],
+      preferredSources: [props.user.avatarUrl],
       pokemonSeed: props.user.uniqueName,
       enablePokemonFallback: enablePokemonAvatarFallback,
     }),
     [
-      props.overrideAvatarUrl,
       props.user.avatarUrl,
       props.user.uniqueName,
       enablePokemonAvatarFallback,

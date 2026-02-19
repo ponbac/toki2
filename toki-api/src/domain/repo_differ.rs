@@ -209,8 +209,12 @@ impl RepoDiffer {
                 .await
                 .map_err(|_| RepoDifferError::Threads)?;
 
+            let url = format!(
+                "https://dev.azure.com/{}/{}/_git/{}/pullrequest/{}",
+                self.key.organization, self.key.project, self.key.repo_name, pr.id
+            );
             complete_pull_requests.push(PullRequest::new(
-                &self.key, pr, threads, commits, work_items,
+                &self.key, url, pr, threads, commits, work_items,
             ));
         }
 

@@ -1,17 +1,17 @@
 use sqlx::PgPool;
 
-use crate::domain::{RepoKey, Role, User};
+use crate::domain::{models::UserId, RepoKey, Role, User};
 
 use super::repo_error::RepositoryError;
 
 pub trait UserRepository {
-    async fn get_user(&self, id: i32) -> Result<User, RepositoryError>;
+    async fn get_user(&self, id: UserId) -> Result<User, RepositoryError>;
     async fn get_users(&self) -> Result<Vec<User>, RepositoryError>;
     async fn upsert_user(&self, user: &NewUser) -> Result<User, RepositoryError>;
-    async fn followed_repositories(&self, id: &i32) -> Result<Vec<RepoKey>, RepositoryError>;
+    async fn followed_repositories(&self, id: UserId) -> Result<Vec<RepoKey>, RepositoryError>;
     async fn follow_repository(
         &self,
-        user_id: i32,
+        user_id: UserId,
         repo: &RepoKey,
         follow: bool,
     ) -> Result<(), RepositoryError>;
@@ -28,7 +28,8 @@ impl UserRepositoryImpl {
 }
 
 impl UserRepository for UserRepositoryImpl {
-    async fn get_user(&self, id: i32) -> Result<User, RepositoryError> {
+    async fn get_user(&self, id: UserId) -> Result<User, RepositoryError> {
+        let id = id.as_i32();
         let db_user = sqlx::query_as!(
             DbUser,
             r#"
@@ -42,7 +43,7 @@ impl UserRepository for UserRepositoryImpl {
         .await?;
 
         let user = User {
-            id: db_user.id,
+            id: UserId::from(db_user.id),
             email: db_user.email,
             full_name: db_user.full_name,
             picture: db_user.picture,
@@ -65,7 +66,7 @@ impl UserRepository for UserRepositoryImpl {
         let users = db_users
             .into_iter()
             .map(|db_user| User {
-                id: db_user.id,
+                id: UserId::from(db_user.id),
                 email: db_user.email,
                 full_name: db_user.full_name,
                 picture: db_user.picture,
@@ -104,7 +105,7 @@ impl UserRepository for UserRepositoryImpl {
         .await?;
 
         let user = User {
-            id: db_user.id,
+            id: UserId::from(db_user.id),
             email: db_user.email,
             full_name: db_user.full_name,
             picture: db_user.picture,
@@ -116,7 +117,8 @@ impl UserRepository for UserRepositoryImpl {
         Ok(user)
     }
 
-    async fn followed_repositories(&self, id: &i32) -> Result<Vec<RepoKey>, RepositoryError> {
+    async fn followed_repositories(&self, id: UserId) -> Result<Vec<RepoKey>, RepositoryError> {
+        let id = id.as_i32();
         let repos = sqlx::query_as!(
             RepoKey,
             r#"
@@ -135,10 +137,11 @@ impl UserRepository for UserRepositoryImpl {
 
     async fn follow_repository(
         &self,
-        user_id: i32,
+        user_id: UserId,
         repo: &RepoKey,
         follow: bool,
     ) -> Result<(), RepositoryError> {
+        let user_id = user_id.as_i32();
         let repo_id = sqlx::query!(
             r#"
             SELECT id

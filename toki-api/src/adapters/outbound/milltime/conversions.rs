@@ -44,8 +44,9 @@ pub fn to_domain_time_entry(entry: milltime::TimeEntry) -> Result<TimeEntry, Tim
     // Convert chrono::NaiveDate to time::Date
     let date = time::Date::from_calendar_date(
         entry.date.year(),
-        time::Month::try_from(entry.date.month() as u8)
-            .map_err(|_| TimeTrackingError::unknown(format!("Invalid month: {}", entry.date.month())))?,
+        time::Month::try_from(entry.date.month() as u8).map_err(|_| {
+            TimeTrackingError::unknown(format!("Invalid month: {}", entry.date.month()))
+        })?,
         entry.date.day() as u8,
     )
     .map_err(|e| TimeTrackingError::unknown(format!("Invalid date {}: {}", entry.date, e)))?;

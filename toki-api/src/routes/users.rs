@@ -9,7 +9,7 @@ use axum::{
 
 use crate::{
     app_state::AppState,
-    auth::AuthSession,
+    auth::AuthUser,
     domain::{models::UserId, AvatarError},
     routes::ApiError,
 };
@@ -32,15 +32,10 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn my_avatar(
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Response, ApiError> {
-    let user = auth_session
-        .user
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("user not found"))?;
-
-    avatar_response(&app_state, UserId::from(user.id)).await
+    avatar_response(&app_state, user.id).await
 }
 
 async fn user_avatar(
@@ -51,38 +46,25 @@ async fn user_avatar(
 }
 
 async fn upload_my_avatar(
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<StatusCode, ApiError> {
-    let user = auth_session
-        .user
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("user not found"))?;
-
     let (image, content_type) = extract_image_from_multipart(&mut multipart).await?;
 
     app_state
         .avatar_service
-        .upload_avatar(&UserId::from(user.id), image, content_type)
+        .upload_avatar(&user.id, image, content_type)
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn delete_my_avatar(
-    auth_session: AuthSession,
+    user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
-    let user = auth_session
-        .user
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("user not found"))?;
-
-    app_state
-        .avatar_service
-        .delete_avatar(&UserId::from(user.id))
-        .await?;
+    app_state.avatar_service.delete_avatar(&user.id).await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

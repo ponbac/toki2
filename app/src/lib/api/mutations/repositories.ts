@@ -66,6 +66,7 @@ function useFollowRepository(
       queryClient.invalidateQueries({
         queryKey: pullRequestsQueries.baseKey,
       });
+      queryClient.invalidateQueries(queries.projects());
       options?.onSettled?.(data, err, vars, ctx);
     },
   });

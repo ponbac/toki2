@@ -3,6 +3,7 @@ import {
   LucideIcon,
   FolderGit2,
   GitPullRequest,
+  KanbanSquare,
   Save,
   TimerIcon,
 } from "lucide-react";
@@ -43,6 +44,12 @@ const MENU_ITEMS = [
     icon: GitPullRequest,
     variant: "ghost",
     to: "/prs",
+  },
+  {
+    title: "Board",
+    icon: KanbanSquare,
+    variant: "ghost",
+    to: "/board",
   },
   {
     title: "Time Tracking",

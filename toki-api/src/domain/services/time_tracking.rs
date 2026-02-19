@@ -6,9 +6,8 @@ use time::{Date, OffsetDateTime};
 
 use crate::domain::{
     models::{
-        Activity, ActiveTimer, CreateTimeEntryRequest, EditTimeEntryRequest,
-        NewTimerHistoryEntry, Project, ProjectId, TimeEntry, TimeInfo, TimerId,
-        TimerHistoryEntry, UserId,
+        ActiveTimer, Activity, CreateTimeEntryRequest, EditTimeEntryRequest, NewTimerHistoryEntry,
+        Project, ProjectId, TimeEntry, TimeInfo, TimerHistoryEntry, TimerId, UserId,
     },
     ports::{
         inbound::TimeTrackingService,
@@ -30,10 +29,7 @@ pub struct TimeTrackingServiceImpl<C, R> {
 
 impl<C, R> TimeTrackingServiceImpl<C, R> {
     pub fn new(client: Arc<C>, timer_repo: Arc<R>) -> Self {
-        Self {
-            client,
-            timer_repo,
-        }
+        Self { client, timer_repo }
     }
 }
 
@@ -160,10 +156,7 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
     // Calendar/Time Entry Operations
     // ========================================================================
 
-    async fn get_time_info(
-        &self,
-        date_range: (Date, Date),
-    ) -> Result<TimeInfo, TimeTrackingError> {
+    async fn get_time_info(&self, date_range: (Date, Date)) -> Result<TimeInfo, TimeTrackingError> {
         self.client.get_time_info(date_range).await
     }
 
@@ -182,7 +175,10 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         // Build a map of registration_id -> (start_time, end_time)
         let history_map: HashMap<String, _> = history
             .into_iter()
-            .filter_map(|h| h.registration_id.map(|reg_id| (reg_id, (h.start_time, h.end_time))))
+            .filter_map(|h| {
+                h.registration_id
+                    .map(|reg_id| (reg_id, (h.start_time, h.end_time)))
+            })
             .collect();
 
         // Augment entries with local start/end times
@@ -263,7 +259,8 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
 
         // Update local timer history
         // Check if we have a local record for this registration
-        if self.timer_repo
+        if self
+            .timer_repo
             .get_by_registration_id(&request.registration_id)
             .await?
             .is_some()
@@ -271,7 +268,8 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
             // Check if registration ID changed (day changed)
             if new_registration_id.as_str() != request.registration_id {
                 // Update both registration ID and times
-                if let Err(e) = self.timer_repo
+                if let Err(e) = self
+                    .timer_repo
                     .update_registration_and_times(
                         &request.registration_id,
                         new_registration_id.as_str(),
@@ -284,7 +282,8 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
                 }
             } else {
                 // Just update times
-                if let Err(e) = self.timer_repo
+                if let Err(e) = self
+                    .timer_repo
                     .update_times(
                         &request.registration_id,
                         &request.start_time,

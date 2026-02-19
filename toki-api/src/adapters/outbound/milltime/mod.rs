@@ -9,16 +9,15 @@ use time::Date;
 
 use crate::domain::{
     models::{
-        Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeInfo, TimerId,
+        Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId, TimeEntry,
+        TimeInfo, TimerId,
     },
     ports::outbound::TimeTrackingClient,
     TimeTrackingError,
 };
 
 use self::conversions::{
-    to_domain_activity, to_domain_project, to_domain_time_entry,
-    to_domain_time_info,
+    to_domain_activity, to_domain_project, to_domain_time_entry, to_domain_time_info,
 };
 
 /// Adapter that wraps the Milltime client to implement the TimeTrackingClient port.
@@ -39,9 +38,14 @@ impl MilltimeAdapter {
 impl TimeTrackingClient for MilltimeAdapter {
     async fn get_projects(&self) -> Result<Vec<Project>, TimeTrackingError> {
         let filter = milltime::ProjectSearchFilter::new("Overview".to_string());
-        let projects = self.client.fetch_project_search(filter).await.map_err(map_milltime_error)?;
+        let projects = self
+            .client
+            .fetch_project_search(filter)
+            .await
+            .map_err(map_milltime_error)?;
         // Filter to only show projects where user is a member
-        Ok(projects.into_iter()
+        Ok(projects
+            .into_iter()
             .filter(|p| p.is_member)
             .map(to_domain_project)
             .collect())
@@ -57,20 +61,27 @@ impl TimeTrackingClient for MilltimeAdapter {
             date_range.0.to_string(),
             date_range.1.to_string(),
         );
-        let activities = self.client.fetch_activities(filter).await.map_err(map_milltime_error)?;
-        Ok(activities.into_iter().map(|a| to_domain_activity(a, project_id)).collect())
+        let activities = self
+            .client
+            .fetch_activities(filter)
+            .await
+            .map_err(map_milltime_error)?;
+        Ok(activities
+            .into_iter()
+            .map(|a| to_domain_activity(a, project_id))
+            .collect())
     }
 
-    async fn get_time_info(
-        &self,
-        date_range: (Date, Date),
-    ) -> Result<TimeInfo, TimeTrackingError> {
-        let date_filter: milltime::DateFilter =
-            format!("{},{}", date_range.0, date_range.1)
-                .parse()
-                .map_err(|_| TimeTrackingError::InvalidDateRange)?;
+    async fn get_time_info(&self, date_range: (Date, Date)) -> Result<TimeInfo, TimeTrackingError> {
+        let date_filter: milltime::DateFilter = format!("{},{}", date_range.0, date_range.1)
+            .parse()
+            .map_err(|_| TimeTrackingError::InvalidDateRange)?;
 
-        let info = self.client.fetch_time_info(date_filter).await.map_err(map_milltime_error)?;
+        let info = self
+            .client
+            .fetch_time_info(date_filter)
+            .await
+            .map_err(map_milltime_error)?;
         Ok(to_domain_time_info(info))
     }
 
@@ -78,12 +89,15 @@ impl TimeTrackingClient for MilltimeAdapter {
         &self,
         date_range: (Date, Date),
     ) -> Result<Vec<TimeEntry>, TimeTrackingError> {
-        let date_filter: milltime::DateFilter =
-            format!("{},{}", date_range.0, date_range.1)
-                .parse()
-                .map_err(|_| TimeTrackingError::InvalidDateRange)?;
+        let date_filter: milltime::DateFilter = format!("{},{}", date_range.0, date_range.1)
+            .parse()
+            .map_err(|_| TimeTrackingError::InvalidDateRange)?;
 
-        let calendar = self.client.fetch_user_calendar(&date_filter).await.map_err(map_milltime_error)?;
+        let calendar = self
+            .client
+            .fetch_user_calendar(&date_filter)
+            .await
+            .map_err(map_milltime_error)?;
 
         // Flatten weeks -> days -> time_entries, filtering by date range
         let entries: Vec<TimeEntry> = calendar
@@ -93,11 +107,9 @@ impl TimeTrackingClient for MilltimeAdapter {
             .filter_map(|day| {
                 // Convert chrono::NaiveDate to time::Date for comparison
                 let month = time::Month::try_from(day.date.month() as u8).ok()?;
-                let day_date = time::Date::from_calendar_date(
-                    day.date.year(),
-                    month,
-                    day.date.day() as u8,
-                ).ok()?;
+                let day_date =
+                    time::Date::from_calendar_date(day.date.year(), month, day.date.day() as u8)
+                        .ok()?;
 
                 if day_date >= date_range.0 && day_date <= date_range.1 {
                     Some(day)
@@ -107,9 +119,11 @@ impl TimeTrackingClient for MilltimeAdapter {
             })
             .flat_map(|day| day.time_entries)
             .filter_map(|entry| {
-                to_domain_time_entry(entry).map_err(|e| {
-                    tracing::warn!("Skipping time entry with invalid date: {}", e);
-                }).ok()
+                to_domain_time_entry(entry)
+                    .map_err(|e| {
+                        tracing::warn!("Skipping time entry with invalid date: {}", e);
+                    })
+                    .ok()
             })
             .collect();
 
@@ -138,7 +152,11 @@ impl TimeTrackingClient for MilltimeAdapter {
             request.note.clone(),
         );
 
-        let response = self.client.new_project_registration(&payload).await.map_err(map_milltime_error)?;
+        let response = self
+            .client
+            .new_project_registration(&payload)
+            .await
+            .map_err(map_milltime_error)?;
         Ok(TimerId::new(response.project_registration_id))
     }
 

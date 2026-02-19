@@ -3,8 +3,8 @@ use time::Date;
 
 use crate::domain::{
     models::{
-        Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeInfo, TimerId,
+        Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId, TimeEntry,
+        TimeInfo, TimerId,
     },
     TimeTrackingError,
 };
@@ -33,10 +33,7 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
     // ========================================================================
 
     /// Get time tracking statistics for a date range.
-    async fn get_time_info(
-        &self,
-        date_range: (Date, Date),
-    ) -> Result<TimeInfo, TimeTrackingError>;
+    async fn get_time_info(&self, date_range: (Date, Date)) -> Result<TimeInfo, TimeTrackingError>;
 
     /// Get time entries from the provider for a date range.
     ///

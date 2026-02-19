@@ -1,28 +1,39 @@
-//! Composition root — concrete factory for creating TimeTrackingService instances.
+//! Composition root — concrete factories for creating service instances.
 //!
 //! This is the ONLY place that imports concrete outbound adapters and provider types.
 
+use std::collections::HashMap;
 use std::ops::Add;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use axum::http::StatusCode;
 use axum_extra::extract::cookie::Cookie;
 use axum_extra::extract::CookieJar;
+use az_devops::RepoClient;
 use time::{Duration, OffsetDateTime};
+use tokio::sync::RwLock;
+use url::Url;
 
 use crate::{
     adapters::{
-        inbound::http::{TimeTrackingServiceError, TimeTrackingServiceFactory},
+        inbound::http::{
+            TimeTrackingServiceError, TimeTrackingServiceFactory, WorkItemServiceError,
+            WorkItemServiceFactory,
+        },
         outbound::{
+            azure_devops::AzureDevOpsWorkItemAdapter,
             milltime::{MilltimeAdapter, MilltimePassword},
             postgres::PostgresTimerHistoryAdapter,
         },
     },
     domain::{
-        ports::inbound::TimeTrackingService,
-        services::TimeTrackingServiceImpl,
+        models::{UserId, WorkItemProject},
+        ports::inbound::{TimeTrackingService, WorkItemService},
+        services::{TimeTrackingServiceImpl, WorkItemServiceImpl},
+        RepoKey,
     },
-    repositories::TimerRepositoryImpl,
+    repositories::{TimerRepositoryImpl, UserRepository, UserRepositoryImpl},
 };
 
 /// Concrete factory that creates Milltime-backed TimeTrackingService instances.
@@ -47,8 +58,7 @@ impl TimeTrackingServiceFactory for MilltimeServiceFactory {
 
         let adapter = MilltimeAdapter::new(credentials);
         let history_adapter = PostgresTimerHistoryAdapter::new(self.timer_repo.clone());
-        let service =
-            TimeTrackingServiceImpl::new(Arc::new(adapter), Arc::new(history_adapter));
+        let service = TimeTrackingServiceImpl::new(Arc::new(adapter), Arc::new(history_adapter));
 
         Ok((Box::new(service), jar))
     }
@@ -61,9 +71,7 @@ impl TimeTrackingServiceFactory for MilltimeServiceFactory {
     ) -> Result<CookieJar, TimeTrackingServiceError> {
         let credentials = milltime::Credentials::new(username, password)
             .await
-            .map_err(|_| {
-                TimeTrackingServiceError::unauthorized("Invalid credentials")
-            })?;
+            .map_err(|_| TimeTrackingServiceError::unauthorized("Invalid credentials"))?;
 
         let encrypted_password = MilltimePassword::new(password.to_string()).to_encrypted();
 
@@ -112,13 +120,13 @@ async fn extract_credentials(
     }
 
     // Fall back to username/password authentication
-    let user_cookie = jar.get("mt_user").ok_or_else(|| {
-        TimeTrackingServiceError::unauthorized("missing mt_user cookie")
-    })?;
+    let user_cookie = jar
+        .get("mt_user")
+        .ok_or_else(|| TimeTrackingServiceError::unauthorized("missing mt_user cookie"))?;
 
-    let pass_cookie = jar.get("mt_password").ok_or_else(|| {
-        TimeTrackingServiceError::unauthorized("missing mt_password cookie")
-    })?;
+    let pass_cookie = jar
+        .get("mt_password")
+        .ok_or_else(|| TimeTrackingServiceError::unauthorized("missing mt_password cookie"))?;
 
     let decrypted_pass = MilltimePassword::from_encrypted(pass_cookie.value().to_string());
 
@@ -137,4 +145,88 @@ async fn extract_credentials(
 
     tracing::debug!("created new provider credentials");
     Ok((credentials, updated_jar))
+}
+
+// ---------------------------------------------------------------------------
+// Work Items factory
+// ---------------------------------------------------------------------------
+
+/// Concrete factory that creates Azure DevOps-backed WorkItemService instances.
+///
+/// Finds a `RepoClient` matching the requested organization and project,
+/// wraps it in an `AzureDevOpsWorkItemAdapter`, and returns a `WorkItemServiceImpl`.
+pub struct AzureDevOpsWorkItemServiceFactory {
+    repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
+    user_repo: Arc<UserRepositoryImpl>,
+    api_base_url: Url,
+}
+
+impl AzureDevOpsWorkItemServiceFactory {
+    pub fn new(
+        repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
+        user_repo: Arc<UserRepositoryImpl>,
+        api_base_url: Url,
+    ) -> Self {
+        Self {
+            repo_clients,
+            user_repo,
+            api_base_url,
+        }
+    }
+}
+
+#[async_trait]
+impl WorkItemServiceFactory for AzureDevOpsWorkItemServiceFactory {
+    async fn create_service(
+        &self,
+        organization: &str,
+        project: &str,
+    ) -> Result<Box<dyn WorkItemService>, WorkItemServiceError> {
+        // 1. Find any RepoClient matching the requested org+project
+        let clients = self.repo_clients.read().await;
+        let client = clients
+            .iter()
+            .find(|(key, _)| {
+                key.organization.eq_ignore_ascii_case(organization)
+                    && key.project.eq_ignore_ascii_case(project)
+            })
+            .map(|(_, client)| client.clone())
+            .ok_or_else(|| WorkItemServiceError {
+                status: StatusCode::NOT_FOUND,
+                message: format!("No client found for {}/{}", organization, project),
+            })?;
+
+        // 2. Create adapter and service
+        let adapter = AzureDevOpsWorkItemAdapter::new(client, self.api_base_url.clone());
+        let service = WorkItemServiceImpl::new(Arc::new(adapter));
+        Ok(Box::new(service))
+    }
+
+    async fn get_available_projects(
+        &self,
+        user_id: UserId,
+    ) -> Result<Vec<WorkItemProject>, WorkItemServiceError> {
+        // Get followed repositories for this user
+        let repos = self
+            .user_repo
+            .followed_repositories(user_id)
+            .await
+            .map_err(|e| WorkItemServiceError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: format!("Failed to fetch followed repositories: {}", e),
+            })?;
+
+        // Deduplicate into unique (organization, project) pairs
+        let mut seen = std::collections::HashSet::new();
+        let projects = repos
+            .into_iter()
+            .filter(|repo| seen.insert((repo.organization.clone(), repo.project.clone())))
+            .map(|repo| WorkItemProject {
+                organization: repo.organization,
+                project: repo.project,
+            })
+            .collect();
+
+        Ok(projects)
+    }
 }
