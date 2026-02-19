@@ -1,3 +1,5 @@
 .vscode
 /target
 .env.local
+*.dump
+.tmp/db-prod-pull/
