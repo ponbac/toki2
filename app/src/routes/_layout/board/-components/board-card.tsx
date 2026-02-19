@@ -185,6 +185,7 @@ export function BoardCard({
           id={item.id}
           url={item.url}
           descriptionRenderedHtml={item.descriptionRenderedHtml}
+          reproStepsRenderedHtml={item.reproStepsRenderedHtml}
         />
 
         {/* PR indicator - always visible */}

@@ -23,6 +23,10 @@ pub struct WorkItem {
     pub description: Option<String>,
     /// Sanitized, render-ready HTML for UI consumers.
     pub description_rendered_html: Option<String>,
+    /// Provider rich-text reproduction steps markup (HTML for Azure DevOps Bugs).
+    pub repro_steps: Option<String>,
+    /// Sanitized, render-ready reproduction steps HTML for UI consumers.
+    pub repro_steps_rendered_html: Option<String>,
     /// Provider rich-text acceptance criteria markup (HTML for Azure DevOps).
     pub acceptance_criteria: Option<String>,
     pub iteration_path: Option<String>,

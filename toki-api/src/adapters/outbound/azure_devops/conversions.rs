@@ -44,11 +44,10 @@ pub fn to_domain_work_item(
 
     // Preserve legacy plain-text contract for `description` while also exposing
     // sanitized render-ready HTML via `description_rendered_html`.
-    let description_raw = ado.description.clone();
-    let description = description_raw.as_deref().map(strip_html);
-    let description_rendered_html = description_raw
-        .as_deref()
-        .map(|value| render_description_html(value, org, project, api_base_url));
+    let (description, description_rendered_html) =
+        to_plain_and_rendered_html(ado.description.as_deref(), org, project, api_base_url);
+    let (repro_steps, repro_steps_rendered_html) =
+        to_plain_and_rendered_html(ado.repro_steps.as_deref(), org, project, api_base_url);
     let acceptance_criteria = ado.acceptance_criteria.as_deref().map(strip_html);
 
     let tags = ado
@@ -122,6 +121,8 @@ pub fn to_domain_work_item(
         created_by,
         description,
         description_rendered_html,
+        repro_steps,
+        repro_steps_rendered_html,
         acceptance_criteria,
         iteration_path: ado.iteration_path,
         area_path: ado.area_path,
@@ -146,6 +147,17 @@ fn render_description_html(value: &str, org: &str, project: &str, api_base_url: 
     }
 
     sanitize_work_item_html(trimmed, org, project, api_base_url)
+}
+
+fn to_plain_and_rendered_html(
+    value: Option<&str>,
+    org: &str,
+    project: &str,
+    api_base_url: &Url,
+) -> (Option<String>, Option<String>) {
+    let plain = value.map(strip_html);
+    let rendered = value.map(|value| render_description_html(value, org, project, api_base_url));
+    (plain, rendered)
 }
 
 fn has_html_markup(value: &str) -> bool {
@@ -531,6 +543,42 @@ mod tests {
         );
 
         assert!(!rendered.contains("<img"));
+    }
+
+    #[test]
+    fn test_to_domain_work_item_maps_repro_steps() {
+        let api_base_url = Url::parse("https://toki-api.spinit.se").unwrap();
+        let domain = to_domain_work_item(
+            az_devops::WorkItem {
+                id: 42,
+                parent_id: None,
+                title: "Bug work item".to_string(),
+                state: "Active".to_string(),
+                board_column: Some("In Progress".to_string()),
+                item_type: "Bug".to_string(),
+                priority: Some(1),
+                created_at: OffsetDateTime::UNIX_EPOCH,
+                changed_at: OffsetDateTime::UNIX_EPOCH,
+                assigned_to: None,
+                created_by: None,
+                relations: vec![],
+                description: None,
+                repro_steps: Some("Open app\nClick save".to_string()),
+                acceptance_criteria: None,
+                iteration_path: None,
+                area_path: None,
+                tags: None,
+            },
+            "my-org",
+            "my-project",
+            &api_base_url,
+        );
+
+        assert_eq!(domain.repro_steps.as_deref(), Some("Open app\nClick save"));
+        assert_eq!(
+            domain.repro_steps_rendered_html.as_deref(),
+            Some("Open app<br />Click save")
+        );
     }
 
     #[test]
