@@ -70,9 +70,26 @@ const MENU_ITEMS = [
   to: LinkDestination;
 }[];
 
+const BOARD_MENU_ALLOWED_EMAILS = new Set(["pontus.backman@spinit.se"]);
+
 type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 
 export function SideNavWrapper({ children }: { children: React.ReactNode }) {
+  const { data: me } = useQuery({
+    ...userQueries.me(),
+    staleTime: Infinity,
+  });
+
+  const menuItems = React.useMemo(
+    () =>
+      MENU_ITEMS.filter(
+        (item) =>
+          item.to !== "/board" ||
+          BOARD_MENU_ALLOWED_EMAILS.has(me?.email ?? ""),
+      ),
+    [me?.email],
+  );
+
   return (
     <div className="flex flex-col md:flex-row">
       {/* Navigation Bar */}
@@ -95,7 +112,7 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
           <div className="mx-2 h-6 w-px bg-border/50 md:mx-0 md:my-3 md:h-px md:w-8" />
 
           {/* Navigation items */}
-          <Nav links={MENU_ITEMS} />
+          <Nav links={menuItems} />
 
           {/* Theme switcher - inline on mobile */}
           <div className="flex h-full items-center justify-center md:hidden">
