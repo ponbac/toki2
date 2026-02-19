@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, LazyLock},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use axum::{
@@ -13,8 +13,8 @@ use axum::{
     Json, Router,
 };
 use futures_util::future::join_all;
+use moka::sync::Cache;
 use serde::Deserialize;
-use tokio::sync::RwLock;
 use tracing::instrument;
 
 use crate::{
@@ -108,17 +108,14 @@ struct PullRequestRefEnrichment {
 const DEFAULT_WORK_ITEM_IMAGE_MIME: &str = "application/octet-stream";
 const WORK_ITEM_IMAGE_CACHE_CONTROL: &str = "private, max-age=3600";
 const AVAILABLE_PROJECTS_CACHE_TTL: Duration = Duration::from_secs(30);
-const AVAILABLE_PROJECTS_CACHE_EVICT_AFTER: Duration = Duration::from_secs(30 * 60);
-const AVAILABLE_PROJECTS_CACHE_MAX_ENTRIES: usize = 2_048;
+const AVAILABLE_PROJECTS_CACHE_MAX_ENTRIES: u64 = 2_048;
 
-#[derive(Clone)]
-struct CachedAvailableProjects {
-    fetched_at: Instant,
-    projects: Vec<WorkItemProject>,
-}
-
-static AVAILABLE_PROJECTS_CACHE: LazyLock<RwLock<HashMap<i32, CachedAvailableProjects>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+static AVAILABLE_PROJECTS_CACHE: LazyLock<Cache<i32, Vec<WorkItemProject>>> = LazyLock::new(|| {
+    Cache::builder()
+        .time_to_live(AVAILABLE_PROJECTS_CACHE_TTL)
+        .max_capacity(AVAILABLE_PROJECTS_CACHE_MAX_ENTRIES)
+        .build()
+});
 
 // ---------------------------------------------------------------------------
 // Route handlers
@@ -263,15 +260,9 @@ async fn get_available_projects_cached(
     user: &AuthUser,
 ) -> Result<Vec<WorkItemProject>, ApiError> {
     let user_id = user.id.as_i32();
-    let now = Instant::now();
 
-    {
-        let cache = AVAILABLE_PROJECTS_CACHE.read().await;
-        if let Some(cached) = cache.get(&user_id) {
-            if now.duration_since(cached.fetched_at) <= AVAILABLE_PROJECTS_CACHE_TTL {
-                return Ok(cached.projects.clone());
-            }
-        }
+    if let Some(projects) = AVAILABLE_PROJECTS_CACHE.get(&user_id) {
+        return Ok(projects);
     }
 
     let projects = app_state
@@ -279,34 +270,7 @@ async fn get_available_projects_cached(
         .get_available_projects(user.id)
         .await?;
 
-    {
-        let mut cache = AVAILABLE_PROJECTS_CACHE.write().await;
-        cache.retain(|_, cached| {
-            now.duration_since(cached.fetched_at) <= AVAILABLE_PROJECTS_CACHE_EVICT_AFTER
-        });
-        cache.insert(
-            user_id,
-            CachedAvailableProjects {
-                fetched_at: now,
-                projects: projects.clone(),
-            },
-        );
-
-        if cache.len() > AVAILABLE_PROJECTS_CACHE_MAX_ENTRIES {
-            let mut eviction_order = cache
-                .iter()
-                .map(|(cached_user_id, cached)| (*cached_user_id, cached.fetched_at))
-                .collect::<Vec<_>>();
-            eviction_order.sort_by_key(|(_, fetched_at)| *fetched_at);
-
-            let eviction_count = eviction_order
-                .len()
-                .saturating_sub(AVAILABLE_PROJECTS_CACHE_MAX_ENTRIES);
-            for (cached_user_id, _) in eviction_order.into_iter().take(eviction_count) {
-                cache.remove(&cached_user_id);
-            }
-        }
-    }
+    AVAILABLE_PROJECTS_CACHE.insert(user_id, projects.clone());
 
     Ok(projects)
 }
@@ -404,7 +368,6 @@ async fn build_pull_request_approval_index(
     .await;
 
     for (repository_id, cached_pull_requests) in cached_repo_pull_requests.into_iter().flatten() {
-
         for pull_request in cached_pull_requests {
             let pull_request_id = pull_request.pull_request_base.id.to_string();
             if !referenced_pr_ids.contains(&pull_request_id) {
@@ -619,7 +582,9 @@ pub fn router() -> Router<AppState> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, thread, time::Duration};
+
+    use moka::sync::Cache;
     use time::OffsetDateTime;
 
     use crate::{
@@ -636,6 +601,30 @@ mod tests {
         apply_avatar_override_to_work_item_person, board_response_from_enriched_board,
         PullRequestApprovalIndexKey, PullRequestRefEnrichment, PullRequestReviewerResponse,
     };
+
+    #[test]
+    fn available_projects_cache_hits_within_ttl() {
+        let cache = Cache::builder()
+            .time_to_live(Duration::from_secs(30))
+            .max_capacity(128)
+            .build();
+        cache.insert(42, vec!["project-a".to_string()]);
+
+        assert_eq!(cache.get(&42), Some(vec!["project-a".to_string()]));
+    }
+
+    #[test]
+    fn available_projects_cache_misses_after_ttl() {
+        let cache = Cache::builder()
+            .time_to_live(Duration::from_millis(20))
+            .max_capacity(128)
+            .build();
+        cache.insert(7, vec!["project-a".to_string()]);
+
+        thread::sleep(Duration::from_millis(40));
+
+        assert_eq!(cache.get(&7), None);
+    }
 
     #[test]
     fn normalize_lookup_key_trims_and_lowercases() {
