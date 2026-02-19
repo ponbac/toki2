@@ -57,3 +57,4 @@ tower-sessions-moka-store = "0.14"
 tower-sessions-sqlx-store = { version = "0.14.2", features = ["postgres"] }
 image = { version = "0.25.9", features = ["jpeg", "png"] }
 webp = "0.3.1"
+moka = { version = "0.12", features = ["sync"] }
