@@ -91,3 +91,36 @@ The project is organized into several key components:
   - shadcn/ui components
   - Service worker for Web Push notifications (https://developer.mozilla.org/en-US/docs/Web/API/Push_API)
   - PWA capabilities
+
+## Development
+
+### Pull production DB into local Postgres
+
+This repository provides a one-command snapshot pull from Fly production into your local database:
+
+```bash
+just db-prod-pull
+```
+
+Useful flags:
+
+```bash
+just db-prod-pull --yes
+just db-prod-pull --yes --keep-dump
+just db-prod-pull --fly-app toki2 --local-db toki
+just db-prod-pull --fly-db-app toki-pg --proxy-port 15432
+```
+
+Requirements:
+
+- `flyctl` (authenticated with `fly auth login`)
+- `pg_dump`, `pg_restore`, `psql`
+- local PostgreSQL running and reachable (defaults: `localhost:5433`, db `toki`)
+
+If production host is a Fly private address (`*.flycast`), the script automatically starts a temporary `flyctl proxy` tunnel.
+
+Safety notes:
+
+- The command refuses to restore unless local host is `localhost`, `127.0.0.1`, or `::1`.
+- By default it prompts before dropping/recreating the local database.
+- The restored data is raw production data; no sanitization/redaction is performed.
