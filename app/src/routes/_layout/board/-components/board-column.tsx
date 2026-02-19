@@ -1,5 +1,6 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
+import type { TimeReportMode } from "@/lib/time-report";
 import { cn } from "@/lib/utils";
 import { BoardCard } from "./board-card";
 
@@ -18,6 +19,7 @@ export function BoardColumn({
   onColumnDragOver,
   onColumnDrop,
   onMoveItem,
+  onTimerAction,
 }: {
   columnId: string;
   title: string;
@@ -37,6 +39,7 @@ export function BoardColumn({
     sourceColumnId: string,
     targetColumnId: string,
   ) => void;
+  onTimerAction: (item: BoardWorkItem, mode: TimeReportMode) => Promise<void>;
 }) {
   const isDragging = draggingItemId !== null;
 
@@ -97,6 +100,7 @@ export function BoardColumn({
                 onDragStart={onCardDragStart}
                 onDragEnd={onCardDragEnd}
                 onMoveToColumn={onMoveItem}
+                onTimerAction={onTimerAction}
               />
             ))
           )}

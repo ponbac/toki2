@@ -5,11 +5,18 @@ import {
 } from "@tanstack/react-query";
 import { queries } from "@/lib/api/queries/queries";
 import { mutations } from "@/lib/api/mutations/mutations";
+import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import {
   normalizeColumnName,
   resolveColumnIdForItem,
 } from "@/lib/board-columns";
+import {
+  buildWorkItemTimeReportText,
+  type TimeReportMode,
+} from "@/lib/time-report";
+import { copyAndSyncTimeReport } from "@/lib/time-report-actions";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
 import {
@@ -68,6 +75,13 @@ export function BoardView({
   });
   const { data: user } = useSuspenseQuery(queries.me());
   const { mutateAsync: moveBoardItem } = mutations.useMoveBoardItem();
+  const { data: timerResponse, isSuccess: timerQuerySuccess } = useQuery({
+    ...timeTrackingQueries.getTimer(),
+    retry: false,
+  });
+  const timer = timerResponse?.timer;
+  const { mutateAsync: startTimer } = timeTrackingMutations.useStartTimer();
+  const { mutateAsync: editTimer } = timeTrackingMutations.useEditTimer();
   const [memberFilterByScope, setMemberFilterByScope] = useAtom(
     memberFilterByScopeAtom,
   );
@@ -332,6 +346,28 @@ export function BoardView({
     },
     [moveItem],
   );
+  const handleTimerAction = useCallback(
+    async (item: BoardWorkItem, mode: TimeReportMode) => {
+      const text = buildWorkItemTimeReportText({
+        workItemId: item.id,
+        title: item.title,
+        parentWorkItemId: item.parent?.id ?? null,
+        mode,
+      });
+
+      await copyAndSyncTimeReport({
+        text,
+        timer,
+        timerQuerySuccess,
+        startTimer,
+        editTimer,
+        onTimerSyncError: () => {
+          console.warn("Failed to synchronize timer state from board action.");
+        },
+      });
+    },
+    [editTimer, startTimer, timer, timerQuerySuccess],
+  );
 
   if (!board) {
     return (
@@ -389,6 +425,7 @@ export function BoardView({
                   onColumnDragOver={handleColumnDragOver}
                   onColumnDrop={handleColumnDrop}
                   onMoveItem={handleMoveItem}
+                  onTimerAction={handleTimerAction}
                 />
               </div>
             ))}

@@ -14,15 +14,19 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
+import type { TimeReportMode } from "@/lib/time-report";
 import { BOARD_CATEGORY_OPTIONS } from "../-lib/category-meta";
 import { CopyWorkItem } from "./copy-work-item";
 import { PrApprovalHoverCard } from "./pr-approval-hover-card";
 import { WorkItemDescriptionHoverCard } from "./work-item-description-hover-card";
 import {
-  GitBranch,
   Check,
+  CodeXmlIcon,
+  GitBranch,
   Loader2,
+  MessageCircleCodeIcon,
   MoreVertical,
+  TimerIcon,
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
@@ -56,6 +60,7 @@ export function BoardCard({
   onDragStart,
   onDragEnd,
   onMoveToColumn,
+  onTimerAction,
 }: {
   item: BoardWorkItem;
   columnId: string;
@@ -71,6 +76,7 @@ export function BoardCard({
     sourceColumnId: string,
     targetColumnId: string,
   ) => void;
+  onTimerAction: (item: BoardWorkItem, mode: TimeReportMode) => Promise<void>;
 }) {
   const categoryMeta = CATEGORY_META_BY_VALUE[item.category];
   const colors = categoryMeta
@@ -89,6 +95,7 @@ export function BoardCard({
   const branchName = sourceBranch ? trimBranch(sourceBranch) : null;
 
   const [branchCopied, setBranchCopied] = useState(false);
+  const [isTimerActionPending, setIsTimerActionPending] = useState(false);
   const handleCopyBranch = useCallback(
     async (e: React.MouseEvent) => {
       if (!branchName) {
@@ -104,6 +111,19 @@ export function BoardCard({
       }
     },
     [branchName],
+  );
+  const handleTimerActionSelect = useCallback(
+    (mode: TimeReportMode) => {
+      if (isTimerActionPending) {
+        return;
+      }
+
+      setIsTimerActionPending(true);
+      void onTimerAction(item, mode).finally(() => {
+        setIsTimerActionPending(false);
+      });
+    },
+    [isTimerActionPending, item, onTimerAction],
   );
   const moveTargets = columns.filter((column) => column.id !== columnId);
 
@@ -173,6 +193,48 @@ export function BoardCard({
         )}
 
         <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          {/* Timer actions */}
+          <div className="pointer-events-auto">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  onClick={(event) => event.stopPropagation()}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isMoving || isTimerActionPending}
+                  aria-label="Timer actions"
+                >
+                  {isTimerActionPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <TimerIcon className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Timer</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => {
+                    handleTimerActionSelect("review");
+                  }}
+                  disabled={isMoving || isTimerActionPending}
+                >
+                  <MessageCircleCodeIcon className="mr-2 h-3.5 w-3.5" />
+                  Review
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    handleTimerActionSelect("develop");
+                  }}
+                  disabled={isMoving || isTimerActionPending}
+                >
+                  <CodeXmlIcon className="mr-2 h-3.5 w-3.5" />
+                  Develop
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           {/* Move menu - shown on hover */}
           <div className="pointer-events-auto">
             <DropdownMenu>

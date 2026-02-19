@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { DefaultMutationOptions } from "./mutations";
+import { DefaultMutationOptions, MutationFnAsync } from "./mutations";
 import { z } from "zod";
 import { timeTrackingQueries } from "../queries/time-tracking";
 import { useTimeTrackingActions } from "@/hooks/useTimeTrackingStore";
@@ -233,6 +233,8 @@ export type StartTimerPayload = {
   activityName?: string;
 };
 
+export type StartTimerMutationAsync = MutationFnAsync<typeof useStartTimer>;
+
 export type SaveTimerPayload = {
   userNote?: string;
 };
@@ -245,6 +247,8 @@ export type EditTimerPayload = {
   activityName?: string;
   startTime?: string;
 };
+
+export type EditTimerMutationAsync = MutationFnAsync<typeof useEditTimer>;
 
 export type EditProjectRegistrationPayload = {
   projectRegistrationId: string;

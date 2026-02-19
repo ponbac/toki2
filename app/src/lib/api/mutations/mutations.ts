@@ -15,6 +15,18 @@ export type DefaultMutationOptions<
   "mutationKey" | "mutationFn"
 >;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type MutationFn<T> = T extends (...args: any[]) => { mutate: infer M }
+  ? M
+  : never;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type MutationFnAsync<T> = T extends (...args: any[]) => {
+  mutateAsync: infer M;
+}
+  ? M
+  : never;
+
 export const mutations = {
   ...differsMutations,
   ...repositoriesMutations,

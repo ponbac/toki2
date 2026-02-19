@@ -19,13 +19,7 @@ import { queries } from "@/lib/api/queries/queries";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import dayjs from "dayjs";
-import {
-  ClipboardCopy,
-  CodeXmlIcon,
-  MessageCircleCodeIcon,
-  TimerIcon,
-} from "lucide-react";
-import { toast } from "sonner";
+import { CodeXmlIcon, MessageCircleCodeIcon } from "lucide-react";
 import Markdown from "react-markdown";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -38,6 +32,8 @@ import React from "react";
 import { PRNotificationSettings } from "../-components/pr-notification-settings";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import { buildWorkItemTimeReportText } from "@/lib/time-report";
+import { copyAndSyncTimeReport } from "@/lib/time-report-actions";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
@@ -70,51 +66,28 @@ function PRDetailsDialog() {
     if (!workItem) {
       return `!${prId} - ${mode === "review" ? "[CR] " : ""}${pr?.title}`;
     }
-    const parentWorkItem = workItem.parentId;
-    return `${parentWorkItem ? `#${parentWorkItem} ` : ""}#${workItem.id} - ${mode === "review" ? "[CR] " : ""}${workItem.title}`;
+
+    return buildWorkItemTimeReportText({
+      workItemId: workItem.id,
+      title: workItem.title,
+      parentWorkItemId: workItem.parentId,
+      mode,
+    });
   };
 
   const handleTimeReportClick = async (mode: "review" | "develop") => {
     const text = buildTimeReportText(mode);
 
-    // Always copy to clipboard
-    navigator.clipboard.writeText(text);
-    toast.info(
-      <div className="flex flex-row items-center">
-        <ClipboardCopy className="mr-2 inline-block" size="1.25rem" />
-        <p className="text-pretty">
-          Copied <span className="font-mono">{text}</span> to clipboard
-        </p>
-      </div>,
-    );
-
-    // Only proceed with timer operations if query succeeded
-    if (!timerQuerySuccess) return;
-
-    try {
-      if (timer) {
-        // Update existing timer note
-        await editTimer({ userNote: text });
-        toast.success(
-          <div className="flex flex-row items-center">
-            <TimerIcon className="mr-2 inline-block" size="1.25rem" />
-            Timer note updated
-          </div>,
-        );
-      } else if (timer === null) {
-        // No active timer - start a new timer
-        await startTimer({ userNote: text });
-        toast.success(
-          <div className="flex flex-row items-center">
-            <TimerIcon className="mr-2 inline-block" size="1.25rem" />
-            Timer started
-          </div>,
-        );
-      }
-    } catch {
-      // Silently fail - clipboard copy already succeeded
-      console.warn("Found no active timer to update");
-    }
+    await copyAndSyncTimeReport({
+      text,
+      timer,
+      timerQuerySuccess,
+      startTimer,
+      editTimer,
+      onTimerSyncError: () => {
+        console.warn("Found no active timer to update");
+      },
+    });
   };
 
   if (!pr) {
