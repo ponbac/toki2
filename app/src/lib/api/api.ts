@@ -4,7 +4,7 @@ import ky from "ky";
 
 const API_URL =
   import.meta.env.MODE === "development"
-    ? "http://localhost:8080"
+    ? "http://localhost:8180"
     : "https://toki-api.spinit.se";
 
 export const api = ky.create({

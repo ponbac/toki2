@@ -1,10 +1,10 @@
 application:
   host: "127.0.0.1"
   app_url: "http://localhost:5173"
-  api_url: "http://localhost:8080"
+  api_url: "http://localhost:8180"
   cookie_domain: "localhost"
   disable_auth: false
 database:
   require_ssl: false
 auth:
-  redirect_url: "http://localhost:8080/oauth/callback"
+  redirect_url: "http://localhost:8180/oauth/callback"

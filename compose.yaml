@@ -4,7 +4,7 @@ services:
       context: .
       target: final
     ports:
-      - 8080:8080
+      - 8180:8180
     depends_on:
       db:
         condition: service_healthy
