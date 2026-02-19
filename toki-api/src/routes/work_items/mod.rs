@@ -404,7 +404,6 @@ async fn build_pull_request_approval_index(
     .await;
 
     for (repository_id, cached_pull_requests) in cached_repo_pull_requests.into_iter().flatten() {
-
         for pull_request in cached_pull_requests {
             let pull_request_id = pull_request.pull_request_base.id.to_string();
             if !referenced_pr_ids.contains(&pull_request_id) {
@@ -780,6 +779,8 @@ mod tests {
             created_by: None,
             description: None,
             description_rendered_html: None,
+            repro_steps: None,
+            repro_steps_rendered_html: None,
             acceptance_criteria: None,
             iteration_path: None,
             area_path: None,

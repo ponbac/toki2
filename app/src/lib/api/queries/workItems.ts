@@ -53,6 +53,8 @@ export type BoardWorkItem = {
   createdBy: WorkItemPerson | null;
   description: string | null;
   descriptionRenderedHtml: string | null;
+  reproSteps: string | null;
+  reproStepsRenderedHtml: string | null;
   acceptanceCriteria: string | null;
   iterationPath: string | null;
   areaPath: string | null;

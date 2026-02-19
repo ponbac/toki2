@@ -25,6 +25,7 @@ pub struct WorkItem {
     pub created_by: Option<Identity>,
     pub relations: Vec<WorkItemRelation>,
     pub description: Option<String>,
+    pub repro_steps: Option<String>,
     pub acceptance_criteria: Option<String>,
     pub iteration_path: Option<String>,
     pub area_path: Option<String>,
@@ -94,6 +95,11 @@ impl From<AzureWorkItem> for WorkItem {
             description: work_item
                 .fields
                 .get("System.Description")
+                .and_then(|value| value.as_str())
+                .map(|s| s.to_owned()),
+            repro_steps: work_item
+                .fields
+                .get("Microsoft.VSTS.TCM.ReproSteps")
                 .and_then(|value| value.as_str())
                 .map(|s| s.to_owned()),
             acceptance_criteria: work_item

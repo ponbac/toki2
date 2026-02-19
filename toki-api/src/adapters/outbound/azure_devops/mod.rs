@@ -208,9 +208,9 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         &self,
         work_item_id: &str,
     ) -> Result<Vec<WorkItemComment>, WorkItemError> {
-        let id: i32 = work_item_id
-            .parse()
-            .map_err(|_| WorkItemError::InvalidInput(format!("Invalid work item ID: {work_item_id}")))?;
+        let id: i32 = work_item_id.parse().map_err(|_| {
+            WorkItemError::InvalidInput(format!("Invalid work item ID: {work_item_id}"))
+        })?;
 
         let ado_comments = self
             .client
@@ -229,9 +229,9 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         &self,
         work_item_id: &str,
     ) -> Result<(String, bool), WorkItemError> {
-        let id: i32 = work_item_id
-            .parse()
-            .map_err(|_| WorkItemError::InvalidInput(format!("Invalid work item ID: {work_item_id}")))?;
+        let id: i32 = work_item_id.parse().map_err(|_| {
+            WorkItemError::InvalidInput(format!("Invalid work item ID: {work_item_id}"))
+        })?;
 
         // Fetch raw ADO work item (need raw HTML for image detection)
         let ado_items = self
@@ -244,20 +244,15 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             WorkItemError::ProviderError(format!("Work item {work_item_id} not found"))
         })?;
         let raw_description = ado_item.description.clone();
+        let raw_repro_steps = ado_item.repro_steps.clone();
         let raw_acceptance_criteria = ado_item.acceptance_criteria.clone();
 
         // Detect images in raw HTML before conversion
-        let mut has_images = false;
-        if let Some(desc) = raw_description.as_deref() {
-            if html_contains_images(desc) {
-                has_images = true;
-            }
-        }
-        if let Some(ac) = raw_acceptance_criteria.as_deref() {
-            if html_contains_images(ac) {
-                has_images = true;
-            }
-        }
+        let mut has_images = contains_images([
+            raw_description.as_deref(),
+            raw_repro_steps.as_deref(),
+            raw_acceptance_criteria.as_deref(),
+        ]);
 
         // Convert to domain model
         let org = self.client.organization();
@@ -294,6 +289,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
 
         // Convert HTML fields to Markdown (richer than strip_html)
         let description_md = raw_description.as_deref().map(html_to_markdown);
+        let repro_steps_md = raw_repro_steps.as_deref().map(html_to_markdown);
         let acceptance_criteria_md = raw_acceptance_criteria.as_deref().map(html_to_markdown);
 
         // Fetch comments
@@ -304,11 +300,10 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             .map_err(|e| WorkItemError::ProviderError(e.to_string()))?;
 
         // Check comment HTML for images too
-        for comment in &ado_comments {
-            if !comment.is_deleted && html_contains_images(&comment.text) {
-                has_images = true;
-            }
-        }
+        has_images = has_images
+            || ado_comments
+                .iter()
+                .any(|comment| !comment.is_deleted && html_contains_images(&comment.text));
 
         let comments: Vec<WorkItemComment> = ado_comments
             .into_iter()
@@ -320,6 +315,7 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         let markdown = build_llm_markdown(
             &domain_item,
             description_md,
+            repro_steps_md,
             acceptance_criteria_md,
             &comments,
             org,
@@ -569,10 +565,25 @@ fn escape_wiql_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
 }
 
+fn contains_images<'a>(fragments: impl IntoIterator<Item = Option<&'a str>>) -> bool {
+    fragments.into_iter().flatten().any(html_contains_images)
+}
+
+fn append_markdown_section(md: &mut String, title: &str, body: Option<&str>) {
+    let Some(body) = body.map(str::trim).filter(|body| !body.is_empty()) else {
+        return;
+    };
+
+    writeln!(md).unwrap();
+    writeln!(md, "### {title}").unwrap();
+    writeln!(md, "{body}").unwrap();
+}
+
 /// Build a Markdown document from a work item and its comments, for LLM consumption.
 fn build_llm_markdown(
     item: &WorkItem,
     description_md: Option<String>,
+    repro_steps_md: Option<String>,
     acceptance_criteria_md: Option<String>,
     comments: &[WorkItemComment],
     org: &str,
@@ -661,23 +672,13 @@ fn build_llm_markdown(
         writeln!(md, "**Tags:** {}", item.tags.join(", ")).unwrap();
     }
 
-    if let Some(ref desc) = description_md {
-        let desc = desc.trim();
-        if !desc.is_empty() {
-            writeln!(md).unwrap();
-            writeln!(md, "### Description").unwrap();
-            writeln!(md, "{desc}").unwrap();
-        }
-    }
-
-    if let Some(ref ac) = acceptance_criteria_md {
-        let ac = ac.trim();
-        if !ac.is_empty() {
-            writeln!(md).unwrap();
-            writeln!(md, "### Acceptance Criteria").unwrap();
-            writeln!(md, "{ac}").unwrap();
-        }
-    }
+    append_markdown_section(&mut md, "Description", description_md.as_deref());
+    append_markdown_section(
+        &mut md,
+        "Acceptance Criteria",
+        acceptance_criteria_md.as_deref(),
+    );
+    append_markdown_section(&mut md, "Repro Steps", repro_steps_md.as_deref());
 
     if let Some(ref parent) = item.parent {
         writeln!(md).unwrap();
