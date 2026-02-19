@@ -25,8 +25,8 @@ DB_USER=${POSTGRES_USER:=postgres}
 DB_PASSWORD="${POSTGRES_PASSWORD:=password}"
 # Check if a custom database name has been set, otherwise default to 'toki'
 DB_NAME="${POSTGRES_DB:=toki}"
-# Check if a custom port has been set, otherwise default to '5432'
-DB_PORT="${POSTGRES_PORT:=5432}"
+# Check if a custom port has been set, otherwise default to '5433'
+DB_PORT="${POSTGRES_PORT:=5433}"
 # Check if a custom host has been set, otherwise default to 'localhost'
 DB_HOST="${POSTGRES_HOST:=localhost}"
 
@@ -53,7 +53,7 @@ done
 
 >&2 echo "Postgres is up and running on port ${DB_PORT} - running migrations now!"
 
-# export DATABASE_URL=postgres://postgres:password@127.0.0.1:5432/newsletter
+# export DATABASE_URL=postgres://postgres:password@127.0.0.1:5433/newsletter
 DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
 export DATABASE_URL
 sqlx database create
