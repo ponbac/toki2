@@ -1,5 +1,6 @@
 mod api;
 mod app;
+mod git;
 mod test_data;
 mod ui;
 
