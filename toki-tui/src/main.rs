@@ -207,10 +207,9 @@ async fn run_app(
                         } else if app.git_mode {
                             // Second key of Ctrl+G sequence
                             match key.code {
-                                KeyCode::Char('b') | KeyCode::Char('B') => app.paste_git_branch_raw(),
-                                KeyCode::Char('p') | KeyCode::Char('P') => app.paste_git_branch_parsed(),
-                                KeyCode::Char('c') | KeyCode::Char('C') => app.paste_git_last_commit(),
-                                KeyCode::Char('d') | KeyCode::Char('D') => app.begin_cwd_change(),
+                                KeyCode::Char('1') => app.paste_git_branch_raw(),
+                                KeyCode::Char('2') => app.paste_git_branch_parsed(),
+                                KeyCode::Char('3') => app.paste_git_last_commit(),
                                 _ => app.exit_git_mode(), // any other key cancels git mode
                             }
                         } else {
@@ -221,9 +220,15 @@ async fn run_app(
                                     app.description_input.clear();
                                 }
                                 KeyCode::Char('g') | KeyCode::Char('G')
-                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                    if key.modifiers.contains(KeyModifiers::CONTROL)
+                                        && app.git_context.branch.is_some() =>
                                 {
                                     app.enter_git_mode();
+                                }
+                                KeyCode::Char('d') | KeyCode::Char('D')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    app.begin_cwd_change();
                                 }
                                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                                     app.input_char(c);

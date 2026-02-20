@@ -1355,27 +1355,28 @@ impl App {
         self.git_mode = false;
     }
 
-    /// Paste raw branch name into description_input.
+    /// Paste raw branch name into description_input (appends to existing text).
     pub fn paste_git_branch_raw(&mut self) {
         self.git_mode = false;
         if let Some(branch) = &self.git_context.branch.clone() {
-            self.description_input = branch.clone();
+            self.description_input.push_str(branch);
         }
     }
 
-    /// Paste parsed branch name into description_input.
+    /// Paste parsed branch name into description_input (appends to existing text).
     pub fn paste_git_branch_parsed(&mut self) {
         self.git_mode = false;
         if let Some(branch) = &self.git_context.branch.clone() {
-            self.description_input = crate::git::parse_branch(branch);
+            self.description_input
+                .push_str(&crate::git::parse_branch(branch));
         }
     }
 
-    /// Paste last commit message into description_input.
+    /// Paste last commit message into description_input (appends to existing text).
     pub fn paste_git_last_commit(&mut self) {
         self.git_mode = false;
         if let Some(commit) = &self.git_context.last_commit.clone() {
-            self.description_input = commit.clone();
+            self.description_input.push_str(commit);
         }
     }
 

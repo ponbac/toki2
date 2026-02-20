@@ -1038,15 +1038,15 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
 
     let git_lines = vec![
         Line::from(vec![
-            Span::styled("Dir:    ", Style::default().fg(muted)),
+            Span::styled("Current directory: ", Style::default().fg(muted)),
             Span::styled(cwd_str, Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
-            Span::styled("Branch: ", Style::default().fg(muted)),
+            Span::styled("Current branch:    ", Style::default().fg(muted)),
             Span::styled(branch_str, Style::default().fg(git_color)),
         ]),
         Line::from(vec![
-            Span::styled("Commit: ", Style::default().fg(muted)),
+            Span::styled("Last commit:       ", Style::default().fg(muted)),
             Span::styled(commit_str, Style::default().fg(git_color)),
         ]),
     ];
@@ -1054,7 +1054,7 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
     let git_panel = Paragraph::new(git_lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" Git ")
+            .title(" Info ")
             .padding(Padding::horizontal(1)),
     );
     frame.render_widget(git_panel, chunks[2]);
@@ -1063,13 +1063,13 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
     let controls_text: Vec<Span> = if app.cwd_input.is_some() {
         vec![
             Span::styled("Type", Style::default().fg(Color::Yellow)),
-            Span::raw(": path  "),
+            Span::raw(": Path  "),
             Span::styled("Tab", Style::default().fg(Color::Yellow)),
-            Span::raw(": complete  "),
+            Span::raw(": Complete  "),
             Span::styled("Enter", Style::default().fg(Color::Yellow)),
-            Span::raw(": confirm  "),
+            Span::raw(": Confirm  "),
             Span::styled("Esc", Style::default().fg(Color::Yellow)),
-            Span::raw(": cancel"),
+            Span::raw(": Cancel"),
         ]
     } else if app.git_mode {
         let git_key_style = if has_git {
@@ -1078,17 +1078,14 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
             Style::default().fg(Color::DarkGray)
         };
         vec![
-            Span::styled("[git mode] ", Style::default().fg(Color::Cyan)),
-            Span::styled("B", git_key_style),
-            Span::raw(": raw branch  "),
-            Span::styled("P", git_key_style),
-            Span::raw(": parsed branch  "),
-            Span::styled("C", git_key_style),
-            Span::raw(": last commit  "),
-            Span::styled("D", Style::default().fg(Color::Yellow)),
-            Span::raw(": change dir  "),
+            Span::styled("1", git_key_style),
+            Span::raw(": Copy/paste branch  "),
+            Span::styled("2", git_key_style),
+            Span::raw(": Parse & paste branch  "),
+            Span::styled("3", git_key_style),
+            Span::raw(": Copy/paste last commit  "),
             Span::styled("Esc", Style::default().fg(Color::Yellow)),
-            Span::raw(": cancel"),
+            Span::raw(": Cancel"),
         ]
     } else {
         let git_key_style = if has_git {
@@ -1098,15 +1095,24 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
         };
         vec![
             Span::styled("Type", Style::default().fg(Color::Yellow)),
-            Span::raw(": edit  "),
+            Span::raw(": Edit  "),
             Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
-            Span::raw(": clear  "),
+            Span::raw(": Clear  "),
             Span::styled("Enter", Style::default().fg(Color::Yellow)),
-            Span::raw(": confirm  "),
+            Span::raw(": Confirm  "),
             Span::styled("Esc", Style::default().fg(Color::Yellow)),
-            Span::raw(": cancel  "),
+            Span::raw(": Cancel  "),
+            Span::styled("Ctrl+D", Style::default().fg(Color::Yellow)),
+            Span::raw(": Change directory  "),
             Span::styled("Ctrl+G", git_key_style),
-            Span::raw(": git…"),
+            Span::styled(
+                ": Git quick commands",
+                Style::default().fg(if has_git {
+                    Color::Reset
+                } else {
+                    Color::DarkGray
+                }),
+            ),
         ]
     };
 
