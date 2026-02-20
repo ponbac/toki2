@@ -32,7 +32,7 @@ pub enum View {
 pub enum SaveAction {
     ContinueSameProject,
     ContinueNewProject,
-    SaveAndPause,
+    SaveAndStop,
     Cancel,
 }
 
@@ -1248,8 +1248,8 @@ impl App {
     pub fn select_next_save_action(&mut self) {
         self.selected_save_action = match self.selected_save_action {
             SaveAction::ContinueSameProject => SaveAction::ContinueNewProject,
-            SaveAction::ContinueNewProject => SaveAction::SaveAndPause,
-            SaveAction::SaveAndPause => SaveAction::Cancel,
+            SaveAction::ContinueNewProject => SaveAction::SaveAndStop,
+            SaveAction::SaveAndStop => SaveAction::Cancel,
             SaveAction::Cancel => SaveAction::ContinueSameProject,
         };
     }
@@ -1259,8 +1259,8 @@ impl App {
         self.selected_save_action = match self.selected_save_action {
             SaveAction::ContinueSameProject => SaveAction::Cancel,
             SaveAction::ContinueNewProject => SaveAction::ContinueSameProject,
-            SaveAction::SaveAndPause => SaveAction::ContinueNewProject,
-            SaveAction::Cancel => SaveAction::SaveAndPause,
+            SaveAction::SaveAndStop => SaveAction::ContinueNewProject,
+            SaveAction::Cancel => SaveAction::SaveAndStop,
         };
     }
 
@@ -1269,7 +1269,7 @@ impl App {
         self.selected_save_action = match num {
             1 => SaveAction::ContinueSameProject,
             2 => SaveAction::ContinueNewProject,
-            3 => SaveAction::SaveAndPause,
+            3 => SaveAction::SaveAndStop,
             4 => SaveAction::Cancel,
             _ => return,
         };

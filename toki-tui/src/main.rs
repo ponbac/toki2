@@ -499,9 +499,22 @@ async fn run_app(
                                     app.focused_this_week_index = None;
                                 }
                             }
-                            // Space: Start timer (backwards compat)
+                            // Space: Start timer or Save & Stop
                             KeyCode::Char(' ') => {
-                                handle_start_timer(app)?;
+                                match app.timer_state {
+                                    app::TimerState::Stopped => {
+                                        handle_start_timer(app)?;
+                                    }
+                                    app::TimerState::Running => {
+                                        if !app.has_project_activity() {
+                                            app.set_status("Cannot save: Please select Project / Activity first (press P)".to_string());
+                                        } else {
+                                            // Save & stop directly without showing dialog
+                                            app.selected_save_action = app::SaveAction::SaveAndStop;
+                                            handle_save_timer_with_action(app, db).await?;
+                                        }
+                                    }
+                                }
                             }
                             // P: Select project
                             KeyCode::Char('p') | KeyCode::Char('P') => {
@@ -629,7 +642,7 @@ async fn handle_save_timer_with_action(app: &mut App, db: &api::Database) -> Res
                             duration_str
                         ));
                     }
-                    app::SaveAction::SaveAndPause => {
+                    app::SaveAction::SaveAndStop => {
                         // Stop timer, keep everything
                         app.timer_state = app::TimerState::Stopped;
                         app.absolute_start = None;

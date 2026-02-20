@@ -924,9 +924,9 @@ fn render_status(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
 fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
     let line1 = vec![
         Span::styled("Space", Style::default().fg(Color::Yellow)),
-        Span::raw(": Start  "),
+        Span::raw(": Start/Stop  "),
         Span::styled("Ctrl+S", Style::default().fg(Color::Yellow)),
-        Span::raw(": Save  "),
+        Span::raw(": Save (options)  "),
         Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
         Span::raw(": Clear  "),
         Span::styled(
@@ -1033,7 +1033,7 @@ fn render_save_action_dialog(frame: &mut Frame, app: &App) {
     let options = [
         "1. Save & continue (same project)",
         "2. Save & continue (new project)",
-        "3. Save & pause",
+        "3. Save & stop",
         "4. Cancel",
     ];
 
@@ -1044,7 +1044,7 @@ fn render_save_action_dialog(frame: &mut Frame, app: &App) {
             let action = match i {
                 0 => SaveAction::ContinueSameProject,
                 1 => SaveAction::ContinueNewProject,
-                2 => SaveAction::SaveAndPause,
+                2 => SaveAction::SaveAndStop,
                 3 => SaveAction::Cancel,
                 _ => unreachable!(),
             };
