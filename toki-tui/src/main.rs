@@ -50,10 +50,11 @@ async fn main() -> Result<()> {
     // Create app state
     let mut app = App::new(user_id);
 
-    // Load timer history
-    match db.get_timer_history(user_id, 50).await {
+    // Load timer history (fetch more entries for month coverage)
+    match db.get_timer_history(user_id, 500).await {
         Ok(history) => {
             app.update_history(history);
+            app.rebuild_history_list();
         }
         Err(e) => {
             eprintln!("Warning: Could not load history: {}", e);
@@ -97,8 +98,7 @@ async fn run_app(
                 match &app.current_view {
                     app::View::SelectProject => {
                         // Save edit state and running timer state before any selection
-                        let had_edit_state = app.today_edit_state.is_some();
-                        let saved_edit_state = app.today_edit_state.clone();
+                        let had_edit_state = app.is_in_edit_mode();
                         // Save running timer's project/activity
                         let saved_selected_project = app.selected_project.clone();
                         let saved_selected_activity = app.selected_activity.clone();
@@ -121,12 +121,8 @@ async fn run_app(
                                 app.confirm_selection();
                                 // If we were in edit mode, restore with selected project AND restore running timer state
                                 if had_edit_state {
-                                    if let Some(mut edit_state) = saved_edit_state {
-                                        if let Some(project) = app.selected_project.clone() {
-                                            edit_state.project_id = Some(project.id.clone());
-                                            edit_state.project_name = Some(project.name.clone());
-                                        }
-                                        app.today_edit_state = Some(edit_state);
+                                    if let Some(project) = app.selected_project.clone() {
+                                        app.update_edit_state_project(project.id.clone(), project.name.clone());
                                     }
                                     // Restore running timer's project/activity
                                     app.selected_project = saved_selected_project;
@@ -142,8 +138,7 @@ async fn run_app(
                     }
                     app::View::SelectActivity => {
                         // Save edit state and running timer state before any selection
-                        let was_in_edit_mode = app.today_edit_state.is_some();
-                        let saved_edit_state = app.today_edit_state.clone();
+                        let was_in_edit_mode = app.is_in_edit_mode();
                         let saved_selected_project = app.selected_project.clone();
                         let saved_selected_activity = app.selected_activity.clone();
                         
@@ -166,20 +161,22 @@ async fn run_app(
                                 
                                 // If we were in edit mode, restore edit state with selected activity AND restore running timer state
                                 if was_in_edit_mode {
-                                    if let Some(mut edit_state) = saved_edit_state {
-                                        if let Some(activity) = app.selected_activity.clone() {
-                                            edit_state.activity_id = Some(activity.id.clone());
-                                            edit_state.activity_name = Some(activity.name.clone());
-                                        }
-                                        app.today_edit_state = Some(edit_state);
+                                    if let Some(activity) = app.selected_activity.clone() {
+                                        app.update_edit_state_activity(activity.id.clone(), activity.name.clone());
                                     }
                                     // Restore running timer's project/activity
                                     app.selected_project = saved_selected_project;
                                     app.selected_activity = saved_selected_activity;
-                                    // Navigate to Timer but stay in Today edit mode with Activity field focused
-                                    app.navigate_to(app::View::Timer);
-                                    app.focused_box = app::FocusedBox::Today;
-                                    app.today_edit_set_focused_field(app::TodayEditField::Activity);
+                                    // Navigate back to the appropriate view
+                                    let return_view = app.get_return_view_from_edit();
+                                    app.navigate_to(return_view);
+                                    if return_view == app::View::Timer {
+                                        app.focused_box = app::FocusedBox::Today;
+                                        app.entry_edit_set_focused_field(app::EntryEditField::Activity);
+                                    } else {
+                                        app.focused_box = app::FocusedBox::Today; // Not used in History view but keep consistent
+                                        app.entry_edit_set_focused_field(app::EntryEditField::Activity);
+                                    }
                                 }
                             }
                             KeyCode::Esc => app.cancel_selection(),
@@ -188,7 +185,7 @@ async fn run_app(
                         }
                     }
                     app::View::EditDescription => {
-                        let was_in_edit_mode = app.today_edit_state.is_some();
+                        let was_in_edit_mode = app.is_in_edit_mode();
                         
                         match key.code {
                             KeyCode::Char('x') | KeyCode::Char('X') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -201,17 +198,17 @@ async fn run_app(
                             KeyCode::Enter => {
                                 // If in edit mode, save to edit state
                                 if was_in_edit_mode {
-                                    if let Some(mut edit_state) = app.today_edit_state.take() {
-                                        edit_state.note = app.description_input.clone();
-                                        app.today_edit_state = Some(edit_state);
-                                    }
+                                    app.update_edit_state_note(app.description_input.clone());
                                     // Restore running timer's note
                                     if let Some(saved_note) = app.saved_timer_note.take() {
                                         app.description_input = saved_note;
                                     }
-                                    // Navigate to Timer but keep focused on Today box with edit state
-                                    app.navigate_to(app::View::Timer);
-                                    app.focused_box = app::FocusedBox::Today;
+                                    // Navigate back to the appropriate view
+                                    let return_view = app.get_return_view_from_edit();
+                                    app.navigate_to(return_view);
+                                    if return_view == app::View::Timer {
+                                        app.focused_box = app::FocusedBox::Today;
+                                    }
                                 } else {
                                     app.confirm_description();
                                 }
@@ -223,8 +220,11 @@ async fn run_app(
                                     if let Some(saved_note) = app.saved_timer_note.take() {
                                         app.description_input = saved_note;
                                     }
-                                    app.navigate_to(app::View::Timer);
-                                    app.focused_box = app::FocusedBox::Today;
+                                    let return_view = app.get_return_view_from_edit();
+                                    app.navigate_to(return_view);
+                                    if return_view == app::View::Timer {
+                                        app.focused_box = app::FocusedBox::Today;
+                                    }
                                 } else {
                                     app.cancel_selection();
                                 }
@@ -262,14 +262,96 @@ async fn run_app(
                         }
                     }
                     app::View::History => {
-                        match key.code {
-                            KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
-                            KeyCode::Down | KeyCode::Char('j') => app.select_next(),
-                            KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Esc => {
-                                app.navigate_to(app::View::Timer);
+                        // Check if we're in edit mode
+                        if app.history_edit_state.is_some() {
+                            match key.code {
+                                // Tab: next field
+                                KeyCode::Tab => {
+                                    app.entry_edit_next_field();
+                                }
+                                KeyCode::BackTab => {
+                                    app.entry_edit_prev_field();
+                                }
+                                // Arrow keys: navigate fields
+                                KeyCode::Down | KeyCode::Char('j') => {
+                                    app.entry_edit_next_field();
+                                }
+                                KeyCode::Up | KeyCode::Char('k') => {
+                                    app.entry_edit_prev_field();
+                                }
+                                KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L') => {
+                                    app.entry_edit_next_field();
+                                }
+                                KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('H') => {
+                                    app.entry_edit_prev_field();
+                                }
+                                // Number keys for time input
+                                KeyCode::Char(c) if c.is_ascii_digit() => {
+                                    app.entry_edit_input_char(c);
+                                }
+                                KeyCode::Backspace => {
+                                    app.entry_edit_backspace();
+                                }
+                                // Enter: edit field or move to next field for times
+                                KeyCode::Enter => {
+                                    if let Some(state) = &app.history_edit_state {
+                                        match state.focused_field {
+                                            app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
+                                                // Move to next field
+                                                app.entry_edit_next_field();
+                                            }
+                                            _ => {
+                                                handle_entry_edit_enter(app);
+                                            }
+                                        }
+                                    }
+                                }
+                                // Ctrl+X: Clear time field (when focused on time input)
+                                KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    if let Some(state) = &app.history_edit_state {
+                                        match state.focused_field {
+                                            app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
+                                                app.entry_edit_clear_time();
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                                // Escape: save and exit edit mode
+                                KeyCode::Esc => {
+                                    if let Some(error) = app.entry_edit_validate() {
+                                        app.entry_edit_revert_invalid_times();
+                                        app.set_status(format!("Edit cancelled: {}", error));
+                                        app.exit_history_edit_mode();
+                                    } else {
+                                        handle_history_edit_save(app, db).await?;
+                                    }
+                                }
+                                // P: select project
+                                KeyCode::Char('p') | KeyCode::Char('P') => {
+                                    app.navigate_to(app::View::SelectProject);
+                                }
+                                // Q: quit
+                                KeyCode::Char('q') | KeyCode::Char('Q') => {
+                                    app.quit();
+                                }
+                                _ => {}
                             }
-                            KeyCode::Char('q') | KeyCode::Char('Q') => app.quit(),
-                            _ => {}
+                        } else {
+                            // Not in edit mode
+                            match key.code {
+                                KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
+                                KeyCode::Down | KeyCode::Char('j') => app.select_next(),
+                                KeyCode::Enter => {
+                                    // Enter edit mode
+                                    app.enter_history_edit_mode();
+                                }
+                                KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Esc => {
+                                    app.navigate_to(app::View::Timer);
+                                }
+                                KeyCode::Char('q') | KeyCode::Char('Q') => app.quit(),
+                                _ => {}
+                            }
                         }
                     }
                     app::View::Timer => {
@@ -296,55 +378,56 @@ async fn run_app(
                             }
                             // Tab: Navigate forward between boxes (or next field in edit mode)
                             KeyCode::Tab => {
-                                if app.today_edit_state.is_some() {
-                                    app.today_edit_next_field();
+                                if app.this_week_edit_state.is_some() {
+                                    app.entry_edit_next_field();
                                 } else {
                                     app.focus_next();
                                 }
                             }
                             // Shift+Tab (BackTab): Navigate backward between boxes (or prev field in edit mode)
                             KeyCode::BackTab => {
-                                if app.today_edit_state.is_some() {
-                                    app.today_edit_prev_field();
+                                if app.this_week_edit_state.is_some() {
+                                    app.entry_edit_prev_field();
                                 } else {
                                     app.focus_previous();
                                 }
                             }
-                            // Arrow down / j: Move down (next row in Today, or next field in edit mode)
+                            // Arrow down / j: Move down (next row in This Week, or next field in edit mode)
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.today_edit_state.is_some() {
-                                    app.today_edit_next_field();
+                                if app.this_week_edit_state.is_some() {
+                                    app.entry_edit_next_field();
                                 } else if app.focused_box == app::FocusedBox::Today {
-                                    app.today_focus_down();
+                                    app.this_week_focus_down();
                                 } else {
                                     app.focus_next();
                                 }
                             }
-                            // Arrow up / k: Move up (prev row in Today, or prev field in edit mode)
+                            // Arrow up / k: Move up (prev row in This Week, or prev field in edit mode)
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.today_edit_state.is_some() {
-                                    app.today_edit_prev_field();
+                                if app.this_week_edit_state.is_some() {
+                                    app.entry_edit_prev_field();
                                 } else if app.focused_box == app::FocusedBox::Today {
-                                    app.today_focus_up();
+                                    app.this_week_focus_up();
                                 } else {
                                     app.focus_previous();
                                 }
                             }
                             // Arrow right / l: Next field (edit mode only)
                             KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L') => {
-                                if app.today_edit_state.is_some() {
-                                    app.today_edit_next_field();
+                                if app.this_week_edit_state.is_some() {
+                                    app.entry_edit_next_field();
                                 }
                             }
-                            // Arrow left / h: Prev field (edit mode only)
+                            // Arrow left / h: Prev field (edit mode only) or open History
                             KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('H') => {
-                                if app.today_edit_state.is_some() {
-                                    app.today_edit_prev_field();
-                                } else if app.today_edit_state.is_none() {
+                                if app.this_week_edit_state.is_some() {
+                                    app.entry_edit_prev_field();
+                                } else if app.this_week_edit_state.is_none() {
                                     // Open History view when not in edit mode
-                                    match db.get_timer_history(app.user_id, 50).await {
+                                    match db.get_timer_history(app.user_id, 500).await {
                                         Ok(history) => {
                                             app.update_history(history);
+                                            app.rebuild_history_list();
                                             app.navigate_to(app::View::History);
                                         }
                                         Err(e) => {
@@ -353,19 +436,19 @@ async fn run_app(
                                     }
                                 }
                             }
-                            // Vim-style navigation between boxes (lowercase j/k without modifiers)
-                            // Enter: activate focused box or start timer if Timer box selected
+                            // Enter: activate focused box or move to next field in edit mode
                             KeyCode::Enter => {
-                                if app.today_edit_state.is_some() {
-                                    // Check if focused on time field - clear it for direct re-entry
-                                    if let Some(state) = &app.today_edit_state {
+                                if app.this_week_edit_state.is_some() {
+                                    // Check if focused on time field - move to next field
+                                    if let Some(state) = &app.this_week_edit_state {
                                         match state.focused_field {
-                                            app::TodayEditField::StartTime | app::TodayEditField::EndTime => {
-                                                app.today_edit_clear_time();
+                                            app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
+                                                // Move to next field
+                                                app.entry_edit_next_field();
                                             }
                                             _ => {
                                                 // In edit mode, Enter on Project/Activity/Note opens modal
-                                                handle_today_edit_enter(app);
+                                                handle_entry_edit_enter(app);
                                             }
                                         }
                                     }
@@ -377,10 +460,10 @@ async fn run_app(
                                         }
                                         app::FocusedBox::Today => {
                                             // If no entry selected, default to first entry
-                                            if app.focused_today_index.is_none() && !app.todays_history().is_empty() {
-                                                app.focused_today_index = Some(0);
+                                            if app.focused_this_week_index.is_none() && !app.this_week_history().is_empty() {
+                                                app.focused_this_week_index = Some(0);
                                             }
-                                            app.enter_today_edit_mode();
+                                            app.enter_this_week_edit_mode();
                                         }
                                         _ => {
                                             app.activate_focused_box();
@@ -389,31 +472,31 @@ async fn run_app(
                                 }
                             }
                             // Number keys for time input in edit mode
-                            KeyCode::Char(c) if app.today_edit_state.is_some() && c.is_ascii_digit() => {
-                                app.today_edit_input_char(c);
+                            KeyCode::Char(c) if app.this_week_edit_state.is_some() && c.is_ascii_digit() => {
+                                app.entry_edit_input_char(c);
                             }
                             KeyCode::Backspace => {
-                                if app.today_edit_state.is_some() {
-                                    app.today_edit_backspace();
+                                if app.this_week_edit_state.is_some() {
+                                    app.entry_edit_backspace();
                                 }
                             }
                             // Escape to exit edit mode
                             KeyCode::Esc => {
-                                if app.today_edit_state.is_some() {
+                                if app.this_week_edit_state.is_some() {
                                     // Check validation
-                                    if let Some(error) = app.today_edit_validate() {
+                                    if let Some(error) = app.entry_edit_validate() {
                                         // Revert invalid times and show error
-                                        app.today_edit_revert_invalid_times();
+                                        app.entry_edit_revert_invalid_times();
                                         app.set_status(format!("Edit cancelled: {}", error));
-                                        app.exit_today_edit_mode();
+                                        app.exit_this_week_edit_mode();
                                         app.focused_box = app::FocusedBox::Today;
                                     } else {
                                         // Save changes via API
-                                        handle_today_edit_save(app, db).await?;
+                                        handle_this_week_edit_save(app, db).await?;
                                     }
                                 } else {
                                     app.focused_box = app::FocusedBox::Timer;
-                                    app.focused_today_index = None;
+                                    app.focused_this_week_index = None;
                                 }
                             }
                             // Space: Start timer (backwards compat)
@@ -432,9 +515,22 @@ async fn run_app(
                             KeyCode::Char('t') | KeyCode::Char('T') => {
                                 app.toggle_timer_size();
                             }
-                            // Ctrl+X: Clear timer and reset to default state
+                            // Ctrl+X: Clear time field (when in edit mode on time input) or clear timer
                             KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                app.clear_timer();
+                                if app.this_week_edit_state.is_some() {
+                                    // In edit mode - clear time field if focused on time input
+                                    if let Some(state) = &app.this_week_edit_state {
+                                        match state.focused_field {
+                                            app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
+                                                app.entry_edit_clear_time();
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                } else {
+                                    // Not in edit mode - clear timer
+                                    app.clear_timer();
+                                }
                             }
                             _ => {}
                         }
@@ -562,50 +658,72 @@ async fn handle_save_timer_with_action(app: &mut App, db: &api::Database) -> Res
     Ok(())
 }
 
-// Helper functions for Today edit mode
+// Helper functions for edit mode
 
-/// Handle Enter key in Today edit mode - open modal for Project/Activity/Note or move to next field
-fn handle_today_edit_enter(app: &mut App) {
-    if let Some(state) = &app.today_edit_state {
-        match state.focused_field {
-            app::TodayEditField::Project => {
-                // Save current edit state, open project modal
-                app.navigate_to(app::View::SelectProject);
-            }
-            app::TodayEditField::Activity => {
-                // For activity, we need a project first
-                if state.project_id.is_some() {
-                    app.navigate_to(app::View::SelectActivity);
-                } else {
-                    app.set_status("Please select a project first".to_string());
+/// Handle Enter key in edit mode - open modal for Project/Activity/Note or move to next field
+fn handle_entry_edit_enter(app: &mut App) {
+    // Extract the data we need first to avoid borrow conflicts
+    let action = {
+        if let Some(state) = app.current_edit_state() {
+            match state.focused_field {
+                app::EntryEditField::Project => Some(('P', None)),
+                app::EntryEditField::Activity => {
+                    if state.project_id.is_some() {
+                        Some(('A', None))
+                    } else {
+                        app.set_status("Please select a project first".to_string());
+                        None
+                    }
+                }
+                app::EntryEditField::Note => {
+                    let note = state.note.clone();
+                    Some(('N', Some(note)))
+                }
+                app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
+                    // Move to next field (like Tab)
+                    app.entry_edit_next_field();
+                    None
                 }
             }
-            app::TodayEditField::Note => {
+        } else {
+            None
+        }
+    };
+
+    // Now perform actions that don't require the borrow
+    if let Some((action, note)) = action {
+        match action {
+            'P' => {
+                app.navigate_to(app::View::SelectProject);
+            }
+            'A' => {
+                app.navigate_to(app::View::SelectActivity);
+            }
+            'N' => {
                 // Save running timer's note before overwriting with entry's note
                 app.saved_timer_note = Some(app.description_input.clone());
                 // Set description_input from the edit state before navigating
-                app.description_input = state.note.clone();
+                if let Some(n) = note {
+                    app.description_input = n;
+                }
                 // Open description editor
                 app.navigate_to(app::View::EditDescription);
             }
-            app::TodayEditField::StartTime | app::TodayEditField::EndTime => {
-                // Move to next field (like Tab)
-                app.today_edit_next_field();
-            }
+            _ => {}
         }
     }
 }
 
-/// Save changes from Today edit mode to database
-async fn handle_today_edit_save(app: &mut App, db: &api::Database) -> Result<()> {
-    if let Some(state) = &app.today_edit_state {
+/// Save changes from This Week edit mode to database
+async fn handle_this_week_edit_save(app: &mut App, db: &api::Database) -> Result<()> {
+    if let Some(state) = &app.this_week_edit_state {
         // Parse the time inputs
         let start_parts: Vec<&str> = state.start_time_input.split(':').collect();
         let end_parts: Vec<&str> = state.end_time_input.split(':').collect();
 
         if start_parts.len() != 2 || end_parts.len() != 2 {
             app.set_status("Error: Invalid time format".to_string());
-            app.exit_today_edit_mode();
+            app.exit_this_week_edit_mode();
             return Ok(());
         }
 
@@ -615,14 +733,14 @@ async fn handle_today_edit_save(app: &mut App, db: &api::Database) -> Result<()>
         let end_mins: u8 = end_parts[1].parse().unwrap_or(0);
 
         // Get the entry being edited to preserve the date
-        let todays = app.todays_history();
-        let entry_date = todays
+        let entries = app.this_week_history();
+        let entry_date = entries
             .iter()
             .find(|e| e.id == state.entry_id)
             .map(|e| e.start_time.date())
             .unwrap_or_else(|| time::OffsetDateTime::now_utc().date());
 
-        // Construct new times (using today's date, treating input as local time)
+        // Construct new times (using entry's date, treating input as local time)
         let local_offset = time::UtcOffset::current_local_offset()
             .unwrap_or(time::UtcOffset::UTC);
         
@@ -652,9 +770,10 @@ async fn handle_today_edit_save(app: &mut App, db: &api::Database) -> Result<()>
             Ok(_) => {
                 app.set_status("Entry updated successfully".to_string());
                 // Refresh history
-                match db.get_timer_history(app.user_id, 50).await {
+                match db.get_timer_history(app.user_id, 500).await {
                     Ok(history) => {
                         app.update_history(history);
+                        app.rebuild_history_list();
                     }
                     Err(e) => {
                         app.set_status(format!("Warning: Could not refresh history: {}", e));
@@ -667,6 +786,82 @@ async fn handle_today_edit_save(app: &mut App, db: &api::Database) -> Result<()>
         }
     }
 
-    app.exit_today_edit_mode();
+    app.exit_this_week_edit_mode();
+    Ok(())
+}
+
+/// Save changes from History edit mode to database
+async fn handle_history_edit_save(app: &mut App, db: &api::Database) -> Result<()> {
+    if let Some(state) = &app.history_edit_state {
+        // Parse the time inputs
+        let start_parts: Vec<&str> = state.start_time_input.split(':').collect();
+        let end_parts: Vec<&str> = state.end_time_input.split(':').collect();
+
+        if start_parts.len() != 2 || end_parts.len() != 2 {
+            app.set_status("Error: Invalid time format".to_string());
+            app.exit_history_edit_mode();
+            return Ok(());
+        }
+
+        let start_hours: u8 = start_parts[0].parse().unwrap_or(0);
+        let start_mins: u8 = start_parts[1].parse().unwrap_or(0);
+        let end_hours: u8 = end_parts[0].parse().unwrap_or(0);
+        let end_mins: u8 = end_parts[1].parse().unwrap_or(0);
+
+        // Get the entry being edited to preserve the date
+        let entry_date = app
+            .timer_history
+            .iter()
+            .find(|e| e.id == state.entry_id)
+            .map(|e| e.start_time.date())
+            .unwrap_or_else(|| time::OffsetDateTime::now_utc().date());
+
+        // Construct new times (using entry's date, treating input as local time)
+        let local_offset = time::UtcOffset::current_local_offset()
+            .unwrap_or(time::UtcOffset::UTC);
+        
+        let start_time = time::OffsetDateTime::new_in_offset(
+            entry_date,
+            time::Time::from_hms(start_hours, start_mins, 0).unwrap(),
+            local_offset,
+        );
+        
+        let end_time = time::OffsetDateTime::new_in_offset(
+            entry_date,
+            time::Time::from_hms(end_hours, end_mins, 0).unwrap(),
+            local_offset,
+        );
+
+        // Update via API
+        match db.update_timer_entry(
+            state.entry_id,
+            start_time,
+            end_time,
+            state.project_id.clone(),
+            state.project_name.clone(),
+            state.activity_id.clone(),
+            state.activity_name.clone(),
+            Some(state.note.clone()),
+        ).await {
+            Ok(_) => {
+                app.set_status("Entry updated successfully".to_string());
+                // Refresh history
+                match db.get_timer_history(app.user_id, 500).await {
+                    Ok(history) => {
+                        app.update_history(history);
+                        app.rebuild_history_list();
+                    }
+                    Err(e) => {
+                        app.set_status(format!("Warning: Could not refresh history: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                app.set_status(format!("Error updating entry: {}", e));
+            }
+        }
+    }
+
+    app.exit_history_edit_mode();
     Ok(())
 }

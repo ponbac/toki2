@@ -1,4 +1,4 @@
-use crate::app::{App, SaveAction, View};
+use crate::app::{App, EntryEditField, EntryEditState, SaveAction, View};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -61,7 +61,7 @@ fn render_timer_view(frame: &mut Frame, app: &App) {
     render_description(frame, chunks[3], app);
 
     // Today's history
-    render_todays_history(frame, chunks[4], app);
+    render_this_week_history(frame, chunks[4], app);
 
     // Status message
     render_status(frame, chunks[5], app);
@@ -82,126 +82,132 @@ fn render_history_view(frame: &mut Frame, app: &App) {
         .split(frame.size());
 
     // Header
-    let title = Paragraph::new("Timer History")
+    let title = Paragraph::new("Timer History (Last 30 Days)")
         .style(Style::default().fg(Color::Cyan))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(title, chunks[0]);
 
-    // History list - grouped by date
-    let mut items: Vec<ListItem> = Vec::new();
-    let mut last_date: Option<time::Date> = None;
+    let month_ago = time::OffsetDateTime::now_utc() - time::Duration::days(30);
+    let entries: Vec<(usize, &crate::api::database::TimerHistoryEntry)> = app
+        .timer_history
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.start_time >= month_ago)
+        .collect();
 
-    for entry in &app.timer_history {
-        let entry_date = entry.start_time.date();
+    if entries.is_empty() {
+        let empty_msg = Paragraph::new("No entries in the last 30 days")
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title(" History "));
+        frame.render_widget(empty_msg, chunks[1]);
+    } else {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(format!(" History ({} entries) ", entries.len()))
+            .padding(ratatui::widgets::Padding::horizontal(1));
 
-        // Add date separator if this is a new date
-        if last_date != Some(entry_date) {
-            // Format date as "Today", "Yesterday", or full date
-            let today = time::OffsetDateTime::now_utc().date();
-            let yesterday = today - time::Duration::days(1);
+        let inner_area = block.inner(chunks[1]);
+        frame.render_widget(block, chunks[1]);
 
-            let date_label = if entry_date == today {
-                "── Today ──".to_string()
-            } else if entry_date == yesterday {
-                "── Yesterday ──".to_string()
+        // Build display with date separators
+        let mut last_date: Option<time::Date> = None;
+        let mut row_y = inner_area.y;
+        let max_rows = inner_area.height as usize;
+        let mut row_count = 0;
+
+        // Find which entry is being edited
+        let editing_entry_id = app.history_edit_state.as_ref().map(|e| e.entry_id);
+
+        for (history_idx, entry) in &entries {
+            if row_count >= max_rows {
+                break;
+            }
+
+            let entry_date = entry.start_time.date();
+
+            // Add date separator if this is a new date
+            if last_date != Some(entry_date) {
+                if row_count >= max_rows {
+                    break;
+                }
+
+                let today = time::OffsetDateTime::now_utc().date();
+                let yesterday = today - time::Duration::days(1);
+
+                let date_label = if entry_date == today {
+                    "── Today ──"
+                } else if entry_date == yesterday {
+                    "── Yesterday ──"
+                } else {
+                    Box::leak(format!("── {} ──", entry_date).into_boxed_str())
+                };
+
+                let sep_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
+                let sep = Paragraph::new(date_label)
+                    .style(Style::default().fg(Color::White).bg(Color::DarkGray));
+                frame.render_widget(sep, sep_rect);
+
+                row_y += 1;
+                row_count += 1;
+                last_date = Some(entry_date);
+            }
+
+            if row_count >= max_rows {
+                break;
+            }
+
+            // Find the list index for this entry
+            let list_idx = app
+                .history_list_entries
+                .iter()
+                .position(|&idx| idx == *history_idx);
+
+            let is_focused = app.focused_history_index == list_idx;
+            let is_editing = Some(entry.id) == editing_entry_id;
+            let is_overlapping = app.is_entry_overlapping(entry.id);
+
+            let line = if is_editing {
+                build_edit_row(entry, app.history_edit_state.as_ref().unwrap(), is_focused)
             } else {
-                format!("── {} ──", entry_date)
+                build_display_row(entry, is_focused, is_overlapping)
             };
 
-            items.push(ListItem::new(Line::from(vec![Span::styled(
-                date_label,
-                Style::default().fg(Color::DarkGray),
-            )])));
+            let row_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
+            let paragraph = Paragraph::new(line).style(Style::default().fg(Color::White));
+            frame.render_widget(paragraph, row_rect);
 
-            last_date = Some(entry_date);
+            row_y += 1;
+            row_count += 1;
         }
-
-        // Calculate duration in [00h:05m] format
-        let duration_display = if let Some(end_time) = entry.end_time {
-            let duration = end_time - entry.start_time;
-            let total_minutes = duration.whole_minutes();
-            let hours = total_minutes / 60;
-            let minutes = total_minutes % 60;
-            format!("[{:02}h:{:02}m]", hours, minutes)
-        } else {
-            "[Active]".to_string()
-        };
-
-        let project = entry.project_name.as_deref().unwrap_or("No project");
-        let activity = entry.activity_name.as_deref().unwrap_or("No activity");
-        let note = entry.note.as_deref().unwrap_or("");
-
-        // Start time
-        let start_time = to_local_time(entry.start_time).time();
-        let start_str = format!("{:02}:{:02}", start_time.hour(), start_time.minute());
-
-        // End time
-        let end_time_str = if let Some(end_time) = entry.end_time {
-            let t = to_local_time(end_time).time();
-            format!("{:02}:{:02}", t.hour(), t.minute())
-        } else {
-            "??:??".to_string()
-        };
-
-        // Truncate note if too long
-        let max_note_len = 30;
-        let note_display = if note.is_empty() {
-            "".to_string()
-        } else if note.len() > max_note_len {
-            format!("{}[...]", &note[..max_note_len])
-        } else {
-            note.to_string()
-        };
-
-        // Build styled line with colors
-        let mut spans = vec![
-            // Time range in Cyan
-            Span::styled(
-                format!("{} - {} ", start_str, end_time_str),
-                Style::default().fg(Color::Cyan),
-            ),
-            // Duration in Yellow
-            Span::styled(duration_display, Style::default().fg(Color::Yellow)),
-            // Pipe separator in Dark Gray
-            Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-            // Project - Activity in Magenta
-            Span::styled(
-                format!("{} - {}", project, activity),
-                Style::default().fg(Color::White),
-            ),
-        ];
-
-        // Add annotation if present
-        if !note_display.is_empty() {
-            spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
-            spans.push(Span::styled(note_display, Style::default().fg(Color::Gray)));
-        }
-
-        items.push(ListItem::new(Line::from(spans)));
     }
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!("History ({} entries)", app.timer_history.len())),
-        )
-        .style(Style::default().fg(Color::White));
-
-    frame.render_widget(list, chunks[1]);
-
     // Controls
-    let controls_text = vec![
-        Span::styled("↑↓", Style::default().fg(Color::Yellow)),
-        Span::raw(": Scroll  "),
-        Span::styled("H", Style::default().fg(Color::Yellow)),
-        Span::raw(": Back to Timer  "),
-        Span::styled("Esc", Style::default().fg(Color::Yellow)),
-        Span::raw(": Cancel  "),
-        Span::styled("Q", Style::default().fg(Color::Yellow)),
-        Span::raw(": Quit"),
-    ];
+    let controls_text = if app.history_edit_state.is_some() {
+        vec![
+            Span::styled("Tab", Style::default().fg(Color::Yellow)),
+            Span::raw(": Next field  "),
+            Span::styled("Enter", Style::default().fg(Color::Yellow)),
+            Span::raw(": Edit field  "),
+            Span::styled("Esc", Style::default().fg(Color::Yellow)),
+            Span::raw(": Save & exit  "),
+            Span::styled("P/A", Style::default().fg(Color::Yellow)),
+            Span::raw(": Change Project/Activity"),
+        ]
+    } else {
+        vec![
+            Span::styled("↑↓", Style::default().fg(Color::Yellow)),
+            Span::raw(": Navigate  "),
+            Span::styled("Enter", Style::default().fg(Color::Yellow)),
+            Span::raw(": Edit  "),
+            Span::styled("H", Style::default().fg(Color::Yellow)),
+            Span::raw(": Back to Timer  "),
+            Span::styled("Esc", Style::default().fg(Color::Yellow)),
+            Span::raw(": Cancel  "),
+            Span::styled("Q", Style::default().fg(Color::Yellow)),
+            Span::raw(": Quit"),
+        ]
+    };
 
     let controls = Paragraph::new(Line::from(controls_text))
         .alignment(Alignment::Center)
@@ -557,10 +563,10 @@ fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App)
     frame.render_widget(widget, area);
 }
 
-fn render_todays_history(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
-    let todays_entries = app.todays_history();
+fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
+    let this_week_entries = app.this_week_history();
     let is_today_focused = app.focused_box == crate::app::FocusedBox::Today;
-    let edit_state = &app.today_edit_state;
+    let edit_state = &app.this_week_edit_state;
 
     // Border style depends on focus
     let border_style = if is_today_focused {
@@ -571,57 +577,126 @@ fn render_todays_history(frame: &mut Frame, area: ratatui::layout::Rect, app: &A
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" Today ({} entries) ", todays_entries.len()))
+        .title(format!(" This Week ({} entries) ", this_week_entries.len()))
         .border_style(border_style)
         .padding(ratatui::widgets::Padding::horizontal(1));
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    if todays_entries.is_empty() {
+    if this_week_entries.is_empty() {
         return;
     }
 
-    // Calculate row height - each entry is 1 line
     let max_rows = inner_area.height as usize;
-    let entries_to_show = todays_entries.len().min(max_rows);
+    let mut row_y = inner_area.y;
+    let mut row_count = 0;
 
-    // Find which entry is being edited and its index
+    // Find which entry is being edited
     let editing_entry_id = edit_state.as_ref().map(|e| e.entry_id);
-    let editing_idx = todays_entries
-        .iter()
-        .position(|e| Some(e.id) == editing_entry_id);
 
-    // Render each row
-    for (idx, entry) in todays_entries.iter().take(entries_to_show).enumerate() {
-        let row_y = inner_area.y + idx as u16;
-        let row_rect = Rect::new(
-            inner_area.x,
-            row_y,
-            inner_area.x + inner_area.width,
-            row_y + 1,
-        );
+    // Render with date separators
+    let mut last_date: Option<time::Date> = None;
+    let mut visible_entry_idx = 0; // Index for focusing (excludes date separators)
 
-        let is_focused = is_today_focused && app.focused_today_index == Some(idx);
-        let is_editing = editing_idx == Some(idx);
+    for entry in &this_week_entries {
+        if row_count >= max_rows {
+            break;
+        }
+
+        let entry_date = entry.start_time.date();
+
+        // Add date separator if this is a new date
+        if last_date != Some(entry_date) {
+            if row_count >= max_rows {
+                break;
+            }
+
+            let today = time::OffsetDateTime::now_utc().date();
+            let yesterday = today - time::Duration::days(1);
+
+            let date_label = if entry_date == today {
+                "── Today ──"
+            } else if entry_date == yesterday {
+                "── Yesterday ──"
+            } else {
+                // Format as day name and date
+                let weekday = match entry_date.weekday() {
+                    time::Weekday::Monday => "Monday",
+                    time::Weekday::Tuesday => "Tuesday",
+                    time::Weekday::Wednesday => "Wednesday",
+                    time::Weekday::Thursday => "Thursday",
+                    time::Weekday::Friday => "Friday",
+                    time::Weekday::Saturday => "Saturday",
+                    time::Weekday::Sunday => "Sunday",
+                };
+                Box::leak(format!("── {} ({}) ──", weekday, entry_date).into_boxed_str())
+            };
+
+            let sep_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
+            let sep = Paragraph::new(date_label)
+                .style(Style::default().fg(Color::White).bg(Color::DarkGray));
+            frame.render_widget(sep, sep_rect);
+
+            row_y += 1;
+            row_count += 1;
+            last_date = Some(entry_date);
+        }
+
+        if row_count >= max_rows {
+            break;
+        }
+
+        let is_focused = is_today_focused && app.focused_this_week_index == Some(visible_entry_idx);
+        let is_editing = Some(entry.id) == editing_entry_id;
+        let is_overlapping = app.is_entry_overlapping(entry.id);
 
         let line = if is_editing {
-            // Render inline edit row
             build_edit_row(entry, edit_state.as_ref().unwrap(), is_focused)
         } else {
-            // Render display row
-            build_display_row(entry, is_focused)
+            build_display_row(entry, is_focused, is_overlapping)
         };
 
+        let row_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
         let paragraph = Paragraph::new(line).style(Style::default().fg(Color::White));
         frame.render_widget(paragraph, row_rect);
+
+        row_y += 1;
+        row_count += 1;
+        visible_entry_idx += 1;
     }
 }
 
 fn build_display_row(
     entry: &crate::api::database::TimerHistoryEntry,
     is_focused: bool,
+    is_overlapping: bool,
 ) -> Line<'_> {
+    // Warning emoji for overlapping entries
+    let warning_prefix = if is_overlapping { "⚠ " } else { "" };
+
+    // Base colors - red for overlapping, normal for non-overlapping
+    let time_color = if is_overlapping {
+        Color::Red
+    } else {
+        Color::Yellow
+    };
+    let duration_color = if is_overlapping {
+        Color::Red
+    } else {
+        Color::Magenta
+    };
+    let project_color = if is_overlapping {
+        Color::Red
+    } else {
+        Color::Cyan
+    };
+    let note_color = if is_overlapping {
+        Color::Red
+    } else {
+        Color::Gray
+    };
+
     // Calculate duration in [00h:05m] format
     let duration_display = if let Some(end_time) = entry.end_time {
         let duration = end_time - entry.start_time;
@@ -660,34 +735,44 @@ fn build_display_row(
     };
 
     // Build styled line with colors
-    let mut spans = vec![
+    let mut spans = vec![];
+
+    // Warning prefix for overlapping entries
+    if is_overlapping {
+        spans.push(Span::styled(
+            warning_prefix,
+            Style::default().fg(Color::Red),
+        ));
+    }
+
+    spans.extend(vec![
         // Time range
         Span::styled(
             format!("{} - {} ", start_str, end_time_str),
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(time_color),
         ),
         // Duration
-        Span::styled(duration_display, Style::default().fg(Color::Magenta)),
+        Span::styled(duration_display, Style::default().fg(duration_color)),
         // Pipe separator
         Span::styled(" | ", Style::default().fg(Color::DarkGray)),
         // Project - Activity
         Span::styled(
             format!("{} - {}", project, activity),
-            Style::default().fg(Color::Cyan),
+            Style::default().fg(project_color),
         ),
-    ];
+    ]);
 
     // Add annotation if present
     if !note_display.is_empty() {
         spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled(note_display, Style::default().fg(Color::Gray)));
+        spans.push(Span::styled(note_display, Style::default().fg(note_color)));
     }
 
-    // Apply focus styling: magenta background with black text
+    // Apply focus styling: white background with black text
     if is_focused {
         let focused_style = Style::default()
             .fg(Color::Black)
-            .bg(Color::Magenta)
+            .bg(Color::White)
             .add_modifier(Modifier::BOLD);
         return Line::from(vec![Span::styled(
             spans.iter().map(|s| s.content.as_ref()).collect::<String>(),
@@ -699,12 +784,10 @@ fn build_display_row(
 }
 
 fn build_edit_row<'a>(
-    entry: &'a crate::api::database::TimerHistoryEntry,
-    edit_state: &'a crate::app::TodayEditState,
+    _entry: &'a crate::api::database::TimerHistoryEntry,
+    edit_state: &'a EntryEditState,
     _is_focused: bool,
 ) -> Line<'a> {
-    use crate::app::TodayEditField;
-
     let mut spans = vec![];
 
     // Start time field
@@ -714,11 +797,11 @@ fn build_edit_row<'a>(
         format!("[{}]", edit_state.start_time_input)
     };
     let start_style = match edit_state.focused_field {
-        TodayEditField::StartTime => Style::default()
+        EntryEditField::StartTime => Style::default()
             .fg(Color::Black)
-            .bg(Color::Magenta)
+            .bg(Color::White)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Magenta),
+        _ => Style::default().fg(Color::White),
     };
     spans.push(Span::styled(start_value, start_style));
 
@@ -732,11 +815,11 @@ fn build_edit_row<'a>(
         format!("[{}]", edit_state.end_time_input)
     };
     let end_style = match edit_state.focused_field {
-        TodayEditField::EndTime => Style::default()
+        EntryEditField::EndTime => Style::default()
             .fg(Color::Black)
-            .bg(Color::Magenta)
+            .bg(Color::White)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Magenta),
+        _ => Style::default().fg(Color::White),
     };
     spans.push(Span::styled(end_value, end_style));
 
@@ -746,11 +829,11 @@ fn build_edit_row<'a>(
     // Project field
     let project_value = format!("[{}]", edit_state.project_name.as_deref().unwrap_or("None"));
     let project_style = match edit_state.focused_field {
-        TodayEditField::Project => Style::default()
+        EntryEditField::Project => Style::default()
             .fg(Color::Black)
-            .bg(Color::Magenta)
+            .bg(Color::White)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Magenta),
+        _ => Style::default().fg(Color::White),
     };
     spans.push(Span::styled(project_value, project_style));
 
@@ -763,11 +846,11 @@ fn build_edit_row<'a>(
         edit_state.activity_name.as_deref().unwrap_or("None")
     );
     let activity_style = match edit_state.focused_field {
-        TodayEditField::Activity => Style::default()
+        EntryEditField::Activity => Style::default()
             .fg(Color::Black)
-            .bg(Color::Magenta)
+            .bg(Color::White)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Magenta),
+        _ => Style::default().fg(Color::White),
     };
     spans.push(Span::styled(activity_value, activity_style));
 
@@ -784,11 +867,11 @@ fn build_edit_row<'a>(
         }
     );
     let note_style = match edit_state.focused_field {
-        TodayEditField::Note => Style::default()
+        EntryEditField::Note => Style::default()
             .fg(Color::Black)
-            .bg(Color::Magenta)
+            .bg(Color::White)
             .add_modifier(Modifier::BOLD),
-        _ => Style::default().fg(Color::Magenta),
+        _ => Style::default().fg(Color::White),
     };
     spans.push(Span::styled(note_value, note_style));
 
