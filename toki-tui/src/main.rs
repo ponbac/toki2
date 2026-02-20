@@ -187,53 +187,84 @@ async fn run_app(
                     }
                     app::View::EditDescription => {
                         let was_in_edit_mode = app.is_in_edit_mode();
-                        
-                        match key.code {
-                            KeyCode::Char('x') | KeyCode::Char('X') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                app.description_input.clear();
-                            }
-                            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                app.input_char(c);
-                            }
-                            KeyCode::Backspace => app.input_backspace(),
-                            KeyCode::Enter => {
-                                // If in edit mode, save to edit state
-                                if was_in_edit_mode {
-                                    app.update_edit_state_note(app.description_input.clone());
-                                    // Restore running timer's note
-                                    if let Some(saved_note) = app.saved_timer_note.take() {
-                                        app.description_input = saved_note;
+
+                        // CWD change mode takes priority
+                        if app.cwd_input.is_some() {
+                            match key.code {
+                                KeyCode::Esc => app.cancel_cwd_change(),
+                                KeyCode::Enter => {
+                                    if let Err(e) = app.confirm_cwd_change() {
+                                        app.status_message = Some(e);
                                     }
-                                    // Navigate back to the appropriate view
-                                    let return_view = app.get_return_view_from_edit();
-                                    app.navigate_to(return_view);
-                                    if return_view == app::View::Timer {
-                                        app.focused_box = app::FocusedBox::Today;
-                                    }
-                                } else {
-                                    app.confirm_description();
                                 }
-                            }
-                            KeyCode::Esc => {
-                                // If in edit mode, cancel without saving
-                                if was_in_edit_mode {
-                                    // Restore running timer's note
-                                    if let Some(saved_note) = app.saved_timer_note.take() {
-                                        app.description_input = saved_note;
-                                    }
-                                    let return_view = app.get_return_view_from_edit();
-                                    app.navigate_to(return_view);
-                                    if return_view == app::View::Timer {
-                                        app.focused_box = app::FocusedBox::Today;
-                                    }
-                                } else {
-                                    app.cancel_selection();
+                                KeyCode::Tab => app.cwd_tab_complete(),
+                                KeyCode::Backspace => app.cwd_input_backspace(),
+                                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    app.cwd_input_char(c);
                                 }
+                                _ => {}
                             }
-                            KeyCode::Char('q') | KeyCode::Char('Q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                app.quit();
+                        } else if app.git_mode {
+                            // Second key of Ctrl+G sequence
+                            match key.code {
+                                KeyCode::Char('b') | KeyCode::Char('B') => app.paste_git_branch_raw(),
+                                KeyCode::Char('p') | KeyCode::Char('P') => app.paste_git_branch_parsed(),
+                                KeyCode::Char('c') | KeyCode::Char('C') => app.paste_git_last_commit(),
+                                KeyCode::Char('d') | KeyCode::Char('D') => app.begin_cwd_change(),
+                                _ => app.exit_git_mode(), // any other key cancels git mode
                             }
-                            _ => {}
+                        } else {
+                            match key.code {
+                                KeyCode::Char('x') | KeyCode::Char('X')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    app.description_input.clear();
+                                }
+                                KeyCode::Char('g') | KeyCode::Char('G')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    app.enter_git_mode();
+                                }
+                                KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    app.input_char(c);
+                                }
+                                KeyCode::Backspace => app.input_backspace(),
+                                KeyCode::Enter => {
+                                    if was_in_edit_mode {
+                                        app.update_edit_state_note(app.description_input.clone());
+                                        if let Some(saved_note) = app.saved_timer_note.take() {
+                                            app.description_input = saved_note;
+                                        }
+                                        let return_view = app.get_return_view_from_edit();
+                                        app.navigate_to(return_view);
+                                        if return_view == app::View::Timer {
+                                            app.focused_box = app::FocusedBox::Today;
+                                        }
+                                    } else {
+                                        app.confirm_description();
+                                    }
+                                }
+                                KeyCode::Esc => {
+                                    if was_in_edit_mode {
+                                        if let Some(saved_note) = app.saved_timer_note.take() {
+                                            app.description_input = saved_note;
+                                        }
+                                        let return_view = app.get_return_view_from_edit();
+                                        app.navigate_to(return_view);
+                                        if return_view == app::View::Timer {
+                                            app.focused_box = app::FocusedBox::Today;
+                                        }
+                                    } else {
+                                        app.cancel_selection();
+                                    }
+                                }
+                                KeyCode::Char('q') | KeyCode::Char('Q')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    app.quit();
+                                }
+                                _ => {}
+                            }
                         }
                     }
                     app::View::SaveAction => {
