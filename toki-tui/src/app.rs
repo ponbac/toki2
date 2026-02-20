@@ -1344,4 +1344,145 @@ impl App {
             _ => return,
         };
     }
+
+    /// Enter git mode (waiting for second key after Ctrl+G).
+    pub fn enter_git_mode(&mut self) {
+        self.git_mode = true;
+    }
+
+    /// Exit git mode without action.
+    pub fn exit_git_mode(&mut self) {
+        self.git_mode = false;
+    }
+
+    /// Paste raw branch name into description_input.
+    pub fn paste_git_branch_raw(&mut self) {
+        self.git_mode = false;
+        if let Some(branch) = &self.git_context.branch.clone() {
+            self.description_input = branch.clone();
+        }
+    }
+
+    /// Paste parsed branch name into description_input.
+    pub fn paste_git_branch_parsed(&mut self) {
+        self.git_mode = false;
+        if let Some(branch) = &self.git_context.branch.clone() {
+            self.description_input = crate::git::parse_branch(branch);
+        }
+    }
+
+    /// Paste last commit message into description_input.
+    pub fn paste_git_last_commit(&mut self) {
+        self.git_mode = false;
+        if let Some(commit) = &self.git_context.last_commit.clone() {
+            self.description_input = commit.clone();
+        }
+    }
+
+    /// Begin CWD change mode. Pre-fill with current cwd string.
+    pub fn begin_cwd_change(&mut self) {
+        self.git_mode = false;
+        self.cwd_input = Some(self.git_context.cwd.to_string_lossy().to_string());
+        self.cwd_completions = Vec::new();
+    }
+
+    /// Cancel CWD change mode.
+    pub fn cancel_cwd_change(&mut self) {
+        self.cwd_input = None;
+        self.cwd_completions = Vec::new();
+    }
+
+    /// Confirm CWD change. Returns Err if path doesn't exist.
+    pub fn confirm_cwd_change(&mut self) -> Result<(), String> {
+        let input = self.cwd_input.take().unwrap_or_default();
+        self.cwd_completions = Vec::new();
+        let path = std::path::PathBuf::from(&input);
+        if path.is_dir() {
+            self.git_context = GitContext::from_cwd(path);
+            Ok(())
+        } else {
+            self.cwd_input = Some(input);
+            Err(format!("Not a directory: {}", path.display()))
+        }
+    }
+
+    /// Tab-complete the current cwd_input. Fills cwd_completions with matches,
+    /// and completes to longest common prefix if there are matches.
+    pub fn cwd_tab_complete(&mut self) {
+        let input = match &self.cwd_input {
+            Some(s) => s.clone(),
+            None => return,
+        };
+
+        let path = std::path::Path::new(&input);
+        let (dir, prefix) = if input.ends_with('/') || input.ends_with(std::path::MAIN_SEPARATOR) {
+            (path, "")
+        } else {
+            (
+                path.parent().unwrap_or(std::path::Path::new(".")),
+                path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+            )
+        };
+
+        let mut matches: Vec<String> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if name.starts_with(prefix) {
+                            let full =
+                                format!("{}/{}", dir.to_string_lossy().trim_end_matches('/'), name);
+                            matches.push(full);
+                        }
+                    }
+                }
+            }
+        }
+        matches.sort();
+
+        if matches.len() == 1 {
+            self.cwd_input = Some(format!("{}/", matches[0]));
+            self.cwd_completions = Vec::new();
+        } else if matches.len() > 1 {
+            // Find longest common prefix
+            let lcp = longest_common_prefix(&matches);
+            self.cwd_input = Some(lcp);
+            self.cwd_completions = matches;
+        }
+        // no matches: do nothing
+    }
+
+    /// Append a char to cwd_input.
+    pub fn cwd_input_char(&mut self, c: char) {
+        if let Some(s) = &mut self.cwd_input {
+            s.push(c);
+            self.cwd_completions.clear();
+        }
+    }
+
+    /// Backspace in cwd_input.
+    pub fn cwd_input_backspace(&mut self) {
+        if let Some(s) = &mut self.cwd_input {
+            s.pop();
+            self.cwd_completions.clear();
+        }
+    }
+}
+
+fn longest_common_prefix(strings: &[String]) -> String {
+    if strings.is_empty() {
+        return String::new();
+    }
+    let first = &strings[0];
+    let mut len = first.len();
+    for s in &strings[1..] {
+        len = len.min(s.len());
+        for (i, (a, b)) in first.chars().zip(s.chars()).enumerate() {
+            if a != b {
+                len = len.min(i);
+                break;
+            }
+        }
+    }
+    first[..len].to_string()
 }
