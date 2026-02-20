@@ -144,8 +144,10 @@ fn render_history_view(frame: &mut Frame, app: &App) {
                 };
 
                 let sep_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
-                let sep = Paragraph::new(date_label)
-                    .style(Style::default().fg(Color::White).bg(Color::DarkGray));
+                let sep = Paragraph::new(Line::from(Span::styled(
+                    date_label,
+                    Style::default().fg(Color::White).bg(Color::DarkGray),
+                )));
                 frame.render_widget(sep, sep_rect);
 
                 row_y += 1;
@@ -634,8 +636,10 @@ fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, app:
             };
 
             let sep_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
-            let sep = Paragraph::new(date_label)
-                .style(Style::default().fg(Color::White).bg(Color::DarkGray));
+            let sep = Paragraph::new(Line::from(Span::styled(
+                date_label,
+                Style::default().fg(Color::White).bg(Color::DarkGray),
+            )));
             frame.render_widget(sep, sep_rect);
 
             row_y += 1;
@@ -974,10 +978,11 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
-            Constraint::Length(3), // Header
-            Constraint::Length(3), // Input field
-            Constraint::Min(0),    // Spacer
-            Constraint::Length(3), // Controls
+            Constraint::Length(3), // 0: Header
+            Constraint::Length(3), // 1: Input field or CWD input
+            Constraint::Length(5), // 2: Git context panel
+            Constraint::Min(0),    // 3: Spacer
+            Constraint::Length(3), // 4: Controls
         ])
         .split(frame.size());
 
@@ -988,35 +993,127 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(title, chunks[0]);
 
-    // Input field with cursor
-    let input_text = format!("{}█", app.description_input); // Add block cursor
-    let input = Paragraph::new(input_text)
-        .style(Style::default().fg(Color::White))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Note ")
-                .padding(Padding::horizontal(1)),
-        );
-    frame.render_widget(input, chunks[1]);
+    // Input field (note or CWD change)
+    if let Some(cwd_input) = &app.cwd_input {
+        let completions_hint = if app.cwd_completions.is_empty() {
+            String::new()
+        } else {
+            format!("  [{}]", app.cwd_completions.join("  "))
+        };
+        let input_text = format!("{}█{}", cwd_input, completions_hint);
+        let input = Paragraph::new(input_text)
+            .style(Style::default().fg(Color::Yellow))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Change Directory ")
+                    .padding(Padding::horizontal(1)),
+            );
+        frame.render_widget(input, chunks[1]);
+    } else {
+        let input_text = format!("{}█", app.description_input);
+        let input = Paragraph::new(input_text)
+            .style(Style::default().fg(Color::White))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Note ")
+                    .padding(Padding::horizontal(1)),
+            );
+        frame.render_widget(input, chunks[1]);
+    }
 
-    // Controls
-    let controls_text = vec![
-        Span::styled("Type", Style::default().fg(Color::Yellow)),
-        Span::raw(": Edit  "),
-        Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
-        Span::raw(": Clear  "),
-        Span::styled("Enter", Style::default().fg(Color::Yellow)),
-        Span::raw(": Confirm  "),
-        Span::styled("Esc", Style::default().fg(Color::Yellow)),
-        Span::raw(": Cancel"),
+    // Git context panel
+    let has_git = app.git_context.branch.is_some();
+    let git_color = if has_git {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+    let muted = Color::DarkGray;
+
+    let cwd_str = app.git_context.cwd.to_string_lossy().to_string();
+    let branch_str = app.git_context.branch.as_deref().unwrap_or("(no git repo)");
+    let commit_str = app.git_context.last_commit.as_deref().unwrap_or("(none)");
+
+    let git_lines = vec![
+        Line::from(vec![
+            Span::styled("Dir:    ", Style::default().fg(muted)),
+            Span::styled(cwd_str, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::styled("Branch: ", Style::default().fg(muted)),
+            Span::styled(branch_str, Style::default().fg(git_color)),
+        ]),
+        Line::from(vec![
+            Span::styled("Commit: ", Style::default().fg(muted)),
+            Span::styled(commit_str, Style::default().fg(git_color)),
+        ]),
     ];
+
+    let git_panel = Paragraph::new(git_lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Git ")
+            .padding(Padding::horizontal(1)),
+    );
+    frame.render_widget(git_panel, chunks[2]);
+
+    // Controls (context-sensitive)
+    let controls_text: Vec<Span> = if app.cwd_input.is_some() {
+        vec![
+            Span::styled("Type", Style::default().fg(Color::Yellow)),
+            Span::raw(": path  "),
+            Span::styled("Tab", Style::default().fg(Color::Yellow)),
+            Span::raw(": complete  "),
+            Span::styled("Enter", Style::default().fg(Color::Yellow)),
+            Span::raw(": confirm  "),
+            Span::styled("Esc", Style::default().fg(Color::Yellow)),
+            Span::raw(": cancel"),
+        ]
+    } else if app.git_mode {
+        let git_key_style = if has_git {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        vec![
+            Span::styled("[git mode] ", Style::default().fg(Color::Cyan)),
+            Span::styled("B", git_key_style),
+            Span::raw(": raw branch  "),
+            Span::styled("P", git_key_style),
+            Span::raw(": parsed branch  "),
+            Span::styled("C", git_key_style),
+            Span::raw(": last commit  "),
+            Span::styled("D", Style::default().fg(Color::Yellow)),
+            Span::raw(": change dir  "),
+            Span::styled("Esc", Style::default().fg(Color::Yellow)),
+            Span::raw(": cancel"),
+        ]
+    } else {
+        let git_key_style = if has_git {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        vec![
+            Span::styled("Type", Style::default().fg(Color::Yellow)),
+            Span::raw(": edit  "),
+            Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
+            Span::raw(": clear  "),
+            Span::styled("Enter", Style::default().fg(Color::Yellow)),
+            Span::raw(": confirm  "),
+            Span::styled("Esc", Style::default().fg(Color::Yellow)),
+            Span::raw(": cancel  "),
+            Span::styled("Ctrl+G", git_key_style),
+            Span::raw(": git…"),
+        ]
+    };
 
     let controls = Paragraph::new(Line::from(controls_text))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Controls"));
-
-    frame.render_widget(controls, chunks[3]);
+        .block(Block::default().borders(Borders::ALL).title(" Controls "));
+    frame.render_widget(controls, chunks[4]);
 }
 
 fn render_save_action_dialog(frame: &mut Frame, app: &App) {
