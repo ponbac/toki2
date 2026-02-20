@@ -50,6 +50,64 @@ pub enum TimerSize {
     Large,
 }
 
+#[derive(Debug, Clone)]
+pub struct GitContext {
+    pub cwd: std::path::PathBuf,
+    pub branch: Option<String>,
+    pub last_commit: Option<String>,
+}
+
+impl GitContext {
+    pub fn from_cwd(cwd: std::path::PathBuf) -> Self {
+        let branch = Self::git_branch(&cwd);
+        let last_commit = Self::git_last_commit(&cwd);
+        Self {
+            cwd,
+            branch,
+            last_commit,
+        }
+    }
+
+    fn git_branch(cwd: &std::path::Path) -> Option<String> {
+        let output = std::process::Command::new("git")
+            .args(["-C", cwd.to_str()?, "rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let s = String::from_utf8(output.stdout).ok()?.trim().to_string();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        } else {
+            None
+        }
+    }
+
+    fn git_last_commit(cwd: &std::path::Path) -> Option<String> {
+        let output = std::process::Command::new("git")
+            .args(["-C", cwd.to_str()?, "log", "-1", "--format=%s"])
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let s = String::from_utf8(output.stdout).ok()?.trim().to_string();
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn refresh(&mut self) {
+        self.branch = Self::git_branch(&self.cwd);
+        self.last_commit = Self::git_last_commit(&self.cwd);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum EntryEditField {
     StartTime,
@@ -126,6 +184,12 @@ pub struct App {
     pub focused_history_index: Option<usize>,
     pub history_edit_state: Option<EntryEditState>,
     pub history_list_entries: Vec<usize>, // Indices into timer_history for entries (excludes date separators)
+
+    // Git context for note editor
+    pub git_context: GitContext,
+    pub git_mode: bool,
+    pub cwd_input: Option<String>,    // Some(_) when changing directory
+    pub cwd_completions: Vec<String>, // Tab completion candidates
 }
 
 impl App {
@@ -167,6 +231,12 @@ impl App {
             focused_history_index: None,
             history_edit_state: None,
             history_list_entries: Vec::new(),
+            git_context: GitContext::from_cwd(
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            ),
+            git_mode: false,
+            cwd_input: None,
+            cwd_completions: Vec::new(),
         }
     }
 
