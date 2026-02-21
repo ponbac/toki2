@@ -88,8 +88,8 @@ function BoardPage() {
   }, [organization, project, lastViewedProject, setLastViewedProject]);
 
   return (
-    <main className="flex w-full flex-col gap-4 p-4 md:p-8">
-      <div className="mx-auto flex w-full max-w-[110rem] flex-col gap-4 md:w-[95%]">
+    <main className="flex min-w-0 w-full flex-col gap-4 p-4 md:p-8">
+      <div className="mx-auto flex min-w-0 w-full max-w-[110rem] flex-col gap-4 md:w-[95%]">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold">Board</h1>
@@ -133,20 +133,22 @@ function BoardPage() {
           </p>
         </div>
       ) : (
-        <Suspense
-          fallback={
-            <div className="flex h-[60vh] items-center justify-center">
-              <LoadingSpinner className="size-8" />
-            </div>
-          }
-        >
-          <BoardViewWithResolvedIteration
-            organization={organization}
-            project={project}
-            iterationPath={iterationPath}
-            team={team}
-          />
-        </Suspense>
+        <div className="min-w-0 w-full">
+          <Suspense
+            fallback={
+              <div className="flex h-[60vh] w-full items-center justify-center">
+                <LoadingSpinner className="size-8" />
+              </div>
+            }
+          >
+            <BoardViewWithResolvedIteration
+              organization={organization}
+              project={project}
+              iterationPath={iterationPath}
+              team={team}
+            />
+          </Suspense>
+        </div>
       )}
     </main>
   );

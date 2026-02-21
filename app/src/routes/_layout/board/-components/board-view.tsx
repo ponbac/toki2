@@ -399,23 +399,21 @@ export function BoardView({
   }
 
   return (
-    <div className="flex w-full flex-col gap-3">
-      <div className="mx-auto w-full max-w-[110rem] md:w-[95%]">
-        <BoardFilters
-          memberFilter={memberFilter}
-          setMemberFilter={setMemberFilter}
-          members={members}
-          columns={columnsWithItems.map((column) => ({
-            id: column.id,
-            name: column.name,
-            count: column.items.length,
-          }))}
-          hiddenColumnIds={hiddenColumnIds}
-          onToggleColumn={toggleColumnVisibility}
-          onShowAllColumns={showAllColumns}
-        />
-      </div>
-      <div className="h-[calc(100vh-15rem)] w-full">
+    <div className="flex min-w-0 w-full flex-col gap-3">
+      <BoardFilters
+        memberFilter={memberFilter}
+        setMemberFilter={setMemberFilter}
+        members={members}
+        columns={columnsWithItems.map((column) => ({
+          id: column.id,
+          name: column.name,
+          count: column.items.length,
+        }))}
+        hiddenColumnIds={hiddenColumnIds}
+        onToggleColumn={toggleColumnVisibility}
+        onShowAllColumns={showAllColumns}
+      />
+      <div className="h-[calc(100vh-15rem)] min-w-0 w-full">
         {visibleColumns.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-border/40 bg-muted/20">
             <p className="text-sm text-muted-foreground">
@@ -426,7 +424,7 @@ export function BoardView({
             </Button>
           </div>
         ) : (
-          <div className="flex h-full w-full gap-4 overflow-x-auto pb-2">
+          <div className="flex h-full min-w-0 w-full gap-4 overflow-x-auto pb-2">
             {visibleColumns.map((column) => (
               <div
                 key={column.id}
