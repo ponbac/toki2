@@ -118,10 +118,13 @@ export const workItemsQueries = {
   }) =>
     queryOptions({
       queryKey: [...workItemsQueries.baseKey, "board", params],
-      refetchInterval: 60 * 1000,
+      refetchInterval: 60_000,
+      retry: 1,
+      retryDelay: 1_000,
       queryFn: async () =>
         api
           .get("work-items/board", {
+            timeout: 45_000,
             searchParams: Object.fromEntries(
               Object.entries(params).filter(([, v]) => v !== undefined),
             ),

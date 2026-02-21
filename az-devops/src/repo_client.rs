@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use azure_devops_rust_api::{
+    core,
     git::{self, models::GitCommitRef},
     graph::{self, models::GraphUser},
     wit::{
@@ -13,11 +15,15 @@ use azure_devops_rust_api::{
     },
     work, Credential,
 };
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::debug;
 
 use crate::{Identity, Iteration, PullRequest, Thread, WorkItem, WorkItemComment};
+
+const WIQL_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
+const WIQL_API_VERSION: &str = "7.1-preview";
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoClientError {
@@ -25,21 +31,43 @@ pub enum RepoClientError {
     AzureDevOpsError(#[from] typespec::error::Error),
     #[error("Azure Core API error: {0}")]
     AzureCoreError(#[from] azure_core::Error),
+    #[error("Azure DevOps HTTP error (status {status}): {body}")]
+    HttpStatus { status: u16, body: String },
     #[error("Repository not found: {0}")]
     RepoNotFound(String),
     #[error("Response payload exceeds {max_bytes} bytes (actual: {actual_bytes} bytes)")]
     PayloadTooLarge { actual_bytes: u64, max_bytes: usize },
 }
 
+#[derive(Serialize)]
+struct ProjectScopeWiqlBody<'a> {
+    query: &'a str,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectScopeWiqlResult {
+    #[serde(default)]
+    work_items: Vec<ProjectScopeWiqlWorkItemRef>,
+}
+
+#[derive(Deserialize)]
+struct ProjectScopeWiqlWorkItemRef {
+    id: Option<i32>,
+}
+
 #[derive(Clone)]
 pub struct RepoClient {
+    core_client: core::Client,
     git_client: git::Client,
     work_item_client: wit::Client,
     work_client: work::Client,
     graph_client: graph::Client,
+    http_client: reqwest::Client,
     organization: String,
     project: String,
     repo_id: String,
+    pat: String,
 }
 
 impl RepoClient {
@@ -51,10 +79,12 @@ impl RepoClient {
     ) -> Result<Self, RepoClientError> {
         // might need to disable retries or set a timeout (https://docs.rs/azure_devops_rust_api/latest/azure_devops_rust_api/git/struct.ClientBuilder.html, https://docs.rs/azure_core/0.20.0/azure_core/struct.TimeoutPolicy.html)
         let credential = Credential::from_pat(pat.to_owned());
+        let core_client = core::ClientBuilder::new(credential.clone()).build();
         let git_client = git::ClientBuilder::new(credential.clone()).build();
         let work_item_client = wit::ClientBuilder::new(credential.clone()).build();
         let work_client = work::ClientBuilder::new(credential.clone()).build();
         let graph_client = graph::ClientBuilder::new(credential).build();
+        let http_client = reqwest::Client::new();
 
         let repo = git_client
             .repositories_client()
@@ -67,13 +97,16 @@ impl RepoClient {
             .ok_or_else(|| RepoClientError::RepoNotFound(repo_name.to_string()))?;
 
         Ok(Self {
+            core_client,
             git_client,
             work_item_client,
             work_client,
             graph_client,
+            http_client,
             organization: organization.to_owned(),
             project: project.to_owned(),
             repo_id: repo.id,
+            pat: pat.to_owned(),
         })
     }
 
@@ -339,16 +372,90 @@ impl RepoClient {
             query: Some(query.to_string()),
         };
 
-        let result = self
-            .work_item_client
-            .wiql_client()
-            .query_by_wiql(&self.organization, wiql, &self.project, team)
-            .await?;
+        let result = tokio::time::timeout(
+            WIQL_QUERY_TIMEOUT,
+            self.work_item_client.wiql_client().query_by_wiql(
+                &self.organization,
+                wiql,
+                &self.project,
+                team,
+            ),
+        )
+        .await
+        .map_err(|_| internal_http_error("WIQL query request timed out"))??;
 
         let ids: Vec<i32> = result.work_items.into_iter().filter_map(|r| r.id).collect();
 
         debug!(
             "WIQL query returned {} work item IDs for {}/{}",
+            ids.len(),
+            self.organization,
+            self.project
+        );
+
+        Ok(ids)
+    }
+
+    /// Query work item IDs using WIQL at project scope (no team segment in URL).
+    ///
+    /// This avoids team-specific WIQL routing issues for projects where the default
+    /// "{Project} Team" does not exist.
+    pub async fn query_work_item_ids_wiql_project_scope(
+        &self,
+        query: &str,
+    ) -> Result<Vec<i32>, RepoClientError> {
+        let mut url = reqwest::Url::parse("https://dev.azure.com")
+            .map_err(|error| internal_http_error(format!("Failed to build WIQL URL: {error}")))?;
+        url.path_segments_mut()
+            .map_err(|_| internal_http_error("Failed to build WIQL URL path"))?
+            .extend([
+                self.organization.as_str(),
+                self.project.as_str(),
+                "_apis",
+                "wit",
+                "wiql",
+            ]);
+        url.query_pairs_mut()
+            .append_pair("api-version", WIQL_API_VERSION);
+
+        let response = self
+            .http_client
+            .post(url)
+            .basic_auth("", Some(&self.pat))
+            .timeout(WIQL_QUERY_TIMEOUT)
+            .json(&ProjectScopeWiqlBody { query })
+            .send()
+            .await
+            .map_err(|error| {
+                internal_http_error(format!("Project WIQL request failed: {error}"))
+            })?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read response body>".to_string());
+            return Err(RepoClientError::HttpStatus {
+                status: status.as_u16(),
+                body: body.chars().take(256).collect(),
+            });
+        }
+
+        let result = response
+            .json::<ProjectScopeWiqlResult>()
+            .await
+            .map_err(|error| {
+                internal_http_error(format!("Failed to decode project WIQL response: {error}"))
+            })?;
+        let ids: Vec<i32> = result
+            .work_items
+            .into_iter()
+            .filter_map(|item| item.id)
+            .collect();
+
+        debug!(
+            "Project-scope WIQL query returned {} work item IDs for {}/{}",
             ids.len(),
             self.organization,
             self.project
@@ -486,6 +593,34 @@ impl RepoClient {
             .await?;
 
         Ok(list.value.into_iter().filter_map(|it| it.path).collect())
+    }
+
+    /// List available team names for this project.
+    pub async fn get_project_team_names(&self) -> Result<Vec<String>, RepoClientError> {
+        let teams = self
+            .core_client
+            .teams_client()
+            .get_teams(&self.organization, &self.project)
+            .await?;
+
+        let mut names: Vec<String> = teams
+            .value
+            .into_iter()
+            .filter_map(|team| team.web_api_team_ref.name)
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect();
+
+        names.sort();
+        names.dedup();
+
+        debug!(
+            project = %self.project,
+            team_count = names.len(),
+            "Got available teams for project"
+        );
+
+        Ok(names)
     }
 
     /// Get ordered taskboard column definitions for a given team.
@@ -682,6 +817,13 @@ fn extract_iteration_dates(
 /// Supports ISO 8601 / RFC 3339 format (e.g. "2024-01-15T00:00:00Z").
 fn parse_date_string(s: &str) -> Option<OffsetDateTime> {
     OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+}
+
+fn internal_http_error(body: impl Into<String>) -> RepoClientError {
+    RepoClientError::HttpStatus {
+        status: 500,
+        body: body.into(),
+    }
 }
 
 #[cfg(test)]

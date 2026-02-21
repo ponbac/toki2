@@ -64,7 +64,11 @@ export function BoardView({
   iterationPath?: string;
   team?: string;
 }) {
-  const { data: board } = useQuery({
+  const {
+    data: board,
+    isError: isBoardError,
+    refetch: refetchBoard,
+  } = useQuery({
     ...queries.board({
       organization,
       project,
@@ -140,7 +144,8 @@ export function BoardView({
     [hiddenColumnIds],
   );
   const selectedMemberEmailSet = useMemo(
-    () => new Set(memberFilter.selectedEmails.map((email) => email.toLowerCase())),
+    () =>
+      new Set(memberFilter.selectedEmails.map((email) => email.toLowerCase())),
     [memberFilter.selectedEmails],
   );
   const boardItems = useMemo(() => board?.items ?? [], [board]);
@@ -182,7 +187,13 @@ export function BoardView({
 
       return true;
     });
-  }, [boardItems, categoryFilter, memberFilter, selectedMemberEmailSet, user.email]);
+  }, [
+    boardItems,
+    categoryFilter,
+    memberFilter,
+    selectedMemberEmailSet,
+    user.email,
+  ]);
 
   const columnsWithItems = useMemo(() => {
     const columns = [...boardColumns].sort(
@@ -221,7 +232,8 @@ export function BoardView({
     [columnsWithItems, hiddenColumnIdSet],
   );
   const allColumns = useMemo(
-    () => columnsWithItems.map((column) => ({ id: column.id, name: column.name })),
+    () =>
+      columnsWithItems.map((column) => ({ id: column.id, name: column.name })),
     [columnsWithItems],
   );
   const allColumnsRef = useRef(allColumns);
@@ -298,13 +310,7 @@ export function BoardView({
         }
       }
     },
-    [
-      iterationPath,
-      moveBoardItem,
-      organization,
-      project,
-      team,
-    ],
+    [iterationPath, moveBoardItem, organization, project, team],
   );
 
   const handleCardDragStart = useCallback(
@@ -370,6 +376,21 @@ export function BoardView({
   );
 
   if (!board) {
+    if (isBoardError) {
+      return (
+        <div className="flex h-[60vh] items-center justify-center">
+          <div className="flex max-w-xl flex-col items-center gap-3 text-center">
+            <p className="text-sm text-muted-foreground">
+              Failed to load board data. Please retry.
+            </p>
+            <Button size="sm" onClick={() => void refetchBoard()}>
+              Retry board load
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <p className="text-sm text-muted-foreground">Loading board...</p>
@@ -407,7 +428,10 @@ export function BoardView({
         ) : (
           <div className="flex h-full w-full gap-4 overflow-x-auto pb-2">
             {visibleColumns.map((column) => (
-              <div key={column.id} className="h-full min-h-0 min-w-[20rem] flex-1">
+              <div
+                key={column.id}
+                className="h-full min-h-0 min-w-[20rem] flex-1"
+              >
                 <BoardColumn
                   columnId={column.id}
                   title={column.name}
