@@ -57,7 +57,7 @@ export function WorkItemDescriptionHoverCard({
           rel="noopener noreferrer"
           onClick={(event) => event.stopPropagation()}
           aria-label={`Show description for issue ${id}`}
-          className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
+          className="inline-flex h-5 items-center gap-0.5 text-xs leading-none text-muted-foreground hover:text-foreground"
         >
           #{id}
           <ExternalLink className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />

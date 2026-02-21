@@ -46,7 +46,7 @@ export function PrApprovalHoverCard({
           onClick={(event) => event.stopPropagation()}
           aria-label={`Show pull request approvals for PR ${primaryPullRequest.id}`}
           className={cn(
-            "inline-flex items-center rounded-md border px-1.5 py-0.5 transition-colors",
+            "inline-flex h-5 items-center justify-center rounded-md border px-1.5 py-0 leading-none transition-colors",
             allDraft
               ? "border-blue-500/30 bg-blue-500/10 text-blue-400 hover:border-blue-500/60 hover:bg-blue-500/15 hover:text-blue-300"
               : "border-emerald-500/30 bg-emerald-500/10 text-emerald-500 hover:border-emerald-500/60 hover:bg-emerald-500/15 hover:text-emerald-400",

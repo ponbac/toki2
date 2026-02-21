@@ -45,10 +45,6 @@ const PRIORITY_INDICATORS: Record<
   4: { label: "P4", className: "text-muted-foreground" },
 };
 
-function trimBranch(branch: string): string {
-  return branch.replace("refs/heads/", "");
-}
-
 export function BoardCard({
   item,
   columnId,
@@ -89,10 +85,12 @@ export function BoardCard({
   const priority =
     item.priority != null ? PRIORITY_INDICATORS[item.priority] : null;
   const isPriorityOne = item.priority === 1;
-  const sourceBranch = item.pullRequests
-    ?.map((pullRequest) => pullRequest.sourceBranch)
-    .find((branch): branch is string => !!branch);
-  const branchName = sourceBranch ? trimBranch(sourceBranch) : null;
+  const pullRequests = item.pullRequests ?? [];
+  const hasPullRequests = pullRequests.length > 0;
+  const branchName =
+    pullRequests
+      .find((pullRequest) => pullRequest.sourceBranch)
+      ?.sourceBranch?.replace("refs/heads/", "") ?? null;
 
   const [branchCopied, setBranchCopied] = useState(false);
   const [isTimerActionPending, setIsTimerActionPending] = useState(false);
@@ -141,7 +139,7 @@ export function BoardCard({
       }}
       onDragEnd={onDragEnd}
       className={cn(
-        "group relative min-w-0 rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm",
+        "group relative min-w-0 overflow-hidden rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm",
         isPriorityOne && "bg-red-500/[0.06]",
         isDragging && "opacity-50",
         isMoving && "cursor-progress",
@@ -151,161 +149,172 @@ export function BoardCard({
         <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-red-300/90 to-transparent" />
       )}
 
-      {/* Top row: type badge + id + actions */}
-      <div className="mb-1.5 flex items-center gap-2">
-        <span
-          className={cn(
-            "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium",
-            colors.bg,
-            colors.text,
-          )}
-        >
-          {categoryLabel}
-        </span>
+      {/* Header row: metadata */}
+      <div className={cn("mb-1.5 min-h-7", branchName ? "pr-[7.5rem]" : "pr-24")}>
+        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          <span
+            className={cn(
+              "inline-flex max-w-[7.5rem] shrink-0 items-center truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+              colors.bg,
+              colors.text,
+            )}
+          >
+            {categoryLabel}
+          </span>
 
-        {item.tags.length > 0 && (
-          <div className="flex items-center gap-1">
-            {item.tags.slice(0, 2).map((tag) => (
-              <span
-                key={tag}
-                className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground"
-              >
-                {tag}
-              </span>
-            ))}
-            {item.tags.length > 2 && (
-              <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                +{item.tags.length - 2}
-              </span>
+          {item.tags.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  className="inline-flex max-w-8 items-center truncate rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  +{item.tags.length}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[16rem]">
+                <div className="space-y-1">
+                  {item.tags.map((tag, index) => (
+                    <p
+                      key={`${tag}-${index}`}
+                      className="text-xs leading-tight [overflow-wrap:anywhere]"
+                    >
+                      - {tag}
+                    </p>
+                  ))}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          <div className="ml-0.5 flex shrink-0 items-center gap-1 leading-none">
+            <WorkItemDescriptionHoverCard
+              id={item.id}
+              url={item.url}
+              descriptionRenderedHtml={item.descriptionRenderedHtml}
+              reproStepsRenderedHtml={item.reproStepsRenderedHtml}
+            />
+
+            {/* PR indicator - always visible */}
+            {hasPullRequests && (
+              <PrApprovalHoverCard pullRequests={pullRequests} />
             )}
           </div>
-        )}
+        </div>
+      </div>
 
-        <WorkItemDescriptionHoverCard
-          id={item.id}
-          url={item.url}
-          descriptionRenderedHtml={item.descriptionRenderedHtml}
-          reproStepsRenderedHtml={item.reproStepsRenderedHtml}
-        />
-
-        {/* PR indicator - always visible */}
-        {item.pullRequests && item.pullRequests.length > 0 && (
-          <PrApprovalHoverCard pullRequests={item.pullRequests} />
-        )}
-
-        <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-          {/* Timer actions */}
-          <div className="pointer-events-auto">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  onClick={(event) => event.stopPropagation()}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={isMoving || isTimerActionPending}
-                  aria-label="Timer actions"
-                >
-                  {isTimerActionPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <TimerIcon className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Timer</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onSelect={() => {
-                    handleTimerActionSelect("review");
-                  }}
-                  disabled={isMoving || isTimerActionPending}
-                >
-                  <MessageCircleCodeIcon className="mr-2 h-3.5 w-3.5" />
-                  Review
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => {
-                    handleTimerActionSelect("develop");
-                  }}
-                  disabled={isMoving || isTimerActionPending}
-                >
-                  <CodeXmlIcon className="mr-2 h-3.5 w-3.5" />
-                  Develop
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* Move menu - shown on hover */}
-          <div className="pointer-events-auto">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={isMoving}
-                >
-                  {isMoving ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <MoreVertical className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Move to...</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {moveTargets.length === 0 ? (
-                  <DropdownMenuItem disabled>No other columns</DropdownMenuItem>
+      <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        {/* Timer actions */}
+        <div className="pointer-events-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                onClick={(event) => event.stopPropagation()}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isMoving || isTimerActionPending}
+                aria-label="Timer actions"
+              >
+                {isTimerActionPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  moveTargets.map((column) => (
-                    <DropdownMenuItem
-                      key={column.id}
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        onMoveToColumn(item.id, columnId, column.id);
-                      }}
-                      disabled={isMoving}
-                    >
-                      {column.name}
-                    </DropdownMenuItem>
-                  ))
+                  <TimerIcon className="h-3.5 w-3.5" />
                 )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Timer</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  handleTimerActionSelect("review");
+                }}
+                disabled={isMoving || isTimerActionPending}
+              >
+                <MessageCircleCodeIcon className="mr-2 h-3.5 w-3.5" />
+                Review
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  handleTimerActionSelect("develop");
+                }}
+                disabled={isMoving || isTimerActionPending}
+              >
+                <CodeXmlIcon className="mr-2 h-3.5 w-3.5" />
+                Develop
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
-          {/* Branch copy - shown on hover only when PR source branch is available */}
-          {branchName && (
-            <div className="pointer-events-auto">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={handleCopyBranch}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+        {/* Move menu - shown on hover */}
+        <div className="pointer-events-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isMoving}
+              >
+                {isMoving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <MoreVertical className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Move to...</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {moveTargets.length === 0 ? (
+                <DropdownMenuItem disabled>No other columns</DropdownMenuItem>
+              ) : (
+                moveTargets.map((column) => (
+                  <DropdownMenuItem
+                    key={column.id}
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      onMoveToColumn(item.id, columnId, column.id);
+                    }}
+                    disabled={isMoving}
                   >
-                    {branchCopied ? (
-                      <Check className="h-3.5 w-3.5 text-green-500" />
-                    ) : (
-                      <GitBranch className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {branchCopied ? "Copied!" : branchName}
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          )}
+                    {column.name}
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
-          {/* Copy work item - shown on hover */}
+        {/* Branch copy - shown on hover only when PR source branch is available */}
+        {branchName && (
           <div className="pointer-events-auto">
-            <CopyWorkItem
-              workItemId={item.id}
-              organization={organization}
-              project={project}
-            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleCopyBranch}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  {branchCopied ? (
+                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  ) : (
+                    <GitBranch className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {branchCopied ? "Copied!" : branchName}
+              </TooltipContent>
+            </Tooltip>
           </div>
+        )}
+
+        {/* Copy work item - shown on hover */}
+        <div className="pointer-events-auto">
+          <CopyWorkItem
+            workItemId={item.id}
+            organization={organization}
+            project={project}
+          />
         </div>
       </div>
 
