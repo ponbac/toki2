@@ -66,6 +66,7 @@ pub struct RepoClient {
     http_client: reqwest::Client,
     organization: String,
     project: String,
+    repo_name: String,
     repo_id: String,
     pat: String,
 }
@@ -105,6 +106,7 @@ impl RepoClient {
             http_client,
             organization: organization.to_owned(),
             project: project.to_owned(),
+            repo_name: repo.name,
             repo_id: repo.id,
             pat: pat.to_owned(),
         })
@@ -116,6 +118,10 @@ impl RepoClient {
 
     pub fn project(&self) -> &str {
         &self.project
+    }
+
+    pub fn repo_name(&self) -> &str {
+        &self.repo_name
     }
 
     pub fn repo_id(&self) -> &str {

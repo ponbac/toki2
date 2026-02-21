@@ -41,15 +41,22 @@ impl AzureDevOpsWorkItemAdapter {
             resolved_default_team: OnceCell::new(),
         }
     }
-}
 
-#[async_trait]
-impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
-    async fn get_iterations(&self) -> Result<Vec<Iteration>, WorkItemError> {
-        let team = format!("{} Team", self.client.project());
-        let current_paths: HashSet<String> = match self
+    async fn current_iteration_paths_for_default_team(&self) -> HashSet<String> {
+        let default_team = match self.resolve_default_team(None).await {
+            Ok(team) => team,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to resolve default team for iterations; falling back to date-based current detection"
+                );
+                return HashSet::new();
+            }
+        };
+
+        match self
             .client
-            .get_current_team_iteration_paths(&team)
+            .get_current_team_iteration_paths(&default_team)
             .await
         {
             Ok(paths) => paths
@@ -59,12 +66,19 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
             Err(e) => {
                 tracing::warn!(
                     error = %e,
-                    team = %team,
+                    team = %default_team,
                     "Failed to fetch current team iteration paths; falling back to date-based current detection"
                 );
                 HashSet::new()
             }
-        };
+        }
+    }
+}
+
+#[async_trait]
+impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
+    async fn get_iterations(&self) -> Result<Vec<Iteration>, WorkItemError> {
+        let current_paths = self.current_iteration_paths_for_default_team().await;
 
         let ado_iterations = self
             .client
@@ -802,7 +816,8 @@ impl AzureDevOpsWorkItemAdapter {
                     .get_project_team_names()
                     .await
                     .map_err(to_provider_error)?;
-                let selected_team = select_default_project_team(project, &project_teams)
+                let selected_team =
+                    select_default_project_team(project, self.client.repo_name(), &project_teams)
                     .ok_or_else(|| {
                         WorkItemError::ProviderError(format!(
                             "No teams were found for project '{project}'"
@@ -871,16 +886,22 @@ impl AzureDevOpsWorkItemAdapter {
     }
 }
 
-fn select_default_project_team(project: &str, project_teams: &[String]) -> Option<String> {
-    let default_team = format!("{project} Team");
-    if let Some(team) = project_teams
-        .iter()
-        .find(|team| team.eq_ignore_ascii_case(&default_team))
-    {
-        return Some(team.clone());
-    }
+fn select_default_project_team(
+    project: &str,
+    repo_name: &str,
+    project_teams: &[String],
+) -> Option<String> {
+    let find_case_insensitive = |needle: &str| {
+        project_teams
+            .iter()
+            .find(|team| team.eq_ignore_ascii_case(needle))
+            .cloned()
+    };
 
-    project_teams.first().cloned()
+    find_case_insensitive(&format!("{project} Team"))
+        .or_else(|| find_case_insensitive(repo_name))
+        .or_else(|| find_case_insensitive(&format!("{repo_name} Team")))
+        .or_else(|| project_teams.first().cloned())
 }
 
 fn to_provider_error(error: impl ToString) -> WorkItemError {
@@ -1000,14 +1021,26 @@ mod tests {
             "Ops".to_string(),
         ];
 
-        let selected = select_default_project_team("Space Ninjas", &teams);
+        let selected = select_default_project_team("Space Ninjas", "platform", &teams);
         assert_eq!(selected.as_deref(), Some("Space Ninjas Team"));
+    }
+
+    #[test]
+    fn select_default_project_team_prefers_repo_name_when_project_team_missing() {
+        let teams = vec![
+            "Backend Team".to_string(),
+            "Hexagon".to_string(),
+            "Frontend Team".to_string(),
+        ];
+
+        let selected = select_default_project_team("Quote Manager", "hexagon", &teams);
+        assert_eq!(selected.as_deref(), Some("Hexagon"));
     }
 
     #[test]
     fn select_default_project_team_falls_back_to_first_team() {
         let teams = vec!["Platform Team".to_string(), "Ops".to_string()];
-        let selected = select_default_project_team("Space Ninjas", &teams);
+        let selected = select_default_project_team("Space Ninjas", "my-repo", &teams);
         assert_eq!(selected.as_deref(), Some("Platform Team"));
     }
 }
