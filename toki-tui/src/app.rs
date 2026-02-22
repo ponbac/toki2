@@ -120,6 +120,98 @@ impl GitContext {
     }
 }
 
+/// A text input with mid-string cursor support.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TextInput {
+    pub value: String,
+    pub cursor: usize,
+}
+
+impl TextInput {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        Self {
+            value: s.to_string(),
+            cursor: s.len(),
+        }
+    }
+
+    /// Insert a character at the cursor position.
+    pub fn insert(&mut self, c: char) {
+        self.value.insert(self.cursor, c);
+        self.cursor += c.len_utf8();
+    }
+
+    /// Delete the character immediately before the cursor (backspace).
+    pub fn backspace(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        // Step back one char boundary
+        let new_cursor = self.prev_boundary(self.cursor);
+        self.value.drain(new_cursor..self.cursor);
+        self.cursor = new_cursor;
+    }
+
+    /// Move cursor one char to the left.
+    pub fn move_left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor = self.prev_boundary(self.cursor);
+        }
+    }
+
+    /// Move cursor one char to the right.
+    pub fn move_right(&mut self) {
+        if self.cursor < self.value.len() {
+            self.cursor = self.next_boundary(self.cursor);
+        }
+    }
+
+    pub fn home(&mut self) {
+        self.cursor = 0;
+    }
+    pub fn end(&mut self) {
+        self.cursor = self.value.len();
+    }
+
+    pub fn clear(&mut self) {
+        self.value.clear();
+        self.cursor = 0;
+    }
+
+    /// Returns the string split at the cursor: (before, after).
+    /// Use for rendering: `before + "█" + after`.
+    pub fn split_at_cursor(&self) -> (&str, &str) {
+        (&self.value[..self.cursor], &self.value[self.cursor..])
+    }
+
+    // --- helpers ---
+    fn prev_boundary(&self, pos: usize) -> usize {
+        debug_assert!(pos > 0, "prev_boundary called with pos == 0");
+        let mut p = pos;
+        loop {
+            p -= 1;
+            if self.value.is_char_boundary(p) {
+                return p;
+            }
+        }
+    }
+    fn next_boundary(&self, pos: usize) -> usize {
+        debug_assert!(
+            pos < self.value.len(),
+            "next_boundary called at end of string"
+        );
+        let mut p = pos + 1;
+        while p <= self.value.len() && !self.value.is_char_boundary(p) {
+            p += 1;
+        }
+        p
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum EntryEditField {
     StartTime,
@@ -140,7 +232,7 @@ pub struct EntryEditState {
     pub project_name: Option<String>,
     pub activity_id: Option<String>,
     pub activity_name: Option<String>,
-    pub note: String,
+    pub note: TextInput,
     pub focused_field: EntryEditField,
     pub validation_error: Option<String>,
 }
@@ -170,12 +262,12 @@ pub struct App {
     pub selected_activity: Option<TestActivity>,
 
     // Fuzzy finding for projects
-    pub project_search_input: String,
+    pub project_search_input: TextInput,
     pub filtered_projects: Vec<TestProject>,
     pub filtered_project_index: usize,
 
     // Fuzzy finding for activities
-    pub activity_search_input: String,
+    pub activity_search_input: TextInput,
     pub filtered_activities: Vec<TestActivity>,
     pub filtered_activity_index: usize,
 
@@ -186,7 +278,7 @@ pub struct App {
     pub selected_save_action: SaveAction,
 
     // Description editing
-    pub description_input: String,
+    pub description_input: TextInput,
     pub editing_description: bool,
     pub description_is_default: bool,
     pub saved_timer_note: Option<String>, // Saved when editing entry note to restore later
@@ -203,7 +295,7 @@ pub struct App {
     // Git context for note editor
     pub git_context: GitContext,
     pub git_mode: bool,
-    pub cwd_input: Option<String>,    // Some(_) when changing directory
+    pub cwd_input: Option<TextInput>, // Some(_) when changing directory
     pub cwd_completions: Vec<String>, // Tab completion candidates
 }
 
@@ -230,15 +322,15 @@ impl App {
             selected_activity_index: 0,
             selected_project: None,
             selected_activity: None,
-            project_search_input: String::new(),
+            project_search_input: TextInput::new(),
             filtered_projects: projects.clone(),
             filtered_project_index: 0,
-            activity_search_input: String::new(),
+            activity_search_input: TextInput::new(),
             filtered_activities: Vec::new(),
             filtered_activity_index: 0,
             selection_list_focused: false,
             selected_save_action: SaveAction::ContinueSameProject,
-            description_input: String::new(),
+            description_input: TextInput::new(),
             editing_description: false,
             description_is_default: true,
             saved_timer_note: None,
@@ -275,7 +367,7 @@ impl App {
         self.local_start = None;
         self.selected_project = None;
         self.selected_activity = None;
-        self.description_input = String::new();
+        self.description_input = TextInput::new();
         self.description_is_default = true;
         self.status_message = Some("Timer cleared".to_string());
     }
@@ -678,7 +770,7 @@ impl App {
             project_name,
             activity_id,
             activity_name,
-            note: note.unwrap_or_default(),
+            note: TextInput::from_str(&note.unwrap_or_default()),
             focused_field: EntryEditField::StartTime,
             validation_error: None,
         };
@@ -819,7 +911,7 @@ impl App {
                 }
             }
             EntryEditField::Note => {
-                state.note.push(c);
+                state.note.insert(c);
             }
             EntryEditField::Project | EntryEditField::Activity => {}
         };
@@ -848,7 +940,7 @@ impl App {
                 state.end_time_input.pop();
             }
             EntryEditField::Note => {
-                state.note.pop();
+                state.note.backspace();
             }
             EntryEditField::Project | EntryEditField::Activity => {}
         };
@@ -858,6 +950,43 @@ impl App {
         }
         if let Some(state) = &mut self.history_edit_state {
             apply_backspace(state);
+        }
+    }
+
+    /// Move cursor left/right in a text field (Note only; time fields have no cursor).
+    pub fn entry_edit_move_cursor(&mut self, left: bool) {
+        let apply = |state: &mut EntryEditState| {
+            if state.focused_field == EntryEditField::Note {
+                if left {
+                    state.note.move_left();
+                } else {
+                    state.note.move_right();
+                }
+            }
+        };
+        if let Some(s) = &mut self.this_week_edit_state {
+            apply(s);
+        }
+        if let Some(s) = &mut self.history_edit_state {
+            apply(s);
+        }
+    }
+
+    pub fn entry_edit_cursor_home_end(&mut self, home: bool) {
+        let apply = |state: &mut EntryEditState| {
+            if state.focused_field == EntryEditField::Note {
+                if home {
+                    state.note.home();
+                } else {
+                    state.note.end();
+                }
+            }
+        };
+        if let Some(s) = &mut self.this_week_edit_state {
+            apply(s);
+        }
+        if let Some(s) = &mut self.history_edit_state {
+            apply(s);
         }
     }
 
@@ -1023,10 +1152,10 @@ impl App {
     pub fn update_edit_state_note(&mut self, note: String) {
         // Update whichever edit state is active (this_week or history)
         if let Some(state) = &mut self.this_week_edit_state {
-            state.note = note.clone();
+            state.note = TextInput::from_str(&note);
         }
         if let Some(state) = &mut self.history_edit_state {
-            state.note = note;
+            state.note = TextInput::from_str(&note);
         }
     }
 
@@ -1175,7 +1304,7 @@ impl App {
 
     /// Get current description for display
     pub fn current_description(&self) -> String {
-        self.description_input.clone()
+        self.description_input.value.clone()
     }
 
     /// Get the start of the current week (Monday 00:00:00)
@@ -1298,14 +1427,34 @@ impl App {
     /// Handle character input for description editing
     pub fn input_char(&mut self, c: char) {
         if self.editing_description {
-            self.description_input.push(c);
+            self.description_input.insert(c);
         }
     }
 
     /// Handle backspace for description editing
     pub fn input_backspace(&mut self) {
         if self.editing_description {
-            self.description_input.pop();
+            self.description_input.backspace();
+        }
+    }
+
+    pub fn input_move_cursor(&mut self, left: bool) {
+        if self.editing_description {
+            if left {
+                self.description_input.move_left();
+            } else {
+                self.description_input.move_right();
+            }
+        }
+    }
+
+    pub fn input_cursor_home_end(&mut self, home: bool) {
+        if self.editing_description {
+            if home {
+                self.description_input.home();
+            } else {
+                self.description_input.end();
+            }
         }
     }
 
@@ -1321,7 +1470,7 @@ impl App {
         use fuzzy_matcher::skim::SkimMatcherV2;
         use fuzzy_matcher::FuzzyMatcher;
 
-        if self.project_search_input.is_empty() {
+        if self.project_search_input.value.is_empty() {
             // Empty search - show all projects
             self.filtered_projects = self.projects.clone();
             self.filtered_project_index = 0;
@@ -1334,7 +1483,7 @@ impl App {
             .iter()
             .filter_map(|project| {
                 matcher
-                    .fuzzy_match(&project.name, &self.project_search_input)
+                    .fuzzy_match(&project.name, &self.project_search_input.value)
                     .map(|score| (project.clone(), score))
             })
             .collect();
@@ -1348,13 +1497,13 @@ impl App {
 
     /// Handle character input for project search
     pub fn search_input_char(&mut self, c: char) {
-        self.project_search_input.push(c);
+        self.project_search_input.insert(c);
         self.filter_projects();
     }
 
     /// Handle backspace for project search
     pub fn search_input_backspace(&mut self) {
-        self.project_search_input.pop();
+        self.project_search_input.backspace();
         self.filter_projects();
     }
 
@@ -1369,7 +1518,7 @@ impl App {
         use fuzzy_matcher::skim::SkimMatcherV2;
         use fuzzy_matcher::FuzzyMatcher;
 
-        if self.activity_search_input.is_empty() {
+        if self.activity_search_input.value.is_empty() {
             // Empty search - show all activities for selected project
             self.filtered_activities = self.activities.clone();
             self.filtered_activity_index = 0;
@@ -1382,7 +1531,7 @@ impl App {
             .iter()
             .filter_map(|activity| {
                 matcher
-                    .fuzzy_match(&activity.name, &self.activity_search_input)
+                    .fuzzy_match(&activity.name, &self.activity_search_input.value)
                     .map(|score| (activity.clone(), score))
             })
             .collect();
@@ -1396,13 +1545,13 @@ impl App {
 
     /// Handle character input for activity search
     pub fn activity_search_input_char(&mut self, c: char) {
-        self.activity_search_input.push(c);
+        self.activity_search_input.insert(c);
         self.filter_activities();
     }
 
     /// Handle backspace for activity search
     pub fn activity_search_input_backspace(&mut self) {
-        self.activity_search_input.pop();
+        self.activity_search_input.backspace();
         self.filter_activities();
     }
 
@@ -1410,6 +1559,42 @@ impl App {
     pub fn activity_search_input_clear(&mut self) {
         self.activity_search_input.clear();
         self.filter_activities();
+    }
+
+    /// Move cursor left/right in project search input.
+    pub fn search_move_cursor(&mut self, left: bool) {
+        if left {
+            self.project_search_input.move_left();
+        } else {
+            self.project_search_input.move_right();
+        }
+    }
+
+    /// Move cursor to home/end in project search input.
+    pub fn search_cursor_home_end(&mut self, home: bool) {
+        if home {
+            self.project_search_input.home();
+        } else {
+            self.project_search_input.end();
+        }
+    }
+
+    /// Move cursor left/right in activity search input.
+    pub fn activity_search_move_cursor(&mut self, left: bool) {
+        if left {
+            self.activity_search_input.move_left();
+        } else {
+            self.activity_search_input.move_right();
+        }
+    }
+
+    /// Move cursor to home/end in activity search input.
+    pub fn activity_search_cursor_home_end(&mut self, home: bool) {
+        if home {
+            self.activity_search_input.home();
+        } else {
+            self.activity_search_input.end();
+        }
     }
 
     /// Navigate to next save action option
@@ -1453,35 +1638,40 @@ impl App {
         self.git_mode = false;
     }
 
-    /// Paste raw branch name into description_input (appends to existing text).
+    /// Paste raw branch name into description_input (inserts at cursor position).
     pub fn paste_git_branch_raw(&mut self) {
         self.git_mode = false;
         if let Some(branch) = &self.git_context.branch.clone() {
-            self.description_input.push_str(branch);
+            for c in branch.chars() {
+                self.description_input.insert(c);
+            }
         }
     }
 
-    /// Paste parsed branch name into description_input (appends to existing text).
+    /// Paste parsed branch name into description_input (inserts at cursor position).
     pub fn paste_git_branch_parsed(&mut self) {
         self.git_mode = false;
         if let Some(branch) = &self.git_context.branch.clone() {
-            self.description_input
-                .push_str(&crate::git::parse_branch(branch));
+            for c in crate::git::parse_branch(branch).chars() {
+                self.description_input.insert(c);
+            }
         }
     }
 
-    /// Paste last commit message into description_input (appends to existing text).
+    /// Paste last commit message into description_input (inserts at cursor position).
     pub fn paste_git_last_commit(&mut self) {
         self.git_mode = false;
         if let Some(commit) = &self.git_context.last_commit.clone() {
-            self.description_input.push_str(commit);
+            for c in commit.chars() {
+                self.description_input.insert(c);
+            }
         }
     }
 
     /// Begin CWD change mode. Pre-fill with current cwd string.
     pub fn begin_cwd_change(&mut self) {
         self.git_mode = false;
-        self.cwd_input = Some(self.git_context.cwd.to_string_lossy().to_string());
+        self.cwd_input = Some(TextInput::from_str(&self.git_context.cwd.to_string_lossy()));
         self.cwd_completions = Vec::new();
     }
 
@@ -1495,7 +1685,7 @@ impl App {
     pub fn confirm_cwd_change(&mut self) -> Result<(), String> {
         let input = self.cwd_input.take().unwrap_or_default();
         self.cwd_completions = Vec::new();
-        let path = std::path::PathBuf::from(&input);
+        let path = std::path::PathBuf::from(&input.value);
         if path.is_dir() {
             self.git_context = GitContext::from_cwd(path);
             Ok(())
@@ -1509,7 +1699,7 @@ impl App {
     /// and completes to longest common prefix if there are matches.
     pub fn cwd_tab_complete(&mut self) {
         let input = match &self.cwd_input {
-            Some(s) => s.clone(),
+            Some(s) => s.value.clone(),
             None => return,
         };
 
@@ -1540,12 +1730,13 @@ impl App {
         matches.sort();
 
         if matches.len() == 1 {
-            self.cwd_input = Some(format!("{}/", matches[0]));
+            let new_val = format!("{}/", matches[0]);
+            self.cwd_input = Some(TextInput::from_str(&new_val));
             self.cwd_completions = Vec::new();
         } else if matches.len() > 1 {
             // Find longest common prefix
             let lcp = longest_common_prefix(&matches);
-            self.cwd_input = Some(lcp);
+            self.cwd_input = Some(TextInput::from_str(&lcp));
             self.cwd_completions = matches;
         }
         // no matches: do nothing
@@ -1554,7 +1745,7 @@ impl App {
     /// Append a char to cwd_input.
     pub fn cwd_input_char(&mut self, c: char) {
         if let Some(s) = &mut self.cwd_input {
-            s.push(c);
+            s.insert(c);
             self.cwd_completions.clear();
         }
     }
@@ -1562,8 +1753,28 @@ impl App {
     /// Backspace in cwd_input.
     pub fn cwd_input_backspace(&mut self) {
         if let Some(s) = &mut self.cwd_input {
-            s.pop();
+            s.backspace();
             self.cwd_completions.clear();
+        }
+    }
+
+    pub fn cwd_move_cursor(&mut self, left: bool) {
+        if let Some(s) = &mut self.cwd_input {
+            if left {
+                s.move_left();
+            } else {
+                s.move_right();
+            }
+        }
+    }
+
+    pub fn cwd_cursor_home_end(&mut self, home: bool) {
+        if let Some(s) = &mut self.cwd_input {
+            if home {
+                s.home();
+            } else {
+                s.end();
+            }
         }
     }
 }

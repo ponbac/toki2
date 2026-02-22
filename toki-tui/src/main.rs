@@ -5,7 +5,7 @@ mod test_data;
 mod ui;
 
 use anyhow::Result;
-use app::App;
+use app::{App, TextInput};
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
@@ -148,6 +148,10 @@ async fn run_app(
                                     app.select_next();
                                 }
                             }
+                            KeyCode::Left  => { if !app.selection_list_focused { app.search_move_cursor(true); } }
+                            KeyCode::Right => { if !app.selection_list_focused { app.search_move_cursor(false); } }
+                            KeyCode::Home  => { if !app.selection_list_focused { app.search_cursor_home_end(true); } }
+                            KeyCode::End   => { if !app.selection_list_focused { app.search_cursor_home_end(false); } }
                             KeyCode::Enter => {
                                 app.confirm_selection();
                                 // If we were in edit mode, restore with selected project AND restore running timer state
@@ -217,6 +221,10 @@ async fn run_app(
                                     app.select_next();
                                 }
                             }
+                            KeyCode::Left  => { if !app.selection_list_focused { app.activity_search_move_cursor(true); } }
+                            KeyCode::Right => { if !app.selection_list_focused { app.activity_search_move_cursor(false); } }
+                            KeyCode::Home  => { if !app.selection_list_focused { app.activity_search_cursor_home_end(true); } }
+                            KeyCode::End   => { if !app.selection_list_focused { app.activity_search_cursor_home_end(false); } }
                             KeyCode::Enter => {
                                 app.confirm_selection();
                                 
@@ -259,6 +267,10 @@ async fn run_app(
                                 }
                                 KeyCode::Tab => app.cwd_tab_complete(),
                                 KeyCode::Backspace => app.cwd_input_backspace(),
+                                KeyCode::Left  => app.cwd_move_cursor(true),
+                                KeyCode::Right => app.cwd_move_cursor(false),
+                                KeyCode::Home  => app.cwd_cursor_home_end(true),
+                                KeyCode::End   => app.cwd_cursor_home_end(false),
                                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                                     app.cwd_input_char(c);
                                 }
@@ -294,11 +306,15 @@ async fn run_app(
                                     app.input_char(c);
                                 }
                                 KeyCode::Backspace => app.input_backspace(),
+                                KeyCode::Left  => app.input_move_cursor(true),
+                                KeyCode::Right => app.input_move_cursor(false),
+                                KeyCode::Home  => app.input_cursor_home_end(true),
+                                KeyCode::End   => app.input_cursor_home_end(false),
                                 KeyCode::Enter => {
                                     if was_in_edit_mode {
-                                        app.update_edit_state_note(app.description_input.clone());
+                                        app.update_edit_state_note(app.description_input.value.clone());
                                         if let Some(saved_note) = app.saved_timer_note.take() {
-                                            app.description_input = saved_note;
+                                            app.description_input = TextInput::from_str(&saved_note);
                                         }
                                         let return_view = app.get_return_view_from_edit();
                                         app.navigate_to(return_view);
@@ -312,7 +328,7 @@ async fn run_app(
                                 KeyCode::Esc => {
                                     if was_in_edit_mode {
                                         if let Some(saved_note) = app.saved_timer_note.take() {
-                                            app.description_input = saved_note;
+                                            app.description_input = TextInput::from_str(&saved_note);
                                         }
                                         let return_view = app.get_return_view_from_edit();
                                         app.navigate_to(return_view);
@@ -369,19 +385,35 @@ async fn run_app(
                                 KeyCode::BackTab => {
                                     app.entry_edit_prev_field();
                                 }
-                                // Arrow keys: navigate fields
-                                KeyCode::Down | KeyCode::Char('j') => {
-                                    app.entry_edit_next_field();
-                                }
-                                KeyCode::Up | KeyCode::Char('k') => {
-                                    app.entry_edit_prev_field();
-                                }
-                                KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L') => {
-                                    app.entry_edit_next_field();
-                                }
-                                KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('H') => {
-                                    app.entry_edit_prev_field();
-                                }
+                                 // Arrow keys: navigate fields (or cursor movement in Note)
+                                 KeyCode::Down | KeyCode::Char('j') => {
+                                     app.entry_edit_next_field();
+                                 }
+                                 KeyCode::Up | KeyCode::Char('k') => {
+                                     app.entry_edit_prev_field();
+                                 }
+                                 KeyCode::Right => {
+                                     if app.history_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
+                                         app.entry_edit_move_cursor(false);
+                                     } else {
+                                         app.entry_edit_next_field();
+                                     }
+                                 }
+                                 KeyCode::Char('l') | KeyCode::Char('L') => {
+                                     app.entry_edit_next_field();
+                                 }
+                                 KeyCode::Left => {
+                                     if app.history_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
+                                         app.entry_edit_move_cursor(true);
+                                     } else {
+                                         app.entry_edit_prev_field();
+                                     }
+                                 }
+                                 KeyCode::Char('h') | KeyCode::Char('H') => {
+                                     app.entry_edit_prev_field();
+                                 }
+                                 KeyCode::Home => app.entry_edit_cursor_home_end(true),
+                                 KeyCode::End  => app.entry_edit_cursor_home_end(false),
                                 // Number keys for time input
                                 KeyCode::Char(c) if c.is_ascii_digit() => {
                                     app.entry_edit_input_char(c);
@@ -519,30 +551,70 @@ async fn run_app(
                                     app.focus_previous();
                                 }
                             }
-                            // Arrow right / l: Next field (edit mode only)
-                            KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L') => {
-                                if app.this_week_edit_state.is_some() {
-                                    app.entry_edit_next_field();
-                                }
-                            }
-                            // Arrow left / h: Prev field (edit mode only) or open History
-                            KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('H') => {
-                                if app.this_week_edit_state.is_some() {
-                                    app.entry_edit_prev_field();
-                                } else if app.this_week_edit_state.is_none() {
-                                    // Open History view when not in edit mode
-                                    match db.get_timer_history(app.user_id, 500).await {
-                                        Ok(history) => {
-                                            app.update_history(history);
-                                            app.rebuild_history_list();
-                                            app.navigate_to(app::View::History);
-                                        }
-                                        Err(e) => {
-                                            app.set_status(format!("Error loading history: {}", e));
-                                        }
-                                    }
-                                }
-                            }
+                             // Arrow right / l: Next field (edit mode only, or cursor movement in Note)
+                             KeyCode::Right => {
+                                 if app.this_week_edit_state.is_some() {
+                                     if app.this_week_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
+                                         app.entry_edit_move_cursor(false);
+                                     } else {
+                                         app.entry_edit_next_field();
+                                     }
+                                 }
+                             }
+                             KeyCode::Char('l') | KeyCode::Char('L') => {
+                                 if app.this_week_edit_state.is_some() {
+                                     app.entry_edit_next_field();
+                                 }
+                             }
+                             // Arrow left / h: Prev field (edit mode only, or cursor movement in Note) or open History
+                             KeyCode::Left => {
+                                 if app.this_week_edit_state.is_some() {
+                                     if app.this_week_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
+                                         app.entry_edit_move_cursor(true);
+                                     } else {
+                                         app.entry_edit_prev_field();
+                                     }
+                                 } else {
+                                     // Open History view when not in edit mode
+                                     match db.get_timer_history(app.user_id, 500).await {
+                                         Ok(history) => {
+                                             app.update_history(history);
+                                             app.rebuild_history_list();
+                                             app.navigate_to(app::View::History);
+                                         }
+                                         Err(e) => {
+                                             app.set_status(format!("Error loading history: {}", e));
+                                         }
+                                     }
+                                 }
+                             }
+                             KeyCode::Char('h') | KeyCode::Char('H') => {
+                                 if app.this_week_edit_state.is_some() {
+                                     app.entry_edit_prev_field();
+                                 } else if app.this_week_edit_state.is_none() {
+                                     // Open History view when not in edit mode
+                                     match db.get_timer_history(app.user_id, 500).await {
+                                         Ok(history) => {
+                                             app.update_history(history);
+                                             app.rebuild_history_list();
+                                             app.navigate_to(app::View::History);
+                                         }
+                                         Err(e) => {
+                                             app.set_status(format!("Error loading history: {}", e));
+                                         }
+                                     }
+                                 }
+                             }
+                             KeyCode::Home => {
+                                 if app.this_week_edit_state.is_some() {
+                                     app.entry_edit_cursor_home_end(true);
+                                 }
+                             }
+                             KeyCode::End => {
+                                 if app.this_week_edit_state.is_some() {
+                                     app.entry_edit_cursor_home_end(false);
+                                 }
+                             }
                             // Enter: activate focused box or move to next field in edit mode
                             KeyCode::Enter => {
                                 if app.this_week_edit_state.is_some() {
@@ -703,7 +775,7 @@ async fn handle_save_timer_with_action(app: &mut App, db: &api::Database) -> Res
         let project_name = Some(app.current_project_name());
         let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
         let activity_name = Some(app.current_activity_name());
-        let note = Some(app.description_input.clone());
+        let note = Some(app.description_input.value.clone());
         
         // Save to database
         match db.save_timer_entry(
@@ -802,7 +874,7 @@ fn handle_entry_edit_enter(app: &mut App) {
                     }
                 }
                 app::EntryEditField::Note => {
-                    let note = state.note.clone();
+                    let note = state.note.value.clone();
                     Some(('N', Some(note)))
                 }
                 app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
@@ -827,10 +899,10 @@ fn handle_entry_edit_enter(app: &mut App) {
             }
             'N' => {
                 // Save running timer's note before overwriting with entry's note
-                app.saved_timer_note = Some(app.description_input.clone());
+                app.saved_timer_note = Some(app.description_input.value.clone());
                 // Set description_input from the edit state before navigating
                 if let Some(n) = note {
-                    app.description_input = n;
+                    app.description_input = TextInput::from_str(&n);
                 }
                 // Open description editor
                 app.navigate_to(app::View::EditDescription);
@@ -891,7 +963,7 @@ async fn handle_this_week_edit_save(app: &mut App, db: &api::Database) -> Result
             state.project_name.clone(),
             state.activity_id.clone(),
             state.activity_name.clone(),
-            Some(state.note.clone()),
+            Some(state.note.value.clone()),
         ).await {
             Ok(_) => {
                 app.set_status("Entry updated successfully".to_string());
@@ -967,7 +1039,7 @@ async fn handle_history_edit_save(app: &mut App, db: &api::Database) -> Result<(
             state.project_name.clone(),
             state.activity_id.clone(),
             state.activity_name.clone(),
-            Some(state.note.clone()),
+            Some(state.note.value.clone()),
         ).await {
             Ok(_) => {
                 app.set_status("Entry updated successfully".to_string());

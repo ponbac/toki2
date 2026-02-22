@@ -240,16 +240,17 @@ fn render_project_selection(frame: &mut Frame, app: &App, body: Rect) {
         .split(body);
 
     // Search input box
-    let search_text = if app.project_search_input.is_empty() {
+    let search_text = if app.project_search_input.value.is_empty() {
         if app.selection_list_focused {
             "Type to search...".to_string()
         } else {
             "█".to_string()
         }
     } else if app.selection_list_focused {
-        app.project_search_input.clone()
+        app.project_search_input.value.clone()
     } else {
-        format!("{}█", app.project_search_input)
+        let (before, after) = app.project_search_input.split_at_cursor();
+        format!("{}█{}", before, after)
     };
     let search_border = if app.selection_list_focused {
         Style::default().fg(Color::DarkGray)
@@ -291,7 +292,7 @@ fn render_project_selection(frame: &mut Frame, app: &App, body: Rect) {
         .collect();
 
     // Show count: filtered / total
-    let title = if app.project_search_input.is_empty() {
+    let title = if app.project_search_input.value.is_empty() {
         format!(" Projects ({}) ", app.projects.len())
     } else {
         format!(
@@ -362,16 +363,17 @@ fn render_activity_selection(frame: &mut Frame, app: &App, body: Rect) {
         .split(body);
 
     // Search input box
-    let search_text = if app.activity_search_input.is_empty() {
+    let search_text = if app.activity_search_input.value.is_empty() {
         if app.selection_list_focused {
             "Type to search...".to_string()
         } else {
             "█".to_string()
         }
     } else if app.selection_list_focused {
-        app.activity_search_input.clone()
+        app.activity_search_input.value.clone()
     } else {
-        format!("{}█", app.activity_search_input)
+        let (before, after) = app.activity_search_input.split_at_cursor();
+        format!("{}█{}", before, after)
     };
     let search_border = if app.selection_list_focused {
         Style::default().fg(Color::DarkGray)
@@ -407,7 +409,7 @@ fn render_activity_selection(frame: &mut Frame, app: &App, body: Rect) {
         .collect();
 
     // Show count: filtered / total
-    let title = if app.activity_search_input.is_empty() {
+    let title = if app.activity_search_input.value.is_empty() {
         format!(" Activities ({}) ", app.activities.len())
     } else {
         format!(
@@ -842,6 +844,19 @@ fn build_display_row(
     Line::from(spans)
 }
 
+/// Render a partial or complete time string with a block cursor.
+/// - len >= 5 ("HH:MM"): display as-is, no cursor
+/// - len < 5: show typed chars + '█' + space padding to fill 5-char slot
+fn time_input_display(s: &str) -> String {
+    if s.len() >= 5 {
+        format!("[{}]", s)
+    } else {
+        let filled = s.len();
+        let spaces = 5 - filled - 1;
+        format!("[{}█{}]", s, " ".repeat(spaces))
+    }
+}
+
 fn build_edit_row<'a>(
     _entry: &'a crate::api::database::TimerHistoryEntry,
     edit_state: &'a EntryEditState,
@@ -850,11 +865,7 @@ fn build_edit_row<'a>(
     let mut spans = vec![];
 
     // Start time field
-    let start_value = if edit_state.start_time_input.len() < 5 {
-        format!("[{:>5}]", edit_state.start_time_input)
-    } else {
-        format!("[{}]", edit_state.start_time_input)
-    };
+    let start_value = time_input_display(&edit_state.start_time_input);
     let start_style = match edit_state.focused_field {
         EntryEditField::StartTime => Style::default()
             .fg(Color::Black)
@@ -868,11 +879,7 @@ fn build_edit_row<'a>(
     spans.push(Span::styled(" - ", Style::default().fg(Color::White)));
 
     // End time field
-    let end_value = if edit_state.end_time_input.len() < 5 {
-        format!("[{:>5}]", edit_state.end_time_input)
-    } else {
-        format!("[{}]", edit_state.end_time_input)
-    };
+    let end_value = time_input_display(&edit_state.end_time_input);
     let end_style = match edit_state.focused_field {
         EntryEditField::EndTime => Style::default()
             .fg(Color::Black)
@@ -917,20 +924,29 @@ fn build_edit_row<'a>(
     spans.push(Span::styled(" | ", Style::default().fg(Color::White)));
 
     // Note field
-    let note_value = format!(
-        "[{}]",
-        if edit_state.note.is_empty() {
-            "None"
-        } else {
-            &edit_state.note
-        }
-    );
     let note_style = match edit_state.focused_field {
         EntryEditField::Note => Style::default()
             .fg(Color::Black)
             .bg(Color::White)
             .add_modifier(Modifier::BOLD),
         _ => Style::default().fg(Color::White),
+    };
+    let note_value = if matches!(edit_state.focused_field, EntryEditField::Note) {
+        let (before, after) = edit_state.note.split_at_cursor();
+        if edit_state.note.value.is_empty() {
+            "[█]".to_string()
+        } else {
+            format!("[{}█{}]", before, after)
+        }
+    } else {
+        format!(
+            "[{}]",
+            if edit_state.note.value.is_empty() {
+                "None"
+            } else {
+                &edit_state.note.value
+            }
+        )
     };
     spans.push(Span::styled(note_value, note_style));
 
@@ -1046,7 +1062,10 @@ fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
         } else {
             format!("  [{}]", app.cwd_completions.join("  "))
         };
-        let input_text = format!("{}█{}", cwd_input, completions_hint);
+        let input_text = {
+            let (before, after) = cwd_input.split_at_cursor();
+            format!("{}█{}{}", before, after, completions_hint)
+        };
         let input = Paragraph::new(input_text)
             .style(Style::default().fg(Color::Yellow))
             .block(
@@ -1058,7 +1077,8 @@ fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             );
         frame.render_widget(input, chunks[0]);
     } else {
-        let input_text = format!("{}█", app.description_input);
+        let (before, after) = app.description_input.split_at_cursor();
+        let input_text = format!("{}█{}", before, after);
         let input = Paragraph::new(input_text)
             .style(Style::default().fg(Color::White))
             .block(
