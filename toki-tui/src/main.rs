@@ -106,18 +106,48 @@ async fn run_app(
                         
                         match key.code {
                             KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+X clears search input
                                 app.search_input_clear();
                             }
-                            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && c != 'q' && c != 'Q' && c != 'j' && c != 'k' => {
-                                // Type to search (except for navigation/quit keys)
-                                app.search_input_char(c);
+                            KeyCode::Tab => {
+                                app.selection_list_focused = true;
+                            }
+                            KeyCode::BackTab => {
+                                app.selection_list_focused = false;
+                            }
+                            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && c != 'q' && c != 'Q' => {
+                                if app.selection_list_focused && c == 'j' {
+                                    if app.filtered_project_index + 1 >= app.filtered_projects.len() {
+                                        app.selection_list_focused = false;
+                                    } else {
+                                        app.select_next();
+                                    }
+                                } else if app.selection_list_focused && c == 'k' {
+                                    if app.filtered_project_index == 0 {
+                                        app.selection_list_focused = false;
+                                    } else {
+                                        app.select_previous();
+                                    }
+                                } else if !app.selection_list_focused {
+                                    app.search_input_char(c);
+                                }
                             }
                             KeyCode::Backspace => {
                                 app.search_input_backspace();
                             }
-                            KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
-                            KeyCode::Down | KeyCode::Char('j') => app.select_next(),
+                            KeyCode::Up => {
+                                if app.selection_list_focused && app.filtered_project_index == 0 {
+                                    app.selection_list_focused = false;
+                                } else {
+                                    app.select_previous();
+                                }
+                            }
+                            KeyCode::Down => {
+                                if app.selection_list_focused && app.filtered_project_index + 1 >= app.filtered_projects.len() {
+                                    app.selection_list_focused = false;
+                                } else {
+                                    app.select_next();
+                                }
+                            }
                             KeyCode::Enter => {
                                 app.confirm_selection();
                                 // If we were in edit mode, restore with selected project AND restore running timer state
@@ -145,18 +175,48 @@ async fn run_app(
                         
                         match key.code {
                             KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                // Ctrl+X clears search input
                                 app.activity_search_input_clear();
                             }
-                            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && c != 'q' && c != 'Q' && c != 'j' && c != 'k' => {
-                                // Type to search (except for navigation/quit keys)
-                                app.activity_search_input_char(c);
+                            KeyCode::Tab => {
+                                app.selection_list_focused = true;
+                            }
+                            KeyCode::BackTab => {
+                                app.selection_list_focused = false;
+                            }
+                            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && c != 'q' && c != 'Q' => {
+                                if app.selection_list_focused && c == 'j' {
+                                    if app.filtered_activity_index + 1 >= app.filtered_activities.len() {
+                                        app.selection_list_focused = false;
+                                    } else {
+                                        app.select_next();
+                                    }
+                                } else if app.selection_list_focused && c == 'k' {
+                                    if app.filtered_activity_index == 0 {
+                                        app.selection_list_focused = false;
+                                    } else {
+                                        app.select_previous();
+                                    }
+                                } else if !app.selection_list_focused {
+                                    app.activity_search_input_char(c);
+                                }
                             }
                             KeyCode::Backspace => {
                                 app.activity_search_input_backspace();
                             }
-                            KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
-                            KeyCode::Down | KeyCode::Char('j') => app.select_next(),
+                            KeyCode::Up => {
+                                if app.selection_list_focused && app.filtered_activity_index == 0 {
+                                    app.selection_list_focused = false;
+                                } else {
+                                    app.select_previous();
+                                }
+                            }
+                            KeyCode::Down => {
+                                if app.selection_list_focused && app.filtered_activity_index + 1 >= app.filtered_activities.len() {
+                                    app.selection_list_focused = false;
+                                } else {
+                                    app.select_next();
+                                }
+                            }
                             KeyCode::Enter => {
                                 app.confirm_selection();
                                 
@@ -391,6 +451,16 @@ async fn run_app(
                             }
                         }
                     }
+                    app::View::Statistics => {
+                        match key.code {
+                            KeyCode::Char('s') | KeyCode::Char('S')
+                            | KeyCode::Esc => {
+                                app.navigate_to(app::View::Timer);
+                            }
+                            KeyCode::Char('q') | KeyCode::Char('Q') => app.quit(),
+                            _ => {}
+                        }
+                    }
                     app::View::Timer => {
                         match key.code {
                             // Quit
@@ -564,6 +634,12 @@ async fn run_app(
                             // T: Toggle timer size
                             KeyCode::Char('t') | KeyCode::Char('T') => {
                                 app.toggle_timer_size();
+                            }
+                            // S: Open Statistics view (unmodified only — Ctrl+S is save)
+                            KeyCode::Char('s') | KeyCode::Char('S')
+                                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
+                                app.navigate_to(app::View::Statistics);
                             }
                             // Ctrl+X: Clear time field (when in edit mode on time input) or clear timer
                             KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {

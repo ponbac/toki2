@@ -17,28 +17,40 @@ fn to_local_time(dt: time::OffsetDateTime) -> time::OffsetDateTime {
 }
 
 pub fn render(frame: &mut Frame, app: &App) {
+    // Split the full screen: global compact stats header on top, body below
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2), // Global header: compact stats row
+            Constraint::Min(0),    // Body: current view
+        ])
+        .split(frame.area());
+
+    render_compact_stats(frame, root[0], app);
+
+    let body = root[1];
     match app.current_view {
-        View::Timer => render_timer_view(frame, app),
-        View::History => render_history_view(frame, app),
-        View::SelectProject => render_project_selection(frame, app),
-        View::SelectActivity => render_activity_selection(frame, app),
-        View::EditDescription => render_description_editor(frame, app),
-        View::SaveAction => render_save_action_dialog(frame, app),
+        View::Timer => render_timer_view(frame, app, body),
+        View::History => render_history_view(frame, app, body),
+        View::SelectProject => render_project_selection(frame, app, body),
+        View::SelectActivity => render_activity_selection(frame, app, body),
+        View::EditDescription => render_description_editor(frame, app, body),
+        View::SaveAction => render_save_action_dialog(frame, app, body),
+        View::Statistics => render_statistics_view(frame, app, body),
     }
 }
 
-fn render_timer_view(frame: &mut Frame, app: &App) {
+fn render_timer_view(frame: &mut Frame, app: &App, body: Rect) {
     // Timer box height depends on timer size
     let timer_height = match app.timer_size {
         crate::app::TimerSize::Normal => 3,
-        crate::app::TimerSize::Large => 11, // 1 top padding + 5 ASCII art + 1 spacing + 1 status + 1 bottom padding + 2 borders
+        crate::app::TimerSize::Large => 11,
     };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
-            Constraint::Length(3),            // Header
             Constraint::Length(timer_height), // Timer display (dynamic)
             Constraint::Length(3),            // Project info
             Constraint::Length(3),            // Description
@@ -46,47 +58,25 @@ fn render_timer_view(frame: &mut Frame, app: &App) {
             Constraint::Length(3),            // Status
             Constraint::Length(4),            // Controls (2 rows)
         ])
-        .split(frame.size());
+        .split(body);
 
-    // Header
-    render_header(frame, chunks[0]);
-
-    // Timer display
-    render_timer(frame, chunks[1], app);
-
-    // Project info
-    render_project(frame, chunks[2], app);
-
-    // Description
-    render_description(frame, chunks[3], app);
-
-    // Today's history
-    render_this_week_history(frame, chunks[4], app);
-
-    // Status message
-    render_status(frame, chunks[5], app);
-
-    // Controls
-    render_controls(frame, chunks[6]);
+    render_timer(frame, chunks[0], app);
+    render_project(frame, chunks[1], app);
+    render_description(frame, chunks[2], app);
+    render_this_week_history(frame, chunks[3], app);
+    render_status(frame, chunks[4], app);
+    render_controls(frame, chunks[5]);
 }
 
-fn render_history_view(frame: &mut Frame, app: &App) {
+fn render_history_view(frame: &mut Frame, app: &App, body: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
-            Constraint::Length(3), // Header
             Constraint::Min(0),    // History list
             Constraint::Length(3), // Controls
         ])
-        .split(frame.size());
-
-    // Header
-    let title = Paragraph::new("Timer History (Last 30 Days)")
-        .style(Style::default().fg(Color::Cyan))
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(title, chunks[0]);
+        .split(body);
 
     let month_ago = time::OffsetDateTime::now_utc() - time::Duration::days(30);
     let entries: Vec<(usize, &crate::api::database::TimerHistoryEntry)> = app
@@ -99,16 +89,29 @@ fn render_history_view(frame: &mut Frame, app: &App) {
     if entries.is_empty() {
         let empty_msg = Paragraph::new("No entries in the last 30 days")
             .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).title(" History "));
-        frame.render_widget(empty_msg, chunks[1]);
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray))
+                    .title(Span::styled(
+                        " History ",
+                        Style::default().fg(Color::DarkGray),
+                    ))
+                    .padding(ratatui::widgets::Padding::horizontal(1)),
+            );
+        frame.render_widget(empty_msg, chunks[0]);
     } else {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(format!(" History ({} entries) ", entries.len()))
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(Span::styled(
+                format!(" History ({} entries) ", entries.len()),
+                Style::default().fg(Color::DarkGray),
+            ))
             .padding(ratatui::widgets::Padding::horizontal(1));
 
-        let inner_area = block.inner(chunks[1]);
-        frame.render_widget(block, chunks[1]);
+        let inner_area = block.inner(chunks[0]);
+        frame.render_widget(block, chunks[0]);
 
         // Build display with date separators
         let mut last_date: Option<time::Date> = None;
@@ -202,10 +205,8 @@ fn render_history_view(frame: &mut Frame, app: &App) {
             Span::raw(": Navigate  "),
             Span::styled("Enter", Style::default().fg(Color::Yellow)),
             Span::raw(": Edit  "),
-            Span::styled("H", Style::default().fg(Color::Yellow)),
+            Span::styled("H/Esc", Style::default().fg(Color::Yellow)),
             Span::raw(": Back to Timer  "),
-            Span::styled("Esc", Style::default().fg(Color::Yellow)),
-            Span::raw(": Cancel  "),
             Span::styled("Q", Style::default().fg(Color::Yellow)),
             Span::raw(": Quit"),
         ]
@@ -213,12 +214,21 @@ fn render_history_view(frame: &mut Frame, app: &App) {
 
     let controls = Paragraph::new(Line::from(controls_text))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Controls"));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title(Span::styled(
+                    " Controls ",
+                    Style::default().fg(Color::DarkGray),
+                ))
+                .padding(ratatui::widgets::Padding::horizontal(1)),
+        );
 
-    frame.render_widget(controls, chunks[2]);
+    frame.render_widget(controls, chunks[1]);
 }
 
-fn render_project_selection(frame: &mut Frame, app: &App) {
+fn render_project_selection(frame: &mut Frame, app: &App, body: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -227,13 +237,24 @@ fn render_project_selection(frame: &mut Frame, app: &App) {
             Constraint::Min(0),    // Project list
             Constraint::Length(3), // Controls
         ])
-        .split(frame.size());
+        .split(body);
 
     // Search input box
     let search_text = if app.project_search_input.is_empty() {
-        "Type to search...".to_string()
+        if app.selection_list_focused {
+            "Type to search...".to_string()
+        } else {
+            "█".to_string()
+        }
+    } else if app.selection_list_focused {
+        app.project_search_input.clone()
     } else {
-        format!("{}_", app.project_search_input)
+        format!("{}█", app.project_search_input)
+    };
+    let search_border = if app.selection_list_focused {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
     };
     let search_box = Paragraph::new(search_text)
         .style(Style::default().fg(Color::White))
@@ -241,6 +262,7 @@ fn render_project_selection(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(search_border)
                 .title(" Search ")
                 .padding(Padding::horizontal(1)),
         );
@@ -279,10 +301,16 @@ fn render_project_selection(frame: &mut Frame, app: &App) {
         )
     };
 
+    let list_border = if app.selection_list_focused {
+        Style::default().fg(Color::White)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(list_border)
                 .title(title)
                 .padding(Padding::horizontal(1)),
         )
@@ -294,7 +322,9 @@ fn render_project_selection(frame: &mut Frame, app: &App) {
     let controls_text = vec![
         Span::styled("Type", Style::default().fg(Color::Yellow)),
         Span::raw(": Filter  "),
-        Span::styled("↑↓", Style::default().fg(Color::Yellow)),
+        Span::styled("Tab", Style::default().fg(Color::Yellow)),
+        Span::raw(": Focus list  "),
+        Span::styled("↑↓/j/k", Style::default().fg(Color::Yellow)),
         Span::raw(": Navigate  "),
         Span::styled("Enter", Style::default().fg(Color::Yellow)),
         Span::raw(": Select  "),
@@ -306,12 +336,21 @@ fn render_project_selection(frame: &mut Frame, app: &App) {
 
     let controls = Paragraph::new(Line::from(controls_text))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title(" Controls "));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title(Span::styled(
+                    " Controls ",
+                    Style::default().fg(Color::DarkGray),
+                ))
+                .padding(ratatui::widgets::Padding::horizontal(1)),
+        );
 
     frame.render_widget(controls, chunks[2]);
 }
 
-fn render_activity_selection(frame: &mut Frame, app: &App) {
+fn render_activity_selection(frame: &mut Frame, app: &App, body: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -320,13 +359,24 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
             Constraint::Min(0),    // Activity list
             Constraint::Length(3), // Controls
         ])
-        .split(frame.size());
+        .split(body);
 
     // Search input box
     let search_text = if app.activity_search_input.is_empty() {
-        "Type to search...".to_string()
+        if app.selection_list_focused {
+            "Type to search...".to_string()
+        } else {
+            "█".to_string()
+        }
+    } else if app.selection_list_focused {
+        app.activity_search_input.clone()
     } else {
-        format!("{}_", app.activity_search_input)
+        format!("{}█", app.activity_search_input)
+    };
+    let search_border = if app.selection_list_focused {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
     };
     let search_box = Paragraph::new(search_text)
         .style(Style::default().fg(Color::White))
@@ -334,6 +384,7 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(search_border)
                 .title(" Search ")
                 .padding(Padding::horizontal(1)),
         );
@@ -366,10 +417,16 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
         )
     };
 
+    let list_border = if app.selection_list_focused {
+        Style::default().fg(Color::White)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(list_border)
                 .title(title)
                 .padding(Padding::horizontal(1)),
         )
@@ -381,7 +438,9 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
     let controls_text = vec![
         Span::styled("Type", Style::default().fg(Color::Yellow)),
         Span::raw(": Filter  "),
-        Span::styled("↑↓", Style::default().fg(Color::Yellow)),
+        Span::styled("Tab", Style::default().fg(Color::Yellow)),
+        Span::raw(": Focus list  "),
+        Span::styled("↑↓/j/k", Style::default().fg(Color::Yellow)),
         Span::raw(": Navigate  "),
         Span::styled("Enter", Style::default().fg(Color::Yellow)),
         Span::raw(": Select  "),
@@ -393,22 +452,18 @@ fn render_activity_selection(frame: &mut Frame, app: &App) {
 
     let controls = Paragraph::new(Line::from(controls_text))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title(" Controls "));
-
-    frame.render_widget(controls, chunks[2]);
-}
-
-fn render_header(frame: &mut Frame, area: ratatui::layout::Rect) {
-    let title = Paragraph::new("Toki Time Tracking TUI")
-        .style(Style::default().fg(Color::Yellow))
-        .alignment(Alignment::Center)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray))
+                .title(Span::styled(
+                    " Controls ",
+                    Style::default().fg(Color::DarkGray),
+                ))
                 .padding(ratatui::widgets::Padding::horizontal(1)),
         );
-    frame.render_widget(title, area);
+
+    frame.render_widget(controls, chunks[2]);
 }
 
 fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
@@ -933,10 +988,7 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Save (options)  "),
         Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
         Span::raw(": Clear  "),
-        Span::styled(
-            "Tab/Shift+Tab / ↑↓ / j/k",
-            Style::default().fg(Color::Yellow),
-        ),
+        Span::styled("Tab / ↑↓ / j/k", Style::default().fg(Color::Yellow)),
         Span::raw(": Navigate  "),
         Span::styled("Enter", Style::default().fg(Color::Yellow)),
         Span::raw(": Edit"),
@@ -951,6 +1003,8 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": History  "),
         Span::styled("T", Style::default().fg(Color::Yellow)),
         Span::raw(": Toggle timer size  "),
+        Span::styled("S", Style::default().fg(Color::Yellow)),
+        Span::raw(": Stats  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
         Span::raw(": Exit edit  "),
         Span::styled("Q", Style::default().fg(Color::Yellow)),
@@ -973,25 +1027,17 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
     frame.render_widget(controls, area);
 }
 
-fn render_description_editor(frame: &mut Frame, app: &App) {
+fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
-            Constraint::Length(3), // 0: Header
-            Constraint::Length(3), // 1: Input field or CWD input
-            Constraint::Length(5), // 2: Git context panel
-            Constraint::Min(0),    // 3: Spacer
-            Constraint::Length(3), // 4: Controls
+            Constraint::Length(3), // 0: Input field or CWD input
+            Constraint::Length(5), // 1: Git context panel
+            Constraint::Min(0),    // 2: Spacer
+            Constraint::Length(3), // 3: Controls
         ])
-        .split(frame.size());
-
-    // Header
-    let title = Paragraph::new("Edit Note")
-        .style(Style::default().fg(Color::Cyan))
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
-    frame.render_widget(title, chunks[0]);
+        .split(body);
 
     // Input field (note or CWD change)
     if let Some(cwd_input) = &app.cwd_input {
@@ -1006,10 +1052,11 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray))
                     .title(" Change Directory ")
                     .padding(Padding::horizontal(1)),
             );
-        frame.render_widget(input, chunks[1]);
+        frame.render_widget(input, chunks[0]);
     } else {
         let input_text = format!("{}█", app.description_input);
         let input = Paragraph::new(input_text)
@@ -1020,7 +1067,7 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
                     .title(" Note ")
                     .padding(Padding::horizontal(1)),
             );
-        frame.render_widget(input, chunks[1]);
+        frame.render_widget(input, chunks[0]);
     }
 
     // Git context panel
@@ -1054,10 +1101,11 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
     let git_panel = Paragraph::new(git_lines).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(" Info ")
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(Span::styled(" Info ", Style::default().fg(Color::DarkGray)))
             .padding(Padding::horizontal(1)),
     );
-    frame.render_widget(git_panel, chunks[2]);
+    frame.render_widget(git_panel, chunks[1]);
 
     // Controls (context-sensitive)
     let controls_text: Vec<Span> = if app.cwd_input.is_some() {
@@ -1118,16 +1166,25 @@ fn render_description_editor(frame: &mut Frame, app: &App) {
 
     let controls = Paragraph::new(Line::from(controls_text))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title(" Controls "));
-    frame.render_widget(controls, chunks[4]);
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title(Span::styled(
+                    " Controls ",
+                    Style::default().fg(Color::DarkGray),
+                ))
+                .padding(ratatui::widgets::Padding::horizontal(1)),
+        );
+    frame.render_widget(controls, chunks[3]);
 }
 
-fn render_save_action_dialog(frame: &mut Frame, app: &App) {
+fn render_save_action_dialog(frame: &mut Frame, app: &App, body: Rect) {
     // Render the normal timer view in the background
-    render_timer_view(frame, app);
+    render_timer_view(frame, app, body);
 
     // Calculate centered position for dialog (50 cols x 10 rows)
-    let area = centered_rect(50, 10, frame.size());
+    let area = centered_rect(50, 10, frame.area());
 
     // Clear the area for the dialog
     frame.render_widget(Clear, area);
@@ -1354,4 +1411,199 @@ fn render_large_time(time_str: &str) -> Vec<Line<'_>> {
             ))
         })
         .collect()
+}
+
+fn render_compact_stats(frame: &mut Frame, area: Rect, app: &App) {
+    // Split vertically: 1 blank row, 1 content row (no bottom padding)
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // top padding
+            Constraint::Length(1), // content
+        ])
+        .split(area);
+    // Add 2-char horizontal padding on each side
+    let content_row = rows[1];
+    let area = Rect {
+        x: content_row.x + 2,
+        y: content_row.y,
+        width: content_row.width.saturating_sub(4),
+        height: content_row.height,
+    };
+
+    let worked = app.worked_hours_this_week();
+    let flex = app.flex_hours_this_week();
+    let percent_f = app.weekly_hours_percent();
+
+    // Format strings
+    let percent = percent_f as u16;
+    let worked_h = worked.floor() as u64;
+    let worked_m = ((worked - worked_h as f64) * 60.0).round() as u64;
+    let worked_str = format!("{}h:{:02}m", worked_h, worked_m);
+
+    let remaining_hours = (crate::app::SCHEDULED_HOURS_PER_WEEK - worked).max(0.0);
+    let rem_h = remaining_hours.floor() as u64;
+    let rem_m = ((remaining_hours - rem_h as f64) * 60.0).round() as u64;
+
+    let muted = Style::default().fg(Color::DarkGray);
+    let white = Style::default().fg(Color::White);
+    let yellow = Style::default().fg(Color::Yellow);
+    let stats_text = Line::from(vec![
+        Span::raw("   "),
+        Span::styled("This week:", yellow),
+        Span::styled(
+            format!(
+                " {}% ({} / {}h) ",
+                percent,
+                worked_str,
+                crate::app::SCHEDULED_HOURS_PER_WEEK as u32
+            ),
+            white,
+        ),
+        Span::styled(" | ", muted),
+        Span::styled(" Remaining:", yellow),
+        Span::styled(format!(" {}h:{:02}m ", rem_h, rem_m), white),
+    ]);
+    let stats_width = stats_text.width() as u16;
+
+    // Format flex label
+    let flex_abs = flex.abs();
+    let flex_h = flex_abs.floor() as u64;
+    let flex_m = ((flex_abs - flex_h as f64) * 60.0).round() as u64;
+    let flex_sign = if flex >= 0.0 { " +" } else { " -" };
+    let flex_str = format!("{}{}h:{:02}m ", flex_sign, flex_h, flex_m);
+    let flex_color = if flex >= 0.0 {
+        Color::Green
+    } else {
+        Color::Red
+    };
+
+    // Column widths
+    const TITLE: &str = " ■ Toki Timer TUI";
+    let title_width = TITLE.len() as u16;
+    let flex_col_width = 3 + flex_str.len() as u16; // " | " + value
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(title_width),    // App title
+            Constraint::Min(10),                // LineGauge (stretches)
+            Constraint::Length(stats_width),    // "This week / Remaining" labels
+            Constraint::Length(flex_col_width), // " | " + Flex value
+        ])
+        .split(area);
+
+    // Render title
+    frame.render_widget(
+        Paragraph::new(Span::styled(TITLE, Style::default().fg(Color::Yellow))),
+        cols[0],
+    );
+    let (gauge_col, stats_col, flex_col) = (cols[1], cols[2], cols[3]);
+
+    // --- LineGauge (no default label) ---
+    let ratio = (percent_f / 100.0).clamp(0.0, 1.0);
+    let gauge = ratatui::widgets::LineGauge::default()
+        .ratio(ratio)
+        .label("")
+        .filled_symbol(ratatui::symbols::line::THICK_HORIZONTAL)
+        .unfilled_symbol("╌")
+        .filled_style(Style::default().fg(Color::Cyan))
+        .unfilled_style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(gauge, gauge_col);
+
+    // --- Stats labels (right of gauge) ---
+    frame.render_widget(Paragraph::new(stats_text), stats_col);
+
+    // --- Flex (separator + colored value) ---
+    let flex_line = Line::from(vec![
+        Span::styled(" | ", muted),
+        Span::styled(flex_str, Style::default().fg(flex_color)),
+    ]);
+    frame.render_widget(Paragraph::new(flex_line), flex_col);
+}
+
+fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
+    use tui_piechart::{PieChart, PieSlice};
+
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Min(10),   // Pie chart area
+            Constraint::Length(3), // Controls
+        ])
+        .split(body);
+
+    // --- Pie chart ---
+    let stats = app.weekly_project_stats();
+
+    if stats.is_empty() {
+        let empty = Paragraph::new("No completed entries this week")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray))
+            .block(Block::default().borders(Borders::ALL));
+        frame.render_widget(empty, outer[0]);
+    } else {
+        let palette = [
+            Color::Blue,
+            Color::Green,
+            Color::Yellow,
+            Color::Magenta,
+            Color::Cyan,
+            Color::Red,
+            Color::LightBlue,
+            Color::LightGreen,
+            Color::LightYellow,
+            Color::LightMagenta,
+            Color::LightCyan,
+            Color::LightRed,
+        ];
+
+        // Build owned label strings first (PieSlice borrows &str)
+        let label_strings: Vec<String> = stats
+            .iter()
+            .map(|s| {
+                let h = s.hours.floor() as u64;
+                let m = ((s.hours - h as f64) * 60.0).round() as u64;
+                format!("{}: {:02}h:{:02}m", s.label, h, m)
+            })
+            .collect();
+
+        let slices: Vec<PieSlice> = label_strings
+            .iter()
+            .enumerate()
+            .map(|(i, label)| {
+                let color = palette[i % palette.len()];
+                PieSlice::new(label.as_str(), stats[i].percentage, color)
+            })
+            .collect();
+
+        let pie = PieChart::new(slices)
+            .show_legend(true)
+            .show_percentages(true);
+        frame.render_widget(pie, outer[0]);
+    }
+
+    // --- Controls ---
+    let stats_controls = vec![
+        Span::styled("S", Style::default().fg(Color::Yellow)),
+        Span::raw("/"),
+        Span::styled("Esc", Style::default().fg(Color::Yellow)),
+        Span::raw(": Back to Timer  "),
+        Span::styled("Q", Style::default().fg(Color::Yellow)),
+        Span::raw(": Quit"),
+    ];
+    let controls = Paragraph::new(Line::from(stats_controls))
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title(Span::styled(
+                    " Controls ",
+                    Style::default().fg(Color::DarkGray),
+                ))
+                .padding(ratatui::widgets::Padding::horizontal(1)),
+        );
+    frame.render_widget(controls, outer[1]);
 }

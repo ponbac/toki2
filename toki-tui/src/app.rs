@@ -18,6 +18,17 @@ pub enum TimerState {
     Running,
 }
 
+/// Default scheduled hours per week (no server API available)
+pub const SCHEDULED_HOURS_PER_WEEK: f64 = 40.0;
+
+/// Per-project/activity breakdown for the statistics view
+#[derive(Debug, Clone)]
+pub struct ProjectStat {
+    pub label: String, // "Project - Activity"
+    pub hours: f64,
+    pub percentage: f64, // 0.0–100.0 of total worked this week
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum View {
     Timer,
@@ -26,6 +37,7 @@ pub enum View {
     SelectActivity,
     EditDescription,
     SaveAction,
+    Statistics,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -167,6 +179,9 @@ pub struct App {
     pub filtered_activities: Vec<TestActivity>,
     pub filtered_activity_index: usize,
 
+    // Whether focus is on the result list (vs the search input) in selection views
+    pub selection_list_focused: bool,
+
     // Save action selection
     pub selected_save_action: SaveAction,
 
@@ -221,6 +236,7 @@ impl App {
             activity_search_input: String::new(),
             filtered_activities: Vec::new(),
             filtered_activity_index: 0,
+            selection_list_focused: false,
             selected_save_action: SaveAction::ContinueSameProject,
             description_input: String::new(),
             editing_description: false,
@@ -392,6 +408,7 @@ impl App {
                 self.project_search_input.clear();
                 self.filtered_projects = self.projects.clone();
                 self.filtered_project_index = 0;
+                self.selection_list_focused = false;
             }
             View::SelectActivity => {
                 self.selected_activity_index = self
@@ -399,6 +416,7 @@ impl App {
                     .iter()
                     .position(|a| self.selected_activity.as_ref().map(|sa| &sa.id) == Some(&a.id))
                     .unwrap_or(0);
+                self.selection_list_focused = false;
             }
             View::EditDescription => {
                 // If in edit mode, don't clear - the view handler will set it from edit_state
@@ -1195,6 +1213,86 @@ impl App {
             .iter()
             .filter(|entry| entry.start_time >= month_ago)
             .collect()
+    }
+
+    /// Total hours worked this week (completed entries only)
+    pub fn worked_hours_this_week(&self) -> f64 {
+        self.this_week_history()
+            .iter()
+            .filter_map(|e| {
+                let end = e.end_time?;
+                let secs = (end - e.start_time).whole_seconds();
+                if secs > 0 {
+                    Some(secs as f64 / 3600.0)
+                } else {
+                    None
+                }
+            })
+            .sum()
+    }
+
+    /// Flex time = worked hours - scheduled hours
+    pub fn flex_hours_this_week(&self) -> f64 {
+        self.worked_hours_this_week() - SCHEDULED_HOURS_PER_WEEK
+    }
+
+    /// Weekly hours as a percentage of scheduled hours (0–100, clamped)
+    pub fn weekly_hours_percent(&self) -> f64 {
+        (self.worked_hours_this_week() / SCHEDULED_HOURS_PER_WEEK * 100.0).clamp(0.0, 100.0)
+    }
+
+    /// Per-project/activity breakdown for this week (≥ 1% of total, sorted desc)
+    pub fn weekly_project_stats(&self) -> Vec<ProjectStat> {
+        use std::collections::HashMap;
+
+        let entries = self.this_week_history();
+        let mut map: HashMap<String, f64> = HashMap::new();
+
+        for e in &entries {
+            if let Some(end) = e.end_time {
+                let secs = (end - e.start_time).whole_seconds();
+                if secs > 0 {
+                    let project = e
+                        .project_name
+                        .clone()
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    let activity = e
+                        .activity_name
+                        .clone()
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    let key = format!("{} - {}", project, activity);
+                    *map.entry(key).or_insert(0.0) += secs as f64 / 3600.0;
+                }
+            }
+        }
+
+        let total: f64 = map.values().sum();
+        if total == 0.0 {
+            return Vec::new();
+        }
+
+        let mut stats: Vec<ProjectStat> = map
+            .into_iter()
+            .filter_map(|(label, hours)| {
+                let percentage = hours / total * 100.0;
+                if percentage >= 1.0 {
+                    Some(ProjectStat {
+                        label,
+                        hours,
+                        percentage,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        stats.sort_by(|a, b| {
+            b.hours
+                .partial_cmp(&a.hours)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        stats
     }
 
     /// Handle character input for description editing
