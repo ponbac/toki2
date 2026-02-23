@@ -301,11 +301,14 @@ pub struct App {
     // Today box navigation (This Week view)
     pub focused_this_week_index: Option<usize>,
     pub this_week_edit_state: Option<EntryEditState>,
+    pub this_week_scroll: usize, // Scroll offset (# logical rows skipped from top)
+    pub this_week_view_height: usize, // Last-rendered inner height (updated by renderer each frame)
 
     // History view navigation and editing
     pub focused_history_index: Option<usize>,
     pub history_edit_state: Option<EntryEditState>,
     pub history_list_entries: Vec<usize>, // Indices into timer_history for entries (excludes date separators)
+    pub history_view_height: usize, // Last-rendered inner height (updated by renderer each frame)
 
     // Git context for note editor
     pub git_context: GitContext,
@@ -352,9 +355,12 @@ impl App {
             saved_timer_note: None,
             focused_this_week_index: None,
             this_week_edit_state: None,
+            this_week_scroll: 0,
+            this_week_view_height: 0,
             focused_history_index: None,
             history_edit_state: None,
             history_list_entries: Vec::new(),
+            history_view_height: 0,
             git_context: GitContext::from_cwd(
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             ),
@@ -394,6 +400,10 @@ impl App {
         self.timer_state = TimerState::Running;
         self.absolute_start = Some(OffsetDateTime::now_utc());
         self.local_start = Some(Instant::now());
+        // Shift focus: running timer row is inserted at index 0, pushing DB entries up by 1
+        if let Some(idx) = self.focused_this_week_index {
+            self.focused_this_week_index = Some(idx + 1);
+        }
     }
 
     /// Stop the timer (without saving)
@@ -629,8 +639,14 @@ impl App {
 
     /// Move focus up in This Week box, wrap to Description if at top
     pub fn this_week_focus_up(&mut self) {
-        let this_week_count = self.this_week_history().len();
-        if this_week_count == 0 {
+        let db_count = self.this_week_history().len();
+        let running_offset = if self.timer_state == TimerState::Running {
+            1
+        } else {
+            0
+        };
+        let visible_count = db_count + running_offset;
+        if visible_count == 0 {
             self.focused_box = FocusedBox::Description;
             self.focused_this_week_index = None;
             return;
@@ -644,21 +660,27 @@ impl App {
                 self.focused_this_week_index = Some(idx - 1);
             }
         } else {
-            self.focused_this_week_index = Some(this_week_count - 1);
+            self.focused_this_week_index = Some(visible_count - 1);
         }
     }
 
     /// Move focus down in This Week box, wrap to Timer if at bottom
     pub fn this_week_focus_down(&mut self) {
-        let this_week_count = self.this_week_history().len();
-        if this_week_count == 0 {
+        let db_count = self.this_week_history().len();
+        let running_offset = if self.timer_state == TimerState::Running {
+            1
+        } else {
+            0
+        };
+        let visible_count = db_count + running_offset;
+        if visible_count == 0 {
             self.focused_box = FocusedBox::Timer;
             self.focused_this_week_index = None;
             return;
         }
 
         if let Some(idx) = self.focused_this_week_index {
-            if idx >= this_week_count - 1 {
+            if idx >= visible_count - 1 {
                 self.focused_box = FocusedBox::Timer;
                 self.focused_this_week_index = None;
             } else {
@@ -672,32 +694,45 @@ impl App {
     /// Enter edit mode for the currently focused This Week entry
     pub fn enter_this_week_edit_mode(&mut self) {
         if let Some(idx) = self.focused_this_week_index {
-            // Clone the entry data we need to avoid borrow issues
-            let entry_data = self.this_week_history().get(idx).map(|e| {
-                (
-                    e.id,
-                    e.start_time,
-                    e.end_time,
-                    e.project_id.clone(),
-                    e.project_name.clone(),
-                    e.activity_id.clone(),
-                    e.activity_name.clone(),
-                    e.note.clone(),
-                )
-            });
-
-            if let Some((
-                id,
-                start_time,
-                end_time,
-                project_id,
-                project_name,
-                activity_id,
-                activity_name,
-                note,
-            )) = entry_data
-            {
+            if self.timer_state == TimerState::Running && idx == 0 {
+                // Editing the live running timer — sentinel entry_id = -1
+                let start_time = self.absolute_start.unwrap_or_else(OffsetDateTime::now_utc);
+                let project_id = self.selected_project.as_ref().map(|p| p.id.clone());
+                let project_name = self.selected_project.as_ref().map(|p| p.name.clone());
+                let activity_id = self.selected_activity.as_ref().map(|a| a.id.clone());
+                let activity_name = self.selected_activity.as_ref().map(|a| a.name.clone());
+                let note = Some(self.description_input.value.clone());
                 self.create_edit_state(
+                    -1,
+                    start_time,
+                    None, // no end time
+                    project_id,
+                    project_name,
+                    activity_id,
+                    activity_name,
+                    note,
+                );
+            } else {
+                // Editing a DB-backed entry — adjust index if timer is running
+                let db_idx = if self.timer_state == TimerState::Running {
+                    idx.saturating_sub(1)
+                } else {
+                    idx
+                };
+                let entry_data = self.this_week_history().get(db_idx).map(|e| {
+                    (
+                        e.id,
+                        e.start_time,
+                        e.end_time,
+                        e.project_id.clone(),
+                        e.project_name.clone(),
+                        e.activity_id.clone(),
+                        e.activity_name.clone(),
+                        e.note.clone(),
+                    )
+                });
+
+                if let Some((
                     id,
                     start_time,
                     end_time,
@@ -706,7 +741,19 @@ impl App {
                     activity_id,
                     activity_name,
                     note,
-                );
+                )) = entry_data
+                {
+                    self.create_edit_state(
+                        id,
+                        start_time,
+                        end_time,
+                        project_id,
+                        project_name,
+                        activity_id,
+                        activity_name,
+                        note,
+                    );
+                }
             }
         }
     }
@@ -823,12 +870,23 @@ impl App {
     pub fn entry_edit_next_field(&mut self) {
         // Update whichever edit state is active (this_week or history)
         if let Some(state) = &mut self.this_week_edit_state {
-            state.focused_field = match state.focused_field {
-                EntryEditField::StartTime => EntryEditField::EndTime,
-                EntryEditField::EndTime => EntryEditField::Project,
-                EntryEditField::Project => EntryEditField::Activity,
-                EntryEditField::Activity => EntryEditField::Note,
-                EntryEditField::Note => EntryEditField::StartTime,
+            state.focused_field = if state.entry_id == -1 {
+                // Running timer: skip EndTime
+                match state.focused_field {
+                    EntryEditField::StartTime => EntryEditField::Project,
+                    EntryEditField::Project => EntryEditField::Activity,
+                    EntryEditField::Activity => EntryEditField::Note,
+                    EntryEditField::Note => EntryEditField::StartTime,
+                    EntryEditField::EndTime => EntryEditField::Project, // shouldn't happen
+                }
+            } else {
+                match state.focused_field {
+                    EntryEditField::StartTime => EntryEditField::EndTime,
+                    EntryEditField::EndTime => EntryEditField::Project,
+                    EntryEditField::Project => EntryEditField::Activity,
+                    EntryEditField::Activity => EntryEditField::Note,
+                    EntryEditField::Note => EntryEditField::StartTime,
+                }
             };
             state.validation_error = None;
         }
@@ -848,12 +906,22 @@ impl App {
     pub fn entry_edit_prev_field(&mut self) {
         // Update whichever edit state is active (this_week or history)
         if let Some(state) = &mut self.this_week_edit_state {
-            state.focused_field = match state.focused_field {
-                EntryEditField::StartTime => EntryEditField::Note,
-                EntryEditField::EndTime => EntryEditField::StartTime,
-                EntryEditField::Project => EntryEditField::EndTime,
-                EntryEditField::Activity => EntryEditField::Project,
-                EntryEditField::Note => EntryEditField::Activity,
+            state.focused_field = if state.entry_id == -1 {
+                match state.focused_field {
+                    EntryEditField::StartTime => EntryEditField::Note,
+                    EntryEditField::Project => EntryEditField::StartTime,
+                    EntryEditField::Activity => EntryEditField::Project,
+                    EntryEditField::Note => EntryEditField::Activity,
+                    EntryEditField::EndTime => EntryEditField::StartTime, // shouldn't happen
+                }
+            } else {
+                match state.focused_field {
+                    EntryEditField::StartTime => EntryEditField::Note,
+                    EntryEditField::EndTime => EntryEditField::StartTime,
+                    EntryEditField::Project => EntryEditField::EndTime,
+                    EntryEditField::Activity => EntryEditField::Project,
+                    EntryEditField::Note => EntryEditField::Activity,
+                }
             };
             state.validation_error = None;
         }
@@ -1079,6 +1147,25 @@ impl App {
         } else {
             return None;
         };
+
+        // Running timer (entry_id == -1) has no end time — skip end-time validation entirely
+        if state.entry_id == -1 {
+            let start_time = if state.start_time_input.is_empty() {
+                "00:00"
+            } else {
+                &state.start_time_input
+            };
+            if start_time.len() != 5 || start_time.chars().nth(2) != Some(':') {
+                return Some("Invalid start time format (use HH:MM)".to_string());
+            }
+            let start_parts: Vec<&str> = start_time.split(':').collect();
+            let start_hours: u32 = start_parts[0].parse().unwrap_or(0);
+            let start_mins: u32 = start_parts[1].parse().unwrap_or(0);
+            if start_hours > 23 || start_mins > 59 {
+                return Some("Invalid start time (hours 0-23, mins 0-59)".to_string());
+            }
+            return None;
+        }
 
         // For empty times, just use default (00:00) - not an error
         let start_time = if state.start_time_input.is_empty() {

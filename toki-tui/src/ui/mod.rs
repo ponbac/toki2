@@ -3,7 +3,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Padding, Paragraph},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState,
+    },
     Frame,
 };
 use time::UtcOffset;
@@ -16,7 +19,7 @@ fn to_local_time(dt: time::OffsetDateTime) -> time::OffsetDateTime {
     }
 }
 
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     // Split the full screen: global compact stats header on top, body below
     let root = Layout::default()
         .direction(Direction::Vertical)
@@ -46,7 +49,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 }
 
-fn render_timer_view(frame: &mut Frame, app: &App, body: Rect) {
+fn render_timer_view(frame: &mut Frame, app: &mut App, body: Rect) {
     // Timer box height depends on timer size
     let timer_height = match app.timer_size {
         crate::app::TimerSize::Normal => 3,
@@ -74,7 +77,7 @@ fn render_timer_view(frame: &mut Frame, app: &App, body: Rect) {
     render_controls(frame, chunks[5]);
 }
 
-fn render_history_view(frame: &mut Frame, app: &App, body: Rect) {
+fn render_history_view(frame: &mut Frame, app: &mut App, body: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -98,98 +101,162 @@ fn render_history_view(frame: &mut Frame, app: &App, body: Rect) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray))
-                    .title(Span::styled(
-                        " History ",
-                        Style::default().fg(Color::DarkGray),
-                    ))
+                    .border_style(Style::default().fg(Color::White))
+                    .title(Span::styled(" History ", Style::default().fg(Color::White)))
                     .padding(ratatui::widgets::Padding::horizontal(1)),
             );
         frame.render_widget(empty_msg, chunks[0]);
     } else {
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray))
+            .border_style(Style::default().fg(Color::White))
             .title(Span::styled(
                 format!(" History ({} entries) ", entries.len()),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::White),
             ))
             .padding(ratatui::widgets::Padding::horizontal(1));
 
         let inner_area = block.inner(chunks[0]);
         frame.render_widget(block, chunks[0]);
 
-        // Build display with date separators
-        let mut last_date: Option<time::Date> = None;
-        let mut row_y = inner_area.y;
         let max_rows = inner_area.height as usize;
-        let mut row_count = 0;
+        app.history_view_height = max_rows;
 
-        // Find which entry is being edited
-        let editing_entry_id = app.history_edit_state.as_ref().map(|e| e.entry_id);
+        // --- Build the full ordered list of logical rows (separators + entries) ---
+        enum HistoryRow<'a> {
+            Separator(String),
+            Entry {
+                list_idx: Option<usize>,
+                entry: &'a crate::api::database::TimerHistoryEntry,
+            },
+        }
+
+        let today = time::OffsetDateTime::now_utc().date();
+        let yesterday = today - time::Duration::days(1);
+        let mut logical_rows: Vec<HistoryRow<'_>> = Vec::new();
+        let mut last_date: Option<time::Date> = None;
 
         for (history_idx, entry) in &entries {
-            if row_count >= max_rows {
-                break;
-            }
-
             let entry_date = entry.start_time.date();
-
-            // Add date separator if this is a new date
             if last_date != Some(entry_date) {
-                if row_count >= max_rows {
-                    break;
-                }
-
-                let today = time::OffsetDateTime::now_utc().date();
-                let yesterday = today - time::Duration::days(1);
-
-                let date_label = if entry_date == today {
-                    "── Today ──"
+                let label = if entry_date == today {
+                    "── Today ──".to_string()
                 } else if entry_date == yesterday {
-                    "── Yesterday ──"
+                    "── Yesterday ──".to_string()
                 } else {
-                    Box::leak(format!("── {} ──", entry_date).into_boxed_str())
+                    format!("── {} ──", entry_date)
                 };
-
-                let sep_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
-                let sep = Paragraph::new(Line::from(Span::styled(
-                    date_label,
-                    Style::default().fg(Color::White).bg(Color::DarkGray),
-                )));
-                frame.render_widget(sep, sep_rect);
-
-                row_y += 1;
-                row_count += 1;
+                logical_rows.push(HistoryRow::Separator(label));
                 last_date = Some(entry_date);
             }
-
-            if row_count >= max_rows {
-                break;
-            }
-
-            // Find the list index for this entry
             let list_idx = app
                 .history_list_entries
                 .iter()
                 .position(|&idx| idx == *history_idx);
+            logical_rows.push(HistoryRow::Entry { list_idx, entry });
+        }
 
-            let is_focused = app.focused_history_index == list_idx;
-            let is_editing = Some(entry.id) == editing_entry_id;
-            let is_overlapping = app.is_entry_overlapping(entry.id);
+        let total_rows = logical_rows.len();
 
-            let line = if is_editing {
-                build_edit_row(entry, app.history_edit_state.as_ref().unwrap(), is_focused)
-            } else {
-                build_display_row(entry, is_focused, is_overlapping)
-            };
+        // --- Find the logical row index of the focused entry ---
+        let focused_logical_row: Option<usize> = app.focused_history_index.and_then(|fi| {
+            logical_rows.iter().position(|r| {
+                if let HistoryRow::Entry { list_idx, .. } = r {
+                    *list_idx == Some(fi)
+                } else {
+                    false
+                }
+            })
+        });
 
-            let row_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
-            let paragraph = Paragraph::new(line).style(Style::default().fg(Color::White));
-            frame.render_widget(paragraph, row_rect);
+        // --- Clamp scroll so focused row is visible ---
+        if let Some(focused_row) = focused_logical_row {
+            // Scroll down if focused row is below visible window
+            if focused_row >= app.history_scroll + max_rows {
+                app.history_scroll = focused_row + 1 - max_rows;
+            }
+            // Scroll up if focused row is above visible window
+            if focused_row < app.history_scroll {
+                app.history_scroll = focused_row;
+            }
+        }
+        // Ensure scroll doesn't go past end
+        if max_rows < total_rows && app.history_scroll > total_rows - max_rows {
+            app.history_scroll = total_rows - max_rows;
+        }
+        if total_rows <= max_rows {
+            app.history_scroll = 0;
+        }
+
+        let scroll_offset = app.history_scroll;
+
+        // --- Render visible rows ---
+        let editing_entry_id = app.history_edit_state.as_ref().map(|e| e.entry_id);
+        let mut row_y = inner_area.y;
+        let mut row_count = 0;
+
+        // Reserve 1 column on the right for the scrollbar
+        let content_width = if total_rows > max_rows {
+            inner_area.width.saturating_sub(1)
+        } else {
+            inner_area.width
+        };
+
+        for (logical_idx, row) in logical_rows.iter().enumerate() {
+            if logical_idx < scroll_offset {
+                continue;
+            }
+            if row_count >= max_rows {
+                break;
+            }
+
+            match row {
+                HistoryRow::Separator(label) => {
+                    let sep_rect = Rect::new(inner_area.x, row_y, content_width, 1);
+                    frame.render_widget(
+                        Paragraph::new(Line::from(Span::styled(
+                            label.as_str(),
+                            Style::default().fg(Color::Cyan),
+                        ))),
+                        sep_rect,
+                    );
+                }
+                HistoryRow::Entry {
+                    list_idx, entry, ..
+                } => {
+                    let is_focused = app.focused_history_index == *list_idx;
+                    let is_editing = Some(entry.id) == editing_entry_id;
+                    let is_overlapping = app.is_entry_overlapping(entry.id);
+
+                    let line = if is_editing {
+                        build_edit_row(entry, app.history_edit_state.as_ref().unwrap(), is_focused)
+                    } else {
+                        build_display_row(entry, is_focused, is_overlapping)
+                    };
+
+                    let row_rect = Rect::new(inner_area.x, row_y, content_width, 1);
+                    frame.render_widget(
+                        Paragraph::new(line).style(Style::default().fg(Color::White)),
+                        row_rect,
+                    );
+                }
+            }
 
             row_y += 1;
             row_count += 1;
+        }
+
+        // --- Render scrollbar ---
+        if total_rows > max_rows {
+            let mut scrollbar_state = ScrollbarState::new(total_rows)
+                .position(scroll_offset)
+                .viewport_content_length(max_rows);
+            frame.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                    .style(Style::default().fg(Color::DarkGray)),
+                inner_area,
+                &mut scrollbar_state,
+            );
         }
     }
 
@@ -628,10 +695,11 @@ fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App)
     frame.render_widget(widget, area);
 }
 
-fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
-    let this_week_entries = app.this_week_history();
+fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
+    let this_week_entries: Vec<crate::api::database::TimerHistoryEntry> =
+        app.this_week_history().into_iter().cloned().collect();
     let is_today_focused = app.focused_box == crate::app::FocusedBox::Today;
-    let edit_state = &app.this_week_edit_state;
+    let is_timer_running = app.timer_state == crate::app::TimerState::Running;
 
     // Border style depends on focus
     let border_style = if is_today_focused {
@@ -640,52 +708,64 @@ fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, app:
         Style::default()
     };
 
+    let title = if is_timer_running {
+        format!(
+            " This Week ({} entries + running) ",
+            this_week_entries.len()
+        )
+    } else {
+        format!(" This Week ({} entries) ", this_week_entries.len())
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" This Week ({} entries) ", this_week_entries.len()))
+        .title(title)
         .border_style(border_style)
         .padding(ratatui::widgets::Padding::horizontal(1));
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    if this_week_entries.is_empty() {
+    // Don't return early on empty if timer is running — we still show the running row
+    if this_week_entries.is_empty() && !is_timer_running {
         return;
     }
 
     let max_rows = inner_area.height as usize;
-    let mut row_y = inner_area.y;
-    let mut row_count = 0;
+    app.this_week_view_height = max_rows;
 
-    // Find which entry is being edited
-    let editing_entry_id = edit_state.as_ref().map(|e| e.entry_id);
+    let today = time::OffsetDateTime::now_utc().date();
+    let yesterday = today - time::Duration::days(1);
 
-    // Render with date separators
+    // --- Build all logical rows ---
+    enum ThisWeekRow<'a> {
+        RunningLabel,
+        RunningEntry,
+        Separator(String),
+        Entry {
+            entry: &'a crate::api::database::TimerHistoryEntry,
+            visible_entry_idx: usize,
+        },
+    }
+
+    let mut logical_rows: Vec<ThisWeekRow<'_>> = Vec::new();
     let mut last_date: Option<time::Date> = None;
-    let mut visible_entry_idx = 0; // Index for focusing (excludes date separators)
+    let mut visible_entry_idx = 0usize;
+
+    if is_timer_running {
+        logical_rows.push(ThisWeekRow::RunningLabel);
+        logical_rows.push(ThisWeekRow::RunningEntry);
+        visible_entry_idx = 1; // DB entries start at visible_entry_idx = 1
+    }
 
     for entry in &this_week_entries {
-        if row_count >= max_rows {
-            break;
-        }
-
         let entry_date = entry.start_time.date();
-
-        // Add date separator if this is a new date
         if last_date != Some(entry_date) {
-            if row_count >= max_rows {
-                break;
-            }
-
-            let today = time::OffsetDateTime::now_utc().date();
-            let yesterday = today - time::Duration::days(1);
-
-            let date_label = if entry_date == today {
-                "── Today ──"
+            let label = if entry_date == today {
+                "── Today ──".to_string()
             } else if entry_date == yesterday {
-                "── Yesterday ──"
+                "── Yesterday ──".to_string()
             } else {
-                // Format as day name and date
                 let weekday = match entry_date.weekday() {
                     time::Weekday::Monday => "Monday",
                     time::Weekday::Tuesday => "Tuesday",
@@ -695,42 +775,147 @@ fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, app:
                     time::Weekday::Saturday => "Saturday",
                     time::Weekday::Sunday => "Sunday",
                 };
-                Box::leak(format!("── {} ({}) ──", weekday, entry_date).into_boxed_str())
+                format!("── {} ({}) ──", weekday, entry_date)
             };
-
-            let sep_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
-            let sep = Paragraph::new(Line::from(Span::styled(
-                date_label,
-                Style::default().fg(Color::White).bg(Color::DarkGray),
-            )));
-            frame.render_widget(sep, sep_rect);
-
-            row_y += 1;
-            row_count += 1;
+            logical_rows.push(ThisWeekRow::Separator(label));
             last_date = Some(entry_date);
         }
+        logical_rows.push(ThisWeekRow::Entry {
+            entry,
+            visible_entry_idx,
+        });
+        visible_entry_idx += 1;
+    }
 
+    let total_rows = logical_rows.len();
+
+    // --- Find the logical row index of the focused entry ---
+    let focused_logical_row: Option<usize> = app.focused_this_week_index.and_then(|fi| {
+        logical_rows.iter().position(|r| match r {
+            ThisWeekRow::RunningEntry => fi == 0 && is_timer_running,
+            ThisWeekRow::Entry {
+                visible_entry_idx, ..
+            } => *visible_entry_idx == fi,
+            _ => false,
+        })
+    });
+
+    // --- Clamp scroll ---
+    if let Some(focused_row) = focused_logical_row {
+        if focused_row >= app.this_week_scroll + max_rows {
+            app.this_week_scroll = focused_row + 1 - max_rows;
+        }
+        if focused_row < app.this_week_scroll {
+            app.this_week_scroll = focused_row;
+        }
+    }
+    if max_rows < total_rows && app.this_week_scroll > total_rows - max_rows {
+        app.this_week_scroll = total_rows - max_rows;
+    }
+    if total_rows <= max_rows {
+        app.this_week_scroll = 0;
+    }
+
+    let scroll_offset = app.this_week_scroll;
+    let editing_entry_id = app.this_week_edit_state.as_ref().map(|e| e.entry_id);
+
+    // Reserve 1 column on the right for the scrollbar
+    let content_width = if total_rows > max_rows {
+        inner_area.width.saturating_sub(1)
+    } else {
+        inner_area.width
+    };
+
+    let mut row_y = inner_area.y;
+    let mut row_count = 0;
+
+    for (logical_idx, row) in logical_rows.iter().enumerate() {
+        if logical_idx < scroll_offset {
+            continue;
+        }
         if row_count >= max_rows {
             break;
         }
 
-        let is_focused = is_today_focused && app.focused_this_week_index == Some(visible_entry_idx);
-        let is_editing = Some(entry.id) == editing_entry_id;
-        let is_overlapping = app.is_entry_overlapping(entry.id);
-
-        let line = if is_editing {
-            build_edit_row(entry, edit_state.as_ref().unwrap(), is_focused)
-        } else {
-            build_display_row(entry, is_focused, is_overlapping)
-        };
-
-        let row_rect = Rect::new(inner_area.x, row_y, inner_area.width, 1);
-        let paragraph = Paragraph::new(line).style(Style::default().fg(Color::White));
-        frame.render_widget(paragraph, row_rect);
+        match row {
+            ThisWeekRow::RunningLabel => {
+                let sep_rect = Rect::new(inner_area.x, row_y, content_width, 1);
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        "── Running ──",
+                        Style::default().fg(Color::Green),
+                    ))),
+                    sep_rect,
+                );
+            }
+            ThisWeekRow::RunningEntry => {
+                let is_focused = is_today_focused && app.focused_this_week_index == Some(0);
+                let is_editing = app
+                    .this_week_edit_state
+                    .as_ref()
+                    .map(|s| s.entry_id == -1)
+                    .unwrap_or(false);
+                let line = if is_editing {
+                    build_running_timer_edit_row(app.this_week_edit_state.as_ref().unwrap())
+                } else {
+                    build_running_timer_display_row(app, is_focused)
+                };
+                let row_rect = Rect::new(inner_area.x, row_y, content_width, 1);
+                frame.render_widget(
+                    Paragraph::new(line).style(Style::default().fg(Color::White)),
+                    row_rect,
+                );
+            }
+            ThisWeekRow::Separator(label) => {
+                let sep_rect = Rect::new(inner_area.x, row_y, content_width, 1);
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        label.as_str(),
+                        Style::default().fg(Color::Cyan),
+                    ))),
+                    sep_rect,
+                );
+            }
+            ThisWeekRow::Entry {
+                entry,
+                visible_entry_idx,
+            } => {
+                let is_focused =
+                    is_today_focused && app.focused_this_week_index == Some(*visible_entry_idx);
+                let is_editing = Some(entry.id) == editing_entry_id;
+                let is_overlapping = app.is_entry_overlapping(entry.id);
+                let line = if is_editing {
+                    build_edit_row(
+                        entry,
+                        app.this_week_edit_state.as_ref().unwrap(),
+                        is_focused,
+                    )
+                } else {
+                    build_display_row(entry, is_focused, is_overlapping)
+                };
+                let row_rect = Rect::new(inner_area.x, row_y, content_width, 1);
+                frame.render_widget(
+                    Paragraph::new(line).style(Style::default().fg(Color::White)),
+                    row_rect,
+                );
+            }
+        }
 
         row_y += 1;
         row_count += 1;
-        visible_entry_idx += 1;
+    }
+
+    // --- Render scrollbar ---
+    if total_rows > max_rows {
+        let mut scrollbar_state = ScrollbarState::new(total_rows)
+            .position(scroll_offset)
+            .viewport_content_length(max_rows);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::default().fg(Color::DarkGray)),
+            inner_area,
+            &mut scrollbar_state,
+        );
     }
 }
 
@@ -850,6 +1035,174 @@ fn build_display_row(
     Line::from(spans)
 }
 
+fn build_running_timer_display_row(app: &App, is_focused: bool) -> Line<'static> {
+    let start_str = app
+        .absolute_start
+        .map(|t| {
+            let local = to_local_time(t);
+            format!("{:02}:{:02}", local.hour(), local.minute())
+        })
+        .unwrap_or_else(|| "??:??".to_string());
+
+    let elapsed = app
+        .absolute_start
+        .map(|start| {
+            let now = time::OffsetDateTime::now_utc();
+            let diff = now - start;
+            std::time::Duration::from_secs(diff.whole_seconds().max(0) as u64)
+        })
+        .unwrap_or_else(|| app.elapsed_duration());
+    let total_mins = elapsed.as_secs() / 60;
+    let hours = total_mins / 60;
+    let mins = total_mins % 60;
+    let duration_str = format!("[{:02}h:{:02}m]", hours, mins);
+
+    let project = app
+        .selected_project
+        .as_ref()
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| "[None]".to_string());
+    let activity = app
+        .selected_activity
+        .as_ref()
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| "[None]".to_string());
+    let note = app.description_input.value.clone();
+
+    let max_note_len = 30;
+    let note_display = if note.is_empty() {
+        String::new()
+    } else if note.len() > max_note_len {
+        format!("{}[...]", &note[..max_note_len])
+    } else {
+        note.clone()
+    };
+
+    let text = if note_display.is_empty() {
+        format!(
+            "▶ {} - HH:MM {} | {} - {}",
+            start_str, duration_str, project, activity
+        )
+    } else {
+        format!(
+            "▶ {} - HH:MM {} | {} - {} | {}",
+            start_str, duration_str, project, activity, note_display
+        )
+    };
+
+    if is_focused {
+        return Line::from(Span::styled(
+            text,
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    // Non-focused: color each part
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled("▶ ", Style::default().fg(Color::Green)),
+        Span::styled(
+            format!("{} - HH:MM ", start_str),
+            Style::default().fg(Color::Yellow),
+        ),
+        Span::styled(duration_str, Style::default().fg(Color::Magenta)),
+        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{} - {}", project, activity),
+            Style::default().fg(Color::Cyan),
+        ),
+    ];
+    if !note_display.is_empty() {
+        spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(note_display, Style::default().fg(Color::Gray)));
+    }
+    Line::from(spans)
+}
+
+fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
+    let mut spans = vec![];
+
+    // ▶ prefix before start time (no space)
+    spans.push(Span::styled("▶ ", Style::default().fg(Color::Green)));
+
+    // Start time field
+    let start_value = time_input_display(&edit_state.start_time_input);
+    let start_style = match edit_state.focused_field {
+        EntryEditField::StartTime => Style::default()
+            .fg(Color::Black)
+            .bg(Color::White)
+            .add_modifier(Modifier::BOLD),
+        _ => Style::default().fg(Color::White),
+    };
+    spans.push(Span::styled(start_value, start_style));
+
+    // Separator + HH:MM placeholder for end time
+    spans.push(Span::styled(
+        " - HH:MM | ",
+        Style::default().fg(Color::White),
+    ));
+
+    // Project field
+    let project_value = format!("[{}]", edit_state.project_name.as_deref().unwrap_or("None"));
+    let project_style = match edit_state.focused_field {
+        EntryEditField::Project => Style::default()
+            .fg(Color::Black)
+            .bg(Color::White)
+            .add_modifier(Modifier::BOLD),
+        _ => Style::default().fg(Color::White),
+    };
+    spans.push(Span::styled(project_value, project_style));
+
+    spans.push(Span::styled(" - ", Style::default().fg(Color::White)));
+
+    // Activity field
+    let activity_value = format!(
+        "[{}]",
+        edit_state.activity_name.as_deref().unwrap_or("None")
+    );
+    let activity_style = match edit_state.focused_field {
+        EntryEditField::Activity => Style::default()
+            .fg(Color::Black)
+            .bg(Color::White)
+            .add_modifier(Modifier::BOLD),
+        _ => Style::default().fg(Color::White),
+    };
+    spans.push(Span::styled(activity_value, activity_style));
+
+    spans.push(Span::styled(" | ", Style::default().fg(Color::White)));
+
+    // Note field
+    let note_style = match edit_state.focused_field {
+        EntryEditField::Note => Style::default()
+            .fg(Color::Black)
+            .bg(Color::White)
+            .add_modifier(Modifier::BOLD),
+        _ => Style::default().fg(Color::White),
+    };
+    let note_value = if matches!(edit_state.focused_field, EntryEditField::Note) {
+        let (before, after) = edit_state.note.split_at_cursor();
+        if edit_state.note.value.is_empty() {
+            "[█]".to_string()
+        } else {
+            format!("[{}█{}]", before, after)
+        }
+    } else {
+        format!(
+            "[{}]",
+            if edit_state.note.value.is_empty() {
+                "Empty"
+            } else {
+                &edit_state.note.value
+            }
+        )
+    };
+    spans.push(Span::styled(note_value, note_style));
+
+    Line::from(spans)
+}
+
 /// Render a partial or complete time string with a block cursor.
 /// - len >= 5 ("HH:MM"): display as-is, no cursor
 /// - len < 5: show typed chars + '█' + space padding to fill 5-char slot
@@ -948,7 +1301,7 @@ fn build_edit_row<'a>(
         format!(
             "[{}]",
             if edit_state.note.value.is_empty() {
-                "None"
+                "Empty"
             } else {
                 &edit_state.note.value
             }
@@ -1023,10 +1376,10 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Note  "),
         Span::styled("H", Style::default().fg(Color::Yellow)),
         Span::raw(": History  "),
+        Span::styled("S", Style::default().fg(Color::Yellow)),
+        Span::raw(": Statistics  "),
         Span::styled("T", Style::default().fg(Color::Yellow)),
         Span::raw(": Toggle timer size  "),
-        Span::styled("S", Style::default().fg(Color::Yellow)),
-        Span::raw(": Stats  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
         Span::raw(": Exit edit  "),
         Span::styled("Q", Style::default().fg(Color::Yellow)),
@@ -1273,7 +1626,7 @@ fn render_taskwarrior_overlay(frame: &mut Frame, app: &App, body: Rect) {
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn render_save_action_dialog(frame: &mut Frame, app: &App, body: Rect) {
+fn render_save_action_dialog(frame: &mut Frame, app: &mut App, body: Rect) {
     // Render the normal timer view in the background
     render_timer_view(frame, app, body);
 
@@ -1628,15 +1981,36 @@ fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
         ])
         .split(body);
 
+    // Surrounding white box with "Statistics" title
+    let stats_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::White))
+        .title(Span::styled(
+            " Statistics ",
+            Style::default().fg(Color::White),
+        ));
+    let chart_inner = stats_block.inner(outer[0]);
+    frame.render_widget(stats_block, outer[0]);
+
+    // Add top/bottom padding inside the box to shrink the pie chart
+    let padded = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(chart_inner);
+    let chart_area = padded[1];
+
     // --- Pie chart ---
     let stats = app.weekly_project_stats();
 
     if stats.is_empty() {
         let empty = Paragraph::new("No completed entries this week")
             .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray))
-            .block(Block::default().borders(Borders::ALL));
-        frame.render_widget(empty, outer[0]);
+            .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(empty, chart_area);
     } else {
         let palette = [
             Color::Blue,
@@ -1675,7 +2049,7 @@ fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
         let pie = PieChart::new(slices)
             .show_legend(true)
             .show_percentages(true);
-        frame.render_widget(pie, outer[0]);
+        frame.render_widget(pie, chart_area);
     }
 
     // --- Controls ---
@@ -1694,7 +2068,7 @@ fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray))
                 .title(Span::styled(
-                    " Controls ",
+                    " Statistics ",
                     Style::default().fg(Color::DarkGray),
                 ))
                 .padding(ratatui::widgets::Padding::horizontal(1)),

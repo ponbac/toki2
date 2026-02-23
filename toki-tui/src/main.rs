@@ -588,25 +588,13 @@ async fn run_app(
                                      app.entry_edit_next_field();
                                  }
                              }
-                             // Arrow left / h: Prev field (edit mode only, or cursor movement in Note) or open History
+                             // Arrow left: cursor movement in Note field, or prev field in edit mode
                              KeyCode::Left => {
                                  if app.this_week_edit_state.is_some() {
                                      if app.this_week_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
                                          app.entry_edit_move_cursor(true);
                                      } else {
                                          app.entry_edit_prev_field();
-                                     }
-                                 } else {
-                                     // Open History view when not in edit mode
-                                     match db.get_timer_history(app.user_id, 500).await {
-                                         Ok(history) => {
-                                             app.update_history(history);
-                                             app.rebuild_history_list();
-                                             app.navigate_to(app::View::History);
-                                         }
-                                         Err(e) => {
-                                             app.set_status(format!("Error loading history: {}", e));
-                                         }
                                      }
                                  }
                              }
@@ -854,6 +842,14 @@ async fn handle_save_timer_with_action(app: &mut App, db: &api::Database) -> Res
                         app.timer_state = app::TimerState::Stopped;
                         app.absolute_start = None;
                         app.local_start = None;
+                        // Running timer row disappears — shift focus back down
+                        if let Some(idx) = app.focused_this_week_index {
+                            app.focused_this_week_index = if idx == 0 {
+                                None // was on the running row, which no longer exists
+                            } else {
+                                Some(idx.saturating_sub(1))
+                            };
+                        }
                         app.set_status(format!(
                             "Saved {} to {} / {}",
                             duration_str, project_display, activity_display
@@ -936,6 +932,12 @@ fn handle_entry_edit_enter(app: &mut App) {
 
 /// Save changes from This Week edit mode to database
 async fn handle_this_week_edit_save(app: &mut App, db: &api::Database) -> Result<()> {
+    // Running timer edits don't touch the DB
+    if app.this_week_edit_state.as_ref().map(|s| s.entry_id) == Some(-1) {
+        handle_running_timer_edit_save(app);
+        return Ok(());
+    }
+
     if let Some(state) = &app.this_week_edit_state {
         // Parse the time inputs
         let start_parts: Vec<&str> = state.start_time_input.split(':').collect();
@@ -1008,6 +1010,59 @@ async fn handle_this_week_edit_save(app: &mut App, db: &api::Database) -> Result
 
     app.exit_this_week_edit_mode();
     Ok(())
+}
+
+/// Apply edits from This Week edit mode back to the live running timer (no DB write).
+/// Called when entry_id == -1 (sentinel for the running timer).
+fn handle_running_timer_edit_save(app: &mut App) {
+    let Some(state) = app.this_week_edit_state.take() else {
+        return;
+    };
+
+    // Parse start time input
+    let start_parts: Vec<&str> = state.start_time_input.split(':').collect();
+    if start_parts.len() != 2 {
+        app.set_status("Error: Invalid time format".to_string());
+        return;
+    }
+    let Ok(start_hours) = start_parts[0].parse::<u8>() else {
+        app.set_status("Error: Invalid start hour".to_string());
+        return;
+    };
+    let Ok(start_mins) = start_parts[1].parse::<u8>() else {
+        app.set_status("Error: Invalid start minute".to_string());
+        return;
+    };
+
+    // Build new absolute_start: today's local date + typed HH:MM, converted to UTC
+    let local_offset = time::UtcOffset::current_local_offset()
+        .unwrap_or(time::UtcOffset::UTC);
+    let today = time::OffsetDateTime::now_utc().to_offset(local_offset).date();
+    let Ok(new_time) = time::Time::from_hms(start_hours, start_mins, 0) else {
+        app.set_status("Error: Invalid start time".to_string());
+        return;
+    };
+    let new_start = time::OffsetDateTime::new_in_offset(today, new_time, local_offset);
+
+    // Reject if new start is in the future
+    if new_start > time::OffsetDateTime::now_utc() {
+        app.set_status("Error: Start time cannot be in the future".to_string());
+        // Restore edit state so the user can correct it
+        app.this_week_edit_state = Some(state);
+        return;
+    }
+
+    // Write back to App fields
+    app.absolute_start = Some(new_start.to_offset(time::UtcOffset::UTC));
+    app.selected_project = state.project_id.zip(state.project_name).map(|(id, name)| {
+        test_data::TestProject { id, name, code: None }
+    });
+    app.selected_activity = state.activity_id.zip(state.activity_name).map(|(id, name)| {
+        test_data::TestActivity { id, name, project_id: String::new() }
+    });
+    app.description_input = TextInput::from_str(&state.note.value);
+
+    app.set_status("Running timer updated".to_string());
 }
 
 /// Save changes from History edit mode to database
