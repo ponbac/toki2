@@ -12,18 +12,25 @@ tui-piechart = "0.3.0"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
-# Database access (same setup as toki-api)
-sqlx = { version = "0.8.0", features = ["runtime-tokio-rustls", "postgres", "uuid", "time"] }
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "cookies"] }
 
 # Time handling (same as toki-api)
-time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros", "local-offset"] }
+time = { version = "0.3", features = [
+  "serde",
+  "formatting",
+  "parsing",
+  "macros",
+  "local-offset",
+] }
 
 # Error handling
 anyhow = "1.0"
 thiserror = "1.0"
 
 # Configuration
-config = "0.14"
+toml = "0.8"
+dirs = "5"
 dotenvy = "0.15"
 
 # Serialization
@@ -32,9 +39,6 @@ serde_json = "1.0"
 
 # Fuzzy matching
 fuzzy-matcher = "0.3"
-
-# Reuse existing crates
-milltime = { path = "../milltime" }
 
 [profile.release]
 opt-level = 3

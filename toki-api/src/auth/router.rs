@@ -141,17 +141,34 @@ mod get {
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
 
-        if let Ok(Some(next)) = session.remove::<String>(NEXT_URL_KEY).await {
-            let dest = app_state.app_url.join(next.as_str());
-            match dest {
-                Ok(url) => Redirect::to(url.as_str()).into_response(),
+        let next_url = session
+            .remove::<String>(NEXT_URL_KEY)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+
+        let redirect_url = if is_tui_callback(&next_url) {
+            // Pass the session ID as a query param so the TUI can capture it
+            let session_id = session.id().map(|id| id.to_string()).unwrap_or_default();
+            format!("{}?session_id={}", next_url, session_id)
+        } else if next_url.is_empty() {
+            app_state.app_url.to_string()
+        } else {
+            match app_state.app_url.join(&next_url) {
+                Ok(url) => url.to_string(),
                 Err(e) => {
                     tracing::error!("Failed to join next URL with app URL: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
             }
-        } else {
-            Redirect::to(app_state.app_url.as_str()).into_response()
-        }
+        };
+
+        Redirect::to(&redirect_url).into_response()
     }
+}
+
+/// Returns true if this next URL looks like a local TUI callback listener.
+fn is_tui_callback(url: &str) -> bool {
+    url.starts_with("http://localhost:") || url.starts_with("http://127.0.0.1:")
 }

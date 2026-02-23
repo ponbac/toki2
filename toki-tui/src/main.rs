@@ -1,10 +1,13 @@
-mod api;
+mod api_client;
 mod app;
+mod config;
 mod git;
-mod test_data;
+mod login;
+mod types;
 mod ui;
 
 use anyhow::Result;
+use api_client::ApiClient;
 use app::{App, TextInput};
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
@@ -20,46 +23,82 @@ async fn main() -> Result<()> {
     // Load environment variables from .env.tui
     dotenvy::from_filename(".env.tui").ok();
 
-    // Get database URL from environment
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/toki_tui_dev".to_string());
+    let args: Vec<String> = std::env::args().collect();
+    let flag = args.get(1).map(|s| s.as_str());
+    let cfg = config::TukiConfig::load()?;
 
-    println!("🔍 Connecting to database: {}", database_url);
-    println!("⚠️  Using ISOLATED dev database (toki_tui_dev)");
-    println!("✅ Your production database is safe!\n");
-
-    // Connect to database
-    let db = match api::Database::new(&database_url).await {
-        Ok(db) => {
-            println!("✅ Connected to database successfully!\n");
-            db
+    match flag {
+        Some("--login") => {
+            login::run_login(&cfg.api_url).await?;
+            return Ok(());
         }
-        Err(e) => {
-            eprintln!("❌ Failed to connect to database: {}", e);
-            eprintln!("\n💡 Make sure you've created the dev database:");
-            eprintln!("   1. Create database: createdb -U postgres toki_tui_dev");
-            eprintln!("   2. Run migrations: just init-tui-db");
-            eprintln!("\n   Or use the justfile commands.");
-            return Err(e);
+        Some("--logout") => {
+            config::TukiConfig::clear_session()?;
+            println!("Logged out. Session cleared.");
+            return Ok(());
+        }
+        Some("--dev") => {
+            let client = ApiClient::dev()?;
+            let me = client.me().await?;
+            println!("Dev mode: logged in as {} ({})\n", me.full_name, me.email);
+            let mut app = App::new(me.id);
+            if let Ok(history) = client.get_timer_history().await {
+                let (projects, activities) = types::build_projects_activities(&history);
+                app.set_projects_activities(projects, activities);
+                app.update_history(history);
+                app.rebuild_history_list();
+            }
+            enable_raw_mode()?;
+            let mut stdout = io::stdout();
+            execute!(stdout, EnterAlternateScreen)?;
+            let backend = CrosstermBackend::new(stdout);
+            let mut terminal = Terminal::new(backend)?;
+            let res = run_app(&mut terminal, &mut app, &client).await;
+            disable_raw_mode()?;
+            execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+            terminal.show_cursor()?;
+            if let Err(err) = res {
+                eprintln!("Error: {:?}", err);
+            }
+            println!("\nGoodbye!");
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    // Load session — require login if missing
+    let session_id = match config::TukiConfig::load_session()? {
+        Some(s) => s,
+        None => {
+            eprintln!("Not logged in. Run `toki-tui --login` to authenticate.");
+            std::process::exit(1);
         }
     };
 
-    // For demo purposes, use user_id = 1
-    // In production, this would come from authentication
-    let user_id = 1;
+    let client = ApiClient::new(&cfg.api_url, &session_id)?;
 
-    // Create app state
-    let mut app = App::new(user_id);
+    // Verify session is valid
+    let me = match client.me().await {
+        Ok(me) => me,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    };
 
-    // Load timer history (fetch more entries for month coverage)
-    match db.get_timer_history(user_id, 500).await {
+    println!("Logged in as {} ({})\n", me.full_name, me.email);
+
+    let mut app = App::new(me.id);
+
+    // Load timer history (also used to derive project/activity lists)
+    match client.get_timer_history().await {
         Ok(history) => {
+            let (projects, activities) = types::build_projects_activities(&history);
+            app.set_projects_activities(projects, activities);
             app.update_history(history);
             app.rebuild_history_list();
         }
-        Err(e) => {
-            eprintln!("Warning: Could not load history: {}", e);
-        }
+        Err(e) => eprintln!("Warning: Could not load history: {}", e),
     }
 
     // Setup terminal
@@ -70,7 +109,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Run the app
-    let res = run_app(&mut terminal, &mut app, &db).await;
+    let res = run_app(&mut terminal, &mut app, &client).await;
 
     // Restore terminal
     disable_raw_mode()?;
@@ -81,7 +120,7 @@ async fn main() -> Result<()> {
         eprintln!("Error: {:?}", err);
     }
 
-    println!("\n👋 Goodbye!");
+    println!("\nGoodbye!");
 
     Ok(())
 }
@@ -89,7 +128,7 @@ async fn main() -> Result<()> {
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
-    db: &api::Database,
+    client: &ApiClient,
 ) -> Result<()> {
     loop {
         terminal.draw(|f| ui::render(f, app))?;
@@ -374,15 +413,15 @@ async fn run_app(
                         match key.code {
                             KeyCode::Char('1') => {
                                 app.select_save_action_by_number(1);
-                                handle_save_timer_with_action(app, &db).await?;
+                                handle_save_timer_with_action(app, client).await?;
                             }
                             KeyCode::Char('2') => {
                                 app.select_save_action_by_number(2);
-                                handle_save_timer_with_action(app, &db).await?;
+                                handle_save_timer_with_action(app, client).await?;
                             }
                             KeyCode::Char('3') => {
                                 app.select_save_action_by_number(3);
-                                handle_save_timer_with_action(app, &db).await?;
+                                handle_save_timer_with_action(app, client).await?;
                             }
                             KeyCode::Char('4') | KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
                                 // Cancel - return to timer view
@@ -391,7 +430,7 @@ async fn run_app(
                             KeyCode::Up | KeyCode::Char('k') => app.select_previous_save_action(),
                             KeyCode::Down | KeyCode::Char('j') => app.select_next_save_action(),
                             KeyCode::Enter => {
-                                handle_save_timer_with_action(app, &db).await?;
+                                handle_save_timer_with_action(app, client).await?;
                             }
                             _ => {}
                         }
@@ -475,7 +514,7 @@ async fn run_app(
                                         app.set_status(format!("Edit cancelled: {}", error));
                                         app.exit_history_edit_mode();
                                     } else {
-                                        handle_history_edit_save(app, db).await?;
+                                        handle_history_edit_save(app, client).await?;
                                     }
                                 }
                                 // P: select project
@@ -603,7 +642,7 @@ async fn run_app(
                                      app.entry_edit_prev_field();
                                  } else if app.this_week_edit_state.is_none() {
                                      // Open History view when not in edit mode
-                                     match db.get_timer_history(app.user_id, 500).await {
+                                     match client.get_timer_history().await {
                                          Ok(history) => {
                                              app.update_history(history);
                                              app.rebuild_history_list();
@@ -681,7 +720,7 @@ async fn run_app(
                                         app.focused_box = app::FocusedBox::Today;
                                     } else {
                                         // Save changes via API
-                                        handle_this_week_edit_save(app, db).await?;
+                                        handle_this_week_edit_save(app, client).await?;
                                     }
                                 } else {
                                     app.focused_box = app::FocusedBox::Timer;
@@ -700,7 +739,7 @@ async fn run_app(
                                         } else {
                                             // Save & stop directly without showing dialog
                                             app.selected_save_action = app::SaveAction::SaveAndStop;
-                                            handle_save_timer_with_action(app, db).await?;
+                                            handle_save_timer_with_action(app, client).await?;
                                         }
                                     }
                                 }
@@ -769,7 +808,7 @@ fn handle_start_timer(app: &mut App) -> Result<()> {
     Ok(())
 }
 
-async fn handle_save_timer_with_action(app: &mut App, db: &api::Database) -> Result<()> {
+async fn handle_save_timer_with_action(app: &mut App, client: &ApiClient) -> Result<()> {
     // Handle Cancel first
     if app.selected_save_action == app::SaveAction::Cancel {
         app.navigate_to(app::View::Timer);
@@ -788,8 +827,7 @@ async fn handle_save_timer_with_action(app: &mut App, db: &api::Database) -> Res
         let note = Some(app.description_input.value.clone());
         
         // Save to database
-        match db.save_timer_entry(
-            app.user_id,
+        match client.save_timer_entry(
             start_time,
             end_time,
             project_id,
@@ -809,7 +847,7 @@ async fn handle_save_timer_with_action(app: &mut App, db: &api::Database) -> Res
                 let activity_display = activity_name.unwrap_or_else(|| "[None]".to_string());
                 
                 // Refresh history
-                if let Ok(history) = db.get_timer_history(app.user_id, 50).await {
+                if let Ok(history) = client.get_timer_history().await {
                     app.update_history(history);
                 }
                 
@@ -931,7 +969,7 @@ fn handle_entry_edit_enter(app: &mut App) {
 }
 
 /// Save changes from This Week edit mode to database
-async fn handle_this_week_edit_save(app: &mut App, db: &api::Database) -> Result<()> {
+async fn handle_this_week_edit_save(app: &mut App, client: &ApiClient) -> Result<()> {
     // Running timer edits don't touch the DB
     if app.this_week_edit_state.as_ref().map(|s| s.entry_id) == Some(-1) {
         handle_running_timer_edit_save(app);
@@ -979,7 +1017,7 @@ async fn handle_this_week_edit_save(app: &mut App, db: &api::Database) -> Result
         );
 
         // Update via API
-        match db.update_timer_entry(
+        match client.update_timer_entry(
             state.entry_id,
             start_time,
             end_time,
@@ -992,7 +1030,7 @@ async fn handle_this_week_edit_save(app: &mut App, db: &api::Database) -> Result
             Ok(_) => {
                 app.set_status("Entry updated successfully".to_string());
                 // Refresh history
-                match db.get_timer_history(app.user_id, 500).await {
+                match client.get_timer_history().await {
                     Ok(history) => {
                         app.update_history(history);
                         app.rebuild_history_list();
@@ -1055,10 +1093,10 @@ fn handle_running_timer_edit_save(app: &mut App) {
     // Write back to App fields
     app.absolute_start = Some(new_start.to_offset(time::UtcOffset::UTC));
     app.selected_project = state.project_id.zip(state.project_name).map(|(id, name)| {
-        test_data::TestProject { id, name, code: None }
+        types::Project { id, name }
     });
     app.selected_activity = state.activity_id.zip(state.activity_name).map(|(id, name)| {
-        test_data::TestActivity { id, name, project_id: String::new() }
+        types::Activity { id, name, project_id: String::new() }
     });
     app.description_input = TextInput::from_str(&state.note.value);
 
@@ -1066,7 +1104,7 @@ fn handle_running_timer_edit_save(app: &mut App) {
 }
 
 /// Save changes from History edit mode to database
-async fn handle_history_edit_save(app: &mut App, db: &api::Database) -> Result<()> {
+async fn handle_history_edit_save(app: &mut App, client: &ApiClient) -> Result<()> {
     if let Some(state) = &app.history_edit_state {
         // Parse the time inputs
         let start_parts: Vec<&str> = state.start_time_input.split(':').collect();
@@ -1108,7 +1146,7 @@ async fn handle_history_edit_save(app: &mut App, db: &api::Database) -> Result<(
         );
 
         // Update via API
-        match db.update_timer_entry(
+        match client.update_timer_entry(
             state.entry_id,
             start_time,
             end_time,
@@ -1121,7 +1159,7 @@ async fn handle_history_edit_save(app: &mut App, db: &api::Database) -> Result<(
             Ok(_) => {
                 app.set_status("Entry updated successfully".to_string());
                 // Refresh history
-                match db.get_timer_history(app.user_id, 500).await {
+                match client.get_timer_history().await {
                     Ok(history) => {
                         app.update_history(history);
                         app.rebuild_history_list();
