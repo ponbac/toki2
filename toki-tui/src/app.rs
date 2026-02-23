@@ -120,6 +120,21 @@ impl GitContext {
     }
 }
 
+/// A single Taskwarrior task entry.
+#[derive(Debug, Clone)]
+pub struct TaskEntry {
+    pub id: u32,
+    pub description: String,
+}
+
+/// State for the Taskwarrior task-picker overlay.
+#[derive(Debug, Clone, Default)]
+pub struct TaskwarriorOverlay {
+    pub tasks: Vec<TaskEntry>,
+    pub selected: Option<usize>,
+    pub error: Option<String>,
+}
+
 /// A text input with mid-string cursor support.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TextInput {
@@ -297,6 +312,7 @@ pub struct App {
     pub git_mode: bool,
     pub cwd_input: Option<TextInput>, // Some(_) when changing directory
     pub cwd_completions: Vec<String>, // Tab completion candidates
+    pub taskwarrior_overlay: Option<TaskwarriorOverlay>,
 }
 
 impl App {
@@ -345,6 +361,7 @@ impl App {
             git_mode: false,
             cwd_input: None,
             cwd_completions: Vec::new(),
+            taskwarrior_overlay: None,
         }
     }
 
@@ -1777,6 +1794,134 @@ impl App {
             }
         }
     }
+
+    /// Open the Taskwarrior task-picker overlay by running `task status:pending export`.
+    /// If the env var `TOKI_TASK_FILTER` is set, its value is split on whitespace and
+    /// prepended as extra filter args (e.g. `TOKI_TASK_FILTER="+spinit -paused"`).
+    pub fn open_taskwarrior_overlay(&mut self) {
+        // NOTE: This blocks the TUI thread for the duration of the `task export` call.
+        // For typical task lists this is fast (<100ms), but could be noticeable with
+        // Taskwarrior hooks or large databases. A background thread would be cleaner.
+        // NOTE: argument order matters — filter first, subcommand second.
+        let mut cmd = std::process::Command::new("task");
+        // Suppress informational lines that task prints to stdout and would break JSON parsing.
+        cmd.arg("rc.verbose=nothing");
+        // Apply optional user-defined filter (e.g. "+spinit -paused")
+        if let Ok(filter) = std::env::var("TOKI_TASK_FILTER") {
+            for token in filter.split_whitespace() {
+                cmd.arg(token);
+            }
+        }
+        cmd.args(["status:pending", "export"]);
+        let result = cmd.output();
+        match result {
+            Err(_) => {
+                self.taskwarrior_overlay = Some(TaskwarriorOverlay {
+                    tasks: vec![],
+                    selected: None,
+                    error: Some("taskwarrior not found (is `task` in PATH?)".to_string()),
+                });
+            }
+            Ok(out) => match parse_task_export(&out.stdout) {
+                Ok(tasks) => {
+                    let selected = if tasks.is_empty() { None } else { Some(0) };
+                    let error = if out.status.success() || !tasks.is_empty() {
+                        None
+                    } else {
+                        Some(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                    };
+                    self.taskwarrior_overlay = Some(TaskwarriorOverlay {
+                        tasks,
+                        selected,
+                        error,
+                    });
+                }
+                Err(parse_err) => {
+                    self.taskwarrior_overlay = Some(TaskwarriorOverlay {
+                        tasks: vec![],
+                        selected: None,
+                        error: Some(parse_err),
+                    });
+                }
+            },
+        }
+    }
+
+    /// Close the Taskwarrior overlay without selecting anything.
+    pub fn close_taskwarrior_overlay(&mut self) {
+        self.taskwarrior_overlay = None;
+    }
+
+    /// Move the Taskwarrior overlay selection up (down=false) or down (down=true).
+    pub fn taskwarrior_move(&mut self, down: bool) {
+        if let Some(overlay) = &mut self.taskwarrior_overlay {
+            let len = overlay.tasks.len();
+            if len == 0 {
+                return;
+            }
+            overlay.selected = Some(match overlay.selected {
+                None => 0,
+                Some(i) => {
+                    if down {
+                        (i + 1).min(len - 1)
+                    } else {
+                        i.saturating_sub(1)
+                    }
+                }
+            });
+        }
+    }
+
+    /// Confirm selection: close overlay and append the selected task description
+    /// to `description_input`. A space is prepended if the note is non-empty.
+    pub fn taskwarrior_confirm(&mut self) {
+        let description = self
+            .taskwarrior_overlay
+            .as_ref()
+            .and_then(|o| o.selected.and_then(|i| o.tasks.get(i)))
+            .map(|t| t.description.clone());
+
+        self.taskwarrior_overlay = None;
+
+        if let Some(desc) = description {
+            if !self.description_input.value.is_empty() {
+                self.description_input.insert(' ');
+            }
+            for c in desc.chars() {
+                self.description_input.insert(c);
+            }
+        }
+    }
+}
+
+/// Parse the JSON output of `task status:pending export`.
+/// Returns a list of TaskEntry values sorted by urgency (highest first),
+/// matching the order `task next` would show them.
+fn parse_task_export(output: &[u8]) -> Result<Vec<TaskEntry>, String> {
+    let text = std::str::from_utf8(output)
+        .map_err(|e| format!("task export output is not valid UTF-8: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("task export output is not valid JSON: {}", e))?;
+    let arr = json
+        .as_array()
+        .ok_or_else(|| "task export output is not a JSON array".to_string())?;
+
+    let mut entries: Vec<(TaskEntry, f64)> = arr
+        .iter()
+        .filter_map(|obj| {
+            let id = obj.get("id")?.as_u64()? as u32;
+            // id == 0 means the task is completed/deleted (no display ID assigned)
+            if id == 0 {
+                return None;
+            }
+            let description = obj.get("description")?.as_str()?.to_string();
+            let urgency = obj.get("urgency").and_then(|u| u.as_f64()).unwrap_or(0.0);
+            Some((TaskEntry { id, description }, urgency))
+        })
+        .collect();
+
+    entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(entries.into_iter().map(|(entry, _)| entry).collect())
 }
 
 fn longest_common_prefix(strings: &[String]) -> String {

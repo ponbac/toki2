@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Padding, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Padding, Paragraph},
     Frame,
 };
 use time::UtcOffset;
@@ -34,7 +34,13 @@ pub fn render(frame: &mut Frame, app: &App) {
         View::History => render_history_view(frame, app, body),
         View::SelectProject => render_project_selection(frame, app, body),
         View::SelectActivity => render_activity_selection(frame, app, body),
-        View::EditDescription => render_description_editor(frame, app, body),
+        View::EditDescription => {
+            if app.taskwarrior_overlay.is_some() {
+                render_taskwarrior_overlay(frame, app, body);
+            } else {
+                render_description_editor(frame, app, body);
+            }
+        }
         View::SaveAction => render_save_action_dialog(frame, app, body),
         View::Statistics => render_statistics_view(frame, app, body),
     }
@@ -1174,13 +1180,15 @@ fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             Span::raw(": Change directory  "),
             Span::styled("Ctrl+G", git_key_style),
             Span::styled(
-                ": Git quick commands",
+                ": Git quick commands  ",
                 Style::default().fg(if has_git {
                     Color::Reset
                 } else {
                     Color::DarkGray
                 }),
             ),
+            Span::styled("Ctrl+T", Style::default().fg(Color::Yellow)),
+            Span::raw(": Tasks"),
         ]
     };
 
@@ -1197,6 +1205,72 @@ fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
                 .padding(ratatui::widgets::Padding::horizontal(1)),
         );
     frame.render_widget(controls, chunks[3]);
+}
+
+fn render_taskwarrior_overlay(frame: &mut Frame, app: &App, body: Rect) {
+    // Render description editor in the background
+    render_description_editor(frame, app, body);
+
+    let overlay = match &app.taskwarrior_overlay {
+        Some(o) => o,
+        None => return,
+    };
+
+    // 70% width, 20 rows, centered
+    let width = (frame.area().width as f32 * 0.70) as u16;
+    let height = 20_u16;
+    let area = centered_rect(width, height, frame.area());
+
+    frame.render_widget(Clear, area);
+
+    if let Some(err) = &overlay.error {
+        let paragraph = Paragraph::new(err.as_str())
+            .style(Style::default().fg(Color::Red))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow))
+                    .title(Span::styled(
+                        " Taskwarrior — error ",
+                        Style::default().fg(Color::Yellow),
+                    ))
+                    .padding(Padding::horizontal(1)),
+            );
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = overlay
+        .tasks
+        .iter()
+        .map(|t| {
+            ListItem::new(format!("[{}] {}", t.id, t.description))
+                .style(Style::default().fg(Color::White))
+        })
+        .collect();
+
+    let mut list_state = ListState::default();
+    list_state.select(overlay.selected);
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title(Span::styled(
+                    " Taskwarrior Tasks ",
+                    Style::default().fg(Color::Yellow),
+                ))
+                .padding(Padding::horizontal(1)),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn render_save_action_dialog(frame: &mut Frame, app: &App, body: Rect) {

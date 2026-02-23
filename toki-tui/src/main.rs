@@ -276,6 +276,23 @@ async fn run_app(
                                 }
                                 _ => {}
                             }
+                        } else if app.taskwarrior_overlay.is_some() {
+                            match key.code {
+                                KeyCode::Esc => app.close_taskwarrior_overlay(),
+                                KeyCode::Char('t') | KeyCode::Char('T')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    app.close_taskwarrior_overlay();
+                                }
+                                KeyCode::Down | KeyCode::Char('j') => {
+                                    app.taskwarrior_move(true);
+                                }
+                                KeyCode::Up | KeyCode::Char('k') => {
+                                    app.taskwarrior_move(false);
+                                }
+                                KeyCode::Enter => app.taskwarrior_confirm(),
+                                _ => {}
+                            }
                         } else if app.git_mode {
                             // Second key of Ctrl+G sequence
                             match key.code {
@@ -301,6 +318,11 @@ async fn run_app(
                                     if key.modifiers.contains(KeyModifiers::CONTROL) =>
                                 {
                                     app.begin_cwd_change();
+                                }
+                                KeyCode::Char('t') | KeyCode::Char('T')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                                {
+                                    app.open_taskwarrior_overlay();
                                 }
                                 KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                                     app.input_char(c);
