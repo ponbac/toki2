@@ -15,6 +15,7 @@ import { router } from "@/main";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { userQueries } from "@/lib/api/queries/user";
+import { differsQueries } from "@/lib/api/queries/differs";
 import { NotificationsPopover } from "./notifications-popover/notifications-popover";
 import { ThemeSwitcher } from "./theme-switcher";
 import {
@@ -69,25 +70,31 @@ const MENU_ITEMS = [
   variant: "default" | "ghost";
   to: LinkDestination;
 }[];
-
-const BOARD_MENU_ALLOWED_EMAILS = new Set(["pontus.backman@spinit.se"]);
+const BOARD_MENU_ORGANIZATION = "lerumsdjur";
 
 type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 
 export function SideNavWrapper({ children }: { children: React.ReactNode }) {
-  const { data: me } = useQuery({
-    ...userQueries.me(),
-    staleTime: Infinity,
+  const { data: differs } = useQuery({
+    ...differsQueries.differs(),
   });
+
+  const canSeeBoard = React.useMemo(
+    () =>
+      differs?.some(
+        (differ) =>
+          differ.followed &&
+          differ.organization.toLowerCase() === BOARD_MENU_ORGANIZATION,
+      ) ?? false,
+    [differs],
+  );
 
   const menuItems = React.useMemo(
     () =>
       MENU_ITEMS.filter(
-        (item) =>
-          item.to !== "/board" ||
-          BOARD_MENU_ALLOWED_EMAILS.has(me?.email ?? ""),
+        (item) => item.to !== "/board" || canSeeBoard,
       ),
-    [me?.email],
+    [canSeeBoard],
   );
 
   return (
