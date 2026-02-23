@@ -1188,7 +1188,7 @@ fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
                 }),
             ),
             Span::styled("Ctrl+T", Style::default().fg(Color::Yellow)),
-            Span::raw(": Tasks"),
+            Span::raw(": Taskwarrior"),
         ]
     };
 
