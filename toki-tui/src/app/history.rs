@@ -116,6 +116,7 @@ impl App {
     }
 
     /// Flex time = worked hours - scheduled hours
+    #[allow(dead_code)]
     pub fn flex_hours_this_week(&self) -> f64 {
         self.worked_hours_this_week() - self.scheduled_hours_per_week
     }

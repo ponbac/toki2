@@ -518,6 +518,7 @@ impl App {
     }
 
     /// Get the registration_id for the currently edited entry
+    #[allow(dead_code)]
     pub fn editing_registration_id(&self) -> Option<&str> {
         if self.current_view == View::History {
             self.history_edit_state

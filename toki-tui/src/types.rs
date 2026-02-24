@@ -52,6 +52,7 @@ pub struct TimeEntry {
     pub start_time: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub end_time: Option<OffsetDateTime>,
+    #[allow(dead_code)]
     pub week_number: u8,
 }
 
@@ -90,6 +91,7 @@ pub struct GetTimerResponse {
 /// Time info returned by GET /time-tracking/time-info.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct TimeInfo {
     pub period_time_left: f64,
     pub worked_period_time: f64,
