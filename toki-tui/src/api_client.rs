@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
 
-use crate::types::{Me, TimerHistoryEntry};
+use crate::types::Me;
 
 /// Cookie name used by tower-sessions (default).
 const SESSION_COOKIE: &str = "id";
@@ -16,7 +16,7 @@ pub struct ApiClient {
     session_id: String,
     mt_cookies: Vec<(String, String)>,
     /// When true, all API calls mutate/read this in-memory store instead of hitting the server.
-    dev_history: Option<Arc<Mutex<Vec<TimerHistoryEntry>>>>,
+    dev_history: Option<Arc<Mutex<Vec<DevEntry>>>>,
 }
 
 impl ApiClient {
@@ -660,13 +660,26 @@ struct ActivityDto {
     activity_name: String,
 }
 
+/// Minimal timer-history record used only in dev mode to simulate a local data store.
+#[derive(Debug, Clone)]
+struct DevEntry {
+    registration_id: Option<String>,
+    start_time: OffsetDateTime,
+    end_time: Option<OffsetDateTime>,
+    project_id: Option<String>,
+    project_name: Option<String>,
+    activity_id: Option<String>,
+    activity_name: Option<String>,
+    note: Option<String>,
+}
+
 /// Generate a handful of fake timer history entries for dev mode.
-fn dev_history() -> Vec<TimerHistoryEntry> {
+fn dev_history() -> Vec<DevEntry> {
     use time::macros::offset;
     let now = OffsetDateTime::now_utc().to_offset(offset!(+1));
     let today = now.date();
 
-    let entry = |id: i32, h_start: u8, h_end: u8, pid: &str, pname: &str, aid: &str, aname: &str, note: &str| {
+    let entry = |h_start: u8, h_end: u8, pid: &str, pname: &str, aid: &str, aname: &str, note: &str| {
         let start = OffsetDateTime::new_in_offset(
             today,
             time::Time::from_hms(h_start, 0, 0).unwrap(),
@@ -677,9 +690,7 @@ fn dev_history() -> Vec<TimerHistoryEntry> {
             time::Time::from_hms(h_end, 0, 0).unwrap(),
             offset!(+1),
         );
-        TimerHistoryEntry {
-            id,
-            user_id: 1,
+        DevEntry {
             start_time: start,
             end_time: Some(end),
             project_id: Some(pid.to_string()),
@@ -692,9 +703,9 @@ fn dev_history() -> Vec<TimerHistoryEntry> {
     };
 
     vec![
-        entry(1, 8, 10, "proj_1", "Nordic Crisis Manager", "act_1_1", "Backend Development", "API refactor"),
-        entry(2, 10, 12, "proj_1", "Nordic Crisis Manager", "act_1_4", "Code Review", "PR review"),
-        entry(3, 13, 15, "proj_2", "Azure DevOps Integration", "act_2_1", "API Integration", "Webhook setup"),
-        entry(4, 15, 17, "proj_3", "TUI Development", "act_3_2", "Feature Implementation", "Scrollable lists"),
+        entry(8, 10, "proj_1", "Nordic Crisis Manager", "act_1_1", "Backend Development", "API refactor"),
+        entry(10, 12, "proj_1", "Nordic Crisis Manager", "act_1_4", "Code Review", "PR review"),
+        entry(13, 15, "proj_2", "Azure DevOps Integration", "act_2_1", "API Integration", "Webhook setup"),
+        entry(15, 17, "proj_3", "TUI Development", "act_3_2", "Feature Implementation", "Scrollable lists"),
     ]
 }

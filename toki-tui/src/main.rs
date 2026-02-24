@@ -228,6 +228,30 @@ async fn run_app(
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
+                // Milltime re-auth overlay intercepts all keys while it is open
+                if app.milltime_reauth.is_some() {
+                    match key.code {
+                        KeyCode::Tab | KeyCode::BackTab => {
+                            app.milltime_reauth_next_field();
+                        }
+                        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            app.milltime_reauth_input_char(c);
+                        }
+                        KeyCode::Backspace => {
+                            app.milltime_reauth_backspace();
+                        }
+                        KeyCode::Enter => {
+                            handle_milltime_reauth_submit(app, client).await;
+                        }
+                        KeyCode::Esc => {
+                            app.close_milltime_reauth();
+                            app.set_status("Milltime re-authentication cancelled".to_string());
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+
                 match &app.current_view {
                     app::View::SelectProject => {
                         // Save edit state and running timer state before any selection
@@ -298,7 +322,7 @@ async fn run_app(
                                                 app.set_status(format!("Failed to load activities: {}", e));
                                             }
                                         }
-    app.is_loading = false;
+                                        app.is_loading = false;
                                     }
                                     // Populate app.activities from cache for this project
                                     if let Some(cached) = app.activity_cache.get(&project.id) {
@@ -989,9 +1013,15 @@ async fn run_app(
         if last_history_refresh.elapsed() >= HISTORY_REFRESH_INTERVAL && !app.is_in_edit_mode() {
             let today = time::OffsetDateTime::now_utc().date();
             let month_ago = today - time::Duration::days(30);
-            if let Ok(entries) = client.get_time_entries(month_ago, today).await {
-                app.update_history(entries);
-                app.rebuild_history_list();
+            match client.get_time_entries(month_ago, today).await {
+                Ok(entries) => {
+                    app.update_history(entries);
+                    app.rebuild_history_list();
+                }
+                Err(e) if is_milltime_auth_error(&e) => {
+                    app.open_milltime_reauth();
+                }
+                Err(_) => {} // transient errors are silently ignored on background refresh
             }
             last_history_refresh = std::time::Instant::now();
         }
@@ -1040,7 +1070,11 @@ async fn handle_start_timer(app: &mut App, client: &mut ApiClient) -> Result<()>
                 Some(app.description_input.value.clone())
             };
             if let Err(e) = client.start_timer(project_id, project_name, activity_id, activity_name, note).await {
-                app.set_status(format!("Error starting timer: {}", e));
+                if is_milltime_auth_error(&e) {
+                    app.open_milltime_reauth();
+                } else {
+                    app.set_status(format!("Error starting timer: {}", e));
+                }
                 return Ok(());
             }
             app.start_timer();
@@ -1132,7 +1166,11 @@ async fn handle_save_timer_with_action(app: &mut App, client: &mut ApiClient) ->
             app.navigate_to(app::View::Timer);
         }
         Err(e) => {
-            app.set_status(format!("Error saving timer: {}", e));
+            if is_milltime_auth_error(&e) {
+                app.open_milltime_reauth();
+            } else {
+                app.set_status(format!("Error saving timer: {}", e));
+            }
             app.navigate_to(app::View::Timer);
         }
     }
@@ -1214,7 +1252,11 @@ async fn handle_this_week_edit_save(app: &mut App, client: &mut ApiClient) -> Re
     };
     app.exit_this_week_edit_mode();
     if let Err(e) = handle_saved_entry_edit_save(state, app, client).await {
-        app.set_status(format!("Error saving entry: {}", e));
+        if is_milltime_auth_error(&e) {
+            app.open_milltime_reauth();
+        } else {
+            app.set_status(format!("Error saving entry: {}", e));
+        }
     }
     Ok(())
 }
@@ -1300,7 +1342,11 @@ async fn handle_history_edit_save(app: &mut App, client: &mut ApiClient) -> Resu
     };
     app.exit_history_edit_mode();
     if let Err(e) = handle_saved_entry_edit_save(state, app, client).await {
-        app.set_status(format!("Error saving entry: {}", e));
+        if is_milltime_auth_error(&e) {
+            app.open_milltime_reauth();
+        } else {
+            app.set_status(format!("Error saving entry: {}", e));
+        }
     }
     Ok(())
 }
@@ -1332,17 +1378,8 @@ async fn handle_saved_entry_edit_save(
         .unwrap_or(time::UtcOffset::UTC);
 
     // Parse entry.date ("YYYY-MM-DD") to get the calendar date
-    let entry_date = {
-        let parts: Vec<&str> = entry.date.splitn(3, '-').collect();
-        anyhow::ensure!(parts.len() == 3, "Unexpected date format: {}", entry.date);
-        let year: i32 = parts[0].parse().context("Invalid year in entry date")?;
-        let month_u8: u8 = parts[1].parse().context("Invalid month in entry date")?;
-        let day: u8 = parts[2].parse().context("Invalid day in entry date")?;
-        let month =
-            time::Month::try_from(month_u8).map_err(|_| anyhow::anyhow!("Invalid month value"))?;
-        time::Date::from_calendar_date(year, month, day)
-            .map_err(|e| anyhow::anyhow!("Invalid calendar date: {}", e))?
-    };
+    let entry_date = app::parse_date_str(&entry.date)
+        .ok_or_else(|| anyhow::anyhow!("Unexpected date format: {}", entry.date))?;
 
     let parse_hhmm = |s: &str| -> Result<time::Time> {
         let parts: Vec<&str> = s.split(':').collect();
@@ -1431,4 +1468,39 @@ async fn handle_saved_entry_edit_save(
 
     app.set_status("Entry updated".to_string());
     Ok(())
+}
+
+/// Attempt Milltime re-authentication with the credentials from the overlay.
+/// On success: updates cookies and closes the overlay.
+/// On failure: sets the error message on the overlay so the user can retry.
+async fn handle_milltime_reauth_submit(app: &mut App, client: &mut ApiClient) {
+    let (username, password) = match app.milltime_reauth_credentials() {
+        Some(creds) => creds,
+        None => return,
+    };
+    if username.is_empty() {
+        app.milltime_reauth_set_error("Username is required".to_string());
+        return;
+    }
+    match client.authenticate(&username, &password).await {
+        Ok(cookies) => {
+            client.update_mt_cookies(cookies);
+            if let Err(e) = config::TokiConfig::save_mt_cookies(client.mt_cookies()) {
+                app.milltime_reauth_set_error(format!("Authenticated but could not save cookies: {}", e));
+                return;
+            }
+            app.close_milltime_reauth();
+            app.set_status("Milltime re-authenticated successfully".to_string());
+        }
+        Err(e) => {
+            app.milltime_reauth_set_error(format!("Authentication failed: {}", e));
+        }
+    }
+}
+
+/// Returns true when an error looks like a Milltime authentication failure.
+/// Used to decide whether to open the re-auth overlay.
+fn is_milltime_auth_error(e: &anyhow::Error) -> bool {
+    let msg = e.to_string().to_lowercase();
+    msg.contains("unauthorized") || msg.contains("authenticate") || msg.contains("milltime")
 }

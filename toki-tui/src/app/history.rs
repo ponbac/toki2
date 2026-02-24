@@ -19,7 +19,11 @@ impl App {
             .collect();
     }
 
-    /// Compute overlapping time entries per day
+    /// Compute overlapping time entries per day.
+    ///
+    /// Entries with both `start_time` and `end_time` are checked for actual time-range
+    /// intersection. Entries without timestamps are skipped — they can't be checked by
+    /// time range and exceeding scheduled hours is legitimate (it just adds flex time).
     pub(super) fn compute_overlaps(&mut self) {
         self.overlapping_entry_ids.clear();
 
@@ -30,7 +34,7 @@ impl App {
             entries_by_date.entry(&entry.date).or_default().push(entry);
         }
 
-        for (_, day_entries) in entries_by_date {
+        for (_, day_entries) in &entries_by_date {
             if day_entries.len() < 2 {
                 continue;
             }
@@ -192,23 +196,7 @@ impl App {
                 continue;
             }
             // Parse entry date to find which weekday slot
-            let parts: Vec<&str> = entry.date.splitn(3, '-').collect();
-            if parts.len() != 3 {
-                continue;
-            }
-            let Ok(year) = parts[0].parse::<i32>() else {
-                continue;
-            };
-            let Ok(month_u8) = parts[1].parse::<u8>() else {
-                continue;
-            };
-            let Ok(day) = parts[2].parse::<u8>() else {
-                continue;
-            };
-            let Ok(month) = time::Month::try_from(month_u8) else {
-                continue;
-            };
-            let Ok(date) = time::Date::from_calendar_date(year, month, day) else {
+            let Some(date) = parse_date_str(&entry.date) else {
                 continue;
             };
 
@@ -243,4 +231,15 @@ impl App {
             })
             .collect()
     }
+}
+
+/// Parse a date string in "YYYY-MM-DD" format into a [`time::Date`].
+/// Returns `None` if the string is malformed.
+pub fn parse_date_str(s: &str) -> Option<time::Date> {
+    let mut parts = s.splitn(3, '-');
+    let year: i32 = parts.next()?.parse().ok()?;
+    let month_u8: u8 = parts.next()?.parse().ok()?;
+    let day: u8 = parts.next()?.parse().ok()?;
+    let month = time::Month::try_from(month_u8).ok()?;
+    time::Date::from_calendar_date(year, month, day).ok()
 }

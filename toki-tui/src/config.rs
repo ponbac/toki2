@@ -10,7 +10,7 @@ pub struct TokiConfig {
 }
 
 fn default_api_url() -> String {
-    "http://localhost:8080".to_string()
+    "https://toki-api.spinit.se".to_string()
 }
 
 impl Default for TokiConfig {
@@ -135,6 +135,19 @@ impl TokiConfig {
             .map(|(name, value)| format!("{}={}", name, value))
             .collect::<Vec<_>>()
             .join("\n");
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)?
+                .write_all(content.as_bytes())?;
+        }
+        #[cfg(not(unix))]
         std::fs::write(&path, content)?;
         Ok(())
     }

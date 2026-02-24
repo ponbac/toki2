@@ -267,4 +267,21 @@ pub struct EntryEditState {
     pub validation_error: Option<String>,
 }
 
+/// State for the Milltime re-authentication overlay.
+/// Shown when Milltime cookies expire mid-session.
+#[derive(Debug, Clone, Default)]
+pub struct MilltimeReauthState {
+    pub username_input: TextInput,
+    pub password_input: TextInput,
+    pub focused_field: MilltimeReauthField,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum MilltimeReauthField {
+    #[default]
+    Username,
+    Password,
+}
+
 // Keep Instant re-exported so App struct can use it without needing to import state internals

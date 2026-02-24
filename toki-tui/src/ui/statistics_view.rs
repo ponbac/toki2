@@ -79,7 +79,7 @@ pub fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
 fn render_pie_panel(frame: &mut Frame, app: &App, area: Rect) {
     use tui_piechart::{PieChart, PieSlice};
 
-    let stats = app.weekly_project_stats();
+    let stats = &app.weekly_stats_cache;
 
     if stats.is_empty() {
         let empty = Paragraph::new("No data")
@@ -152,7 +152,7 @@ fn render_pie_panel(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_daily_panel(frame: &mut Frame, app: &App, area: Rect) {
-    let day_stats = app.weekly_daily_stats();
+    let day_stats = &app.weekly_daily_stats_cache;
 
     // Find max daily hours for bar scaling
     let max_hours = day_stats
@@ -165,7 +165,8 @@ fn render_daily_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut lines: Vec<Line> = Vec::new();
 
-    for day in &day_stats {
+    let last_index = day_stats.len().saturating_sub(1);
+    for (di, day) in day_stats.iter().enumerate() {
         // --- Bar row ---
         let mut spans: Vec<Span> = Vec::new();
 
@@ -243,13 +244,15 @@ fn render_daily_panel(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         // Blank row between days (not after the last one)
-        if !std::ptr::eq(day, day_stats.last().unwrap()) {
+        if di < last_index {
             lines.push(Line::raw(""));
         }
     }
 
     let text = ratatui::text::Text::from(lines);
     let paragraph = Paragraph::new(text)
+        // 4-row bottom padding reserves space so the bar chart legend doesn't
+        // overlap the compact stats header rendered in the row above the body.
         .block(Block::default().padding(ratatui::widgets::Padding::new(0, 0, 4, 0)));
     frame.render_widget(paragraph, area);
 }

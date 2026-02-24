@@ -1,4 +1,4 @@
-use crate::app::{App, SaveAction, View};
+use crate::app::{App, MilltimeReauthField, SaveAction, View};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -46,4 +46,104 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         View::Statistics => statistics_view::render_statistics_view(frame, app, body),
         View::ConfirmDelete => delete_dialog::render_delete_confirm_dialog(frame, app, body),
     }
+
+    // Milltime re-auth overlay — renders on top of any view
+    if app.milltime_reauth.is_some() {
+        render_milltime_reauth_overlay(frame, app);
+    }
+}
+
+fn render_milltime_reauth_overlay(frame: &mut Frame, app: &App) {
+    let state = match &app.milltime_reauth {
+        Some(s) => s,
+        None => return,
+    };
+
+    let area = utils::centered_rect(60, 14, frame.area());
+    frame.render_widget(Clear, area);
+
+    let username_focused = state.focused_field == MilltimeReauthField::Username;
+    let password_focused = state.focused_field == MilltimeReauthField::Password;
+
+    let username_style = if username_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let password_style = if password_focused {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    // Password is masked
+    let password_display = "•".repeat(state.password_input.value.len());
+
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "Milltime session expired. Please re-authenticate.",
+            Style::default().fg(Color::White),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Username: ", username_style),
+            Span::styled(
+                state.username_input.value.clone(),
+                if username_focused {
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Password: ", password_style),
+            Span::styled(
+                password_display,
+                if password_focused {
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                },
+            ),
+        ]),
+        Line::from(""),
+    ];
+
+    if let Some(err) = &state.error {
+        lines.push(Line::from(Span::styled(
+            err.as_str(),
+            Style::default().fg(Color::Red),
+        )));
+        lines.push(Line::from(""));
+    }
+
+    lines.push(Line::from(vec![
+        Span::styled("Tab", Style::default().fg(Color::Yellow)),
+        Span::raw(": Switch field  "),
+        Span::styled("Enter", Style::default().fg(Color::Yellow)),
+        Span::raw(": Submit  "),
+        Span::styled("Esc", Style::default().fg(Color::Yellow)),
+        Span::raw(": Cancel"),
+    ]));
+
+    let paragraph = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .title(Span::styled(
+                    " Milltime Re-authentication ",
+                    Style::default().fg(Color::Yellow),
+                ))
+                .padding(Padding::horizontal(2)),
+        )
+        .alignment(Alignment::Left);
+
+    frame.render_widget(paragraph, area);
 }

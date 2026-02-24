@@ -584,8 +584,7 @@ impl App {
 /// return a concrete (start, end) pair for pre-populating the edit form.
 ///
 /// When real times are absent (entry booked via Milltime web UI):
-/// - start defaults to 06:00 on the entry's date (matching the web app default)
-/// - end is derived as start + hours
+/// - start and end default to 00:00 (user must fill them in manually)
 fn derive_start_end(
     start_time: Option<time::OffsetDateTime>,
     end_time: Option<time::OffsetDateTime>,

@@ -7,10 +7,11 @@ mod edit;
 mod history;
 mod navigation;
 mod state;
+pub use history::parse_date_str;
 pub use state::{
     DailyProjectStat, DayStat, DeleteContext, DeleteOrigin, EntryEditField, EntryEditState,
-    FocusedBox, GitContext, ProjectStat, SaveAction, TaskEntry, TaskwarriorOverlay, TextInput,
-    TimerSize, TimerState, View,
+    FocusedBox, GitContext, MilltimeReauthField, MilltimeReauthState, ProjectStat, SaveAction,
+    TaskEntry, TaskwarriorOverlay, TextInput, TimerSize, TimerState, View,
 };
 
 fn to_local_time(dt: OffsetDateTime) -> OffsetDateTime {
@@ -102,6 +103,13 @@ pub struct App {
 
     // Activity cache: project_id -> fetched activities
     pub activity_cache: HashMap<String, Vec<Activity>>,
+
+    // Statistics cache — computed once per history update, used every render frame
+    pub weekly_stats_cache: Vec<ProjectStat>,
+    pub weekly_daily_stats_cache: Vec<DayStat>,
+
+    // Milltime re-auth overlay — shown when Milltime cookies expire mid-session
+    pub milltime_reauth: Option<MilltimeReauthState>,
 }
 
 impl App {
@@ -158,6 +166,9 @@ impl App {
             scheduled_hours_per_week: 40.0,
             flex_time_current: 0.0,
             activity_cache: HashMap::new(),
+            weekly_stats_cache: Vec::new(),
+            weekly_daily_stats_cache: Vec::new(),
+            milltime_reauth: None,
         }
     }
 
@@ -305,6 +316,10 @@ impl App {
         self.time_entries = entries;
         self.history_scroll = 0;
         self.compute_overlaps();
+        // Recompute statistics caches — these are expensive (multiple passes over history)
+        // and are called every render frame, so we compute once here and serve cached values.
+        self.weekly_stats_cache = self.weekly_project_stats();
+        self.weekly_daily_stats_cache = self.weekly_daily_stats();
     }
 
     /// Load projects and activities derived from timer history (via HTTP API).
@@ -735,6 +750,57 @@ impl App {
             self.cwd_input = Some(input);
             Err(format!("Not a directory: {}", path.display()))
         }
+    }
+
+    pub fn open_milltime_reauth(&mut self) {
+        self.milltime_reauth = Some(MilltimeReauthState::default());
+    }
+
+    pub fn close_milltime_reauth(&mut self) {
+        self.milltime_reauth = None;
+    }
+
+    pub fn milltime_reauth_input_char(&mut self, c: char) {
+        if let Some(state) = &mut self.milltime_reauth {
+            match state.focused_field {
+                MilltimeReauthField::Username => state.username_input.insert(c),
+                MilltimeReauthField::Password => state.password_input.insert(c),
+            }
+        }
+    }
+
+    pub fn milltime_reauth_backspace(&mut self) {
+        if let Some(state) = &mut self.milltime_reauth {
+            match state.focused_field {
+                MilltimeReauthField::Username => state.username_input.backspace(),
+                MilltimeReauthField::Password => state.password_input.backspace(),
+            }
+        }
+    }
+
+    pub fn milltime_reauth_next_field(&mut self) {
+        if let Some(state) = &mut self.milltime_reauth {
+            state.focused_field = match state.focused_field {
+                MilltimeReauthField::Username => MilltimeReauthField::Password,
+                MilltimeReauthField::Password => MilltimeReauthField::Username,
+            };
+        }
+    }
+
+    pub fn milltime_reauth_set_error(&mut self, err: String) {
+        if let Some(state) = &mut self.milltime_reauth {
+            state.error = Some(err);
+        }
+    }
+
+    /// Returns (username, password) for the re-auth overlay, if present.
+    pub fn milltime_reauth_credentials(&self) -> Option<(String, String)> {
+        self.milltime_reauth.as_ref().map(|s| {
+            (
+                s.username_input.value.clone(),
+                s.password_input.value.clone(),
+            )
+        })
     }
 
     pub fn cwd_tab_complete(&mut self) {

@@ -43,7 +43,6 @@ fuzzy-matcher = "0.3"
 
 # URL encoding
 urlencoding = "2"
-axum-login = "0.18.0"
 
 # Password input (no echo)
 rpassword = "7"

@@ -16,24 +16,6 @@ pub struct Activity {
     pub project_id: String,
 }
 
-/// A timer history entry as returned by toki-api.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TimerHistoryEntry {
-    pub id: i32,
-    pub user_id: i32,
-    #[serde(with = "time::serde::rfc3339")]
-    pub start_time: OffsetDateTime,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub end_time: Option<OffsetDateTime>,
-    pub project_id: Option<String>,
-    pub project_name: Option<String>,
-    pub activity_id: Option<String>,
-    pub activity_name: Option<String>,
-    pub note: Option<String>,
-    pub registration_id: Option<String>,
-}
-
 /// A completed time entry from Milltime (via GET /time-tracking/time-entries).
 /// start_time / end_time are optional — present only if a local timer history record exists.
 #[derive(Debug, Clone, Deserialize)]
