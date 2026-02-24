@@ -407,6 +407,7 @@ fn render_large_time(time_str: &str) -> Vec<Line<'_>> {
         } else if ch.is_ascii_digit() {
             // Render digit
             let pattern = get_digit_pattern(ch);
+            #[allow(clippy::needless_range_loop)]
             for row in 0..DIGIT_SIZE {
                 for col in 0..DIGIT_SIZE {
                     let idx = row * DIGIT_SIZE + col;

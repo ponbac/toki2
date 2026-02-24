@@ -54,8 +54,7 @@ mod post {
             .await
             .expect("Serialization should not fail.");
 
-        // Redirect::to(auth_url.as_str()).into_response()
-        auth_url.as_str().to_string()
+        Redirect::to(auth_url.as_str()).into_response()
     }
 
     pub async fn logout(mut auth_session: AuthSession) -> impl IntoResponse {
@@ -149,7 +148,13 @@ mod get {
             .unwrap_or_default();
 
         let redirect_url = if is_tui_callback(&next_url) {
-            // Pass the session ID as a query param so the TUI can capture it
+            // axum-login's login() calls cycle_id() which sets the session ID to
+            // None until the session is persisted. Save explicitly so we can read
+            // the newly-assigned ID before building the redirect URL.
+            if let Err(e) = session.save().await {
+                tracing::error!("Failed to save session after login: {}", e);
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
             let session_id = session.id().map(|id| id.to_string()).unwrap_or_default();
             format!("{}?session_id={}", next_url, session_id)
         } else if next_url.is_empty() {

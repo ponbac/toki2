@@ -7,7 +7,7 @@ pub fn render_delete_confirm_dialog(frame: &mut Frame, app: &mut App, body: Rect
     let (origin, label, detail) = if let Some(ctx) = &app.delete_context {
         let h = format!("{:.2}h", ctx.display_hours);
         let detail = format!("{}  ·  {}", ctx.display_date, h);
-        (Some(ctx.origin.clone()), ctx.display_label.clone(), detail)
+        (Some(ctx.origin), ctx.display_label.clone(), detail)
     } else {
         (None, String::new(), String::new())
     };

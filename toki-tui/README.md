@@ -18,16 +18,48 @@ just tui-dev
 just tui-logout
 ```
 
-## Key bindings
+## Configuration
+
+Config file: `~/.config/toki-tui/config.toml`
+
+All keys are optional. The file is created automatically with defaults on first run.
+
+```toml
+# URL of the toki-api server. Defaults to the production instance.
+api_url = "https://toki-api.spinit.se"
+
+# Prefix used when converting a git branch name to a time entry note,
+# when no conventional commit prefix (feat/fix/etc.) or ticket number is found.
+# Example: branch "branding/redesign" → "Utveckling: branding/redesign"
+git_default_prefix = "Utveckling"
+
+# Taskwarrior filter tokens prepended before `status:pending export`.
+# Leave empty to show all pending tasks.
+# Example: "+work project:Toki"
+task_filter = ""
+```
+
+### Example: local dev setup
+
+```toml
+api_url = "http://localhost:8080"
+git_default_prefix = "Development"
+task_filter = "+work"
+```
+
+## Standard key bindings
 
 | Key | Action |
 |-----|--------|
 | `Space` | Start / stop timer |
-| `S` | Statistics view |
+| `Ctrl+S` | Save (options) |
+| `Ctrl+X` | Clear | 
+| `Tab / ↑↓ / j/k` | Navigate | 
 | `H` | History view |
-| `P` | Select project |
-| `A` | Select activity |
-| `D` | Edit description |
-| `E` | Edit entry (in history) |
-| `Esc` | Back / cancel |
+| `P` | Project |
+| `N` | Note |
+| `T` | Toggle timer size |
+| `S` | Statistics |
+| `Esc` | Exit / cancel |
 | `Q` | Quit |
+

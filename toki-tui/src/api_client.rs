@@ -376,6 +376,7 @@ impl ApiClient {
     }
 
     /// PUT /time-tracking/time-entries — edit an existing saved time entry.
+    #[allow(clippy::too_many_arguments)]
     pub async fn edit_time_entry(
         &mut self,
         project_registration_id: &str,

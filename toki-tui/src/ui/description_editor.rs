@@ -104,11 +104,11 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             Style::default().fg(Color::DarkGray)
         };
         vec![
-            Span::styled("1", git_key_style),
+            Span::styled("B", git_key_style),
             Span::raw(": Copy/paste branch  "),
-            Span::styled("2", git_key_style),
+            Span::styled("P", git_key_style),
             Span::raw(": Parse & paste branch  "),
-            Span::styled("3", git_key_style),
+            Span::styled("C", git_key_style),
             Span::raw(": Copy/paste last commit  "),
             Span::styled("Esc", Style::default().fg(Color::Yellow)),
             Span::raw(": Cancel"),

@@ -114,6 +114,7 @@ impl App {
     }
 
     /// Create edit state from entry data
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn create_edit_state(
         &mut self,
         registration_id: String,
@@ -269,7 +270,7 @@ impl App {
                 }
                 if c.is_ascii_digit() {
                     if state.start_time_input.is_empty() {
-                        if c >= '3' && c <= '9' {
+                        if ('3'..='9').contains(&c) {
                             state.start_time_input.push('0');
                             state.start_time_input.push(c);
                             state.start_time_input.push(':');
@@ -290,7 +291,7 @@ impl App {
                 }
                 if c.is_ascii_digit() {
                     if state.end_time_input.is_empty() {
-                        if c >= '3' && c <= '9' {
+                        if ('3'..='9').contains(&c) {
                             state.end_time_input.push('0');
                             state.end_time_input.push(c);
                             state.end_time_input.push(':');

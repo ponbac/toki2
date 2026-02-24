@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
             let mut client = ApiClient::dev()?;
             let me = client.me().await?;
             println!("Dev mode: logged in as {} ({})\n", me.full_name, me.email);
-            let mut app = App::new(me.id);
+            let mut app = App::new(me.id, &cfg);
             {
                 let today = time::OffsetDateTime::now_utc().date();
                 let month_ago = today - time::Duration::days(30);
@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    let mut app = App::new(me.id);
+    let mut app = App::new(me.id, &cfg);
 
     // Load timer history (last 30 days from Milltime)
     app.is_loading = true;
@@ -485,9 +485,9 @@ async fn run_app(
                         } else if app.git_mode {
                             // Second key of Ctrl+G sequence
                             match key.code {
-                                KeyCode::Char('1') => app.paste_git_branch_raw(),
-                                KeyCode::Char('2') => app.paste_git_branch_parsed(),
-                                KeyCode::Char('3') => app.paste_git_last_commit(),
+                                KeyCode::Char('b') | KeyCode::Char('B') => app.paste_git_branch_raw(),
+                                KeyCode::Char('p') | KeyCode::Char('P') => app.paste_git_branch_parsed(),
+                                KeyCode::Char('c') | KeyCode::Char('C') => app.paste_git_last_commit(),
                                 _ => app.exit_git_mode(), // any other key cancels git mode
                             }
                         } else {
@@ -604,7 +604,7 @@ async fn run_app(
                                      app.entry_edit_prev_field();
                                  }
                                  KeyCode::Right => {
-                                     if app.history_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
+                                     if app.history_edit_state.as_ref().is_some_and(|s| s.focused_field == app::EntryEditField::Note) {
                                          app.entry_edit_move_cursor(false);
                                      } else {
                                          app.entry_edit_next_field();
@@ -614,7 +614,7 @@ async fn run_app(
                                      app.entry_edit_next_field();
                                  }
                                  KeyCode::Left => {
-                                     if app.history_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
+                                     if app.history_edit_state.as_ref().is_some_and(|s| s.focused_field == app::EntryEditField::Note) {
                                          app.entry_edit_move_cursor(true);
                                      } else {
                                          app.entry_edit_prev_field();
@@ -895,12 +895,12 @@ async fn run_app(
                                 if app.this_week_edit_state.is_some() {
                                     // Note field is not inline-editable; Enter opens the Notes view
                                     let on_note = app.this_week_edit_state.as_ref()
-                                        .map_or(false, |s| s.focused_field == app::EntryEditField::Note);
+                                        .is_some_and(|s| s.focused_field == app::EntryEditField::Note);
                                     if !on_note {
                                         app.entry_edit_backspace();
                                     }
                                 } else if app.focused_box == app::FocusedBox::Today
-                                    && app.focused_this_week_index.map_or(false, |idx| {
+                                    && app.focused_this_week_index.is_some_and(|idx| {
                                         !(app.timer_state == app::TimerState::Running && idx == 0)
                                     })
                                 {
@@ -976,7 +976,7 @@ async fn run_app(
                                 } else {
                                     // If a DB entry row is selected, treat Ctrl+X as delete
                                     let selected_is_db_row = app.focused_box == app::FocusedBox::Today
-                                        && app.focused_this_week_index.map_or(false, |idx| {
+                                        && app.focused_this_week_index.is_some_and(|idx| {
                                             !(app.timer_state == app::TimerState::Running && idx == 0)
                                         });
                                     if selected_is_db_row {
@@ -995,7 +995,7 @@ async fn run_app(
                             KeyCode::Delete
                                 if app.this_week_edit_state.is_none()
                                     && app.focused_box == app::FocusedBox::Today
-                                    && app.focused_this_week_index.map_or(false, |idx| {
+                                    && app.focused_this_week_index.is_some_and(|idx| {
                                         !(app.timer_state == app::TimerState::Running && idx == 0)
                                     }) =>
                             {

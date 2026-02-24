@@ -1,3 +1,4 @@
+use crate::config::TokiConfig;
 use crate::types::{Activity, Project, TimeEntry};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -110,10 +111,14 @@ pub struct App {
 
     // Milltime re-auth overlay — shown when Milltime cookies expire mid-session
     pub milltime_reauth: Option<MilltimeReauthState>,
+
+    // Config values used at runtime
+    pub task_filter: String,
+    pub git_default_prefix: String,
 }
 
 impl App {
-    pub fn new(user_id: i32) -> Self {
+    pub fn new(user_id: i32, cfg: &TokiConfig) -> Self {
         Self {
             running: true,
             timer_state: TimerState::Stopped,
@@ -140,7 +145,7 @@ impl App {
             filtered_activities: Vec::new(),
             filtered_activity_index: 0,
             selection_list_focused: false,
-            selected_save_action: SaveAction::ContinueSameProject,
+            selected_save_action: SaveAction::SaveAndStop,
             description_input: TextInput::new(),
             editing_description: false,
             description_is_default: true,
@@ -169,6 +174,8 @@ impl App {
             weekly_stats_cache: Vec::new(),
             weekly_daily_stats_cache: Vec::new(),
             milltime_reauth: None,
+            task_filter: cfg.task_filter.clone(),
+            git_default_prefix: cfg.git_default_prefix.clone(),
         }
     }
 
@@ -495,7 +502,7 @@ impl App {
             }
             TimerState::Running => {
                 if self.has_project_activity() {
-                    "Timer active (press Ctrl+S to save)".to_string()
+                    "Timer active (press Space or Ctrl+S to save, Ctrl+X to clear)".to_string()
                 } else {
                     "Timer active (press P to add Project / Activity)".to_string()
                 }
@@ -667,27 +674,27 @@ impl App {
 
     pub fn select_next_save_action(&mut self) {
         self.selected_save_action = match self.selected_save_action {
-            SaveAction::ContinueSameProject => SaveAction::ContinueNewProject,
-            SaveAction::ContinueNewProject => SaveAction::SaveAndStop,
-            SaveAction::SaveAndStop => SaveAction::Cancel,
-            SaveAction::Cancel => SaveAction::ContinueSameProject,
+            SaveAction::SaveAndStop => SaveAction::ContinueNewProject,
+            SaveAction::ContinueNewProject => SaveAction::ContinueSameProject,
+            SaveAction::ContinueSameProject => SaveAction::Cancel,
+            SaveAction::Cancel => SaveAction::SaveAndStop,
         };
     }
 
     pub fn select_previous_save_action(&mut self) {
         self.selected_save_action = match self.selected_save_action {
-            SaveAction::ContinueSameProject => SaveAction::Cancel,
-            SaveAction::ContinueNewProject => SaveAction::ContinueSameProject,
-            SaveAction::SaveAndStop => SaveAction::ContinueNewProject,
-            SaveAction::Cancel => SaveAction::SaveAndStop,
+            SaveAction::SaveAndStop => SaveAction::Cancel,
+            SaveAction::ContinueNewProject => SaveAction::SaveAndStop,
+            SaveAction::ContinueSameProject => SaveAction::ContinueNewProject,
+            SaveAction::Cancel => SaveAction::ContinueSameProject,
         };
     }
 
     pub fn select_save_action_by_number(&mut self, num: u32) {
         self.selected_save_action = match num {
-            1 => SaveAction::ContinueSameProject,
+            1 => SaveAction::SaveAndStop,
             2 => SaveAction::ContinueNewProject,
-            3 => SaveAction::SaveAndStop,
+            3 => SaveAction::ContinueSameProject,
             4 => SaveAction::Cancel,
             _ => return,
         };
@@ -713,7 +720,7 @@ impl App {
     pub fn paste_git_branch_parsed(&mut self) {
         self.git_mode = false;
         if let Some(branch) = &self.git_context.branch.clone() {
-            for c in crate::git::parse_branch(branch).chars() {
+            for c in crate::git::parse_branch(branch, &self.git_default_prefix).chars() {
                 self.description_input.insert(c);
             }
         }
@@ -883,10 +890,8 @@ impl App {
     pub fn open_taskwarrior_overlay(&mut self) {
         let mut cmd = std::process::Command::new("task");
         cmd.arg("rc.verbose=nothing");
-        if let Ok(filter) = std::env::var("TOKI_TASK_FILTER") {
-            for token in filter.split_whitespace() {
-                cmd.arg(token);
-            }
+        for token in self.task_filter.split_whitespace() {
+            cmd.arg(token);
         }
         cmd.args(["status:pending", "export"]);
         let result = cmd.output();

@@ -109,11 +109,11 @@ fn humanize(s: &str) -> String {
 /// Rules (applied in order):
 /// - Has number + conventional prefix → `"#NUM - prefix: humanized_rest"`
 /// - Has number + no slash prefix     → `"#NUM - humanized_rest"`
-/// - Has number + non-conventional slash prefix → `"#NUM - Utveckling: rest_after_slash"` (original)
+/// - Has number + non-conventional slash prefix → `"#NUM - {default_prefix}: rest_after_slash"` (original)
 /// - No number + conventional prefix  → `"prefix: humanized_rest"`
-/// - No number + non-conventional slash prefix → `"Utveckling: branch"` (full original)
-/// - No number + no slash              → `"Utveckling: branch"` (full original)
-pub fn parse_branch(branch: &str) -> String {
+/// - No number + non-conventional slash prefix → `"{default_prefix}: branch"` (full original)
+/// - No number + no slash              → `"{default_prefix}: branch"` (full original)
+pub fn parse_branch(branch: &str, default_prefix: &str) -> String {
     // Step 1: Split on first `/` to get optional slash_prefix and rest.
     let (slash_prefix, rest) = if let Some(pos) = branch.find('/') {
         (Some(&branch[..pos]), &branch[pos + 1..])
@@ -140,7 +140,7 @@ pub fn parse_branch(branch: &str) -> String {
         (Some(num), Some(_prefix)) => {
             // Has number + non-conventional prefix
             // Use original rest_after_slash (not humanized)
-            format!("#{} - Utveckling: {}", num, rest)
+            format!("#{} - {}: {}", num, default_prefix, rest)
         }
         (None, Some(prefix)) if is_conventional(prefix) => {
             // No number + conventional prefix
@@ -148,7 +148,7 @@ pub fn parse_branch(branch: &str) -> String {
         }
         _ => {
             // No number + non-conventional prefix, or no slash at all
-            format!("Utveckling: {}", branch)
+            format!("{}: {}", default_prefix, branch)
         }
     }
 }
@@ -160,30 +160,36 @@ mod tests {
     #[test]
     fn test_fix_with_number_and_dashes() {
         assert_eq!(
-            parse_branch("fix/8322-styling-adjustments"),
+            parse_branch("fix/8322-styling-adjustments", "Utveckling"),
             "#8322 - fix: styling adjustments"
         );
     }
 
     #[test]
     fn test_number_only_no_prefix() {
-        assert_eq!(parse_branch("8322-mybranch"), "#8322 - mybranch");
+        assert_eq!(
+            parse_branch("8322-mybranch", "Utveckling"),
+            "#8322 - mybranch"
+        );
     }
 
     #[test]
     fn test_feature_with_number_and_underscore() {
-        assert_eq!(parse_branch("feature/8322_tests"), "#8322 - feature: tests");
+        assert_eq!(
+            parse_branch("feature/8322_tests", "Utveckling"),
+            "#8322 - feature: tests"
+        );
     }
 
     #[test]
     fn test_main_no_slash_no_number() {
-        assert_eq!(parse_branch("main"), "Utveckling: main");
+        assert_eq!(parse_branch("main", "Utveckling"), "Utveckling: main");
     }
 
     #[test]
     fn test_non_conventional_prefix_no_number() {
         assert_eq!(
-            parse_branch("branding/testbageriet"),
+            parse_branch("branding/testbageriet", "Utveckling"),
             "Utveckling: branding/testbageriet"
         );
     }
@@ -192,6 +198,18 @@ mod tests {
     fn test_conventional_prefix_no_number_embedded_digit_not_standalone() {
         // `2` in `feature2` is NOT standalone (no separator before it), so no number extracted.
         // `test` IS conventional, so result is "test: feature2".
-        assert_eq!(parse_branch("test/feature2"), "test: feature2");
+        assert_eq!(
+            parse_branch("test/feature2", "Utveckling"),
+            "test: feature2"
+        );
+    }
+
+    #[test]
+    fn test_custom_default_prefix() {
+        assert_eq!(parse_branch("main", "Development"), "Development: main");
+        assert_eq!(
+            parse_branch("branding/testbageriet", "Development"),
+            "Development: branding/testbageriet"
+        );
     }
 }

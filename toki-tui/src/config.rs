@@ -7,16 +7,33 @@ pub struct TokiConfig {
     /// Base URL of the toki-api server, e.g. "http://localhost:8080"
     #[serde(default = "default_api_url")]
     pub api_url: String,
+
+    /// Taskwarrior filter tokens passed before `status:pending export`.
+    /// e.g. "+work project:Toki" to restrict which tasks appear in the picker.
+    /// Defaults to no filter (all pending tasks).
+    #[serde(default)]
+    pub task_filter: String,
+
+    /// Default prefix used in git branch → note conversion when no recognised
+    /// prefix or ticket number is found. e.g. "Development" or "Utveckling".
+    #[serde(default = "default_git_prefix")]
+    pub git_default_prefix: String,
 }
 
 fn default_api_url() -> String {
     "https://toki-api.spinit.se".to_string()
 }
 
+fn default_git_prefix() -> String {
+    "Utveckling".to_string()
+}
+
 impl Default for TokiConfig {
     fn default() -> Self {
         Self {
             api_url: default_api_url(),
+            task_filter: String::new(),
+            git_default_prefix: default_git_prefix(),
         }
     }
 }

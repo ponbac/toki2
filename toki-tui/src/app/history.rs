@@ -34,7 +34,7 @@ impl App {
             entries_by_date.entry(&entry.date).or_default().push(entry);
         }
 
-        for (_, day_entries) in &entries_by_date {
+        for day_entries in entries_by_date.values() {
             if day_entries.len() < 2 {
                 continue;
             }

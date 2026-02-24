@@ -13,9 +13,9 @@ pub fn render_save_action_dialog(frame: &mut Frame, app: &mut App, body: Rect) {
 
     // Create option list items
     let options = [
-        "1. Save & continue (same project)",
+        "1. Save & stop",
         "2. Save & continue (new project)",
-        "3. Save & stop",
+        "3. Save & continue (same project)",
         "4. Cancel",
     ];
 
@@ -24,9 +24,9 @@ pub fn render_save_action_dialog(frame: &mut Frame, app: &mut App, body: Rect) {
         .enumerate()
         .map(|(i, text)| {
             let action = match i {
-                0 => SaveAction::ContinueSameProject,
+                0 => SaveAction::SaveAndStop,
                 1 => SaveAction::ContinueNewProject,
-                2 => SaveAction::SaveAndStop,
+                2 => SaveAction::ContinueSameProject,
                 3 => SaveAction::Cancel,
                 _ => unreachable!(),
             };
