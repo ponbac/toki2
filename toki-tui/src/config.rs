@@ -98,6 +98,19 @@ impl TokiConfig {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)?
+                .write_all(session_id.as_bytes())?;
+        }
+        #[cfg(not(unix))]
         std::fs::write(&path, session_id)?;
         Ok(())
     }

@@ -173,7 +173,18 @@ mod get {
     }
 }
 
-/// Returns true if this next URL looks like a local TUI callback listener.
+/// Returns true if this next URL is the TUI's local OAuth callback listener.
+/// Validates the exact expected format (http://localhost:<port>/callback) rather
+/// than accepting any localhost URL, to avoid open-redirect abuse.
 fn is_tui_callback(url: &str) -> bool {
-    url.starts_with("http://localhost:") || url.starts_with("http://127.0.0.1:")
+    // Must be http://localhost:<digits>/callback with nothing after
+    let Some(rest) = url.strip_prefix("http://localhost:") else {
+        return false;
+    };
+    let Some(path_start) = rest.find('/') else {
+        return false;
+    };
+    let port_str = &rest[..path_start];
+    let path = &rest[path_start..];
+    port_str.chars().all(|c| c.is_ascii_digit()) && path == "/callback"
 }
