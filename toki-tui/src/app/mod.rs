@@ -1,5 +1,5 @@
-use crate::types::{Activity, Project, TimerHistoryEntry};
-use std::collections::HashSet;
+use crate::types::{Activity, Project, TimeEntry};
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use time::{OffsetDateTime, UtcOffset};
 
@@ -8,8 +8,9 @@ mod history;
 mod navigation;
 mod state;
 pub use state::{
-    EntryEditField, EntryEditState, FocusedBox, GitContext, ProjectStat, SaveAction, TaskEntry,
-    TaskwarriorOverlay, TextInput, TimerSize, TimerState, View, SCHEDULED_HOURS_PER_WEEK,
+    DailyProjectStat, DayStat, DeleteContext, DeleteOrigin, EntryEditField, EntryEditState,
+    FocusedBox, GitContext, ProjectStat, SaveAction, TaskEntry, TaskwarriorOverlay, TextInput,
+    TimerSize, TimerState, View,
 };
 
 fn to_local_time(dt: OffsetDateTime) -> OffsetDateTime {
@@ -33,9 +34,9 @@ pub struct App {
     pub timer_size: TimerSize,
 
     // Timer history
-    pub timer_history: Vec<TimerHistoryEntry>,
+    pub time_entries: Vec<TimeEntry>,
     pub history_scroll: usize,
-    pub overlapping_entry_ids: HashSet<i32>, // Entry IDs that have overlapping times
+    pub overlapping_entry_ids: HashSet<String>, // Registration IDs that have overlapping times
 
     // Project/Activity selection
     pub projects: Vec<Project>,
@@ -76,8 +77,11 @@ pub struct App {
     // History view navigation and editing
     pub focused_history_index: Option<usize>,
     pub history_edit_state: Option<EntryEditState>,
-    pub history_list_entries: Vec<usize>, // Indices into timer_history for entries (excludes date separators)
+    pub history_list_entries: Vec<usize>, // Indices into time_entries for entries (excludes date separators)
     pub history_view_height: usize, // Last-rendered inner height (updated by renderer each frame)
+
+    // Delete confirmation
+    pub delete_context: Option<DeleteContext>,
 
     // Git context for note editor
     pub git_context: GitContext,
@@ -85,6 +89,19 @@ pub struct App {
     pub cwd_input: Option<TextInput>, // Some(_) when changing directory
     pub cwd_completions: Vec<String>, // Tab completion candidates
     pub taskwarrior_overlay: Option<TaskwarriorOverlay>,
+
+    // Loading indicator
+    pub is_loading: bool,
+    pub throbber_state: throbber_widgets_tui::ThrobberState,
+
+    // Scheduled hours per week from Milltime (defaults to 40.0 until fetched)
+    pub scheduled_hours_per_week: f64,
+
+    /// Total accumulated flex time from Milltime (0.0 until fetched at startup)
+    pub flex_time_current: f64,
+
+    // Activity cache: project_id -> fetched activities
+    pub activity_cache: HashMap<String, Vec<Activity>>,
 }
 
 impl App {
@@ -99,7 +116,7 @@ impl App {
             current_view: View::Timer,
             focused_box: FocusedBox::Timer,
             timer_size: TimerSize::Normal,
-            timer_history: Vec::new(),
+            time_entries: Vec::new(),
             history_scroll: 0,
             overlapping_entry_ids: HashSet::new(),
             projects: Vec::new(),
@@ -128,6 +145,7 @@ impl App {
             history_edit_state: None,
             history_list_entries: Vec::new(),
             history_view_height: 0,
+            delete_context: None,
             git_context: GitContext::from_cwd(
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             ),
@@ -135,6 +153,11 @@ impl App {
             cwd_input: None,
             cwd_completions: Vec::new(),
             taskwarrior_overlay: None,
+            is_loading: false,
+            throbber_state: throbber_widgets_tui::ThrobberState::default(),
+            scheduled_hours_per_week: 40.0,
+            flex_time_current: 0.0,
+            activity_cache: HashMap::new(),
         }
     }
 
@@ -160,6 +183,63 @@ impl App {
         self.description_input = TextInput::new();
         self.description_is_default = true;
         self.status_message = Some("Timer cleared".to_string());
+    }
+
+    /// Populate delete_context from the currently selected entry and switch to ConfirmDelete view.
+    /// Call only when not in edit mode and a row is selected.
+    pub fn enter_delete_confirm(&mut self, origin: DeleteOrigin) {
+        let ctx = match origin {
+            DeleteOrigin::Timer => {
+                let idx = match self.focused_this_week_index {
+                    Some(i) => i,
+                    None => return,
+                };
+                // Skip the running-timer row (index 0 when timer is running)
+                let db_idx = if self.timer_state == TimerState::Running {
+                    if idx == 0 {
+                        return;
+                    } // can't delete the live timer this way
+                    idx.saturating_sub(1)
+                } else {
+                    idx
+                };
+                let entries = self.this_week_history();
+                let e = match entries.get(db_idx) {
+                    Some(e) => e,
+                    None => return,
+                };
+                DeleteContext {
+                    registration_id: e.registration_id.clone(),
+                    display_label: format!("{} / {}", e.project_name, e.activity_name),
+                    display_date: e.date.clone(),
+                    display_hours: e.hours,
+                    origin,
+                }
+            }
+            DeleteOrigin::History => {
+                let list_idx = match self.focused_history_index {
+                    Some(i) => i,
+                    None => return,
+                };
+                let entry_idx = match self.history_list_entries.get(list_idx) {
+                    Some(&i) => i,
+                    None => return,
+                };
+                let e = match self.time_entries.get(entry_idx) {
+                    Some(e) => e,
+                    None => return,
+                };
+                DeleteContext {
+                    registration_id: e.registration_id.clone(),
+                    display_label: format!("{} / {}", e.project_name, e.activity_name),
+                    display_date: e.date.clone(),
+                    display_hours: e.hours,
+                    origin,
+                }
+            }
+        };
+        self.delete_context = Some(ctx);
+        self.navigate_to(View::ConfirmDelete);
     }
 
     /// Start a new timer
@@ -210,8 +290,19 @@ impl App {
     }
 
     /// Update timer history
-    pub fn update_history(&mut self, history: Vec<TimerHistoryEntry>) {
-        self.timer_history = history;
+    pub fn update_history(&mut self, mut entries: Vec<TimeEntry>) {
+        // Sort: newest date first, then by end_time desc within each date (nulls last)
+        entries.sort_by(|a, b| {
+            b.date
+                .cmp(&a.date)
+                .then_with(|| match (b.end_time, a.end_time) {
+                    (Some(be), Some(ae)) => be.cmp(&ae),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                })
+        });
+        self.time_entries = entries;
         self.history_scroll = 0;
         self.compute_overlaps();
     }

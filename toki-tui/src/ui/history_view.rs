@@ -11,12 +11,18 @@ pub fn render_history_view(frame: &mut Frame, app: &mut App, body: Rect) {
         ])
         .split(body);
 
-    let month_ago = time::OffsetDateTime::now_utc() - time::Duration::days(30);
-    let entries: Vec<(usize, &crate::types::TimerHistoryEntry)> = app
-        .timer_history
+    let month_ago = (time::OffsetDateTime::now_utc() - time::Duration::days(30)).date();
+    let month_ago_str = format!(
+        "{:04}-{:02}-{:02}",
+        month_ago.year(),
+        month_ago.month() as u8,
+        month_ago.day()
+    );
+    let entries: Vec<(usize, &crate::types::TimeEntry)> = app
+        .time_entries
         .iter()
         .enumerate()
-        .filter(|(_, entry)| entry.start_time >= month_ago)
+        .filter(|(_, entry)| entry.date >= month_ago_str)
         .collect();
 
     if entries.is_empty() {
@@ -51,27 +57,38 @@ pub fn render_history_view(frame: &mut Frame, app: &mut App, body: Rect) {
             Separator(String),
             Entry {
                 list_idx: Option<usize>,
-                entry: &'a crate::types::TimerHistoryEntry,
+                entry: &'a crate::types::TimeEntry,
             },
         }
 
         let today = time::OffsetDateTime::now_utc().date();
         let yesterday = today - time::Duration::days(1);
+        let today_str = format!(
+            "{:04}-{:02}-{:02}",
+            today.year(),
+            today.month() as u8,
+            today.day()
+        );
+        let yesterday_str = format!(
+            "{:04}-{:02}-{:02}",
+            yesterday.year(),
+            yesterday.month() as u8,
+            yesterday.day()
+        );
         let mut logical_rows: Vec<HistoryRow<'_>> = Vec::new();
-        let mut last_date: Option<time::Date> = None;
+        let mut last_date: Option<String> = None;
 
         for (history_idx, entry) in &entries {
-            let entry_date = entry.start_time.date();
-            if last_date != Some(entry_date) {
-                let label = if entry_date == today {
+            if last_date.as_deref() != Some(&entry.date) {
+                let label = if entry.date == today_str {
                     "── Today ──".to_string()
-                } else if entry_date == yesterday {
+                } else if entry.date == yesterday_str {
                     "── Yesterday ──".to_string()
                 } else {
-                    format!("── {} ──", entry_date)
+                    format!("── {} ──", entry.date)
                 };
                 logical_rows.push(HistoryRow::Separator(label));
-                last_date = Some(entry_date);
+                last_date = Some(entry.date.clone());
             }
             let list_idx = app
                 .history_list_entries
@@ -115,7 +132,10 @@ pub fn render_history_view(frame: &mut Frame, app: &mut App, body: Rect) {
         let scroll_offset = app.history_scroll;
 
         // --- Render visible rows ---
-        let editing_entry_id = app.history_edit_state.as_ref().map(|e| e.entry_id);
+        let editing_reg_id = app
+            .history_edit_state
+            .as_ref()
+            .map(|e| e.registration_id.as_str());
         let mut row_y = inner_area.y;
         let mut row_count = 0;
 
@@ -149,13 +169,13 @@ pub fn render_history_view(frame: &mut Frame, app: &mut App, body: Rect) {
                     list_idx, entry, ..
                 } => {
                     let is_focused = app.focused_history_index == *list_idx;
-                    let is_editing = Some(entry.id) == editing_entry_id;
-                    let is_overlapping = app.is_entry_overlapping(entry.id);
+                    let is_editing = editing_reg_id == Some(entry.registration_id.as_str());
+                    let is_overlapping = app.is_entry_overlapping(&entry.registration_id);
 
                     let line = if is_editing {
                         build_edit_row(entry, app.history_edit_state.as_ref().unwrap(), is_focused)
                     } else {
-                        build_display_row(entry, is_focused, is_overlapping)
+                        build_display_row(entry, is_focused, is_overlapping, content_width)
                     };
 
                     let row_rect = Rect::new(inner_area.x, row_y, content_width, 1);

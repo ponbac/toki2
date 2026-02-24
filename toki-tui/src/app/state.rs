@@ -1,5 +1,3 @@
-pub const SCHEDULED_HOURS_PER_WEEK: f64 = 40.0;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TimerState {
     Stopped,
@@ -15,6 +13,7 @@ pub enum View {
     EditDescription,
     SaveAction,
     Statistics,
+    ConfirmDelete,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,6 +22,23 @@ pub enum SaveAction {
     ContinueNewProject,
     SaveAndStop,
     Cancel,
+}
+
+/// Which view was active when delete was triggered — used to return after dismiss.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DeleteOrigin {
+    Timer,
+    History,
+}
+
+/// Context for the delete-confirmation modal.
+#[derive(Debug, Clone)]
+pub struct DeleteContext {
+    pub registration_id: String,
+    pub display_label: String, // "Project / Activity"
+    pub display_date: String,  // "YYYY-MM-DD"
+    pub display_hours: f64,
+    pub origin: DeleteOrigin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,9 +58,25 @@ pub enum TimerSize {
 /// Per-project/activity breakdown for the statistics view
 #[derive(Debug, Clone)]
 pub struct ProjectStat {
-    pub label: String, // "Project - Activity"
+    pub label: String, // "Project: Activity"
     pub hours: f64,
     pub percentage: f64, // 0.0–100.0 of total worked this week
+}
+
+/// One project/activity's contribution to a single day
+#[derive(Debug, Clone)]
+pub struct DailyProjectStat {
+    pub label: String, // "Project: Activity"
+    pub hours: f64,
+    pub color_index: usize, // index into the shared PALETTE
+}
+
+/// Hours breakdown for one weekday
+#[derive(Debug, Clone)]
+pub struct DayStat {
+    pub day_name: String, // "Mon", "Tue", …
+    pub total_hours: f64,
+    pub projects: Vec<DailyProjectStat>, // sorted by color_index asc (same order as pie)
 }
 
 #[derive(Debug, Clone)]
@@ -221,7 +253,7 @@ pub enum EntryEditField {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EntryEditState {
-    pub entry_id: i32,
+    pub registration_id: String, // "" = running timer sentinel
     pub start_time_input: String,
     pub end_time_input: String,
     pub original_start_time: String,

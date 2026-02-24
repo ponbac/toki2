@@ -10,6 +10,7 @@ use ratatui::{
     Frame,
 };
 
+mod delete_dialog;
 mod description_editor;
 mod history_panel;
 mod history_view;
@@ -43,5 +44,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         }
         View::SaveAction => save_dialog::render_save_action_dialog(frame, app, body),
         View::Statistics => statistics_view::render_statistics_view(frame, app, body),
+        View::ConfirmDelete => delete_dialog::render_delete_confirm_dialog(frame, app, body),
     }
 }

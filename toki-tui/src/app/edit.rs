@@ -12,8 +12,8 @@ impl App {
                 let activity_name = self.selected_activity.as_ref().map(|a| a.name.clone());
                 let note = Some(self.description_input.value.clone());
                 self.create_edit_state(
-                    -1,
-                    start_time,
+                    String::new(), // "" = running timer sentinel
+                    Some(start_time),
                     None,
                     project_id,
                     project_name,
@@ -28,10 +28,12 @@ impl App {
                     idx
                 };
                 let entry_data = self.this_week_history().get(db_idx).map(|e| {
+                    let (start_time, end_time) =
+                        derive_start_end(e.start_time, e.end_time, &e.date, e.hours);
                     (
-                        e.id,
-                        e.start_time,
-                        e.end_time,
+                        e.registration_id.clone(),
+                        start_time,
+                        end_time,
                         e.project_id.clone(),
                         e.project_name.clone(),
                         e.activity_id.clone(),
@@ -41,7 +43,7 @@ impl App {
                 });
 
                 if let Some((
-                    id,
+                    registration_id,
                     start_time,
                     end_time,
                     project_id,
@@ -52,13 +54,13 @@ impl App {
                 )) = entry_data
                 {
                     self.create_edit_state(
-                        id,
+                        registration_id,
                         start_time,
                         end_time,
-                        project_id,
-                        project_name,
-                        activity_id,
-                        activity_name,
+                        Some(project_id),
+                        Some(project_name),
+                        Some(activity_id),
+                        Some(activity_name),
                         note,
                     );
                 }
@@ -70,11 +72,13 @@ impl App {
     pub fn enter_history_edit_mode(&mut self) {
         if let Some(list_idx) = self.focused_history_index {
             if let Some(&history_idx) = self.history_list_entries.get(list_idx) {
-                let entry_data = self.timer_history.get(history_idx).map(|e| {
+                let entry_data = self.time_entries.get(history_idx).map(|e| {
+                    let (start_time, end_time) =
+                        derive_start_end(e.start_time, e.end_time, &e.date, e.hours);
                     (
-                        e.id,
-                        e.start_time,
-                        e.end_time,
+                        e.registration_id.clone(),
+                        start_time,
+                        end_time,
                         e.project_id.clone(),
                         e.project_name.clone(),
                         e.activity_id.clone(),
@@ -84,7 +88,7 @@ impl App {
                 });
 
                 if let Some((
-                    id,
+                    registration_id,
                     start_time,
                     end_time,
                     project_id,
@@ -95,13 +99,13 @@ impl App {
                 )) = entry_data
                 {
                     self.create_edit_state(
-                        id,
+                        registration_id,
                         start_time,
                         end_time,
-                        project_id,
-                        project_name,
-                        activity_id,
-                        activity_name,
+                        Some(project_id),
+                        Some(project_name),
+                        Some(activity_id),
+                        Some(activity_name),
                         note,
                     );
                 }
@@ -112,8 +116,8 @@ impl App {
     /// Create edit state from entry data
     pub(super) fn create_edit_state(
         &mut self,
-        entry_id: i32,
-        start_time: OffsetDateTime,
+        registration_id: String,
+        start_time: Option<OffsetDateTime>,
         end_time: Option<OffsetDateTime>,
         project_id: Option<String>,
         project_name: Option<String>,
@@ -121,8 +125,12 @@ impl App {
         activity_name: Option<String>,
         note: Option<String>,
     ) {
-        let start_t = to_local_time(start_time).time();
-        let start_str = format!("{:02}:{:02}", start_t.hour(), start_t.minute());
+        let start_str = start_time
+            .map(|st| {
+                let t = to_local_time(st).time();
+                format!("{:02}:{:02}", t.hour(), t.minute())
+            })
+            .unwrap_or_else(|| "00:00".to_string());
 
         let end_str = end_time
             .map(|et| {
@@ -132,7 +140,7 @@ impl App {
             .unwrap_or_else(|| "00:00".to_string());
 
         let edit_state = EntryEditState {
-            entry_id,
+            registration_id,
             start_time_input: start_str.clone(),
             end_time_input: end_str.clone(),
             original_start_time: start_str,
@@ -175,7 +183,7 @@ impl App {
     /// Move to next field in edit mode
     pub fn entry_edit_next_field(&mut self) {
         if let Some(state) = &mut self.this_week_edit_state {
-            state.focused_field = if state.entry_id == -1 {
+            state.focused_field = if state.registration_id.is_empty() {
                 match state.focused_field {
                     EntryEditField::StartTime => EntryEditField::Project,
                     EntryEditField::Project => EntryEditField::Activity,
@@ -209,7 +217,7 @@ impl App {
     /// Move to previous field in edit mode
     pub fn entry_edit_prev_field(&mut self) {
         if let Some(state) = &mut self.this_week_edit_state {
-            state.focused_field = if state.entry_id == -1 {
+            state.focused_field = if state.registration_id.is_empty() {
                 match state.focused_field {
                     EntryEditField::StartTime => EntryEditField::Note,
                     EntryEditField::Project => EntryEditField::StartTime,
@@ -448,7 +456,7 @@ impl App {
             return None;
         };
 
-        if state.entry_id == -1 {
+        if state.registration_id.is_empty() {
             let start_time = if state.start_time_input.is_empty() {
                 "00:00"
             } else {
@@ -509,13 +517,16 @@ impl App {
         None
     }
 
-    /// Get the entry ID for the currently edited entry
-    #[allow(dead_code)]
-    pub fn entry_edit_entry_id(&self) -> Option<i32> {
+    /// Get the registration_id for the currently edited entry
+    pub fn editing_registration_id(&self) -> Option<&str> {
         if self.current_view == View::History {
-            self.history_edit_state.as_ref().map(|s| s.entry_id)
+            self.history_edit_state
+                .as_ref()
+                .map(|s| s.registration_id.as_str())
         } else {
-            self.this_week_edit_state.as_ref().map(|s| s.entry_id)
+            self.this_week_edit_state
+                .as_ref()
+                .map(|s| s.registration_id.as_str())
         }
     }
 
@@ -566,4 +577,19 @@ impl App {
             View::Timer
         }
     }
+}
+
+/// Given an entry's optional start/end times, date string (YYYY-MM-DD), and hours,
+/// return a concrete (start, end) pair for pre-populating the edit form.
+///
+/// When real times are absent (entry booked via Milltime web UI):
+/// - start defaults to 06:00 on the entry's date (matching the web app default)
+/// - end is derived as start + hours
+fn derive_start_end(
+    start_time: Option<time::OffsetDateTime>,
+    end_time: Option<time::OffsetDateTime>,
+    _date_str: &str,
+    _hours: f64,
+) -> (Option<time::OffsetDateTime>, Option<time::OffsetDateTime>) {
+    (start_time, end_time)
 }

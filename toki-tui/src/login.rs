@@ -5,38 +5,27 @@ const TUI_CALLBACK_PORT: u16 = 9876;
 
 /// Run the interactive login flow:
 /// 1. Start a local HTTP listener on localhost:9876
-/// 2. POST to toki-api /login?next=http://localhost:9876/callback
-/// 3. Open the returned Azure AD URL in the system browser
-/// 4. Wait for the browser to call back with ?session_id=<value>
-/// 5. Save the session ID and return it
+/// 2. Open the browser to toki-api /login?next=http://localhost:9876/callback
+///    (the browser itself initiates the OAuth flow, so the session cookie is set
+///    in the browser and survives the Azure AD redirect back to /oauth/callback)
+/// 3. Wait for the browser to call back with ?session_id=<value>
+/// 4. Save the session ID and return it
 pub async fn run_login(api_url: &str) -> Result<String> {
     let callback_url = format!("http://localhost:{}/callback", TUI_CALLBACK_PORT);
-
-    // POST /login?next=<callback_url> to get the Azure AD authorization URL
-    let client = reqwest::Client::new();
-    let auth_url = client
-        .post(format!("{}/login", api_url))
-        .query(&[("next", &callback_url)])
-        .send()
-        .await
-        .context("Failed to call /login on toki-api. Is toki-api running?")?
-        .error_for_status()
-        .context("POST /login returned error")?
-        .text()
-        .await
-        .context("Failed to read /login response")?;
+    let login_url = format!("{}/login?next={}", api_url, urlencoding::encode(&callback_url));
 
     println!("Opening browser for login...");
-    println!("If the browser doesn't open, visit:\n  {}\n", auth_url);
+    println!("If the browser doesn't open, visit:\n  {}\n", login_url);
 
-    // Open browser
-    open_browser(&auth_url);
+    // Open browser directly to /login — the browser handles the full OAuth flow
+    // including storing the session cookie, so CSRF state survives the callback.
+    open_browser(&login_url);
 
     // Listen for the callback
     let session_id = wait_for_callback().await?;
 
     // Save the session
-    crate::config::TukiConfig::save_session(&session_id)?;
+    crate::config::TokiConfig::save_session(&session_id)?;
     println!("Login successful. Session saved.");
 
     Ok(session_id)

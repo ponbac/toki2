@@ -1,14 +1,20 @@
 use super::*;
 
 impl App {
-    /// Build the history list entries (indices into timer_history)
+    /// Build the history list entries (indices into time_entries)
     pub fn rebuild_history_list(&mut self) {
-        let month_ago = OffsetDateTime::now_utc() - time::Duration::days(30);
+        let month_ago = (OffsetDateTime::now_utc() - time::Duration::days(30)).date();
+        let month_ago_str = format!(
+            "{:04}-{:02}-{:02}",
+            month_ago.year(),
+            month_ago.month() as u8,
+            month_ago.day()
+        );
         self.history_list_entries = self
-            .timer_history
+            .time_entries
             .iter()
             .enumerate()
-            .filter(|(_, entry)| entry.start_time >= month_ago)
+            .filter(|(_, entry)| entry.date >= month_ago_str)
             .map(|(idx, _)| idx)
             .collect();
     }
@@ -18,11 +24,10 @@ impl App {
         self.overlapping_entry_ids.clear();
 
         use std::collections::HashMap;
-        let mut entries_by_date: HashMap<time::Date, Vec<&TimerHistoryEntry>> = HashMap::new();
+        let mut entries_by_date: HashMap<&str, Vec<&TimeEntry>> = HashMap::new();
 
-        for entry in &self.timer_history {
-            let date = entry.start_time.date();
-            entries_by_date.entry(date).or_default().push(entry);
+        for entry in &self.time_entries {
+            entries_by_date.entry(&entry.date).or_default().push(entry);
         }
 
         for (_, day_entries) in entries_by_date {
@@ -30,14 +35,14 @@ impl App {
                 continue;
             }
 
-            let mut intervals: Vec<(i32, i64, i64)> = day_entries
+            let mut intervals: Vec<(&str, i64, i64)> = day_entries
                 .iter()
                 .filter_map(|entry| {
+                    let start = entry.start_time?;
                     let end = entry.end_time?;
-                    let start_mins = entry.start_time.time().hour() as i64 * 60
-                        + entry.start_time.time().minute() as i64;
+                    let start_mins = start.time().hour() as i64 * 60 + start.time().minute() as i64;
                     let end_mins = end.time().hour() as i64 * 60 + end.time().minute() as i64;
-                    Some((entry.id, start_mins, end_mins))
+                    Some((entry.registration_id.as_str(), start_mins, end_mins))
                 })
                 .collect();
 
@@ -46,13 +51,14 @@ impl App {
             for (i, (_, _, curr_end)) in intervals.iter().enumerate() {
                 for (_, next_start, _) in intervals.iter().skip(i + 1) {
                     if *next_start < *curr_end {
-                        self.overlapping_entry_ids.insert(intervals[i].0);
+                        self.overlapping_entry_ids
+                            .insert(intervals[i].0.to_string());
                         if let Some((id, _, _)) = intervals
                             .iter()
                             .skip(i + 1)
                             .find(|(_, s, _)| *s < *curr_end)
                         {
-                            self.overlapping_entry_ids.insert(*id);
+                            self.overlapping_entry_ids.insert(id.to_string());
                         }
                     } else {
                         break;
@@ -63,8 +69,8 @@ impl App {
     }
 
     /// Check if an entry has overlapping times
-    pub fn is_entry_overlapping(&self, entry_id: i32) -> bool {
-        self.overlapping_entry_ids.contains(&entry_id)
+    pub fn is_entry_overlapping(&self, registration_id: &str) -> bool {
+        self.overlapping_entry_ids.contains(registration_id)
     }
 
     pub(super) fn week_start(dt: OffsetDateTime) -> OffsetDateTime {
@@ -82,51 +88,41 @@ impl App {
     }
 
     /// Get this week's history entries (Monday to Sunday)
-    pub fn this_week_history(&self) -> Vec<&TimerHistoryEntry> {
+    pub fn this_week_history(&self) -> Vec<&TimeEntry> {
         let now = OffsetDateTime::now_utc();
-        let week_start = Self::week_start(now);
-        let week_end = Self::week_end(now);
-        self.timer_history
+        let week_start = Self::week_start(now).date();
+        let week_end = Self::week_end(now).date();
+        let ws = format!(
+            "{:04}-{:02}-{:02}",
+            week_start.year(),
+            week_start.month() as u8,
+            week_start.day()
+        );
+        let we = format!(
+            "{:04}-{:02}-{:02}",
+            week_end.year(),
+            week_end.month() as u8,
+            week_end.day()
+        );
+        self.time_entries
             .iter()
-            .filter(|entry| entry.start_time >= week_start && entry.start_time <= week_end)
+            .filter(|e| e.date >= ws && e.date <= we)
             .collect()
     }
 
-    /// Get history entries from the last month (for History view)
-    #[allow(dead_code)]
-    pub fn last_month_history(&self) -> Vec<&TimerHistoryEntry> {
-        let now = OffsetDateTime::now_utc();
-        let month_ago = now - time::Duration::days(30);
-        self.timer_history
-            .iter()
-            .filter(|entry| entry.start_time >= month_ago)
-            .collect()
-    }
-
-    /// Total hours worked this week (completed entries only)
+    /// Total hours worked this week (uses Milltime hours directly)
     pub fn worked_hours_this_week(&self) -> f64 {
-        self.this_week_history()
-            .iter()
-            .filter_map(|e| {
-                let end = e.end_time?;
-                let secs = (end - e.start_time).whole_seconds();
-                if secs > 0 {
-                    Some(secs as f64 / 3600.0)
-                } else {
-                    None
-                }
-            })
-            .sum()
+        self.this_week_history().iter().map(|e| e.hours).sum()
     }
 
     /// Flex time = worked hours - scheduled hours
     pub fn flex_hours_this_week(&self) -> f64 {
-        self.worked_hours_this_week() - SCHEDULED_HOURS_PER_WEEK
+        self.worked_hours_this_week() - self.scheduled_hours_per_week
     }
 
     /// Weekly hours as a percentage of scheduled hours (0–100, clamped)
     pub fn weekly_hours_percent(&self) -> f64 {
-        (self.worked_hours_this_week() / SCHEDULED_HOURS_PER_WEEK * 100.0).clamp(0.0, 100.0)
+        (self.worked_hours_this_week() / self.scheduled_hours_per_week * 100.0).clamp(0.0, 100.0)
     }
 
     /// Per-project/activity breakdown for this week (≥ 1% of total, sorted desc)
@@ -137,20 +133,9 @@ impl App {
         let mut map: HashMap<String, f64> = HashMap::new();
 
         for e in &entries {
-            if let Some(end) = e.end_time {
-                let secs = (end - e.start_time).whole_seconds();
-                if secs > 0 {
-                    let project = e
-                        .project_name
-                        .clone()
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    let activity = e
-                        .activity_name
-                        .clone()
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    let key = format!("{} - {}", project, activity);
-                    *map.entry(key).or_insert(0.0) += secs as f64 / 3600.0;
-                }
+            if e.hours > 0.0 {
+                let key = format!("{}: {}", e.project_name, e.activity_name);
+                *map.entry(key).or_insert(0.0) += e.hours;
             }
         }
 
@@ -182,5 +167,79 @@ impl App {
                 .then_with(|| a.label.cmp(&b.label)) // stable tiebreaker: label alphabetical
         });
         stats
+    }
+
+    /// Per-day breakdown for this week, Mon–Sun, each day split by project/activity.
+    /// Projects are colored by their global rank (same order as weekly_project_stats).
+    pub fn weekly_daily_stats(&self) -> Vec<DayStat> {
+        use std::collections::HashMap;
+
+        // Build the global project ordering (for consistent palette indices)
+        let global_stats = self.weekly_project_stats();
+        let color_index: HashMap<String, usize> = global_stats
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.label.clone(), i))
+            .collect();
+
+        // Build 7 slots Mon(0)…Sun(6)
+        let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let mut slots: Vec<HashMap<String, f64>> = vec![HashMap::new(); 7];
+
+        for entry in self.this_week_history() {
+            if entry.hours <= 0.0 {
+                continue;
+            }
+            // Parse entry date to find which weekday slot
+            let parts: Vec<&str> = entry.date.splitn(3, '-').collect();
+            if parts.len() != 3 {
+                continue;
+            }
+            let Ok(year) = parts[0].parse::<i32>() else {
+                continue;
+            };
+            let Ok(month_u8) = parts[1].parse::<u8>() else {
+                continue;
+            };
+            let Ok(day) = parts[2].parse::<u8>() else {
+                continue;
+            };
+            let Ok(month) = time::Month::try_from(month_u8) else {
+                continue;
+            };
+            let Ok(date) = time::Date::from_calendar_date(year, month, day) else {
+                continue;
+            };
+
+            let slot = date.weekday().number_days_from_monday() as usize;
+            let key = format!("{}: {}", entry.project_name, entry.activity_name);
+            *slots[slot].entry(key).or_insert(0.0) += entry.hours;
+        }
+
+        slots
+            .into_iter()
+            .enumerate()
+            .map(|(i, map)| {
+                let total_hours: f64 = map.values().sum();
+                let mut projects: Vec<DailyProjectStat> = map
+                    .into_iter()
+                    .map(|(label, hours)| {
+                        let ci = *color_index.get(&label).unwrap_or(&0);
+                        DailyProjectStat {
+                            label,
+                            hours,
+                            color_index: ci,
+                        }
+                    })
+                    .collect();
+                // Sort by global rank (color_index) so stacking order matches pie
+                projects.sort_by_key(|p| p.color_index);
+                DayStat {
+                    day_name: day_names[i].to_string(),
+                    total_hours,
+                    projects,
+                }
+            })
+            .collect()
     }
 }

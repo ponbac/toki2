@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TukiConfig {
+pub struct TokiConfig {
     /// Base URL of the toki-api server, e.g. "http://localhost:8080"
     #[serde(default = "default_api_url")]
     pub api_url: String,
@@ -13,7 +13,7 @@ fn default_api_url() -> String {
     "http://localhost:8080".to_string()
 }
 
-impl Default for TukiConfig {
+impl Default for TokiConfig {
     fn default() -> Self {
         Self {
             api_url: default_api_url(),
@@ -21,7 +21,7 @@ impl Default for TukiConfig {
     }
 }
 
-impl TukiConfig {
+impl TokiConfig {
     pub fn config_path() -> Result<PathBuf> {
         Ok(dirs::config_dir()
             .context("Cannot determine config directory")?
@@ -88,6 +88,60 @@ impl TukiConfig {
     /// Delete the saved session (logout).
     pub fn clear_session() -> Result<()> {
         let path = Self::session_path()?;
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+        }
+        Ok(())
+    }
+
+    pub fn mt_cookies_path() -> Result<PathBuf> {
+        Ok(dirs::config_dir()
+            .context("Cannot determine config directory")?
+            .join("toki-tui")
+            .join("mt_cookies"))
+    }
+
+    /// Load saved Milltime cookies from disk. Returns empty vec if file doesn't exist.
+    pub fn load_mt_cookies() -> Result<Vec<(String, String)>> {
+        let path = Self::mt_cookies_path()?;
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+        let raw = std::fs::read_to_string(&path).context("Failed to read mt_cookies")?;
+        let cookies = raw
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.splitn(2, '=');
+                let name = parts.next()?.trim().to_string();
+                let value = parts.next()?.trim().to_string();
+                if name.is_empty() {
+                    None
+                } else {
+                    Some((name, value))
+                }
+            })
+            .collect();
+        Ok(cookies)
+    }
+
+    /// Save Milltime cookies to disk.
+    pub fn save_mt_cookies(cookies: &[(String, String)]) -> Result<()> {
+        let path = Self::mt_cookies_path()?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let content = cookies
+            .iter()
+            .map(|(name, value)| format!("{}={}", name, value))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, content)?;
+        Ok(())
+    }
+
+    /// Delete saved Milltime cookies.
+    pub fn clear_mt_cookies() -> Result<()> {
+        let path = Self::mt_cookies_path()?;
         if path.exists() {
             std::fs::remove_file(&path)?;
         }

@@ -1,6 +1,6 @@
 use super::utils::to_local_time;
 use crate::app::{EntryEditField, EntryEditState};
-use crate::types::TimerHistoryEntry;
+use crate::types::TimeEntry;
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -21,10 +21,57 @@ fn time_input_display(s: &str) -> String {
     }
 }
 
+/// Truncate `s` to at most `max_chars` Unicode scalar values.
+/// Appends `…` if truncation occurred (the ellipsis counts as 1 char toward the limit).
+/// Returns the original string if it already fits.
+fn truncate_to(s: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return "…".to_string();
+    }
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
+        s.to_string()
+    } else {
+        // Take max_chars - 1 chars to leave room for the ellipsis
+        let truncated: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    }
+}
+
+/// Given a remaining character budget, fit `proj_act` and optionally `note` into it.
+/// Trims the note first; trims `proj_act` only if it alone overflows.
+/// Returns `(proj_act_display, note_display)` — both owned `String`s.
+fn fit_proj_act_note(proj_act: &str, note: &str, remaining: usize) -> (String, String) {
+    let proj_act_len = proj_act.chars().count();
+    let pipe_and_note_len = if note.is_empty() {
+        0
+    } else {
+        3 + note.chars().count()
+    };
+
+    if remaining == 0 {
+        (String::new(), String::new())
+    } else if proj_act_len + pipe_and_note_len <= remaining {
+        // Everything fits
+        (proj_act.to_string(), note.to_string())
+    } else if proj_act_len + 3 < remaining && !note.is_empty() {
+        // proj_act fits; trim the note to fill the rest (3 = " | " separator)
+        let note_budget = remaining - proj_act_len - 3;
+        (proj_act.to_string(), truncate_to(note, note_budget))
+    } else if proj_act_len <= remaining {
+        // proj_act fills the budget exactly (or no room for note), drop the note
+        (proj_act.to_string(), String::new())
+    } else {
+        // proj_act itself overflows — trim it, drop the note
+        (truncate_to(proj_act, remaining), String::new())
+    }
+}
+
 pub fn build_display_row(
-    entry: &TimerHistoryEntry,
+    entry: &TimeEntry,
     is_focused: bool,
     is_overlapping: bool,
+    available_width: u16,
 ) -> Line<'_> {
     // Warning emoji for overlapping entries
     let warning_prefix = if is_overlapping { "⚠ " } else { "" };
@@ -52,41 +99,45 @@ pub fn build_display_row(
     };
 
     // Calculate duration in [00h:05m] format
-    let duration_display = if let Some(end_time) = entry.end_time {
-        let duration = end_time - entry.start_time;
-        let total_minutes = duration.whole_minutes();
+    let duration_display = if let (Some(start), Some(end)) = (entry.start_time, entry.end_time) {
+        let total_minutes = (end - start).whole_minutes();
         let hours = total_minutes / 60;
         let minutes = total_minutes % 60;
         format!("[{:02}h:{:02}m]", hours, minutes)
     } else {
-        "[Active]".to_string()
+        let total_minutes = (entry.hours * 60.0).round() as i64;
+        format!("[{:02}h:{:02}m]", total_minutes / 60, total_minutes % 60)
     };
 
-    let project = entry.project_name.as_deref().unwrap_or("Unknown");
-    let activity = entry.activity_name.as_deref().unwrap_or("Unknown");
+    let project = &entry.project_name;
+    let activity = &entry.activity_name;
     let note = entry.note.as_deref().unwrap_or("");
 
     // Start time
-    let start_time = to_local_time(entry.start_time).time();
-    let start_str = format!("{:02}:{:02}", start_time.hour(), start_time.minute());
+    let start_str = entry
+        .start_time
+        .map(|t| {
+            let local = to_local_time(t).time();
+            format!("{:02}:{:02}", local.hour(), local.minute())
+        })
+        .unwrap_or_else(|| "XX:XX".to_string());
 
     // End time
     let end_time_str = if let Some(end_time) = entry.end_time {
         let t = to_local_time(end_time).time();
         format!("{:02}:{:02}", t.hour(), t.minute())
     } else {
-        "??:??".to_string()
+        "XX:XX".to_string()
     };
 
-    // Truncate note if too long
-    let max_note_len = 30;
-    let note_display = if note.is_empty() {
-        "".to_string()
-    } else if note.len() > max_note_len {
-        format!("{}[...]", &note[..max_note_len])
-    } else {
-        note.to_string()
-    };
+    // Responsive truncation: compute remaining width after fixed prefix.
+    // Non-overlapping: "HH:MM - HH:MM " (14) + "[DDh:DDm]" (9) + " | " (3) = 26
+    // Overlapping adds "⚠ " (2 chars: symbol + space) = 28
+    let prefix_len: usize = if is_overlapping { 28 } else { 26 };
+    let remaining = (available_width as usize).saturating_sub(prefix_len);
+
+    let proj_act = format!("{}: {}", project, activity);
+    let (proj_act_display, note_display) = fit_proj_act_note(&proj_act, note, remaining);
 
     // Build styled line with colors
     let mut spans = vec![];
@@ -99,21 +150,24 @@ pub fn build_display_row(
         ));
     }
 
+    // Show time range — use real times if available, otherwise a dimmed placeholder
+    let has_times = entry.start_time.is_some() || entry.end_time.is_some();
+    spans.push(Span::styled(
+        format!("{} - {} ", start_str, end_time_str),
+        Style::default().fg(if has_times {
+            time_color
+        } else {
+            Color::DarkGray
+        }),
+    ));
+
     spans.extend(vec![
-        // Time range
-        Span::styled(
-            format!("{} - {} ", start_str, end_time_str),
-            Style::default().fg(time_color),
-        ),
         // Duration
         Span::styled(duration_display, Style::default().fg(duration_color)),
         // Pipe separator
         Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-        // Project - Activity
-        Span::styled(
-            format!("{} - {}", project, activity),
-            Style::default().fg(project_color),
-        ),
+        // Project - Activity (possibly truncated)
+        Span::styled(proj_act_display, Style::default().fg(project_color)),
     ]);
 
     // Add annotation if present
@@ -137,7 +191,11 @@ pub fn build_display_row(
     Line::from(spans)
 }
 
-pub fn build_running_timer_display_row(app: &App, is_focused: bool) -> Line<'static> {
+pub fn build_running_timer_display_row(
+    app: &App,
+    is_focused: bool,
+    available_width: u16,
+) -> Line<'static> {
     let start_str = app
         .absolute_start
         .map(|t| {
@@ -171,24 +229,21 @@ pub fn build_running_timer_display_row(app: &App, is_focused: bool) -> Line<'sta
         .unwrap_or_else(|| "[None]".to_string());
     let note = app.description_input.value.clone();
 
-    let max_note_len = 30;
-    let note_display = if note.is_empty() {
-        String::new()
-    } else if note.len() > max_note_len {
-        format!("{}[...]", &note[..max_note_len])
-    } else {
-        note.clone()
-    };
+    let prefix_len: usize = 28; // "▶ " (2) + "HH:MM - HH:MM " (14) + "[DDh:DDm]" (9) + " | " (3)
+    let remaining = (available_width as usize).saturating_sub(prefix_len);
+
+    let proj_act = format!("{}: {}", project, activity);
+    let (proj_act_display, note_display) = fit_proj_act_note(&proj_act, &note, remaining);
 
     let text = if note_display.is_empty() {
         format!(
-            "▶ {} - HH:MM {} | {} - {}",
-            start_str, duration_str, project, activity
+            "▶ {} - HH:MM {} | {}",
+            start_str, duration_str, proj_act_display
         )
     } else {
         format!(
-            "▶ {} - HH:MM {} | {} - {} | {}",
-            start_str, duration_str, project, activity, note_display
+            "▶ {} - HH:MM {} | {} | {}",
+            start_str, duration_str, proj_act_display, note_display
         )
     };
 
@@ -211,10 +266,7 @@ pub fn build_running_timer_display_row(app: &App, is_focused: bool) -> Line<'sta
         ),
         Span::styled(duration_str, Style::default().fg(Color::Magenta)),
         Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            format!("{} - {}", project, activity),
-            Style::default().fg(Color::Cyan),
-        ),
+        Span::styled(proj_act_display, Style::default().fg(Color::Cyan)),
     ];
     if !note_display.is_empty() {
         spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
@@ -257,7 +309,7 @@ pub fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
     };
     spans.push(Span::styled(project_value, project_style));
 
-    spans.push(Span::styled(" - ", Style::default().fg(Color::White)));
+    spans.push(Span::styled(": ", Style::default().fg(Color::White)));
 
     // Activity field
     let activity_value = format!(
@@ -306,7 +358,7 @@ pub fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
 }
 
 pub fn build_edit_row<'a>(
-    _entry: &'a TimerHistoryEntry,
+    _entry: &'a TimeEntry,
     edit_state: &'a EntryEditState,
     _is_focused: bool,
 ) -> Line<'a> {
@@ -352,7 +404,7 @@ pub fn build_edit_row<'a>(
     spans.push(Span::styled(project_value, project_style));
 
     // Separator
-    spans.push(Span::styled(" - ", Style::default().fg(Color::White)));
+    spans.push(Span::styled(": ", Style::default().fg(Color::White)));
 
     // Activity field
     let activity_value = format!(

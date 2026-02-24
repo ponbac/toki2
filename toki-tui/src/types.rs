@@ -31,6 +31,28 @@ pub struct TimerHistoryEntry {
     pub activity_id: Option<String>,
     pub activity_name: Option<String>,
     pub note: Option<String>,
+    pub registration_id: Option<String>,
+}
+
+/// A completed time entry from Milltime (via GET /time-tracking/time-entries).
+/// start_time / end_time are optional — present only if a local timer history record exists.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeEntry {
+    pub registration_id: String,
+    pub project_id: String,
+    pub project_name: String,
+    pub activity_id: String,
+    pub activity_name: String,
+    /// Date in YYYY-MM-DD format, e.g. "2026-02-24"
+    pub date: String,
+    pub hours: f64,
+    pub note: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub start_time: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub end_time: Option<OffsetDateTime>,
+    pub week_number: u8,
 }
 
 /// The current user, as returned by GET /me.
@@ -42,43 +64,36 @@ pub struct Me {
     pub full_name: String,
 }
 
-/// Build Project + Activity lists from a history entry list.
-/// Extracts DISTINCT project/activity combinations from history.
-pub fn build_projects_activities(history: &[TimerHistoryEntry]) -> (Vec<Project>, Vec<Activity>) {
-    let mut projects: Vec<Project> = Vec::new();
-    let mut activities: Vec<Activity> = Vec::new();
+/// Active timer as returned by GET /time-tracking/timer.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveTimerState {
+    #[serde(with = "time::serde::rfc3339")]
+    pub start_time: OffsetDateTime,
+    pub project_id: Option<String>,
+    pub project_name: Option<String>,
+    pub activity_id: Option<String>,
+    pub activity_name: Option<String>,
+    pub note: String,
+    pub hours: i64,
+    pub minutes: i64,
+    pub seconds: i64,
+}
 
-    for entry in history {
-        let (Some(pid), Some(pname), Some(aid), Some(aname)) = (
-            entry.project_id.as_ref(),
-            entry.project_name.as_ref(),
-            entry.activity_id.as_ref(),
-            entry.activity_name.as_ref(),
-        ) else {
-            continue;
-        };
+/// Wrapper returned by GET /time-tracking/timer.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetTimerResponse {
+    pub timer: Option<ActiveTimerState>,
+}
 
-        if !projects.iter().any(|p: &Project| &p.id == pid) {
-            projects.push(Project {
-                id: pid.clone(),
-                name: pname.clone(),
-            });
-        }
-        if !activities
-            .iter()
-            .any(|a: &Activity| &a.id == aid && &a.project_id == pid)
-        {
-            activities.push(Activity {
-                id: aid.clone(),
-                name: aname.clone(),
-                project_id: pid.clone(),
-            });
-        }
-    }
-
-    // Sort for stable display
-    projects.sort_by(|a, b| a.name.cmp(&b.name));
-    activities.sort_by(|a, b| a.project_id.cmp(&b.project_id).then(a.name.cmp(&b.name)));
-
-    (projects, activities)
+/// Time info returned by GET /time-tracking/time-info.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeInfo {
+    pub period_time_left: f64,
+    pub worked_period_time: f64,
+    pub scheduled_period_time: f64,
+    pub worked_period_with_absence_time: f64,
+    pub flex_time_current: f64,
 }

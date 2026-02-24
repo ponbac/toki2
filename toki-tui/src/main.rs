@@ -6,7 +6,7 @@ mod login;
 mod types;
 mod ui;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use api_client::ApiClient;
 use app::{App, TextInput};
 use crossterm::{
@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
     let flag = args.get(1).map(|s| s.as_str());
-    let cfg = config::TukiConfig::load()?;
+    let cfg = config::TokiConfig::load()?;
 
     match flag {
         Some("--login") => {
@@ -33,27 +33,36 @@ async fn main() -> Result<()> {
             return Ok(());
         }
         Some("--logout") => {
-            config::TukiConfig::clear_session()?;
-            println!("Logged out. Session cleared.");
+            config::TokiConfig::clear_session()?;
+            config::TokiConfig::clear_mt_cookies()?;
+            println!("Logged out. Session and Milltime cookies cleared.");
             return Ok(());
         }
         Some("--dev") => {
-            let client = ApiClient::dev()?;
+            let mut client = ApiClient::dev()?;
             let me = client.me().await?;
             println!("Dev mode: logged in as {} ({})\n", me.full_name, me.email);
             let mut app = App::new(me.id);
-            if let Ok(history) = client.get_timer_history().await {
-                let (projects, activities) = types::build_projects_activities(&history);
-                app.set_projects_activities(projects, activities);
-                app.update_history(history);
-                app.rebuild_history_list();
+            {
+                let today = time::OffsetDateTime::now_utc().date();
+                let month_ago = today - time::Duration::days(30);
+                if let Ok(entries) = client.get_time_entries(month_ago, today).await {
+                    app.update_history(entries);
+                    app.rebuild_history_list();
+                }
+            }
+            if let Ok(projects) = client.get_projects().await {
+                app.set_projects_activities(projects, vec![]);
+            }
+            if let Ok(Some(timer)) = client.get_active_timer().await {
+                restore_active_timer(&mut app, timer);
             }
             enable_raw_mode()?;
             let mut stdout = io::stdout();
             execute!(stdout, EnterAlternateScreen)?;
             let backend = CrosstermBackend::new(stdout);
             let mut terminal = Terminal::new(backend)?;
-            let res = run_app(&mut terminal, &mut app, &client).await;
+            let res = run_app(&mut terminal, &mut app, &mut client).await;
             disable_raw_mode()?;
             execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
             terminal.show_cursor()?;
@@ -67,7 +76,7 @@ async fn main() -> Result<()> {
     }
 
     // Load session — require login if missing
-    let session_id = match config::TukiConfig::load_session()? {
+    let session_id = match config::TokiConfig::load_session()? {
         Some(s) => s,
         None => {
             eprintln!("Not logged in. Run `toki-tui --login` to authenticate.");
@@ -75,7 +84,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    let client = ApiClient::new(&cfg.api_url, &session_id)?;
+    let mt_cookies = config::TokiConfig::load_mt_cookies()?;
+    let mut client = ApiClient::new(&cfg.api_url, &session_id, mt_cookies)?;
 
     // Verify session is valid
     let me = match client.me().await {
@@ -88,18 +98,84 @@ async fn main() -> Result<()> {
 
     println!("Logged in as {} ({})\n", me.full_name, me.email);
 
+    // Authenticate against Milltime if we don't have cookies yet
+    if client.mt_cookies().is_empty() {
+        println!("Milltime credentials required.");
+        print!("Username: ");
+        std::io::Write::flush(&mut std::io::stdout())?;
+        let mut username = String::new();
+        std::io::BufRead::read_line(&mut std::io::BufReader::new(std::io::stdin()), &mut username)?;
+        let username = username.trim().to_string();
+
+        let password = rpassword::prompt_password("Password: ")?;
+
+        print!("Authenticating...");
+        std::io::Write::flush(&mut std::io::stdout())?;
+        match client.authenticate(&username, &password).await {
+            Ok(cookies) => {
+                client.update_mt_cookies(cookies);
+                config::TokiConfig::save_mt_cookies(client.mt_cookies())?;
+                println!(" OK");
+            }
+            Err(e) => {
+                eprintln!("\nMilltime authentication failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     let mut app = App::new(me.id);
 
-    // Load timer history (also used to derive project/activity lists)
-    match client.get_timer_history().await {
-        Ok(history) => {
-            let (projects, activities) = types::build_projects_activities(&history);
-            app.set_projects_activities(projects, activities);
-            app.update_history(history);
-            app.rebuild_history_list();
+    // Load timer history (last 30 days from Milltime)
+    app.is_loading = true;
+    {
+        let today = time::OffsetDateTime::now_utc().date();
+        let month_ago = today - time::Duration::days(30);
+        match client.get_time_entries(month_ago, today).await {
+            Ok(entries) => {
+                app.update_history(entries);
+                app.rebuild_history_list();
+            }
+            Err(e) => eprintln!("Warning: Could not load history: {}", e),
         }
-        Err(e) => eprintln!("Warning: Could not load history: {}", e),
     }
+
+    // Fetch projects from Milltime API
+    match client.get_projects().await {
+        Ok(projects) => {
+            app.set_projects_activities(projects, vec![]);
+        }
+        Err(e) => eprintln!("Warning: Could not load projects: {}", e),
+    }
+
+    // Restore running timer from server (if one was left running)
+    match client.get_active_timer().await {
+        Ok(Some(timer)) => {
+            restore_active_timer(&mut app, timer);
+            println!("Restored running timer from server.");
+        }
+        Ok(None) => {}
+        Err(e) => eprintln!("Warning: Could not check active timer: {}", e),
+    }
+
+    // Compute Mon–Sun of the current ISO week for time-info query
+    let today = time::OffsetDateTime::now_utc()
+        .to_offset(time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC))
+        .date();
+    let days_from_monday = today.weekday().number_days_from_monday() as i64;
+    let week_start = today - time::Duration::days(days_from_monday);
+    let week_end = week_start + time::Duration::days(6);
+
+    // Fetch scheduled hours per week from Milltime
+    match client.get_time_info(week_start, week_end).await {
+        Ok(time_info) => {
+            app.scheduled_hours_per_week = time_info.scheduled_period_time;
+            app.flex_time_current = time_info.flex_time_current;
+        }
+        Err(e) => eprintln!("Warning: Could not load time info: {}", e),
+    }
+
+    app.is_loading = false;
 
     // Setup terminal
     enable_raw_mode()?;
@@ -109,7 +185,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // Run the app
-    let res = run_app(&mut terminal, &mut app, &client).await;
+    let res = run_app(&mut terminal, &mut app, &mut client).await;
 
     // Restore terminal
     disable_raw_mode()?;
@@ -128,10 +204,27 @@ async fn main() -> Result<()> {
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
-    client: &ApiClient,
+    client: &mut ApiClient,
 ) -> Result<()> {
+    // Show throbber for at least 3 seconds on startup
+    app.is_loading = true;
+    let loading_until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+
+    // Background polling: refresh time entries every 60 seconds
+    let mut last_history_refresh = std::time::Instant::now();
+    const HISTORY_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
     loop {
         terminal.draw(|f| ui::render(f, app))?;
+
+        // Advance throbber every frame when loading
+        if app.is_loading {
+            app.throbber_state.calc_next();
+            // Stop the startup animation after 3 seconds (real loads set is_loading themselves)
+            if std::time::Instant::now() >= loading_until {
+                app.is_loading = false;
+            }
+        }
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
@@ -193,6 +286,27 @@ async fn run_app(
                             KeyCode::End   => { if !app.selection_list_focused { app.search_cursor_home_end(false); } }
                             KeyCode::Enter => {
                                 app.confirm_selection();
+                                // Fetch activities for the selected project (lazy, cached)
+                                if let Some(project) = app.selected_project.clone() {
+                                    if !app.activity_cache.contains_key(&project.id) {
+                                        app.is_loading = true;
+                                        match client.get_activities(&project.id).await {
+                                            Ok(activities) => {
+                                                app.activity_cache.insert(project.id.clone(), activities);
+                                            }
+                                            Err(e) => {
+                                                app.set_status(format!("Failed to load activities: {}", e));
+                                            }
+                                        }
+    app.is_loading = false;
+                                    }
+                                    // Populate app.activities from cache for this project
+                                    if let Some(cached) = app.activity_cache.get(&project.id) {
+                                        app.activities = cached.clone();
+                                        app.filtered_activities = cached.clone();
+                                        app.filtered_activity_index = 0;
+                                    }
+                                }
                                 // If we were in edit mode, restore with selected project AND restore running timer state
                                 if had_edit_state {
                                     if let Some(project) = app.selected_project.clone() {
@@ -284,6 +398,18 @@ async fn run_app(
                                     } else {
                                         app.focused_box = app::FocusedBox::Today; // Not used in History view but keep consistent
                                         app.entry_edit_set_focused_field(app::EntryEditField::Activity);
+                                    }
+                                } else if app.timer_state == app::TimerState::Running {
+                                    // Sync new project/activity to server
+                                    let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
+                                    let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
+                                    let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
+                                    let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+                                    if let Err(e) = client.update_active_timer(
+                                        project_id, project_name, activity_id, activity_name,
+                                        None, None,
+                                    ).await {
+                                        app.set_status(format!("Warning: Could not sync project to server: {}", e));
                                     }
                                 }
                             }
@@ -540,6 +666,17 @@ async fn run_app(
                                     app.navigate_to(app::View::Timer);
                                 }
                                 KeyCode::Char('q') | KeyCode::Char('Q') => app.quit(),
+                                KeyCode::Delete | KeyCode::Backspace
+                                    if app.focused_history_index.is_some() =>
+                                {
+                                    app.enter_delete_confirm(app::DeleteOrigin::History);
+                                }
+                                KeyCode::Char('x')
+                                    if key.modifiers.contains(KeyModifiers::CONTROL)
+                                        && app.focused_history_index.is_some() =>
+                                {
+                                    app.enter_delete_confirm(app::DeleteOrigin::History);
+                                }
                                 _ => {}
                             }
                         }
@@ -551,6 +688,39 @@ async fn run_app(
                                 app.navigate_to(app::View::Timer);
                             }
                             KeyCode::Char('q') | KeyCode::Char('Q') => app.quit(),
+                            _ => {}
+                        }
+                    }
+                    app::View::ConfirmDelete => {
+                        match key.code {
+                            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                                if let Some(ctx) = app.delete_context.take() {
+                                    let origin = ctx.origin;
+                                    match client.delete_time_entry(&ctx.registration_id).await {
+                                        Ok(()) => {
+                                            // Remove from local state immediately
+                                            app.time_entries.retain(|e| e.registration_id != ctx.registration_id);
+                                            app.rebuild_history_list();
+                                            app.set_status("Entry deleted".to_string());
+                                        }
+                                        Err(e) => {
+                                            app.set_status(format!("Delete failed: {}", e));
+                                        }
+                                    }
+                                    match origin {
+                                        app::DeleteOrigin::Timer => app.navigate_to(app::View::Timer),
+                                        app::DeleteOrigin::History => app.navigate_to(app::View::History),
+                                    }
+                                }
+                            }
+                            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                let origin = app.delete_context.as_ref().map(|c| c.origin);
+                                app.delete_context = None;
+                                match origin {
+                                    Some(app::DeleteOrigin::Timer) | None => app.navigate_to(app::View::Timer),
+                                    Some(app::DeleteOrigin::History) => app.navigate_to(app::View::History),
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -612,14 +782,10 @@ async fn run_app(
                                     app.focus_previous();
                                 }
                             }
-                             // Arrow right / l: Next field (edit mode only, or cursor movement in Note)
+                             // Arrow right / l: Next field (edit mode only; Note is not inline-editable)
                              KeyCode::Right => {
                                  if app.this_week_edit_state.is_some() {
-                                     if app.this_week_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
-                                         app.entry_edit_move_cursor(false);
-                                     } else {
-                                         app.entry_edit_next_field();
-                                     }
+                                     app.entry_edit_next_field();
                                  }
                              }
                              KeyCode::Char('l') | KeyCode::Char('L') => {
@@ -627,24 +793,22 @@ async fn run_app(
                                      app.entry_edit_next_field();
                                  }
                              }
-                             // Arrow left: cursor movement in Note field, or prev field in edit mode
+                             // Arrow left: Prev field in edit mode (Note is not inline-editable)
                              KeyCode::Left => {
                                  if app.this_week_edit_state.is_some() {
-                                     if app.this_week_edit_state.as_ref().map_or(false, |s| s.focused_field == app::EntryEditField::Note) {
-                                         app.entry_edit_move_cursor(true);
-                                     } else {
-                                         app.entry_edit_prev_field();
-                                     }
+                                     app.entry_edit_prev_field();
                                  }
                              }
                              KeyCode::Char('h') | KeyCode::Char('H') => {
                                  if app.this_week_edit_state.is_some() {
                                      app.entry_edit_prev_field();
-                                 } else if app.this_week_edit_state.is_none() {
+                                 } else                          if app.this_week_edit_state.is_none() {
                                      // Open History view when not in edit mode
-                                     match client.get_timer_history().await {
-                                         Ok(history) => {
-                                             app.update_history(history);
+                                     let today = time::OffsetDateTime::now_utc().date();
+                                     let month_ago = today - time::Duration::days(30);
+                                     match client.get_time_entries(month_ago, today).await {
+                                         Ok(entries) => {
+                                             app.update_history(entries);
                                              app.rebuild_history_list();
                                              app.navigate_to(app::View::History);
                                          }
@@ -684,7 +848,7 @@ async fn run_app(
                                     match app.focused_box {
                                         app::FocusedBox::Timer => {
                                             // Start timer when Timer box is focused
-                                            handle_start_timer(app)?;
+                                            handle_start_timer(app, client).await?;
                                         }
                                         app::FocusedBox::Today => {
                                             // If no entry selected, default to first entry
@@ -705,7 +869,18 @@ async fn run_app(
                             }
                             KeyCode::Backspace => {
                                 if app.this_week_edit_state.is_some() {
-                                    app.entry_edit_backspace();
+                                    // Note field is not inline-editable; Enter opens the Notes view
+                                    let on_note = app.this_week_edit_state.as_ref()
+                                        .map_or(false, |s| s.focused_field == app::EntryEditField::Note);
+                                    if !on_note {
+                                        app.entry_edit_backspace();
+                                    }
+                                } else if app.focused_box == app::FocusedBox::Today
+                                    && app.focused_this_week_index.map_or(false, |idx| {
+                                        !(app.timer_state == app::TimerState::Running && idx == 0)
+                                    })
+                                {
+                                    app.enter_delete_confirm(app::DeleteOrigin::Timer);
                                 }
                             }
                             // Escape to exit edit mode
@@ -731,7 +906,7 @@ async fn run_app(
                             KeyCode::Char(' ') => {
                                 match app.timer_state {
                                     app::TimerState::Stopped => {
-                                        handle_start_timer(app)?;
+                                        handle_start_timer(app, client).await?;
                                     }
                                     app::TimerState::Running => {
                                         if !app.has_project_activity() {
@@ -775,15 +950,50 @@ async fn run_app(
                                         }
                                     }
                                 } else {
-                                    // Not in edit mode - clear timer
-                                    app.clear_timer();
+                                    // If a DB entry row is selected, treat Ctrl+X as delete
+                                    let selected_is_db_row = app.focused_box == app::FocusedBox::Today
+                                        && app.focused_this_week_index.map_or(false, |idx| {
+                                            !(app.timer_state == app::TimerState::Running && idx == 0)
+                                        });
+                                    if selected_is_db_row {
+                                        app.enter_delete_confirm(app::DeleteOrigin::Timer);
+                                    } else {
+                                        // Original behaviour: discard running timer
+                                        if app.timer_state == app::TimerState::Running {
+                                            if let Err(e) = client.stop_timer().await {
+                                                app.set_status(format!("Warning: Could not stop server timer: {}", e));
+                                            }
+                                        }
+                                        app.clear_timer();
+                                    }
                                 }
+                            }
+                            KeyCode::Delete
+                                if app.this_week_edit_state.is_none()
+                                    && app.focused_box == app::FocusedBox::Today
+                                    && app.focused_this_week_index.map_or(false, |idx| {
+                                        !(app.timer_state == app::TimerState::Running && idx == 0)
+                                    }) =>
+                            {
+                                app.enter_delete_confirm(app::DeleteOrigin::Timer);
                             }
                             _ => {}
                         }
                     }
                 }
             }
+        }
+
+        // Background polling: silently refresh time entries every 60 seconds
+        // Skip if user is in edit mode to avoid disrupting their input
+        if last_history_refresh.elapsed() >= HISTORY_REFRESH_INTERVAL && !app.is_in_edit_mode() {
+            let today = time::OffsetDateTime::now_utc().date();
+            let month_ago = today - time::Duration::days(30);
+            if let Ok(entries) = client.get_time_entries(month_ago, today).await {
+                app.update_history(entries);
+                app.rebuild_history_list();
+            }
+            last_history_refresh = std::time::Instant::now();
         }
 
         if !app.running {
@@ -794,11 +1004,46 @@ async fn run_app(
     Ok(())
 }
 
-fn handle_start_timer(app: &mut App) -> Result<()> {
+/// Apply an active timer fetched from the server into App state.
+fn restore_active_timer(app: &mut App, timer: crate::types::ActiveTimerState) {
+    use std::time::{Duration, Instant};
+    let elapsed_secs = (timer.hours * 3600 + timer.minutes * 60 + timer.seconds) as u64;
+    app.absolute_start = Some(timer.start_time);
+    app.local_start = Some(Instant::now() - Duration::from_secs(elapsed_secs));
+    app.timer_state = app::TimerState::Running;
+    if let (Some(id), Some(name)) = (timer.project_id, timer.project_name) {
+        app.selected_project = Some(crate::types::Project { id, name });
+    }
+    if let (Some(id), Some(name)) = (timer.activity_id, timer.activity_name) {
+        app.selected_activity = Some(crate::types::Activity {
+            id,
+            name,
+            project_id: app.selected_project.as_ref().map(|p| p.id.clone()).unwrap_or_default(),
+        });
+    }
+    if !timer.note.is_empty() {
+        app.description_input = app::TextInput::from_str(&timer.note);
+        app.description_is_default = false;
+    }
+}
+
+async fn handle_start_timer(app: &mut App, client: &mut ApiClient) -> Result<()> {
     match app.timer_state {
         app::TimerState::Stopped => {
+            let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
+            let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
+            let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
+            let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+            let note = if app.description_input.value.is_empty() {
+                None
+            } else {
+                Some(app.description_input.value.clone())
+            };
+            if let Err(e) = client.start_timer(project_id, project_name, activity_id, activity_name, note).await {
+                app.set_status(format!("Error starting timer: {}", e));
+                return Ok(());
+            }
             app.start_timer();
-            // Clear status to show contextual message
             app.clear_status();
         }
         app::TimerState::Running => {
@@ -808,107 +1053,90 @@ fn handle_start_timer(app: &mut App) -> Result<()> {
     Ok(())
 }
 
-async fn handle_save_timer_with_action(app: &mut App, client: &ApiClient) -> Result<()> {
+async fn handle_save_timer_with_action(app: &mut App, client: &mut ApiClient) -> Result<()> {
     // Handle Cancel first
     if app.selected_save_action == app::SaveAction::Cancel {
         app.navigate_to(app::View::Timer);
         return Ok(());
     }
 
-    // Validate and save
-    if let Some(start_time) = app.absolute_start {
-        let end_time = time::OffsetDateTime::now_utc();
-        let duration = app.elapsed_duration();
-        
-        let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
-        let project_name = Some(app.current_project_name());
-        let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
-        let activity_name = Some(app.current_activity_name());
-        let note = Some(app.description_input.value.clone());
-        
-        // Save to database
-        match client.save_timer_entry(
-            start_time,
-            end_time,
-            project_id,
-            project_name.clone(),
-            activity_id,
-            activity_name.clone(),
-            note,
-        ).await {
-            Ok(_) => {
-                // Format status message
-                let hours = duration.as_secs() / 3600;
-                let minutes = (duration.as_secs() % 3600) / 60;
-                let seconds = duration.as_secs() % 60;
-                let duration_str = format!("{:02}:{:02}:{:02}", hours, minutes, seconds);
-                
-                let project_display = project_name.unwrap_or_else(|| "[None]".to_string());
-                let activity_display = activity_name.unwrap_or_else(|| "[None]".to_string());
-                
-                // Refresh history
-                if let Ok(history) = client.get_timer_history().await {
-                    app.update_history(history);
-                }
-                
-                // Handle action-specific behavior
-                match app.selected_save_action {
-                    app::SaveAction::ContinueSameProject => {
-                        // Keep project/activity, clear description
-                        app.description_input.clear();
-                        app.description_is_default = true;
-                        app.start_timer();
-                        app.set_status(format!(
-                            "Saved {} to {} / {}",
-                            duration_str, project_display, activity_display
-                        ));
-                    }
-                    app::SaveAction::ContinueNewProject => {
-                        // Clear everything
-                        app.selected_project = None;
-                        app.selected_activity = None;
-                        app.description_input.clear();
-                        app.description_is_default = true;
-                        app.start_timer();
-                        app.set_status(format!(
-                            "Saved {}. Timer started. Press P to select project.",
-                            duration_str
-                        ));
-                    }
-                    app::SaveAction::SaveAndStop => {
-                        // Stop timer, keep everything
-                        app.timer_state = app::TimerState::Stopped;
-                        app.absolute_start = None;
-                        app.local_start = None;
-                        // Running timer row disappears — shift focus back down
-                        if let Some(idx) = app.focused_this_week_index {
-                            app.focused_this_week_index = if idx == 0 {
-                                None // was on the running row, which no longer exists
-                            } else {
-                                Some(idx.saturating_sub(1))
-                            };
-                        }
-                        app.set_status(format!(
-                            "Saved {} to {} / {}",
-                            duration_str, project_display, activity_display
-                        ));
-                    }
-                    app::SaveAction::Cancel => unreachable!(), // Handled above
-                }
-                
-                // Return to timer view
-                app.navigate_to(app::View::Timer);
-            }
-            Err(e) => {
-                app.set_status(format!("Error saving timer: {}", e));
-                app.navigate_to(app::View::Timer);
-            }
-        }
+    let duration = app.elapsed_duration();
+    let note = if app.description_input.value.is_empty() {
+        None
     } else {
-        app.set_status("Error: No start time recorded".to_string());
-        app.navigate_to(app::View::Timer);
+        Some(app.description_input.value.clone())
+    };
+
+    let project_display = app.current_project_name();
+    let activity_display = app.current_activity_name();
+
+    // Save the active timer to Milltime
+    match client.save_timer(note.clone()).await {
+        Ok(()) => {
+            let hours = duration.as_secs() / 3600;
+            let minutes = (duration.as_secs() % 3600) / 60;
+            let seconds = duration.as_secs() % 60;
+            let duration_str = format!("{:02}:{:02}:{:02}", hours, minutes, seconds);
+
+            // Refresh history
+            {
+                let today = time::OffsetDateTime::now_utc().date();
+                let month_ago = today - time::Duration::days(30);
+                if let Ok(entries) = client.get_time_entries(month_ago, today).await {
+                    app.update_history(entries);
+                    app.rebuild_history_list();
+                }
+            }
+
+            match app.selected_save_action {
+                app::SaveAction::ContinueSameProject => {
+                    app.description_input.clear();
+                    app.description_is_default = true;
+                    // Start a new server-side timer with same project/activity
+                    let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
+                    let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
+                    let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
+                    let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+                    if let Err(e) = client.start_timer(project_id, project_name, activity_id, activity_name, None).await {
+                        app.set_status(format!("Saved but could not restart timer: {}", e));
+                    } else {
+                        app.start_timer();
+                        app.set_status(format!("Saved {} to {} / {}", duration_str, project_display, activity_display));
+                    }
+                }
+                app::SaveAction::ContinueNewProject => {
+                    app.selected_project = None;
+                    app.selected_activity = None;
+                    app.description_input.clear();
+                    app.description_is_default = true;
+                    // Start new timer with no project yet
+                    if let Err(e) = client.start_timer(None, None, None, None, None).await {
+                        app.set_status(format!("Saved but could not restart timer: {}", e));
+                    } else {
+                        app.start_timer();
+                        app.set_status(format!("Saved {}. Timer started. Press P to select project.", duration_str));
+                    }
+                }
+                app::SaveAction::SaveAndStop => {
+                    app.timer_state = app::TimerState::Stopped;
+                    app.absolute_start = None;
+                    app.local_start = None;
+                    if let Some(idx) = app.focused_this_week_index {
+                        app.focused_this_week_index = if idx == 0 { None } else { Some(idx.saturating_sub(1)) };
+                    }
+                    app.set_status(format!("Saved {} to {} / {}", duration_str, project_display, activity_display));
+                }
+                app::SaveAction::Cancel => unreachable!(),
+            }
+
+            app.navigate_to(app::View::Timer);
+        }
+        Err(e) => {
+            app.set_status(format!("Error saving timer: {}", e));
+            app.navigate_to(app::View::Timer);
+        }
     }
-    
+
     Ok(())
 }
 
@@ -969,90 +1197,31 @@ fn handle_entry_edit_enter(app: &mut App) {
 }
 
 /// Save changes from This Week edit mode to database
-async fn handle_this_week_edit_save(app: &mut App, client: &ApiClient) -> Result<()> {
+async fn handle_this_week_edit_save(app: &mut App, client: &mut ApiClient) -> Result<()> {
     // Running timer edits don't touch the DB
-    if app.this_week_edit_state.as_ref().map(|s| s.entry_id) == Some(-1) {
-        handle_running_timer_edit_save(app);
+    if app
+        .this_week_edit_state
+        .as_ref()
+        .map(|s| s.registration_id.is_empty())
+        == Some(true)
+    {
+        handle_running_timer_edit_save(app, client).await;
         return Ok(());
     }
 
-    if let Some(state) = &app.this_week_edit_state {
-        // Parse the time inputs
-        let start_parts: Vec<&str> = state.start_time_input.split(':').collect();
-        let end_parts: Vec<&str> = state.end_time_input.split(':').collect();
-
-        if start_parts.len() != 2 || end_parts.len() != 2 {
-            app.set_status("Error: Invalid time format".to_string());
-            app.exit_this_week_edit_mode();
-            return Ok(());
-        }
-
-        let start_hours: u8 = start_parts[0].parse().unwrap_or(0);
-        let start_mins: u8 = start_parts[1].parse().unwrap_or(0);
-        let end_hours: u8 = end_parts[0].parse().unwrap_or(0);
-        let end_mins: u8 = end_parts[1].parse().unwrap_or(0);
-
-        // Get the entry being edited to preserve the date
-        let entries = app.this_week_history();
-        let entry_date = entries
-            .iter()
-            .find(|e| e.id == state.entry_id)
-            .map(|e| e.start_time.date())
-            .unwrap_or_else(|| time::OffsetDateTime::now_utc().date());
-
-        // Construct new times (using entry's date, treating input as local time)
-        let local_offset = time::UtcOffset::current_local_offset()
-            .unwrap_or(time::UtcOffset::UTC);
-        
-        let start_time = time::OffsetDateTime::new_in_offset(
-            entry_date,
-            time::Time::from_hms(start_hours, start_mins, 0).unwrap(),
-            local_offset,
-        );
-        
-        let end_time = time::OffsetDateTime::new_in_offset(
-            entry_date,
-            time::Time::from_hms(end_hours, end_mins, 0).unwrap(),
-            local_offset,
-        );
-
-        // Update via API
-        match client.update_timer_entry(
-            state.entry_id,
-            start_time,
-            end_time,
-            state.project_id.clone(),
-            state.project_name.clone(),
-            state.activity_id.clone(),
-            state.activity_name.clone(),
-            Some(state.note.value.clone()),
-        ).await {
-            Ok(_) => {
-                app.set_status("Entry updated successfully".to_string());
-                // Refresh history
-                match client.get_timer_history().await {
-                    Ok(history) => {
-                        app.update_history(history);
-                        app.rebuild_history_list();
-                    }
-                    Err(e) => {
-                        app.set_status(format!("Warning: Could not refresh history: {}", e));
-                    }
-                }
-            }
-            Err(e) => {
-                app.set_status(format!("Error updating entry: {}", e));
-            }
-        }
-    }
-
+    let Some(state) = app.this_week_edit_state.take() else {
+        return Ok(());
+    };
     app.exit_this_week_edit_mode();
+    if let Err(e) = handle_saved_entry_edit_save(state, app, client).await {
+        app.set_status(format!("Error saving entry: {}", e));
+    }
     Ok(())
 }
 
 /// Apply edits from This Week edit mode back to the live running timer (no DB write).
-/// Called when entry_id == -1 (sentinel for the running timer).
-fn handle_running_timer_edit_save(app: &mut App) {
+/// Called when registration_id is empty (sentinel for the running timer).
+async fn handle_running_timer_edit_save(app: &mut App, client: &mut ApiClient) {
     let Some(state) = app.this_week_edit_state.take() else {
         return;
     };
@@ -1092,6 +1261,14 @@ fn handle_running_timer_edit_save(app: &mut App) {
 
     // Write back to App fields
     app.absolute_start = Some(new_start.to_offset(time::UtcOffset::UTC));
+
+    // Recalculate local_start so elapsed_duration() reflects the new start time
+    let now_utc = time::OffsetDateTime::now_utc();
+    let elapsed_secs = (now_utc - new_start.to_offset(time::UtcOffset::UTC))
+        .whole_seconds()
+        .max(0) as u64;
+    app.local_start = Some(std::time::Instant::now() - std::time::Duration::from_secs(elapsed_secs));
+
     app.selected_project = state.project_id.zip(state.project_name).map(|(id, name)| {
         types::Project { id, name }
     });
@@ -1101,80 +1278,157 @@ fn handle_running_timer_edit_save(app: &mut App) {
     app.description_input = TextInput::from_str(&state.note.value);
 
     app.set_status("Running timer updated".to_string());
+
+    // Sync updated start time / project / activity / note to server
+    let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
+    let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
+    let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
+    let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+    let note = if app.description_input.value.is_empty() { None } else { Some(app.description_input.value.clone()) };
+    if let Err(e) = client.update_active_timer(
+        project_id, project_name, activity_id, activity_name,
+        note, app.absolute_start,
+    ).await {
+        app.set_status(format!("Warning: Could not sync timer to server: {}", e));
+    }
 }
 
 /// Save changes from History edit mode to database
-async fn handle_history_edit_save(app: &mut App, client: &ApiClient) -> Result<()> {
-    if let Some(state) = &app.history_edit_state {
-        // Parse the time inputs
-        let start_parts: Vec<&str> = state.start_time_input.split(':').collect();
-        let end_parts: Vec<&str> = state.end_time_input.split(':').collect();
+async fn handle_history_edit_save(app: &mut App, client: &mut ApiClient) -> Result<()> {
+    let Some(state) = app.history_edit_state.take() else {
+        return Ok(());
+    };
+    app.exit_history_edit_mode();
+    if let Err(e) = handle_saved_entry_edit_save(state, app, client).await {
+        app.set_status(format!("Error saving entry: {}", e));
+    }
+    Ok(())
+}
 
-        if start_parts.len() != 2 || end_parts.len() != 2 {
-            app.set_status("Error: Invalid time format".to_string());
-            app.exit_history_edit_mode();
+/// Shared helper: save edits to a completed (non-running) timer history entry via the API.
+async fn handle_saved_entry_edit_save(
+    state: app::EntryEditState,
+    app: &mut App,
+    client: &mut ApiClient,
+) -> Result<()> {
+    // Look up the original entry from history
+    let entry = match app
+        .time_entries
+        .iter()
+        .find(|e| e.registration_id == state.registration_id)
+    {
+        Some(e) => e.clone(),
+        None => {
+            app.set_status("Error: Entry not found in history".to_string());
             return Ok(());
         }
+    };
 
-        let start_hours: u8 = start_parts[0].parse().unwrap_or(0);
-        let start_mins: u8 = start_parts[1].parse().unwrap_or(0);
-        let end_hours: u8 = end_parts[0].parse().unwrap_or(0);
-        let end_mins: u8 = end_parts[1].parse().unwrap_or(0);
+    // registration_id is always present on TimeEntry
+    let registration_id = entry.registration_id.clone();
 
-        // Get the entry being edited to preserve the date
-        let entry_date = app
-            .timer_history
-            .iter()
-            .find(|e| e.id == state.entry_id)
-            .map(|e| e.start_time.date())
-            .unwrap_or_else(|| time::OffsetDateTime::now_utc().date());
+    // Parse start / end times (HH:MM) on the entry's original local date
+    let local_offset = time::UtcOffset::current_local_offset()
+        .unwrap_or(time::UtcOffset::UTC);
 
-        // Construct new times (using entry's date, treating input as local time)
-        let local_offset = time::UtcOffset::current_local_offset()
-            .unwrap_or(time::UtcOffset::UTC);
-        
-        let start_time = time::OffsetDateTime::new_in_offset(
-            entry_date,
-            time::Time::from_hms(start_hours, start_mins, 0).unwrap(),
-            local_offset,
-        );
-        
-        let end_time = time::OffsetDateTime::new_in_offset(
-            entry_date,
-            time::Time::from_hms(end_hours, end_mins, 0).unwrap(),
-            local_offset,
-        );
+    // Parse entry.date ("YYYY-MM-DD") to get the calendar date
+    let entry_date = {
+        let parts: Vec<&str> = entry.date.splitn(3, '-').collect();
+        anyhow::ensure!(parts.len() == 3, "Unexpected date format: {}", entry.date);
+        let year: i32 = parts[0].parse().context("Invalid year in entry date")?;
+        let month_u8: u8 = parts[1].parse().context("Invalid month in entry date")?;
+        let day: u8 = parts[2].parse().context("Invalid day in entry date")?;
+        let month =
+            time::Month::try_from(month_u8).map_err(|_| anyhow::anyhow!("Invalid month value"))?;
+        time::Date::from_calendar_date(year, month, day)
+            .map_err(|e| anyhow::anyhow!("Invalid calendar date: {}", e))?
+    };
 
-        // Update via API
-        match client.update_timer_entry(
-            state.entry_id,
-            start_time,
-            end_time,
-            state.project_id.clone(),
-            state.project_name.clone(),
-            state.activity_id.clone(),
-            state.activity_name.clone(),
-            Some(state.note.value.clone()),
-        ).await {
-            Ok(_) => {
-                app.set_status("Entry updated successfully".to_string());
-                // Refresh history
-                match client.get_timer_history().await {
-                    Ok(history) => {
-                        app.update_history(history);
-                        app.rebuild_history_list();
-                    }
-                    Err(e) => {
-                        app.set_status(format!("Warning: Could not refresh history: {}", e));
-                    }
-                }
+    let parse_hhmm = |s: &str| -> Result<time::Time> {
+        let parts: Vec<&str> = s.split(':').collect();
+        anyhow::ensure!(parts.len() == 2, "Expected HH:MM format, got {:?}", s);
+        let h: u8 = parts[0].parse().context("Invalid hour")?;
+        let m: u8 = parts[1].parse().context("Invalid minute")?;
+        time::Time::from_hms(h, m, 0).map_err(|e| anyhow::anyhow!("Invalid time: {}", e))
+    };
+
+    let start_local = time::OffsetDateTime::new_in_offset(
+        entry_date,
+        parse_hhmm(&state.start_time_input)?,
+        local_offset,
+    );
+    let end_local = time::OffsetDateTime::new_in_offset(
+        entry_date,
+        parse_hhmm(&state.end_time_input)?,
+        local_offset,
+    );
+
+    anyhow::ensure!(end_local > start_local, "End time must be after start time");
+
+    // Compute reg_day and week_number from the entry date
+    let reg_day = format!(
+        "{:04}-{:02}-{:02}",
+        entry_date.year(),
+        entry_date.month() as u8,
+        entry_date.day()
+    );
+    let week_number = entry_date.iso_week() as i32;
+
+    // Determine delta fields (only set if project/activity changed)
+    let original_project_id = if state.project_id.as_deref() != Some(entry.project_id.as_str()) {
+        Some(entry.project_id.as_str())
+    } else {
+        None
+    };
+    let original_activity_id =
+        if state.activity_id.as_deref() != Some(entry.activity_id.as_str()) {
+            Some(entry.activity_id.as_str())
+        } else {
+            None
+        };
+
+    let project_id = state.project_id.as_deref().unwrap_or("");
+    let project_name = state.project_name.as_deref().unwrap_or("");
+    let activity_id = state.activity_id.as_deref().unwrap_or("");
+    let activity_name = state.activity_name.as_deref().unwrap_or("");
+    let user_note = &state.note.value;
+
+    client
+        .edit_time_entry(
+            &registration_id,
+            project_id,
+            project_name,
+            activity_id,
+            activity_name,
+            start_local.to_offset(time::UtcOffset::UTC),
+            end_local.to_offset(time::UtcOffset::UTC),
+            &reg_day,
+            week_number,
+            user_note,
+            original_project_id,
+            original_activity_id,
+        )
+        .await?;
+
+    // Reload history to reflect the changes
+    {
+        let today = time::OffsetDateTime::now_utc().date();
+        let month_ago = today - time::Duration::days(30);
+        match client.get_time_entries(month_ago, today).await {
+            Ok(entries) => {
+                app.update_history(entries);
+                app.rebuild_history_list();
             }
             Err(e) => {
-                app.set_status(format!("Error updating entry: {}", e));
+                app.set_status(format!(
+                    "Entry updated (warning: could not reload history: {})",
+                    e
+                ));
+                return Ok(());
             }
         }
     }
 
-    app.exit_history_edit_mode();
+    app.set_status("Entry updated".to_string());
     Ok(())
 }

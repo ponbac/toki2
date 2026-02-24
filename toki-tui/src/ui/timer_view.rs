@@ -110,7 +110,7 @@ fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
 fn render_project(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
     let project = app.current_project_name();
     let activity = app.current_activity_name();
-    let project_text = format!("{} / {}", project, activity);
+    let project_text = format!("{}: {}", project, activity);
 
     let is_empty = !app.has_project_activity();
     let is_focused = app.focused_box == crate::app::FocusedBox::ProjectActivity;
@@ -435,7 +435,7 @@ fn render_large_time(time_str: &str) -> Vec<Line<'_>> {
         .collect()
 }
 
-pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &mut App) {
     // Split vertically: 1 blank row, 1 content row (no bottom padding)
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -454,16 +454,18 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     let worked = app.worked_hours_this_week();
-    let flex = app.flex_hours_this_week();
+    // Use Milltime's total accumulated flex, adjusted live for the running timer
+    let timer_elapsed_hours = app.elapsed_duration().as_secs_f64() / 3600.0;
+    let flex = app.flex_time_current + timer_elapsed_hours;
     let percent_f = app.weekly_hours_percent();
 
     // Format strings
-    let percent = percent_f as u16;
+    let percent = percent_f.round() as u16;
     let worked_h = worked.floor() as u64;
     let worked_m = ((worked - worked_h as f64) * 60.0).round() as u64;
     let worked_str = format!("{}h:{:02}m", worked_h, worked_m);
 
-    let remaining_hours = (crate::app::SCHEDULED_HOURS_PER_WEEK - worked).max(0.0);
+    let remaining_hours = (app.scheduled_hours_per_week - worked).max(0.0);
     let rem_h = remaining_hours.floor() as u64;
     let rem_m = ((remaining_hours - rem_h as f64) * 60.0).round() as u64;
 
@@ -473,14 +475,10 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &App) {
     let stats_text = Line::from(vec![
         Span::raw("   "),
         Span::styled("This week:", yellow),
+        Span::styled(format!(" {}%", percent), white),
         Span::styled(
-            format!(
-                " {}% ({} / {}h) ",
-                percent,
-                worked_str,
-                crate::app::SCHEDULED_HOURS_PER_WEEK as u32
-            ),
-            white,
+            format!(" ({} / {}h) ", worked_str, app.scheduled_hours_per_week),
+            muted,
         ),
         Span::styled(" | ", muted),
         Span::styled(" Remaining:", yellow),
@@ -494,16 +492,11 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &App) {
     let flex_m = ((flex_abs - flex_h as f64) * 60.0).round() as u64;
     let flex_sign = if flex >= 0.0 { " +" } else { " -" };
     let flex_str = format!("{}{}h:{:02}m ", flex_sign, flex_h, flex_m);
-    let flex_color = if flex >= 0.0 {
-        Color::Green
-    } else {
-        Color::Red
-    };
 
-    // Column widths
-    const TITLE: &str = " ■ Toki Timer TUI";
-    let title_width = TITLE.len() as u16;
-    let flex_col_width = 3 + flex_str.len() as u16; // " | " + value
+    // Column widths — throbber (1 char) + " Toki Timer TUI"
+    const LABEL: &str = " Toki Timer TUI";
+    let title_width = 1 + LABEL.len() as u16 + 1; // leading space + symbol + label
+    let flex_col_width = 3 + "Flex:".len() as u16 + flex_str.len() as u16; // " | " + "Flex:" + value
 
     let cols = Layout::default()
         .direction(Direction::Horizontal)
@@ -515,10 +508,32 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    // Render title
+    // Render title: throbber (spinning when loading, full symbol when idle) + label
+    let throbber_area = Rect {
+        x: cols[0].x + 1,
+        y: cols[0].y,
+        width: 1,
+        height: 1,
+    };
+    let label_area = Rect {
+        x: throbber_area.x + 1,
+        y: cols[0].y,
+        width: cols[0].width.saturating_sub(2),
+        height: 1,
+    };
+    let throbber = throbber_widgets_tui::Throbber::default()
+        .style(Style::default().fg(Color::Yellow))
+        .throbber_style(Style::default().fg(Color::Yellow))
+        .throbber_set(throbber_widgets_tui::BRAILLE_SIX)
+        .use_type(if app.is_loading {
+            throbber_widgets_tui::WhichUse::Spin
+        } else {
+            throbber_widgets_tui::WhichUse::Full
+        });
+    frame.render_stateful_widget(throbber, throbber_area, &mut app.throbber_state);
     frame.render_widget(
-        Paragraph::new(Span::styled(TITLE, Style::default().fg(Color::Yellow))),
-        cols[0],
+        Paragraph::new(Span::styled(LABEL, Style::default().fg(Color::Yellow))),
+        label_area,
     );
     let (gauge_col, stats_col, flex_col) = (cols[1], cols[2], cols[3]);
 
@@ -537,9 +552,15 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(stats_text), stats_col);
 
     // --- Flex (separator + colored value) ---
+    let flex_color = if flex >= 0.0 {
+        Style::default().fg(Color::Green)
+    } else {
+        Style::default().fg(Color::Red)
+    };
     let flex_line = Line::from(vec![
         Span::styled(" | ", muted),
-        Span::styled(flex_str, Style::default().fg(flex_color)),
+        Span::styled("Flex:", yellow),
+        Span::styled(flex_str, flex_color),
     ]);
     frame.render_widget(Paragraph::new(flex_line), flex_col);
 }
