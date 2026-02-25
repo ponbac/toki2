@@ -250,6 +250,8 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Statistics  "),
         Span::styled("T", Style::default().fg(Color::Yellow)),
         Span::raw(": Toggle timer size  "),
+        Span::styled("Z", Style::default().fg(Color::Yellow)),
+        Span::raw(": Zen mode  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
         Span::raw(": Exit edit  "),
         Span::styled("Q", Style::default().fg(Color::Yellow)),
@@ -384,6 +386,15 @@ fn get_digit_pattern(digit: char) -> &'static [u8; DIGIT_SIZE * DIGIT_SIZE] {
 
 /// Render time string as large block digits
 fn render_large_time(time_str: &str) -> Vec<Line<'_>> {
+    render_large_time_colored(time_str, Color::White)
+}
+
+/// Like `render_large_time` but rendered in DarkGray (for zen mode).
+pub(super) fn render_large_time_muted(time_str: &str) -> Vec<Line<'_>> {
+    render_large_time_colored(time_str, Color::DarkGray)
+}
+
+fn render_large_time_colored(time_str: &str, color: Color) -> Vec<Line<'_>> {
     let symbol = "█";
 
     // Parse time string (HH:MM:SS) into individual digits and colons
@@ -428,9 +439,7 @@ fn render_large_time(time_str: &str) -> Vec<Line<'_>> {
         .map(|line| {
             Line::from(Span::styled(
                 line,
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
             ))
         })
         .collect()

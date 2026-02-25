@@ -20,8 +20,19 @@ mod statistics_view;
 mod timer_view;
 pub(super) mod utils;
 pub(super) mod widgets;
+mod zen_view;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
+    // Zen mode: full-screen, no stats bar, no other UI
+    if app.current_view == View::Timer && app.zen_mode {
+        zen_view::render_zen_view(frame, app);
+        // Still render milltime reauth on top if needed
+        if app.milltime_reauth.is_some() {
+            render_milltime_reauth_overlay(frame, app);
+        }
+        return;
+    }
+
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(2), Constraint::Min(0)])

@@ -54,10 +54,8 @@ pub fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
 
     // Controls bar
     let stats_controls = vec![
-        Span::styled("S", Style::default().fg(Color::Yellow)),
-        Span::raw("/"),
-        Span::styled("Esc", Style::default().fg(Color::Yellow)),
-        Span::raw(": Back to Timer  "),
+        Span::styled("S / Esc", Style::default().fg(Color::Yellow)),
+        Span::raw(": Back to timer  "),
         Span::styled("Q", Style::default().fg(Color::Yellow)),
         Span::raw(": Quit"),
     ];

@@ -907,9 +907,11 @@ async fn run_app(
                                     app.enter_delete_confirm(app::DeleteOrigin::Timer);
                                 }
                             }
-                            // Escape to exit edit mode
+                            // Escape to exit zen mode first, then exit edit mode
                             KeyCode::Esc => {
-                                if app.this_week_edit_state.is_some() {
+                                if app.zen_mode {
+                                    app.exit_zen_mode();
+                                } else if app.this_week_edit_state.is_some() {
                                     // Check validation
                                     if let Some(error) = app.entry_edit_validate() {
                                         // Revert invalid times and show error
@@ -1001,6 +1003,8 @@ async fn run_app(
                             {
                                 app.enter_delete_confirm(app::DeleteOrigin::Timer);
                             }
+                            // Z: Toggle zen mode
+                            KeyCode::Char('z') | KeyCode::Char('Z') => app.toggle_zen_mode(),
                             _ => {}
                         }
                     }

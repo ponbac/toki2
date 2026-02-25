@@ -88,6 +88,7 @@ pub struct App {
     // Git context for note editor
     pub git_context: GitContext,
     pub git_mode: bool,
+    pub zen_mode: bool,
     pub cwd_input: Option<TextInput>, // Some(_) when changing directory
     pub cwd_completions: Vec<String>, // Tab completion candidates
     pub taskwarrior_overlay: Option<TaskwarriorOverlay>,
@@ -163,6 +164,7 @@ impl App {
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             ),
             git_mode: false,
+            zen_mode: false,
             cwd_input: None,
             cwd_completions: Vec::new(),
             taskwarrior_overlay: None,
@@ -706,6 +708,14 @@ impl App {
 
     pub fn exit_git_mode(&mut self) {
         self.git_mode = false;
+    }
+
+    pub fn toggle_zen_mode(&mut self) {
+        self.zen_mode = !self.zen_mode;
+    }
+
+    pub fn exit_zen_mode(&mut self) {
+        self.zen_mode = false;
     }
 
     pub fn paste_git_branch_raw(&mut self) {
