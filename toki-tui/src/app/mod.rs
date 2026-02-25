@@ -289,14 +289,24 @@ impl App {
         self.status_message = None;
     }
 
-    /// Get the elapsed time for the current timer
+    /// Get the elapsed time for the current timer.
+    ///
+    /// Uses `absolute_start` (wall-clock UTC) when available so that elapsed
+    /// time remains accurate after the system sleeps and wakes — `Instant` is
+    /// monotonic and does not advance during sleep on most platforms.
     pub fn elapsed_duration(&self) -> Duration {
         match self.timer_state {
             TimerState::Stopped => Duration::ZERO,
-            TimerState::Running => self
-                .local_start
-                .map(|start| start.elapsed())
-                .unwrap_or_default(),
+            TimerState::Running => {
+                if let Some(abs) = self.absolute_start {
+                    let secs = (OffsetDateTime::now_utc() - abs).whole_seconds().max(0) as u64;
+                    Duration::from_secs(secs)
+                } else {
+                    self.local_start
+                        .map(|start| start.elapsed())
+                        .unwrap_or_default()
+                }
+            }
         }
     }
 
