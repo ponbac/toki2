@@ -54,8 +54,7 @@ mod post {
             .await
             .expect("Serialization should not fail.");
 
-        // Redirect::to(auth_url.as_str()).into_response()
-        auth_url.as_str().to_string()
+        Redirect::to(auth_url.as_str()).into_response()
     }
 
     pub async fn logout(mut auth_session: AuthSession) -> impl IntoResponse {
@@ -141,17 +140,65 @@ mod get {
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
 
-        if let Ok(Some(next)) = session.remove::<String>(NEXT_URL_KEY).await {
-            let dest = app_state.app_url.join(next.as_str());
-            match dest {
-                Ok(url) => Redirect::to(url.as_str()).into_response(),
-                Err(e) => {
-                    tracing::error!("Failed to join next URL with app URL: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        let next_url = match session.remove::<String>(NEXT_URL_KEY).await {
+            Ok(Some(next_url)) => next_url,
+            Ok(None) | Err(_) => String::new(),
+        };
+
+        let redirect_url = match next_url.as_str() {
+            next if is_tui_callback(next) => {
+                match tui_callback_redirect_url(&session, next).await {
+                    Ok(url) => url,
+                    Err(status) => return status.into_response(),
                 }
             }
-        } else {
-            Redirect::to(app_state.app_url.as_str()).into_response()
-        }
+            "" => app_state.app_url.to_string(),
+            next => match app_state.app_url.join(next) {
+                Ok(url) => url.to_string(),
+                Err(e) => {
+                    tracing::error!("Failed to join next URL with app URL: {}", e);
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            },
+        };
+
+        Redirect::to(&redirect_url).into_response()
     }
+}
+
+async fn tui_callback_redirect_url(
+    session: &Session,
+    callback_url: &str,
+) -> Result<String, StatusCode> {
+    // axum-login rotates the session ID at login to prevent fixation attacks.
+    // The new ID is only available after persisting the session.
+    if let Err(e) = session.save().await {
+        tracing::error!("Failed to save session after login: {}", e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    let Some(session_id) = session.id() else {
+        tracing::error!("Session ID missing after save");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+
+    Ok(format!("{callback_url}?session_id={session_id}"))
+}
+
+/// Returns true if this next URL is the TUI's local OAuth callback listener.
+/// Validates the exact expected format (http://localhost:<port>/callback) rather
+/// than accepting any localhost URL, to avoid open-redirect abuse.
+fn is_tui_callback(url: &str) -> bool {
+    // Must be http://localhost:<port>/callback with nothing after
+    let Some(rest) = url.strip_prefix("http://localhost:") else {
+        return false;
+    };
+
+    matches!(
+        rest.split_once('/'),
+        Some((port, "callback"))
+            if !port.is_empty()
+                && port.chars().all(|c| c.is_ascii_digit())
+                && port.parse::<u16>().is_ok()
+    )
 }

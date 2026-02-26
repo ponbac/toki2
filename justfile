@@ -73,3 +73,26 @@ check-all: check clippy tsc lint
 # Format frontend code with prettier
 fmt:
     cd app && bunx prettier --write src/
+
+# === TUI ===
+
+# Run the TUI (requires login — run `just tui-login` first if needed)
+tui:
+    cd toki-tui && cargo run
+
+# Run the TUI in dev mode (no login required, mock data)
+tui-dev:
+    cd toki-tui && cargo run -- --dev
+
+# Authenticate the TUI via browser OAuth
+tui-login:
+    cd toki-tui && cargo run -- --login
+
+# Log out (clear saved session)
+tui-logout:
+    cd toki-tui && cargo run -- --logout
+
+# Print TUI config path and create default config if missing
+tui-config:
+    cd toki-tui && cargo run -- --config-path
+
