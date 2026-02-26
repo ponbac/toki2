@@ -140,51 +140,65 @@ mod get {
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
 
-        let next_url = session
-            .remove::<String>(NEXT_URL_KEY)
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+        let next_url = match session.remove::<String>(NEXT_URL_KEY).await {
+            Ok(Some(next_url)) => next_url,
+            Ok(None) | Err(_) => String::new(),
+        };
 
-        let redirect_url = if is_tui_callback(&next_url) {
-            // axum-login's login() calls cycle_id() which sets the session ID to
-            // None until the session is persisted. Save explicitly so we can read
-            // the newly-assigned ID before building the redirect URL.
-            if let Err(e) = session.save().await {
-                tracing::error!("Failed to save session after login: {}", e);
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        let redirect_url = match next_url.as_str() {
+            next if is_tui_callback(next) => {
+                match tui_callback_redirect_url(&session, next).await {
+                    Ok(url) => url,
+                    Err(status) => return status.into_response(),
+                }
             }
-            let session_id = session.id().map(|id| id.to_string()).unwrap_or_default();
-            format!("{}?session_id={}", next_url, session_id)
-        } else if next_url.is_empty() {
-            app_state.app_url.to_string()
-        } else {
-            match app_state.app_url.join(&next_url) {
+            "" => app_state.app_url.to_string(),
+            next => match app_state.app_url.join(next) {
                 Ok(url) => url.to_string(),
                 Err(e) => {
                     tracing::error!("Failed to join next URL with app URL: {}", e);
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
-            }
+            },
         };
 
         Redirect::to(&redirect_url).into_response()
     }
 }
 
+async fn tui_callback_redirect_url(
+    session: &Session,
+    callback_url: &str,
+) -> Result<String, StatusCode> {
+    // axum-login rotates the session ID at login to prevent fixation attacks.
+    // The new ID is only available after persisting the session.
+    if let Err(e) = session.save().await {
+        tracing::error!("Failed to save session after login: {}", e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    let Some(session_id) = session.id() else {
+        tracing::error!("Session ID missing after save");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+
+    Ok(format!("{callback_url}?session_id={session_id}"))
+}
+
 /// Returns true if this next URL is the TUI's local OAuth callback listener.
 /// Validates the exact expected format (http://localhost:<port>/callback) rather
 /// than accepting any localhost URL, to avoid open-redirect abuse.
 fn is_tui_callback(url: &str) -> bool {
-    // Must be http://localhost:<digits>/callback with nothing after
+    // Must be http://localhost:<port>/callback with nothing after
     let Some(rest) = url.strip_prefix("http://localhost:") else {
         return false;
     };
-    let Some(path_start) = rest.find('/') else {
-        return false;
-    };
-    let port_str = &rest[..path_start];
-    let path = &rest[path_start..];
-    port_str.chars().all(|c| c.is_ascii_digit()) && path == "/callback"
+
+    matches!(
+        rest.split_once('/'),
+        Some((port, "callback"))
+            if !port.is_empty()
+                && port.chars().all(|c| c.is_ascii_digit())
+                && port.parse::<u16>().is_ok()
+    )
 }
