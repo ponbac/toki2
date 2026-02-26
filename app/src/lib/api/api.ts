@@ -1,8 +1,7 @@
 import { useTimeTrackingStore } from "@/hooks/useTimeTrackingStore";
-import { router } from "@/main";
 import ky from "ky";
 
-const API_URL =
+export const API_URL =
   import.meta.env.MODE === "development"
     ? "http://localhost:8180"
     : "https://toki-api.spinit.se";
@@ -21,9 +20,7 @@ export const api = ky.create({
             return response;
           }
 
-          window.location.replace(
-            `/login?next=${router.history.location.pathname}`,
-          );
+          window.location.replace(`/login?next=${window.location.pathname}`);
         }
 
         return response;

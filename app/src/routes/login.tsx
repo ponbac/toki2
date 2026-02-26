@@ -8,8 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { LogIn } from "lucide-react";
-import { api } from "@/lib/api/api";
-import { useMutation } from "@tanstack/react-query";
+import { API_URL } from "@/lib/api/api";
 
 type LoginSearchParams = {
   next?: string;
@@ -17,24 +16,16 @@ type LoginSearchParams = {
 
 export const Route = createFileRoute("/login")({
   component: LoginComponent,
-  validateSearch: (search: Record<string, unknown>): LoginSearchParams => {
-    return {
-      next: (search.next as string) || undefined,
-    };
-  },
+  validateSearch: (search: Record<string, unknown>): LoginSearchParams => ({
+    next: typeof search.next === "string" ? search.next : undefined,
+  }),
 });
 
 function LoginComponent() {
   const { next } = Route.useSearch();
-
-  const { mutate: login, isPending } = useMutation({
-    mutationFn: (next?: string) =>
-      api.post("login", { searchParams: next ? { next } : undefined }).text(),
-    onSuccess: (authUrl) => {
-      // eslint-disable-next-line react-compiler/react-compiler
-      window.location.href = authUrl;
-    },
-  });
+  const loginAction = next
+    ? `${API_URL}/login?next=${encodeURIComponent(next)}`
+    : `${API_URL}/login`;
 
   return (
     <main className="flex h-screen items-center justify-center">
@@ -46,14 +37,12 @@ function LoginComponent() {
           </CardDescription>
         </CardHeader>
         <CardFooter>
-          <Button
-            className="w-full"
-            onClick={() => login(next)}
-            disabled={isPending}
-          >
-            <LogIn className="mr-2 h-4 w-4" />
-            Sign in with Azure
-          </Button>
+          <form action={loginAction} method="POST" className="w-full">
+            <Button className="w-full" type="submit">
+              <LogIn className="mr-2 h-4 w-4" />
+              Sign in with Azure
+            </Button>
+          </form>
         </CardFooter>
       </Card>
     </main>
