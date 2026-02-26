@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use api_client::ApiClient;
 use app::{App, TextInput};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -237,6 +237,9 @@ async fn run_app(
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
                 // Milltime re-auth overlay intercepts all keys while it is open
                 if app.milltime_reauth.is_some() {
                     match key.code {
