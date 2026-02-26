@@ -1,12 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use time::UtcOffset;
 
 pub fn to_local_time(dt: time::OffsetDateTime) -> time::OffsetDateTime {
-    if let Ok(local_offset) = UtcOffset::current_local_offset() {
-        dt.to_offset(local_offset)
-    } else {
-        dt
-    }
+    crate::time_utils::to_local_time(dt)
 }
 
 /// Helper function to create a centered rectangle

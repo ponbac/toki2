@@ -1,8 +1,11 @@
 use crate::config::TokiConfig;
+use crate::time_utils::to_local_time;
 use crate::types::{Activity, Project, TimeEntry};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
-use time::{OffsetDateTime, UtcOffset};
+use time::OffsetDateTime;
 
 mod edit;
 mod history;
@@ -14,14 +17,6 @@ pub use state::{
     FocusedBox, GitContext, MilltimeReauthField, MilltimeReauthState, ProjectStat, SaveAction,
     TaskEntry, TaskwarriorOverlay, TextInput, TimerSize, TimerState, View,
 };
-
-fn to_local_time(dt: OffsetDateTime) -> OffsetDateTime {
-    if let Ok(local_offset) = UtcOffset::current_local_offset() {
-        dt.to_offset(local_offset)
-    } else {
-        dt
-    }
-}
 
 pub struct App {
     pub running: bool,
@@ -69,6 +64,7 @@ pub struct App {
     pub editing_description: bool,
     pub description_is_default: bool,
     pub saved_timer_note: Option<String>, // Saved when editing entry note to restore later
+    pub pending_edit_selection_restore: Option<(Option<Project>, Option<Activity>)>,
 
     // Today box navigation (This Week view)
     pub focused_this_week_index: Option<usize>,
@@ -151,6 +147,7 @@ impl App {
             editing_description: false,
             description_is_default: true,
             saved_timer_note: None,
+            pending_edit_selection_restore: None,
             focused_this_week_index: None,
             this_week_edit_state: None,
             this_week_scroll: 0,
@@ -482,6 +479,7 @@ impl App {
 
     /// Cancel current selection and return to timer view
     pub fn cancel_selection(&mut self) {
+        self.pending_edit_selection_restore = None;
         self.navigate_to(View::Timer);
     }
 
@@ -570,9 +568,6 @@ impl App {
 
     /// Filter projects based on search input using fuzzy matching
     pub fn filter_projects(&mut self) {
-        use fuzzy_matcher::skim::SkimMatcherV2;
-        use fuzzy_matcher::FuzzyMatcher;
-
         if self.project_search_input.value.is_empty() {
             self.filtered_projects = self.projects.clone();
             self.filtered_project_index = 0;
@@ -612,11 +607,23 @@ impl App {
 
     /// Filter activities based on search input using fuzzy matching
     pub fn filter_activities(&mut self) {
-        use fuzzy_matcher::skim::SkimMatcherV2;
-        use fuzzy_matcher::FuzzyMatcher;
+        let selected_project_id = self
+            .selected_project
+            .as_ref()
+            .map(|project| project.id.as_str());
+        let project_activities = self
+            .activities
+            .iter()
+            .filter(|activity| {
+                selected_project_id
+                    .map(|project_id| activity.project_id == project_id)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
 
         if self.activity_search_input.value.is_empty() {
-            self.filtered_activities = self.activities.clone();
+            self.filtered_activities = project_activities;
             self.filtered_activity_index = 0;
             return;
         }
@@ -625,6 +632,11 @@ impl App {
         let mut scored_activities: Vec<(Activity, i64)> = self
             .activities
             .iter()
+            .filter(|activity| {
+                selected_project_id
+                    .map(|project_id| activity.project_id == project_id)
+                    .unwrap_or(true)
+            })
             .filter_map(|activity| {
                 matcher
                     .fuzzy_match(&activity.name, &self.activity_search_input.value)
@@ -1021,16 +1033,21 @@ fn longest_common_prefix(strings: &[String]) -> String {
     if strings.is_empty() {
         return String::new();
     }
-    let first = &strings[0];
-    let mut len = first.len();
+
+    let mut prefix: Vec<char> = strings[0].chars().collect();
     for s in &strings[1..] {
-        len = len.min(s.len());
-        for (i, (a, b)) in first.chars().zip(s.chars()).enumerate() {
-            if a != b {
-                len = len.min(i);
+        let mut matched_chars = 0usize;
+        for (a, b) in prefix.iter().zip(s.chars()) {
+            if *a != b {
                 break;
             }
+            matched_chars += 1;
+        }
+        prefix.truncate(matched_chars);
+        if prefix.is_empty() {
+            break;
         }
     }
-    first[..len].to_string()
+
+    prefix.into_iter().collect()
 }

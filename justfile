@@ -78,21 +78,20 @@ fmt:
 
 # Run the TUI (requires login — run `just tui-login` first if needed)
 tui:
-    cd toki-tui && cargo run
+    cd toki-tui && cargo run -- run
 
 # Run the TUI in dev mode (no login required, mock data)
 tui-dev:
-    cd toki-tui && cargo run -- --dev
+    cd toki-tui && cargo run -- dev
 
 # Authenticate the TUI via browser OAuth
 tui-login:
-    cd toki-tui && cargo run -- --login
+    cd toki-tui && cargo run -- login
 
 # Log out (clear saved session)
 tui-logout:
-    cd toki-tui && cargo run -- --logout
+    cd toki-tui && cargo run -- logout
 
 # Print TUI config path and create default config if missing
 tui-config:
-    cd toki-tui && cargo run -- --config-path
-
+    cd toki-tui && cargo run -- config-path

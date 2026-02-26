@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 
 impl App {
     /// Build the history list entries (indices into time_entries)
@@ -27,7 +28,6 @@ impl App {
     pub(super) fn compute_overlaps(&mut self) {
         self.overlapping_entry_ids.clear();
 
-        use std::collections::HashMap;
         let mut entries_by_date: HashMap<&str, Vec<&TimeEntry>> = HashMap::new();
 
         for entry in &self.time_entries {
@@ -132,8 +132,6 @@ impl App {
 
     /// Per-project/activity breakdown for this week (≥ 1% of total, sorted desc)
     pub fn weekly_project_stats(&self) -> Vec<ProjectStat> {
-        use std::collections::HashMap;
-
         let entries = self.this_week_history();
         let mut map: HashMap<String, f64> = HashMap::new();
 
@@ -177,8 +175,6 @@ impl App {
     /// Per-day breakdown for this week, Mon–Sun, each day split by project/activity.
     /// Projects are colored by their global rank (same order as weekly_project_stats).
     pub fn weekly_daily_stats(&self) -> Vec<DayStat> {
-        use std::collections::HashMap;
-
         // Build the global project ordering (for consistent palette indices)
         let global_stats = self.weekly_project_stats();
         let color_index: HashMap<String, usize> = global_stats

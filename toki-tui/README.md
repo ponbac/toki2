@@ -25,9 +25,27 @@ just tui-config
 
 Config file: `~/.config/toki-tui/config.toml`
 
-Run `just tui-config` (or `cargo run -- --config-path`) to print the path and create the file with defaults if it does not exist.
+Run `just tui-config` (or `cargo run -- config-path`) to print the path and create the file with defaults if it does not exist.
 
 All keys are optional. If the file is missing, built-in defaults are used.
+
+### Environment variables
+
+You can override config values with environment variables.
+
+- Prefix: `TOKI_TUI_`
+- Key format: uppercase snake case
+- Nested keys (if added later): use `__` as separator
+
+Current variables:
+
+```bash
+TOKI_TUI_API_URL="http://localhost:8080"
+TOKI_TUI_GIT_DEFAULT_PREFIX="Development"
+TOKI_TUI_TASK_FILTER="+work project:Toki"
+```
+
+Environment variables override values from `config.toml`.
 
 ```toml
 # URL of the toki-api server. Defaults to the production instance.

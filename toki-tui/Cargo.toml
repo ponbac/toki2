@@ -11,13 +11,13 @@ tui-piechart = "0.3.0"
 throbber-widgets-tui = "0.11"
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio.workspace = true
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "cookies"] }
+reqwest = { workspace = true, features = ["json", "cookies"] }
 
 # Time handling (same as toki-api)
-time = { version = "0.3", features = [
+time = { workspace = true, features = [
   "serde",
   "formatting",
   "parsing",
@@ -26,16 +26,17 @@ time = { version = "0.3", features = [
 ] }
 
 # Error handling
-anyhow = "1.0"
-thiserror = "1.0"
+anyhow.workspace = true
 
 # Configuration
-toml = "0.8"
+config.workspace = true
+clap = { version = "4.5.40", features = ["derive"] }
 dirs = "5"
+toml = "0.8"
 
 # Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde.workspace = true
+serde_json.workspace = true
 
 # Fuzzy matching
 fuzzy-matcher = "0.3"
@@ -45,8 +46,3 @@ urlencoding = "2"
 
 # Password input (no echo)
 rpassword = "7"
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
