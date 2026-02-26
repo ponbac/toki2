@@ -14,7 +14,7 @@ throbber-widgets-tui = "0.11"
 tokio = { version = "1", features = ["full"] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "cookies"] }
+reqwest = { version = "0.12", features = ["json", "cookies", "rustls-tls"], default-features = false }
 
 # Time handling (same as toki-api)
 time = { version = "0.3", features = [
