@@ -5665,7 +5665,6 @@ dependencies = [
  "anyhow",
  "crossterm",
  "dirs",
- "dotenvy",
  "fuzzy-matcher",
  "ratatui",
  "reqwest 0.12.28",

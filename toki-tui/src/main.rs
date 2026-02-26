@@ -20,11 +20,20 @@ use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load environment variables from .env.tui
-    dotenvy::from_filename(".env.tui").ok();
-
     let args: Vec<String> = std::env::args().collect();
     let flag = args.get(1).map(|s| s.as_str());
+
+    if matches!(flag, Some("--config-path")) {
+        let path = config::TokiConfig::config_path()?;
+        if !path.exists() {
+            config::TokiConfig::default().save()?;
+            println!("Created default config at {}", path.display());
+        } else {
+            println!("{}", path.display());
+        }
+        return Ok(());
+    }
+
     let cfg = config::TokiConfig::load()?;
 
     match flag {

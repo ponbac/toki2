@@ -92,3 +92,7 @@ tui-login:
 tui-logout:
     cd toki-tui && cargo run -- --logout
 
+# Print TUI config path and create default config if missing
+tui-config:
+    cd toki-tui && cargo run -- --config-path
+

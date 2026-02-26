@@ -16,13 +16,18 @@ just tui-dev
 
 # Clear saved session
 just tui-logout
+
+# Print config path and create default config if missing
+just tui-config
 ```
 
 ## Configuration
 
 Config file: `~/.config/toki-tui/config.toml`
 
-All keys are optional. The file is created automatically with defaults on first run.
+Run `just tui-config` (or `cargo run -- --config-path`) to print the path and create the file with defaults if it does not exist.
+
+All keys are optional. If the file is missing, built-in defaults are used.
 
 ```toml
 # URL of the toki-api server. Defaults to the production instance.
@@ -49,17 +54,16 @@ task_filter = "+work"
 
 ## Standard key bindings
 
-| Key | Action |
-|-----|--------|
-| `Space` | Start / stop timer |
-| `Ctrl+S` | Save (options) |
-| `Ctrl+X` | Clear | 
-| `Tab / ↑↓ / j/k` | Navigate | 
-| `H` | History view |
-| `P` | Project |
-| `N` | Note |
-| `T` | Toggle timer size |
-| `S` | Statistics |
-| `Esc` | Exit / cancel |
-| `Q` | Quit |
-
+| Key              | Action             |
+| ---------------- | ------------------ |
+| `Space`          | Start / stop timer |
+| `Ctrl+S`         | Save (options)     |
+| `Ctrl+X`         | Clear              |
+| `Tab / ↑↓ / j/k` | Navigate           |
+| `H`              | History view       |
+| `P`              | Project            |
+| `N`              | Note               |
+| `T`              | Toggle timer size  |
+| `S`              | Statistics         |
+| `Esc`            | Exit / cancel      |
+| `Q`              | Quit               |
