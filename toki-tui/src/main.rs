@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use api_client::ApiClient;
 use app::{App, TextInput};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -237,6 +237,9 @@ async fn run_app(
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
                 // Milltime re-auth overlay intercepts all keys while it is open
                 if app.milltime_reauth.is_some() {
                     match key.code {
@@ -650,7 +653,7 @@ async fn run_app(
                                                 app.entry_edit_next_field();
                                             }
                                             _ => {
-                                                handle_entry_edit_enter(app);
+                                                handle_entry_edit_enter_async(app, client).await;
                                             }
                                         }
                                     }
@@ -873,7 +876,7 @@ async fn run_app(
                                             }
                                             _ => {
                                                 // In edit mode, Enter on Project/Activity/Note opens modal
-                                                handle_entry_edit_enter(app);
+                                                handle_entry_edit_enter_async(app, client).await;
                                             }
                                         }
                                     }
@@ -908,6 +911,14 @@ async fn run_app(
                                     if !on_note {
                                         app.entry_edit_backspace();
                                     }
+                                } else if app.timer_state == app::TimerState::Stopped
+                                    && app.focused_box == app::FocusedBox::ProjectActivity
+                                {
+                                    app.clear_project_activity();
+                                } else if app.timer_state == app::TimerState::Stopped
+                                    && app.focused_box == app::FocusedBox::Description
+                                {
+                                    app.clear_note();
                                 } else if app.focused_box == app::FocusedBox::Today
                                     && app.focused_this_week_index.is_some_and(|idx| {
                                         !(app.timer_state == app::TimerState::Running && idx == 0)
@@ -1193,57 +1204,74 @@ async fn handle_save_timer_with_action(app: &mut App, client: &mut ApiClient) ->
 
 // Helper functions for edit mode
 
-/// Handle Enter key in edit mode - open modal for Project/Activity/Note or move to next field
-fn handle_entry_edit_enter(app: &mut App) {
-    // Extract the data we need first to avoid borrow conflicts
-    let action = {
-        if let Some(state) = app.current_edit_state() {
-            match state.focused_field {
-                app::EntryEditField::Project => Some(('P', None)),
-                app::EntryEditField::Activity => {
-                    if state.project_id.is_some() {
-                        Some(('A', None))
-                    } else {
-                        app.set_status("Please select a project first".to_string());
-                        None
-                    }
-                }
-                app::EntryEditField::Note => {
-                    let note = state.note.value.clone();
-                    Some(('N', Some(note)))
-                }
-                app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
-                    // Move to next field (like Tab)
-                    app.entry_edit_next_field();
+enum EditEnterAction {
+    OpenProjectPicker,
+    OpenActivityPicker { project_id: String },
+    OpenNoteEditor { note: String },
+}
+
+/// Handle Enter key in edit mode - returns the action to perform (caller handles async fetch)
+fn handle_entry_edit_enter(app: &mut App) -> Option<EditEnterAction> {
+    if let Some(state) = app.current_edit_state() {
+        match state.focused_field {
+            app::EntryEditField::Project => Some(EditEnterAction::OpenProjectPicker),
+            app::EntryEditField::Activity => {
+                if let Some(pid) = state.project_id.clone() {
+                    Some(EditEnterAction::OpenActivityPicker { project_id: pid })
+                } else {
+                    app.set_status("Please select a project first".to_string());
                     None
                 }
             }
-        } else {
-            None
+            app::EntryEditField::Note => {
+                let note = state.note.value.clone();
+                Some(EditEnterAction::OpenNoteEditor { note })
+            }
+            app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
+                app.entry_edit_next_field();
+                None
+            }
         }
-    };
+    } else {
+        None
+    }
+}
 
-    // Now perform actions that don't require the borrow
-    if let Some((action, note)) = action {
-        match action {
-            'P' => {
-                app.navigate_to(app::View::SelectProject);
-            }
-            'A' => {
-                app.navigate_to(app::View::SelectActivity);
-            }
-            'N' => {
-                // Save running timer's note before overwriting with entry's note
-                app.saved_timer_note = Some(app.description_input.value.clone());
-                // Set description_input from the edit state before navigating
-                if let Some(n) = note {
-                    app.description_input = TextInput::from_str(&n);
-                }
-                // Open description editor
-                app.navigate_to(app::View::EditDescription);
-            }
-            _ => {}
+/// Async wrapper: determines the edit-mode Enter action and performs it, fetching activities
+/// from the API if they are not yet cached for the entry's project.
+async fn handle_entry_edit_enter_async(app: &mut App, client: &mut ApiClient) {
+    let action = handle_entry_edit_enter(app);
+    match action {
+        Some(EditEnterAction::OpenProjectPicker) => {
+            app.navigate_to(app::View::SelectProject);
         }
+        Some(EditEnterAction::OpenActivityPicker { project_id }) => {
+            // Fetch activities for the entry's project if not already cached.
+            if !app.activity_cache.contains_key(&project_id) {
+                app.is_loading = true;
+                match client.get_activities(&project_id).await {
+                    Ok(activities) => {
+                        app.activity_cache.insert(project_id.clone(), activities);
+                    }
+                    Err(e) => {
+                        app.set_status(format!("Failed to load activities: {}", e));
+                    }
+                }
+                app.is_loading = false;
+            }
+            if let Some(cached) = app.activity_cache.get(&project_id) {
+                app.activities = cached.clone();
+                app.filtered_activities = cached.clone();
+                app.filtered_activity_index = 0;
+            }
+            app.navigate_to(app::View::SelectActivity);
+        }
+        Some(EditEnterAction::OpenNoteEditor { note }) => {
+            app.saved_timer_note = Some(app.description_input.value.clone());
+            app.description_input = TextInput::from_str(&note);
+            app.navigate_to(app::View::EditDescription);
+        }
+        None => {}
     }
 }
 

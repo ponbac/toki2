@@ -373,6 +373,9 @@ impl App {
                     .iter()
                     .position(|a| self.selected_activity.as_ref().map(|sa| &sa.id) == Some(&a.id))
                     .unwrap_or(0);
+                self.activity_search_input.clear();
+                self.filtered_activities = self.activities.clone();
+                self.filtered_activity_index = 0;
                 self.selection_list_focused = false;
             }
             View::EditDescription => {
