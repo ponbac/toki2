@@ -1,5 +1,6 @@
 mod conversions;
 mod urls;
+pub(crate) use urls::AzureDevOpsUrl;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -818,7 +819,7 @@ impl AzureDevOpsWorkItemAdapter {
                     .map_err(to_provider_error)?;
                 let selected_team =
                     select_default_project_team(project, self.client.repo_name(), &project_teams)
-                    .ok_or_else(|| {
+                        .ok_or_else(|| {
                         WorkItemError::ProviderError(format!(
                             "No teams were found for project '{project}'"
                         ))

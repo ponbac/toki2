@@ -29,7 +29,7 @@ impl From<&PRChangeEvent> for DbNotificationType {
             PRChangeEvent::PullRequestClosed => DbNotificationType::PrClosed,
             PRChangeEvent::ThreadAdded(_) => DbNotificationType::ThreadAdded,
             PRChangeEvent::ThreadUpdated(_) => DbNotificationType::ThreadUpdated,
-            PRChangeEvent::CommentMentioned(_, _) => DbNotificationType::CommentMentioned,
+            PRChangeEvent::CommentMentioned { .. } => DbNotificationType::CommentMentioned,
         }
     }
 }

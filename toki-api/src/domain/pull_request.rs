@@ -64,7 +64,11 @@ impl PullRequest {
         let new_threads = new_pr
             .threads
             .iter()
-            .filter(|t| !self.threads.iter().any(|ot| ot.id == t.id) && !t.is_system_thread())
+            .filter(|t| {
+                !self.threads.iter().any(|ot| ot.id == t.id)
+                    && !t.comments.is_empty()
+                    && !t.is_system_thread()
+            })
             .map(|thread| PRChangeEvent::ThreadAdded(thread.clone()));
 
         let updated_threads = new_pr
@@ -106,7 +110,11 @@ impl PullRequest {
                             .filter_map(move |mention_id| {
                                 // Resolve mention ID to email
                                 id_to_email_map.get(&mention_id).map(|email| {
-                                    PRChangeEvent::CommentMentioned(comment.clone(), email.clone())
+                                    PRChangeEvent::CommentMentioned {
+                                        comment: comment.clone(),
+                                        mentioned_email: email.clone(),
+                                        thread_id: new_thread.id,
+                                    }
                                 })
                             })
                     })
@@ -219,5 +227,151 @@ impl From<(PullRequest, Vec<PRChangeEvent>)> for PullRequestDiff {
 impl From<&PullRequest> for RepoKey {
     fn from(pr: &PullRequest) -> Self {
         Self::new(&pr.organization, &pr.project, &pr.repo_name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use time::OffsetDateTime;
+
+    use crate::domain::Email;
+
+    use super::*;
+
+    #[test]
+    fn changelog_includes_thread_id_for_comment_mentions() {
+        let thread_id = 38706;
+        let old_thread = test_thread(
+            thread_id,
+            vec![test_comment(1, "author@example.com", "Initial comment")],
+        );
+        let new_thread = test_thread(
+            thread_id,
+            vec![
+                test_comment(1, "author@example.com", "Initial comment"),
+                test_comment(2, "reviewer@example.com", "Hello @<user-123>"),
+            ],
+        );
+
+        let old_pr = test_pull_request(vec![old_thread]);
+        let new_pr = test_pull_request(vec![new_thread]);
+
+        let mut id_to_email_map = HashMap::new();
+        id_to_email_map.insert(
+            "USER-123".to_string(),
+            Email::try_from("mentioned@example.com").unwrap(),
+        );
+
+        let diff = old_pr.changelog(Some(&new_pr), &id_to_email_map);
+        let mention_event = diff
+            .changes
+            .iter()
+            .find_map(|event| match event {
+                PRChangeEvent::CommentMentioned {
+                    thread_id,
+                    mentioned_email,
+                    ..
+                } => Some((*thread_id, mentioned_email.clone())),
+                _ => None,
+            })
+            .expect("expected a mention event");
+
+        assert_eq!(mention_event.0, thread_id);
+        assert_eq!(
+            mention_event.1,
+            Email::try_from("mentioned@example.com").unwrap()
+        );
+    }
+
+    #[test]
+    fn changelog_ignores_empty_new_threads_for_thread_added() {
+        let old_pr = test_pull_request(vec![]);
+        let new_pr = test_pull_request(vec![test_thread(38706, vec![])]);
+        let diff = old_pr.changelog(Some(&new_pr), &HashMap::new());
+
+        assert!(!diff
+            .changes
+            .iter()
+            .any(|event| matches!(event, PRChangeEvent::ThreadAdded(_))));
+    }
+
+    #[test]
+    fn changelog_emits_thread_added_for_non_empty_new_threads() {
+        let old_pr = test_pull_request(vec![]);
+        let new_pr = test_pull_request(vec![test_thread(
+            38706,
+            vec![test_comment(1, "reviewer@example.com", "New thread")],
+        )]);
+        let diff = old_pr.changelog(Some(&new_pr), &HashMap::new());
+
+        assert!(diff.changes.iter().any(
+            |event| matches!(event, PRChangeEvent::ThreadAdded(thread) if thread.id == 38706)
+        ));
+    }
+
+    fn test_pull_request(threads: Vec<az_devops::Thread>) -> PullRequest {
+        PullRequest {
+            organization: "org".to_string(),
+            project: "project".to_string(),
+            repo_name: "repo".to_string(),
+            url: "https://dev.azure.com/org/project/_git/repo/pullrequest/2310".to_string(),
+            pull_request_base: az_devops::PullRequest {
+                id: 2310,
+                title: "PR title".to_string(),
+                description: None,
+                source_branch: "refs/heads/feature".to_string(),
+                target_branch: "refs/heads/main".to_string(),
+                status: serde_json::from_str("\"active\"").unwrap(),
+                created_by: test_identity("author@example.com"),
+                created_at: OffsetDateTime::UNIX_EPOCH,
+                closed_at: None,
+                auto_complete_set_by: None,
+                completion_options: None,
+                is_draft: false,
+                merge_status: None,
+                merge_job_id: None,
+                merge_failure_type: None,
+                merge_failure_message: None,
+                reviewers: vec![],
+                url: "https://dev.azure.com/org/project/_git/repo/pullrequest/2310".to_string(),
+            },
+            threads,
+            commits: vec![],
+            work_items: vec![],
+        }
+    }
+
+    fn test_thread(id: i32, comments: Vec<az_devops::Comment>) -> az_devops::Thread {
+        az_devops::Thread {
+            id,
+            comments,
+            status: None,
+            is_deleted: Some(false),
+            last_updated_at: OffsetDateTime::UNIX_EPOCH,
+            published_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    fn test_comment(id: i64, author_email: &str, content: &str) -> az_devops::Comment {
+        az_devops::Comment {
+            id,
+            author: test_identity(author_email),
+            content: Some(content.to_string()),
+            comment_type: Some(az_devops::CommentType::Text),
+            is_deleted: Some(false),
+            published_at: OffsetDateTime::UNIX_EPOCH,
+            liked_by: vec![],
+        }
+    }
+
+    fn test_identity(email: &str) -> az_devops::Identity {
+        az_devops::Identity {
+            id: email.to_string(),
+            display_name: email.to_string(),
+            unique_name: email.to_string(),
+            avatar_url: None,
+        }
     }
 }

@@ -1,9 +1,10 @@
+use crate::adapters::outbound::azure_devops::AzureDevOpsUrl;
 use crate::repositories::RepoRepository;
 use futures::future;
 use sqlx::PgPool;
 use web_push::{IsahcWebPushClient, WebPushClient};
 
-use crate::domain::{DbNotificationType, Notification};
+use crate::domain::{DbNotificationType, Notification, PRChangeEvent};
 use crate::repositories::{
     NotificationRepository, NotificationRepositoryImpl, PushSubscriptionRepository,
     PushSubscriptionRepositoryImpl, RepoRepositoryImpl, UserRepository, UserRepositoryImpl,
@@ -137,8 +138,9 @@ impl NotificationHandler {
                         continue;
                     }
 
+                    let link = build_event_link(diff, event);
                     let push_notification =
-                        event.to_push_notification(&diff.pr.pull_request_base, &diff.pr.url);
+                        event.to_push_notification(&diff.pr.pull_request_base, &link);
                     let db_notification = Notification {
                         id: 0, // Will be set by database
                         user_id: user_id_i32,
@@ -147,7 +149,7 @@ impl NotificationHandler {
                         notification_type,
                         title: diff.pr.pull_request_base.title.clone(),
                         message: push_notification.body.clone(),
-                        link: push_notification.url.clone(),
+                        link: Some(link.clone()),
                         viewed_at: None,
                         created_at: time::OffsetDateTime::now_utc(),
                         metadata: serde_json::Value::Null,
@@ -170,7 +172,7 @@ impl NotificationHandler {
                                 let message = event.to_web_push_message(
                                     sub,
                                     &diff.pr.pull_request_base,
-                                    &diff.pr.url,
+                                    &link,
                                 );
                                 push_futures.push(self.web_push_client.send(message));
                             }
@@ -183,5 +185,36 @@ impl NotificationHandler {
         }
 
         Ok(())
+    }
+}
+
+fn build_event_link(diff: &PullRequestDiff, event: &PRChangeEvent) -> String {
+    let pr_id = diff.pr.pull_request_base.id.to_string();
+    let base_pr_url = AzureDevOpsUrl::PullRequest {
+        org: &diff.pr.organization,
+        project: &diff.pr.project,
+        repo: &diff.pr.repo_name,
+        id: &pr_id,
+    };
+
+    match event {
+        PRChangeEvent::PullRequestClosed => base_pr_url.to_string(),
+        PRChangeEvent::ThreadAdded(thread) => {
+            let first_comment = thread
+                .comments
+                .first()
+                .expect("ThreadAdded event should always contain at least one comment");
+            base_pr_url.pull_request_comment_url(thread.id, first_comment.id)
+        }
+        PRChangeEvent::ThreadUpdated(thread) => {
+            let latest_comment = thread
+                .comments
+                .last()
+                .expect("ThreadUpdated event should always contain at least one comment");
+            base_pr_url.pull_request_comment_url(thread.id, latest_comment.id)
+        }
+        PRChangeEvent::CommentMentioned {
+            comment, thread_id, ..
+        } => base_pr_url.pull_request_comment_url(*thread_id, comment.id),
     }
 }

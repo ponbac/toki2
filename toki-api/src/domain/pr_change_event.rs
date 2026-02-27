@@ -10,7 +10,11 @@ pub enum PRChangeEvent {
     PullRequestClosed,
     ThreadAdded(az_devops::Thread),
     ThreadUpdated(az_devops::Thread),
-    CommentMentioned(Comment, Email),
+    CommentMentioned {
+        comment: Comment,
+        mentioned_email: Email,
+        thread_id: i32,
+    },
 }
 
 impl fmt::Display for PRChangeEvent {
@@ -25,7 +29,11 @@ impl fmt::Display for PRChangeEvent {
             PRChangeEvent::ThreadUpdated(thread) => {
                 write!(f, "ThreadUpdated({})", thread.id)
             }
-            PRChangeEvent::CommentMentioned(comment, mentioned_email) => {
+            PRChangeEvent::CommentMentioned {
+                comment,
+                mentioned_email,
+                ..
+            } => {
                 write!(
                     f,
                     "CommentMentioned(comment:{}, mentioned:{})",
@@ -78,9 +86,9 @@ impl PRChangeEvent {
                     .iter()
                     .any(|comment| comment.author.unique_name == user_email)
             }
-            PRChangeEvent::CommentMentioned(_, mentioned_email) => {
-                mentioned_email.to_lowercase() == user_email.to_lowercase()
-            }
+            PRChangeEvent::CommentMentioned {
+                mentioned_email, ..
+            } => mentioned_email.to_lowercase() == user_email.to_lowercase(),
         }
     }
 
@@ -119,7 +127,7 @@ impl PRChangeEvent {
                 Some(url),
                 None,
             ),
-            PRChangeEvent::CommentMentioned(comment, _mentioned_email) => PushNotification::new(
+            PRChangeEvent::CommentMentioned { comment, .. } => PushNotification::new(
                 format!("{}: You were mentioned", pr.title).as_str(),
                 format!(
                     "{} mentioned you in a comment.",
