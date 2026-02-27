@@ -194,6 +194,20 @@ impl App {
     }
 
     /// Clear timer and reset to default state
+    /// Clear the selected project and activity (timer must be stopped).
+    pub fn clear_project_activity(&mut self) {
+        self.selected_project = None;
+        self.selected_activity = None;
+        self.status_message = Some("Project and activity cleared".to_string());
+    }
+
+    /// Clear the note/description input (timer must be stopped).
+    pub fn clear_note(&mut self) {
+        self.description_input = TextInput::new();
+        self.description_is_default = true;
+        self.status_message = Some("Note cleared".to_string());
+    }
+
     pub fn clear_timer(&mut self) {
         self.timer_state = TimerState::Stopped;
         self.absolute_start = None;
