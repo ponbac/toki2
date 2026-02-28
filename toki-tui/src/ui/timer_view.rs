@@ -1,4 +1,5 @@
 use super::*;
+use crate::app::TimerSize;
 
 pub fn render_timer_view(frame: &mut Frame, app: &mut App, body: Rect) {
     // Timer box height depends on timer size
@@ -29,8 +30,6 @@ pub fn render_timer_view(frame: &mut Frame, app: &mut App, body: Rect) {
 }
 
 fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
-    use crate::app::TimerSize;
-
     let is_running = matches!(app.timer_state, crate::app::TimerState::Running);
     let is_focused = app.focused_box == crate::app::FocusedBox::Timer;
 

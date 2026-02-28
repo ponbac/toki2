@@ -15,14 +15,14 @@ azure_devops_rust_api = { version = "0.28.0", features = [
     "work",
     "graph",
 ] }
-serde = { version = "1.0.193", features = ["derive"] }
-serde_json = "1.0.108"
-reqwest = { version = "0.12.15", default-features = false, features = ["json", "rustls-tls"] }
+serde.workspace = true
+serde_json.workspace = true
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 thiserror = "2.0.12"
-time = { version = "0.3.47", features = ["serde", "parsing"] }
-tokio = { version = "1.35.1", features = ["full"] }
-tracing = { version = "0.1.40", features = ["attributes"] }
+time.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 typespec = "0.4.0"
 
 [dev-dependencies]
-dotenvy = "0.15.7"
+dotenvy.workspace = true

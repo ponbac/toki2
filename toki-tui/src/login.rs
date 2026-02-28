@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 const TUI_CALLBACK_PORT: u16 = 9876;
 const TUI_LOGIN_PORT: u16 = 9875;
@@ -53,7 +54,7 @@ pub async fn run_login(api_url: &str) -> Result<String> {
     // Wait for the OAuth callback with the session_id
     let session_id = wait_for_callback().await?;
 
-    crate::config::TokiConfig::save_session(&session_id)?;
+    crate::session_store::save_session(&session_id)?;
     println!("Login successful. Session saved.");
 
     Ok(session_id)
@@ -63,8 +64,6 @@ pub async fn run_login(api_url: &str) -> Result<String> {
 /// Accepts up to 10 connections to handle browser pre-connections/favicon/etc,
 /// but exits as soon as a GET / request has been served.
 async fn serve_one_page(port: u16, html: String) {
-    use tokio::net::TcpListener;
-
     let listener = match TcpListener::bind(format!("127.0.0.1:{}", port)).await {
         Ok(l) => l,
         Err(e) => {
@@ -110,15 +109,19 @@ fn open_browser(url: &str) {
 /// Start a minimal HTTP server, wait for one request to /callback?session_id=<value>,
 /// return the session_id.
 async fn wait_for_callback() -> Result<String> {
-    use tokio::net::TcpListener;
-
     let listener = TcpListener::bind(format!("127.0.0.1:{}", TUI_CALLBACK_PORT))
         .await
         .with_context(|| format!("Failed to bind to port {}", TUI_CALLBACK_PORT))?;
 
-    println!("Waiting for browser callback on port {}...", TUI_CALLBACK_PORT);
+    println!(
+        "Waiting for browser callback on port {}...",
+        TUI_CALLBACK_PORT
+    );
 
-    let (mut stream, _) = listener.accept().await.context("Failed to accept connection")?;
+    let (mut stream, _) = listener
+        .accept()
+        .await
+        .context("Failed to accept connection")?;
 
     let mut buf = vec![0u8; 4096];
     let n = stream

@@ -1,4 +1,5 @@
 use super::*;
+use tui_piechart::{PieChart, PieSlice};
 
 /// Shared color palette — same order for pie slices and daily bars
 pub const PALETTE: [Color; 12] = [
@@ -75,8 +76,6 @@ pub fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
 }
 
 fn render_pie_panel(frame: &mut Frame, app: &App, area: Rect) {
-    use tui_piechart::{PieChart, PieSlice};
-
     let stats = &app.weekly_stats_cache;
 
     if stats.is_empty() {
