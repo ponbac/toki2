@@ -1,4 +1,4 @@
-use crate::api::ApiClient;
+use crate::api::{ApiClient, SaveTimerRequest};
 use crate::app::{self, App, TextInput};
 use crate::types;
 use anyhow::{Context, Result};
@@ -317,9 +317,16 @@ pub(super) async fn handle_save_timer_with_action(
 
     let project_display = app.current_project_name();
     let activity_display = app.current_activity_name();
+    let save_request = SaveTimerRequest {
+        user_note: note,
+        project_id: app.selected_project.as_ref().map(|p| p.id.clone()),
+        project_name: app.selected_project.as_ref().map(|p| p.name.clone()),
+        activity_id: app.selected_activity.as_ref().map(|a| a.id.clone()),
+        activity_name: app.selected_activity.as_ref().map(|a| a.name.clone()),
+    };
 
     // Save the active timer to Milltime
-    match client.save_timer(note.clone()).await {
+    match client.save_timer(save_request).await {
         Ok(()) => {
             let hours = duration.as_secs() / 3600;
             let minutes = (duration.as_secs() % 3600) / 60;

@@ -9,8 +9,9 @@ use std::sync::Arc;
 use crate::api::dev_backend::DevBackend;
 use crate::api::dto::{
     ActivityDto, AuthenticateRequest, DeleteEntryRequest, EditEntryRequest, ProjectDto,
-    SaveTimerRequest, StartTimerRequest, UpdateActiveTimerRequest,
+    StartTimerRequest, UpdateActiveTimerRequest,
 };
+use crate::api::SaveTimerRequest;
 use crate::session_store;
 use crate::types::{
     ActiveTimerState, Activity, GetTimerResponse, Me, Project, TimeEntry, TimeInfo,
@@ -288,7 +289,7 @@ impl ApiClient {
         .await
     }
 
-    pub async fn save_timer(&mut self, note: Option<String>) -> Result<()> {
+    pub async fn save_timer(&mut self, request: SaveTimerRequest) -> Result<()> {
         if self.dev_backend.is_some() {
             return Ok(());
         }
@@ -296,7 +297,7 @@ impl ApiClient {
         self.send_without_body(
             self.client
                 .put(self.endpoint("/time-tracking/timer")?)
-                .json(&SaveTimerRequest { user_note: note }),
+                .json(&request),
             "PUT /time-tracking/timer",
             UNAUTH_RELOGIN,
         )
