@@ -28,6 +28,10 @@ pub struct StartTimerRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SaveTimerRequest {
     pub user_note: Option<String>,
+    pub project_id: Option<String>,
+    pub project_name: Option<String>,
+    pub activity_id: Option<String>,
+    pub activity_name: Option<String>,
 }
 
 #[derive(Serialize)]
