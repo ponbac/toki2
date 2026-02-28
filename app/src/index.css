@@ -6,49 +6,47 @@
 
 @layer base {
   :root {
-    /* Light mode - Quiet warmth with amber accents */
-    --background: 36 10% 95%;
-    --foreground: 30 10% 16%;
+    /* Light mode - warm paper neutrals with amber accents */
+    --background: 45 22% 92%;
+    --foreground: 32 18% 19%;
 
-    --card: 37 14% 98%;
-    --card-foreground: 30 10% 16%;
+    --card: 44 25% 95%;
+    --card-foreground: 30 18% 15%;
 
-    --popover: 38 16% 99%;
-    --popover-foreground: 30 10% 16%;
+    --popover: 48 26% 97%;
+    --popover-foreground: 31 16% 18%;
 
-    /* Amber primary — warm but not overwhelming */
-    --primary: 36 82% 46%;
-    --primary-foreground: 40 20% 98%;
+    --primary: 27 63% 45%;
+    --primary-foreground: 45 32% 98%;
 
-    /* Warm neutral secondary */
-    --secondary: 34 8% 90%;
-    --secondary-foreground: 30 10% 24%;
+    --secondary: 44 16% 85%;
+    --secondary-foreground: 31 14% 29%;
 
-    --muted: 34 7% 91%;
-    --muted-foreground: 30 6% 40%;
+    --muted: 42 16% 84%;
+    --muted-foreground: 31 10% 36%;
 
-    --accent: 30 8% 90%;
-    --accent-foreground: 30 10% 20%;
+    --accent: 42 17% 86%;
+    --accent-foreground: 30 15% 20%;
 
-    --destructive: 2 72% 46%;
+    --destructive: 2 65% 45%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 34 8% 85%;
-    --input: 34 9% 89%;
-    --ring: 36 82% 46%;
+    --border: 40 14% 74%;
+    --input: 39 16% 69%;
+    --ring: 27 63% 45%;
 
     --radius: 0.75rem;
 
     /* Custom tokens */
-    --glow: 36 82% 46%;
-    --surface-elevated: 38 18% 99%;
-    --text-primary: 30 10% 16%;
-    --text-secondary: 30 6% 40%;
-    --text-tertiary: 28 4% 52%;
+    --glow: 27 63% 45%;
+    --surface-elevated: 46 28% 96%;
+    --text-primary: 32 18% 19%;
+    --text-secondary: 31 10% 33%;
+    --text-tertiary: 30 8% 44%;
 
     /* Gradient tokens */
-    --gradient-warm: linear-gradient(135deg, hsl(36 82% 46% / 0.08) 0%, hsl(24 75% 42% / 0.04) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(37 14% 98%) 0%, hsl(36 10% 96%) 100%);
+    --gradient-warm: linear-gradient(135deg, hsl(27 63% 45% / 0.12) 0%, hsl(18 50% 40% / 0.06) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(44 26% 96%) 0%, hsl(43 20% 90%) 100%);
   }
 
   .dark {
@@ -119,11 +117,11 @@
   /* Glass morphism card effect */
   .card-elevated {
     background: var(--gradient-card);
-    border: 1px solid hsl(var(--border) / 0.5);
+    border: 1px solid hsl(var(--border) / 0.78);
     box-shadow:
-      0 1px 2px hsl(var(--foreground) / 0.03),
-      0 4px 8px hsl(var(--foreground) / 0.04),
-      0 0 0 1px hsl(var(--border) / 0.1) inset;
+      0 1px 2px hsl(32 24% 10% / 0.09),
+      0 8px 18px hsl(28 35% 25% / 0.10),
+      0 0 0 1px hsl(var(--primary) / 0.10) inset;
   }
 
   .dark .card-elevated {
@@ -158,7 +156,7 @@
 
   /* Text gradient */
   .text-gradient {
-    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(38 85% 60%) 100%);
+    background: linear-gradient(135deg, hsl(27 66% 40%) 0%, hsl(21 53% 36%) 58%, hsl(12 46% 34%) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

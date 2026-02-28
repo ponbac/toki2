@@ -24,8 +24,10 @@
       // Prevent flash of wrong theme on load
       (function() {
         var stored = localStorage.getItem('toki-theme');
-        var theme = stored === 'light' || stored === 'dark' ? stored : null;
-        if (!theme) {
+        var theme = null;
+        if (stored === 'light' || stored === 'dark') {
+          theme = stored;
+        } else {
           theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
         document.documentElement.classList.add(theme);

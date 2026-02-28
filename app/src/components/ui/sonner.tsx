@@ -17,11 +17,11 @@ const TOAST_OPTIONS = {
 } as const;
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { resolvedTheme } = useTheme();
+  const { theme } = useTheme();
 
   return (
     <Sonner
-      theme={resolvedTheme}
+      theme={theme}
       className="toaster group"
       toastOptions={TOAST_OPTIONS}
       {...props}

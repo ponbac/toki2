@@ -1,10 +1,11 @@
 import React from "react";
 
 type Theme = "light" | "dark" | "system";
+type ResolvedTheme = "light" | "dark";
 
 type ThemeContext = {
   theme: Theme;
-  resolvedTheme: "light" | "dark";
+  resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
 };
 
@@ -19,15 +20,21 @@ function getSystemTheme(): "light" | "dark" {
     : "light";
 }
 
+function resolveTheme(theme: Theme): ResolvedTheme {
+  if (theme !== "system") return theme;
+  return getSystemTheme();
+}
+
 function getStoredTheme(): Theme {
   if (typeof window === "undefined") return "system";
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark" || stored === "system")
+  if (stored === "light" || stored === "dark" || stored === "system") {
     return stored;
+  }
   return "system";
 }
 
-function applyTheme(resolved: "light" | "dark") {
+function applyTheme(resolved: ResolvedTheme) {
   const root = document.documentElement;
   root.classList.remove("light", "dark");
   root.classList.add(resolved);
@@ -35,31 +42,29 @@ function applyTheme(resolved: "light" | "dark") {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = React.useState<Theme>(getStoredTheme);
-  const [resolvedTheme, setResolvedTheme] = React.useState<"light" | "dark">(
-    () => {
-      const stored = getStoredTheme();
-      return stored === "system" ? getSystemTheme() : stored;
-    },
+  const [resolvedTheme, setResolvedTheme] = React.useState<ResolvedTheme>(
+    () => resolveTheme(getStoredTheme()),
   );
 
   const setTheme = React.useCallback((newTheme: Theme) => {
     setThemeState(newTheme);
     localStorage.setItem(STORAGE_KEY, newTheme);
-    const resolved = newTheme === "system" ? getSystemTheme() : newTheme;
+    const resolved = resolveTheme(newTheme);
     setResolvedTheme(resolved);
     applyTheme(resolved);
   }, []);
 
   // Listen for system theme changes
   React.useEffect(() => {
+    if (theme !== "system") return;
+
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = () => {
-      if (theme === "system") {
-        const resolved = getSystemTheme();
-        setResolvedTheme(resolved);
-        applyTheme(resolved);
-      }
+      const resolved = getSystemTheme();
+      setResolvedTheme(resolved);
+      applyTheme(resolved);
     };
+
     mediaQuery.addEventListener("change", handleChange);
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, [theme]);

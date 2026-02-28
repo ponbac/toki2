@@ -8,6 +8,7 @@ import { enablePokemonAvatarFallbackAtom } from "@/lib/avatar-preferences";
 import { useAvatarSourceWithFallback } from "@/hooks/useAvatarSourceWithFallback";
 import { useTheme } from "@/hooks/useTheme";
 import {
+  type AvatarThemeMode,
   avatarFallbackTextColorFromSeed,
   avatarRingColorFromSeed,
   buildAvatarSources,
@@ -42,6 +43,8 @@ function AvatarComponent(props: {
   className?: string;
 }) {
   const { resolvedTheme } = useTheme();
+  const avatarThemeMode: AvatarThemeMode =
+    resolvedTheme === "dark" ? "dark" : "light";
   const enablePokemonAvatarFallback = useAtomValue(
     enablePokemonAvatarFallbackAtom,
   );
@@ -79,12 +82,13 @@ function AvatarComponent(props: {
     avatarSrc === pokemonAvatarSrc &&
     !failedSources.has(pokemonAvatarSrc);
   const pokemonRingColor = React.useMemo(
-    () => avatarRingColorFromSeed(props.user.uniqueName, resolvedTheme),
-    [props.user.uniqueName, resolvedTheme],
+    () => avatarRingColorFromSeed(props.user.uniqueName, avatarThemeMode),
+    [props.user.uniqueName, avatarThemeMode],
   );
   const fallbackInitialColor = React.useMemo(
-    () => avatarFallbackTextColorFromSeed(props.user.uniqueName, resolvedTheme),
-    [props.user.uniqueName, resolvedTheme],
+    () =>
+      avatarFallbackTextColorFromSeed(props.user.uniqueName, avatarThemeMode),
+    [props.user.uniqueName, avatarThemeMode],
   );
   const fallbackInitial = props.user.displayName?.[0]?.toUpperCase() ?? "?";
 
