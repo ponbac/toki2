@@ -4,7 +4,7 @@ use crate::types;
 use anyhow::{Context, Result};
 use std::time::{Duration, Instant};
 
-use super::action_queue::Action;
+use super::action_queue::{Action, ActionTx};
 
 /// Apply an active timer fetched from the server into App state.
 pub(crate) fn restore_active_timer(app: &mut App, timer: crate::types::ActiveTimerState) {
@@ -68,6 +68,25 @@ pub(super) async fn run_action(
                 saved_selected_activity,
             )
             .await;
+        }
+        Action::OpenEditActivityPicker { project_id } => {
+            app.pending_edit_selection_restore.get_or_insert_with(|| {
+                (app.selected_project.clone(), app.selected_activity.clone())
+            });
+
+            let project_name = app
+                .projects
+                .iter()
+                .find_map(|project| (project.id == project_id).then(|| project.name.clone()))
+                .unwrap_or_default();
+            app.selected_project = Some(types::Project {
+                id: project_id.clone(),
+                name: project_name,
+            });
+            app.selected_activity = None;
+
+            ensure_activities_for_project(app, client, &project_id).await;
+            app.navigate_to(app::View::SelectActivity);
         }
         Action::StartTimer => {
             handle_start_timer(app, client).await?;
@@ -140,26 +159,12 @@ async fn handle_project_selection_enter(
     saved_selected_project: Option<types::Project>,
     saved_selected_activity: Option<types::Activity>,
 ) {
-    // Fetch activities for the selected project (lazy, cached).
-    if let Some(project) = app.selected_project.clone() {
-        if !app.activity_cache.contains_key(&project.id) {
-            app.is_loading = true;
-            match client.get_activities(&project.id).await {
-                Ok(activities) => {
-                    app.activity_cache.insert(project.id.clone(), activities);
-                }
-                Err(e) => {
-                    app.set_status(format!("Failed to load activities: {}", e));
-                }
-            }
-            app.is_loading = false;
-        }
-
-        if let Some(cached) = app.activity_cache.get(&project.id) {
-            app.activities = cached.clone();
-            app.filtered_activities = cached.clone();
-            app.filtered_activity_index = 0;
-        }
+    if let Some(project_id) = app
+        .selected_project
+        .as_ref()
+        .map(|project| project.id.clone())
+    {
+        ensure_activities_for_project(app, client, &project_id).await;
     }
 
     if had_edit_state {
@@ -171,6 +176,32 @@ async fn handle_project_selection_enter(
     }
 
     app.navigate_to(app::View::SelectActivity);
+}
+
+async fn ensure_activities_for_project(app: &mut App, client: &mut ApiClient, project_id: &str) {
+    if !app.activity_cache.contains_key(project_id) {
+        app.is_loading = true;
+        let fetch_result = client.get_activities(project_id).await;
+        app.is_loading = false;
+
+        match fetch_result {
+            Ok(activities) => {
+                app.activity_cache
+                    .insert(project_id.to_string(), activities);
+            }
+            Err(e) => {
+                app.set_status(format!("Failed to load activities: {}", e));
+            }
+        }
+    }
+
+    if let Some(cached) = app.activity_cache.get(project_id) {
+        app.activities = cached.clone();
+    } else {
+        app.activities.clear();
+    }
+    app.filtered_activities.clear();
+    app.filtered_activity_index = 0;
 }
 
 async fn handle_activity_selection_enter(
@@ -405,56 +436,59 @@ pub(super) async fn handle_save_timer_with_action(
 
 // Helper functions for edit mode
 
-/// Handle Enter key in edit mode - open modal for Project/Activity/Note or move to next field
-pub(super) fn handle_entry_edit_enter(app: &mut App) {
+enum EditEnterAction {
+    ProjectPicker,
+    ActivityPicker { project_id: String },
+    NoteEditor { note: String },
+}
+
+/// Handle Enter key in edit mode - open modal for Project/Activity/Note or move to next field.
+pub(super) fn handle_entry_edit_enter(app: &mut App, action_tx: &ActionTx) {
     // Extract the data we need first to avoid borrow conflicts
-    let action = {
-        if let Some(state) = app.current_edit_state() {
-            match state.focused_field {
-                app::EntryEditField::Project => Some(('P', None)),
-                app::EntryEditField::Activity => {
-                    if state.project_id.is_some() {
-                        Some(('A', None))
-                    } else {
-                        app.set_status("Please select a project first".to_string());
-                        None
-                    }
-                }
-                app::EntryEditField::Note => {
-                    let note = state.note.value.clone();
-                    Some(('N', Some(note)))
-                }
-                app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
-                    // Move to next field (like Tab)
-                    app.entry_edit_next_field();
+    let action = if let Some(state) = app.current_edit_state() {
+        match state.focused_field {
+            app::EntryEditField::Project => Some(EditEnterAction::ProjectPicker),
+            app::EntryEditField::Activity => {
+                if let Some(project_id) = state.project_id.clone() {
+                    Some(EditEnterAction::ActivityPicker { project_id })
+                } else {
+                    app.set_status("Please select a project first".to_string());
                     None
                 }
             }
-        } else {
-            None
+            app::EntryEditField::Note => {
+                let note = state.note.value.clone();
+                Some(EditEnterAction::NoteEditor { note })
+            }
+            app::EntryEditField::StartTime | app::EntryEditField::EndTime => {
+                // Move to next field (like Tab)
+                app.entry_edit_next_field();
+                None
+            }
         }
+    } else {
+        None
     };
 
-    // Now perform actions that don't require the borrow
-    if let Some((action, note)) = action {
-        match action {
-            'P' => {
-                app.navigate_to(app::View::SelectProject);
-            }
-            'A' => {
-                app.navigate_to(app::View::SelectActivity);
-            }
-            'N' => {
-                // Save running timer's note before overwriting with entry's note
-                app.saved_timer_note = Some(app.description_input.value.clone());
-                // Set description_input from the edit state before navigating
-                if let Some(n) = note {
-                    app.description_input = TextInput::from_str(&n);
-                }
-                // Open description editor
-                app.navigate_to(app::View::EditDescription);
-            }
-            _ => {}
+    let Some(action) = action else {
+        return;
+    };
+
+    // Now perform actions that don't require the borrow.
+    match action {
+        EditEnterAction::ProjectPicker => {
+            app.navigate_to(app::View::SelectProject);
+        }
+        EditEnterAction::ActivityPicker { project_id } => {
+            let _ = action_tx.send(Action::OpenEditActivityPicker { project_id });
+        }
+        EditEnterAction::NoteEditor { note } => {
+            // Save running timer's note before overwriting with entry's note
+            app.saved_timer_note = Some(app.description_input.value.clone());
+            // Set description_input from the edit state before navigating
+            app.description_input = TextInput::from_str(&note);
+            // Open description editor
+            app.navigate_to(app::View::EditDescription);
         }
     }
 }
