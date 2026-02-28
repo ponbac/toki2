@@ -64,7 +64,7 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
                             app.entry_edit_next_field();
                         }
                         _ => {
-                            handle_entry_edit_enter(app);
+                            handle_entry_edit_enter(app, action_tx);
                         }
                     }
                 }

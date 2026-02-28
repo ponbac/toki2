@@ -94,6 +94,14 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
                 if !is_note_focused_in_this_week_edit(app) {
                     app.entry_edit_backspace();
                 }
+            } else if app.timer_state == app::TimerState::Stopped
+                && app.focused_box == app::FocusedBox::ProjectActivity
+            {
+                app.clear_project_activity();
+            } else if app.timer_state == app::TimerState::Stopped
+                && app.focused_box == app::FocusedBox::Description
+            {
+                app.clear_note();
             } else if is_persisted_today_row_selected(app) {
                 app.enter_delete_confirm(app::DeleteOrigin::Timer);
             }
@@ -156,7 +164,7 @@ fn handle_enter_key(app: &mut App, action_tx: &ActionTx) {
                     app.entry_edit_next_field();
                 }
                 _ => {
-                    handle_entry_edit_enter(app);
+                    handle_entry_edit_enter(app, action_tx);
                 }
             }
         }
