@@ -205,6 +205,7 @@ impl App {
 
     pub fn clear_timer(&mut self) {
         self.timer_state = TimerState::Stopped;
+        self.timer_size = TimerSize::Normal;
         self.absolute_start = None;
         self.local_start = None;
         self.selected_project = None;
@@ -276,6 +277,7 @@ impl App {
         self.timer_state = TimerState::Running;
         self.absolute_start = Some(OffsetDateTime::now_utc());
         self.local_start = Some(Instant::now());
+        self.timer_size = TimerSize::Large;
         // Shift focus: running timer row is inserted at index 0, pushing DB entries up by 1
         if let Some(idx) = self.focused_this_week_index {
             self.focused_this_week_index = Some(idx + 1);
@@ -286,6 +288,7 @@ impl App {
     #[allow(dead_code)]
     pub fn stop_timer(&mut self) {
         self.timer_state = TimerState::Stopped;
+        self.timer_size = TimerSize::Normal;
         self.absolute_start = None;
         self.local_start = None;
     }

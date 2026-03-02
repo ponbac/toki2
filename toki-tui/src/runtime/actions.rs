@@ -12,6 +12,7 @@ pub(crate) fn restore_active_timer(app: &mut App, timer: crate::types::ActiveTim
     app.absolute_start = Some(timer.start_time);
     app.local_start = Some(Instant::now() - Duration::from_secs(elapsed_secs));
     app.timer_state = app::TimerState::Running;
+    app.timer_size = app::TimerSize::Large;
     if let (Some(id), Some(name)) = (timer.project_id, timer.project_name) {
         app.selected_project = Some(crate::types::Project { id, name });
     }
@@ -114,6 +115,12 @@ pub(super) async fn run_action(
         }
         Action::RefreshHistoryBackground => {
             refresh_history_background(app, client).await;
+        }
+        Action::YankEntryToTimer(entry) => {
+            yank_entry_to_timer(entry, app, client).await;
+        }
+        Action::ResumeEntry(entry) => {
+            resume_entry(entry, app, client).await;
         }
     }
     Ok(())
@@ -329,6 +336,74 @@ async fn refresh_history_background(app: &mut App, client: &mut ApiClient) {
     }
 }
 
+async fn yank_entry_to_timer(entry: types::TimeEntry, app: &mut App, client: &mut ApiClient) {
+    // Apply locally first so the UI updates immediately
+    app.yank_entry_to_timer(&entry);
+
+    // Sync the new project/activity/note to the server so save works correctly
+    if app.timer_state == app::TimerState::Running {
+        let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
+        let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
+        let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
+        let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+        let note = if app.description_input.value.is_empty() {
+            None
+        } else {
+            Some(app.description_input.value.clone())
+        };
+        if let Err(e) = client
+            .update_active_timer(
+                project_id,
+                project_name,
+                activity_id,
+                activity_name,
+                note,
+                None,
+            )
+            .await
+        {
+            app.set_status(format!("Warning: Could not sync copied entry to server: {}", e));
+        }
+    }
+}
+
+async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiClient) {
+    // Guard: should not be called while running, but be safe
+    if app.timer_state == app::TimerState::Running {
+        app.set_status("Timer already running — stop it first (Space or Ctrl+X)".to_string());
+        return;
+    }
+
+    // Build server arguments from the entry directly (not from app state)
+    let project_id = Some(entry.project_id.clone());
+    let project_name = Some(entry.project_name.clone());
+    let activity_id = Some(entry.activity_id.clone());
+    let activity_name = Some(entry.activity_name.clone());
+    let note = entry.note.clone().filter(|n| !n.is_empty());
+
+    match client
+        .start_timer(project_id, project_name, activity_id, activity_name, note)
+        .await
+    {
+        Ok(()) => {
+            // Only mutate local state after confirmed server success
+            app.copy_entry_fields(&entry);
+            app.start_timer(); // sets TimerState::Running + TimerSize::Large + local_start
+            app.set_status(format!(
+                "Resumed: {}: {}",
+                entry.project_name, entry.activity_name
+            ));
+        }
+        Err(e) => {
+            if is_milltime_auth_error(&e) {
+                app.open_milltime_reauth();
+            } else {
+                app.set_status(format!("Error resuming entry: {}", e));
+            }
+        }
+    }
+}
+
 pub(super) async fn handle_save_timer_with_action(
     app: &mut App,
     client: &mut ApiClient,
@@ -409,6 +484,7 @@ pub(super) async fn handle_save_timer_with_action(
                 }
                 app::SaveAction::SaveAndStop => {
                     app.timer_state = app::TimerState::Stopped;
+                    app.timer_size = app::TimerSize::Normal;
                     app.absolute_start = None;
                     app.local_start = None;
                     if let Some(idx) = app.focused_this_week_index {

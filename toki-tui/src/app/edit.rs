@@ -579,6 +579,32 @@ impl App {
             View::Timer
         }
     }
+
+    /// Copy project, activity, and note from a history entry into the timer fields.
+    /// Does not set a status message — callers are responsible for that.
+    pub fn copy_entry_fields(&mut self, entry: &crate::types::TimeEntry) {
+        self.selected_project = Some(crate::types::Project {
+            id: entry.project_id.clone(),
+            name: entry.project_name.clone(),
+        });
+        self.selected_activity = Some(crate::types::Activity {
+            id: entry.activity_id.clone(),
+            name: entry.activity_name.clone(),
+            project_id: entry.project_id.clone(),
+        });
+        let note = entry.note.clone().unwrap_or_default();
+        self.description_input = TextInput::from_str(&note);
+        self.description_is_default = false;
+    }
+
+    /// Copy project, activity, and note from a history entry into the running timer.
+    pub fn yank_entry_to_timer(&mut self, entry: &crate::types::TimeEntry) {
+        self.copy_entry_fields(entry);
+        self.set_status(format!(
+            "Copied: {}: {}",
+            entry.project_name, entry.activity_name
+        ));
+    }
 }
 
 /// Given an entry's optional start/end times, date string (YYYY-MM-DD), and hours,
