@@ -2,7 +2,7 @@ use crate::api::ApiClient;
 use crate::app::App;
 use crate::ui;
 use anyhow::Result;
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyEventKind};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::time::{Duration, Instant};
@@ -38,6 +38,9 @@ pub async fn run_app(
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
                 if app.milltime_reauth.is_some() {
                     handle_milltime_reauth_key(key, app, &action_tx);
                 } else {

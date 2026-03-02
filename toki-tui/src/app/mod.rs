@@ -191,6 +191,18 @@ impl App {
     }
 
     /// Clear timer and reset to default state
+    pub fn clear_project_activity(&mut self) {
+        self.selected_project = None;
+        self.selected_activity = None;
+        self.status_message = Some("Project and activity cleared".to_string());
+    }
+
+    pub fn clear_note(&mut self) {
+        self.description_input = TextInput::new();
+        self.description_is_default = true;
+        self.status_message = Some("Note cleared".to_string());
+    }
+
     pub fn clear_timer(&mut self) {
         self.timer_state = TimerState::Stopped;
         self.absolute_start = None;
@@ -370,6 +382,8 @@ impl App {
                     .iter()
                     .position(|a| self.selected_activity.as_ref().map(|sa| &sa.id) == Some(&a.id))
                     .unwrap_or(0);
+                self.activity_search_input.clear();
+                self.filter_activities();
                 self.selection_list_focused = false;
             }
             View::EditDescription => {
@@ -479,7 +493,12 @@ impl App {
 
     /// Cancel current selection and return to timer view
     pub fn cancel_selection(&mut self) {
-        self.pending_edit_selection_restore = None;
+        if let Some((restore_project, restore_activity)) =
+            self.pending_edit_selection_restore.take()
+        {
+            self.selected_project = restore_project;
+            self.selected_activity = restore_activity;
+        }
         self.navigate_to(View::Timer);
     }
 

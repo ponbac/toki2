@@ -14,6 +14,9 @@ pub(super) enum Action {
         saved_selected_project: Option<Project>,
         saved_selected_activity: Option<Activity>,
     },
+    OpenEditActivityPicker {
+        project_id: String,
+    },
     StartTimer,
     SaveTimer,
     SyncRunningTimerNote {
