@@ -31,6 +31,7 @@ export function DataTable<TData extends DataWithId, TValue>({
   // eslint-disable-next-line react-compiler/react-compiler
   "use no memo";
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,

@@ -57,7 +57,6 @@ export default [
           allowConstantExport: true,
         },
       ],
-
       "@typescript-eslint/no-empty-object-type": "off",
     },
   },

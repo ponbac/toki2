@@ -47,6 +47,7 @@ export function SprintSelector({
     });
   }, [effectiveIterationPath, selectedIterationPath, navigate]);
 
+  // eslint-disable-next-line react-hooks/purity
   const nowMsForRender = Date.now();
 
   return (

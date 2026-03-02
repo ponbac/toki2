@@ -25,16 +25,14 @@ export const TimerEditDialog = (props: {
   timer: TimerResponse;
 }) => {
   const [projectId, setProjectId] = React.useState<string | undefined>(
-    props.timer?.projectId ?? undefined,
+    props.timer.projectId ?? undefined,
   );
   const [activityName, setActivityName] = React.useState<string | undefined>(
-    props.timer?.activityName ?? undefined,
+    props.timer.activityName ?? undefined,
   );
-  const [note, setNote] = React.useState<string | undefined>(
-    props.timer?.note ?? undefined,
-  );
+  const [note, setNote] = React.useState<string | undefined>(props.timer.note);
   const [startTimeISO, setStartTimeISO] = React.useState<string | undefined>(
-    props.timer?.startTime,
+    props.timer.startTime,
   );
 
   const { projects, activities } = useTimeTrackingData({
@@ -51,38 +49,39 @@ export const TimerEditDialog = (props: {
     [activities, activityName],
   );
 
-  const { mutate: updateTimerMutate } =
-    timeTrackingMutations.useEditTimer({
-      onSuccess: () => {
-        props.onOpenChange(false);
-      },
-    });
-
-  const updateTimer = () => {
-    updateTimerMutate(
-      {
-        projectId: projectId,
-        projectName: selectedProject?.projectName ?? "",
-        activityId: selectedActivity?.activity ?? "",
-        activityName: activityName,
-        userNote: note ?? "",
-        startTime: startTimeISO,
-      },
-      {
-        onSuccess: () => {
-          props.onOpenChange(false);
-        },
-      },
-    );
+  const closeDialog = () => {
+    props.onOpenChange(false);
   };
 
+  const { mutate: updateTimerMutate } = timeTrackingMutations.useEditTimer({
+    onSuccess: closeDialog,
+  });
+
+  const updateTimer = () => {
+    updateTimerMutate({
+      projectId: projectId,
+      projectName: selectedProject?.projectName ?? "",
+      activityId: selectedActivity?.activity ?? "",
+      activityName: activityName,
+      userNote: note ?? "",
+      startTime: startTimeISO,
+    });
+  };
+
+  const hydrateDraftFromCurrentTimer = React.useEffectEvent(() => {
+    setProjectId(props.timer.projectId ?? undefined);
+    setActivityName(props.timer.activityName ?? undefined);
+    setNote(props.timer.note);
+    setStartTimeISO(props.timer.startTime);
+  });
+
   React.useEffect(() => {
-    // Synchronize state with props.timer when it changes
-    setProjectId(props.timer?.projectId ?? undefined);
-    setActivityName(props.timer?.activityName ?? undefined);
-    setNote(props.timer?.note ?? undefined); // Convert null to undefined for consistency
-    setStartTimeISO(props.timer?.startTime);
-  }, [props.timer]);
+    // Initialize draft state only when dialog opens.
+    // While open, keep local edits as source of truth even if timer query refetches.
+    if (props.open) {
+      hydrateDraftFromCurrentTimer();
+    }
+  }, [props.open]);
 
   const activitiesRef = React.useRef<HTMLButtonElement>(null);
   const noteInputRef = React.useRef<HTMLInputElement>(null);
@@ -93,13 +92,15 @@ export const TimerEditDialog = (props: {
 
   // Handle time input change from "HH:mm"
   const handleTimeInputChange = (newTimeValue: string) => {
-    if (!props.timer?.startTime) {
+    const baseStartTime = startTimeISO ?? props.timer.startTime;
+
+    if (!baseStartTime) {
       console.warn(
         "Original timer start time not available to derive date for time input change.",
       );
       return;
     }
-    const originalTimerDate = dayjs(props.timer.startTime); // Base date from original timer
+    const originalTimerDate = dayjs(baseStartTime);
     const [hours, minutes] = newTimeValue.split(":").map(Number);
 
     let newFullDateTime = originalTimerDate
@@ -121,12 +122,7 @@ export const TimerEditDialog = (props: {
   if (!props.open || !projects) return null;
 
   return (
-    <Dialog
-      open={props.open}
-      onOpenChange={(open) => {
-        props.onOpenChange(open);
-      }}
-    >
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-w-2xl">
         <form
           className="flex flex-col gap-4"
