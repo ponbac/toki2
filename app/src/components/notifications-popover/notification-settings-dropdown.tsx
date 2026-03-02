@@ -95,6 +95,7 @@ export function NotificationSettingsDropdown() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setBrowserPermission(hasPushPermission());
 
     const permissionChangeHandler = () => {

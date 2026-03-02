@@ -625,6 +625,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     const to = parseISO(dateRange.to);
     const today = startOfDay(new Date());
     const target = today >= from && today <= to ? today : from;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentWeekStart(startOfWeek(target, { weekStartsOn: 1 }));
     setSelectedDate(target);
   }, [dateRange.from, dateRange.to]);
