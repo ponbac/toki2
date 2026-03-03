@@ -36,7 +36,22 @@ const DEFAULT_END_HOUR = 17;
 const MOCK_START_HOUR = 8; // untimed entries stack from 08:00
 const HOUR_HEIGHT_PX = 80;
 const MIN_BLOCK_PX = 36;
+const SHOW_PRIMARY_DETAIL_MIN_HEIGHT = 24;
+const SHOW_SECONDARY_DETAIL_MIN_HEIGHT_DAY = 90;
+const SHOW_SECONDARY_DETAIL_MIN_HEIGHT_WEEK = 96;
+const DAY_KEY_FORMAT = "yyyy-MM-dd";
+const WEEK_STARTS_ON = 1 as const;
 
+function toDayKey(date: Date) {
+  return format(date, DAY_KEY_FORMAT);
+}
+
+function getInRangeDate(fromIso: string, toIso: string) {
+  const from = parseISO(fromIso);
+  const to = parseISO(toIso);
+  const today = startOfDay(new Date());
+  return today >= from && today <= to ? today : from;
+}
 
 type PositionedEntry = TimeEntry & {
   topPx: number;
@@ -404,6 +419,23 @@ function TimelineBlock({
   const endTime = entry.endTime
     ? format(parseISO(entry.endTime), "HH:mm")
     : null;
+  const note = entry.note?.trim() ?? "";
+  const hasNote = note.length > 0;
+  const primaryDetail = hasNote ? note : entry.activityName;
+  const showPrimaryDetail = entry.heightPx > SHOW_PRIMARY_DETAIL_MIN_HEIGHT;
+  const secondaryDetailMinHeight = isWeekView
+    ? SHOW_SECONDARY_DETAIL_MIN_HEIGHT_WEEK
+    : SHOW_SECONDARY_DETAIL_MIN_HEIGHT_DAY;
+  const showSecondaryActivity =
+    hasNote && entry.heightPx > secondaryDetailMinHeight;
+  const primaryDetailSizeClass = isWeekView
+    ? "line-clamp-1 text-[10px]"
+    : cn(
+        "text-[12px]",
+        entry.heightPx > SHOW_SECONDARY_DETAIL_MIN_HEIGHT_DAY
+          ? "line-clamp-2"
+          : "line-clamp-1",
+      );
 
   return (
     <Tooltip>
@@ -444,19 +476,25 @@ function TimelineBlock({
             >
               {entry.projectName}
             </p>
-            {entry.heightPx > 38 && (
+            {showPrimaryDetail && (
               <p
                 className={cn(
-                  "truncate text-muted-foreground",
-                  isWeekView ? "text-[9px]" : "text-[11px]",
+                  "mt-0.5 leading-snug",
+                  hasNote ? "text-foreground/85" : "text-muted-foreground",
+                  primaryDetailSizeClass,
+                )}
+              >
+                {primaryDetail}
+              </p>
+            )}
+            {showSecondaryActivity && (
+              <p
+                className={cn(
+                  "-mt-px truncate leading-tight text-muted-foreground",
+                  isWeekView ? "text-[9.5px]" : "text-[11px]",
                 )}
               >
                 {entry.activityName}
-              </p>
-            )}
-            {!isWeekView && entry.heightPx > 76 && entry.note && (
-              <p className="mt-0.5 line-clamp-2 text-[10px] font-mono text-muted-foreground/80">
-                {entry.note}
               </p>
             )}
             {entry.heightPx > 48 && (
@@ -484,10 +522,8 @@ function TimelineBlock({
             />
             <p className="font-semibold">{entry.projectName}</p>
           </div>
+          {hasNote && <p className="text-sm text-foreground/90">{note}</p>}
           <p className="text-sm text-muted-foreground">{entry.activityName}</p>
-          {entry.note && (
-            <p className="text-sm font-mono text-foreground/80">{entry.note}</p>
-          )}
           <div className="flex items-center gap-3 pt-1 text-sm">
             <span className="time-display font-medium">
               {formatHoursAsHoursMinutes(entry.hours)}
@@ -604,29 +640,20 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
 
   // Week view: track which week is displayed
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-    const from = parseISO(dateRange.from);
-    const to = parseISO(dateRange.to);
-    const today = startOfDay(new Date());
-    const target = today >= from && today <= to ? today : from;
-    return startOfWeek(target, { weekStartsOn: 1 });
+    const target = getInRangeDate(dateRange.from, dateRange.to);
+    return startOfWeek(target, { weekStartsOn: WEEK_STARTS_ON });
   });
 
   // Day view: track selected date
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const from = parseISO(dateRange.from);
-    const to = parseISO(dateRange.to);
-    const today = startOfDay(new Date());
-    return today >= from && today <= to ? today : from;
-  });
+  const [selectedDate, setSelectedDate] = useState(() =>
+    getInRangeDate(dateRange.from, dateRange.to),
+  );
 
   // Reset when dateRange changes
   useEffect(() => {
-    const from = parseISO(dateRange.from);
-    const to = parseISO(dateRange.to);
-    const today = startOfDay(new Date());
-    const target = today >= from && today <= to ? today : from;
+    const target = getInRangeDate(dateRange.from, dateRange.to);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCurrentWeekStart(startOfWeek(target, { weekStartsOn: 1 }));
+    setCurrentWeekStart(startOfWeek(target, { weekStartsOn: WEEK_STARTS_ON }));
     setSelectedDate(target);
   }, [dateRange.from, dateRange.to]);
 
@@ -651,7 +678,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     const days: Date[] = [];
     for (let i = 0; i < 7; i++) {
       const day = addDays(currentWeekStart, i);
-      const key = format(day, "yyyy-MM-dd");
+      const key = toDayKey(day);
       // Always include Mon-Fri; include Sat/Sun only if they have entries
       if (i < 5 || entriesByDate.has(key)) {
         days.push(day);
@@ -662,18 +689,22 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
 
   // Multi-week navigation
   const isMultiWeek = useMemo(() => {
-    const firstWeek = startOfWeek(rangeFrom, { weekStartsOn: 1 });
-    const lastWeek = startOfWeek(rangeTo, { weekStartsOn: 1 });
+    const firstWeek = startOfWeek(rangeFrom, { weekStartsOn: WEEK_STARTS_ON });
+    const lastWeek = startOfWeek(rangeTo, { weekStartsOn: WEEK_STARTS_ON });
     return firstWeek.getTime() !== lastWeek.getTime();
   }, [rangeFrom, rangeTo]);
 
   const canGoPrevWeek = useMemo(
-    () => addDays(currentWeekStart, -7) >= startOfWeek(rangeFrom, { weekStartsOn: 1 }),
+    () =>
+      addDays(currentWeekStart, -7) >=
+      startOfWeek(rangeFrom, { weekStartsOn: WEEK_STARTS_ON }),
     [currentWeekStart, rangeFrom],
   );
 
   const canGoNextWeek = useMemo(
-    () => addDays(currentWeekStart, 7) <= startOfWeek(rangeTo, { weekStartsOn: 1 }),
+    () =>
+      addDays(currentWeekStart, 7) <=
+      startOfWeek(rangeTo, { weekStartsOn: WEEK_STARTS_ON }),
     [currentWeekStart, rangeTo],
   );
 
@@ -689,7 +720,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
   );
 
   const selectedDayKey = useMemo(
-    () => format(selectedDate, "yyyy-MM-dd"),
+    () => toDayKey(selectedDate),
     [selectedDate],
   );
 
@@ -698,7 +729,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     if (mode === "week") {
       const entries: TimeEntry[] = [];
       weekDays.forEach((day) => {
-        const key = format(day, "yyyy-MM-dd");
+        const key = toDayKey(day);
         const dayEntries = entriesByDate.get(key);
         if (dayEntries) entries.push(...dayEntries);
       });
@@ -716,7 +747,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     const days = mode === "week" ? weekDays : [selectedDate];
     const map = new Map<string, PositionedEntry[]>();
     days.forEach((day) => {
-      const key = format(day, "yyyy-MM-dd");
+      const key = toDayKey(day);
       const dayEntries = entriesByDate.get(key) ?? [];
       map.set(key, positionEntries(dayEntries, startHour));
     });
@@ -885,7 +916,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                   className="flex flex-1"
                 >
                   {weekDays.map((day) => {
-                    const key = format(day, "yyyy-MM-dd");
+                    const key = toDayKey(day);
                     return (
                       <DayColumn
                         key={key}
