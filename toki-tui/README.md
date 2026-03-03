@@ -72,8 +72,8 @@ task_filter = "+work"
 
 ## Standard key bindings
 
-| Key              | Action             |
-| ---------------- | ------------------ |
+| Key            | Action             |
+| -------------- | ------------------ |
 | `Space`          | Start / stop timer |
 | `Ctrl+S`         | Save (options)     |
 | `Ctrl+X`         | Clear              |
@@ -82,6 +82,6 @@ task_filter = "+work"
 | `P`              | Project            |
 | `N`              | Note               |
 | `T`              | Toggle timer size  |
-| `S`              | Statistics         |
+| `S`              | Stats              |
 | `Esc`            | Exit / cancel      |
 | `Q`              | Quit               |
