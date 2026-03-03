@@ -50,8 +50,10 @@ type TimelineMode = "day" | "week";
 
 const DEFAULT_START_HOUR = 8;
 const DEFAULT_END_HOUR = 17;
+const MIN_VISIBLE_END_HOUR = 20;
 const HOUR_HEIGHT_PX = 80;
 const MIN_BLOCK_PX = 36;
+const TIMELINE_CHROME_HEIGHT_PX = 80;
 const DAY_KEY_FORMAT = "yyyy-MM-dd";
 const WEEK_STARTS_ON = 1 as const;
 const DAY_HEADER_LAYOUT_CLASS = "flex flex-col items-center gap-0.5 px-2 py-2.5";
@@ -222,7 +224,7 @@ function computeGridBounds(
 
   return {
     startHour: Math.max(0, earliest - 0.5),
-    endHour: Math.min(24, latest + 0.5),
+    endHour: Math.max(MIN_VISIBLE_END_HOUR, Math.min(24, latest + 0.5)),
   };
 }
 
@@ -874,7 +876,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
       </div>
 
       {/* Timeline body — needs definite height for Radix ScrollArea viewport to scroll */}
-      <ScrollArea style={{ height: Math.min(720, gridHeight + 80) }}>
+      <ScrollArea style={{ height: gridHeight + TIMELINE_CHROME_HEIGHT_PX }}>
         <div className="flex" style={{ minWidth: mode === "week" ? 700 : 400 }}>
           {/* Hour labels */}
           <div className="relative shrink-0">
