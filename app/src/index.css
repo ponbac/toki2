@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@property --active-shine-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0turn;
+}
+
 /* Nordic Precision Design System */
 
 @layer base {
@@ -152,6 +158,51 @@
 
   .btn-glow:hover::before {
     opacity: 1;
+  }
+
+  @keyframes timeline-active-shine-sweep {
+    to {
+      --active-shine-angle: 1turn;
+    }
+  }
+
+  .timeline-active-timer-block {
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .timeline-active-timer-block::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    --active-shine-color: hsl(var(--primary) / 0.95);
+    --active-shine-glow: hsl(var(--primary) / 0.45);
+    border-radius: inherit;
+    padding: 1.5px;
+    box-sizing: border-box;
+    background: conic-gradient(
+      from var(--active-shine-angle),
+      transparent 0deg 280deg,
+      var(--active-shine-color) 315deg,
+      transparent 350deg 360deg
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: timeline-active-shine-sweep 5.5s linear infinite;
+    filter: drop-shadow(0 0 6px var(--active-shine-glow));
+    opacity: 0.95;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .timeline-active-timer-block::before {
+      animation: none;
+      opacity: 0.35;
+    }
   }
 
   /* Text gradient */

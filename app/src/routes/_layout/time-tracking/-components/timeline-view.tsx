@@ -1,5 +1,9 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { AttestLevel, TimeEntry } from "@/lib/api/queries/time-tracking";
+import {
+  AttestLevel,
+  TimeEntry,
+  timeTrackingQueries,
+} from "@/lib/api/queries/time-tracking";
 import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import {
   format,
@@ -11,6 +15,7 @@ import {
 } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Clock, PlayIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -23,6 +28,18 @@ import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
 import { toast } from "sonner";
 import { TimeEntryEditDialog } from "./time-entry-edit-dialog";
+import {
+  ActiveTimerBlock,
+  buildActiveTimerIntervalsByDay,
+  buildActiveTimerSegments,
+  computeActiveTimerHourBounds,
+  type ActiveTimerSegment,
+} from "./active-timer-block";
+import {
+  SavedTimelineCardBody,
+  SavedTimelineCardTooltipBody,
+} from "./timeline-card-content";
+import { buildTimelineCardText } from "./timeline-card-text";
 
 type TimelineViewProps = {
   timeEntries: TimeEntry[];
@@ -33,14 +50,12 @@ type TimelineMode = "day" | "week";
 
 const DEFAULT_START_HOUR = 8;
 const DEFAULT_END_HOUR = 17;
-const MOCK_START_HOUR = 8; // untimed entries stack from 08:00
 const HOUR_HEIGHT_PX = 80;
 const MIN_BLOCK_PX = 36;
-const SHOW_PRIMARY_DETAIL_MIN_HEIGHT = 24;
-const SHOW_SECONDARY_DETAIL_MIN_HEIGHT_DAY = 90;
-const SHOW_SECONDARY_DETAIL_MIN_HEIGHT_WEEK = 96;
 const DAY_KEY_FORMAT = "yyyy-MM-dd";
 const WEEK_STARTS_ON = 1 as const;
+const DAY_HEADER_LAYOUT_CLASS = "flex flex-col items-center gap-0.5 px-2 py-2.5";
+const DAY_HEADER_TOTAL_CLASS = "time-display text-[11px] text-muted-foreground";
 
 function toDayKey(date: Date) {
   return format(date, DAY_KEY_FORMAT);
@@ -59,7 +74,6 @@ type PositionedEntry = TimeEntry & {
   endPx: number; // actual time-based end position (without MIN_BLOCK_PX inflation)
   column: number;
   totalColumns: number;
-  mockTimes: boolean;
 };
 
 function positionEntries(
@@ -68,25 +82,13 @@ function positionEntries(
 ): PositionedEntry[] {
   if (dayEntries.length === 0) return [];
 
-  const withTimes: TimeEntry[] = [];
-  const withoutTimes: TimeEntry[] = [];
-
-  dayEntries.forEach((entry) => {
-    if (entry.startTime && entry.endTime) {
-      withTimes.push(entry);
-    } else {
-      withoutTimes.push(entry);
-    }
-  });
-
   const positioned: PositionedEntry[] = [];
 
-  // Position entries with real times
-  withTimes.forEach((entry) => {
-    const start = parseISO(entry.startTime!);
-    const end = parseISO(entry.endTime!);
-    const startH =
-      start.getHours() + start.getMinutes() / 60 - gridStartHour;
+  dayEntries.forEach((entry) => {
+    if (!entry.startTime || !entry.endTime) return;
+    const start = parseISO(entry.startTime);
+    const end = parseISO(entry.endTime);
+    const startH = start.getHours() + start.getMinutes() / 60 - gridStartHour;
     const endH = end.getHours() + end.getMinutes() / 60 - gridStartHour;
 
     const naturalHeight = (endH - startH) * HOUR_HEIGHT_PX;
@@ -98,29 +100,10 @@ function positionEntries(
       endPx: Math.max(0, endH * HOUR_HEIGHT_PX),
       column: 0,
       totalColumns: 1,
-      mockTimes: false,
     });
   });
 
-  // For entries without times, stack sequentially from MOCK_START_HOUR
-  if (withoutTimes.length > 0) {
-    let currentHour = MOCK_START_HOUR - gridStartHour;
-    withoutTimes.forEach((entry) => {
-      const duration = Math.max(entry.hours, 0.5);
-      const topPx = Math.max(0, currentHour * HOUR_HEIGHT_PX);
-      const naturalHeight = duration * HOUR_HEIGHT_PX;
-      positioned.push({
-        ...entry,
-        topPx,
-        heightPx: Math.max(MIN_BLOCK_PX, naturalHeight),
-        endPx: Math.max(0, (currentHour + duration) * HOUR_HEIGHT_PX),
-        column: 0,
-        totalColumns: 1,
-        mockTimes: true,
-      });
-      currentHour += duration + 0.04;
-    });
-  }
+  if (positioned.length === 0) return [];
 
   // Resolve overlaps using cluster-based approach
   const sorted = positioned.sort((a, b) => a.topPx - b.topPx);
@@ -210,18 +193,15 @@ function positionEntries(
 }
 
 /** Scan entries to find the earliest start and latest end, with 30 min padding */
-function computeGridBounds(entries: TimeEntry[]): {
+function computeGridBounds(
+  entries: TimeEntry[],
+  activeTimerBounds?: { earliestHour: number; latestHour: number } | null,
+): {
   startHour: number;
   endHour: number;
 } {
-  if (entries.length === 0) {
-    return { startHour: DEFAULT_START_HOUR, endHour: DEFAULT_END_HOUR };
-  }
-
   let earliest = Infinity;
   let latest = -Infinity;
-  // Group untimed entries by date in the same pass
-  const untimedByDate = new Map<string, TimeEntry[]>();
 
   entries.forEach((entry) => {
     if (entry.startTime && entry.endTime) {
@@ -229,27 +209,16 @@ function computeGridBounds(entries: TimeEntry[]): {
       earliest = Math.min(earliest, s.getHours() + s.getMinutes() / 60);
       const e = parseISO(entry.endTime);
       latest = Math.max(latest, e.getHours() + e.getMinutes() / 60);
-    } else {
-      const arr = untimedByDate.get(entry.date) || [];
-      arr.push(entry);
-      untimedByDate.set(entry.date, arr);
     }
   });
 
-  // Account for untimed entries (mock-positioned from MOCK_START_HOUR)
-  if (untimedByDate.size > 0) {
-    earliest = Math.min(earliest, MOCK_START_HOUR);
-    untimedByDate.forEach((dayEntries) => {
-      let mockEnd = MOCK_START_HOUR;
-      dayEntries.forEach((e) => {
-        mockEnd += Math.max(e.hours, 0.5) + 0.04;
-      });
-      latest = Math.max(latest, mockEnd);
-    });
-  }
-
   if (!isFinite(earliest)) earliest = DEFAULT_START_HOUR;
   if (!isFinite(latest)) latest = DEFAULT_END_HOUR;
+
+  if (activeTimerBounds) {
+    earliest = Math.min(earliest, activeTimerBounds.earliestHour);
+    latest = Math.max(latest, activeTimerBounds.latestHour);
+  }
 
   return {
     startHour: Math.max(0, earliest - 0.5),
@@ -274,7 +243,7 @@ function HourLabels({
       {hours.map((hour) => (
         <div
           key={hour}
-          className="absolute right-0 -translate-y-1/2 pr-2 text-[11px] text-muted-foreground/70 time-display"
+          className="time-display absolute right-0 -translate-y-1/2 pr-2 text-[11px] text-muted-foreground/70"
           style={{ top: (hour - startHour) * HOUR_HEIGHT_PX }}
         >
           {String(hour).padStart(2, "0")}
@@ -304,13 +273,7 @@ function HourGridLines({
   return <>{lines}</>;
 }
 
-function NowIndicator({
-  date,
-  startHour,
-}: {
-  date: Date;
-  startHour: number;
-}) {
+function NowIndicator({ date, startHour }: { date: Date; startHour: number }) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -321,8 +284,7 @@ function NowIndicator({
 
   if (!isToday(date)) return null;
 
-  const currentHour =
-    now.getHours() + now.getMinutes() / 60 - startHour;
+  const currentHour = now.getHours() + now.getMinutes() / 60 - startHour;
 
   if (currentHour < 0) return null;
 
@@ -346,8 +308,7 @@ const PlayButton = React.memo(function PlayButton({
 }) {
   const { mutateAsync: startTimerAsync, isPending: isStarting } =
     timeTrackingMutations.useStartTimer();
-  const { mutateAsync: editTimerAsync } =
-    timeTrackingMutations.useEditTimer();
+  const { mutateAsync: editTimerAsync } = timeTrackingMutations.useEditTimer();
   const { state: timerState } = useTimeTrackingTimer();
 
   const handleStartAgain = (e: React.MouseEvent) => {
@@ -389,7 +350,7 @@ const PlayButton = React.memo(function PlayButton({
         "absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-card/95 opacity-0 shadow-sm backdrop-blur-sm transition-opacity",
         "hover:bg-primary/10 hover:text-primary",
         "group-hover/block:opacity-100",
-        isWeekView && "h-5 w-5 right-0.5 top-0.5",
+        isWeekView && "right-0.5 top-0.5 h-5 w-5",
       )}
     >
       <PlayIcon className={cn("h-3 w-3", isWeekView && "h-2.5 w-2.5")} />
@@ -397,7 +358,7 @@ const PlayButton = React.memo(function PlayButton({
   );
 });
 
-function TimelineBlock({
+const TimelineBlock = React.memo(function TimelineBlock({
   entry,
   color,
   isWeekView,
@@ -419,23 +380,12 @@ function TimelineBlock({
   const endTime = entry.endTime
     ? format(parseISO(entry.endTime), "HH:mm")
     : null;
-  const note = entry.note?.trim() ?? "";
-  const hasNote = note.length > 0;
-  const primaryDetail = hasNote ? note : entry.activityName;
-  const showPrimaryDetail = entry.heightPx > SHOW_PRIMARY_DETAIL_MIN_HEIGHT;
-  const secondaryDetailMinHeight = isWeekView
-    ? SHOW_SECONDARY_DETAIL_MIN_HEIGHT_WEEK
-    : SHOW_SECONDARY_DETAIL_MIN_HEIGHT_DAY;
-  const showSecondaryActivity =
-    hasNote && entry.heightPx > secondaryDetailMinHeight;
-  const primaryDetailSizeClass = isWeekView
-    ? "line-clamp-1 text-[10px]"
-    : cn(
-        "text-[12px]",
-        entry.heightPx > SHOW_SECONDARY_DETAIL_MIN_HEIGHT_DAY
-          ? "line-clamp-2"
-          : "line-clamp-1",
-      );
+  const text = buildTimelineCardText({
+    projectName: entry.projectName,
+    activityName: entry.activityName,
+    note: entry.note,
+  });
+  const timeRangeLabel = startTime && endTime ? `${startTime} — ${endTime}` : null;
 
   return (
     <Tooltip>
@@ -447,8 +397,9 @@ function TimelineBlock({
           onClick={isEditable ? onClick : undefined}
           className={cn(
             "group/block absolute z-10 overflow-hidden rounded-lg border transition-all duration-200",
-            isEditable ? "cursor-pointer hover:z-30 hover:shadow-lg" : "cursor-default",
-            entry.mockTimes && "border-dashed opacity-85",
+            isEditable
+              ? "cursor-pointer hover:z-30 hover:shadow-lg"
+              : "cursor-default",
           )}
           style={{
             top: entry.topPx,
@@ -466,87 +417,30 @@ function TimelineBlock({
           />
           {/* Play button overlay on hover */}
           <PlayButton entry={entry} isWeekView={isWeekView} />
-          <div className="flex h-full flex-col justify-start overflow-hidden pl-2.5 pr-1.5 py-1">
-            <p
-              className={cn(
-                "truncate font-semibold leading-tight",
-                isWeekView ? "text-[10px]" : "text-xs",
-              )}
-              style={{ color }}
-            >
-              {entry.projectName}
-            </p>
-            {showPrimaryDetail && (
-              <p
-                className={cn(
-                  "mt-0.5 leading-snug",
-                  hasNote ? "text-foreground/85" : "text-muted-foreground",
-                  primaryDetailSizeClass,
-                )}
-              >
-                {primaryDetail}
-              </p>
-            )}
-            {showSecondaryActivity && (
-              <p
-                className={cn(
-                  "-mt-px truncate leading-tight text-muted-foreground",
-                  isWeekView ? "text-[9.5px]" : "text-[11px]",
-                )}
-              >
-                {entry.activityName}
-              </p>
-            )}
-            {entry.heightPx > 48 && (
-              <p
-                className={cn(
-                  "mt-auto time-display text-muted-foreground/60",
-                  isWeekView ? "text-[9px]" : "text-[10px]",
-                )}
-              >
-                {formatHoursAsHoursMinutes(entry.hours)}
-              </p>
-            )}
-          </div>
+          <SavedTimelineCardBody
+            text={text}
+            heightPx={entry.heightPx}
+            color={color}
+            hours={entry.hours}
+            isWeekView={isWeekView}
+          />
         </motion.div>
       </TooltipTrigger>
       <TooltipContent
         side="right"
         className="max-w-xs rounded-lg border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-sm"
       >
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <div
-              className="h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: color }}
-            />
-            <p className="font-semibold">{entry.projectName}</p>
-          </div>
-          {hasNote && <p className="text-sm text-foreground/90">{note}</p>}
-          <p className="text-sm text-muted-foreground">{entry.activityName}</p>
-          <div className="flex items-center gap-3 pt-1 text-sm">
-            <span className="time-display font-medium">
-              {formatHoursAsHoursMinutes(entry.hours)}
-            </span>
-            {startTime && endTime && (
-              <span className="time-display text-muted-foreground">
-                {startTime} — {endTime}
-              </span>
-            )}
-          </div>
-          {entry.mockTimes && (
-            <p className="text-[10px] text-muted-foreground/60 italic">
-              Estimated position (no start/end time)
-            </p>
-          )}
-          {!isEditable && (
-            <p className="text-[10px] text-muted-foreground/60">Locked entry</p>
-          )}
-        </div>
+        <SavedTimelineCardTooltipBody
+          text={text}
+          color={color}
+          hours={entry.hours}
+          timeRangeLabel={timeRangeLabel}
+          footerHint={!isEditable ? "Locked entry" : undefined}
+        />
       </TooltipContent>
     </Tooltip>
   );
-}
+});
 
 function DayColumn({
   date,
@@ -557,6 +451,7 @@ function DayColumn({
   endHour,
   isWeekView,
   isOnly,
+  activeTimerSegment,
   onEntryClick,
 }: {
   date: Date;
@@ -567,10 +462,12 @@ function DayColumn({
   endHour: number;
   isWeekView: boolean;
   isOnly: boolean;
+  activeTimerSegment?: ActiveTimerSegment | null;
   onEntryClick: (entry: PositionedEntry) => void;
 }) {
   const dayTotal = entries.reduce((sum, e) => sum + e.hours, 0);
   const today = isToday(date);
+  const hasDayTotal = dayTotal > 0;
 
   return (
     <div
@@ -583,7 +480,8 @@ function DayColumn({
       {/* Day header */}
       <div
         className={cn(
-          "flex flex-col items-center gap-0.5 border-b border-border/30 px-2 py-2.5",
+          DAY_HEADER_LAYOUT_CLASS,
+          "border-b border-border/30",
           today && "bg-primary/5",
         )}
       >
@@ -598,24 +496,28 @@ function DayColumn({
         <span
           className={cn(
             "flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold",
-            today
-              ? "bg-primary text-primary-foreground"
-              : "text-foreground",
+            today ? "bg-primary text-primary-foreground" : "text-foreground",
           )}
         >
           {format(date, "d")}
         </span>
-        {dayTotal > 0 && (
-          <span className="text-[11px] time-display text-muted-foreground">
-            {formatHoursAsHoursMinutes(dayTotal)}
-          </span>
-        )}
+        <span
+          className={cn(
+            DAY_HEADER_TOTAL_CLASS,
+            !hasDayTotal && "invisible",
+          )}
+        >
+          {hasDayTotal ? formatHoursAsHoursMinutes(dayTotal) : "0m"}
+        </span>
       </div>
 
       {/* Timeline area — explicit height from computed grid bounds */}
       <div className="relative" style={{ height: gridHeight }}>
         <HourGridLines startHour={startHour} endHour={endHour} />
         <NowIndicator date={date} startHour={startHour} />
+        {activeTimerSegment && (
+          <ActiveTimerBlock segment={activeTimerSegment} isWeekView={isWeekView} />
+        )}
         {entries.map((entry) => (
           <TimelineBlock
             key={entry.registrationId}
@@ -631,9 +533,40 @@ function DayColumn({
   );
 }
 
+function TimelineHeaderSpacer() {
+  return (
+    <div
+      aria-hidden
+      className={cn(DAY_HEADER_LAYOUT_CLASS, "border-b border-transparent")}
+    >
+      <span className="invisible text-xs font-medium uppercase tracking-wider">
+        Mon
+      </span>
+      <span className="invisible flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold">
+        1
+      </span>
+      <span className={cn(DAY_HEADER_TOTAL_CLASS, "invisible")}>
+        0m
+      </span>
+    </div>
+  );
+}
+
 export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
+  const { state: timerState } = useTimeTrackingTimer();
+
   const [mode, setMode] = useState<TimelineMode>("week");
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  const [activeTimerNow, setActiveTimerNow] = useState(() => new Date());
+
+  const { data: activeTimer } = useQuery({
+    ...timeTrackingQueries.getTimer(),
+    enabled: timerState === "running" || timerState === undefined,
+    refetchInterval:
+      timerState === "running" || timerState === undefined ? 60_000 : false,
+    select: (data) => data.timer,
+  });
+  const normalizedActiveTimer = activeTimer ?? null;
 
   const rangeFrom = useMemo(() => parseISO(dateRange.from), [dateRange.from]);
   const rangeTo = useMemo(() => parseISO(dateRange.to), [dateRange.to]);
@@ -662,10 +595,11 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     [timeEntries],
   );
 
-  // Pre-group entries by date so we don't filter per day
+  // Pre-group timed entries by date so timeline only renders precise placements.
   const entriesByDate = useMemo(() => {
     const map = new Map<string, TimeEntry[]>();
     timeEntries.forEach((e) => {
+      if (!e.startTime || !e.endTime) return;
       const key = e.date.slice(0, 10);
       const arr = map.get(key) || [];
       arr.push(e);
@@ -675,17 +609,26 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
   }, [timeEntries]);
 
   const weekDays = useMemo(() => {
-    const days: Date[] = [];
-    for (let i = 0; i < 7; i++) {
-      const day = addDays(currentWeekStart, i);
+    const weekCandidates = Array.from({ length: 7 }, (_, index) =>
+      addDays(currentWeekStart, index),
+    );
+    const activeTimerWeekIntervalsByDay = buildActiveTimerIntervalsByDay({
+      timer: normalizedActiveTimer,
+      now: activeTimerNow,
+      days: weekCandidates,
+      toDayKey,
+    });
+
+    return weekCandidates.filter((day, index) => {
       const key = toDayKey(day);
-      // Always include Mon-Fri; include Sat/Sun only if they have entries
-      if (i < 5 || entriesByDate.has(key)) {
-        days.push(day);
-      }
-    }
-    return days;
-  }, [currentWeekStart, entriesByDate]);
+      // Always include Mon-Fri; include Sat/Sun only if they have entries or active timer overlap
+      return (
+        index < 5 ||
+        entriesByDate.has(key) ||
+        activeTimerWeekIntervalsByDay.has(key)
+      );
+    });
+  }, [currentWeekStart, entriesByDate, normalizedActiveTimer, activeTimerNow]);
 
   // Multi-week navigation
   const isMultiWeek = useMemo(() => {
@@ -719,43 +662,85 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     [selectedDate, rangeTo],
   );
 
-  const selectedDayKey = useMemo(
-    () => toDayKey(selectedDate),
-    [selectedDate],
+  const selectedDayKey = useMemo(() => toDayKey(selectedDate), [selectedDate]);
+  const activeTimerStartTime = normalizedActiveTimer?.startTime ?? null;
+
+  useEffect(() => {
+    if (!activeTimerStartTime) return;
+    const id = setInterval(() => setActiveTimerNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, [activeTimerStartTime]);
+
+  const visibleDays = useMemo(
+    () => (mode === "week" ? weekDays : [selectedDate]),
+    [mode, weekDays, selectedDate],
   );
 
   // Only use entries visible in current view for grid bounds
   const visibleEntries = useMemo(() => {
-    if (mode === "week") {
-      const entries: TimeEntry[] = [];
-      weekDays.forEach((day) => {
-        const key = toDayKey(day);
-        const dayEntries = entriesByDate.get(key);
-        if (dayEntries) entries.push(...dayEntries);
-      });
-      return entries;
-    }
-    return entriesByDate.get(selectedDayKey) ?? [];
-  }, [mode, weekDays, entriesByDate, selectedDayKey]);
+    const entries: TimeEntry[] = [];
+    visibleDays.forEach((day) => {
+      const key = toDayKey(day);
+      const dayEntries = entriesByDate.get(key);
+      if (dayEntries) entries.push(...dayEntries);
+    });
+    return entries;
+  }, [visibleDays, entriesByDate]);
+
+  const activeTimerIntervalsByDay = useMemo(
+    () =>
+      buildActiveTimerIntervalsByDay({
+        timer: normalizedActiveTimer,
+        now: activeTimerNow,
+        days: visibleDays,
+        toDayKey,
+      }),
+    [normalizedActiveTimer, activeTimerNow, visibleDays],
+  );
+
+  const activeTimerHourBounds = useMemo(
+    () => computeActiveTimerHourBounds(activeTimerIntervalsByDay),
+    [activeTimerIntervalsByDay],
+  );
 
   const { startHour, endHour } = useMemo(
-    () => computeGridBounds(visibleEntries),
-    [visibleEntries],
+    () => computeGridBounds(visibleEntries, activeTimerHourBounds),
+    [visibleEntries, activeTimerHourBounds],
   );
 
   const positionedByDay = useMemo(() => {
-    const days = mode === "week" ? weekDays : [selectedDate];
     const map = new Map<string, PositionedEntry[]>();
-    days.forEach((day) => {
+    visibleDays.forEach((day) => {
       const key = toDayKey(day);
       const dayEntries = entriesByDate.get(key) ?? [];
       map.set(key, positionEntries(dayEntries, startHour));
     });
     return map;
-  }, [entriesByDate, mode, weekDays, selectedDate, startHour]);
+  }, [entriesByDate, visibleDays, startHour]);
 
   const totalHours = endHour - startHour;
   const gridHeight = totalHours * HOUR_HEIGHT_PX;
+
+  const activeTimerSegmentsByDay = useMemo(
+    () =>
+      buildActiveTimerSegments({
+        timer: normalizedActiveTimer,
+        intervalsByDay: activeTimerIntervalsByDay,
+        now: activeTimerNow,
+        startHour,
+        hourHeightPx: HOUR_HEIGHT_PX,
+        gridHeight,
+        colorMap,
+      }),
+    [
+      normalizedActiveTimer,
+      activeTimerIntervalsByDay,
+      activeTimerNow,
+      startHour,
+      gridHeight,
+      colorMap,
+    ],
+  );
 
   const totalHoursInView = useMemo(() => {
     let total = 0;
@@ -778,7 +763,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
           <Clock className="h-4 w-4 text-primary" />
           <h3 className="font-display text-base font-semibold">Timeline</h3>
           {totalHoursInView > 0 && (
-            <span className="text-sm text-muted-foreground time-display">
+            <span className="time-display text-sm text-muted-foreground">
               {formatHoursAsHoursMinutes(totalHoursInView)}
             </span>
           )}
@@ -797,7 +782,8 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="min-w-[130px] text-center text-sm font-medium">
-                {format(currentWeekStart, "MMM d")} – {format(weekDays[weekDays.length - 1], "MMM d")}
+                {format(currentWeekStart, "MMM d")} –{" "}
+                {format(weekDays[weekDays.length - 1], "MMM d")}
               </span>
               <Button
                 variant="ghost"
@@ -888,16 +874,11 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
       </div>
 
       {/* Timeline body — needs definite height for Radix ScrollArea viewport to scroll */}
-      <ScrollArea
-        style={{ height: Math.min(720, gridHeight + 80) }}
-      >
-        <div
-          className="flex"
-          style={{ minWidth: mode === "week" ? 700 : 400 }}
-        >
+      <ScrollArea style={{ height: Math.min(720, gridHeight + 80) }}>
+        <div className="flex" style={{ minWidth: mode === "week" ? 700 : 400 }}>
           {/* Hour labels */}
           <div className="relative shrink-0">
-            <div className="h-[76px]" />
+            <TimelineHeaderSpacer />
             <div className="relative" style={{ height: gridHeight }}>
               <HourLabels startHour={startHour} endHour={endHour} />
             </div>
@@ -928,6 +909,9 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                         endHour={endHour}
                         isWeekView={true}
                         isOnly={false}
+                        activeTimerSegment={
+                          activeTimerSegmentsByDay.get(key) ?? null
+                        }
                         onEntryClick={handleEntryClick}
                       />
                     );
@@ -951,6 +935,9 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                     endHour={endHour}
                     isWeekView={false}
                     isOnly={true}
+                    activeTimerSegment={
+                      activeTimerSegmentsByDay.get(selectedDayKey) ?? null
+                    }
                     onEntryClick={handleEntryClick}
                   />
                 </motion.div>
