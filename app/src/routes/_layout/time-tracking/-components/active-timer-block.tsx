@@ -11,7 +11,6 @@ import {
 import { buildTimelineCardText } from "./timeline-card-text";
 
 const HOURS_PER_DAY = 24;
-const ACTIVE_TIMER_MIN_VISIBLE_PX = 10;
 
 export type ActiveTimerHourBounds = {
   earliestHour: number;
@@ -41,9 +40,11 @@ export type ActiveTimerDayInterval = {
 export function ActiveTimerBlock({
   segment,
   isWeekView,
+  dayContentWidthPx,
 }: {
   segment: ActiveTimerSegment;
   isWeekView: boolean;
+  dayContentWidthPx: number | null;
 }) {
   const text = buildTimelineCardText({
     projectName: segment.projectName,
@@ -53,6 +54,8 @@ export function ActiveTimerBlock({
   const timeRangeLabel = `${format(segment.segmentStart, "HH:mm")} — ${
     segment.isCurrent ? "Now" : format(segment.segmentEnd, "HH:mm")
   }`;
+  const cardWidthPx =
+    dayContentWidthPx === null ? null : Math.max(0, dayContentWidthPx - 12);
 
   return (
     <Tooltip>
@@ -74,6 +77,7 @@ export function ActiveTimerBlock({
           <ActiveTimelineCardBody
             text={text}
             heightPx={segment.heightPx}
+            widthPx={cardWidthPx}
             color={segment.color}
             hours={segment.hours}
             isWeekView={isWeekView}
@@ -206,14 +210,8 @@ export function buildActiveTimerSegments({
     const clampedBottom = Math.max(0, Math.min(rawBottom, gridHeight));
     if (clampedBottom <= clampedTop) return;
 
-    let topPx = clampedTop;
-    let heightPx = clampedBottom - clampedTop;
-
-    if (heightPx < ACTIVE_TIMER_MIN_VISIBLE_PX) {
-      const minHeight = Math.min(ACTIVE_TIMER_MIN_VISIBLE_PX, gridHeight);
-      topPx = Math.max(0, Math.min(topPx, gridHeight - minHeight));
-      heightPx = minHeight;
-    }
+    const topPx = clampedTop;
+    const heightPx = Math.max(1, clampedBottom - clampedTop);
 
     segmentsByDay.set(dayKey, {
       topPx,
