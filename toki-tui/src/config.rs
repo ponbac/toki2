@@ -15,6 +15,10 @@ pub struct TokiConfig {
     /// when no conventional commit prefix or ticket number is found.
     #[serde(default = "default_git_prefix")]
     pub git_default_prefix: String,
+    /// Whether to automatically resize the timer to Large when started
+    /// and back to Normal when stopped. Default: true.
+    #[serde(default = "default_auto_resize_timer")]
+    pub auto_resize_timer: bool,
 }
 
 fn default_api_url() -> String {
@@ -25,12 +29,17 @@ fn default_git_prefix() -> String {
     "Utveckling".to_string()
 }
 
+fn default_auto_resize_timer() -> bool {
+    true
+}
+
 impl Default for TokiConfig {
     fn default() -> Self {
         Self {
             api_url: default_api_url(),
             task_filter: String::new(),
             git_default_prefix: default_git_prefix(),
+            auto_resize_timer: default_auto_resize_timer(),
         }
     }
 }
@@ -68,6 +77,7 @@ impl TokiConfig {
             .set_default("api_url", default_api_url())?
             .set_default("task_filter", "")?
             .set_default("git_default_prefix", default_git_prefix())?
+            .set_default("auto_resize_timer", true)?
             .add_source(config::File::from(path.clone()).required(false))
             .add_source(
                 config::Environment::with_prefix("TOKI_TUI")
