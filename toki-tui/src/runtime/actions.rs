@@ -12,7 +12,9 @@ pub(crate) fn restore_active_timer(app: &mut App, timer: crate::types::ActiveTim
     app.absolute_start = Some(timer.start_time);
     app.local_start = Some(Instant::now() - Duration::from_secs(elapsed_secs));
     app.timer_state = app::TimerState::Running;
-    app.timer_size = app::TimerSize::Large;
+    if app.auto_resize_timer {
+        app.timer_size = app::TimerSize::Large;
+    }
     if let (Some(id), Some(name)) = (timer.project_id, timer.project_name) {
         app.selected_project = Some(crate::types::Project { id, name });
     }
@@ -149,7 +151,8 @@ pub(super) async fn handle_start_timer(app: &mut App, client: &mut ApiClient) ->
                 }
                 return Ok(());
             }
-            app.start_timer();
+            let auto_resize = app.auto_resize_timer;
+            app.start_timer(auto_resize);
             app.clear_status();
         }
         app::TimerState::Running => {
@@ -388,7 +391,8 @@ async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiCl
         Ok(()) => {
             // Only mutate local state after confirmed server success
             app.copy_entry_fields(&entry);
-            app.start_timer(); // sets TimerState::Running + TimerSize::Large + local_start
+            let auto_resize = app.auto_resize_timer;
+            app.start_timer(auto_resize); // sets TimerState::Running + TimerSize::Large + local_start
             app.set_status(format!(
                 "Resumed: {}: {}",
                 entry.project_name, entry.activity_name
@@ -459,7 +463,8 @@ pub(super) async fn handle_save_timer_with_action(
                     {
                         app.set_status(format!("Saved but could not restart timer: {}", e));
                     } else {
-                        app.start_timer();
+                        let auto_resize = app.auto_resize_timer;
+                        app.start_timer(auto_resize);
                         app.set_status(format!(
                             "Saved {} to {} / {}",
                             duration_str, project_display, activity_display
@@ -475,7 +480,8 @@ pub(super) async fn handle_save_timer_with_action(
                     if let Err(e) = client.start_timer(None, None, None, None, None).await {
                         app.set_status(format!("Saved but could not restart timer: {}", e));
                     } else {
-                        app.start_timer();
+                        let auto_resize = app.auto_resize_timer;
+                        app.start_timer(auto_resize);
                         app.set_status(format!(
                             "Saved {}. Timer started. Press P to select project.",
                             duration_str
@@ -484,7 +490,9 @@ pub(super) async fn handle_save_timer_with_action(
                 }
                 app::SaveAction::SaveAndStop => {
                     app.timer_state = app::TimerState::Stopped;
-                    app.timer_size = app::TimerSize::Normal;
+                    if app.auto_resize_timer {
+                        app.timer_size = app::TimerSize::Normal;
+                    }
                     app.absolute_start = None;
                     app.local_start = None;
                     if let Some(idx) = app.focused_this_week_index {
