@@ -489,19 +489,7 @@ pub(super) async fn handle_save_timer_with_action(
                     }
                 }
                 app::SaveAction::SaveAndStop => {
-                    app.timer_state = app::TimerState::Stopped;
-                    if app.auto_resize_timer {
-                        app.timer_size = app::TimerSize::Normal;
-                    }
-                    app.absolute_start = None;
-                    app.local_start = None;
-                    if let Some(idx) = app.focused_this_week_index {
-                        app.focused_this_week_index = if idx == 0 {
-                            None
-                        } else {
-                            Some(idx.saturating_sub(1))
-                        };
-                    }
+                    app.stop_timer(app.auto_resize_timer);
                     app.set_status(format!(
                         "Saved {} to {} / {}",
                         duration_str, project_display, activity_display

@@ -288,8 +288,7 @@ impl App {
         }
     }
 
-    /// Stop the timer (without saving)
-    #[allow(dead_code)]
+    /// Stop the timer (without saving).
     pub fn stop_timer(&mut self, auto_resize: bool) {
         self.timer_state = TimerState::Stopped;
         if auto_resize {
@@ -297,6 +296,14 @@ impl App {
         }
         self.absolute_start = None;
         self.local_start = None;
+        // Shift focus back: running timer row at index 0 is removed, pushing DB entries down by 1
+        if let Some(idx) = self.focused_this_week_index {
+            self.focused_this_week_index = if idx == 0 {
+                None
+            } else {
+                Some(idx.saturating_sub(1))
+            };
+        }
     }
 
     pub fn set_status(&mut self, message: String) {
