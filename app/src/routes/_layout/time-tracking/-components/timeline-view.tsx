@@ -191,7 +191,32 @@ function positionEntries(
     }
   }
 
-  return sorted;
+  return sorted.sort((a, b) => a.topPx - b.topPx);
+}
+
+function resolveActiveSegmentTop({
+  segment,
+  entries,
+  gridHeight,
+}: {
+  segment: ActiveTimerSegment;
+  entries: PositionedEntry[];
+  gridHeight: number;
+}) {
+  const maxTop = Math.max(0, gridHeight - segment.heightPx);
+  let topPx = Math.max(0, Math.min(segment.topPx, maxTop));
+
+  for (const entry of entries) {
+    const segmentBottom = topPx + segment.heightPx;
+    const entryBottom = entry.topPx + entry.heightPx;
+    const intersects = topPx < entryBottom && entry.topPx < segmentBottom;
+    if (!intersects) continue;
+
+    topPx = entryBottom;
+    if (topPx > maxTop) return maxTop;
+  }
+
+  return topPx;
 }
 
 /** Scan entries to find the earliest start and latest end, with 30 min padding */
@@ -277,18 +302,17 @@ function HourGridLines({
 
 function NowIndicator({ date, startHour }: { date: Date; startHour: number }) {
   const [now, setNow] = useState(() => new Date());
+  const isTodayColumn = isToday(date);
 
   useEffect(() => {
-    if (!isToday(date)) return;
+    if (!isTodayColumn) return;
+    // Depend on stable day-identity boolean so interval isn't restarted by recreated Date objects.
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
-  }, [date]);
-
-  if (!isToday(date)) return null;
+  }, [isTodayColumn]);
 
   const currentHour = now.getHours() + now.getMinutes() / 60 - startHour;
-
-  if (currentHour < 0) return null;
+  if (!isTodayColumn || currentHour < 0) return null;
 
   return (
     <div
@@ -610,10 +634,12 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     return map;
   }, [timeEntries]);
 
+  const weekCandidates = useMemo(
+    () => Array.from({ length: 7 }, (_, index) => addDays(currentWeekStart, index)),
+    [currentWeekStart],
+  );
+
   const weekDays = useMemo(() => {
-    const weekCandidates = Array.from({ length: 7 }, (_, index) =>
-      addDays(currentWeekStart, index),
-    );
     const activeTimerWeekIntervalsByDay = buildActiveTimerIntervalsByDay({
       timer: normalizedActiveTimer,
       now: activeTimerNow,
@@ -630,7 +656,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
         activeTimerWeekIntervalsByDay.has(key)
       );
     });
-  }, [currentWeekStart, entriesByDate, normalizedActiveTimer, activeTimerNow]);
+  }, [entriesByDate, normalizedActiveTimer, activeTimerNow, weekCandidates]);
 
   // Multi-week navigation
   const isMultiWeek = useMemo(() => {
@@ -743,6 +769,28 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
       colorMap,
     ],
   );
+
+  const resolvedActiveTimerSegmentsByDay = useMemo(() => {
+    const resolved = new Map<string, ActiveTimerSegment>();
+
+    // Saved entries are visually inflated and push-shifted; align active timer cards to that
+    // rendered geometry to avoid card-on-card overlap.
+    visibleDays.forEach((day) => {
+      const key = toDayKey(day);
+      const segment = activeTimerSegmentsByDay.get(key);
+      if (!segment) return;
+
+      const entries = positionedByDay.get(key) ?? [];
+      const topPx = resolveActiveSegmentTop({
+        segment,
+        entries,
+        gridHeight,
+      });
+      resolved.set(key, topPx === segment.topPx ? segment : { ...segment, topPx });
+    });
+
+    return resolved;
+  }, [visibleDays, activeTimerSegmentsByDay, positionedByDay, gridHeight]);
 
   const totalHoursInView = useMemo(() => {
     let total = 0;
@@ -912,7 +960,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                         isWeekView={true}
                         isOnly={false}
                         activeTimerSegment={
-                          activeTimerSegmentsByDay.get(key) ?? null
+                          resolvedActiveTimerSegmentsByDay.get(key) ?? null
                         }
                         onEntryClick={handleEntryClick}
                       />
@@ -938,7 +986,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
                     isWeekView={false}
                     isOnly={true}
                     activeTimerSegment={
-                      activeTimerSegmentsByDay.get(selectedDayKey) ?? null
+                      resolvedActiveTimerSegmentsByDay.get(selectedDayKey) ?? null
                     }
                     onEntryClick={handleEntryClick}
                   />
