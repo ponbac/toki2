@@ -2,13 +2,8 @@ import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import type { TimelineCardText } from "./timeline-card-text";
 
 type BodyConfig = {
-  showProjectAt: number;
-  showPrimaryAt: number;
-  showSecondaryAt: number;
-  showDurationAt: number;
-  twoLinePrimaryAt: number;
-  compactAt?: number;
   spacingClass: string;
+  compactSpacingClass: string;
   projectTextClass: string;
   primaryTextClass: string;
   secondaryTextClass: string;
@@ -16,12 +11,8 @@ type BodyConfig = {
 };
 
 const SAVED_DAY_BODY: BodyConfig = {
-  showProjectAt: 0,
-  showPrimaryAt: 24,
-  showSecondaryAt: 90,
-  showDurationAt: 48,
-  twoLinePrimaryAt: 90,
   spacingClass: "py-1 pl-2.5 pr-1.5",
+  compactSpacingClass: "px-2 py-0.5",
   projectTextClass: "text-xs",
   primaryTextClass: "text-[12px]",
   secondaryTextClass: "-mt-px text-[11px]",
@@ -29,12 +20,8 @@ const SAVED_DAY_BODY: BodyConfig = {
 };
 
 const SAVED_WEEK_BODY: BodyConfig = {
-  showProjectAt: 0,
-  showPrimaryAt: 24,
-  showSecondaryAt: 96,
-  showDurationAt: 48,
-  twoLinePrimaryAt: Infinity,
   spacingClass: "py-1 pl-2.5 pr-1.5",
+  compactSpacingClass: "px-2 py-0.5",
   projectTextClass: "text-[10px]",
   primaryTextClass: "text-[10px]",
   secondaryTextClass: "-mt-px text-[9.5px]",
@@ -42,63 +29,144 @@ const SAVED_WEEK_BODY: BodyConfig = {
 };
 
 const ACTIVE_DAY_BODY: BodyConfig = {
-  showProjectAt: 22,
-  showPrimaryAt: 46,
-  showSecondaryAt: 76,
-  showDurationAt: 60,
-  twoLinePrimaryAt: 84,
-  compactAt: 40,
   spacingClass: "px-2.5 py-1",
-  projectTextClass: "text-[11px]",
-  primaryTextClass: "text-[10px]",
-  secondaryTextClass: "mt-px text-[10px]",
+  compactSpacingClass: "px-2 py-0.5",
+  projectTextClass: "text-xs",
+  primaryTextClass: "text-[12px]",
+  secondaryTextClass: "-mt-px text-[11px]",
   durationTextClass: "text-[10px] text-muted-foreground/70",
 };
 
 const ACTIVE_WEEK_BODY: BodyConfig = {
   ...ACTIVE_DAY_BODY,
+  projectTextClass: "text-[10px]",
+  primaryTextClass: "text-[10px]",
+  secondaryTextClass: "-mt-px text-[9.5px]",
+  durationTextClass: "text-[9px] text-muted-foreground/70",
 };
+
+type DensityMode =
+  | "project_only"
+  | "project_duration"
+  | "project_primary"
+  | "project_primary_duration"
+  | "full";
+
+function hasPrimaryDetail(mode: DensityMode) {
+  return (
+    mode === "project_primary" ||
+    mode === "project_primary_duration" ||
+    mode === "full"
+  );
+}
+
+function hasDuration(mode: DensityMode) {
+  return (
+    mode === "project_duration" ||
+    mode === "project_primary_duration" ||
+    mode === "full"
+  );
+}
+
+function resolveDensityMode({
+  heightPx,
+  widthPx,
+  forceProjectOnly = false,
+}: {
+  heightPx: number;
+  widthPx: number | null;
+  forceProjectOnly?: boolean;
+}): DensityMode {
+  if (forceProjectOnly) return "project_only";
+
+  if (heightPx < 34) {
+    return "project_only";
+  }
+
+  // Width limits text density, but should not collapse medium-height cards to project-only.
+  if (widthPx !== null) {
+    if (widthPx < 120) {
+      if (heightPx < 44) return "project_duration";
+      if (heightPx < 56) return "project_primary";
+      return "project_primary_duration";
+    }
+    if (widthPx < 180) {
+      if (heightPx < 40) return "project_duration";
+      if (heightPx < 52) return "project_primary";
+      return heightPx >= 92 ? "full" : "project_primary_duration";
+    }
+    if (widthPx < 250) {
+      if (heightPx < 44) return "project_primary";
+      return heightPx >= 96 ? "full" : "project_primary_duration";
+    }
+    if (widthPx < 320 && heightPx < 96) {
+      return "project_primary_duration";
+    }
+  }
+
+  // In roomier columns, allow notes earlier so ~30 minute entries can show
+  // useful context while still reserving full mode for taller cards.
+  if (heightPx < 64) {
+    return "project_primary";
+  }
+  if (heightPx < 96) {
+    return "project_primary_duration";
+  }
+  return "full";
+}
 
 function TimelineCardBodyBase({
   text,
   heightPx,
+  widthPx,
   color,
   hours,
   projectColor,
   className,
+  forceProjectOnly,
   config,
 }: {
   text: TimelineCardText;
   heightPx: number;
+  widthPx: number | null;
   color: string;
   hours: number;
   projectColor?: string;
   className?: string;
+  forceProjectOnly?: boolean;
   config: BodyConfig;
 }) {
-  const isCompact = config.compactAt !== undefined && heightPx < config.compactAt;
-  const showProjectLabel = heightPx >= config.showProjectAt;
-  const showPrimaryDetail = heightPx > config.showPrimaryAt;
-  const showSecondaryDetail = text.hasNote && heightPx > config.showSecondaryAt;
-  const showDuration = heightPx >= config.showDurationAt;
-  const showTwoLinePrimary = heightPx >= config.twoLinePrimaryAt;
+  const densityMode = resolveDensityMode({
+    heightPx,
+    widthPx,
+    forceProjectOnly,
+  });
+  const isCompact =
+    densityMode === "project_only" ||
+    densityMode === "project_duration" ||
+    densityMode === "project_primary";
+  const showPrimaryDetail = hasPrimaryDetail(densityMode);
+  const showSecondaryDetail = densityMode === "full" && text.hasNote;
+  const showDuration = hasDuration(densityMode);
+  const showTwoLinePrimary =
+    densityMode === "full" &&
+    heightPx >= 132 &&
+    (widthPx === null || widthPx >= 380);
 
   return (
     <div
       className={cn(
         "flex h-full min-h-0 flex-col justify-start overflow-hidden",
-        isCompact ? "px-2 py-0.5" : config.spacingClass,
+        isCompact ? config.compactSpacingClass : config.spacingClass,
         className,
       )}
     >
-      {showProjectLabel && (
-        <p
-          className={cn("truncate font-semibold leading-tight", config.projectTextClass)}
-          style={{ color: projectColor ?? color }}
-        >
-          {text.projectLabel}
-        </p>
-      )}
+      <p
+        className={cn("truncate font-semibold leading-tight", config.projectTextClass)}
+        style={{ color: projectColor ?? color }}
+      >
+        {text.projectLabel}
+      </p>
       {showPrimaryDetail && (
         <p
           className={cn(
@@ -179,22 +247,28 @@ function TimelineCardTooltipBodyBase({
 export function SavedTimelineCardBody({
   text,
   heightPx,
+  widthPx,
   color,
   hours,
   isWeekView,
+  forceProjectOnly,
 }: {
   text: TimelineCardText;
   heightPx: number;
+  widthPx: number | null;
   color: string;
   hours: number;
   isWeekView: boolean;
+  forceProjectOnly?: boolean;
 }) {
   return (
     <TimelineCardBodyBase
       text={text}
       heightPx={heightPx}
+      widthPx={widthPx}
       color={color}
       hours={hours}
+      forceProjectOnly={forceProjectOnly}
       config={isWeekView ? SAVED_WEEK_BODY : SAVED_DAY_BODY}
     />
   );
@@ -203,6 +277,7 @@ export function SavedTimelineCardBody({
 export function ActiveTimelineCardBody({
   text,
   heightPx,
+  widthPx,
   color,
   hours,
   isWeekView,
@@ -211,6 +286,7 @@ export function ActiveTimelineCardBody({
 }: {
   text: TimelineCardText;
   heightPx: number;
+  widthPx: number | null;
   color: string;
   hours: number;
   isWeekView: boolean;
@@ -221,6 +297,7 @@ export function ActiveTimelineCardBody({
     <TimelineCardBodyBase
       text={text}
       heightPx={heightPx}
+      widthPx={widthPx}
       color={color}
       hours={hours}
       projectColor={projectColor}
