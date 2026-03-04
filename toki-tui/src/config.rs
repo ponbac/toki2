@@ -77,7 +77,7 @@ impl TokiConfig {
             .set_default("api_url", default_api_url())?
             .set_default("task_filter", "")?
             .set_default("git_default_prefix", default_git_prefix())?
-            .set_default("auto_resize_timer", true)?
+            .set_default("auto_resize_timer", default_auto_resize_timer())?
             .add_source(config::File::from(path.clone()).required(false))
             .add_source(
                 config::Environment::with_prefix("TOKI_TUI")
