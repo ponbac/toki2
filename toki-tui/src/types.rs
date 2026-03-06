@@ -16,6 +16,32 @@ pub struct Activity {
     pub project_id: String,
 }
 
+/// Attestation / lock level for a time entry, matching the Milltime API value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(from = "u8")]
+pub enum AttestLevel {
+    #[default]
+    None = 0,
+    Week = 1,
+    Month = 2,
+}
+
+impl From<u8> for AttestLevel {
+    fn from(v: u8) -> Self {
+        match v {
+            1 => AttestLevel::Week,
+            2 => AttestLevel::Month,
+            _ => AttestLevel::None,
+        }
+    }
+}
+
+impl AttestLevel {
+    pub fn is_locked(self) -> bool {
+        self != AttestLevel::None
+    }
+}
+
 /// A completed time entry from Milltime (via GET /time-tracking/time-entries).
 /// start_time / end_time are optional — present only if a local timer history record exists.
 #[derive(Debug, Clone, Deserialize)]
@@ -36,6 +62,8 @@ pub struct TimeEntry {
     pub end_time: Option<OffsetDateTime>,
     #[allow(dead_code)]
     pub week_number: u8,
+    #[serde(default)]
+    pub attest_level: AttestLevel,
 }
 
 /// The current user, as returned by GET /me.

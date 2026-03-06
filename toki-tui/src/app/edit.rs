@@ -1,5 +1,8 @@
 use super::*;
 
+const LOCKED_ENTRY_MSG: &str = "Entry is locked and cannot be edited";
+const LOCKED_DELETE_MSG: &str = "Entry is locked and cannot be deleted";
+
 impl App {
     /// Enter edit mode for the currently focused This Week entry
     pub fn enter_this_week_edit_mode(&mut self) {
@@ -27,6 +30,13 @@ impl App {
                 } else {
                     idx
                 };
+                // Guard: locked entries cannot be edited
+                if let Some(entry) = self.this_week_history().get(db_idx) {
+                    if entry.attest_level.is_locked() {
+                        self.set_status(LOCKED_ENTRY_MSG.to_string());
+                        return;
+                    }
+                }
                 let entry_data = self.this_week_history().get(db_idx).map(|e| {
                     let (start_time, end_time) =
                         derive_start_end(e.start_time, e.end_time, &e.date, e.hours);
@@ -72,6 +82,13 @@ impl App {
     pub fn enter_history_edit_mode(&mut self) {
         if let Some(list_idx) = self.focused_history_index {
             if let Some(&history_idx) = self.history_list_entries.get(list_idx) {
+                // Guard: locked entries cannot be edited
+                if let Some(entry) = self.time_entries.get(history_idx) {
+                    if entry.attest_level.is_locked() {
+                        self.set_status(LOCKED_ENTRY_MSG.to_string());
+                        return;
+                    }
+                }
                 let entry_data = self.time_entries.get(history_idx).map(|e| {
                     let (start_time, end_time) =
                         derive_start_end(e.start_time, e.end_time, &e.date, e.hours);
@@ -564,6 +581,37 @@ impl App {
         if let Some(state) = &mut self.history_edit_state {
             state.note = TextInput::from_str(&note);
         }
+    }
+
+    /// Returns true if the currently focused history entry is locked.
+    pub fn focused_history_entry_is_locked(&self) -> bool {
+        self.focused_history_index
+            .and_then(|list_idx| self.history_list_entries.get(list_idx))
+            .and_then(|&history_idx| self.time_entries.get(history_idx))
+            .map(|e| e.attest_level.is_locked())
+            .unwrap_or(false)
+    }
+
+    /// Returns true if the currently focused This Week entry is locked.
+    pub fn focused_this_week_entry_is_locked(&self) -> bool {
+        self.focused_this_week_index
+            .map(|idx| {
+                let db_idx = if self.timer_state == TimerState::Running {
+                    idx.saturating_sub(1)
+                } else {
+                    idx
+                };
+                self.this_week_history()
+                    .get(db_idx)
+                    .map(|e| e.attest_level.is_locked())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+
+    /// Set the status message for a locked-entry delete attempt.
+    pub fn set_locked_delete_status(&mut self) {
+        self.set_status(LOCKED_DELETE_MSG.to_string());
     }
 
     /// Check if we're in any edit mode

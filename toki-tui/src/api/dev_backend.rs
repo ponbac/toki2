@@ -49,6 +49,7 @@ impl DevBackend {
                 start_time: Some(e.start_time),
                 end_time: e.end_time,
                 week_number: e.start_time.iso_week(),
+                attest_level: Default::default(),
             })
             .collect()
     }

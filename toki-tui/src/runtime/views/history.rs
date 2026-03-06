@@ -110,13 +110,21 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
             }
             KeyCode::Char('q') | KeyCode::Char('Q') => app.quit(),
             KeyCode::Delete | KeyCode::Backspace if app.focused_history_index.is_some() => {
-                app.enter_delete_confirm(app::DeleteOrigin::History);
+                if app.focused_history_entry_is_locked() {
+                    app.set_locked_delete_status();
+                } else {
+                    app.enter_delete_confirm(app::DeleteOrigin::History);
+                }
             }
             KeyCode::Char('x')
                 if key.modifiers.contains(KeyModifiers::CONTROL)
                     && app.focused_history_index.is_some() =>
             {
-                app.enter_delete_confirm(app::DeleteOrigin::History);
+                if app.focused_history_entry_is_locked() {
+                    app.set_locked_delete_status();
+                } else {
+                    app.enter_delete_confirm(app::DeleteOrigin::History);
+                }
             }
             _ => {}
         }

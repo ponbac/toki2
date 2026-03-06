@@ -73,10 +73,9 @@ pub fn build_display_row(
     is_overlapping: bool,
     available_width: u16,
 ) -> Line<'_> {
-    // Warning emoji for overlapping entries
-    let warning_prefix = if is_overlapping { "⚠ " } else { "" };
+    let is_locked = entry.attest_level.is_locked();
 
-    // Base colors - red for overlapping, normal for non-overlapping
+    // Base colors - red for overlapping, normal otherwise (locked entries keep normal colors)
     let time_color = if is_overlapping {
         Color::Red
     } else {
@@ -132,8 +131,9 @@ pub fn build_display_row(
 
     // Responsive truncation: compute remaining width after fixed prefix.
     // Non-overlapping: "HH:MM - HH:MM " (14) + "[DDh:DDm]" (9) + " | " (3) = 26
-    // Overlapping adds "⚠ " (2 chars: symbol + space) = 28
-    let prefix_len: usize = if is_overlapping { 28 } else { 26 };
+    // Both ⊘ and ⚠ are 2 chars (symbol + space), so same budget = 28
+    let has_prefix = is_locked || is_overlapping;
+    let prefix_len: usize = if has_prefix { 28 } else { 26 };
     let remaining = (available_width as usize).saturating_sub(prefix_len);
 
     let proj_act = format!("{}: {}", project, activity);
@@ -142,12 +142,12 @@ pub fn build_display_row(
     // Build styled line with colors
     let mut spans = vec![];
 
-    // Warning prefix for overlapping entries
-    if is_overlapping {
-        spans.push(Span::styled(
-            warning_prefix,
-            Style::default().fg(Color::Red),
-        ));
+    // Locked takes visual precedence over overlap — attested entries cannot be
+    // edited regardless of overlap, so the lock indicator is more actionable.
+    if is_locked {
+        spans.push(Span::styled("⊘ ", Style::default().fg(Color::Red)));
+    } else if is_overlapping {
+        spans.push(Span::styled("⚠ ", Style::default().fg(Color::Red)));
     }
 
     // Show time range — use real times if available, otherwise a dimmed placeholder
