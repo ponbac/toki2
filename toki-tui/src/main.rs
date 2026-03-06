@@ -28,6 +28,17 @@ async fn main() -> Result<()> {
             let path = config::TokiConfig::ensure_exists()?;
             println!("{}", path.display());
         }
+        Commands::Version => {
+            println!("{}", env!("CARGO_PKG_VERSION"));
+        }
+        Commands::Status => {
+            let session = session_store::load_session()?;
+            let mt_cookies = session_store::load_mt_cookies()?;
+            let session_status = if session.is_some() { "logged in" } else { "not logged in" };
+            let mt_status = if !mt_cookies.is_empty() { "authenticated" } else { "no cookies" };
+            println!("Azure AD: {}", session_status);
+            println!("Milltime: {}", mt_status);
+        }
         Commands::Login => {
             let cfg = config::TokiConfig::load()?;
             login::run_login(&cfg.api_url).await?;

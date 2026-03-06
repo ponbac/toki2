@@ -20,4 +20,8 @@ pub enum Commands {
     Logout,
     /// Print config path and create default file if missing
     ConfigPath,
+    /// Print the current version
+    Version,
+    /// Show current login and Milltime session status
+    Status,
 }

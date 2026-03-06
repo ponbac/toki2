@@ -95,3 +95,11 @@ tui-logout:
 # Print TUI config path and create default config if missing
 tui-config:
     cd toki-tui && cargo run -- config-path
+
+# Print toki-tui version
+tui-version:
+    cd toki-tui && cargo run -- version
+
+# Show toki-tui session and Milltime status
+tui-status:
+    cd toki-tui && cargo run -- status
