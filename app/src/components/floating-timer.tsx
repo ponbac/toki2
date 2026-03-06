@@ -169,7 +169,7 @@ export const FloatingTimer = () => {
         <button
           type="button"
           onClick={() => setIsMinimized(false)}
-          className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 cursor-pointer items-center gap-2.5 rounded-full border border-border/50 bg-card/95 px-4 py-2 shadow-elevated-lg backdrop-blur-xl transition-all hover:scale-[1.02] hover:shadow-elevated-xl active:scale-[0.98] md:left-auto md:right-4 md:translate-x-0"
+          className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 cursor-pointer items-center gap-2.5 rounded-full border border-border/50 bg-card/75 px-4 py-2 shadow-elevated-lg backdrop-blur-xl transition-all hover:scale-[1.02] hover:shadow-elevated-xl active:scale-[0.98] md:left-auto md:right-4 md:translate-x-0"
         >
           <span className="relative flex size-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -185,7 +185,7 @@ export const FloatingTimer = () => {
           )}
         </button>
       ) : (
-        <div className="fixed bottom-4 left-1/2 z-40 w-[90%] -translate-x-1/2 rounded-lg border border-border/50 bg-card/95 p-4 shadow-elevated-lg backdrop-blur-xl sm:w-[400px] md:left-auto md:right-4 md:translate-x-0">
+        <div className="fixed bottom-4 left-1/2 z-40 w-[90%] -translate-x-1/2 rounded-lg border border-border/50 bg-card/75 p-4 shadow-elevated-lg backdrop-blur-xl sm:w-[400px] md:left-auto md:right-4 md:translate-x-0">
           <div className="flex flex-col items-center justify-between space-y-1">
             <div className="flex w-full items-center justify-between gap-2">
               <div className="text-4xl font-bold tracking-tighter text-foreground">
