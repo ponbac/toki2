@@ -55,6 +55,10 @@ export const FloatingTimer = () => {
     retry: 1,
   });
   const timer = timerResponse?.timer;
+  const timerForEditDialog = React.useMemo(
+    () => (timer ? { ...timer, note: userNote } : null),
+    [timer, userNote],
+  );
 
   const { mutate: startTimer } = timeTrackingMutations.useStartTimer();
   const { mutate: stopTimer, isPending: isStoppingTimer } =
@@ -380,12 +384,12 @@ export const FloatingTimer = () => {
           </div>
         </div>
       )}
-      {timer && (
+      {timerForEditDialog && (
         <TimerEditDialog
           key={`${isEditDialogOpen}`}
           open={isEditDialogOpen}
           onOpenChange={setIsEditDialogOpen}
-          timer={timer}
+          timer={timerForEditDialog}
         />
       )}
     </>

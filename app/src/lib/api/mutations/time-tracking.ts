@@ -2,7 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions, MutationFnAsync } from "./mutations";
 import { z } from "zod";
-import { timeTrackingQueries } from "../queries/time-tracking";
+import {
+  GetTimerResponse,
+  TimerResponse,
+  timeTrackingQueries,
+} from "../queries/time-tracking";
 import { useTimeTrackingActions } from "@/hooks/useTimeTrackingStore";
 
 export const timeTrackingMutations = {
@@ -127,8 +131,24 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
   });
 }
 
+function mergeOptimisticTimerEdit(
+  timer: TimerResponse,
+  body: EditTimerPayload,
+): TimerResponse {
+  return {
+    ...timer,
+    note: body.userNote ?? timer.note,
+    projectId: body.projectId ?? timer.projectId,
+    projectName: body.projectName ?? timer.projectName,
+    activityId: body.activityId ?? timer.activityId,
+    activityName: body.activityName ?? timer.activityName,
+    startTime: body.startTime ?? timer.startTime,
+  };
+}
+
 function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
   const queryClient = useQueryClient();
+  const timerQueryKey = timeTrackingQueries.getTimer().queryKey;
 
   return useMutation({
     mutationKey: ["time-tracking", "editTimer"],
@@ -137,11 +157,48 @@ function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
         json: body,
       }),
     ...options,
-    onSuccess: (data, v, c) => {
-      queryClient.invalidateQueries({
-        queryKey: timeTrackingQueries.getTimer().queryKey,
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({
+        queryKey: timerQueryKey,
       });
-      options?.onSuccess?.(data, v, c);
+
+      const previousTimer =
+        queryClient.getQueryData<GetTimerResponse>(timerQueryKey);
+
+      queryClient.setQueryData<GetTimerResponse | undefined>(
+        timerQueryKey,
+        (current) =>
+          current?.timer
+            ? {
+                ...current,
+                timer: mergeOptimisticTimerEdit(current.timer, vars),
+              }
+            : current,
+      );
+
+      const optionsContext = await options?.onMutate?.(vars);
+      return { previousTimer, optionsContext } satisfies {
+        previousTimer: GetTimerResponse | undefined;
+        optionsContext: unknown;
+      };
+    },
+    onSuccess: (data, v, c) => {
+      options?.onSuccess?.(data, v, c?.optionsContext);
+    },
+    onError: (error, v, c) => {
+      if (c?.previousTimer !== undefined) {
+        queryClient.setQueryData<GetTimerResponse>(
+          timerQueryKey,
+          c.previousTimer,
+        );
+      }
+      options?.onError?.(error, v, c?.optionsContext);
+    },
+    onSettled: (data, error, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: timerQueryKey,
+      });
+      options?.onSettled?.(data, error, v, c?.optionsContext);
     },
   });
 }
