@@ -112,6 +112,7 @@ pub struct App {
     // Config values used at runtime
     pub task_filter: String,
     pub git_default_prefix: String,
+    pub auto_resize_timer: bool,
 }
 
 impl App {
@@ -175,6 +176,7 @@ impl App {
             milltime_reauth: None,
             task_filter: cfg.task_filter.clone(),
             git_default_prefix: cfg.git_default_prefix.clone(),
+            auto_resize_timer: cfg.auto_resize_timer,
         }
     }
 
@@ -273,24 +275,35 @@ impl App {
     }
 
     /// Start a new timer
-    pub fn start_timer(&mut self) {
+    pub fn start_timer(&mut self, auto_resize: bool) {
         self.timer_state = TimerState::Running;
         self.absolute_start = Some(OffsetDateTime::now_utc());
         self.local_start = Some(Instant::now());
-        self.timer_size = TimerSize::Large;
+        if auto_resize {
+            self.timer_size = TimerSize::Large;
+        }
         // Shift focus: running timer row is inserted at index 0, pushing DB entries up by 1
         if let Some(idx) = self.focused_this_week_index {
             self.focused_this_week_index = Some(idx + 1);
         }
     }
 
-    /// Stop the timer (without saving)
-    #[allow(dead_code)]
-    pub fn stop_timer(&mut self) {
+    /// Stop the timer (without saving).
+    pub fn stop_timer(&mut self, auto_resize: bool) {
         self.timer_state = TimerState::Stopped;
-        self.timer_size = TimerSize::Normal;
+        if auto_resize {
+            self.timer_size = TimerSize::Normal;
+        }
         self.absolute_start = None;
         self.local_start = None;
+        // Shift focus back: running timer row at index 0 is removed, pushing DB entries down by 1
+        if let Some(idx) = self.focused_this_week_index {
+            self.focused_this_week_index = if idx == 0 {
+                None
+            } else {
+                Some(idx.saturating_sub(1))
+            };
+        }
     }
 
     pub fn set_status(&mut self, message: String) {

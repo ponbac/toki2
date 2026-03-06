@@ -43,6 +43,7 @@ Current variables:
 TOKI_TUI_API_URL="http://localhost:8080"
 TOKI_TUI_GIT_DEFAULT_PREFIX="Development"
 TOKI_TUI_TASK_FILTER="+work project:Toki"
+TOKI_TUI_AUTO_RESIZE_TIMER=true
 ```
 
 Environment variables override values from `config.toml`.
@@ -60,6 +61,11 @@ git_default_prefix = "Utveckling"
 # Leave empty to show all pending tasks.
 # Example: "+work project:Toki"
 task_filter = ""
+
+# Whether to automatically resize the timer widget when the timer starts/stops.
+# When true (default), the timer grows large when running and shrinks when stopped.
+# Set to false to keep the timer at a fixed (normal) size at all times.
+auto_resize_timer = true
 ```
 
 ### Example: local dev setup
