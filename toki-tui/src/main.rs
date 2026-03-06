@@ -8,6 +8,8 @@ mod login;
 mod runtime;
 mod session_store;
 mod terminal;
+#[cfg(test)]
+mod test_support;
 mod time_utils;
 mod types;
 mod ui;

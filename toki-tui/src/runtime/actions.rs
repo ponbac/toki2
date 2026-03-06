@@ -780,3 +780,106 @@ pub(super) fn is_milltime_auth_error(e: &anyhow::Error) -> bool {
     let msg = e.to_string().to_lowercase();
     msg.contains("unauthorized") || msg.contains("authenticate") || msg.contains("milltime")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::ApiClient;
+    use crate::app::{DeleteContext, DeleteOrigin, SaveAction, View};
+    use crate::test_support::test_app;
+    use crate::types::ActiveTimerState;
+    use time::macros::datetime;
+
+    #[test]
+    fn restore_active_timer_populates_local_app_state() {
+        let mut app = test_app();
+        let timer = ActiveTimerState {
+            start_time: datetime!(2026-03-06 09:15 UTC),
+            project_id: Some("proj-1".to_string()),
+            project_name: Some("Project One".to_string()),
+            activity_id: Some("act-1".to_string()),
+            activity_name: Some("Activity One".to_string()),
+            note: "Investigate tests".to_string(),
+            hours: 1,
+            minutes: 2,
+            seconds: 3,
+        };
+
+        restore_active_timer(&mut app, timer);
+
+        assert_eq!(app.timer_state, app::TimerState::Running);
+        assert_eq!(app.selected_project.as_ref().map(|p| p.id.as_str()), Some("proj-1"));
+        assert_eq!(
+            app.selected_activity.as_ref().map(|a| a.name.as_str()),
+            Some("Activity One")
+        );
+        assert_eq!(app.description_input.value, "Investigate tests");
+        assert!(!app.description_is_default);
+        assert_eq!(app.absolute_start, Some(datetime!(2026-03-06 09:15 UTC)));
+        assert!(app.local_start.is_some());
+    }
+
+    #[tokio::test]
+    async fn handle_start_timer_starts_timer_in_dev_mode() {
+        let mut app = test_app();
+        let mut client = ApiClient::dev().expect("dev client");
+
+        handle_start_timer(&mut app, &mut client)
+            .await
+            .expect("start timer should succeed");
+
+        assert_eq!(app.timer_state, app::TimerState::Running);
+        assert!(app.absolute_start.is_some());
+        assert!(app.local_start.is_some());
+        assert!(app.status_message.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_save_timer_cancel_returns_to_timer_without_saving() {
+        let mut app = test_app();
+        let mut client = ApiClient::dev().expect("dev client");
+        app.current_view = View::SaveAction;
+        app.selected_save_action = SaveAction::Cancel;
+        app.timer_state = app::TimerState::Running;
+
+        handle_save_timer_with_action(&mut app, &mut client)
+            .await
+            .expect("cancel should succeed");
+
+        assert_eq!(app.current_view, View::Timer);
+        assert_eq!(app.timer_state, app::TimerState::Running);
+    }
+
+    #[tokio::test]
+    async fn handle_confirm_delete_removes_entry_and_returns_to_origin_view() {
+        let mut app = test_app();
+        let mut client = ApiClient::dev().expect("dev client");
+        let today = time::OffsetDateTime::now_utc().date();
+        let entries = client
+            .get_time_entries(today, today)
+            .await
+            .expect("history should load");
+        let entry = entries.first().expect("seeded history entry").clone();
+
+        app.update_history(entries);
+        app.rebuild_history_list();
+        app.current_view = View::ConfirmDelete;
+        app.delete_context = Some(DeleteContext {
+            registration_id: entry.registration_id.clone(),
+            display_label: format!("{} / {}", entry.project_name, entry.activity_name),
+            display_date: entry.date.clone(),
+            display_hours: entry.hours,
+            origin: DeleteOrigin::History,
+        });
+
+        handle_confirm_delete(&mut app, &mut client).await;
+
+        assert_eq!(app.current_view, View::History);
+        assert!(app.status_message.is_none());
+        assert!(app
+            .time_entries
+            .iter()
+            .all(|item| item.registration_id != entry.registration_id));
+        assert!(app.delete_context.is_none());
+    }
+}
