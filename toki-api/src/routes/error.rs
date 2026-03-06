@@ -6,10 +6,11 @@ use axum::{
 use serde::Serialize;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
     TimeTrackingAuthenticationFailed,
+    TimeTrackingPeriodLocked,
 }
 
 #[derive(Serialize)]
@@ -121,6 +122,8 @@ impl From<TimeTrackingError> for ApiError {
             }
             TimeTrackingError::TimerAlreadyRunning => Self::conflict(err.to_string()),
             TimeTrackingError::InvalidDateRange => Self::bad_request(err.to_string()),
+            TimeTrackingError::PeriodLocked => Self::new(StatusCode::LOCKED, err.to_string())
+                .with_code(ErrorCode::TimeTrackingPeriodLocked),
             _ => Self::internal(err.to_string()),
         }
     }
@@ -172,5 +175,19 @@ impl From<WorkItemError> for ApiError {
 impl From<WorkItemServiceError> for ApiError {
     fn from(err: WorkItemServiceError) -> Self {
         Self::new(err.status, err.message)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn period_locked_maps_to_locked_status_and_code() {
+        let api_error = ApiError::from(TimeTrackingError::PeriodLocked);
+
+        assert_eq!(api_error.status, StatusCode::LOCKED);
+        assert_eq!(api_error.code, Some(ErrorCode::TimeTrackingPeriodLocked));
+        assert_eq!(api_error.message, "time period is locked");
     }
 }

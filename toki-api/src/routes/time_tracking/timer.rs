@@ -153,6 +153,7 @@ pub struct SaveTimerPayload {
     project_name: Option<String>,
     activity_id: Option<String>,
     activity_name: Option<String>,
+    reg_day: Option<String>,
 }
 
 #[instrument(name = "save_timer", skip(jar))]
@@ -169,6 +170,7 @@ pub async fn save_timer(
 
     let parsed_update = parse_save_timer_project_activity_update(&body)?;
     let user_note = body.user_note;
+    let reg_day = body.reg_day;
 
     // Allow clients to include latest project/activity values in the save call.
     // This makes save robust if a prior timer-edit sync call was missed.
@@ -191,7 +193,7 @@ pub async fn save_timer(
         service.edit_timer(&user.id, &updated_timer).await?;
     }
 
-    service.save_timer(&user.id, user_note).await?;
+    service.save_timer(&user.id, user_note, reg_day).await?;
 
     Ok((jar, StatusCode::OK))
 }
@@ -314,6 +316,7 @@ mod tests {
             project_name: project_name.map(ToString::to_string),
             activity_id: activity_id.map(ToString::to_string),
             activity_name: activity_name.map(ToString::to_string),
+            reg_day: None,
         }
     }
 

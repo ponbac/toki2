@@ -32,6 +32,7 @@ pub struct SaveTimerRequest {
     pub project_name: Option<String>,
     pub activity_id: Option<String>,
     pub activity_name: Option<String>,
+    pub reg_day: Option<String>,
 }
 
 #[derive(Serialize)]

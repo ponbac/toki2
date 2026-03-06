@@ -33,6 +33,28 @@ impl<C, R> TimeTrackingServiceImpl<C, R> {
     }
 }
 
+fn resolve_save_day_and_week(
+    now: OffsetDateTime,
+    reg_day: Option<&str>,
+) -> Result<(String, i32), TimeTrackingError> {
+    let format =
+        time::format_description::parse("[year]-[month]-[day]").expect("valid format description");
+    match reg_day {
+        Some(day) => {
+            let date =
+                Date::parse(day, &format).map_err(|_| TimeTrackingError::InvalidDateRange)?;
+            Ok((day.to_string(), date.iso_week() as i32))
+        }
+        None => {
+            let day = now
+                .date()
+                .format(&format)
+                .expect("failed to format current day");
+            Ok((day, now.iso_week() as i32))
+        }
+    }
+}
+
 #[async_trait]
 impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
     for TimeTrackingServiceImpl<C, R>
@@ -69,6 +91,7 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         &self,
         user_id: &UserId,
         note: Option<String>,
+        reg_day: Option<String>,
     ) -> Result<TimerId, TimeTrackingError> {
         // Get the active timer
         let active_timer = self
@@ -81,15 +104,7 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         const BONUS_TIME_MINUTES: i64 = 1;
         let now = OffsetDateTime::now_utc();
         let end_time = now + time::Duration::minutes(BONUS_TIME_MINUTES);
-
-        let current_day = now
-            .date()
-            .format(
-                &time::format_description::parse("[year]-[month]-[day]")
-                    .expect("valid format description"),
-            )
-            .expect("failed to format current day");
-        let week_number = now.iso_week() as i32;
+        let (save_day, week_number) = resolve_save_day_and_week(now, reg_day.as_deref())?;
 
         // Build the create request
         let req = CreateTimeEntryRequest {
@@ -111,7 +126,7 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
                 .ok_or_else(|| TimeTrackingError::unknown("activity name not set on timer"))?,
             start_time: active_timer.started_at,
             end_time,
-            reg_day: current_day,
+            reg_day: save_day,
             week_number,
             note: note.unwrap_or_else(|| active_timer.note.clone()),
         };
@@ -310,5 +325,40 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         user_id: &UserId,
     ) -> Result<Vec<TimerHistoryEntry>, TimeTrackingError> {
         self.timer_repo.get_history(user_id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use time::macros::datetime;
+
+    use super::*;
+
+    #[test]
+    fn resolve_save_day_and_week_uses_provided_reg_day() {
+        let now = datetime!(2026-03-06 10:00:00 UTC);
+        let (reg_day, week_number) =
+            resolve_save_day_and_week(now, Some("2026-03-01")).expect("expected valid reg day");
+
+        assert_eq!(reg_day, "2026-03-01");
+        assert_eq!(week_number, 9);
+    }
+
+    #[test]
+    fn resolve_save_day_and_week_falls_back_to_now() {
+        let now = datetime!(2026-03-06 10:00:00 UTC);
+        let (reg_day, week_number) =
+            resolve_save_day_and_week(now, None).expect("expected fallback to now");
+
+        assert_eq!(reg_day, "2026-03-06");
+        assert_eq!(week_number, 10);
+    }
+
+    #[test]
+    fn resolve_save_day_and_week_rejects_invalid_date() {
+        let now = datetime!(2026-03-06 10:00:00 UTC);
+        let result = resolve_save_day_and_week(now, Some("2026-99-99"));
+
+        assert!(matches!(result, Err(TimeTrackingError::InvalidDateRange)));
     }
 }

@@ -47,12 +47,19 @@ impl MilltimeClient {
         &self,
         resp: reqwest::Response,
     ) -> Result<T, MilltimeFetchError> {
-        if resp.status().is_client_error() {
-            return match resp.status() {
+        let status = resp.status();
+        if status.is_client_error() {
+            return match status {
                 reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
                     Err(MilltimeFetchError::Unauthorized)
                 }
-                _ => Err(MilltimeFetchError::ResponseError(resp.status().to_string())),
+                _ => {
+                    let body = resp.text().await.unwrap_or_default();
+                    Err(MilltimeFetchError::ResponseError {
+                        status: Some(status),
+                        body,
+                    })
+                }
             };
         }
 
@@ -378,8 +385,11 @@ impl MilltimeClient {
 pub enum MilltimeFetchError {
     #[error("Unauthorized")]
     Unauthorized,
-    #[error("ResponseError: {0}")]
-    ResponseError(String),
+    #[error("ResponseError: status={status:?}, body={body}")]
+    ResponseError {
+        status: Option<reqwest::StatusCode>,
+        body: String,
+    },
     #[error("ParsingError: {0}")]
     ParsingError(String),
     #[error("Other: {0}")]
@@ -388,7 +398,10 @@ pub enum MilltimeFetchError {
 
 impl From<reqwest::Error> for MilltimeFetchError {
     fn from(e: reqwest::Error) -> Self {
-        Self::ResponseError(e.to_string())
+        Self::ResponseError {
+            status: e.status(),
+            body: e.to_string(),
+        }
     }
 }
 
