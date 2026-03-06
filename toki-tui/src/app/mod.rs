@@ -1086,3 +1086,177 @@ fn longest_common_prefix(strings: &[String]) -> String {
 
     prefix.into_iter().collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{activity, project, test_app, time_entry};
+
+    #[test]
+    fn start_timer_sets_running_state_and_shifts_focus() {
+        let mut app = test_app();
+        app.focused_this_week_index = Some(2);
+
+        app.start_timer();
+
+        assert_eq!(app.timer_state, TimerState::Running);
+        assert!(app.absolute_start.is_some());
+        assert!(app.local_start.is_some());
+        assert_eq!(app.focused_this_week_index, Some(3));
+    }
+
+    #[test]
+    fn stop_timer_clears_running_state() {
+        let mut app = test_app();
+        app.focused_this_week_index = Some(2);
+        app.start_timer();
+
+        app.stop_timer();
+
+        assert_eq!(app.timer_state, TimerState::Stopped);
+        assert!(app.absolute_start.is_none());
+        assert!(app.local_start.is_none());
+        assert_eq!(app.focused_this_week_index, Some(3));
+    }
+
+    #[test]
+    fn clear_timer_resets_selected_fields_and_note() {
+        let mut app = test_app();
+        app.timer_size = TimerSize::Large;
+        app.selected_project = Some(project("proj-1", "Project One"));
+        app.selected_activity = Some(activity("act-1", "proj-1", "Activity One"));
+        app.description_input = TextInput::from_str("Existing note");
+        app.description_is_default = false;
+
+        app.clear_timer();
+
+        assert_eq!(app.timer_state, TimerState::Stopped);
+        assert_eq!(app.timer_size, TimerSize::Large);
+        assert!(app.selected_project.is_none());
+        assert!(app.selected_activity.is_none());
+        assert_eq!(app.description_input, TextInput::new());
+        assert!(app.description_is_default);
+    }
+
+    #[test]
+    fn navigate_to_edit_description_clears_default_note() {
+        let mut app = test_app();
+        app.description_input = TextInput::from_str("Prefill");
+        app.description_is_default = true;
+
+        app.navigate_to(View::EditDescription);
+
+        assert_eq!(app.current_view, View::EditDescription);
+        assert!(app.editing_description);
+        assert_eq!(app.description_input, TextInput::new());
+        assert!(!app.description_is_default);
+    }
+
+    #[test]
+    fn select_save_action_by_number_ignores_unknown_values() {
+        let mut app = test_app();
+        app.selected_save_action = SaveAction::ContinueSameProject;
+
+        app.select_save_action_by_number(9);
+
+        assert_eq!(app.selected_save_action, SaveAction::ContinueSameProject);
+    }
+
+    #[test]
+    fn filter_projects_orders_best_match_first() {
+        let mut app = test_app();
+        app.projects = vec![
+            project("proj-1", "Backend Platform"),
+            project("proj-2", "Timer UI"),
+            project("proj-3", "Documentation"),
+        ];
+        app.project_search_input = TextInput::from_str("tmr");
+
+        app.filter_projects();
+
+        assert_eq!(
+            app.filtered_projects.first().map(|p| p.name.as_str()),
+            Some("Timer UI")
+        );
+    }
+
+    #[test]
+    fn filter_activities_respects_selected_project() {
+        let mut app = test_app();
+        app.selected_project = Some(project("proj-2", "Timer UI"));
+        app.activities = vec![
+            activity("act-1", "proj-1", "Planning"),
+            activity("act-2", "proj-2", "Implementation"),
+            activity("act-3", "proj-2", "Testing"),
+        ];
+
+        app.filter_activities();
+
+        assert_eq!(app.filtered_activities.len(), 2);
+        assert!(app
+            .filtered_activities
+            .iter()
+            .all(|activity| activity.project_id == "proj-2"));
+    }
+
+    #[test]
+    fn parse_task_export_rejects_invalid_utf8_or_json() {
+        let utf8_err = parse_task_export(&[0xff]).expect_err("invalid UTF-8 should fail");
+        let json_err = parse_task_export(b"not-json").expect_err("invalid JSON should fail");
+
+        assert!(utf8_err.contains("UTF-8"));
+        assert!(json_err.contains("JSON"));
+    }
+
+    #[test]
+    fn parse_task_export_sorts_by_urgency_desc() {
+        let output = br#"[
+            {"id": 2, "description": "Lower", "urgency": 1.0},
+            {"id": 1, "description": "Higher", "urgency": 9.5},
+            {"id": 3, "description": "Medium", "urgency": 3.2}
+        ]"#;
+
+        let tasks = parse_task_export(output).expect("valid export should parse");
+
+        let descriptions: Vec<&str> = tasks.iter().map(|task| task.description.as_str()).collect();
+        assert_eq!(descriptions, vec!["Higher", "Medium", "Lower"]);
+    }
+
+    #[test]
+    fn update_history_sorts_entries_newest_first() {
+        let mut app = test_app();
+        let early = time_entry(
+            "reg-1",
+            "proj-1",
+            "Project One",
+            "act-1",
+            "Activity One",
+            "2026-03-01",
+            1.0,
+            None,
+            None,
+            None,
+        );
+        let late = time_entry(
+            "reg-2",
+            "proj-1",
+            "Project One",
+            "act-1",
+            "Activity One",
+            "2026-03-02",
+            1.0,
+            None,
+            None,
+            None,
+        );
+
+        app.update_history(vec![early, late]);
+
+        let ids: Vec<&str> = app
+            .time_entries
+            .iter()
+            .map(|entry| entry.registration_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["reg-2", "reg-1"]);
+    }
+}

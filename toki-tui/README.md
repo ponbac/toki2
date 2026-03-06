@@ -76,6 +76,21 @@ git_default_prefix = "Development"
 task_filter = "+work"
 ```
 
+## Testing
+
+Run the TUI test suite with:
+
+```bash
+cargo test -p toki-tui
+```
+
+The current tests focus on the most stable and useful layers first:
+
+- app and state behavior
+- parsing and text input helpers
+- runtime action handling with the dev backend
+- focused Ratatui render assertions for important UI states
+
 ## Standard key bindings
 
 | Key            | Action             |
