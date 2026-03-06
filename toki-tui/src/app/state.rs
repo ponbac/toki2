@@ -285,3 +285,40 @@ pub enum MilltimeReauthField {
 }
 
 // Keep Instant re-exported so App struct can use it without needing to import state internals
+
+#[cfg(test)]
+mod tests {
+    use super::TextInput;
+
+    #[test]
+    fn text_input_inserts_and_backspaces_at_utf8_boundaries() {
+        let mut input = TextInput::from_str("a");
+        input.insert('e');
+        input.insert('\u{301}');
+
+        assert_eq!(input.value, "ae\u{301}");
+
+        input.backspace();
+        assert_eq!(input.value, "ae");
+
+        input.backspace();
+        assert_eq!(input.value, "a");
+    }
+
+    #[test]
+    fn text_input_moves_cursor_left_and_right_by_char() {
+        let mut input = TextInput::from_str("a😀b");
+
+        input.move_left();
+        assert_eq!(input.cursor, "a😀".len());
+
+        input.move_left();
+        assert_eq!(input.cursor, "a".len());
+
+        input.move_right();
+        assert_eq!(input.cursor, "a😀".len());
+
+        input.move_right();
+        assert_eq!(input.cursor, "a😀b".len());
+    }
+}
