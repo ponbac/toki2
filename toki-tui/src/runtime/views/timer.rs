@@ -125,7 +125,7 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
         KeyCode::Char('t') | KeyCode::Char('T') => {
             app.toggle_timer_size();
         }
-        // S: Open Statistics view (unmodified only - Ctrl+S is save)
+        // S: Open Stats view (unmodified only - Ctrl+S is save)
         KeyCode::Char('s') | KeyCode::Char('S')
             if !key.modifiers.contains(KeyModifiers::CONTROL) =>
         {
@@ -142,6 +142,32 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
             }
         }
         KeyCode::Char('z') | KeyCode::Char('Z') => app.toggle_zen_mode(),
+        KeyCode::Char('y') | KeyCode::Char('Y') if !is_editing_this_week(app) => {
+            if app.timer_state != app::TimerState::Running {
+                app.set_status("No running timer — use R to resume this entry instead".to_string());
+            } else if is_persisted_today_row_selected(app) {
+                let idx = app.focused_this_week_index.unwrap();
+                let db_idx = idx.saturating_sub(1); // timer row at 0 shifts DB entries by 1
+                let entry = app.this_week_history().get(db_idx).cloned().cloned();
+                if let Some(entry) = entry {
+                    enqueue_action(action_tx, Action::YankEntryToTimer(entry));
+                }
+            }
+        }
+        KeyCode::Char('r') | KeyCode::Char('R') if !is_editing_this_week(app) => {
+            if app.timer_state == app::TimerState::Running {
+                app.set_status(
+                    "Timer already running — stop it first (Space or Ctrl+X)".to_string(),
+                );
+            } else if is_persisted_today_row_selected(app) {
+                let idx = app.focused_this_week_index.unwrap();
+                // Timer is stopped: no running-timer row at index 0, so idx is the DB index directly
+                let entry = app.this_week_history().get(idx).cloned().cloned();
+                if let Some(entry) = entry {
+                    enqueue_action(action_tx, Action::ResumeEntry(entry));
+                }
+            }
+        }
         _ => {}
     }
 }

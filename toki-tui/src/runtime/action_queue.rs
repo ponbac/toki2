@@ -1,4 +1,4 @@
-use crate::types::{Activity, Project};
+use crate::types::{Activity, Project, TimeEntry};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 #[derive(Debug, Clone)]
@@ -28,6 +28,8 @@ pub(super) enum Action {
     ConfirmDelete,
     StopServerTimerAndClear,
     RefreshHistoryBackground,
+    YankEntryToTimer(TimeEntry),
+    ResumeEntry(TimeEntry),
 }
 
 pub(super) type ActionTx = UnboundedSender<Action>;

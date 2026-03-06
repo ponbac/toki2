@@ -36,7 +36,7 @@ fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
     let border_style = if is_focused {
         Style::default().fg(Color::Magenta)
     } else if is_running {
-        Style::default().fg(Color::Green)
+        Style::default().fg(Color::White)
     } else {
         Style::default()
     };
@@ -118,8 +118,8 @@ fn render_project(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         // Magenta border and white text when focused (takes priority)
         (Style::default().fg(Color::Magenta), Color::White)
     } else if !is_empty {
-        // Green border when project/activity selected and not focused
-        (Style::default().fg(Color::Green), Color::White)
+        // White border when project/activity selected and not focused
+        (Style::default().fg(Color::White), Color::White)
     } else {
         // Default border when empty and not focused
         (Style::default(), Color::White)
@@ -154,8 +154,8 @@ fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App)
     let border_style = if is_focused {
         Style::default().fg(Color::Magenta)
     } else if !is_empty {
-        // Green border when annotation has content and not focused
-        Style::default().fg(Color::Green)
+        // White border when note has content and not focused
+        Style::default().fg(Color::White)
     } else {
         // Default when empty and not focused
         Style::default()
@@ -190,6 +190,8 @@ pub fn render_status(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) 
     let is_error = status_lower.contains("error")
         || status_lower.contains("warning")
         || status_lower.contains("no active timer")
+        || status_lower.contains("no running timer")
+        || status_lower.contains("timer already running")
         || status_lower.contains("cannot save")
         || status_lower.contains("please select")
         || status_lower.contains("cancelled");
@@ -200,7 +202,8 @@ pub fn render_status(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) 
         || status_lower.contains("started")
         || status_lower.contains("stopped")
         || status_lower.contains("cleared")
-        || status_lower.contains("loaded");
+        || status_lower.contains("loaded")
+        || status_lower.contains("resumed");
 
     let (border_style, text_color) = if is_error {
         (Style::default().fg(Color::Red), Color::Red)
@@ -246,9 +249,13 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::styled("H", Style::default().fg(Color::Yellow)),
         Span::raw(": History  "),
         Span::styled("S", Style::default().fg(Color::Yellow)),
-        Span::raw(": Statistics  "),
+        Span::raw(": Stats  "),
         Span::styled("T", Style::default().fg(Color::Yellow)),
-        Span::raw(": Toggle timer size  "),
+        Span::raw(": Toggle size  "),
+        Span::styled("Y", Style::default().fg(Color::Yellow)),
+        Span::raw(": Copy to running timer  "),
+        Span::styled("R", Style::default().fg(Color::Yellow)),
+        Span::raw(": Resume  "),
         Span::styled("Z", Style::default().fg(Color::Yellow)),
         Span::raw(": Zen mode  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
