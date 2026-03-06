@@ -104,6 +104,7 @@ function useSaveTimer(options?: DefaultMutationOptions<SaveTimerPayload>) {
       api.put("time-tracking/timer", {
         json: {
           userNote: body.userNote,
+          regDay: body.regDay,
         },
       }),
     ...options,
@@ -294,6 +295,7 @@ export type StartTimerMutationAsync = MutationFnAsync<typeof useStartTimer>;
 
 export type SaveTimerPayload = {
   userNote?: string;
+  regDay?: string;
 };
 
 export type EditTimerPayload = {

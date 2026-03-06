@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Errors that can occur during time tracking operations.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum TimeTrackingError {
     #[error("timer not found")]
     TimerNotFound,
@@ -19,6 +19,8 @@ pub enum TimeTrackingError {
     ActivityNotFound(String),
     #[error("invalid date range")]
     InvalidDateRange,
+    #[error("time period is locked")]
+    PeriodLocked,
     #[error("{0}")]
     Unknown(String),
 }

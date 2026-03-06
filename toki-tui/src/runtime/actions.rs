@@ -365,7 +365,10 @@ async fn yank_entry_to_timer(entry: types::TimeEntry, app: &mut App, client: &mu
             )
             .await
         {
-            app.set_status(format!("Warning: Could not sync copied entry to server: {}", e));
+            app.set_status(format!(
+                "Warning: Could not sync copied entry to server: {}",
+                e
+            ));
         }
     }
 }
@@ -408,6 +411,18 @@ async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiCl
     }
 }
 
+fn local_reg_day() -> String {
+    let local_offset = time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
+    let now_local = time::OffsetDateTime::now_utc().to_offset(local_offset);
+
+    format!(
+        "{:04}-{:02}-{:02}",
+        now_local.year(),
+        now_local.month() as u8,
+        now_local.day()
+    )
+}
+
 pub(super) async fn handle_save_timer_with_action(
     app: &mut App,
     client: &mut ApiClient,
@@ -433,6 +448,7 @@ pub(super) async fn handle_save_timer_with_action(
         project_name: app.selected_project.as_ref().map(|p| p.name.clone()),
         activity_id: app.selected_activity.as_ref().map(|a| a.id.clone()),
         activity_name: app.selected_activity.as_ref().map(|a| a.name.clone()),
+        reg_day: Some(local_reg_day()),
     };
 
     // Save the active timer to Milltime

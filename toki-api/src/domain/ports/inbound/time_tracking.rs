@@ -45,6 +45,7 @@ pub trait TimeTrackingService: Send + Sync + 'static {
         &self,
         user_id: &UserId,
         note: Option<String>,
+        reg_day: Option<String>,
     ) -> Result<TimerId, TimeTrackingError>;
 
     /// Edit the active timer for a user.

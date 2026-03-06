@@ -35,6 +35,8 @@ import {
   rememberLastProjectAtom,
   buildRememberedTimerParams,
 } from "@/lib/time-tracking-preferences";
+import dayjs from "dayjs";
+import { getSaveTimerErrorDescription } from "@/lib/api/error";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
@@ -131,6 +133,11 @@ function ActionsCommandGroup(props: { close: () => void }) {
         }),
       });
     },
+    onError: (error) => {
+      void getSaveTimerErrorDescription(error).then((description) => {
+        toast.error("Could not save timer", { description });
+      });
+    },
   });
 
   const saveTimerDisabled = !timer?.activityName || !timer?.projectName;
@@ -165,6 +172,7 @@ function ActionsCommandGroup(props: { close: () => void }) {
             onSelect={() => {
               saveTimer({
                 userNote: timer?.note ?? "",
+                regDay: dayjs().format("YYYY-MM-DD"),
               });
               props.close();
             }}

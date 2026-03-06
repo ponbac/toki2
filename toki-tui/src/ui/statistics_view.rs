@@ -29,10 +29,7 @@ pub fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
     let stats_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::White))
-        .title(Span::styled(
-            " Stats ",
-            Style::default().fg(Color::White),
-        ));
+        .title(Span::styled(" Stats ", Style::default().fg(Color::White)));
     let stats_inner = stats_block.inner(outer[0]);
     frame.render_widget(stats_block, outer[0]);
 

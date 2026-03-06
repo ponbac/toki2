@@ -156,7 +156,7 @@ impl TimeTrackingClient for MilltimeAdapter {
             .client
             .new_project_registration(&payload)
             .await
-            .map_err(map_milltime_error)?;
+            .map_err(map_milltime_registration_write_error)?;
         Ok(TimerId::new(response.project_registration_id))
     }
 
@@ -207,7 +207,7 @@ impl TimeTrackingClient for MilltimeAdapter {
                 .client
                 .new_project_registration(&new_payload)
                 .await
-                .map_err(map_milltime_error)?;
+                .map_err(map_milltime_registration_write_error)?;
 
             // Delete old registration
             self.client
@@ -234,7 +234,7 @@ impl TimeTrackingClient for MilltimeAdapter {
             self.client
                 .edit_project_registration(&payload)
                 .await
-                .map_err(map_milltime_error)?;
+                .map_err(map_milltime_registration_write_error)?;
 
             Ok(TimerId::new(request.registration_id.clone()))
         }
@@ -256,8 +256,78 @@ fn map_milltime_error(e: milltime::MilltimeFetchError) -> TimeTrackingError {
         {
             TimeTrackingError::TimerNotFound
         }
-        milltime::MilltimeFetchError::ResponseError(msg) => TimeTrackingError::unknown(msg),
+        milltime::MilltimeFetchError::ResponseError { status, body } => {
+            TimeTrackingError::unknown(format!("status={status:?}, body={body}"))
+        }
         milltime::MilltimeFetchError::ParsingError(msg) => TimeTrackingError::unknown(msg),
         milltime::MilltimeFetchError::Other(msg) => TimeTrackingError::unknown(msg),
+    }
+}
+
+fn map_milltime_registration_write_error(e: milltime::MilltimeFetchError) -> TimeTrackingError {
+    if is_locked_period_error(&e) {
+        TimeTrackingError::PeriodLocked
+    } else {
+        map_milltime_error(e)
+    }
+}
+
+fn is_locked_period_error(e: &milltime::MilltimeFetchError) -> bool {
+    match e {
+        milltime::MilltimeFetchError::ResponseError {
+            status: Some(reqwest::StatusCode::NOT_FOUND),
+            body,
+        } => {
+            let body_lower = body.to_lowercase();
+            body_lower.contains("timer not found")
+                || body_lower.contains("locked")
+                || body_lower.contains("attest")
+                || body_lower.contains("attester")
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registration_write_maps_locked_period_error() {
+        let err = milltime::MilltimeFetchError::ResponseError {
+            status: Some(reqwest::StatusCode::NOT_FOUND),
+            body: "timer not found".to_string(),
+        };
+
+        assert!(matches!(
+            map_milltime_registration_write_error(err),
+            TimeTrackingError::PeriodLocked
+        ));
+    }
+
+    #[test]
+    fn registration_write_keeps_non_lock_errors_as_unknown() {
+        let err = milltime::MilltimeFetchError::ResponseError {
+            status: Some(reqwest::StatusCode::BAD_REQUEST),
+            body: "validation failed".to_string(),
+        };
+
+        assert!(matches!(
+            map_milltime_registration_write_error(err),
+            TimeTrackingError::Unknown(_)
+        ));
+    }
+
+    #[test]
+    fn registration_write_keeps_blank_404_errors_as_unknown() {
+        let err = milltime::MilltimeFetchError::ResponseError {
+            status: Some(reqwest::StatusCode::NOT_FOUND),
+            body: String::new(),
+        };
+
+        assert!(matches!(
+            map_milltime_registration_write_error(err),
+            TimeTrackingError::Unknown(_)
+        ));
     }
 }

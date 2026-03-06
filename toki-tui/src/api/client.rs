@@ -4,6 +4,7 @@ use reqwest::{
     Client, RequestBuilder, Response, StatusCode, Url,
 };
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::api::dev_backend::DevBackend;
@@ -22,6 +23,12 @@ const UNAUTH_INVALID_SESSION: &str =
     "Session expired or invalid. Run `toki-tui login` to authenticate.";
 const UNAUTH_RELOGIN: &str = "Session expired. Run `toki-tui login` to re-authenticate.";
 const UNAUTH_INVALID_MILLTIME_CREDENTIALS: &str = "Invalid Milltime credentials.";
+
+#[derive(Debug, Deserialize)]
+struct ApiErrorBody {
+    error: String,
+    code: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct ApiClient {
@@ -143,9 +150,27 @@ impl ApiClient {
             anyhow::bail!("{unauthorized_message}");
         }
 
-        response
-            .error_for_status_ref()
-            .with_context(|| format!("{} returned error", call_name))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body_text = response.text().await.unwrap_or_default();
+
+            if let Ok(api_error) = serde_json::from_str::<ApiErrorBody>(&body_text) {
+                let message = match api_error.code {
+                    Some(code) => format!("{} ({})", api_error.error, code),
+                    None => api_error.error,
+                };
+                anyhow::bail!("{message}");
+            }
+
+            if body_text.trim().is_empty() {
+                anyhow::bail!("{call_name} returned error ({status})");
+            }
+
+            anyhow::bail!(
+                "{call_name} returned error ({status}): {}",
+                body_text.trim()
+            );
+        }
 
         self.sync_mt_cookies_from_jar()?;
         Ok(response)

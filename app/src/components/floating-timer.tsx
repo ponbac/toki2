@@ -29,6 +29,7 @@ import {
   lastProjectAtom,
   rememberLastProjectAtom,
 } from "@/lib/time-tracking-preferences";
+import { getSaveTimerErrorDescription } from "@/lib/api/error";
 
 export const FloatingTimer = () => {
   const queryClient = useQueryClient();
@@ -203,6 +204,7 @@ export const FloatingTimer = () => {
                           saveTimer(
                             {
                               userNote: userNote ?? "",
+                              regDay: dayjs().format("YYYY-MM-DD"),
                             },
                             {
                               onSuccess: () => {
@@ -244,6 +246,15 @@ export const FloatingTimer = () => {
                                       : {}),
                                   });
                                 }
+                              },
+                              onError: (error) => {
+                                void getSaveTimerErrorDescription(error).then(
+                                  (description) => {
+                                    toast.error("Could not save timer", {
+                                      description,
+                                    });
+                                  },
+                                );
                               },
                             },
                           );
