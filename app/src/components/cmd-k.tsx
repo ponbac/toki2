@@ -35,11 +35,96 @@ import {
   rememberLastProjectAtom,
   buildRememberedTimerParams,
 } from "@/lib/time-tracking-preferences";
+import { ConfirmDefaultTimerNoteDialog } from "./confirm-default-timer-note-dialog";
+import {
+  CONTINUING_MY_WORK_NOTE,
+  DOING_SOMETHING_IMPORTANT_NOTE,
+  isDefaultStartTimerNote,
+} from "@/lib/time-tracking-default-notes";
 
 export function CmdK() {
   const [open, setOpen] = React.useState(false);
+  const [pendingSaveConfirmationNote, setPendingSaveConfirmationNote] =
+    React.useState<string | null>(null);
 
-  const close = () => setOpen(false);
+  const { removeSegment } = useTitleStore();
+  const { state: timerState } = useTimeTrackingTimer();
+  const { setEditTimerDialogOpen } = useTimeTrackingActions();
+
+  const lastProject = useAtomValue(lastProjectAtom);
+  const lastActivity = useAtomValue(lastActivityAtom);
+  const rememberLastProject = useAtomValue(rememberLastProjectAtom);
+
+  // TODO: should probably handle the fetched timer and saveTimer in a centralized place
+  const { data: timerResponse } = useQuery({
+    ...timeTrackingQueries.getTimer(),
+    enabled: false,
+  });
+  const timer = timerResponse?.timer;
+  const rememberedTimerParams = React.useMemo(
+    () =>
+      buildRememberedTimerParams({
+        rememberLastProject,
+        lastProject,
+        lastActivity,
+      }),
+    [lastActivity, lastProject, rememberLastProject],
+  );
+
+  const { mutate: startTimer } = timeTrackingMutations.useStartTimer();
+  const { mutate: saveTimer, isPending: isSavingTimer } =
+    timeTrackingMutations.useSaveTimer({
+      onSuccess: () => {
+        toast.success("Timer successfully saved");
+        removeSegment("timer");
+        startTimer({
+          userNote: CONTINUING_MY_WORK_NOTE,
+          ...rememberedTimerParams,
+        });
+      },
+    });
+  const saveTimerDisabled = !timer?.activityName || !timer?.projectName;
+
+  const close = React.useCallback(() => setOpen(false), []);
+  const clearPendingSaveConfirmation = React.useCallback(
+    () => setPendingSaveConfirmationNote(null),
+    [],
+  );
+
+  const executeSave = React.useCallback(
+    (note: string) => {
+      saveTimer({
+        userNote: note,
+      });
+    },
+    [saveTimer],
+  );
+
+  const handleStartEmptyTimer = React.useCallback(() => {
+    startTimer({
+      userNote: DOING_SOMETHING_IMPORTANT_NOTE,
+      ...rememberedTimerParams,
+    });
+    close();
+  }, [close, rememberedTimerParams, startTimer]);
+
+  const handleSaveCurrentTimer = React.useCallback(() => {
+    const note = timer?.note ?? "";
+
+    if (isDefaultStartTimerNote(note)) {
+      close();
+      setPendingSaveConfirmationNote(note);
+      return;
+    }
+
+    executeSave(note);
+    close();
+  }, [close, executeSave, timer]);
+
+  const handleEditCurrentTimer = React.useCallback(() => {
+    setEditTimerDialogOpen(true);
+    close();
+  }, [close, setEditTimerDialogOpen]);
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -54,15 +139,40 @@ export function CmdK() {
   }, []);
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Type a command or search..." />
-      <CommandList className="max-w-2xl">
-        <CommandEmpty>No results found.</CommandEmpty>
-        <PagesCommandGroup close={close} />
-        <ActionsCommandGroup close={close} />
-        <PRCommandGroup close={close} />
-      </CommandList>
-    </CommandDialog>
+    <>
+      <CommandDialog open={open} onOpenChange={setOpen}>
+        <CommandInput placeholder="Type a command or search..." />
+        <CommandList className="max-w-2xl">
+          <CommandEmpty>No results found.</CommandEmpty>
+          <PagesCommandGroup close={close} />
+          <ActionsCommandGroup
+            timerState={timerState}
+            saveTimerDisabled={saveTimerDisabled}
+            onStartEmptyTimer={handleStartEmptyTimer}
+            onSaveCurrentTimer={handleSaveCurrentTimer}
+            onEditCurrentTimer={handleEditCurrentTimer}
+          />
+          <PRCommandGroup close={close} />
+        </CommandList>
+      </CommandDialog>
+      <ConfirmDefaultTimerNoteDialog
+        open={pendingSaveConfirmationNote !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            clearPendingSaveConfirmation();
+          }
+        }}
+        onConfirm={() => {
+          if (!pendingSaveConfirmationNote) {
+            return;
+          }
+
+          executeSave(pendingSaveConfirmationNote);
+          clearPendingSaveConfirmation();
+        }}
+        isPending={isSavingTimer}
+      />
+    </>
   );
 }
 
@@ -98,60 +208,18 @@ function PagesCommandGroup(props: { close: () => void }) {
   );
 }
 
-function ActionsCommandGroup(props: { close: () => void }) {
-  const { removeSegment } = useTitleStore();
-  const { state: timerState } = useTimeTrackingTimer();
-  const { setEditTimerDialogOpen } =
-    useTimeTrackingActions();
-
-  const lastProject = useAtomValue(lastProjectAtom);
-  const lastActivity = useAtomValue(lastActivityAtom);
-  const rememberLastProject = useAtomValue(rememberLastProjectAtom);
-
-  // TODO: should probably handle the fetched timer and saveTimer in a centralized place
-  const { data: timerResponse } = useQuery({
-    ...timeTrackingQueries.getTimer(),
-    enabled: false,
-  });
-  const timer = timerResponse?.timer;
-
-  const { mutate: startTimer } =
-    timeTrackingMutations.useStartTimer();
-
-  const { mutate: saveTimer } = timeTrackingMutations.useSaveTimer({
-    onSuccess: () => {
-      toast.success("Timer successfully saved");
-      removeSegment("timer");
-      startTimer({
-        userNote: "Continuing my work...",
-        ...buildRememberedTimerParams({
-          rememberLastProject,
-          lastProject,
-          lastActivity,
-        }),
-      });
-    },
-  });
-
-  const saveTimerDisabled = !timer?.activityName || !timer?.projectName;
-
+function ActionsCommandGroup(props: {
+  timerState: "running" | "stopped" | undefined;
+  saveTimerDisabled: boolean;
+  onStartEmptyTimer: () => void;
+  onSaveCurrentTimer: () => void;
+  onEditCurrentTimer: () => void;
+}) {
   return (
     <CommandGroup heading="Actions">
-      {timerState !== "running" ? (
+      {props.timerState !== "running" ? (
         <>
-          <CommandItem
-            onSelect={() => {
-              startTimer({
-                userNote: "Doing something important...",
-                ...buildRememberedTimerParams({
-                  rememberLastProject,
-                  lastProject,
-                  lastActivity,
-                }),
-              });
-              props.close();
-            }}
-          >
+          <CommandItem onSelect={props.onStartEmptyTimer}>
             <div className="flex flex-row items-center gap-2">
               <DrumIcon className="h-1 w-1" />
               Start empty timer
@@ -161,30 +229,20 @@ function ActionsCommandGroup(props: { close: () => void }) {
       ) : (
         <>
           <CommandItem
-            disabled={saveTimerDisabled}
-            onSelect={() => {
-              saveTimer({
-                userNote: timer?.note ?? "",
-              });
-              props.close();
-            }}
+            disabled={props.saveTimerDisabled}
+            onSelect={props.onSaveCurrentTimer}
           >
             <div className="flex flex-row items-center gap-2">
               <TimerIcon className="h-1 w-1" />
               Save current timer
-              {saveTimerDisabled && (
+              {props.saveTimerDisabled && (
                 <span className="text-muted-foreground">
                   (disabled, no project or activity selected)
                 </span>
               )}
             </div>
           </CommandItem>
-          <CommandItem
-            onSelect={() => {
-              setEditTimerDialogOpen(true);
-              props.close();
-            }}
-          >
+          <CommandItem onSelect={props.onEditCurrentTimer}>
             <div className="flex flex-row items-center gap-2">
               <TimerIcon className="h-1 w-1" />
               Edit current timer

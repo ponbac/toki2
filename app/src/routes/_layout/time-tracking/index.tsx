@@ -1,36 +1,40 @@
-import { createFileRoute } from "@tanstack/react-router"
-import { cn } from "@/lib/utils"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { useTimeTrackingData } from "@/hooks/useTimeTrackingData"
-import { SearchBar } from "@/routes/_layout/time-tracking/-components/search-bar"
-import { Summary } from "@/routes/_layout/time-tracking/-components/summary"
-import { TimeEntriesList } from "./-components/time-entries-list"
-import { DateRangeSelector } from "./-components/date-range-selector"
-import { useQuery } from "@tanstack/react-query"
-import { timeTrackingQueries } from "@/lib/api/queries/time-tracking"
-import { startOfWeek, endOfWeek, format } from "date-fns"
-import React from "react"
-import { atomWithStorage } from "jotai/utils"
-import { useAtom, useAtomValue } from "jotai/react"
-import { MergeEntriesSwitch } from "./-components/merge-entries-switch"
-import { TimeTrackingSettings } from "./-components/time-tracking-settings"
+import { createFileRoute } from "@tanstack/react-router";
+import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
+import { SearchBar } from "@/routes/_layout/time-tracking/-components/search-bar";
+import { Summary } from "@/routes/_layout/time-tracking/-components/summary";
+import { TimeEntriesList } from "./-components/time-entries-list";
+import { DateRangeSelector } from "./-components/date-range-selector";
+import { useQuery } from "@tanstack/react-query";
+import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
+import { startOfWeek, endOfWeek, format } from "date-fns";
+import React from "react";
+import { atomWithStorage } from "jotai/utils";
+import { useAtom, useAtomValue } from "jotai/react";
+import { MergeEntriesSwitch } from "./-components/merge-entries-switch";
+import { TimeTrackingSettings } from "./-components/time-tracking-settings";
 import {
   buildRememberedTimerParams,
   lastActivityAtom,
   lastProjectAtom,
   rememberLastProjectAtom,
-} from "@/lib/time-tracking-preferences"
-import { TimeStats } from "./-components/time-stats"
-import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking"
+} from "@/lib/time-tracking-preferences";
+import { TimeStats } from "./-components/time-stats";
+import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import {
+  FIRST_TIMER_OF_THE_WEEK_NOTE,
+  TRY_CMD_K_NEXT_TIME_NOTE,
+} from "@/lib/time-tracking-default-notes";
 import {
   useTimeTrackingIsAuthenticating,
   useTimeTrackingTimer,
-} from "@/hooks/useTimeTrackingStore"
-import { useTimeTrackingActions } from "@/hooks/useTimeTrackingStore"
-import { NotLockedAlert } from "./-components/not-locked-alert"
+} from "@/hooks/useTimeTrackingStore";
+import { useTimeTrackingActions } from "@/hooks/useTimeTrackingStore";
+import { NotLockedAlert } from "./-components/not-locked-alert";
 import {
   TimerIcon,
   Plus,
@@ -39,11 +43,11 @@ import {
   Sparkles,
   List,
   CalendarDays,
-} from "lucide-react"
-import { toast } from "sonner"
-import { NewEntryDialog } from "./-components/new-entry-dialog"
-import { useMediaQuery } from "@/hooks/useMediaQuery"
-import { TimelineView } from "./-components/timeline-view"
+} from "lucide-react";
+import { toast } from "sonner";
+import { NewEntryDialog } from "./-components/new-entry-dialog";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { TimelineView } from "./-components/timeline-view";
 
 export const Route = createFileRoute("/_layout/time-tracking/")({
   loader: async ({ context }) => {
@@ -56,43 +60,43 @@ export const Route = createFileRoute("/_layout/time-tracking/")({
           ),
           to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
         }),
-      )
+      );
     } catch (error) {
-      console.error(error)
+      console.error(error);
     }
   },
   component: TimeTrackingPage,
-})
+});
 
 const mergeSameDayPersistedAtom = atomWithStorage(
   "time-tracking-mergeSameDay",
   false,
-)
+);
 
 const viewModePersistedAtom = atomWithStorage<"list" | "timeline">(
   "time-tracking-viewMode",
   "list",
-)
+);
 
 function TimeTrackingPage() {
-  const { authenticate } = useTimeTrackingActions()
-  const isAuthenticating = useTimeTrackingIsAuthenticating()
-  const { isAuthenticated } = useTimeTrackingData()
+  const { authenticate } = useTimeTrackingActions();
+  const isAuthenticating = useTimeTrackingIsAuthenticating();
+  const { isAuthenticated } = useTimeTrackingData();
 
   const [dateRange, setDateRange] = React.useState(() => ({
     from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
     to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-  }))
-  const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom)
-  const [storedViewMode, setViewMode] = useAtom(viewModePersistedAtom)
-  const isDesktop = useMediaQuery("(min-width: 768px)")
-  const viewMode = isDesktop ? storedViewMode : "list"
+  }));
+  const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
+  const [storedViewMode, setViewMode] = useAtom(viewModePersistedAtom);
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const viewMode = isDesktop ? storedViewMode : "list";
   const [rememberLastProject, setRememberLastProject] = useAtom(
     rememberLastProjectAtom,
-  )
-  const lastProject = useAtomValue(lastProjectAtom)
-  const lastActivity = useAtomValue(lastActivityAtom)
-  const [search, setSearch] = React.useState("")
+  );
+  const lastProject = useAtomValue(lastProjectAtom);
+  const lastActivity = useAtomValue(lastActivityAtom);
+  const [search, setSearch] = React.useState("");
 
   const { data: timeEntries } = useQuery({
     ...timeTrackingQueries.timeEntries({
@@ -100,7 +104,7 @@ function TimeTrackingPage() {
       to: dateRange.to,
     }),
     enabled: isAuthenticated,
-  })
+  });
 
   const filteredTimeEntries = React.useMemo(() => {
     return timeEntries?.length
@@ -109,33 +113,33 @@ function TimeTrackingPage() {
             .toLowerCase()
             .includes(search.toLowerCase()),
         )
-      : []
-  }, [timeEntries, search])
+      : [];
+  }, [timeEntries, search]);
 
-  const { state: timerState } = useTimeTrackingTimer()
+  const { state: timerState } = useTimeTrackingTimer();
   const { mutate: startTimer, isPending: isStartingTimer } =
-    timeTrackingMutations.useStartTimer()
+    timeTrackingMutations.useStartTimer();
   const { mutate: createProjectRegistration } =
     timeTrackingMutations.useCreateProjectRegistration({
       onSuccess: () => {
-        setIsNewEntryOpen(false)
-        toast.success("Entry created")
+        setIsNewEntryOpen(false);
+        toast.success("Entry created");
       },
       onError: () => toast.error("Failed to create entry"),
-    })
+    });
 
-  const [isNewEntryOpen, setIsNewEntryOpen] = React.useState(false)
+  const [isNewEntryOpen, setIsNewEntryOpen] = React.useState(false);
 
   const onStartTimer = React.useCallback(() => {
     startTimer({
-      userNote: "First timer of the week...",
+      userNote: FIRST_TIMER_OF_THE_WEEK_NOTE,
       ...buildRememberedTimerParams({
         rememberLastProject,
         lastProject,
         lastActivity,
       }),
-    })
-  }, [rememberLastProject, lastProject, lastActivity, startTimer])
+    });
+  }, [rememberLastProject, lastProject, lastActivity, startTimer]);
 
   return (
     <div className="min-h-screen">
@@ -151,7 +155,7 @@ function TimeTrackingPage() {
             {/* Background decoration */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
               <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/5 blur-3xl" />
-              <div className="absolute -left-20 top-20 h-48 w-48 rounded-full bg-primary/3 blur-2xl" />
+              <div className="bg-primary/3 absolute -left-20 top-20 h-48 w-48 rounded-full blur-2xl" />
             </div>
 
             <div className="relative mx-auto max-w-[1600px]">
@@ -182,7 +186,7 @@ function TimeTrackingPage() {
                       disabled={isStartingTimer}
                       onClick={() =>
                         startTimer({
-                          userNote: "Try Ctrl+K to start a timer next time",
+                          userNote: TRY_CMD_K_NEXT_TIME_NOTE,
                           ...buildRememberedTimerParams({
                             rememberLastProject,
                             lastProject,
@@ -312,16 +316,16 @@ function TimeTrackingPage() {
         open={isNewEntryOpen}
         onOpenChange={setIsNewEntryOpen}
         onCreate={(payload) => {
-          createProjectRegistration(payload)
+          createProjectRegistration(payload);
         }}
       />
     </div>
-  )
+  );
 }
 
 function EmptyState(props: {
-  timerState: string | undefined
-  onStartTimer: () => void
+  timerState: string | undefined;
+  onStartTimer: () => void;
 }) {
   return (
     <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-card/30 p-12 text-center">
@@ -346,12 +350,12 @@ function EmptyState(props: {
         </Button>
       )}
     </div>
-  )
+  );
 }
 
 function LoginForm(props: {
-  onSubmit: (credentials: { username: string; password: string }) => void
-  isAuthenticating: boolean
+  onSubmit: (credentials: { username: string; password: string }) => void;
+  isAuthenticating: boolean;
 }) {
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -364,15 +368,15 @@ function LoginForm(props: {
       <form
         className="relative w-full max-w-md"
         onSubmit={(e) => {
-          e.preventDefault()
-          const formData = new FormData(e.target as HTMLFormElement)
-          const username = formData.get("username") as string
-          const password = formData.get("password") as string
+          e.preventDefault();
+          const formData = new FormData(e.target as HTMLFormElement);
+          const username = formData.get("username") as string;
+          const password = formData.get("password") as string;
 
           props.onSubmit({
             username,
             password,
-          })
+          });
         }}
       >
         <Card className="card-elevated overflow-hidden rounded-2xl border-border/50">
@@ -438,5 +442,5 @@ function LoginForm(props: {
         </Card>
       </form>
     </div>
-  )
+  );
 }

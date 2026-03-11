@@ -1,5 +1,6 @@
 import React from "react";
 import { Button } from "./ui/button";
+import { ConfirmDefaultTimerNoteDialog } from "./confirm-default-timer-note-dialog";
 import {
   CalendarClockIcon,
   EditIcon,
@@ -19,7 +20,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { TimerEditDialog } from "./timer-edit-dialog";
 import { TimerHistory } from "./timer-history";
-import { useTimeTrackingActions, useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
+import {
+  useTimeTrackingActions,
+  useTimeTrackingTimer,
+} from "@/hooks/useTimeTrackingStore";
 import { useTitleStore } from "@/hooks/useTitleStore";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { HistoryIcon } from "lucide-react";
@@ -29,6 +33,15 @@ import {
   lastProjectAtom,
   rememberLastProjectAtom,
 } from "@/lib/time-tracking-preferences";
+import {
+  CONTINUING_MY_WORK_NOTE,
+  isDefaultStartTimerNote,
+} from "@/lib/time-tracking-default-notes";
+
+type PendingSaveConfirmation = {
+  note: string;
+  shouldAutoRestart: boolean;
+};
 
 export const FloatingTimer = () => {
   const queryClient = useQueryClient();
@@ -43,6 +56,8 @@ export const FloatingTimer = () => {
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [userNote, setUserNote] = React.useState("");
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
+  const [pendingSaveConfirmation, setPendingSaveConfirmation] =
+    React.useState<PendingSaveConfirmation | null>(null);
 
   const setLastProject = useSetAtom(lastProjectAtom);
   const setLastActivity = useSetAtom(lastActivityAtom);
@@ -59,6 +74,26 @@ export const FloatingTimer = () => {
     () => (timer ? { ...timer, note: userNote } : null),
     [timer, userNote],
   );
+  const restartTimerParams = React.useMemo(() => {
+    if (!rememberLastProject || !timer) {
+      return {};
+    }
+
+    return {
+      ...(timer.projectId && timer.projectName
+        ? {
+            projectId: timer.projectId,
+            projectName: timer.projectName,
+          }
+        : {}),
+      ...(timer.activityId && timer.activityName
+        ? {
+            activityId: timer.activityId,
+            activityName: timer.activityName,
+          }
+        : {}),
+    };
+  }, [rememberLastProject, timer]);
 
   const { mutate: startTimer } = timeTrackingMutations.useStartTimer();
   const { mutate: stopTimer, isPending: isStoppingTimer } =
@@ -82,6 +117,78 @@ export const FloatingTimer = () => {
   const startTimeRef = React.useRef<Date | null>(null);
 
   const { addSegment, removeSegment } = useTitleStore();
+  const clearPendingSaveConfirmation = React.useCallback(
+    () => setPendingSaveConfirmation(null),
+    [],
+  );
+  const rememberCurrentTimerSelection = React.useCallback(() => {
+    if (!timer) {
+      return;
+    }
+
+    if (timer.projectId && timer.projectName) {
+      setLastProject({
+        projectId: timer.projectId,
+        projectName: timer.projectName,
+      });
+    }
+    if (timer.activityId && timer.activityName) {
+      setLastActivity({
+        activityId: timer.activityId,
+        activityName: timer.activityName,
+      });
+    }
+  }, [setLastActivity, setLastProject, timer]);
+
+  const executeSave = React.useCallback(
+    (note: string, shouldAutoRestart: boolean) => {
+      if (!timer) {
+        return;
+      }
+
+      saveTimer(
+        {
+          userNote: note,
+        },
+        {
+          onSuccess: () => {
+            toast.success("Timer successfully saved");
+            removeSegment("timer");
+            rememberCurrentTimerSelection();
+            if (shouldAutoRestart) {
+              startTimer({
+                userNote: CONTINUING_MY_WORK_NOTE,
+                ...restartTimerParams,
+              });
+            }
+          },
+        },
+      );
+    },
+    [
+      removeSegment,
+      rememberCurrentTimerSelection,
+      restartTimerParams,
+      saveTimer,
+      startTimer,
+      timer,
+    ],
+  );
+
+  const handleSaveButtonClick = React.useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      const note = userNote ?? "";
+      const shouldAutoRestart = !(e.ctrlKey || e.metaKey);
+
+      if (isDefaultStartTimerNote(note)) {
+        setPendingSaveConfirmation({ note, shouldAutoRestart });
+        return;
+      }
+
+      executeSave(note, shouldAutoRestart);
+    },
+    [executeSave, userNote],
+  );
 
   // Sync local timer with fetched timer
   React.useEffect(() => {
@@ -198,56 +305,7 @@ export const FloatingTimer = () => {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={(e) => {
-                          const shouldAutoRestart = !(e.ctrlKey || e.metaKey);
-                          saveTimer(
-                            {
-                              userNote: userNote ?? "",
-                            },
-                            {
-                              onSuccess: () => {
-                                toast.success(
-                                  "Timer successfully saved",
-                                );
-                                removeSegment("timer");
-                                // Remember this project and activity for next time
-                                if (timer.projectId && timer.projectName) {
-                                  setLastProject({
-                                    projectId: timer.projectId,
-                                    projectName: timer.projectName,
-                                  });
-                                }
-                                if (timer.activityId && timer.activityName) {
-                                  setLastActivity({
-                                    activityId: timer.activityId,
-                                    activityName: timer.activityName,
-                                  });
-                                }
-                                if (shouldAutoRestart) {
-                                  startTimer({
-                                    userNote: "Continuing my work...",
-                                    ...(rememberLastProject &&
-                                    timer.projectId &&
-                                    timer.projectName
-                                      ? {
-                                          projectId: timer.projectId,
-                                          projectName: timer.projectName,
-                                        }
-                                      : {}),
-                                    ...(rememberLastProject &&
-                                    timer.activityId &&
-                                    timer.activityName
-                                      ? {
-                                          activityId: timer.activityId,
-                                          activityName: timer.activityName,
-                                        }
-                                      : {}),
-                                  });
-                                }
-                              },
-                            },
-                          );
-                        }}
+                        onClick={handleSaveButtonClick}
                         disabled={isSavingTimer || isStoppingTimer}
                       >
                         <SaveIcon className="h-6 w-6 text-muted-foreground" />
@@ -392,6 +450,26 @@ export const FloatingTimer = () => {
           timer={timerForEditDialog}
         />
       )}
+      <ConfirmDefaultTimerNoteDialog
+        open={pendingSaveConfirmation !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            clearPendingSaveConfirmation();
+          }
+        }}
+        onConfirm={() => {
+          if (!pendingSaveConfirmation) {
+            return;
+          }
+
+          executeSave(
+            pendingSaveConfirmation.note,
+            pendingSaveConfirmation.shouldAutoRestart,
+          );
+          clearPendingSaveConfirmation();
+        }}
+        isPending={isSavingTimer || isStoppingTimer}
+      />
     </>
   ) : null;
 };
