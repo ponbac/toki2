@@ -1,7 +1,12 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryKey,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions } from "./mutations";
-import { notificationsQueries } from "../queries/notifications";
+import { Notification, notificationsQueries } from "../queries/notifications";
 import { subscribeUser } from "@/lib/notifications/web_push";
 
 export enum NotificationType {
@@ -22,6 +27,103 @@ export const notificationsMutations = {
   useDeletePushSubscription,
 };
 
+const notificationsListQueryKey = ["notifications", "list"] as const;
+
+type NotificationsListOptions = {
+  includeViewed: boolean;
+  maxAgeDays: number;
+};
+
+type NotificationsListSnapshot = Array<
+  [QueryKey, Array<Notification> | undefined]
+>;
+
+type NotificationsMutationContext = {
+  optionsContext: unknown;
+  previousLists: NotificationsListSnapshot;
+};
+
+function snapshotNotificationsLists(
+  queryClient: QueryClient,
+): NotificationsListSnapshot {
+  return queryClient.getQueriesData<Array<Notification>>({
+    queryKey: notificationsListQueryKey,
+  });
+}
+
+function restoreNotificationsLists(
+  queryClient: QueryClient,
+  snapshots: NotificationsListSnapshot,
+) {
+  for (const [queryKey, data] of snapshots) {
+    queryClient.setQueryData<Array<Notification> | undefined>(queryKey, data);
+  }
+}
+
+function getNotificationsListOptions(
+  queryKey: QueryKey,
+): NotificationsListOptions | undefined {
+  const options = queryKey[2];
+
+  if (!options || typeof options !== "object") {
+    return undefined;
+  }
+
+  const maybeOptions = options as Partial<NotificationsListOptions>;
+
+  if (
+    typeof maybeOptions.includeViewed !== "boolean" ||
+    typeof maybeOptions.maxAgeDays !== "number"
+  ) {
+    return undefined;
+  }
+
+  return maybeOptions as NotificationsListOptions;
+}
+
+function updateNotificationsLists(
+  queryClient: QueryClient,
+  updater: (
+    notifications: Array<Notification>,
+    options: NotificationsListOptions | undefined,
+  ) => Array<Notification>,
+) {
+  for (const [queryKey, notifications] of snapshotNotificationsLists(
+    queryClient,
+  )) {
+    if (!notifications) continue;
+
+    queryClient.setQueryData<Array<Notification>>(queryKey, (current) =>
+      current
+        ? updater(current, getNotificationsListOptions(queryKey))
+        : current,
+    );
+  }
+}
+
+async function optimisticUpdateNotificationsLists<TVars>(
+  queryClient: QueryClient,
+  vars: TVars,
+  onMutate: ((vars: TVars) => Promise<unknown> | unknown) | undefined,
+  updater: (
+    notifications: Array<Notification>,
+    options: NotificationsListOptions | undefined,
+  ) => Array<Notification>,
+): Promise<NotificationsMutationContext> {
+  await queryClient.cancelQueries({
+    queryKey: notificationsListQueryKey,
+  });
+
+  const previousLists = snapshotNotificationsLists(queryClient);
+  updateNotificationsLists(queryClient, updater);
+  const optionsContext = await onMutate?.(vars);
+
+  return {
+    optionsContext,
+    previousLists,
+  };
+}
+
 function useMarkNotificationViewed(options?: DefaultMutationOptions<number>) {
   const queryClient = useQueryClient();
 
@@ -30,9 +132,41 @@ function useMarkNotificationViewed(options?: DefaultMutationOptions<number>) {
     mutationFn: (notificationId: number) =>
       api.post(`notifications/${notificationId}/view`),
     ...options,
+    onMutate: async (notificationId) => {
+      const viewedAt = new Date().toISOString();
+
+      return optimisticUpdateNotificationsLists(
+        queryClient,
+        notificationId,
+        options?.onMutate,
+        (notifications, queryOptions) => {
+          if (queryOptions?.includeViewed === false) {
+            return notifications.filter(
+              (notification) => notification.id !== notificationId,
+            );
+          }
+
+          return notifications.map((notification) =>
+            notification.id === notificationId
+              ? {
+                  ...notification,
+                  viewedAt,
+                }
+              : notification,
+          );
+        },
+      );
+    },
     onSuccess: (data, vars, ctx) => {
-      queryClient.invalidateQueries({ queryKey: ["notifications", "list"] });
-      options?.onSuccess?.(data, vars, ctx);
+      options?.onSuccess?.(data, vars, ctx?.optionsContext);
+    },
+    onError: (error, vars, ctx) => {
+      restoreNotificationsLists(queryClient, ctx?.previousLists ?? []);
+      options?.onError?.(error, vars, ctx?.optionsContext);
+    },
+    onSettled: (data, error, vars, ctx) => {
+      queryClient.invalidateQueries({ queryKey: notificationsListQueryKey });
+      options?.onSettled?.(data, error, vars, ctx?.optionsContext);
     },
   });
 }
@@ -44,9 +178,39 @@ function useMarkAllNotificationsViewed(options?: DefaultMutationOptions<void>) {
     mutationKey: ["notifications", "view-all"],
     mutationFn: () => api.post("notifications/view-all"),
     ...options,
+    onMutate: async () => {
+      const viewedAt = new Date().toISOString();
+
+      return optimisticUpdateNotificationsLists(
+        queryClient,
+        undefined,
+        options?.onMutate,
+        (notifications, queryOptions) => {
+          if (queryOptions?.includeViewed === false) {
+            return [];
+          }
+
+          return notifications.map((notification) =>
+            notification.viewedAt
+              ? notification
+              : {
+                  ...notification,
+                  viewedAt,
+                },
+          );
+        },
+      );
+    },
     onSuccess: (data, vars, ctx) => {
-      queryClient.invalidateQueries({ queryKey: ["notifications", "list"] });
-      options?.onSuccess?.(data, vars, ctx);
+      options?.onSuccess?.(data, vars, ctx?.optionsContext);
+    },
+    onError: (error, vars, ctx) => {
+      restoreNotificationsLists(queryClient, ctx?.previousLists ?? []);
+      options?.onError?.(error, vars, ctx?.optionsContext);
+    },
+    onSettled: (data, error, vars, ctx) => {
+      queryClient.invalidateQueries({ queryKey: notificationsListQueryKey });
+      options?.onSettled?.(data, error, vars, ctx?.optionsContext);
     },
   });
 }
@@ -60,7 +224,7 @@ function useDeleteNotification(options?: DefaultMutationOptions<number>) {
       api.delete(`notifications/${notificationId}`),
     ...options,
     onSuccess: (data, vars, ctx) => {
-      queryClient.invalidateQueries({ queryKey: ["notifications", "list"] });
+      queryClient.invalidateQueries({ queryKey: notificationsListQueryKey });
       options?.onSuccess?.(data, vars, ctx);
     },
   });

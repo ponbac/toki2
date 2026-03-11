@@ -42,7 +42,7 @@ export function NotificationsPopover() {
     staleTime: 1000 * 60 * 30, // 30 minutes
   });
 
-  const { mutate: markViewed, isPending: isMarkingViewed } =
+  const { mutate: markViewed } =
     notificationsMutations.useMarkNotificationViewed();
   const { mutate: markAllViewed, isPending: isMarkingAllViewed } =
     notificationsMutations.useMarkAllNotificationsViewed();
@@ -138,7 +138,6 @@ export function NotificationsPopover() {
                     (r) => r.repoId === notification.repositoryId,
                   )}
                   onView={() => markViewed(notification.id)}
-                  isMarkingViewed={isMarkingViewed}
                 />
               ))}
             </div>
