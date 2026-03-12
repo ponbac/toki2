@@ -128,7 +128,9 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
         KeyCode::Char('n') | KeyCode::Char('N') => {
             app.navigate_to(app::View::EditDescription);
         }
-        KeyCode::Char('g') | KeyCode::Char('G') => {
+        KeyCode::Char('x') | KeyCode::Char('X')
+            if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
             app.toggle_timer_size();
         }
         // S: Open Stats view (unmodified only - Ctrl+S is save)
