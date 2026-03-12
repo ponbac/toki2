@@ -55,7 +55,9 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
                 app.focus_previous();
             }
         }
-        KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L') => {
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L')
+            if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
             if is_editing_this_week(app) {
                 app.entry_edit_next_field();
             }
@@ -165,6 +167,29 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
                 if let Some(entry) = entry {
                     enqueue_action(action_tx, Action::ResumeEntry(entry));
                 }
+            }
+        }
+        KeyCode::Char('l') | KeyCode::Char('L')
+            if !is_editing_this_week(app)
+                && key.modifiers.contains(KeyModifiers::CONTROL)
+                && is_persisted_today_row_selected(app) =>
+        {
+            let idx = app.focused_this_week_index.unwrap();
+            let db_idx = if app.timer_state == app::TimerState::Running {
+                idx.saturating_sub(1)
+            } else {
+                idx
+            };
+            let note = app
+                .this_week_history()
+                .get(db_idx)
+                .and_then(|e| e.note.as_deref())
+                .unwrap_or("");
+            let id = crate::log_notes::extract_id(note).unwrap_or("").to_string();
+            if id.is_empty() {
+                app.set_status("No log linked to this entry".to_string());
+            } else {
+                enqueue_action(action_tx, Action::OpenEntryLogNote(id));
             }
         }
         KeyCode::Char('t') | KeyCode::Char('T')
