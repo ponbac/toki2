@@ -243,6 +243,8 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         Span::raw(": Save (options)  "),
         Span::styled("Ctrl+R", Style::default().fg(Color::Yellow)),
         Span::raw(": Resume  "),
+        Span::styled("Ctrl+L", Style::default().fg(Color::Yellow)),
+        Span::raw(": Log  "),
         Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
         Span::raw(": Clear  "),
         Span::styled("Tab / ↑↓ / j/k", Style::default().fg(Color::Yellow)),
