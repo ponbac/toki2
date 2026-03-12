@@ -209,6 +209,94 @@ impl TextInput {
         self.cursor = self.value.len();
     }
 
+    /// Move cursor left by one whitespace-delimited word (bash/readline style).
+    /// Skips whitespace leftward, then skips non-whitespace leftward.
+    pub fn move_word_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        // Step 1: skip whitespace to the left
+        let mut p = self.cursor;
+        while p > 0 {
+            let prev = self.prev_boundary(p);
+            if self.value[prev..p]
+                .chars()
+                .next()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false)
+            {
+                p = prev;
+            } else {
+                break;
+            }
+        }
+        // Step 2: skip non-whitespace to the left
+        while p > 0 {
+            let prev = self.prev_boundary(p);
+            if self.value[prev..p]
+                .chars()
+                .next()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false)
+            {
+                break;
+            } else {
+                p = prev;
+            }
+        }
+        self.cursor = p;
+    }
+
+    /// Move cursor right by one whitespace-delimited word (bash/readline style).
+    /// Skips non-whitespace rightward, then skips whitespace rightward.
+    pub fn move_word_right(&mut self) {
+        let len = self.value.len();
+        if self.cursor >= len {
+            return;
+        }
+        // Step 1: skip non-whitespace to the right
+        let mut p = self.cursor;
+        while p < len {
+            let next = self.next_boundary(p);
+            if self.value[p..next]
+                .chars()
+                .next()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false)
+            {
+                break;
+            } else {
+                p = next;
+            }
+        }
+        // Step 2: skip whitespace to the right
+        while p < len {
+            let next = self.next_boundary(p);
+            if self.value[p..next]
+                .chars()
+                .next()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false)
+            {
+                p = next;
+            } else {
+                break;
+            }
+        }
+        self.cursor = p;
+    }
+
+    /// Delete the word immediately before the cursor (Alt+Backspace / readline kill-word-back).
+    /// Equivalent to move_word_left then delete from new position to old cursor.
+    pub fn delete_word_back(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let old_cursor = self.cursor;
+        self.move_word_left();
+        self.value.drain(self.cursor..old_cursor);
+    }
+
     pub fn clear(&mut self) {
         self.value.clear();
         self.cursor = 0;
@@ -320,5 +408,63 @@ mod tests {
 
         input.move_right();
         assert_eq!(input.cursor, "a😀b".len());
+    }
+
+    #[test]
+    fn text_input_move_word_left_basic() {
+        let mut ti = TextInput::from_str("hello world foo");
+        // cursor at end (15)
+        ti.move_word_left(); // skip 0 whitespace, skip "foo" → cursor at 12
+        assert_eq!(ti.cursor, 12);
+        ti.move_word_left(); // skip 1 space, skip "world" → cursor at 6
+        assert_eq!(ti.cursor, 6);
+        ti.move_word_left(); // skip 1 space, skip "hello" → cursor at 0
+        assert_eq!(ti.cursor, 0);
+        ti.move_word_left(); // at start, no-op
+        assert_eq!(ti.cursor, 0);
+    }
+
+    #[test]
+    fn text_input_move_word_left_from_middle_of_word() {
+        let mut ti = TextInput::from_str("hello world");
+        ti.cursor = 8; // inside "world" at byte 8 (w=6,o=7,r=8)
+        ti.move_word_left(); // no leading whitespace, skip non-ws back to 6
+        assert_eq!(ti.cursor, 6);
+    }
+
+    #[test]
+    fn text_input_move_word_right_basic() {
+        let mut ti = TextInput::from_str("hello world foo");
+        ti.cursor = 0;
+        ti.move_word_right(); // skip "hello" (5), skip " " (1) → cursor at 6
+        assert_eq!(ti.cursor, 6);
+        ti.move_word_right(); // skip "world" (5), skip " " (1) → cursor at 12
+        assert_eq!(ti.cursor, 12);
+        ti.move_word_right(); // skip "foo" (3), no trailing ws → cursor at 15
+        assert_eq!(ti.cursor, 15);
+        ti.move_word_right(); // at end, no-op
+        assert_eq!(ti.cursor, 15);
+    }
+
+    #[test]
+    fn text_input_delete_word_back_basic() {
+        let mut ti = TextInput::from_str("hello world");
+        // cursor at end (11): skip 0 ws, skip "world" (5) back to 6. drain [6..11].
+        ti.delete_word_back();
+        assert_eq!(ti.value, "hello ");
+        assert_eq!(ti.cursor, 6);
+        // now skip " " (1 ws), skip "hello" (5) → cursor 0. drain [0..6].
+        ti.delete_word_back();
+        assert_eq!(ti.value, "");
+        assert_eq!(ti.cursor, 0);
+    }
+
+    #[test]
+    fn text_input_delete_word_back_at_start() {
+        let mut ti = TextInput::from_str("hello");
+        ti.cursor = 0;
+        ti.delete_word_back(); // no-op
+        assert_eq!(ti.value, "hello");
+        assert_eq!(ti.cursor, 0);
     }
 }
