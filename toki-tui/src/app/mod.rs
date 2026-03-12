@@ -113,6 +113,12 @@ pub struct App {
     pub task_filter: String,
     pub git_default_prefix: String,
     pub auto_resize_timer: bool,
+
+    // Templates
+    pub templates: Vec<crate::config::TemplateConfig>,
+    pub template_search_input: TextInput,
+    pub filtered_templates: Vec<crate::config::TemplateConfig>,
+    pub filtered_template_index: usize,
 }
 
 impl App {
@@ -177,6 +183,10 @@ impl App {
             task_filter: cfg.task_filter.clone(),
             git_default_prefix: cfg.git_default_prefix.clone(),
             auto_resize_timer: cfg.auto_resize_timer,
+            templates: cfg.templates.clone(),
+            template_search_input: TextInput::new(),
+            filtered_templates: Vec::new(),
+            filtered_template_index: 0,
         }
     }
 
@@ -402,6 +412,13 @@ impl App {
                 self.filter_activities();
                 self.selection_list_focused = false;
             }
+            View::SelectTemplate => {
+                self.template_search_input = TextInput::new();
+                self.filtered_templates = self.templates.clone();
+                self.filtered_template_index = 0;
+                self.selection_list_focused = false;
+                self.current_view = View::SelectTemplate;
+            }
             View::EditDescription => {
                 if self.description_is_default
                     && self.this_week_edit_state.is_none()
@@ -435,6 +452,12 @@ impl App {
                         (self.filtered_activity_index + 1) % self.filtered_activities.len();
                 }
             }
+            View::SelectTemplate => {
+                if !self.filtered_templates.is_empty() {
+                    self.filtered_template_index =
+                        (self.filtered_template_index + 1) % self.filtered_templates.len();
+                }
+            }
             View::History => {
                 self.history_focus_down();
             }
@@ -460,6 +483,15 @@ impl App {
                         self.filtered_activities.len() - 1
                     } else {
                         self.filtered_activity_index - 1
+                    };
+                }
+            }
+            View::SelectTemplate => {
+                if !self.filtered_templates.is_empty() {
+                    self.filtered_template_index = if self.filtered_template_index == 0 {
+                        self.filtered_templates.len() - 1
+                    } else {
+                        self.filtered_template_index - 1
                     };
                 }
             }
@@ -689,6 +721,27 @@ impl App {
         self.filter_activities();
     }
 
+    pub fn filter_templates(&mut self) {
+        let query = &self.template_search_input.value;
+        if query.is_empty() {
+            self.filtered_templates = self.templates.clone();
+        } else {
+            let matcher = SkimMatcherV2::default();
+            let mut scored: Vec<_> = self
+                .templates
+                .iter()
+                .filter_map(|t| {
+                    matcher
+                        .fuzzy_match(&t.description, query)
+                        .map(|score| (score, t.clone()))
+                })
+                .collect();
+            scored.sort_by(|a, b| b.0.cmp(&a.0));
+            self.filtered_templates = scored.into_iter().map(|(_, t)| t).collect();
+        }
+        self.filtered_template_index = 0;
+    }
+
     pub fn activity_search_input_backspace(&mut self) {
         self.activity_search_input.backspace();
         self.filter_activities();
@@ -697,6 +750,37 @@ impl App {
     pub fn activity_search_input_clear(&mut self) {
         self.activity_search_input.clear();
         self.filter_activities();
+    }
+
+    pub fn template_search_input_char(&mut self, c: char) {
+        self.template_search_input.insert(c);
+        self.filter_templates();
+    }
+
+    pub fn template_search_input_backspace(&mut self) {
+        self.template_search_input.backspace();
+        self.filter_templates();
+    }
+
+    pub fn template_search_input_clear(&mut self) {
+        self.template_search_input.clear();
+        self.filter_templates();
+    }
+
+    pub fn template_search_move_cursor(&mut self, left: bool) {
+        if left {
+            self.template_search_input.move_left();
+        } else {
+            self.template_search_input.move_right();
+        }
+    }
+
+    pub fn template_search_cursor_home_end(&mut self, home: bool) {
+        if home {
+            self.template_search_input.home();
+        } else {
+            self.template_search_input.end();
+        }
     }
 
     pub fn search_move_cursor(&mut self, left: bool) {

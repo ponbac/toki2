@@ -84,7 +84,7 @@ pub(super) fn handle_select_activity_key(key: KeyEvent, app: &mut App, action_tx
     }
 }
 
-fn handle_selection_input_key(
+pub(super) fn handle_selection_input_key(
     key: KeyEvent,
     app: &mut App,
     list_index: usize,
@@ -173,7 +173,7 @@ fn handle_selection_input_key(
 }
 
 #[derive(Clone, Copy)]
-struct SelectionInputOps {
+pub(super) struct SelectionInputOps {
     clear_input: fn(&mut App),
     input_char: fn(&mut App, char),
     input_backspace: fn(&mut App),

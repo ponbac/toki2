@@ -124,6 +124,9 @@ pub(super) async fn run_action(
         Action::ResumeEntry(entry) => {
             resume_entry(entry, app, client).await;
         }
+        Action::ApplyTemplate { template } => {
+            handle_apply_template(template, app, client).await?;
+        }
     }
     Ok(())
 }
@@ -283,6 +286,68 @@ async fn sync_running_timer_note(note: String, app: &mut App, client: &mut ApiCl
     {
         app.set_status(format!("Warning: Could not sync note to server: {}", e));
     }
+}
+
+async fn handle_apply_template(
+    template: crate::config::TemplateConfig,
+    app: &mut App,
+    client: &mut ApiClient,
+) -> Result<()> {
+    // Find project by name (case-insensitive)
+    let project = app
+        .projects
+        .iter()
+        .find(|p| p.name.eq_ignore_ascii_case(&template.project))
+        .cloned();
+
+    let Some(project) = project else {
+        // Project not found — navigate back silently
+        app.navigate_to(app::View::Timer);
+        return Ok(());
+    };
+
+    app.selected_project = Some(project.clone());
+
+    // Ensure activities are loaded for this project
+    ensure_activities_for_project(app, client, &project.id).await;
+
+    // Find activity by name (case-insensitive)
+    let activity = app
+        .activity_cache
+        .get(&project.id)
+        .and_then(|acts| {
+            acts.iter()
+                .find(|a| a.name.eq_ignore_ascii_case(&template.activity))
+                .cloned()
+        });
+
+    if let Some(activity) = activity {
+        app.selected_activity = Some(activity);
+    }
+
+    // Set note
+    app.description_input = app::TextInput::from_str(&template.note);
+    app.description_is_default = template.note.is_empty();
+
+    // Navigate back to timer
+    app.navigate_to(app::View::Timer);
+
+    // If timer is running, sync to server
+    if app.timer_state == app::TimerState::Running {
+        let note = app.description_input.value.clone();
+        let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
+        let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
+        let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
+        let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+        if let Err(e) = client
+            .update_active_timer(project_id, project_name, activity_id, activity_name, Some(note), None)
+            .await
+        {
+            app.set_status(format!("Warning: Could not sync template to server: {}", e));
+        }
+    }
+
+    Ok(())
 }
 
 async fn load_history_and_open(app: &mut App, client: &mut ApiClient) {

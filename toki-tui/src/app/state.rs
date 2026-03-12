@@ -10,6 +10,7 @@ pub enum View {
     History,
     SelectProject,
     SelectActivity,
+    SelectTemplate,
     EditDescription,
     SaveAction,
     Statistics,
