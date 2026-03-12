@@ -1097,7 +1097,7 @@ mod tests {
         let mut app = test_app();
         app.focused_this_week_index = Some(2);
 
-        app.start_timer();
+        app.start_timer(false);
 
         assert_eq!(app.timer_state, TimerState::Running);
         assert!(app.absolute_start.is_some());
@@ -1109,14 +1109,14 @@ mod tests {
     fn stop_timer_clears_running_state() {
         let mut app = test_app();
         app.focused_this_week_index = Some(2);
-        app.start_timer();
+        app.start_timer(false);
 
-        app.stop_timer();
+        app.stop_timer(false);
 
         assert_eq!(app.timer_state, TimerState::Stopped);
         assert!(app.absolute_start.is_none());
         assert!(app.local_start.is_none());
-        assert_eq!(app.focused_this_week_index, Some(3));
+        assert_eq!(app.focused_this_week_index, Some(2));
     }
 
     #[test]
@@ -1131,7 +1131,7 @@ mod tests {
         app.clear_timer();
 
         assert_eq!(app.timer_state, TimerState::Stopped);
-        assert_eq!(app.timer_size, TimerSize::Large);
+        assert_eq!(app.timer_size, TimerSize::Normal);
         assert!(app.selected_project.is_none());
         assert!(app.selected_activity.is_none());
         assert_eq!(app.description_input, TextInput::new());

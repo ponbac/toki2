@@ -1,6 +1,6 @@
 use crate::app::App;
 use crate::config::TokiConfig;
-use crate::types::{Activity, Project, TimeEntry};
+use crate::types::{Activity, AttestLevel, Project, TimeEntry};
 use time::OffsetDateTime;
 
 pub fn test_config() -> TokiConfig {
@@ -54,6 +54,7 @@ pub fn time_entry(
         start_time,
         end_time,
         week_number: 1,
+        attest_level: AttestLevel::None,
     }
 }
 
