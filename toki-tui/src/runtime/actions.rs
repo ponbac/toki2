@@ -129,8 +129,8 @@ pub(super) async fn run_action(
                 app.set_status(format!("Log note error: {}", e));
             }
         }
-        Action::OpenEntryLogNote(_entry_id) => {
-            // TODO: implement in subsequent task
+        Action::OpenEntryLogNote(id) => {
+            handle_open_entry_log_note(&id, app).await;
         }
     }
     Ok(())
@@ -927,6 +927,38 @@ pub(super) fn is_milltime_auth_error(e: &anyhow::Error) -> bool {
     msg.contains("unauthorized") || msg.contains("authenticate") || msg.contains("milltime")
 }
 
+/// Open an existing log file for a history/today entry.
+/// Takes a pre-extracted log ID (may be empty if the entry has no log tag).
+/// Does NOT create a new log file and does NOT mutate running-timer state.
+pub(super) async fn handle_open_entry_log_note(id: &str, app: &mut App) {
+    use crate::log_notes;
+
+    if id.is_empty() {
+        app.set_status("No log linked to this entry".to_string());
+        return;
+    }
+
+    let path = match log_notes::log_path(id) {
+        Ok(p) => p,
+        Err(e) => {
+            app.set_status(format!("Log error: {}", e));
+            return;
+        }
+    };
+
+    if !path.exists() {
+        app.set_status("Log file not found".to_string());
+        return;
+    }
+
+    if let Err(e) = crate::editor::open_editor(&path).await {
+        app.set_status(format!("Editor error: {}", e));
+        return;
+    }
+
+    app.needs_full_redraw = true;
+}
+
 async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::Result<()> {
     use crate::log_notes;
     use time::OffsetDateTime;
@@ -1053,6 +1085,33 @@ mod tests {
 
         assert_eq!(app.current_view, View::Timer);
         assert_eq!(app.timer_state, app::TimerState::Running);
+    }
+
+    #[tokio::test]
+    async fn open_entry_log_note_no_log_linked_sets_status() {
+        let mut app = test_app();
+        // Empty id → sets "No log linked to this entry"
+        handle_open_entry_log_note("", &mut app).await;
+        assert!(app.status_message.as_deref().unwrap_or("").contains("No log"));
+    }
+
+    #[tokio::test]
+    async fn open_entry_log_note_invalid_id_sets_status() {
+        let mut app = test_app();
+        // Invalid id (non-hex) → log_path returns Err → sets some status
+        handle_open_entry_log_note("ZZZZZZ", &mut app).await;
+        assert!(app.status_message.is_some());
+    }
+
+    #[tokio::test]
+    async fn open_entry_log_note_missing_file_sets_status() {
+        let mut app = test_app();
+        // Valid hex id but file doesn't exist → sets "Log file not found"
+        handle_open_entry_log_note("abcdef", &mut app).await;
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("Log file not found")
+        );
     }
 
     #[tokio::test]
