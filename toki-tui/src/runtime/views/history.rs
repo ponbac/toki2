@@ -43,7 +43,9 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
                     app.entry_edit_next_field();
                 }
             }
-            KeyCode::Char('l') | KeyCode::Char('L') => {
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 app.entry_edit_next_field();
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
