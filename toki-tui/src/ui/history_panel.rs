@@ -83,17 +83,25 @@ pub fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, 
         visible_entry_idx = 1; // DB entries start at visible_entry_idx = 1
     }
 
+    // Compute total hours per date for separator labels
+    let mut date_totals: std::collections::HashMap<&str, f64> = std::collections::HashMap::new();
+    for entry in &this_week_entries {
+        *date_totals.entry(entry.date.as_str()).or_insert(0.0) += entry.hours;
+    }
+
     for entry in &this_week_entries {
         let entry_date = &entry.date;
         if last_date.as_deref() != Some(entry_date.as_str()) {
+            let total = date_totals.get(entry_date.as_str()).copied().unwrap_or(0.0);
+            let total_str = super::utils::format_hours_hm(total);
             let label = if entry_date == &today_str {
-                "── Today ──".to_string()
+                format!("── Today ({}) ──", total_str)
             } else if entry_date == &yesterday_str {
-                "── Yesterday ──".to_string()
+                format!("── Yesterday ({}) ──", total_str)
             } else {
                 // Parse YYYY-MM-DD to get weekday
                 let weekday_label = super::utils::parse_date_weekday(entry_date);
-                format!("── {} ({}) ──", weekday_label, entry_date)
+                format!("── {}, {} ({}) ──", weekday_label, entry_date, total_str)
             };
             logical_rows.push(ThisWeekRow::Separator(label));
             last_date = Some(entry_date.clone());
