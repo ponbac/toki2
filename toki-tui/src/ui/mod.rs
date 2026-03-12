@@ -17,6 +17,7 @@ mod history_view;
 mod save_dialog;
 mod selection_views;
 mod statistics_view;
+mod template_selection_view;
 mod timer_view;
 pub(super) mod utils;
 pub(super) mod widgets;
@@ -46,6 +47,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         View::History => history_view::render_history_view(frame, app, body),
         View::SelectProject => selection_views::render_project_selection(frame, app, body),
         View::SelectActivity => selection_views::render_activity_selection(frame, app, body),
+        View::SelectTemplate => {
+            template_selection_view::render_template_selection(frame, app, body)
+        }
         View::EditDescription => {
             if app.taskwarrior_overlay.is_some() {
                 description_editor::render_taskwarrior_overlay(frame, app, body);

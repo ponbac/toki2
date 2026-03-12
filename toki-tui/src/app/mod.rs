@@ -452,6 +452,12 @@ impl App {
                         (self.filtered_activity_index + 1) % self.filtered_activities.len();
                 }
             }
+            View::SelectTemplate => {
+                if !self.filtered_templates.is_empty() {
+                    self.filtered_template_index =
+                        (self.filtered_template_index + 1) % self.filtered_templates.len();
+                }
+            }
             View::History => {
                 self.history_focus_down();
             }
@@ -477,6 +483,15 @@ impl App {
                         self.filtered_activities.len() - 1
                     } else {
                         self.filtered_activity_index - 1
+                    };
+                }
+            }
+            View::SelectTemplate => {
+                if !self.filtered_templates.is_empty() {
+                    self.filtered_template_index = if self.filtered_template_index == 0 {
+                        self.filtered_templates.len() - 1
+                    } else {
+                        self.filtered_template_index - 1
                     };
                 }
             }
@@ -735,6 +750,37 @@ impl App {
     pub fn activity_search_input_clear(&mut self) {
         self.activity_search_input.clear();
         self.filter_activities();
+    }
+
+    pub fn template_search_input_char(&mut self, c: char) {
+        self.template_search_input.insert(c);
+        self.filter_templates();
+    }
+
+    pub fn template_search_input_backspace(&mut self) {
+        self.template_search_input.backspace();
+        self.filter_templates();
+    }
+
+    pub fn template_search_input_clear(&mut self) {
+        self.template_search_input.clear();
+        self.filter_templates();
+    }
+
+    pub fn template_search_move_cursor(&mut self, left: bool) {
+        if left {
+            self.template_search_input.move_left();
+        } else {
+            self.template_search_input.move_right();
+        }
+    }
+
+    pub fn template_search_cursor_home_end(&mut self, home: bool) {
+        if home {
+            self.template_search_input.home();
+        } else {
+            self.template_search_input.end();
+        }
     }
 
     pub fn search_move_cursor(&mut self, left: bool) {
