@@ -1,5 +1,6 @@
 use super::utils::to_local_time;
 use crate::app::{EntryEditField, EntryEditState};
+use crate::log_notes;
 use crate::types::TimeEntry;
 use ratatui::{
     style::{Color, Modifier, Style},
@@ -110,7 +111,8 @@ pub fn build_display_row(
 
     let project = &entry.project_name;
     let activity = &entry.activity_name;
-    let note = entry.note.as_deref().unwrap_or("");
+    let note_raw = entry.note.as_deref().unwrap_or("");
+    let note = log_notes::strip_tag(note_raw);
 
     // Start time
     let start_str = entry
@@ -227,7 +229,7 @@ pub fn build_running_timer_display_row(
         .as_ref()
         .map(|a| a.name.clone())
         .unwrap_or_else(|| "[None]".to_string());
-    let note = app.description_input.value.clone();
+    let note = log_notes::strip_tag(&app.description_input.value).to_string();
 
     let prefix_len: usize = 28; // "▶ " (2) + "HH:MM - HH:MM " (14) + "[DDh:DDm]" (9) + " | " (3)
     let remaining = (available_width as usize).saturating_sub(prefix_len);
@@ -336,6 +338,7 @@ pub fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
         _ => Style::default().fg(Color::White),
     };
     let note_value = if matches!(edit_state.focused_field, EntryEditField::Note) {
+        // Cursor active — show raw value with cursor (user is typing)
         let (before, after) = edit_state.note.split_at_cursor();
         if edit_state.note.value.is_empty() {
             "[█]".to_string()
@@ -343,14 +346,9 @@ pub fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
             format!("[{}█{}]", before, after)
         }
     } else {
-        format!(
-            "[{}]",
-            if edit_state.note.value.is_empty() {
-                "Empty"
-            } else {
-                &edit_state.note.value
-            }
-        )
+        // Display mode — strip the log tag
+        let display = log_notes::strip_tag(&edit_state.note.value);
+        format!("[{}]", if display.is_empty() { "Empty" } else { display })
     };
     spans.push(Span::styled(note_value, note_style));
 
@@ -432,6 +430,7 @@ pub fn build_edit_row<'a>(
         _ => Style::default().fg(Color::White),
     };
     let note_value = if matches!(edit_state.focused_field, EntryEditField::Note) {
+        // Cursor active — show raw value with cursor (user is typing)
         let (before, after) = edit_state.note.split_at_cursor();
         if edit_state.note.value.is_empty() {
             "[█]".to_string()
@@ -439,14 +438,9 @@ pub fn build_edit_row<'a>(
             format!("[{}█{}]", before, after)
         }
     } else {
-        format!(
-            "[{}]",
-            if edit_state.note.value.is_empty() {
-                "Empty"
-            } else {
-                &edit_state.note.value
-            }
-        )
+        // Display mode — strip the log tag
+        let display = log_notes::strip_tag(&edit_state.note.value);
+        format!("[{}]", if display.is_empty() { "Empty" } else { display })
     };
     spans.push(Span::styled(note_value, note_style));
 

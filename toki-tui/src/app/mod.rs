@@ -119,6 +119,10 @@ pub struct App {
     pub template_search_input: TextInput,
     pub filtered_templates: Vec<crate::config::TemplateConfig>,
     pub filtered_template_index: usize,
+
+    /// Set to true after leaving/re-entering the alternate screen (e.g. after spawning an editor).
+    /// The event loop will call terminal.clear() to force a full redraw when this is true.
+    pub needs_full_redraw: bool,
 }
 
 impl App {
@@ -187,6 +191,7 @@ impl App {
             template_search_input: TextInput::new(),
             filtered_templates: Vec::new(),
             filtered_template_index: 0,
+            needs_full_redraw: false,
         }
     }
 

@@ -1,5 +1,6 @@
 use super::utils::centered_rect;
 use super::*;
+use crate::log_notes;
 
 pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
     let chunks = Layout::default()
@@ -35,7 +36,14 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             );
         frame.render_widget(input, chunks[0]);
     } else {
-        let (before, after) = app.description_input.split_at_cursor();
+        // Strip the log tag from the displayed value — the user sees the clean summary.
+        // The raw value (including tag) is preserved in app.description_input.value.
+        let raw = &app.description_input.value;
+        let stripped = log_notes::strip_tag(raw);
+        // Compute cursor position in the stripped view (capped at stripped length)
+        let cursor = app.description_input.cursor.min(stripped.chars().count());
+        let before: String = stripped.chars().take(cursor).collect();
+        let after: String = stripped.chars().skip(cursor).collect();
         let input_text = format!("{}█{}", before, after);
         let input = Paragraph::new(input_text)
             .style(Style::default().fg(Color::White))
@@ -119,6 +127,13 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
         } else {
             Style::default().fg(Color::DarkGray)
         };
+        let has_log = log_notes::extract_id(&app.description_input.value).is_some();
+        let log_hint_key = Span::styled("Ctrl+L", Style::default().fg(Color::Yellow));
+        let log_hint_label = if has_log {
+            Span::styled(": Log  ", Style::default().fg(Color::Green))
+        } else {
+            Span::raw(": New log  ")
+        };
         vec![
             Span::styled("Type", Style::default().fg(Color::Yellow)),
             Span::raw(": Edit  "),
@@ -128,11 +143,13 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             Span::raw(": Confirm  "),
             Span::styled("Esc", Style::default().fg(Color::Yellow)),
             Span::raw(": Cancel  "),
+            log_hint_key,
+            log_hint_label,
             Span::styled("Ctrl+D", Style::default().fg(Color::Yellow)),
             Span::raw(": Change directory  "),
             Span::styled("Ctrl+G", git_key_style),
             Span::styled(
-                ": Git quick commands  ",
+                ": Git  ",
                 Style::default().fg(if has_git {
                     Color::Reset
                 } else {
