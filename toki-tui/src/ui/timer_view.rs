@@ -147,36 +147,41 @@ fn render_project(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
 }
 
 fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
-    let description = app.current_description();
+    let description = crate::log_notes::strip_tag(&app.description_input.value).to_string();
     let is_empty = description.is_empty();
+    let has_log = app.description_log_id.is_some();
 
     let is_focused = app.focused_box == crate::app::FocusedBox::Description;
     let border_style = if is_focused {
         Style::default().fg(Color::Magenta)
-    } else if !is_empty {
-        // White border when note has content and not focused
+    } else if !is_empty || has_log {
+        // White border when note has content (or a log is attached) and not focused
         Style::default().fg(Color::White)
     } else {
         // Default when empty and not focused
         Style::default()
     };
 
-    // Title with underlined A
+    // Title with underlined N
     let title = vec![
         Span::raw(" "),
         Span::styled("N", Style::default().add_modifier(Modifier::UNDERLINED)),
         Span::raw("ote "),
     ];
 
-    let widget = Paragraph::new(description)
-        .style(Style::default().fg(Color::White))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(Line::from(title))
-                .border_style(border_style)
-                .padding(ratatui::widgets::Padding::horizontal(1)),
-        );
+    // Build the paragraph content: summary text + optional muted "[...]" log indicator
+    let mut spans: Vec<Span> = vec![Span::styled(description, Style::default().fg(Color::White))];
+    if has_log {
+        spans.push(Span::styled(" [...]", Style::default().fg(Color::DarkGray)));
+    }
+
+    let widget = Paragraph::new(Line::from(spans)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(Line::from(title))
+            .border_style(border_style)
+            .padding(ratatui::widgets::Padding::horizontal(1)),
+    );
 
     frame.render_widget(widget, area);
 }

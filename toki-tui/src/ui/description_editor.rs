@@ -3,14 +3,17 @@ use super::*;
 use crate::log_notes;
 
 pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
+    let has_log = app.description_log_id.is_some();
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([
             Constraint::Length(3), // 0: Input field or CWD input
-            Constraint::Length(5), // 1: Git context panel
-            Constraint::Min(0),    // 2: Spacer
-            Constraint::Length(3), // 3: Controls
+            Constraint::Length(6), // 1: Info panel (4 lines: cwd, branch, commit, log path)
+            Constraint::Min(3),    // 2: Log content box (empty space when no log)
+            Constraint::Min(0),    // 3: Spacer
+            Constraint::Length(3), // 4: Controls
         ])
         .split(body);
 
@@ -56,7 +59,7 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
         frame.render_widget(input, chunks[0]);
     }
 
-    // Git context panel
+    // Info panel
     let has_git = app.git_context.branch.is_some();
     let git_color = if has_git {
         Color::White
@@ -68,6 +71,33 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
     let cwd_str = app.git_context.cwd.to_string_lossy().to_string();
     let branch_str = app.git_context.branch.as_deref().unwrap_or("(no git repo)");
     let commit_str = app.git_context.last_commit.as_deref().unwrap_or("(none)");
+
+    // Build log file path label (4th info line)
+    let log_path_line = if let Some(ref id) = app.description_log_id {
+        match log_notes::log_path(id) {
+            Ok(path) => {
+                // Show path relative to home if possible
+                let home = dirs::home_dir().unwrap_or_default();
+                let display = match path.strip_prefix(&home) {
+                    Ok(rel) => format!(".local/share/toki-tui/{}", rel.to_string_lossy()),
+                    Err(_) => path.to_string_lossy().to_string(),
+                };
+                Line::from(vec![
+                    Span::styled("Log file:          ", Style::default().fg(muted)),
+                    Span::styled(display, Style::default().fg(Color::Cyan)),
+                ])
+            }
+            Err(_) => Line::from(vec![Span::styled(
+                "Log file:          (error)",
+                Style::default().fg(muted),
+            )]),
+        }
+    } else {
+        Line::from(vec![Span::styled(
+            "Log file:          ",
+            Style::default().fg(muted),
+        )])
+    };
 
     let git_lines = vec![
         Line::from(vec![
@@ -82,6 +112,7 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             Span::styled("Last commit:       ", Style::default().fg(muted)),
             Span::styled(commit_str, Style::default().fg(git_color)),
         ]),
+        log_path_line,
     ];
 
     let git_panel = Paragraph::new(git_lines).block(
@@ -92,6 +123,28 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             .padding(Padding::horizontal(1)),
     );
     frame.render_widget(git_panel, chunks[1]);
+
+    // Log content box (read-only, shown when a log is linked)
+    if has_log {
+        let log_content = app
+            .description_log_id
+            .as_ref()
+            .and_then(|id| log_notes::log_path(id).ok())
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_default();
+
+        let log_paragraph = Paragraph::new(log_content)
+            .style(Style::default().fg(Color::DarkGray))
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray))
+                    .title(Span::styled(" Log ", Style::default().fg(Color::DarkGray)))
+                    .padding(Padding::horizontal(1)),
+            );
+        frame.render_widget(log_paragraph, chunks[2]);
+    }
 
     // Controls (context-sensitive)
     let controls_text: Vec<Span> = if app.cwd_input.is_some() {
@@ -127,14 +180,7 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
         } else {
             Style::default().fg(Color::DarkGray)
         };
-        let has_log = log_notes::extract_id(&app.description_input.value).is_some();
-        let log_hint_key = Span::styled("Ctrl+L", Style::default().fg(Color::Yellow));
-        let log_hint_label = if has_log {
-            Span::styled(": Log  ", Style::default().fg(Color::Green))
-        } else {
-            Span::raw(": New log  ")
-        };
-        vec![
+        let mut spans = vec![
             Span::styled("Type", Style::default().fg(Color::Yellow)),
             Span::raw(": Edit  "),
             Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
@@ -143,8 +189,17 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             Span::raw(": Confirm  "),
             Span::styled("Esc", Style::default().fg(Color::Yellow)),
             Span::raw(": Cancel  "),
-            log_hint_key,
-            log_hint_label,
+            Span::styled("Ctrl+L", Style::default().fg(Color::Yellow)),
+            Span::raw(": Log  "),
+        ];
+        if has_log {
+            spans.push(Span::styled(
+                "Shift+Ctrl+L",
+                Style::default().fg(Color::Yellow),
+            ));
+            spans.push(Span::raw(": Detach  "));
+        }
+        spans.extend([
             Span::styled("Ctrl+D", Style::default().fg(Color::Yellow)),
             Span::raw(": Change directory  "),
             Span::styled("Ctrl+G", git_key_style),
@@ -158,7 +213,8 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             ),
             Span::styled("Ctrl+T", Style::default().fg(Color::Yellow)),
             Span::raw(": Taskwarrior"),
-        ]
+        ]);
+        spans
     };
 
     let controls = Paragraph::new(Line::from(controls_text))
@@ -173,7 +229,7 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
                 ))
                 .padding(ratatui::widgets::Padding::horizontal(1)),
         );
-    frame.render_widget(controls, chunks[3]);
+    frame.render_widget(controls, chunks[4]);
 }
 
 pub fn render_taskwarrior_overlay(frame: &mut Frame, app: &App, body: Rect) {

@@ -123,6 +123,12 @@ pub struct App {
     /// Set to true after leaving/re-entering the alternate screen (e.g. after spawning an editor).
     /// The event loop will call terminal.clear() to force a full redraw when this is true.
     pub needs_full_redraw: bool,
+
+    /// When a log note is linked to the current description, this holds the 8-char hex ID.
+    /// The `·log:<id>` tag is stripped from `description_input` while editing so the user
+    /// sees (and edits) only the clean summary. The tag is re-appended when the editor
+    /// closes (Enter / Esc) or when `handle_open_log_note` reads the full note value.
+    pub description_log_id: Option<String>,
 }
 
 impl App {
@@ -192,6 +198,7 @@ impl App {
             filtered_templates: Vec::new(),
             filtered_template_index: 0,
             needs_full_redraw: false,
+            description_log_id: None,
         }
     }
 
@@ -432,6 +439,18 @@ impl App {
                     self.description_input.clear();
                     self.description_is_default = false;
                 }
+                // Strip the log tag from the editable buffer so the user sees only the
+                // clean summary. The ID is preserved in description_log_id and re-appended
+                // when the editor closes.
+                {
+                    use crate::log_notes;
+                    let raw = self.description_input.value.clone();
+                    if let Some(id) = log_notes::extract_id(&raw) {
+                        self.description_log_id = Some(id.to_string());
+                        let stripped = log_notes::strip_tag(&raw).to_string();
+                        self.description_input = TextInput::from_str(&stripped);
+                    }
+                }
                 self.editing_description = true;
             }
             View::Timer => {
@@ -592,9 +611,51 @@ impl App {
         }
     }
 
-    /// Get current description for display
+    /// Get current description for display (clean summary, tag stripped)
+    #[allow(dead_code)]
     pub fn current_description(&self) -> String {
         self.description_input.value.clone()
+    }
+
+    /// Returns the full note value: the clean summary from `description_input` with the
+    /// `·log:<id>` tag re-appended if one is stored in `description_log_id`.
+    /// Use this instead of reading `description_input.value` directly whenever you need
+    /// the canonical note to save or sync.
+    pub fn full_note_value(&self) -> String {
+        use crate::log_notes;
+        match &self.description_log_id {
+            Some(id) => log_notes::append_tag(&self.description_input.value, id),
+            None => self.description_input.value.clone(),
+        }
+    }
+
+    /// Restore the running timer's note from `saved_timer_note`, stripping any embedded
+    /// log tag into `description_log_id` so the invariant is maintained.
+    pub fn restore_saved_timer_note(&mut self) {
+        use crate::log_notes;
+        if let Some(saved) = self.saved_timer_note.take() {
+            if let Some(id) = log_notes::extract_id(&saved) {
+                self.description_log_id = Some(id.to_string());
+                self.description_input = TextInput::from_str(log_notes::strip_tag(&saved));
+            } else {
+                self.description_log_id = None;
+                self.description_input = TextInput::from_str(&saved);
+            }
+        }
+    }
+
+    /// Set the running timer's note from a raw string (which may contain a `·log:` tag).
+    /// Strips the tag into `description_log_id` to maintain the invariant that
+    /// `description_input` always holds only the clean summary.
+    pub fn set_note_from_raw(&mut self, raw: &str) {
+        use crate::log_notes;
+        if let Some(id) = log_notes::extract_id(raw) {
+            self.description_log_id = Some(id.to_string());
+            self.description_input = TextInput::from_str(log_notes::strip_tag(raw));
+        } else {
+            self.description_log_id = None;
+            self.description_input = TextInput::from_str(raw);
+        }
     }
 
     /// Handle character input for description editing

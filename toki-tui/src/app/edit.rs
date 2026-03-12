@@ -13,7 +13,7 @@ impl App {
                 let project_name = self.selected_project.as_ref().map(|p| p.name.clone());
                 let activity_id = self.selected_activity.as_ref().map(|a| a.id.clone());
                 let activity_name = self.selected_activity.as_ref().map(|a| a.name.clone());
-                let note = Some(self.description_input.value.clone());
+                let note = Some(self.full_note_value());
                 self.create_edit_state(
                     String::new(), // "" = running timer sentinel
                     Some(start_time),

@@ -30,7 +30,7 @@ pub(crate) fn restore_active_timer(app: &mut App, timer: crate::types::ActiveTim
         });
     }
     if !timer.note.is_empty() {
-        app.description_input = app::TextInput::from_str(&timer.note);
+        app.set_note_from_raw(&timer.note);
         app.description_is_default = false;
     }
 }
@@ -143,10 +143,9 @@ pub(super) async fn handle_start_timer(app: &mut App, client: &mut ApiClient) ->
             let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
             let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
             let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-            let note = if app.description_input.value.is_empty() {
-                None
-            } else {
-                Some(app.description_input.value.clone())
+            let note = {
+                let full = app.full_note_value();
+                if full.is_empty() { None } else { Some(full) }
             };
             if let Err(e) = client
                 .start_timer(project_id, project_name, activity_id, activity_name, note)
@@ -419,10 +418,9 @@ async fn yank_entry_to_timer(entry: types::TimeEntry, app: &mut App, client: &mu
         let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
         let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
         let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-        let note = if app.description_input.value.is_empty() {
-            None
-        } else {
-            Some(app.description_input.value.clone())
+        let note = {
+            let full = app.full_note_value();
+            if full.is_empty() { None } else { Some(full) }
         };
         if let Err(e) = client
             .update_active_timer(
@@ -489,10 +487,9 @@ pub(super) async fn handle_save_timer_with_action(
     }
 
     let duration = app.elapsed_duration();
-    let note = if app.description_input.value.is_empty() {
-        None
-    } else {
-        Some(app.description_input.value.clone())
+    let note = {
+        let full = app.full_note_value();
+        if full.is_empty() { None } else { Some(full) }
     };
 
     let project_display = app.current_project_name();
@@ -632,8 +629,10 @@ pub(super) fn handle_entry_edit_enter(app: &mut App, action_tx: &ActionTx) {
             let _ = action_tx.send(Action::OpenEditActivityPicker { project_id });
         }
         EditEnterAction::NoteEditor { note } => {
-            // Save running timer's note before overwriting with entry's note
-            app.saved_timer_note = Some(app.description_input.value.clone());
+            // Save running timer's full note (including any log tag) before overwriting
+            // with the entry's note. On return, this will be restored to description_input
+            // and navigate_to(EditDescription) will re-strip the tag if present.
+            app.saved_timer_note = Some(app.full_note_value());
             // Set description_input from the edit state before navigating
             app.description_input = TextInput::from_str(&note);
             // Open description editor
@@ -736,7 +735,7 @@ async fn handle_running_timer_edit_save(app: &mut App, client: &mut ApiClient) {
             name,
             project_id: String::new(),
         });
-    app.description_input = TextInput::from_str(&state.note.value);
+    app.set_note_from_raw(&state.note.value);
 
     app.set_status("Running timer updated".to_string());
 
@@ -745,10 +744,11 @@ async fn handle_running_timer_edit_save(app: &mut App, client: &mut ApiClient) {
     let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
     let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
     let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-    let note = if app.description_input.value.is_empty() {
+    let full_note = app.full_note_value();
+    let note = if full_note.is_empty() {
         None
     } else {
-        Some(app.description_input.value.clone())
+        Some(full_note)
     };
     if let Err(e) = client
         .update_active_timer(
@@ -927,17 +927,16 @@ async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::
     use crate::log_notes;
     use time::OffsetDateTime;
 
-    let current_note = app.description_input.value.clone();
+    // The description editor strips the tag into `description_log_id` so
+    // `description_input.value` is always the clean summary.
+    let summary = app.description_input.value.clone();
 
-    // Determine or generate the log ID
-    let id = if let Some(existing_id) = log_notes::extract_id(&current_note) {
-        existing_id.to_string()
-    } else {
-        log_notes::generate_id()
-    };
-
-    // Summary = note without the tag
-    let summary = log_notes::strip_tag(&current_note).to_string();
+    // Determine or generate the log ID.  Prefer the one already stored on App;
+    // fall back to generating a new one (first time Ctrl+L is pressed).
+    let id = app
+        .description_log_id
+        .clone()
+        .unwrap_or_else(|| log_notes::generate_id());
 
     // Project/activity names for frontmatter
     let project = app
@@ -968,17 +967,14 @@ async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::
     // Open the editor (suspends TUI)
     crate::editor::open_editor(&log_path).await?;
 
-    // After editor closes: ensure the tag is in the note
-    let new_note = if log_notes::extract_id(&current_note).is_some() {
-        // Tag already present — note unchanged
-        current_note
-    } else {
-        // Append the new tag
-        log_notes::append_tag(&summary, &id)
-    };
+    // Store the ID on App so subsequent Ctrl+L presses reuse it and the tag
+    // survives further editing.
+    app.description_log_id = Some(id.clone());
 
-    // Update app state
-    app.description_input = TextInput::from_str(&new_note);
+    // Build the full note value (summary + tag) to save/sync.
+    let new_note = log_notes::append_tag(&summary, &id);
+
+    // description_input stays as the clean summary (tag lives in description_log_id).
     app.description_is_default = false;
 
     // If in edit mode, also sync the edit state's note field so Enter saves it correctly.

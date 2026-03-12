@@ -113,6 +113,7 @@ pub fn build_display_row(
     let activity = &entry.activity_name;
     let note_raw = entry.note.as_deref().unwrap_or("");
     let note = log_notes::strip_tag(note_raw);
+    let has_log = log_notes::extract_id(note_raw).is_some();
 
     // Start time
     let start_str = entry
@@ -178,6 +179,11 @@ pub fn build_display_row(
         spans.push(Span::styled(note_display, Style::default().fg(note_color)));
     }
 
+    // Log indicator: "[...]" in white for entries with a linked log note
+    if has_log {
+        spans.push(Span::styled(" [...]", Style::default().fg(Color::White)));
+    }
+
     // Apply focus styling: white background with black text
     if is_focused {
         let focused_style = Style::default()
@@ -230,6 +236,7 @@ pub fn build_running_timer_display_row(
         .map(|a| a.name.clone())
         .unwrap_or_else(|| "[None]".to_string());
     let note = log_notes::strip_tag(&app.description_input.value).to_string();
+    let has_log = app.description_log_id.is_some();
 
     let prefix_len: usize = 28; // "▶ " (2) + "HH:MM - HH:MM " (14) + "[DDh:DDm]" (9) + " | " (3)
     let remaining = (available_width as usize).saturating_sub(prefix_len);
@@ -273,6 +280,9 @@ pub fn build_running_timer_display_row(
     if !note_display.is_empty() {
         spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
         spans.push(Span::styled(note_display, Style::default().fg(Color::Gray)));
+    }
+    if has_log {
+        spans.push(Span::styled(" [...]", Style::default().fg(Color::White)));
     }
     Line::from(spans)
 }
@@ -338,9 +348,14 @@ pub fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
         _ => Style::default().fg(Color::White),
     };
     let note_value = if matches!(edit_state.focused_field, EntryEditField::Note) {
-        // Cursor active — show raw value with cursor (user is typing)
-        let (before, after) = edit_state.note.split_at_cursor();
-        if edit_state.note.value.is_empty() {
+        // Cursor active — strip the log tag first so it is never user-facing,
+        // then show the clean summary with cursor.
+        let clean = log_notes::strip_tag(&edit_state.note.value);
+        let clean_len = clean.chars().count();
+        let cursor = edit_state.note.cursor.min(clean_len);
+        let before: String = clean.chars().take(cursor).collect();
+        let after: String = clean.chars().skip(cursor).collect();
+        if clean.is_empty() {
             "[█]".to_string()
         } else {
             format!("[{}█{}]", before, after)
@@ -430,9 +445,14 @@ pub fn build_edit_row<'a>(
         _ => Style::default().fg(Color::White),
     };
     let note_value = if matches!(edit_state.focused_field, EntryEditField::Note) {
-        // Cursor active — show raw value with cursor (user is typing)
-        let (before, after) = edit_state.note.split_at_cursor();
-        if edit_state.note.value.is_empty() {
+        // Cursor active — strip the log tag first so it is never user-facing,
+        // then show the clean summary with cursor.
+        let clean = log_notes::strip_tag(&edit_state.note.value);
+        let clean_len = clean.chars().count();
+        let cursor = edit_state.note.cursor.min(clean_len);
+        let before: String = clean.chars().take(cursor).collect();
+        let after: String = clean.chars().skip(cursor).collect();
+        if clean.is_empty() {
             "[█]".to_string()
         } else {
             format!("[{}█{}]", before, after)
