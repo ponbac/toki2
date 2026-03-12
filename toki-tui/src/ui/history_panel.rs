@@ -83,17 +83,25 @@ pub fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, 
         visible_entry_idx = 1; // DB entries start at visible_entry_idx = 1
     }
 
+    // Compute total hours per date for separator labels
+    let mut date_totals: std::collections::HashMap<&str, f64> = std::collections::HashMap::new();
+    for entry in &this_week_entries {
+        *date_totals.entry(entry.date.as_str()).or_insert(0.0) += entry.hours;
+    }
+
     for entry in &this_week_entries {
         let entry_date = &entry.date;
         if last_date.as_deref() != Some(entry_date.as_str()) {
+            let total = date_totals.get(entry_date.as_str()).copied().unwrap_or(0.0);
+            let total_str = super::utils::format_hours_hm(total);
             let label = if entry_date == &today_str {
-                "── Today ──".to_string()
+                format!("── Today ({}) ──", total_str)
             } else if entry_date == &yesterday_str {
-                "── Yesterday ──".to_string()
+                format!("── Yesterday ({}) ──", total_str)
             } else {
                 // Parse YYYY-MM-DD to get weekday
-                let weekday_label = parse_date_weekday(entry_date);
-                format!("── {} ({}) ──", weekday_label, entry_date)
+                let weekday_label = super::utils::parse_date_weekday(entry_date);
+                format!("── {}, {} ({}) ──", weekday_label, entry_date, total_str)
             };
             logical_rows.push(ThisWeekRow::Separator(label));
             last_date = Some(entry_date.clone());
@@ -237,35 +245,5 @@ pub fn render_this_week_history(frame: &mut Frame, area: ratatui::layout::Rect, 
             inner_area,
             &mut scrollbar_state,
         );
-    }
-}
-
-/// Parse a YYYY-MM-DD string and return the weekday name, or "Unknown" on failure.
-fn parse_date_weekday(date_str: &str) -> &'static str {
-    let parts: Vec<&str> = date_str.splitn(3, '-').collect();
-    if parts.len() != 3 {
-        return "Unknown";
-    }
-    let (Ok(year), Ok(month_u8), Ok(day)) = (
-        parts[0].parse::<i32>(),
-        parts[1].parse::<u8>(),
-        parts[2].parse::<u8>(),
-    ) else {
-        return "Unknown";
-    };
-    let Ok(month) = time::Month::try_from(month_u8) else {
-        return "Unknown";
-    };
-    let Ok(date) = time::Date::from_calendar_date(year, month, day) else {
-        return "Unknown";
-    };
-    match date.weekday() {
-        time::Weekday::Monday => "Monday",
-        time::Weekday::Tuesday => "Tuesday",
-        time::Weekday::Wednesday => "Wednesday",
-        time::Weekday::Thursday => "Thursday",
-        time::Weekday::Friday => "Friday",
-        time::Weekday::Saturday => "Saturday",
-        time::Weekday::Sunday => "Sunday",
     }
 }
