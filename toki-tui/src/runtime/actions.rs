@@ -328,6 +328,11 @@ async fn handle_apply_template(
 
     if let Some(activity) = activity {
         app.selected_activity = Some(activity);
+    } else {
+        app.set_status(format!(
+            "Activity '{}' not found — skipped",
+            template.activity
+        ));
     }
 
     // Set note
@@ -339,7 +344,7 @@ async fn handle_apply_template(
 
     // If timer is running, sync to server
     if app.timer_state == app::TimerState::Running {
-        let note = app.description_input.value.clone();
+        let note = app.full_note_value();
         let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
         let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
         let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());

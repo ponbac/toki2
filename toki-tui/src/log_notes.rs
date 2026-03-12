@@ -14,25 +14,34 @@ pub fn log_dir() -> anyhow::Result<PathBuf> {
 }
 
 /// Returns the path for a given log ID.
-/// Returns an error if `id` contains non-hex characters (prevents path traversal).
+/// Returns an error if `id` contains non-lowercase-hex characters (prevents path traversal).
 pub fn log_path(id: &str) -> anyhow::Result<PathBuf> {
-    if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit()) {
+    if id.is_empty()
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f'))
+    {
         anyhow::bail!("Invalid log id: must be lowercase hex characters only");
     }
     Ok(log_dir()?.join(format!("{}.md", id)))
 }
 
-/// Generates a random 6-character lowercase hex ID.
+/// Derives a 6-character lowercase hex ID from the current timestamp and a
+/// process-local monotonic counter. Not cryptographically random — intended
+/// only to be unique enough for thousands of personal log files.
 pub fn generate_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
-    // Simple deterministic-enough ID from timestamp nanos XOR'd with secs.
-    // No external deps needed. 6 hex chars = 16M values, plenty for thousands of logs.
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     let nanos = now.subsec_nanos();
     let secs = now.as_secs();
-    let hash = (secs ^ (nanos as u64)).wrapping_mul(0x9e3779b97f4a7c15);
+    let hash = (secs ^ (nanos as u64) ^ seq).wrapping_mul(0x9e3779b97f4a7c15);
     format!("{:06x}", hash & 0xffffff)
 }
 

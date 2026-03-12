@@ -27,6 +27,13 @@ pub async fn run_app(
     let (action_tx, mut action_rx) = channel();
 
     loop {
+        // Clear before drawing to avoid a flash when the screen needs a full repaint
+        // (e.g. after returning from an external editor or waking from sleep).
+        if app.needs_full_redraw {
+            terminal.clear()?;
+            app.needs_full_redraw = false;
+        }
+
         terminal.draw(|f| ui::render(f, app))?;
 
         if app.is_loading {
@@ -63,11 +70,6 @@ pub async fn run_app(
 
         while let Ok(action) = action_rx.try_recv() {
             run_action(action, app, client).await?;
-        }
-
-        if app.needs_full_redraw {
-            terminal.clear()?;
-            app.needs_full_redraw = false;
         }
 
         if !app.running {
