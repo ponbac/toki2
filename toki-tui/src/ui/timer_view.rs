@@ -267,7 +267,7 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         Span::styled("H", Style::default().fg(Color::Yellow)),
         Span::raw(": History  "),
         Span::styled("S", Style::default().fg(Color::Yellow)),
-        Span::raw(": Stats  "),
+        Span::raw(": Statistics  "),
         Span::styled("X", Style::default().fg(Color::Yellow)),
         Span::raw(": Toggle size  "),
         Span::styled("Z", Style::default().fg(Color::Yellow)),
