@@ -30,6 +30,9 @@ pub(super) enum Action {
     RefreshHistoryBackground,
     YankEntryToTimer(TimeEntry),
     ResumeEntry(TimeEntry),
+    ApplyTemplate {
+        template: crate::config::TemplateConfig,
+    },
 }
 
 pub(super) type ActionTx = UnboundedSender<Action>;
