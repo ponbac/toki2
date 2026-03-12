@@ -916,11 +916,17 @@ async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::
     app.description_input = TextInput::from_str(&new_note);
     app.description_is_default = false;
 
+    // If in edit mode, also sync the edit state's note field so Enter saves it correctly.
+    if app.is_in_edit_mode() {
+        app.update_edit_state_note(new_note.clone());
+    }
+
     // Signal the event loop to do a full terminal redraw after the editor exits
     app.needs_full_redraw = true;
 
-    // If timer is running, sync the updated note to the server
-    if app.timer_state == app::TimerState::Running {
+    // If timer is running AND we are NOT in edit mode, sync the updated note to the server.
+    // (In edit mode the note belongs to a history entry — it will be saved on Enter.)
+    if app.timer_state == app::TimerState::Running && !app.is_in_edit_mode() {
         sync_running_timer_note(new_note, app, client).await;
     }
 
