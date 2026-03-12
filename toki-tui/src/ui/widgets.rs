@@ -345,42 +345,17 @@ pub fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
 
     spans.push(Span::styled(" | ", Style::default().fg(Color::White)));
 
-    // Note field
-    let note_base_style = match edit_state.focused_field {
+    // Note field — display only (editing opens the full-screen Notes overlay via Enter)
+    let note_style = match edit_state.focused_field {
         EntryEditField::Note => Style::default()
             .fg(Color::Black)
             .bg(Color::White)
             .add_modifier(Modifier::BOLD),
         _ => Style::default().fg(Color::White),
     };
-    if matches!(edit_state.focused_field, EntryEditField::Note) {
-        // Cursor active — strip the log tag, then render cursor as underlined char
-        let clean = log_notes::strip_tag(&edit_state.note.value);
-        let clean_len = clean.chars().count();
-        let cursor = edit_state.note.cursor.min(clean_len);
-        let before: String = clean.chars().take(cursor).collect();
-        let cursor_char: String = clean
-            .chars()
-            .nth(cursor)
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| " ".to_string());
-        let after: String = clean.chars().skip(cursor + 1).collect();
-        // Invert fg/bg on the cursor character so it's visible within the white-highlight zone
-        let cursor_style = Style::default()
-            .fg(Color::White)
-            .bg(Color::Black)
-            .add_modifier(Modifier::BOLD);
-        spans.push(Span::styled("[", note_base_style));
-        spans.push(Span::styled(before, note_base_style));
-        spans.push(Span::styled(cursor_char, cursor_style));
-        spans.push(Span::styled(after, note_base_style));
-        spans.push(Span::styled("]", note_base_style));
-    } else {
-        // Display mode — strip the log tag
-        let display = log_notes::strip_tag(&edit_state.note.value);
-        let note_value = format!("[{}]", if display.is_empty() { "Empty" } else { display });
-        spans.push(Span::styled(note_value, note_base_style));
-    }
+    let display = log_notes::strip_tag(&edit_state.note.value);
+    let note_value = format!("[{}]", if display.is_empty() { "Empty" } else { display });
+    spans.push(Span::styled(note_value, note_style));
 
     Line::from(spans)
 }
@@ -451,42 +426,17 @@ pub fn build_edit_row<'a>(
     // Separator
     spans.push(Span::styled(" | ", Style::default().fg(Color::White)));
 
-    // Note field
-    let note_base_style = match edit_state.focused_field {
+    // Note field — display only (editing opens the full-screen Notes overlay via Enter)
+    let note_style = match edit_state.focused_field {
         EntryEditField::Note => Style::default()
             .fg(Color::Black)
             .bg(Color::White)
             .add_modifier(Modifier::BOLD),
         _ => Style::default().fg(Color::White),
     };
-    if matches!(edit_state.focused_field, EntryEditField::Note) {
-        // Cursor active — strip the log tag, then render cursor as underlined char
-        let clean = log_notes::strip_tag(&edit_state.note.value);
-        let clean_len = clean.chars().count();
-        let cursor = edit_state.note.cursor.min(clean_len);
-        let before: String = clean.chars().take(cursor).collect();
-        let cursor_char: String = clean
-            .chars()
-            .nth(cursor)
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| " ".to_string());
-        let after: String = clean.chars().skip(cursor + 1).collect();
-        // Invert fg/bg on the cursor character so it's visible within the white-highlight zone
-        let cursor_style = Style::default()
-            .fg(Color::White)
-            .bg(Color::Black)
-            .add_modifier(Modifier::BOLD);
-        spans.push(Span::styled("[", note_base_style));
-        spans.push(Span::styled(before, note_base_style));
-        spans.push(Span::styled(cursor_char, cursor_style));
-        spans.push(Span::styled(after, note_base_style));
-        spans.push(Span::styled("]", note_base_style));
-    } else {
-        // Display mode — strip the log tag
-        let display = log_notes::strip_tag(&edit_state.note.value);
-        let note_value = format!("[{}]", if display.is_empty() { "Empty" } else { display });
-        spans.push(Span::styled(note_value, note_base_style));
-    }
+    let display = log_notes::strip_tag(&edit_state.note.value);
+    let note_value = format!("[{}]", if display.is_empty() { "Empty" } else { display });
+    spans.push(Span::styled(note_value, note_style));
 
     Line::from(spans)
 }
