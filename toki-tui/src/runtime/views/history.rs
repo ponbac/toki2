@@ -151,7 +151,10 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
                     app.enter_delete_confirm(app::DeleteOrigin::History);
                 }
             }
-            KeyCode::Char('r') | KeyCode::Char('R') if app.focused_history_index.is_some() => {
+            KeyCode::Char('r') | KeyCode::Char('R')
+                if app.focused_history_index.is_some()
+                    && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 let entry = app
                     .focused_history_index
                     .and_then(|idx| app.history_list_entries.get(idx).copied())

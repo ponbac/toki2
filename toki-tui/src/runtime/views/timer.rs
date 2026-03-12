@@ -150,7 +150,9 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
             }
         }
         KeyCode::Char('z') | KeyCode::Char('Z') => app.toggle_zen_mode(),
-        KeyCode::Char('r') | KeyCode::Char('R') if !is_editing_this_week(app) => {
+        KeyCode::Char('r') | KeyCode::Char('R')
+            if !is_editing_this_week(app) && key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
             if is_persisted_today_row_selected(app) {
                 let idx = app.focused_this_week_index.unwrap();
                 // When running, index 0 is the running-timer row so DB entries are shifted by 1
