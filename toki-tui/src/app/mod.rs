@@ -412,6 +412,13 @@ impl App {
                 self.filter_activities();
                 self.selection_list_focused = false;
             }
+            View::SelectTemplate => {
+                self.template_search_input = TextInput::new();
+                self.filtered_templates = self.templates.clone();
+                self.filtered_template_index = 0;
+                self.selection_list_focused = false;
+                self.current_view = View::SelectTemplate;
+            }
             View::EditDescription => {
                 if self.description_is_default
                     && self.this_week_edit_state.is_none()
