@@ -21,6 +21,17 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
             KeyCode::Up | KeyCode::Char('k') => {
                 app.entry_edit_prev_field();
             }
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if app
+                    .history_edit_state
+                    .as_ref()
+                    .is_some_and(|s| s.focused_field == app::EntryEditField::Note)
+                {
+                    app.entry_edit_word_right();
+                } else {
+                    app.entry_edit_next_field();
+                }
+            }
             KeyCode::Right => {
                 if app
                     .history_edit_state
@@ -34,6 +45,17 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
             }
             KeyCode::Char('l') | KeyCode::Char('L') => {
                 app.entry_edit_next_field();
+            }
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if app
+                    .history_edit_state
+                    .as_ref()
+                    .is_some_and(|s| s.focused_field == app::EntryEditField::Note)
+                {
+                    app.entry_edit_word_left();
+                } else {
+                    app.entry_edit_prev_field();
+                }
             }
             KeyCode::Left => {
                 if app
@@ -53,6 +75,9 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
             KeyCode::End => app.entry_edit_cursor_home_end(false),
             KeyCode::Char(c) if c.is_ascii_digit() => {
                 app.entry_edit_input_char(c);
+            }
+            KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                app.entry_edit_delete_word_back();
             }
             KeyCode::Backspace => {
                 app.entry_edit_backspace();
