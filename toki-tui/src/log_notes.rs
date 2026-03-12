@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-const TAG_PREFIX: &str = "  \u{00B7}log:"; // "  ·log:"
+const TAG_PREFIX: &str = "  [log:";
+const TAG_SUFFIX: &str = "]";
 
 /// Returns the log storage directory: ~/.local/share/toki-tui/logs/
 pub fn log_dir() -> anyhow::Result<PathBuf> {
@@ -35,12 +36,15 @@ pub fn generate_id() -> String {
 }
 
 /// Extracts the log ID from a note string, if the tag is present.
-/// e.g. "Fixed auth bug  ·log:a3f8b2" → Some("a3f8b2")
+/// e.g. "Fixed auth bug  [log:a3f8b2]" → Some("a3f8b2")
 pub fn extract_id(note: &str) -> Option<&str> {
     let pos = note.find(TAG_PREFIX)?;
     let after = &note[pos + TAG_PREFIX.len()..];
-    // ID is exactly 6 hex chars
-    if after.len() >= 6 && after[..6].chars().all(|c| c.is_ascii_hexdigit()) {
+    // ID is exactly 6 hex chars followed by ']'
+    if after.len() >= 7
+        && after[..6].chars().all(|c| c.is_ascii_hexdigit())
+        && after.as_bytes()[6] == b']'
+    {
         Some(&after[..6])
     } else {
         None
@@ -58,7 +62,7 @@ pub fn strip_tag(note: &str) -> &str {
 
 /// Appends a log tag to a note string (returns new String).
 pub fn append_tag(note: &str, id: &str) -> String {
-    format!("{}{}{}", note.trim_end(), TAG_PREFIX, id)
+    format!("{}{}{}{}", note.trim_end(), TAG_PREFIX, id, TAG_SUFFIX)
 }
 
 /// Writes the initial log file with YAML frontmatter.
@@ -79,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_extract_id_present() {
-        let note = "Fixed auth bug  \u{00B7}log:a3f8b2";
+        let note = "Fixed auth bug  [log:a3f8b2]";
         assert_eq!(extract_id(note), Some("a3f8b2"));
     }
 
@@ -90,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_strip_tag() {
-        let note = "Fixed auth bug  \u{00B7}log:a3f8b2";
+        let note = "Fixed auth bug  [log:a3f8b2]";
         assert_eq!(strip_tag(note), "Fixed auth bug");
     }
 
@@ -102,13 +106,13 @@ mod tests {
     #[test]
     fn test_append_tag() {
         let result = append_tag("Fixed auth bug", "a3f8b2");
-        assert_eq!(result, "Fixed auth bug  \u{00B7}log:a3f8b2");
+        assert_eq!(result, "Fixed auth bug  [log:a3f8b2]");
     }
 
     #[test]
     fn test_append_tag_trims_trailing_space() {
         let result = append_tag("Fixed auth bug   ", "a3f8b2");
-        assert_eq!(result, "Fixed auth bug  \u{00B7}log:a3f8b2");
+        assert_eq!(result, "Fixed auth bug  [log:a3f8b2]");
     }
 
     #[test]
