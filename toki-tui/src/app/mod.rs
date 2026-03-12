@@ -594,6 +594,24 @@ impl App {
         }
     }
 
+    pub fn input_word_left(&mut self) {
+        if self.editing_description {
+            self.description_input.move_word_left();
+        }
+    }
+
+    pub fn input_word_right(&mut self) {
+        if self.editing_description {
+            self.description_input.move_word_right();
+        }
+    }
+
+    pub fn input_delete_word_back(&mut self) {
+        if self.editing_description {
+            self.description_input.delete_word_back();
+        }
+    }
+
     /// Confirm description edit
     pub fn confirm_description(&mut self) {
         self.editing_description = false;
@@ -715,6 +733,19 @@ impl App {
         }
     }
 
+    pub fn search_word_left(&mut self) {
+        self.project_search_input.move_word_left();
+    }
+
+    pub fn search_word_right(&mut self) {
+        self.project_search_input.move_word_right();
+    }
+
+    pub fn search_delete_word_back(&mut self) {
+        self.project_search_input.delete_word_back();
+        self.filter_projects();
+    }
+
     pub fn activity_search_move_cursor(&mut self, left: bool) {
         if left {
             self.activity_search_input.move_left();
@@ -729,6 +760,19 @@ impl App {
         } else {
             self.activity_search_input.end();
         }
+    }
+
+    pub fn activity_search_word_left(&mut self) {
+        self.activity_search_input.move_word_left();
+    }
+
+    pub fn activity_search_word_right(&mut self) {
+        self.activity_search_input.move_word_right();
+    }
+
+    pub fn activity_search_delete_word_back(&mut self) {
+        self.activity_search_input.delete_word_back();
+        self.filter_activities();
     }
 
     pub fn select_next_save_action(&mut self) {
@@ -951,6 +995,24 @@ impl App {
             } else {
                 s.end();
             }
+        }
+    }
+
+    pub fn cwd_word_left(&mut self) {
+        if let Some(ref mut ti) = self.cwd_input {
+            ti.move_word_left();
+        }
+    }
+
+    pub fn cwd_word_right(&mut self) {
+        if let Some(ref mut ti) = self.cwd_input {
+            ti.move_word_right();
+        }
+    }
+
+    pub fn cwd_delete_word_back(&mut self) {
+        if let Some(ref mut ti) = self.cwd_input {
+            ti.delete_word_back();
         }
     }
 
