@@ -14,7 +14,11 @@ pub fn log_dir() -> anyhow::Result<PathBuf> {
 }
 
 /// Returns the path for a given log ID.
+/// Returns an error if `id` contains non-hex characters (prevents path traversal).
 pub fn log_path(id: &str) -> anyhow::Result<PathBuf> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit()) {
+        anyhow::bail!("Invalid log id: must be lowercase hex characters only");
+    }
     Ok(log_dir()?.join(format!("{}.md", id)))
 }
 
@@ -23,14 +27,11 @@ pub fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     // Simple deterministic-enough ID from timestamp nanos XOR'd with secs.
     // No external deps needed. 6 hex chars = 16M values, plenty for thousands of logs.
-    let nanos = SystemTime::now()
+    let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+        .unwrap_or_default();
+    let nanos = now.subsec_nanos();
+    let secs = now.as_secs();
     let hash = (secs ^ (nanos as u64)).wrapping_mul(0x9e3779b97f4a7c15);
     format!("{:06x}", hash & 0xffffff)
 }

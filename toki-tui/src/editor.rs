@@ -16,15 +16,17 @@ pub async fn open_editor(path: &Path) -> Result<()> {
     disable_raw_mode()?;
     execute!(std::io::stdout(), LeaveAlternateScreen)?;
 
-    // Spawn editor and wait
-    let status = tokio::process::Command::new(&editor)
+    // Spawn editor and wait; capture result so TUI is always restored below
+    let status_res = tokio::process::Command::new(&editor)
         .arg(path)
         .status()
-        .await?;
+        .await;
 
-    // Re-enter TUI
+    // Re-enter TUI (always, even if the editor failed to launch)
     enable_raw_mode()?;
     execute!(std::io::stdout(), EnterAlternateScreen)?;
+
+    let status = status_res?;
 
     if !status.success() {
         anyhow::bail!("Editor exited with non-zero status: {}", status);

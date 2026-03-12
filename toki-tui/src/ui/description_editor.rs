@@ -133,11 +133,10 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
     // Log content box (read-only, shown when a log is linked)
     if has_log {
         let log_content = app
-            .description_log_id
-            .as_ref()
-            .and_then(|id| log_notes::log_path(id).ok())
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .unwrap_or_default();
+            .cached_log_content
+            .as_deref()
+            .unwrap_or_default()
+            .to_string();
 
         let log_paragraph = Paragraph::new(log_content)
             .style(Style::default().fg(Color::DarkGray))

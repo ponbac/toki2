@@ -91,6 +91,7 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
             {
                 // Remove (detach) the linked log from the current note (orphans the file, keeps note text)
                 app.description_log_id = None;
+                app.cached_log_content = None;
                 app.status_message = Some("Log removed".to_string());
             }
             KeyCode::Char('l') | KeyCode::Char('L')

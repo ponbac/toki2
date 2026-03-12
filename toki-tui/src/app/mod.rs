@@ -129,6 +129,11 @@ pub struct App {
     /// sees (and edits) only the clean summary. The tag is re-appended when the editor
     /// closes (Enter / Esc) or when `handle_open_log_note` reads the full note value.
     pub description_log_id: Option<String>,
+
+    /// Cached content of the currently linked log file, refreshed whenever
+    /// `description_log_id` changes. Used by the render path to avoid per-frame
+    /// synchronous file I/O.
+    pub cached_log_content: Option<String>,
 }
 
 impl App {
@@ -199,6 +204,7 @@ impl App {
             filtered_template_index: 0,
             needs_full_redraw: false,
             description_log_id: None,
+            cached_log_content: None,
         }
     }
 
@@ -225,6 +231,7 @@ impl App {
         self.description_input = TextInput::new();
         self.description_is_default = true;
         self.description_log_id = None;
+        self.cached_log_content = None;
         self.status_message = Some("Note cleared".to_string());
     }
 
@@ -238,6 +245,7 @@ impl App {
         self.description_input = TextInput::new();
         self.description_is_default = true;
         self.description_log_id = None;
+        self.cached_log_content = None;
         self.status_message = Some("Timer cleared".to_string());
     }
 
@@ -451,6 +459,7 @@ impl App {
                         self.description_log_id = Some(id.to_string());
                         let stripped = log_notes::strip_tag(&raw).to_string();
                         self.description_input = TextInput::from_str(&stripped);
+                        self.refresh_log_cache();
                     }
                 }
                 self.editing_description = true;
@@ -643,6 +652,7 @@ impl App {
                 self.description_log_id = None;
                 self.description_input = TextInput::from_str(&saved);
             }
+            self.refresh_log_cache();
         }
     }
 
@@ -658,6 +668,18 @@ impl App {
             self.description_log_id = None;
             self.description_input = TextInput::from_str(raw);
         }
+        self.refresh_log_cache();
+    }
+
+    /// Refreshes `cached_log_content` from disk based on the current `description_log_id`.
+    /// Call this once whenever `description_log_id` is assigned.
+    pub fn refresh_log_cache(&mut self) {
+        use crate::log_notes;
+        self.cached_log_content = self
+            .description_log_id
+            .as_ref()
+            .and_then(|id| log_notes::log_path(id).ok())
+            .and_then(|path| std::fs::read_to_string(path).ok());
     }
 
     /// Handle character input for description editing
@@ -1178,6 +1200,7 @@ impl App {
     pub fn cwd_delete_word_back(&mut self) {
         if let Some(ref mut ti) = self.cwd_input {
             ti.delete_word_back();
+            self.cwd_completions.clear();
         }
     }
 

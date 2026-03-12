@@ -302,7 +302,11 @@ async fn handle_apply_template(
         .cloned();
 
     let Some(project) = project else {
-        // Project not found — navigate back silently
+        // Project not found — tell the user and navigate back
+        app.set_status(format!(
+            "Project '{}' not found — template not applied",
+            template.project
+        ));
         app.navigate_to(app::View::Timer);
         return Ok(());
     };
@@ -946,8 +950,10 @@ async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::
     crate::editor::open_editor(&log_path).await?;
 
     // Store the ID on App so subsequent Ctrl+L presses reuse it and the tag
-    // survives further editing.
+    // survives further editing. Refresh the cache so the render path sees the
+    // newly written file immediately.
     app.description_log_id = Some(id.clone());
+    app.refresh_log_cache();
 
     // Build the full note value (summary + tag) to save/sync.
     let new_note = log_notes::append_tag(&summary, &id);
