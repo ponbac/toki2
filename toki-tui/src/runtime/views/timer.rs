@@ -89,6 +89,12 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
         KeyCode::Char(c) if is_editing_this_week(app) && c.is_ascii_digit() => {
             app.entry_edit_input_char(c);
         }
+        KeyCode::Backspace
+            if key.modifiers.contains(KeyModifiers::ALT)
+                && is_note_focused_in_this_week_edit(app) =>
+        {
+            app.entry_edit_delete_word_back();
+        }
         KeyCode::Backspace => {
             if is_editing_this_week(app) {
                 if !is_note_focused_in_this_week_edit(app) {

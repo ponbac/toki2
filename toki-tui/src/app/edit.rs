@@ -403,6 +403,51 @@ impl App {
         }
     }
 
+    /// Move cursor left by one word in the Note field.
+    pub fn entry_edit_word_left(&mut self) {
+        let apply = |state: &mut EntryEditState| {
+            if state.focused_field == EntryEditField::Note {
+                state.note.move_word_left();
+            }
+        };
+        if let Some(s) = &mut self.this_week_edit_state {
+            apply(s);
+        }
+        if let Some(s) = &mut self.history_edit_state {
+            apply(s);
+        }
+    }
+
+    /// Move cursor right by one word in the Note field.
+    pub fn entry_edit_word_right(&mut self) {
+        let apply = |state: &mut EntryEditState| {
+            if state.focused_field == EntryEditField::Note {
+                state.note.move_word_right();
+            }
+        };
+        if let Some(s) = &mut self.this_week_edit_state {
+            apply(s);
+        }
+        if let Some(s) = &mut self.history_edit_state {
+            apply(s);
+        }
+    }
+
+    /// Delete the previous word in the Note field.
+    pub fn entry_edit_delete_word_back(&mut self) {
+        let apply = |state: &mut EntryEditState| {
+            if state.focused_field == EntryEditField::Note {
+                state.note.delete_word_back();
+            }
+        };
+        if let Some(s) = &mut self.this_week_edit_state {
+            apply(s);
+        }
+        if let Some(s) = &mut self.history_edit_state {
+            apply(s);
+        }
+    }
+
     /// Clear the current time field for direct re-entry
     pub fn entry_edit_clear_time(&mut self) {
         if let Some(state) = &mut self.this_week_edit_state {
