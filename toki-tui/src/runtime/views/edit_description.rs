@@ -17,8 +17,17 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
                 }
             }
             KeyCode::Tab => app.cwd_tab_complete(),
+            KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                app.cwd_delete_word_back();
+            }
             KeyCode::Backspace => app.cwd_input_backspace(),
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.cwd_word_left();
+            }
             KeyCode::Left => app.cwd_move_cursor(true),
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.cwd_word_right();
+            }
             KeyCode::Right => app.cwd_move_cursor(false),
             KeyCode::Home => app.cwd_cursor_home_end(true),
             KeyCode::End => app.cwd_cursor_home_end(false),
@@ -78,8 +87,17 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.input_char(c);
             }
+            KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                app.input_delete_word_back();
+            }
             KeyCode::Backspace => app.input_backspace(),
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.input_word_left();
+            }
             KeyCode::Left => app.input_move_cursor(true),
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.input_word_right();
+            }
             KeyCode::Right => app.input_move_cursor(false),
             KeyCode::Home => app.input_cursor_home_end(true),
             KeyCode::End => app.input_cursor_home_end(false),
