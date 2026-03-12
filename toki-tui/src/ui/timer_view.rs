@@ -26,7 +26,7 @@ pub fn render_timer_view(frame: &mut Frame, app: &mut App, body: Rect) {
     render_description(frame, chunks[2], app);
     super::history_panel::render_this_week_history(frame, chunks[3], app);
     render_status(frame, chunks[4], app);
-    render_controls(frame, chunks[5]);
+    render_controls(frame, chunks[5], app);
 }
 
 fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
@@ -227,7 +227,7 @@ pub fn render_status(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) 
     frame.render_widget(status, area);
 }
 
-fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
+fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
     let line1 = vec![
         Span::styled("Space", Style::default().fg(Color::Yellow)),
         Span::raw(": Start/Stop  "),
@@ -241,7 +241,7 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Edit"),
     ];
 
-    let line2 = vec![
+    let mut line2 = vec![
         Span::styled("P", Style::default().fg(Color::Yellow)),
         Span::raw(": Project  "),
         Span::styled("N", Style::default().fg(Color::Yellow)),
@@ -256,13 +256,21 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Copy to running timer  "),
         Span::styled("R", Style::default().fg(Color::Yellow)),
         Span::raw(": Resume  "),
+    ];
+
+    if !app.templates.is_empty() {
+        line2.push(Span::styled("M", Style::default().fg(Color::Yellow)));
+        line2.push(Span::raw(": Template  "));
+    }
+
+    line2.extend([
         Span::styled("Z", Style::default().fg(Color::Yellow)),
         Span::raw(": Zen mode  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
         Span::raw(": Exit edit  "),
         Span::styled("Q", Style::default().fg(Color::Yellow)),
         Span::raw(": Quit"),
-    ];
+    ]);
 
     let controls = Paragraph::new(vec![Line::from(line1), Line::from(line2)])
         .alignment(Alignment::Center)
