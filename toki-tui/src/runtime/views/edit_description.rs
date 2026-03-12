@@ -75,6 +75,11 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
             {
                 app.open_taskwarrior_overlay();
             }
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                enqueue_action(action_tx, Action::OpenLogNote);
+            }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.input_char(c);
             }
