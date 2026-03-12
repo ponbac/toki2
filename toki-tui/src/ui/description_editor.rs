@@ -195,11 +195,11 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             Span::styled("Esc", Style::default().fg(Color::Yellow)),
             Span::raw(": Cancel  "),
             Span::styled("Ctrl+L", Style::default().fg(Color::Yellow)),
-            Span::raw(": Add/edit log file  "),
+            Span::raw(": Add/edit log  "),
         ];
         if has_log {
             spans.push(Span::styled("Ctrl+R", Style::default().fg(Color::Yellow)));
-            spans.push(Span::raw(": Remove log file  "));
+            spans.push(Span::raw(": Remove log  "));
         }
         spans.extend([
             Span::styled("Ctrl+D", Style::default().fg(Color::Yellow)),
