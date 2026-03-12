@@ -129,6 +129,9 @@ pub(super) async fn run_action(
                 app.set_status(format!("Log note error: {}", e));
             }
         }
+        Action::OpenEntryLogNote(_entry_id) => {
+            // TODO: implement in subsequent task
+        }
     }
     Ok(())
 }

@@ -33,6 +33,7 @@ pub(super) enum Action {
         template: crate::config::TemplateConfig,
     },
     OpenLogNote,
+    OpenEntryLogNote(String),
 }
 
 pub(super) type ActionTx = UnboundedSender<Action>;
