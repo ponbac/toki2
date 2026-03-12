@@ -29,7 +29,7 @@ pub struct TokiConfig {
     pub auto_resize_timer: bool,
     /// Named presets of (project, activity, note) applied via the template picker.
     #[serde(default)]
-    pub templates: Vec<TemplateConfig>,
+    pub template: Vec<TemplateConfig>,
 }
 
 fn default_api_url() -> String {
@@ -51,7 +51,7 @@ impl Default for TokiConfig {
             task_filter: String::new(),
             git_default_prefix: default_git_prefix(),
             auto_resize_timer: default_auto_resize_timer(),
-            templates: Vec::new(),
+            template: Vec::new(),
         }
     }
 }

@@ -183,7 +183,7 @@ impl App {
             task_filter: cfg.task_filter.clone(),
             git_default_prefix: cfg.git_default_prefix.clone(),
             auto_resize_timer: cfg.auto_resize_timer,
-            templates: cfg.templates.clone(),
+            templates: cfg.template.clone(),
             template_search_input: TextInput::new(),
             filtered_templates: Vec::new(),
             filtered_template_index: 0,
