@@ -165,6 +165,23 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
                     app.set_status("Error: could not resolve selected entry".to_string());
                 }
             }
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if app.focused_history_index.is_some()
+                    && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                let note = app
+                    .focused_history_index
+                    .and_then(|idx| app.history_list_entries.get(idx).copied())
+                    .and_then(|te_idx| app.time_entries.get(te_idx))
+                    .and_then(|e| e.note.as_deref())
+                    .unwrap_or("");
+                let id = crate::log_notes::extract_id(note).unwrap_or("").to_string();
+                if id.is_empty() {
+                    app.set_status("No log linked to this entry".to_string());
+                } else {
+                    enqueue_action(action_tx, Action::OpenEntryLogNote(id));
+                }
+            }
             _ => {}
         }
     }
