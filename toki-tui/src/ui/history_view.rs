@@ -233,7 +233,7 @@ pub fn render_history_view(frame: &mut Frame, app: &mut App, body: Rect) {
             Span::styled("Enter", Style::default().fg(Color::Yellow)),
             Span::raw(": Edit  "),
             Span::styled("R", Style::default().fg(Color::Yellow)),
-            Span::raw(": Resume / Copy to running  "),
+            Span::raw(": Resume  "),
             Span::styled("H / Esc", Style::default().fg(Color::Yellow)),
             Span::raw(": Back to timer  "),
             Span::styled("Q", Style::default().fg(Color::Yellow)),

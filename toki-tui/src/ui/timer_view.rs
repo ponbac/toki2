@@ -269,7 +269,7 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         Span::styled("G", Style::default().fg(Color::Yellow)),
         Span::raw(": Toggle size  "),
         Span::styled("R", Style::default().fg(Color::Yellow)),
-        Span::raw(": Resume / Copy to running  "),
+        Span::raw(": Resume  "),
         Span::styled("Z", Style::default().fg(Color::Yellow)),
         Span::raw(": Zen mode  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
