@@ -1098,9 +1098,9 @@ mod tests {
     #[tokio::test]
     async fn open_entry_log_note_invalid_id_sets_status() {
         let mut app = test_app();
-        // Invalid id (non-hex) → log_path returns Err → sets some status
+        // Invalid id (non-hex) → log_path returns Err → sets "Log error: ..."
         handle_open_entry_log_note("ZZZZZZ", &mut app).await;
-        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_deref().unwrap_or("").contains("Log error"));
     }
 
     #[tokio::test]
