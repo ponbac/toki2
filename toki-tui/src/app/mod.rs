@@ -801,6 +801,19 @@ impl App {
         }
     }
 
+    pub fn template_search_word_left(&mut self) {
+        self.template_search_input.move_word_left();
+    }
+
+    pub fn template_search_word_right(&mut self) {
+        self.template_search_input.move_word_right();
+    }
+
+    pub fn template_search_delete_word_back(&mut self) {
+        self.template_search_input.delete_word_back();
+        self.filter_templates();
+    }
+
     pub fn search_move_cursor(&mut self, left: bool) {
         if left {
             self.project_search_input.move_left();

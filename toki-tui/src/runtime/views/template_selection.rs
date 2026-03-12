@@ -64,6 +64,10 @@ fn handle_template_input_key(key: KeyEvent, app: &mut App) -> bool {
             }
             true
         }
+        KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+            app.template_search_delete_word_back();
+            true
+        }
         KeyCode::Backspace => {
             app.template_search_input_backspace();
             true
@@ -84,9 +88,21 @@ fn handle_template_input_key(key: KeyEvent, app: &mut App) -> bool {
             }
             true
         }
+        KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if !app.selection_list_focused {
+                app.template_search_word_left();
+            }
+            true
+        }
         KeyCode::Left => {
             if !app.selection_list_focused {
                 app.template_search_move_cursor(true);
+            }
+            true
+        }
+        KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if !app.selection_list_focused {
+                app.template_search_word_right();
             }
             true
         }
