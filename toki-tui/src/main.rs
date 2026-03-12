@@ -32,6 +32,10 @@ async fn main() -> Result<()> {
             let path = config::TokiConfig::ensure_exists()?;
             println!("{}", path.display());
         }
+        Commands::LogsPath => {
+            let path = log_notes::log_dir()?;
+            println!("{}", path.display());
+        }
         Commands::Version => {
             println!("{}", env!("CARGO_PKG_VERSION"));
         }

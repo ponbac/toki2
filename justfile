@@ -103,3 +103,7 @@ tui-version:
 # Show toki-tui session and Milltime status
 tui-status:
     cd toki-tui && cargo run -- status
+
+# Print the log notes directory path
+tui-logs:
+    cd toki-tui && cargo run -- logs-path
