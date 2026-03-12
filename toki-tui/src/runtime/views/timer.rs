@@ -122,7 +122,7 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
         KeyCode::Char('n') | KeyCode::Char('N') => {
             app.navigate_to(app::View::EditDescription);
         }
-        KeyCode::Char('t') | KeyCode::Char('T') => {
+        KeyCode::Char('g') | KeyCode::Char('G') => {
             app.toggle_timer_size();
         }
         // S: Open Stats view (unmodified only - Ctrl+S is save)
@@ -168,7 +168,7 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
                 }
             }
         }
-        KeyCode::Char('m') | KeyCode::Char('M')
+        KeyCode::Char('t') | KeyCode::Char('T')
             if !is_editing_this_week(app) && !app.templates.is_empty() =>
         {
             app.navigate_to(app::View::SelectTemplate);

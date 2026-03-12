@@ -246,24 +246,24 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         Span::raw(": Project  "),
         Span::styled("N", Style::default().fg(Color::Yellow)),
         Span::raw(": Note  "),
+    ];
+
+    if !app.templates.is_empty() {
+        line2.push(Span::styled("T", Style::default().fg(Color::Yellow)));
+        line2.push(Span::raw(": Template  "));
+    }
+
+    line2.extend([
         Span::styled("H", Style::default().fg(Color::Yellow)),
         Span::raw(": History  "),
         Span::styled("S", Style::default().fg(Color::Yellow)),
         Span::raw(": Stats  "),
-        Span::styled("T", Style::default().fg(Color::Yellow)),
+        Span::styled("G", Style::default().fg(Color::Yellow)),
         Span::raw(": Toggle size  "),
         Span::styled("Y", Style::default().fg(Color::Yellow)),
         Span::raw(": Copy to running timer  "),
         Span::styled("R", Style::default().fg(Color::Yellow)),
         Span::raw(": Resume  "),
-    ];
-
-    if !app.templates.is_empty() {
-        line2.push(Span::styled("M", Style::default().fg(Color::Yellow)));
-        line2.push(Span::raw(": Template  "));
-    }
-
-    line2.extend([
         Span::styled("Z", Style::default().fg(Color::Yellow)),
         Span::raw(": Zen mode  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),

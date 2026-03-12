@@ -57,7 +57,7 @@ pub fn render_template_selection(frame: &mut Frame, app: &App, body: Rect) {
 
             let line1 = Line::from(Span::styled(template.description.clone(), desc_style));
             let line2 = Line::from(Span::styled(
-                format!("{} / {}", template.project, template.activity),
+                format!("{}: {}", template.project, template.activity),
                 sub_style,
             ));
 
