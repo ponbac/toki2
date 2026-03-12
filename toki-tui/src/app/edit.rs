@@ -686,7 +686,7 @@ impl App {
             project_id: entry.project_id.clone(),
         });
         let note = entry.note.clone().unwrap_or_default();
-        self.description_input = TextInput::from_str(&note);
+        self.set_note_from_raw(&note);
         self.description_is_default = false;
     }
 
