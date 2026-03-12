@@ -78,14 +78,24 @@ pub fn render_history_view(frame: &mut Frame, app: &mut App, body: Rect) {
         let mut logical_rows: Vec<HistoryRow<'_>> = Vec::new();
         let mut last_date: Option<String> = None;
 
+        // Compute total hours per date for separator labels
+        let mut date_totals: std::collections::HashMap<&str, f64> =
+            std::collections::HashMap::new();
+        for (_, entry) in &entries {
+            *date_totals.entry(entry.date.as_str()).or_insert(0.0) += entry.hours;
+        }
+
         for (history_idx, entry) in &entries {
             if last_date.as_deref() != Some(&entry.date) {
+                let total = date_totals.get(entry.date.as_str()).copied().unwrap_or(0.0);
+                let total_str = super::utils::format_hours_hm(total);
                 let label = if entry.date == today_str {
-                    "── Today ──".to_string()
+                    format!("── Today ({}) ──", total_str)
                 } else if entry.date == yesterday_str {
-                    "── Yesterday ──".to_string()
+                    format!("── Yesterday ({}) ──", total_str)
                 } else {
-                    format!("── {} ──", entry.date)
+                    let weekday = super::utils::parse_date_weekday(&entry.date);
+                    format!("── {}, {} ({}) ──", weekday, entry.date, total_str)
                 };
                 logical_rows.push(HistoryRow::Separator(label));
                 last_date = Some(entry.date.clone());
