@@ -928,7 +928,7 @@ async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::
     let id = app
         .description_log_id
         .clone()
-        .unwrap_or_else(|| log_notes::generate_id());
+        .unwrap_or_else(log_notes::generate_id);
 
     // Date string
     let today = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
