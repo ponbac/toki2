@@ -169,10 +169,13 @@ fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App)
         Span::raw("ote "),
     ];
 
-    // Build the paragraph content: summary text + optional muted "[...]" log indicator
+    // Build the paragraph content: summary text + optional muted "[…]" log indicator
     let mut spans: Vec<Span> = vec![Span::styled(description, Style::default().fg(Color::White))];
     if has_log {
-        spans.push(Span::styled(" [...]", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            " [\u{2026}]",
+            Style::default().fg(Color::DarkGray),
+        ));
     }
 
     let widget = Paragraph::new(Line::from(spans)).block(

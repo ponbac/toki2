@@ -17,11 +17,11 @@ pub fn log_path(id: &str) -> anyhow::Result<PathBuf> {
     Ok(log_dir()?.join(format!("{}.md", id)))
 }
 
-/// Generates a random 8-character lowercase hex ID.
+/// Generates a random 6-character lowercase hex ID.
 pub fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    // Simple deterministic-enough ID from timestamp nanos XOR'd with a counter
-    // No external deps needed.
+    // Simple deterministic-enough ID from timestamp nanos XOR'd with secs.
+    // No external deps needed. 6 hex chars = 16M values, plenty for thousands of logs.
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -30,20 +30,18 @@ pub fn generate_id() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    format!(
-        "{:08x}",
-        (secs ^ (nanos as u64)).wrapping_mul(0x9e3779b97f4a7c15)
-    )
+    let hash = (secs ^ (nanos as u64)).wrapping_mul(0x9e3779b97f4a7c15);
+    format!("{:06x}", hash & 0xffffff)
 }
 
 /// Extracts the log ID from a note string, if the tag is present.
-/// e.g. "Fixed auth bug  ·log:a3f8b2c1" → Some("a3f8b2c1")
+/// e.g. "Fixed auth bug  ·log:a3f8b2" → Some("a3f8b2")
 pub fn extract_id(note: &str) -> Option<&str> {
     let pos = note.find(TAG_PREFIX)?;
     let after = &note[pos + TAG_PREFIX.len()..];
-    // ID is exactly 8 hex chars
-    if after.len() >= 8 && after[..8].chars().all(|c| c.is_ascii_hexdigit()) {
-        Some(&after[..8])
+    // ID is exactly 6 hex chars
+    if after.len() >= 6 && after[..6].chars().all(|c| c.is_ascii_hexdigit()) {
+        Some(&after[..6])
     } else {
         None
     }
@@ -64,19 +62,12 @@ pub fn append_tag(note: &str, id: &str) -> String {
 }
 
 /// Writes the initial log file with YAML frontmatter.
-pub fn create_log_file(
-    id: &str,
-    date: &str,
-    project: &str,
-    activity: &str,
-    note_summary: &str,
-) -> anyhow::Result<PathBuf> {
+/// Only `id` and `date` are stored — project/activity/note are not tracked
+/// since they can change after creation and would quickly go stale.
+pub fn create_log_file(id: &str, date: &str) -> anyhow::Result<PathBuf> {
     let path = log_path(id)?;
     if !path.exists() {
-        let content = format!(
-            "---\nid: {}\ndate: {}\nproject: {}\nactivity: {}\nnote: {}\n---\n\n",
-            id, date, project, activity, note_summary
-        );
+        let content = format!("---\nid: {}\ndate: {}\n---\n\n", id, date);
         std::fs::write(&path, content)?;
     }
     Ok(path)
@@ -88,8 +79,8 @@ mod tests {
 
     #[test]
     fn test_extract_id_present() {
-        let note = "Fixed auth bug  \u{00B7}log:a3f8b2c1";
-        assert_eq!(extract_id(note), Some("a3f8b2c1"));
+        let note = "Fixed auth bug  \u{00B7}log:a3f8b2";
+        assert_eq!(extract_id(note), Some("a3f8b2"));
     }
 
     #[test]
@@ -99,7 +90,7 @@ mod tests {
 
     #[test]
     fn test_strip_tag() {
-        let note = "Fixed auth bug  \u{00B7}log:a3f8b2c1";
+        let note = "Fixed auth bug  \u{00B7}log:a3f8b2";
         assert_eq!(strip_tag(note), "Fixed auth bug");
     }
 
@@ -110,13 +101,20 @@ mod tests {
 
     #[test]
     fn test_append_tag() {
-        let result = append_tag("Fixed auth bug", "a3f8b2c1");
-        assert_eq!(result, "Fixed auth bug  \u{00B7}log:a3f8b2c1");
+        let result = append_tag("Fixed auth bug", "a3f8b2");
+        assert_eq!(result, "Fixed auth bug  \u{00B7}log:a3f8b2");
     }
 
     #[test]
     fn test_append_tag_trims_trailing_space() {
-        let result = append_tag("Fixed auth bug   ", "a3f8b2c1");
-        assert_eq!(result, "Fixed auth bug  \u{00B7}log:a3f8b2c1");
+        let result = append_tag("Fixed auth bug   ", "a3f8b2");
+        assert_eq!(result, "Fixed auth bug  \u{00B7}log:a3f8b2");
+    }
+
+    #[test]
+    fn test_generate_id_length() {
+        let id = generate_id();
+        assert_eq!(id.len(), 6);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

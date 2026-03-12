@@ -66,8 +66,9 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
             KeyCode::Char('x') | KeyCode::Char('X')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
+                // Clear the note text only — the log link is preserved intentionally.
+                // Use Ctrl+R to remove the log link.
                 app.description_input.clear();
-                app.description_log_id = None; // clearing the note also drops the linked log
             }
             KeyCode::Char('g') | KeyCode::Char('G')
                 if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -85,13 +86,18 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
             {
                 app.open_taskwarrior_overlay();
             }
-            KeyCode::Char('l') | KeyCode::Char('L')
-                if key.modifiers.contains(KeyModifiers::CONTROL)
-                    && key.modifiers.contains(KeyModifiers::SHIFT) =>
+            KeyCode::Char('r') | KeyCode::Char('R')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                // Detach the linked log from the current note (orphan the file, keep note text)
+                // Remove (detach) the linked log from the current note (orphans the file, keeps note text)
                 app.description_log_id = None;
-                app.status_message = Some("Log detached".to_string());
+                app.status_message = Some("Log removed".to_string());
+            }
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if key.modifiers.contains(KeyModifiers::SHIFT)
+                    && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                // no-op: previously Shift+Ctrl+L was detach, now Ctrl+R handles this
             }
             KeyCode::Char('l') | KeyCode::Char('L')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
@@ -129,7 +135,8 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
                 } else {
                     let should_sync_running_note = app.timer_state == app::TimerState::Running;
                     let note = app.full_note_value();
-                    app.description_log_id = None;
+                    // description_log_id intentionally preserved — the log stays linked
+                    // to the running timer after confirming. Use Ctrl+R to remove it.
                     app.confirm_description();
                     if should_sync_running_note {
                         enqueue_action(action_tx, Action::SyncRunningTimerNote { note });

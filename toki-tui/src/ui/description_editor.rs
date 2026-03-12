@@ -24,10 +24,8 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
         } else {
             format!("  [{}]", app.cwd_completions.join("  "))
         };
-        let input_text = {
-            let (before, after) = cwd_input.split_at_cursor();
-            format!("{}█{}{}", before, after, completions_hint)
-        };
+        let (before, after) = cwd_input.split_at_cursor();
+        let input_text = format!("{}{}{}", before, after, completions_hint);
         let input = Paragraph::new(input_text)
             .style(Style::default().fg(Color::Yellow))
             .block(
@@ -38,6 +36,10 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
                     .padding(Padding::horizontal(1)),
             );
         frame.render_widget(input, chunks[0]);
+        // Place terminal cursor: border(1) + padding(1) + char offset
+        let cx = chunks[0].x + 2 + before.chars().count() as u16;
+        let cy = chunks[0].y + 1;
+        frame.set_cursor_position((cx, cy));
     } else {
         // Strip the log tag from the displayed value — the user sees the clean summary.
         // The raw value (including tag) is preserved in app.description_input.value.
@@ -47,7 +49,7 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
         let cursor = app.description_input.cursor.min(stripped.chars().count());
         let before: String = stripped.chars().take(cursor).collect();
         let after: String = stripped.chars().skip(cursor).collect();
-        let input_text = format!("{}█{}", before, after);
+        let input_text = format!("{}{}", before, after);
         let input = Paragraph::new(input_text)
             .style(Style::default().fg(Color::White))
             .block(
@@ -57,6 +59,10 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
                     .padding(Padding::horizontal(1)),
             );
         frame.render_widget(input, chunks[0]);
+        // Place terminal cursor: border(1) + padding(1) + char offset
+        let cx = chunks[0].x + 2 + cursor as u16;
+        let cy = chunks[0].y + 1;
+        frame.set_cursor_position((cx, cy));
     }
 
     // Info panel
@@ -79,7 +85,7 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
                 // Show path relative to home if possible
                 let home = dirs::home_dir().unwrap_or_default();
                 let display = match path.strip_prefix(&home) {
-                    Ok(rel) => format!(".local/share/toki-tui/{}", rel.to_string_lossy()),
+                    Ok(rel) => format!("~/{}", rel.to_string_lossy()),
                     Err(_) => path.to_string_lossy().to_string(),
                 };
                 Line::from(vec![
@@ -190,14 +196,11 @@ pub fn render_description_editor(frame: &mut Frame, app: &App, body: Rect) {
             Span::styled("Esc", Style::default().fg(Color::Yellow)),
             Span::raw(": Cancel  "),
             Span::styled("Ctrl+L", Style::default().fg(Color::Yellow)),
-            Span::raw(": Log  "),
+            Span::raw(": Add/edit log file  "),
         ];
         if has_log {
-            spans.push(Span::styled(
-                "Shift+Ctrl+L",
-                Style::default().fg(Color::Yellow),
-            ));
-            spans.push(Span::raw(": Detach  "));
+            spans.push(Span::styled("Ctrl+R", Style::default().fg(Color::Yellow)));
+            spans.push(Span::raw(": Remove log file  "));
         }
         spans.extend([
             Span::styled("Ctrl+D", Style::default().fg(Color::Yellow)),

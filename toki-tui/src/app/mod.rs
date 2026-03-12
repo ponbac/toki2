@@ -224,6 +224,7 @@ impl App {
     pub fn clear_note(&mut self) {
         self.description_input = TextInput::new();
         self.description_is_default = true;
+        self.description_log_id = None;
         self.status_message = Some("Note cleared".to_string());
     }
 
@@ -236,6 +237,7 @@ impl App {
         self.selected_activity = None;
         self.description_input = TextInput::new();
         self.description_is_default = true;
+        self.description_log_id = None;
         self.status_message = Some("Timer cleared".to_string());
     }
 

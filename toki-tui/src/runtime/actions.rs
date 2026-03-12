@@ -1,5 +1,5 @@
 use crate::api::{ApiClient, SaveTimerRequest};
-use crate::app::{self, App, TextInput};
+use crate::app::{self, App};
 use crate::types;
 use anyhow::{Context, Result};
 use std::time::{Duration, Instant};
@@ -633,8 +633,9 @@ pub(super) fn handle_entry_edit_enter(app: &mut App, action_tx: &ActionTx) {
             // with the entry's note. On return, this will be restored to description_input
             // and navigate_to(EditDescription) will re-strip the tag if present.
             app.saved_timer_note = Some(app.full_note_value());
-            // Set description_input from the edit state before navigating
-            app.description_input = TextInput::from_str(&note);
+            // Load the entry's note, stripping any embedded log tag into description_log_id.
+            // This prevents the running timer's log from leaking into the entry's Notes view.
+            app.set_note_from_raw(&note);
             // Open description editor
             app.navigate_to(app::View::EditDescription);
         }
@@ -938,20 +939,6 @@ async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::
         .clone()
         .unwrap_or_else(|| log_notes::generate_id());
 
-    // Project/activity names for frontmatter
-    let project = app
-        .selected_project
-        .as_ref()
-        .map(|p| p.name.as_str())
-        .unwrap_or("")
-        .to_string();
-    let activity = app
-        .selected_activity
-        .as_ref()
-        .map(|a| a.name.as_str())
-        .unwrap_or("")
-        .to_string();
-
     // Date string
     let today = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
     let date = format!(
@@ -962,7 +949,7 @@ async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::
     );
 
     // Create log file if it doesn't exist yet
-    let log_path = log_notes::create_log_file(&id, &date, &project, &activity, &summary)?;
+    let log_path = log_notes::create_log_file(&id, &date)?;
 
     // Open the editor (suspends TUI)
     crate::editor::open_editor(&log_path).await?;

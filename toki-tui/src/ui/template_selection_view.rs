@@ -12,17 +12,18 @@ pub fn render_template_selection(frame: &mut Frame, app: &App, body: Rect) {
         .split(body);
 
     // Search input box
-    let search_text = if app.template_search_input.value.is_empty() {
+    let (search_text, template_cursor_col) = if app.template_search_input.value.is_empty() {
         if app.selection_list_focused {
-            "Type to search...".to_string()
+            ("Type to search...".to_string(), None)
         } else {
-            "█".to_string()
+            (String::new(), Some(0u16))
         }
     } else if app.selection_list_focused {
-        app.template_search_input.value.clone()
+        (app.template_search_input.value.clone(), None)
     } else {
         let (before, after) = app.template_search_input.split_at_cursor();
-        format!("{}█{}", before, after)
+        let col = before.chars().count() as u16;
+        (format!("{}{}", before, after), Some(col))
     };
     let search_border = if app.selection_list_focused {
         Style::default().fg(Color::DarkGray)
@@ -40,6 +41,9 @@ pub fn render_template_selection(frame: &mut Frame, app: &App, body: Rect) {
                 .padding(Padding::horizontal(1)),
         );
     frame.render_widget(search_box, chunks[0]);
+    if let Some(col) = template_cursor_col {
+        frame.set_cursor_position((chunks[0].x + 2 + col, chunks[0].y + 1));
+    }
 
     // Template list
     let items: Vec<ListItem> = app
