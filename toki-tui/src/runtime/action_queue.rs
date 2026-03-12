@@ -30,6 +30,7 @@ pub(super) enum Action {
     RefreshHistoryBackground,
     YankEntryToTimer(TimeEntry),
     ResumeEntry(TimeEntry),
+    OpenLogNote,
 }
 
 pub(super) type ActionTx = UnboundedSender<Action>;

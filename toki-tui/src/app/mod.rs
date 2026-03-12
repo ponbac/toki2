@@ -113,6 +113,10 @@ pub struct App {
     pub task_filter: String,
     pub git_default_prefix: String,
     pub auto_resize_timer: bool,
+
+    /// Set to true after leaving/re-entering the alternate screen (e.g. after spawning an editor).
+    /// The event loop will call terminal.clear() to force a full redraw when this is true.
+    pub needs_full_redraw: bool,
 }
 
 impl App {
@@ -177,6 +181,7 @@ impl App {
             task_filter: cfg.task_filter.clone(),
             git_default_prefix: cfg.git_default_prefix.clone(),
             auto_resize_timer: cfg.auto_resize_timer,
+            needs_full_redraw: false,
         }
     }
 

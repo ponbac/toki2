@@ -124,6 +124,11 @@ pub(super) async fn run_action(
         Action::ResumeEntry(entry) => {
             resume_entry(entry, app, client).await;
         }
+        Action::OpenLogNote => {
+            if let Err(e) = handle_open_log_note(app, client).await {
+                app.set_status(format!("Log note error: {}", e));
+            }
+        }
     }
     Ok(())
 }
@@ -851,6 +856,75 @@ pub(super) async fn handle_milltime_reauth_submit(app: &mut App, client: &mut Ap
 pub(super) fn is_milltime_auth_error(e: &anyhow::Error) -> bool {
     let msg = e.to_string().to_lowercase();
     msg.contains("unauthorized") || msg.contains("authenticate") || msg.contains("milltime")
+}
+
+async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::Result<()> {
+    use crate::log_notes;
+    use time::OffsetDateTime;
+
+    let current_note = app.description_input.value.clone();
+
+    // Determine or generate the log ID
+    let id = if let Some(existing_id) = log_notes::extract_id(&current_note) {
+        existing_id.to_string()
+    } else {
+        log_notes::generate_id()
+    };
+
+    // Summary = note without the tag
+    let summary = log_notes::strip_tag(&current_note).to_string();
+
+    // Project/activity names for frontmatter
+    let project = app
+        .selected_project
+        .as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or("")
+        .to_string();
+    let activity = app
+        .selected_activity
+        .as_ref()
+        .map(|a| a.name.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // Date string
+    let today = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let date = format!(
+        "{:04}-{:02}-{:02}",
+        today.year(),
+        today.month() as u8,
+        today.day()
+    );
+
+    // Create log file if it doesn't exist yet
+    let log_path = log_notes::create_log_file(&id, &date, &project, &activity, &summary)?;
+
+    // Open the editor (suspends TUI)
+    crate::editor::open_editor(&log_path).await?;
+
+    // After editor closes: ensure the tag is in the note
+    let new_note = if log_notes::extract_id(&current_note).is_some() {
+        // Tag already present — note unchanged
+        current_note
+    } else {
+        // Append the new tag
+        log_notes::append_tag(&summary, &id)
+    };
+
+    // Update app state
+    app.description_input = TextInput::from_str(&new_note);
+    app.description_is_default = false;
+
+    // Signal the event loop to do a full terminal redraw after the editor exits
+    app.needs_full_redraw = true;
+
+    // If timer is running, sync the updated note to the server
+    if app.timer_state == app::TimerState::Running {
+        sync_running_timer_note(new_note, app, client).await;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -58,6 +58,11 @@ pub async fn run_app(
             run_action(action, app, client).await?;
         }
 
+        if app.needs_full_redraw {
+            terminal.clear()?;
+            app.needs_full_redraw = false;
+        }
+
         if !app.running {
             break;
         }
