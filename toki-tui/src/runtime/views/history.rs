@@ -151,38 +151,15 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
                     app.enter_delete_confirm(app::DeleteOrigin::History);
                 }
             }
-            KeyCode::Char('y') | KeyCode::Char('Y') if app.focused_history_index.is_some() => {
-                if app.timer_state != app::TimerState::Running {
-                    app.set_status(
-                        "No running timer — use R to resume this entry instead".to_string(),
-                    );
-                } else {
-                    let entry = app
-                        .focused_history_index
-                        .and_then(|idx| app.history_list_entries.get(idx).copied())
-                        .and_then(|te_idx| app.time_entries.get(te_idx).cloned());
-                    if let Some(entry) = entry {
-                        enqueue_action(action_tx, Action::YankEntryToTimer(entry));
-                    } else {
-                        app.set_status("Error: could not resolve selected entry".to_string());
-                    }
-                }
-            }
             KeyCode::Char('r') | KeyCode::Char('R') if app.focused_history_index.is_some() => {
-                if app.timer_state == app::TimerState::Running {
-                    app.set_status(
-                        "Timer already running — stop it first (Space or Ctrl+X)".to_string(),
-                    );
+                let entry = app
+                    .focused_history_index
+                    .and_then(|idx| app.history_list_entries.get(idx).copied())
+                    .and_then(|te_idx| app.time_entries.get(te_idx).cloned());
+                if let Some(entry) = entry {
+                    enqueue_action(action_tx, Action::ResumeEntry(entry));
                 } else {
-                    let entry = app
-                        .focused_history_index
-                        .and_then(|idx| app.history_list_entries.get(idx).copied())
-                        .and_then(|te_idx| app.time_entries.get(te_idx).cloned());
-                    if let Some(entry) = entry {
-                        enqueue_action(action_tx, Action::ResumeEntry(entry));
-                    } else {
-                        app.set_status("Error: could not resolve selected entry".to_string());
-                    }
+                    app.set_status("Error: could not resolve selected entry".to_string());
                 }
             }
             _ => {}

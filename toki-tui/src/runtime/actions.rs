@@ -118,9 +118,6 @@ pub(super) async fn run_action(
         Action::RefreshHistoryBackground => {
             refresh_history_background(app, client).await;
         }
-        Action::YankEntryToTimer(entry) => {
-            yank_entry_to_timer(entry, app, client).await;
-        }
         Action::ResumeEntry(entry) => {
             resume_entry(entry, app, client).await;
         }
@@ -408,12 +405,11 @@ async fn refresh_history_background(app: &mut App, client: &mut ApiClient) {
     }
 }
 
-async fn yank_entry_to_timer(entry: types::TimeEntry, app: &mut App, client: &mut ApiClient) {
-    // Apply locally first so the UI updates immediately
-    app.yank_entry_to_timer(&entry);
-
-    // Sync the new project/activity/note to the server so save works correctly
+async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiClient) {
     if app.timer_state == app::TimerState::Running {
+        // Timer already running — copy fields and sync to server (yank behaviour)
+        app.copy_entry_fields(&entry);
+
         let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
         let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
         let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
@@ -434,14 +430,9 @@ async fn yank_entry_to_timer(entry: types::TimeEntry, app: &mut App, client: &mu
             .await
         {
             app.set_status(format!("Warning: Could not sync copied entry to server: {}", e));
+        } else {
+            app.set_status(format!("Copied: {}: {}", entry.project_name, entry.activity_name));
         }
-    }
-}
-
-async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiClient) {
-    // Guard: should not be called while running, but be safe
-    if app.timer_state == app::TimerState::Running {
-        app.set_status("Timer already running — stop it first (Space or Ctrl+X)".to_string());
         return;
     }
 

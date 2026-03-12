@@ -689,15 +689,6 @@ impl App {
         self.set_note_from_raw(&note);
         self.description_is_default = false;
     }
-
-    /// Copy project, activity, and note from a history entry into the running timer.
-    pub fn yank_entry_to_timer(&mut self, entry: &crate::types::TimeEntry) {
-        self.copy_entry_fields(entry);
-        self.set_status(format!(
-            "Copied: {}: {}",
-            entry.project_name, entry.activity_name
-        ));
-    }
 }
 
 /// Given an entry's optional start/end times, date string (YYYY-MM-DD), and hours,
