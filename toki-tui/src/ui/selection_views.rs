@@ -12,17 +12,18 @@ pub fn render_project_selection(frame: &mut Frame, app: &App, body: Rect) {
         .split(body);
 
     // Search input box
-    let search_text = if app.project_search_input.value.is_empty() {
+    let (search_text, project_cursor_col) = if app.project_search_input.value.is_empty() {
         if app.selection_list_focused {
-            "Type to search...".to_string()
+            ("Type to search...".to_string(), None)
         } else {
-            "█".to_string()
+            (String::new(), Some(0u16))
         }
     } else if app.selection_list_focused {
-        app.project_search_input.value.clone()
+        (app.project_search_input.value.clone(), None)
     } else {
         let (before, after) = app.project_search_input.split_at_cursor();
-        format!("{}█{}", before, after)
+        let col = before.chars().count() as u16;
+        (format!("{}{}", before, after), Some(col))
     };
     let search_border = if app.selection_list_focused {
         Style::default().fg(Color::DarkGray)
@@ -40,6 +41,9 @@ pub fn render_project_selection(frame: &mut Frame, app: &App, body: Rect) {
                 .padding(Padding::horizontal(1)),
         );
     frame.render_widget(search_box, chunks[0]);
+    if let Some(col) = project_cursor_col {
+        frame.set_cursor_position((chunks[0].x + 2 + col, chunks[0].y + 1));
+    }
 
     // Project list
     let items: Vec<ListItem> = app
@@ -131,17 +135,18 @@ pub fn render_activity_selection(frame: &mut Frame, app: &App, body: Rect) {
         .split(body);
 
     // Search input box
-    let search_text = if app.activity_search_input.value.is_empty() {
+    let (search_text, activity_cursor_col) = if app.activity_search_input.value.is_empty() {
         if app.selection_list_focused {
-            "Type to search...".to_string()
+            ("Type to search...".to_string(), None)
         } else {
-            "█".to_string()
+            (String::new(), Some(0u16))
         }
     } else if app.selection_list_focused {
-        app.activity_search_input.value.clone()
+        (app.activity_search_input.value.clone(), None)
     } else {
         let (before, after) = app.activity_search_input.split_at_cursor();
-        format!("{}█{}", before, after)
+        let col = before.chars().count() as u16;
+        (format!("{}{}", before, after), Some(col))
     };
     let search_border = if app.selection_list_focused {
         Style::default().fg(Color::DarkGray)
@@ -159,6 +164,9 @@ pub fn render_activity_selection(frame: &mut Frame, app: &App, body: Rect) {
                 .padding(Padding::horizontal(1)),
         );
     frame.render_widget(search_box, chunks[0]);
+    if let Some(col) = activity_cursor_col {
+        frame.set_cursor_position((chunks[0].x + 2 + col, chunks[0].y + 1));
+    }
 
     // Activity list
     let items: Vec<ListItem> = app

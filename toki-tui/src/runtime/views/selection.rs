@@ -21,6 +21,9 @@ pub(super) fn handle_select_project_key(key: KeyEvent, app: &mut App, action_tx:
             input_backspace: App::search_input_backspace,
             move_cursor: App::search_move_cursor,
             cursor_home_end: App::search_cursor_home_end,
+            word_left: App::search_word_left,
+            word_right: App::search_word_right,
+            delete_word_back: App::search_delete_word_back,
         },
     ) {
         return;
@@ -61,6 +64,9 @@ pub(super) fn handle_select_activity_key(key: KeyEvent, app: &mut App, action_tx
             input_backspace: App::activity_search_input_backspace,
             move_cursor: App::activity_search_move_cursor,
             cursor_home_end: App::activity_search_cursor_home_end,
+            word_left: App::activity_search_word_left,
+            word_right: App::activity_search_word_right,
+            delete_word_back: App::activity_search_delete_word_back,
         },
     ) {
         return;
@@ -84,7 +90,7 @@ pub(super) fn handle_select_activity_key(key: KeyEvent, app: &mut App, action_tx
     }
 }
 
-fn handle_selection_input_key(
+pub(super) fn handle_selection_input_key(
     key: KeyEvent,
     app: &mut App,
     list_index: usize,
@@ -124,6 +130,10 @@ fn handle_selection_input_key(
             }
             true
         }
+        KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+            (ops.delete_word_back)(app);
+            true
+        }
         KeyCode::Backspace => {
             (ops.input_backspace)(app);
             true
@@ -144,9 +154,21 @@ fn handle_selection_input_key(
             }
             true
         }
+        KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if !app.selection_list_focused {
+                (ops.word_left)(app);
+            }
+            true
+        }
         KeyCode::Left => {
             if !app.selection_list_focused {
                 (ops.move_cursor)(app, true);
+            }
+            true
+        }
+        KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if !app.selection_list_focused {
+                (ops.word_right)(app);
             }
             true
         }
@@ -173,10 +195,13 @@ fn handle_selection_input_key(
 }
 
 #[derive(Clone, Copy)]
-struct SelectionInputOps {
+pub(super) struct SelectionInputOps {
     clear_input: fn(&mut App),
     input_char: fn(&mut App, char),
     input_backspace: fn(&mut App),
     move_cursor: fn(&mut App, bool),
     cursor_home_end: fn(&mut App, bool),
+    word_left: fn(&mut App),
+    word_right: fn(&mut App),
+    delete_word_back: fn(&mut App),
 }

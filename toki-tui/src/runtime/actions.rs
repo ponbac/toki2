@@ -1,5 +1,5 @@
 use crate::api::{ApiClient, SaveTimerRequest};
-use crate::app::{self, App, TextInput};
+use crate::app::{self, App};
 use crate::types;
 use anyhow::{Context, Result};
 use std::time::{Duration, Instant};
@@ -30,7 +30,7 @@ pub(crate) fn restore_active_timer(app: &mut App, timer: crate::types::ActiveTim
         });
     }
     if !timer.note.is_empty() {
-        app.description_input = app::TextInput::from_str(&timer.note);
+        app.set_note_from_raw(&timer.note);
         app.description_is_default = false;
     }
 }
@@ -118,11 +118,19 @@ pub(super) async fn run_action(
         Action::RefreshHistoryBackground => {
             refresh_history_background(app, client).await;
         }
-        Action::YankEntryToTimer(entry) => {
-            yank_entry_to_timer(entry, app, client).await;
-        }
         Action::ResumeEntry(entry) => {
             resume_entry(entry, app, client).await;
+        }
+        Action::ApplyTemplate { template } => {
+            handle_apply_template(template, app, client).await?;
+        }
+        Action::OpenLogNote => {
+            if let Err(e) = handle_open_log_note(app, client).await {
+                app.set_status(format!("Log note error: {}", e));
+            }
+        }
+        Action::OpenEntryLogNote(id) => {
+            handle_open_entry_log_note(&id, app).await;
         }
     }
     Ok(())
@@ -135,10 +143,9 @@ pub(super) async fn handle_start_timer(app: &mut App, client: &mut ApiClient) ->
             let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
             let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
             let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-            let note = if app.description_input.value.is_empty() {
-                None
-            } else {
-                Some(app.description_input.value.clone())
+            let note = {
+                let full = app.full_note_value();
+                if full.is_empty() { None } else { Some(full) }
             };
             if let Err(e) = client
                 .start_timer(project_id, project_name, activity_id, activity_name, note)
@@ -285,6 +292,77 @@ async fn sync_running_timer_note(note: String, app: &mut App, client: &mut ApiCl
     }
 }
 
+async fn handle_apply_template(
+    template: crate::config::TemplateConfig,
+    app: &mut App,
+    client: &mut ApiClient,
+) -> Result<()> {
+    // Find project by name (case-insensitive)
+    let project = app
+        .projects
+        .iter()
+        .find(|p| p.name.eq_ignore_ascii_case(&template.project))
+        .cloned();
+
+    let Some(project) = project else {
+        // Project not found — tell the user and navigate back
+        app.set_status(format!(
+            "Project '{}' not found — template not applied",
+            template.project
+        ));
+        app.navigate_to(app::View::Timer);
+        return Ok(());
+    };
+
+    app.selected_project = Some(project.clone());
+
+    // Ensure activities are loaded for this project
+    ensure_activities_for_project(app, client, &project.id).await;
+
+    // Find activity by name (case-insensitive)
+    let activity = app
+        .activity_cache
+        .get(&project.id)
+        .and_then(|acts| {
+            acts.iter()
+                .find(|a| a.name.eq_ignore_ascii_case(&template.activity))
+                .cloned()
+        });
+
+    if let Some(activity) = activity {
+        app.selected_activity = Some(activity);
+    } else {
+        app.set_status(format!(
+            "Activity '{}' not found — skipped",
+            template.activity
+        ));
+    }
+
+    // Set note
+    app.description_input = app::TextInput::from_str(&template.note);
+    app.description_is_default = template.note.is_empty();
+
+    // Navigate back to timer
+    app.navigate_to(app::View::Timer);
+
+    // If timer is running, sync to server
+    if app.timer_state == app::TimerState::Running {
+        let note = app.full_note_value();
+        let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
+        let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
+        let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
+        let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+        if let Err(e) = client
+            .update_active_timer(project_id, project_name, activity_id, activity_name, Some(note), None)
+            .await
+        {
+            app.set_status(format!("Warning: Could not sync template to server: {}", e));
+        }
+    }
+
+    Ok(())
+}
+
 async fn load_history_and_open(app: &mut App, client: &mut ApiClient) {
     match fetch_recent_history(client).await {
         Ok(entries) => {
@@ -339,20 +417,18 @@ async fn refresh_history_background(app: &mut App, client: &mut ApiClient) {
     }
 }
 
-async fn yank_entry_to_timer(entry: types::TimeEntry, app: &mut App, client: &mut ApiClient) {
-    // Apply locally first so the UI updates immediately
-    app.yank_entry_to_timer(&entry);
-
-    // Sync the new project/activity/note to the server so save works correctly
+async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiClient) {
     if app.timer_state == app::TimerState::Running {
+        // Timer already running — copy fields and sync to server (yank behaviour)
+        app.copy_entry_fields(&entry);
+
         let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
         let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
         let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
         let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-        let note = if app.description_input.value.is_empty() {
-            None
-        } else {
-            Some(app.description_input.value.clone())
+        let note = {
+            let full = app.full_note_value();
+            if full.is_empty() { None } else { Some(full) }
         };
         if let Err(e) = client
             .update_active_timer(
@@ -366,14 +442,9 @@ async fn yank_entry_to_timer(entry: types::TimeEntry, app: &mut App, client: &mu
             .await
         {
             app.set_status(format!("Warning: Could not sync copied entry to server: {}", e));
+        } else {
+            app.set_status(format!("Copied: {}: {}", entry.project_name, entry.activity_name));
         }
-    }
-}
-
-async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiClient) {
-    // Guard: should not be called while running, but be safe
-    if app.timer_state == app::TimerState::Running {
-        app.set_status("Timer already running — stop it first (Space or Ctrl+X)".to_string());
         return;
     }
 
@@ -419,10 +490,9 @@ pub(super) async fn handle_save_timer_with_action(
     }
 
     let duration = app.elapsed_duration();
-    let note = if app.description_input.value.is_empty() {
-        None
-    } else {
-        Some(app.description_input.value.clone())
+    let note = {
+        let full = app.full_note_value();
+        if full.is_empty() { None } else { Some(full) }
     };
 
     let project_display = app.current_project_name();
@@ -562,10 +632,13 @@ pub(super) fn handle_entry_edit_enter(app: &mut App, action_tx: &ActionTx) {
             let _ = action_tx.send(Action::OpenEditActivityPicker { project_id });
         }
         EditEnterAction::NoteEditor { note } => {
-            // Save running timer's note before overwriting with entry's note
-            app.saved_timer_note = Some(app.description_input.value.clone());
-            // Set description_input from the edit state before navigating
-            app.description_input = TextInput::from_str(&note);
+            // Save running timer's full note (including any log tag) before overwriting
+            // with the entry's note. On return, this will be restored to description_input
+            // and navigate_to(EditDescription) will re-strip the tag if present.
+            app.saved_timer_note = Some(app.full_note_value());
+            // Load the entry's note, stripping any embedded log tag into description_log_id.
+            // This prevents the running timer's log from leaking into the entry's Notes view.
+            app.set_note_from_raw(&note);
             // Open description editor
             app.navigate_to(app::View::EditDescription);
         }
@@ -666,7 +739,7 @@ async fn handle_running_timer_edit_save(app: &mut App, client: &mut ApiClient) {
             name,
             project_id: String::new(),
         });
-    app.description_input = TextInput::from_str(&state.note.value);
+    app.set_note_from_raw(&state.note.value);
 
     app.set_status("Running timer updated".to_string());
 
@@ -675,10 +748,11 @@ async fn handle_running_timer_edit_save(app: &mut App, client: &mut ApiClient) {
     let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
     let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
     let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-    let note = if app.description_input.value.is_empty() {
+    let full_note = app.full_note_value();
+    let note = if full_note.is_empty() {
         None
     } else {
-        Some(app.description_input.value.clone())
+        Some(full_note)
     };
     if let Err(e) = client
         .update_active_timer(
@@ -851,4 +925,225 @@ pub(super) async fn handle_milltime_reauth_submit(app: &mut App, client: &mut Ap
 pub(super) fn is_milltime_auth_error(e: &anyhow::Error) -> bool {
     let msg = e.to_string().to_lowercase();
     msg.contains("unauthorized") || msg.contains("authenticate") || msg.contains("milltime")
+}
+
+/// Open an existing log file for a history/today entry.
+/// Takes a pre-extracted log ID (may be empty if the entry has no log tag).
+/// Does NOT create a new log file and does NOT mutate running-timer state.
+pub(super) async fn handle_open_entry_log_note(id: &str, app: &mut App) {
+    use crate::log_notes;
+
+    if id.is_empty() {
+        app.set_status("No log linked to this entry".to_string());
+        return;
+    }
+
+    let path = match log_notes::log_path(id) {
+        Ok(p) => p,
+        Err(e) => {
+            app.set_status(format!("Log error: {}", e));
+            return;
+        }
+    };
+
+    if !path.exists() {
+        app.set_status("Log file not found".to_string());
+        return;
+    }
+
+    if let Err(e) = crate::editor::open_editor(&path).await {
+        app.set_status(format!("Editor error: {}", e));
+        return;
+    }
+
+    app.needs_full_redraw = true;
+}
+
+async fn handle_open_log_note(app: &mut App, client: &mut ApiClient) -> anyhow::Result<()> {
+    use crate::log_notes;
+    use time::OffsetDateTime;
+
+    // The description editor strips the tag into `description_log_id` so
+    // `description_input.value` is always the clean summary.
+    let summary = app.description_input.value.clone();
+
+    // Determine or generate the log ID.  Prefer the one already stored on App;
+    // fall back to generating a new one (first time Ctrl+L is pressed).
+    let id = app
+        .description_log_id
+        .clone()
+        .unwrap_or_else(log_notes::generate_id);
+
+    // Date string
+    let today = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let date = format!(
+        "{:04}-{:02}-{:02}",
+        today.year(),
+        today.month() as u8,
+        today.day()
+    );
+
+    // Create log file if it doesn't exist yet
+    let log_path = log_notes::create_log_file(&id, &date)?;
+
+    // Open the editor (suspends TUI)
+    crate::editor::open_editor(&log_path).await?;
+
+    // Store the ID on App so subsequent Ctrl+L presses reuse it and the tag
+    // survives further editing. Refresh the cache so the render path sees the
+    // newly written file immediately.
+    app.description_log_id = Some(id.clone());
+    app.refresh_log_cache();
+
+    // Build the full note value (summary + tag) to save/sync.
+    let new_note = log_notes::append_tag(&summary, &id);
+
+    // description_input stays as the clean summary (tag lives in description_log_id).
+    app.description_is_default = false;
+
+    // If in edit mode, also sync the edit state's note field so Enter saves it correctly.
+    if app.is_in_edit_mode() {
+        app.update_edit_state_note(new_note.clone());
+    }
+
+    // Signal the event loop to do a full terminal redraw after the editor exits
+    app.needs_full_redraw = true;
+
+    // If timer is running AND we are NOT in edit mode, sync the updated note to the server.
+    // (In edit mode the note belongs to a history entry — it will be saved on Enter.)
+    if app.timer_state == app::TimerState::Running && !app.is_in_edit_mode() {
+        sync_running_timer_note(new_note, app, client).await;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::ApiClient;
+    use crate::app::{DeleteContext, DeleteOrigin, SaveAction, View};
+    use crate::test_support::test_app;
+    use crate::types::ActiveTimerState;
+    use time::macros::datetime;
+
+    #[test]
+    fn restore_active_timer_populates_local_app_state() {
+        let mut app = test_app();
+        let timer = ActiveTimerState {
+            start_time: datetime!(2026-03-06 09:15 UTC),
+            project_id: Some("proj-1".to_string()),
+            project_name: Some("Project One".to_string()),
+            activity_id: Some("act-1".to_string()),
+            activity_name: Some("Activity One".to_string()),
+            note: "Investigate tests".to_string(),
+            hours: 1,
+            minutes: 2,
+            seconds: 3,
+        };
+
+        restore_active_timer(&mut app, timer);
+
+        assert_eq!(app.timer_state, app::TimerState::Running);
+        assert_eq!(app.selected_project.as_ref().map(|p| p.id.as_str()), Some("proj-1"));
+        assert_eq!(
+            app.selected_activity.as_ref().map(|a| a.name.as_str()),
+            Some("Activity One")
+        );
+        assert_eq!(app.description_input.value, "Investigate tests");
+        assert!(!app.description_is_default);
+        assert_eq!(app.absolute_start, Some(datetime!(2026-03-06 09:15 UTC)));
+        assert!(app.local_start.is_some());
+    }
+
+    #[tokio::test]
+    async fn handle_start_timer_starts_timer_in_dev_mode() {
+        let mut app = test_app();
+        let mut client = ApiClient::dev().expect("dev client");
+
+        handle_start_timer(&mut app, &mut client)
+            .await
+            .expect("start timer should succeed");
+
+        assert_eq!(app.timer_state, app::TimerState::Running);
+        assert!(app.absolute_start.is_some());
+        assert!(app.local_start.is_some());
+        assert!(app.status_message.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_save_timer_cancel_returns_to_timer_without_saving() {
+        let mut app = test_app();
+        let mut client = ApiClient::dev().expect("dev client");
+        app.current_view = View::SaveAction;
+        app.selected_save_action = SaveAction::Cancel;
+        app.timer_state = app::TimerState::Running;
+
+        handle_save_timer_with_action(&mut app, &mut client)
+            .await
+            .expect("cancel should succeed");
+
+        assert_eq!(app.current_view, View::Timer);
+        assert_eq!(app.timer_state, app::TimerState::Running);
+    }
+
+    #[tokio::test]
+    async fn open_entry_log_note_no_log_linked_sets_status() {
+        let mut app = test_app();
+        // Empty id → sets "No log linked to this entry"
+        handle_open_entry_log_note("", &mut app).await;
+        assert!(app.status_message.as_deref().unwrap_or("").contains("No log"));
+    }
+
+    #[tokio::test]
+    async fn open_entry_log_note_invalid_id_sets_status() {
+        let mut app = test_app();
+        // Invalid id (non-hex) → log_path returns Err → sets "Log error: ..."
+        handle_open_entry_log_note("ZZZZZZ", &mut app).await;
+        assert!(app.status_message.as_deref().unwrap_or("").contains("Log error"));
+    }
+
+    #[tokio::test]
+    async fn open_entry_log_note_missing_file_sets_status() {
+        let mut app = test_app();
+        // Valid hex id but file doesn't exist → sets "Log file not found"
+        handle_open_entry_log_note("abcdef", &mut app).await;
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("Log file not found")
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_confirm_delete_removes_entry_and_returns_to_origin_view() {
+        let mut app = test_app();
+        let mut client = ApiClient::dev().expect("dev client");
+        let today = time::OffsetDateTime::now_utc().date();
+        let entries = client
+            .get_time_entries(today, today)
+            .await
+            .expect("history should load");
+        let entry = entries.first().expect("seeded history entry").clone();
+
+        app.update_history(entries);
+        app.rebuild_history_list();
+        app.current_view = View::ConfirmDelete;
+        app.delete_context = Some(DeleteContext {
+            registration_id: entry.registration_id.clone(),
+            display_label: format!("{} / {}", entry.project_name, entry.activity_name),
+            display_date: entry.date.clone(),
+            display_hours: entry.hours,
+            origin: DeleteOrigin::History,
+        });
+
+        handle_confirm_delete(&mut app, &mut client).await;
+
+        assert_eq!(app.current_view, View::History);
+        assert!(app.status_message.is_none());
+        assert!(app
+            .time_entries
+            .iter()
+            .all(|item| item.registration_id != entry.registration_id));
+        assert!(app.delete_context.is_none());
+    }
 }

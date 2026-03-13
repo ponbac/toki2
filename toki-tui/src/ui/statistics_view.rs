@@ -25,12 +25,12 @@ pub fn render_statistics_view(frame: &mut Frame, app: &App, body: Rect) {
         .constraints([Constraint::Min(10), Constraint::Length(3)])
         .split(body);
 
-    // Outer "Stats" box
+    // Outer "Statistics" box
     let stats_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::White))
         .title(Span::styled(
-            " Stats ",
+            " Statistics ",
             Style::default().fg(Color::White),
         ));
     let stats_inner = stats_block.inner(outer[0]);

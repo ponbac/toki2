@@ -28,8 +28,12 @@ pub(super) enum Action {
     ConfirmDelete,
     StopServerTimerAndClear,
     RefreshHistoryBackground,
-    YankEntryToTimer(TimeEntry),
     ResumeEntry(TimeEntry),
+    ApplyTemplate {
+        template: crate::config::TemplateConfig,
+    },
+    OpenLogNote,
+    OpenEntryLogNote(String),
 }
 
 pub(super) type ActionTx = UnboundedSender<Action>;

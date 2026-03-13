@@ -27,6 +27,13 @@ pub async fn run_app(
     let (action_tx, mut action_rx) = channel();
 
     loop {
+        // Clear before drawing to avoid a flash when the screen needs a full repaint
+        // (e.g. after returning from an external editor or waking from sleep).
+        if app.needs_full_redraw {
+            terminal.clear()?;
+            app.needs_full_redraw = false;
+        }
+
         terminal.draw(|f| ui::render(f, app))?;
 
         if app.is_loading {
@@ -37,15 +44,22 @@ pub async fn run_app(
         }
 
         if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
+                    if app.milltime_reauth.is_some() {
+                        handle_milltime_reauth_key(key, app, &action_tx);
+                    } else {
+                        handle_view_key(key, app, &action_tx);
+                    }
                 }
-                if app.milltime_reauth.is_some() {
-                    handle_milltime_reauth_key(key, app, &action_tx);
-                } else {
-                    handle_view_key(key, app, &action_tx);
+                // Force a full redraw when the terminal regains focus (e.g. after sleep/wake)
+                Event::FocusGained => {
+                    app.needs_full_redraw = true;
                 }
+                _ => {}
             }
         }
 

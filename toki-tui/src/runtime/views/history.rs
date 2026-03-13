@@ -21,6 +21,17 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
             KeyCode::Up | KeyCode::Char('k') => {
                 app.entry_edit_prev_field();
             }
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if app
+                    .history_edit_state
+                    .as_ref()
+                    .is_some_and(|s| s.focused_field == app::EntryEditField::Note)
+                {
+                    app.entry_edit_word_right();
+                } else {
+                    app.entry_edit_next_field();
+                }
+            }
             KeyCode::Right => {
                 if app
                     .history_edit_state
@@ -32,8 +43,21 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
                     app.entry_edit_next_field();
                 }
             }
-            KeyCode::Char('l') | KeyCode::Char('L') => {
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 app.entry_edit_next_field();
+            }
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if app
+                    .history_edit_state
+                    .as_ref()
+                    .is_some_and(|s| s.focused_field == app::EntryEditField::Note)
+                {
+                    app.entry_edit_word_left();
+                } else {
+                    app.entry_edit_prev_field();
+                }
             }
             KeyCode::Left => {
                 if app
@@ -53,6 +77,9 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
             KeyCode::End => app.entry_edit_cursor_home_end(false),
             KeyCode::Char(c) if c.is_ascii_digit() => {
                 app.entry_edit_input_char(c);
+            }
+            KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                app.entry_edit_delete_word_back();
             }
             KeyCode::Backspace => {
                 app.entry_edit_backspace();
@@ -126,38 +153,35 @@ pub(super) fn handle_history_key(key: KeyEvent, app: &mut App, action_tx: &Actio
                     app.enter_delete_confirm(app::DeleteOrigin::History);
                 }
             }
-            KeyCode::Char('y') | KeyCode::Char('Y') if app.focused_history_index.is_some() => {
-                if app.timer_state != app::TimerState::Running {
-                    app.set_status(
-                        "No running timer — use R to resume this entry instead".to_string(),
-                    );
+            KeyCode::Char('r') | KeyCode::Char('R')
+                if app.focused_history_index.is_some()
+                    && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                let entry = app
+                    .focused_history_index
+                    .and_then(|idx| app.history_list_entries.get(idx).copied())
+                    .and_then(|te_idx| app.time_entries.get(te_idx).cloned());
+                if let Some(entry) = entry {
+                    enqueue_action(action_tx, Action::ResumeEntry(entry));
                 } else {
-                    let entry = app
-                        .focused_history_index
-                        .and_then(|idx| app.history_list_entries.get(idx).copied())
-                        .and_then(|te_idx| app.time_entries.get(te_idx).cloned());
-                    if let Some(entry) = entry {
-                        enqueue_action(action_tx, Action::YankEntryToTimer(entry));
-                    } else {
-                        app.set_status("Error: could not resolve selected entry".to_string());
-                    }
+                    app.set_status("Error: could not resolve selected entry".to_string());
                 }
             }
-            KeyCode::Char('r') | KeyCode::Char('R') if app.focused_history_index.is_some() => {
-                if app.timer_state == app::TimerState::Running {
-                    app.set_status(
-                        "Timer already running — stop it first (Space or Ctrl+X)".to_string(),
-                    );
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if app.focused_history_index.is_some()
+                    && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                let note = app
+                    .focused_history_index
+                    .and_then(|idx| app.history_list_entries.get(idx).copied())
+                    .and_then(|te_idx| app.time_entries.get(te_idx))
+                    .and_then(|e| e.note.as_deref())
+                    .unwrap_or("");
+                let id = crate::log_notes::extract_id(note).unwrap_or("").to_string();
+                if id.is_empty() {
+                    app.set_status("No log linked to this entry".to_string());
                 } else {
-                    let entry = app
-                        .focused_history_index
-                        .and_then(|idx| app.history_list_entries.get(idx).copied())
-                        .and_then(|te_idx| app.time_entries.get(te_idx).cloned());
-                    if let Some(entry) = entry {
-                        enqueue_action(action_tx, Action::ResumeEntry(entry));
-                    } else {
-                        app.set_status("Error: could not resolve selected entry".to_string());
-                    }
+                    enqueue_action(action_tx, Action::OpenEntryLogNote(id));
                 }
             }
             _ => {}

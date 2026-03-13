@@ -26,7 +26,7 @@ pub fn render_timer_view(frame: &mut Frame, app: &mut App, body: Rect) {
     render_description(frame, chunks[2], app);
     super::history_panel::render_this_week_history(frame, chunks[3], app);
     render_status(frame, chunks[4], app);
-    render_controls(frame, chunks[5]);
+    render_controls(frame, chunks[5], app);
 }
 
 fn render_timer(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
@@ -147,36 +147,44 @@ fn render_project(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
 }
 
 fn render_description(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
-    let description = app.current_description();
+    let description = crate::log_notes::strip_tag(&app.description_input.value).to_string();
     let is_empty = description.is_empty();
+    let has_log = app.description_log_id.is_some();
 
     let is_focused = app.focused_box == crate::app::FocusedBox::Description;
     let border_style = if is_focused {
         Style::default().fg(Color::Magenta)
-    } else if !is_empty {
-        // White border when note has content and not focused
+    } else if !is_empty || has_log {
+        // White border when note has content (or a log is attached) and not focused
         Style::default().fg(Color::White)
     } else {
         // Default when empty and not focused
         Style::default()
     };
 
-    // Title with underlined A
+    // Title with underlined N
     let title = vec![
         Span::raw(" "),
         Span::styled("N", Style::default().add_modifier(Modifier::UNDERLINED)),
         Span::raw("ote "),
     ];
 
-    let widget = Paragraph::new(description)
-        .style(Style::default().fg(Color::White))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(Line::from(title))
-                .border_style(border_style)
-                .padding(ratatui::widgets::Padding::horizontal(1)),
-        );
+    // Build the paragraph content: summary text + optional muted "[…]" log indicator
+    let mut spans: Vec<Span> = vec![Span::styled(description, Style::default().fg(Color::White))];
+    if has_log {
+        spans.push(Span::styled(
+            " [\u{2026}]",
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+
+    let widget = Paragraph::new(Line::from(spans)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(Line::from(title))
+            .border_style(border_style)
+            .padding(ratatui::widgets::Padding::horizontal(1)),
+    );
 
     frame.render_widget(widget, area);
 }
@@ -227,12 +235,16 @@ pub fn render_status(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) 
     frame.render_widget(status, area);
 }
 
-fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
+fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect, app: &App) {
     let line1 = vec![
         Span::styled("Space", Style::default().fg(Color::Yellow)),
         Span::raw(": Start/Stop  "),
         Span::styled("Ctrl+S", Style::default().fg(Color::Yellow)),
-        Span::raw(": Save (options)  "),
+        Span::raw(": Save  "),
+        Span::styled("Ctrl+R", Style::default().fg(Color::Yellow)),
+        Span::raw(": Resume  "),
+        Span::styled("Ctrl+L", Style::default().fg(Color::Yellow)),
+        Span::raw(": Open log  "),
         Span::styled("Ctrl+X", Style::default().fg(Color::Yellow)),
         Span::raw(": Clear  "),
         Span::styled("Tab / ↑↓ / j/k", Style::default().fg(Color::Yellow)),
@@ -241,28 +253,32 @@ fn render_controls(frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(": Edit"),
     ];
 
-    let line2 = vec![
+    let mut line2 = vec![
         Span::styled("P", Style::default().fg(Color::Yellow)),
         Span::raw(": Project  "),
         Span::styled("N", Style::default().fg(Color::Yellow)),
         Span::raw(": Note  "),
+    ];
+
+    if !app.templates.is_empty() {
+        line2.push(Span::styled("T", Style::default().fg(Color::Yellow)));
+        line2.push(Span::raw(": Template  "));
+    }
+
+    line2.extend([
         Span::styled("H", Style::default().fg(Color::Yellow)),
         Span::raw(": History  "),
         Span::styled("S", Style::default().fg(Color::Yellow)),
-        Span::raw(": Stats  "),
-        Span::styled("T", Style::default().fg(Color::Yellow)),
+        Span::raw(": Statistics  "),
+        Span::styled("X", Style::default().fg(Color::Yellow)),
         Span::raw(": Toggle size  "),
-        Span::styled("Y", Style::default().fg(Color::Yellow)),
-        Span::raw(": Copy to running timer  "),
-        Span::styled("R", Style::default().fg(Color::Yellow)),
-        Span::raw(": Resume  "),
         Span::styled("Z", Style::default().fg(Color::Yellow)),
         Span::raw(": Zen mode  "),
         Span::styled("Esc", Style::default().fg(Color::Yellow)),
         Span::raw(": Exit edit  "),
         Span::styled("Q", Style::default().fg(Color::Yellow)),
         Span::raw(": Quit"),
-    ];
+    ]);
 
     let controls = Paragraph::new(vec![Line::from(line1), Line::from(line2)])
         .alignment(Alignment::Center)

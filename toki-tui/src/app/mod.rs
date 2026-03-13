@@ -113,6 +113,27 @@ pub struct App {
     pub task_filter: String,
     pub git_default_prefix: String,
     pub auto_resize_timer: bool,
+
+    // Templates
+    pub templates: Vec<crate::config::TemplateConfig>,
+    pub template_search_input: TextInput,
+    pub filtered_templates: Vec<crate::config::TemplateConfig>,
+    pub filtered_template_index: usize,
+
+    /// Set to true after leaving/re-entering the alternate screen (e.g. after spawning an editor).
+    /// The event loop will call terminal.clear() to force a full redraw when this is true.
+    pub needs_full_redraw: bool,
+
+    /// When a log note is linked to the current description, this holds the 8-char hex ID.
+    /// The `·log:<id>` tag is stripped from `description_input` while editing so the user
+    /// sees (and edits) only the clean summary. The tag is re-appended when the editor
+    /// closes (Enter / Esc) or when `handle_open_log_note` reads the full note value.
+    pub description_log_id: Option<String>,
+
+    /// Cached content of the currently linked log file, refreshed whenever
+    /// `description_log_id` changes. Used by the render path to avoid per-frame
+    /// synchronous file I/O.
+    pub cached_log_content: Option<String>,
 }
 
 impl App {
@@ -177,6 +198,13 @@ impl App {
             task_filter: cfg.task_filter.clone(),
             git_default_prefix: cfg.git_default_prefix.clone(),
             auto_resize_timer: cfg.auto_resize_timer,
+            templates: cfg.template.clone(),
+            template_search_input: TextInput::new(),
+            filtered_templates: Vec::new(),
+            filtered_template_index: 0,
+            needs_full_redraw: false,
+            description_log_id: None,
+            cached_log_content: None,
         }
     }
 
@@ -202,6 +230,8 @@ impl App {
     pub fn clear_note(&mut self) {
         self.description_input = TextInput::new();
         self.description_is_default = true;
+        self.description_log_id = None;
+        self.cached_log_content = None;
         self.status_message = Some("Note cleared".to_string());
     }
 
@@ -214,6 +244,8 @@ impl App {
         self.selected_activity = None;
         self.description_input = TextInput::new();
         self.description_is_default = true;
+        self.description_log_id = None;
+        self.cached_log_content = None;
         self.status_message = Some("Timer cleared".to_string());
     }
 
@@ -402,6 +434,13 @@ impl App {
                 self.filter_activities();
                 self.selection_list_focused = false;
             }
+            View::SelectTemplate => {
+                self.template_search_input = TextInput::new();
+                self.filtered_templates = self.templates.clone();
+                self.filtered_template_index = 0;
+                self.selection_list_focused = false;
+                self.current_view = View::SelectTemplate;
+            }
             View::EditDescription => {
                 if self.description_is_default
                     && self.this_week_edit_state.is_none()
@@ -409,6 +448,19 @@ impl App {
                 {
                     self.description_input.clear();
                     self.description_is_default = false;
+                }
+                // Strip the log tag from the editable buffer so the user sees only the
+                // clean summary. The ID is preserved in description_log_id and re-appended
+                // when the editor closes.
+                {
+                    use crate::log_notes;
+                    let raw = self.description_input.value.clone();
+                    if let Some(id) = log_notes::extract_id(&raw) {
+                        self.description_log_id = Some(id.to_string());
+                        let stripped = log_notes::strip_tag(&raw).to_string();
+                        self.description_input = TextInput::from_str(&stripped);
+                        self.refresh_log_cache();
+                    }
                 }
                 self.editing_description = true;
             }
@@ -433,6 +485,12 @@ impl App {
                 if !self.filtered_activities.is_empty() {
                     self.filtered_activity_index =
                         (self.filtered_activity_index + 1) % self.filtered_activities.len();
+                }
+            }
+            View::SelectTemplate => {
+                if !self.filtered_templates.is_empty() {
+                    self.filtered_template_index =
+                        (self.filtered_template_index + 1) % self.filtered_templates.len();
                 }
             }
             View::History => {
@@ -460,6 +518,15 @@ impl App {
                         self.filtered_activities.len() - 1
                     } else {
                         self.filtered_activity_index - 1
+                    };
+                }
+            }
+            View::SelectTemplate => {
+                if !self.filtered_templates.is_empty() {
+                    self.filtered_template_index = if self.filtered_template_index == 0 {
+                        self.filtered_templates.len() - 1
+                    } else {
+                        self.filtered_template_index - 1
                     };
                 }
             }
@@ -555,9 +622,64 @@ impl App {
         }
     }
 
-    /// Get current description for display
+    /// Get current description for display (clean summary, tag stripped)
+    #[allow(dead_code)]
     pub fn current_description(&self) -> String {
         self.description_input.value.clone()
+    }
+
+    /// Returns the full note value: the clean summary from `description_input` with the
+    /// `·log:<id>` tag re-appended if one is stored in `description_log_id`.
+    /// Use this instead of reading `description_input.value` directly whenever you need
+    /// the canonical note to save or sync.
+    pub fn full_note_value(&self) -> String {
+        use crate::log_notes;
+        match &self.description_log_id {
+            Some(id) => log_notes::append_tag(&self.description_input.value, id),
+            None => self.description_input.value.clone(),
+        }
+    }
+
+    /// Restore the running timer's note from `saved_timer_note`, stripping any embedded
+    /// log tag into `description_log_id` so the invariant is maintained.
+    pub fn restore_saved_timer_note(&mut self) {
+        use crate::log_notes;
+        if let Some(saved) = self.saved_timer_note.take() {
+            if let Some(id) = log_notes::extract_id(&saved) {
+                self.description_log_id = Some(id.to_string());
+                self.description_input = TextInput::from_str(log_notes::strip_tag(&saved));
+            } else {
+                self.description_log_id = None;
+                self.description_input = TextInput::from_str(&saved);
+            }
+            self.refresh_log_cache();
+        }
+    }
+
+    /// Set the running timer's note from a raw string (which may contain a `·log:` tag).
+    /// Strips the tag into `description_log_id` to maintain the invariant that
+    /// `description_input` always holds only the clean summary.
+    pub fn set_note_from_raw(&mut self, raw: &str) {
+        use crate::log_notes;
+        if let Some(id) = log_notes::extract_id(raw) {
+            self.description_log_id = Some(id.to_string());
+            self.description_input = TextInput::from_str(log_notes::strip_tag(raw));
+        } else {
+            self.description_log_id = None;
+            self.description_input = TextInput::from_str(raw);
+        }
+        self.refresh_log_cache();
+    }
+
+    /// Refreshes `cached_log_content` from disk based on the current `description_log_id`.
+    /// Call this once whenever `description_log_id` is assigned.
+    pub fn refresh_log_cache(&mut self) {
+        use crate::log_notes;
+        self.cached_log_content = self
+            .description_log_id
+            .as_ref()
+            .and_then(|id| log_notes::log_path(id).ok())
+            .and_then(|path| std::fs::read_to_string(path).ok());
     }
 
     /// Handle character input for description editing
@@ -591,6 +713,24 @@ impl App {
             } else {
                 self.description_input.end();
             }
+        }
+    }
+
+    pub fn input_word_left(&mut self) {
+        if self.editing_description {
+            self.description_input.move_word_left();
+        }
+    }
+
+    pub fn input_word_right(&mut self) {
+        if self.editing_description {
+            self.description_input.move_word_right();
+        }
+    }
+
+    pub fn input_delete_word_back(&mut self) {
+        if self.editing_description {
+            self.description_input.delete_word_back();
         }
     }
 
@@ -689,6 +829,27 @@ impl App {
         self.filter_activities();
     }
 
+    pub fn filter_templates(&mut self) {
+        let query = &self.template_search_input.value;
+        if query.is_empty() {
+            self.filtered_templates = self.templates.clone();
+        } else {
+            let matcher = SkimMatcherV2::default();
+            let mut scored: Vec<_> = self
+                .templates
+                .iter()
+                .filter_map(|t| {
+                    matcher
+                        .fuzzy_match(&t.description, query)
+                        .map(|score| (score, t.clone()))
+                })
+                .collect();
+            scored.sort_by(|a, b| b.0.cmp(&a.0));
+            self.filtered_templates = scored.into_iter().map(|(_, t)| t).collect();
+        }
+        self.filtered_template_index = 0;
+    }
+
     pub fn activity_search_input_backspace(&mut self) {
         self.activity_search_input.backspace();
         self.filter_activities();
@@ -697,6 +858,50 @@ impl App {
     pub fn activity_search_input_clear(&mut self) {
         self.activity_search_input.clear();
         self.filter_activities();
+    }
+
+    pub fn template_search_input_char(&mut self, c: char) {
+        self.template_search_input.insert(c);
+        self.filter_templates();
+    }
+
+    pub fn template_search_input_backspace(&mut self) {
+        self.template_search_input.backspace();
+        self.filter_templates();
+    }
+
+    pub fn template_search_input_clear(&mut self) {
+        self.template_search_input.clear();
+        self.filter_templates();
+    }
+
+    pub fn template_search_move_cursor(&mut self, left: bool) {
+        if left {
+            self.template_search_input.move_left();
+        } else {
+            self.template_search_input.move_right();
+        }
+    }
+
+    pub fn template_search_cursor_home_end(&mut self, home: bool) {
+        if home {
+            self.template_search_input.home();
+        } else {
+            self.template_search_input.end();
+        }
+    }
+
+    pub fn template_search_word_left(&mut self) {
+        self.template_search_input.move_word_left();
+    }
+
+    pub fn template_search_word_right(&mut self) {
+        self.template_search_input.move_word_right();
+    }
+
+    pub fn template_search_delete_word_back(&mut self) {
+        self.template_search_input.delete_word_back();
+        self.filter_templates();
     }
 
     pub fn search_move_cursor(&mut self, left: bool) {
@@ -715,6 +920,19 @@ impl App {
         }
     }
 
+    pub fn search_word_left(&mut self) {
+        self.project_search_input.move_word_left();
+    }
+
+    pub fn search_word_right(&mut self) {
+        self.project_search_input.move_word_right();
+    }
+
+    pub fn search_delete_word_back(&mut self) {
+        self.project_search_input.delete_word_back();
+        self.filter_projects();
+    }
+
     pub fn activity_search_move_cursor(&mut self, left: bool) {
         if left {
             self.activity_search_input.move_left();
@@ -729,6 +947,19 @@ impl App {
         } else {
             self.activity_search_input.end();
         }
+    }
+
+    pub fn activity_search_word_left(&mut self) {
+        self.activity_search_input.move_word_left();
+    }
+
+    pub fn activity_search_word_right(&mut self) {
+        self.activity_search_input.move_word_right();
+    }
+
+    pub fn activity_search_delete_word_back(&mut self) {
+        self.activity_search_input.delete_word_back();
+        self.filter_activities();
     }
 
     pub fn select_next_save_action(&mut self) {
@@ -954,6 +1185,25 @@ impl App {
         }
     }
 
+    pub fn cwd_word_left(&mut self) {
+        if let Some(ref mut ti) = self.cwd_input {
+            ti.move_word_left();
+        }
+    }
+
+    pub fn cwd_word_right(&mut self) {
+        if let Some(ref mut ti) = self.cwd_input {
+            ti.move_word_right();
+        }
+    }
+
+    pub fn cwd_delete_word_back(&mut self) {
+        if let Some(ref mut ti) = self.cwd_input {
+            ti.delete_word_back();
+            self.cwd_completions.clear();
+        }
+    }
+
     pub fn open_taskwarrior_overlay(&mut self) {
         let mut cmd = std::process::Command::new("task");
         cmd.arg("rc.verbose=nothing");
@@ -1085,4 +1335,178 @@ fn longest_common_prefix(strings: &[String]) -> String {
     }
 
     prefix.into_iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{activity, project, test_app, time_entry};
+
+    #[test]
+    fn start_timer_sets_running_state_and_shifts_focus() {
+        let mut app = test_app();
+        app.focused_this_week_index = Some(2);
+
+        app.start_timer(false);
+
+        assert_eq!(app.timer_state, TimerState::Running);
+        assert!(app.absolute_start.is_some());
+        assert!(app.local_start.is_some());
+        assert_eq!(app.focused_this_week_index, Some(3));
+    }
+
+    #[test]
+    fn stop_timer_clears_running_state() {
+        let mut app = test_app();
+        app.focused_this_week_index = Some(2);
+        app.start_timer(false);
+
+        app.stop_timer(false);
+
+        assert_eq!(app.timer_state, TimerState::Stopped);
+        assert!(app.absolute_start.is_none());
+        assert!(app.local_start.is_none());
+        assert_eq!(app.focused_this_week_index, Some(2));
+    }
+
+    #[test]
+    fn clear_timer_resets_selected_fields_and_note() {
+        let mut app = test_app();
+        app.timer_size = TimerSize::Large;
+        app.selected_project = Some(project("proj-1", "Project One"));
+        app.selected_activity = Some(activity("act-1", "proj-1", "Activity One"));
+        app.description_input = TextInput::from_str("Existing note");
+        app.description_is_default = false;
+
+        app.clear_timer();
+
+        assert_eq!(app.timer_state, TimerState::Stopped);
+        assert_eq!(app.timer_size, TimerSize::Normal);
+        assert!(app.selected_project.is_none());
+        assert!(app.selected_activity.is_none());
+        assert_eq!(app.description_input, TextInput::new());
+        assert!(app.description_is_default);
+    }
+
+    #[test]
+    fn navigate_to_edit_description_clears_default_note() {
+        let mut app = test_app();
+        app.description_input = TextInput::from_str("Prefill");
+        app.description_is_default = true;
+
+        app.navigate_to(View::EditDescription);
+
+        assert_eq!(app.current_view, View::EditDescription);
+        assert!(app.editing_description);
+        assert_eq!(app.description_input, TextInput::new());
+        assert!(!app.description_is_default);
+    }
+
+    #[test]
+    fn select_save_action_by_number_ignores_unknown_values() {
+        let mut app = test_app();
+        app.selected_save_action = SaveAction::ContinueSameProject;
+
+        app.select_save_action_by_number(9);
+
+        assert_eq!(app.selected_save_action, SaveAction::ContinueSameProject);
+    }
+
+    #[test]
+    fn filter_projects_orders_best_match_first() {
+        let mut app = test_app();
+        app.projects = vec![
+            project("proj-1", "Backend Platform"),
+            project("proj-2", "Timer UI"),
+            project("proj-3", "Documentation"),
+        ];
+        app.project_search_input = TextInput::from_str("tmr");
+
+        app.filter_projects();
+
+        assert_eq!(
+            app.filtered_projects.first().map(|p| p.name.as_str()),
+            Some("Timer UI")
+        );
+    }
+
+    #[test]
+    fn filter_activities_respects_selected_project() {
+        let mut app = test_app();
+        app.selected_project = Some(project("proj-2", "Timer UI"));
+        app.activities = vec![
+            activity("act-1", "proj-1", "Planning"),
+            activity("act-2", "proj-2", "Implementation"),
+            activity("act-3", "proj-2", "Testing"),
+        ];
+
+        app.filter_activities();
+
+        assert_eq!(app.filtered_activities.len(), 2);
+        assert!(app
+            .filtered_activities
+            .iter()
+            .all(|activity| activity.project_id == "proj-2"));
+    }
+
+    #[test]
+    fn parse_task_export_rejects_invalid_utf8_or_json() {
+        let utf8_err = parse_task_export(&[0xff]).expect_err("invalid UTF-8 should fail");
+        let json_err = parse_task_export(b"not-json").expect_err("invalid JSON should fail");
+
+        assert!(utf8_err.contains("UTF-8"));
+        assert!(json_err.contains("JSON"));
+    }
+
+    #[test]
+    fn parse_task_export_sorts_by_urgency_desc() {
+        let output = br#"[
+            {"id": 2, "description": "Lower", "urgency": 1.0},
+            {"id": 1, "description": "Higher", "urgency": 9.5},
+            {"id": 3, "description": "Medium", "urgency": 3.2}
+        ]"#;
+
+        let tasks = parse_task_export(output).expect("valid export should parse");
+
+        let descriptions: Vec<&str> = tasks.iter().map(|task| task.description.as_str()).collect();
+        assert_eq!(descriptions, vec!["Higher", "Medium", "Lower"]);
+    }
+
+    #[test]
+    fn update_history_sorts_entries_newest_first() {
+        let mut app = test_app();
+        let early = time_entry(
+            "reg-1",
+            "proj-1",
+            "Project One",
+            "act-1",
+            "Activity One",
+            "2026-03-01",
+            1.0,
+            None,
+            None,
+            None,
+        );
+        let late = time_entry(
+            "reg-2",
+            "proj-1",
+            "Project One",
+            "act-1",
+            "Activity One",
+            "2026-03-02",
+            1.0,
+            None,
+            None,
+            None,
+        );
+
+        app.update_history(vec![early, late]);
+
+        let ids: Vec<&str> = app
+            .time_entries
+            .iter()
+            .map(|entry| entry.registration_id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["reg-2", "reg-1"]);
+    }
 }

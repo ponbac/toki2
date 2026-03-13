@@ -1,5 +1,6 @@
 use super::utils::to_local_time;
 use crate::app::{EntryEditField, EntryEditState};
+use crate::log_notes;
 use crate::types::TimeEntry;
 use ratatui::{
     style::{Color, Modifier, Style},
@@ -8,16 +9,16 @@ use ratatui::{
 
 use crate::app::App;
 
-/// Render a partial or complete time string with a block cursor.
+/// Render a partial or complete time string with a hairline cursor.
 /// - len >= 5 ("HH:MM"): display as-is, no cursor
-/// - len < 5: show typed chars + '█' + space padding to fill 5-char slot
+/// - len < 5: show typed chars + '▏' + space padding to fill 5-char slot
 fn time_input_display(s: &str) -> String {
     if s.len() >= 5 {
         format!("[{}]", s)
     } else {
         let filled = s.len();
         let spaces = 5 - filled - 1;
-        format!("[{}█{}]", s, " ".repeat(spaces))
+        format!("[{}▏{}]", s, " ".repeat(spaces))
     }
 }
 
@@ -110,7 +111,9 @@ pub fn build_display_row(
 
     let project = &entry.project_name;
     let activity = &entry.activity_name;
-    let note = entry.note.as_deref().unwrap_or("");
+    let note_raw = entry.note.as_deref().unwrap_or("");
+    let note = log_notes::strip_tag(note_raw);
+    let has_log = log_notes::extract_id(note_raw).is_some();
 
     // Start time
     let start_str = entry
@@ -176,6 +179,14 @@ pub fn build_display_row(
         spans.push(Span::styled(note_display, Style::default().fg(note_color)));
     }
 
+    // Log indicator: "[…]" in white for entries with a linked log note
+    if has_log {
+        spans.push(Span::styled(
+            " [\u{2026}]",
+            Style::default().fg(Color::White),
+        ));
+    }
+
     // Apply focus styling: white background with black text
     if is_focused {
         let focused_style = Style::default()
@@ -227,7 +238,8 @@ pub fn build_running_timer_display_row(
         .as_ref()
         .map(|a| a.name.clone())
         .unwrap_or_else(|| "[None]".to_string());
-    let note = app.description_input.value.clone();
+    let note = log_notes::strip_tag(&app.description_input.value).to_string();
+    let has_log = app.description_log_id.is_some();
 
     let prefix_len: usize = 28; // "▶ " (2) + "HH:MM - HH:MM " (14) + "[DDh:DDm]" (9) + " | " (3)
     let remaining = (available_width as usize).saturating_sub(prefix_len);
@@ -271,6 +283,12 @@ pub fn build_running_timer_display_row(
     if !note_display.is_empty() {
         spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
         spans.push(Span::styled(note_display, Style::default().fg(Color::Gray)));
+    }
+    if has_log {
+        spans.push(Span::styled(
+            " [\u{2026}]",
+            Style::default().fg(Color::White),
+        ));
     }
     Line::from(spans)
 }
@@ -327,7 +345,7 @@ pub fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
 
     spans.push(Span::styled(" | ", Style::default().fg(Color::White)));
 
-    // Note field
+    // Note field — display only (editing opens the full-screen Notes overlay via Enter)
     let note_style = match edit_state.focused_field {
         EntryEditField::Note => Style::default()
             .fg(Color::Black)
@@ -335,23 +353,8 @@ pub fn build_running_timer_edit_row(edit_state: &EntryEditState) -> Line<'_> {
             .add_modifier(Modifier::BOLD),
         _ => Style::default().fg(Color::White),
     };
-    let note_value = if matches!(edit_state.focused_field, EntryEditField::Note) {
-        let (before, after) = edit_state.note.split_at_cursor();
-        if edit_state.note.value.is_empty() {
-            "[█]".to_string()
-        } else {
-            format!("[{}█{}]", before, after)
-        }
-    } else {
-        format!(
-            "[{}]",
-            if edit_state.note.value.is_empty() {
-                "Empty"
-            } else {
-                &edit_state.note.value
-            }
-        )
-    };
+    let display = log_notes::strip_tag(&edit_state.note.value);
+    let note_value = format!("[{}]", if display.is_empty() { "Empty" } else { display });
     spans.push(Span::styled(note_value, note_style));
 
     Line::from(spans)
@@ -423,7 +426,7 @@ pub fn build_edit_row<'a>(
     // Separator
     spans.push(Span::styled(" | ", Style::default().fg(Color::White)));
 
-    // Note field
+    // Note field — display only (editing opens the full-screen Notes overlay via Enter)
     let note_style = match edit_state.focused_field {
         EntryEditField::Note => Style::default()
             .fg(Color::Black)
@@ -431,23 +434,8 @@ pub fn build_edit_row<'a>(
             .add_modifier(Modifier::BOLD),
         _ => Style::default().fg(Color::White),
     };
-    let note_value = if matches!(edit_state.focused_field, EntryEditField::Note) {
-        let (before, after) = edit_state.note.split_at_cursor();
-        if edit_state.note.value.is_empty() {
-            "[█]".to_string()
-        } else {
-            format!("[{}█{}]", before, after)
-        }
-    } else {
-        format!(
-            "[{}]",
-            if edit_state.note.value.is_empty() {
-                "Empty"
-            } else {
-                &edit_state.note.value
-            }
-        )
-    };
+    let display = log_notes::strip_tag(&edit_state.note.value);
+    let note_value = format!("[{}]", if display.is_empty() { "Empty" } else { display });
     spans.push(Span::styled(note_value, note_style));
 
     Line::from(spans)

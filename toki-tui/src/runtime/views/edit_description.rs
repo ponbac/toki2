@@ -1,4 +1,4 @@
-use crate::app::{self, App, TextInput};
+use crate::app::{self, App};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::action_queue::{Action, ActionTx};
@@ -17,8 +17,17 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
                 }
             }
             KeyCode::Tab => app.cwd_tab_complete(),
+            KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                app.cwd_delete_word_back();
+            }
             KeyCode::Backspace => app.cwd_input_backspace(),
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.cwd_word_left();
+            }
             KeyCode::Left => app.cwd_move_cursor(true),
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.cwd_word_right();
+            }
             KeyCode::Right => app.cwd_move_cursor(false),
             KeyCode::Home => app.cwd_cursor_home_end(true),
             KeyCode::End => app.cwd_cursor_home_end(false),
@@ -57,6 +66,8 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
             KeyCode::Char('x') | KeyCode::Char('X')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
+                // Clear the note text only — the log link is preserved intentionally.
+                // Use Ctrl+R to remove the log link.
                 app.description_input.clear();
             }
             KeyCode::Char('g') | KeyCode::Char('G')
@@ -75,20 +86,48 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
             {
                 app.open_taskwarrior_overlay();
             }
+            KeyCode::Char('r') | KeyCode::Char('R')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                // Remove (detach) the linked log from the current note (orphans the file, keeps note text)
+                app.description_log_id = None;
+                app.cached_log_content = None;
+                app.status_message = Some("Log removed".to_string());
+            }
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if key.modifiers.contains(KeyModifiers::SHIFT)
+                    && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                // no-op: previously Shift+Ctrl+L was detach, now Ctrl+R handles this
+            }
+            KeyCode::Char('l') | KeyCode::Char('L')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                enqueue_action(action_tx, Action::OpenLogNote);
+            }
             KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.input_char(c);
             }
+            KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                app.input_delete_word_back();
+            }
             KeyCode::Backspace => app.input_backspace(),
+            KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.input_word_left();
+            }
             KeyCode::Left => app.input_move_cursor(true),
+            KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.input_word_right();
+            }
             KeyCode::Right => app.input_move_cursor(false),
             KeyCode::Home => app.input_cursor_home_end(true),
             KeyCode::End => app.input_cursor_home_end(false),
             KeyCode::Enter => {
                 if was_in_edit_mode {
-                    app.update_edit_state_note(app.description_input.value.clone());
-                    if let Some(saved_note) = app.saved_timer_note.take() {
-                        app.description_input = TextInput::from_str(&saved_note);
-                    }
+                    let note = app.full_note_value();
+                    app.description_log_id = None;
+                    app.update_edit_state_note(note);
+                    app.restore_saved_timer_note();
                     let return_view = app.get_return_view_from_edit();
                     app.navigate_to(return_view);
                     if return_view == app::View::Timer {
@@ -96,7 +135,9 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
                     }
                 } else {
                     let should_sync_running_note = app.timer_state == app::TimerState::Running;
-                    let note = app.description_input.value.clone();
+                    let note = app.full_note_value();
+                    // description_log_id intentionally preserved — the log stays linked
+                    // to the running timer after confirming. Use Ctrl+R to remove it.
                     app.confirm_description();
                     if should_sync_running_note {
                         enqueue_action(action_tx, Action::SyncRunningTimerNote { note });
@@ -105,15 +146,19 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
             }
             KeyCode::Esc => {
                 if was_in_edit_mode {
-                    if let Some(saved_note) = app.saved_timer_note.take() {
-                        app.description_input = TextInput::from_str(&saved_note);
-                    }
+                    // Discarding the edit — drop the log ID (it belongs to the entry being
+                    // edited, not to the running timer, and will be restored via saved_timer_note).
+                    app.description_log_id = None;
+                    app.restore_saved_timer_note();
                     let return_view = app.get_return_view_from_edit();
                     app.navigate_to(return_view);
                     if return_view == app::View::Timer {
                         app.focused_box = app::FocusedBox::Today;
                     }
                 } else {
+                    // Cancelling description editing for the running timer — don't sync
+                    // anything, just exit the editor. description_log_id stays intact so the
+                    // log link is preserved for the next time the user opens the editor.
                     app.cancel_selection();
                 }
             }
@@ -130,7 +175,7 @@ pub(super) fn handle_edit_description_key(key: KeyEvent, app: &mut App, action_t
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{EntryEditField, EntryEditState, TimerState, View};
+    use crate::app::{EntryEditField, EntryEditState, TextInput, TimerState, View};
     use crate::config::TokiConfig;
     use crossterm::event::{KeyEvent, KeyModifiers};
 

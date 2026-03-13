@@ -17,6 +17,7 @@ mod history_view;
 mod save_dialog;
 mod selection_views;
 mod statistics_view;
+mod template_selection_view;
 mod timer_view;
 pub(super) mod utils;
 pub(super) mod widgets;
@@ -46,6 +47,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         View::History => history_view::render_history_view(frame, app, body),
         View::SelectProject => selection_views::render_project_selection(frame, app, body),
         View::SelectActivity => selection_views::render_activity_selection(frame, app, body),
+        View::SelectTemplate => {
+            template_selection_view::render_template_selection(frame, app, body)
+        }
         View::EditDescription => {
             if app.taskwarrior_overlay.is_some() {
                 description_editor::render_taskwarrior_overlay(frame, app, body);
@@ -157,4 +161,95 @@ fn render_milltime_reauth_overlay(frame: &mut Frame, app: &App) {
         .alignment(Alignment::Left);
 
     frame.render_widget(paragraph, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{FocusedBox, MilltimeReauthState, TimerState};
+    use crate::test_support::{activity, project, test_app};
+    use ratatui::{backend::TestBackend, Terminal};
+    use time::macros::datetime;
+
+    fn render_lines(app: &mut App) -> Vec<String> {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| render(frame, app))
+            .expect("render should succeed");
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    fn rendered_text(app: &mut App) -> String {
+        render_lines(app).join("\n")
+    }
+
+    #[test]
+    fn render_shows_running_timer_project_and_note() {
+        let mut app = test_app();
+        app.timer_state = TimerState::Running;
+        app.absolute_start = Some(datetime!(2026-03-06 09:15 UTC));
+        app.selected_project = Some(project("proj-1", "Project One"));
+        app.selected_activity = Some(activity("act-1", "proj-1", "Activity One"));
+        app.description_input.value = "Investigate tests".to_string();
+        app.description_input.cursor = app.description_input.value.len();
+        app.focused_box = FocusedBox::ProjectActivity;
+
+        let text = rendered_text(&mut app);
+
+        assert!(text.contains("Timer"));
+        assert!(text.contains("(running)"));
+        assert!(text.contains("Project One: Activity One"));
+        assert!(text.contains("Investigate tests"));
+    }
+
+    #[test]
+    fn render_status_shows_error_copy() {
+        let mut app = test_app();
+        app.status_message = Some("Error starting timer: boom".to_string());
+
+        let text = rendered_text(&mut app);
+
+        assert!(text.contains("Status"));
+        assert!(text.contains("Error starting timer: boom"));
+    }
+
+    #[test]
+    fn render_status_shows_success_copy() {
+        let mut app = test_app();
+        app.status_message = Some("Saved 00:15:00 to Project / Activity".to_string());
+
+        let text = rendered_text(&mut app);
+
+        assert!(text.contains("Saved 00:15:00 to Project / Activity"));
+    }
+
+    #[test]
+    fn render_milltime_reauth_masks_password() {
+        let mut app = test_app();
+        let mut reauth = MilltimeReauthState::default();
+        reauth.username_input.value = "alice".to_string();
+        reauth.username_input.cursor = reauth.username_input.value.len();
+        reauth.password_input.value = "secret".to_string();
+        reauth.password_input.cursor = reauth.password_input.value.len();
+        app.milltime_reauth = Some(reauth);
+
+        let text = rendered_text(&mut app);
+
+        assert!(text.contains("Milltime session expired. Please re-authenticate."));
+        assert!(text.contains("alice"));
+        assert!(text.contains("Password:"));
+        assert!(!text.contains("secret"));
+        assert!(text.contains("••••••"));
+    }
 }

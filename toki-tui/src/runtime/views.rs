@@ -9,6 +9,7 @@ mod history;
 mod save_action;
 mod selection;
 mod statistics;
+mod template_selection;
 mod timer;
 
 fn enqueue_action(action_tx: &ActionTx, action: Action) {
@@ -41,6 +42,9 @@ pub(super) fn handle_view_key(key: KeyEvent, app: &mut App, action_tx: &ActionTx
     match &app.current_view {
         app::View::SelectProject => selection::handle_select_project_key(key, app, action_tx),
         app::View::SelectActivity => selection::handle_select_activity_key(key, app, action_tx),
+        app::View::SelectTemplate => {
+            template_selection::handle_select_template_key(key, app, action_tx)
+        }
         app::View::EditDescription => {
             edit_description::handle_edit_description_key(key, app, action_tx)
         }

@@ -55,7 +55,9 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
                 app.focus_previous();
             }
         }
-        KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L') => {
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L')
+            if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
             if is_editing_this_week(app) {
                 app.entry_edit_next_field();
             }
@@ -88,6 +90,12 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
         // Number keys for time input in edit mode
         KeyCode::Char(c) if is_editing_this_week(app) && c.is_ascii_digit() => {
             app.entry_edit_input_char(c);
+        }
+        KeyCode::Backspace
+            if key.modifiers.contains(KeyModifiers::ALT)
+                && is_note_focused_in_this_week_edit(app) =>
+        {
+            app.entry_edit_delete_word_back();
         }
         KeyCode::Backspace => {
             if is_editing_this_week(app) {
@@ -122,7 +130,9 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
         KeyCode::Char('n') | KeyCode::Char('N') => {
             app.navigate_to(app::View::EditDescription);
         }
-        KeyCode::Char('t') | KeyCode::Char('T') => {
+        KeyCode::Char('x') | KeyCode::Char('X')
+            if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
             app.toggle_timer_size();
         }
         // S: Open Stats view (unmodified only - Ctrl+S is save)
@@ -142,31 +152,50 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
             }
         }
         KeyCode::Char('z') | KeyCode::Char('Z') => app.toggle_zen_mode(),
-        KeyCode::Char('y') | KeyCode::Char('Y') if !is_editing_this_week(app) => {
-            if app.timer_state != app::TimerState::Running {
-                app.set_status("No running timer — use R to resume this entry instead".to_string());
-            } else if is_persisted_today_row_selected(app) {
+        KeyCode::Char('r') | KeyCode::Char('R')
+            if !is_editing_this_week(app) && key.modifiers.contains(KeyModifiers::CONTROL) =>
+        {
+            if is_persisted_today_row_selected(app) {
                 let idx = app.focused_this_week_index.unwrap();
-                let db_idx = idx.saturating_sub(1); // timer row at 0 shifts DB entries by 1
+                // When running, index 0 is the running-timer row so DB entries are shifted by 1
+                let db_idx = if app.timer_state == app::TimerState::Running {
+                    idx.saturating_sub(1)
+                } else {
+                    idx
+                };
                 let entry = app.this_week_history().get(db_idx).cloned().cloned();
-                if let Some(entry) = entry {
-                    enqueue_action(action_tx, Action::YankEntryToTimer(entry));
-                }
-            }
-        }
-        KeyCode::Char('r') | KeyCode::Char('R') if !is_editing_this_week(app) => {
-            if app.timer_state == app::TimerState::Running {
-                app.set_status(
-                    "Timer already running — stop it first (Space or Ctrl+X)".to_string(),
-                );
-            } else if is_persisted_today_row_selected(app) {
-                let idx = app.focused_this_week_index.unwrap();
-                // Timer is stopped: no running-timer row at index 0, so idx is the DB index directly
-                let entry = app.this_week_history().get(idx).cloned().cloned();
                 if let Some(entry) = entry {
                     enqueue_action(action_tx, Action::ResumeEntry(entry));
                 }
             }
+        }
+        KeyCode::Char('l') | KeyCode::Char('L')
+            if !is_editing_this_week(app)
+                && key.modifiers.contains(KeyModifiers::CONTROL)
+                && is_persisted_today_row_selected(app) =>
+        {
+            let idx = app.focused_this_week_index.unwrap();
+            let db_idx = if app.timer_state == app::TimerState::Running {
+                idx.saturating_sub(1)
+            } else {
+                idx
+            };
+            let note = app
+                .this_week_history()
+                .get(db_idx)
+                .and_then(|e| e.note.as_deref())
+                .unwrap_or("");
+            let id = crate::log_notes::extract_id(note).unwrap_or("").to_string();
+            if id.is_empty() {
+                app.set_status("No log linked to this entry".to_string());
+            } else {
+                enqueue_action(action_tx, Action::OpenEntryLogNote(id));
+            }
+        }
+        KeyCode::Char('t') | KeyCode::Char('T')
+            if !is_editing_this_week(app) && !app.templates.is_empty() =>
+        {
+            app.navigate_to(app::View::SelectTemplate);
         }
         _ => {}
     }

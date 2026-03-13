@@ -3,11 +3,15 @@ mod app;
 mod bootstrap;
 mod cli;
 mod config;
+mod editor;
 mod git;
+mod log_notes;
 mod login;
 mod runtime;
 mod session_store;
 mod terminal;
+#[cfg(test)]
+mod test_support;
 mod time_utils;
 mod types;
 mod ui;
@@ -26,6 +30,10 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::ConfigPath => {
             let path = config::TokiConfig::ensure_exists()?;
+            println!("{}", path.display());
+        }
+        Commands::LogsPath => {
+            let path = log_notes::log_dir()?;
             println!("{}", path.display());
         }
         Commands::Version => {
