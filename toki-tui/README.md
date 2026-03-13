@@ -63,7 +63,7 @@ auto_resize_timer = true
 # Entry templates — pre-fill project, activity and note from a picker (press T).
 # [[template]] sections can be repeated.
 [[template]]
-name = "My project"
+description = "My project"
 project = "My Project"
 activity = "Development"
 note = "Working on stuff"
