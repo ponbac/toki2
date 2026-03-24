@@ -25,7 +25,7 @@ use crate::{
     auth::{self, AuthBackend},
     config::Settings,
     domain::{ports::inbound::AvatarService, services::AvatarServiceImpl, RepoConfig},
-    factory::MilltimeServiceFactory,
+    factory::KleerServiceFactory,
     routes,
 };
 
@@ -59,7 +59,14 @@ pub async fn create(
     let timer_repo = Arc::new(crate::repositories::TimerRepositoryImpl::new(
         connection_pool.clone(),
     ));
-    let time_tracking_factory = Arc::new(MilltimeServiceFactory::new(timer_repo));
+    let time_tracking_user_link_repo = Arc::new(
+        crate::repositories::TimeTrackingUserLinkRepositoryImpl::new(connection_pool.clone()),
+    );
+    let time_tracking_factory = Arc::new(KleerServiceFactory::new(
+        timer_repo,
+        time_tracking_user_link_repo,
+        config.kleer.clone(),
+    ));
     let avatar_repository = Arc::new(PostgresAvatarRepository::new(connection_pool.clone()));
     let avatar_processor = Arc::new(WebpAvatarProcessor);
     let avatar_service: Arc<dyn AvatarService> = Arc::new(AvatarServiceImpl::new(
@@ -72,7 +79,7 @@ pub async fn create(
     let app_state = AppState::new(
         config.application.app_url.clone(),
         config.application.api_url.clone(),
-        config.application.cookie_domain.clone(),
+        config.kleer.clone(),
         connection_pool.clone(),
         repo_configs,
         time_tracking_factory,
@@ -111,13 +118,15 @@ async fn new_auth_layer(
     connection_pool: PgPool,
     config: Settings,
 ) -> AuthManagerLayer<AuthBackend, SessionStore> {
-    let client = BasicClient::new(
-        ClientId::new(config.auth.client_id),
-        Some(ClientSecret::new(config.auth.client_secret)),
-        AuthUrl::new(config.auth.auth_url).expect("Invalid authorization endpoint URL"),
-        Some(TokenUrl::new(config.auth.token_url).expect("Invalid token endpoint URL")),
-    )
-    .set_redirect_uri(RedirectUrl::new(config.auth.redirect_url).expect("Invalid redirect URL"));
+    let client = BasicClient::new(ClientId::new(config.auth.client_id))
+        .set_client_secret(ClientSecret::new(config.auth.client_secret))
+        .set_auth_uri(
+            AuthUrl::new(config.auth.auth_url).expect("Invalid authorization endpoint URL"),
+        )
+        .set_token_uri(TokenUrl::new(config.auth.token_url).expect("Invalid token endpoint URL"))
+        .set_redirect_uri(
+            RedirectUrl::new(config.auth.redirect_url).expect("Invalid redirect URL"),
+        );
 
     // Use PostgresStore for DB-backed sessions that persist across restarts
     let db_store = PostgresStore::new(connection_pool.clone());

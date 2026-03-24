@@ -16,34 +16,24 @@ pub struct Activity {
     pub project_id: String,
 }
 
-/// Attestation / lock level for a time entry, matching the Milltime API value.
+/// Lock status for a time entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
-#[serde(from = "u8")]
-pub enum AttestLevel {
+#[serde(rename_all = "lowercase")]
+pub enum TimeEntryStatus {
     #[default]
-    None = 0,
-    Week = 1,
-    Month = 2,
+    Open,
+    Approved,
+    Certified,
 }
 
-impl From<u8> for AttestLevel {
-    fn from(v: u8) -> Self {
-        match v {
-            1 => AttestLevel::Week,
-            2 => AttestLevel::Month,
-            _ => AttestLevel::None,
-        }
-    }
-}
-
-impl AttestLevel {
+impl TimeEntryStatus {
     pub fn is_locked(self) -> bool {
-        self != AttestLevel::None
+        self != TimeEntryStatus::Open
     }
 }
 
-/// A completed time entry from Milltime (via GET /time-tracking/time-entries).
-/// start_time / end_time are optional — present only if a local timer history record exists.
+/// A completed time entry from GET /time-tracking/time-entries.
+/// start_time / end_time are optional and present only when local timer history exists.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeEntry {
@@ -63,7 +53,7 @@ pub struct TimeEntry {
     #[allow(dead_code)]
     pub week_number: u8,
     #[serde(default)]
-    pub attest_level: AttestLevel,
+    pub status: TimeEntryStatus,
 }
 
 /// The current user, as returned by GET /me.
@@ -101,11 +91,6 @@ pub struct GetTimerResponse {
 /// Time info returned by GET /time-tracking/time-info.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct TimeInfo {
-    pub period_time_left: f64,
-    pub worked_period_time: f64,
-    pub scheduled_period_time: f64,
-    pub worked_period_with_absence_time: f64,
-    pub flex_time_current: f64,
+    pub scheduled_hours: f64,
 }

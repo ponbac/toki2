@@ -1,6 +1,6 @@
 # Toki - Användarmanual
 
-Toki är ett verktyg för tidrapportering som integrerar med Milltime och Azure DevOps. Denna manual beskriver hur du använder applikationen för att rapportera din tid.
+Toki är ett verktyg för tidrapportering som integrerar med Kleer och Azure DevOps. Denna manual beskriver hur du använder applikationen för att rapportera din tid.
 
 ---
 
@@ -8,7 +8,7 @@ Toki är ett verktyg för tidrapportering som integrerar med Milltime och Azure 
 
 1. [Komma igång](#komma-igång)
 2. [Logga in](#logga-in)
-3. [Tidrapportering med Milltime](#tidrapportering-med-milltime)
+3. [Tidrapportering](#tidrapportering)
 4. [Använda timern](#använda-timern)
 5. [Skapa tidspost utan timer](#skapa-tidspost-utan-timer)
 6. [Redigera och ta bort tidsposter](#redigera-och-ta-bort-tidsposter)
@@ -41,21 +41,13 @@ Toki är en webbapplikation som du når via din webbläsare. Applikationen kan �
 2. Klicka på **"Sign in with Azure"**
 3. Logga in med ditt företagskonto
 
-### Milltime-inloggning
-
-För att kunna tidrapportera behöver du även logga in på Milltime:
-
-1. Navigera till **Milltime** i sidomenyn (timer-ikonen)
-2. Fyll i ditt Milltime-användarnamn och lösenord
-3. Klicka på **"Sign in"**
-
-Din Milltime-session sparas i din webbläsare så att du inte behöver logga in varje gång.
+Tidrapporteringen använder din Toki-inloggning. Om sidan visar att ditt konto inte är kopplat till Kleer behöver en administratör skapa kopplingen.
 
 ---
 
-## Tidrapportering med Milltime
+## Tidrapportering
 
-Milltime-sidan är din huvudsakliga arbetsyta för tidrapportering. Här kan du:
+Tidrapporteringssidan är din huvudsakliga arbetsyta. Här kan du:
 
 - Se alla dina tidsposter
 - Starta och stoppa timers
@@ -64,9 +56,9 @@ Milltime-sidan är din huvudsakliga arbetsyta för tidrapportering. Här kan du:
 
 ### Översikt
 
-När du öppnar Milltime-sidan ser du:
+När du öppnar tidrapporteringssidan ser du:
 
-- **Veckans statistik** (övre delen): Visar hur många timmar du arbetat, kvarvarande tid och flextid
+- **Veckans statistik** (övre delen): Visar hur många timmar du arbetat och kvarvarande tid
 - **Tidsposter** (huvudområdet): Lista över dina tidrapporter grupperade per dag
 
 ---
@@ -106,7 +98,7 @@ När en timer är aktiv visas en flytande timer-widget i nedre högra hörnet. D
    - Lägg till en **anteckning** som beskriver arbetet
 3. Klicka på **"Save"**
 
-Tidsposten synkas automatiskt till Milltime.
+Tidsposten synkas automatiskt.
 
 ### Avbryta timern
 
@@ -121,7 +113,7 @@ Om du vill ta bort timern utan att spara:
 
 Du kan även skapa tidsposter direkt utan att använda timern:
 
-1. Gå till **Milltime**-sidan
+1. Gå till tidrapporteringssidan
 2. Klicka på **"New entry"**-knappen
 3. Fyll i formuläret:
    - **Projekt**: Välj från listan
@@ -162,11 +154,10 @@ Tidsposter som tillhör en låst vecka eller månad kan inte redigeras. Dessa vi
 
 ### Veckostatistik
 
-I övre delen av Milltime-sidan visas:
+I övre delen av tidrapporteringssidan visas:
 
 - **Arbetade timmar**: Hur mycket du arbetat denna vecka
 - **Kvarvarande timmar**: Hur mycket tid som återstår enligt din arbetstidsplan
-- **Flextid**: Din ackumulerade flextid (plus eller minus)
 
 ### Datumfiltrering
 
@@ -333,7 +324,7 @@ Använd `Ctrl+K` (eller `Cmd+K` på Mac) för att öppna snabbkommandomenyn.
 | Kommando                 | Beskrivning                      |
 | ------------------------ | -------------------------------- |
 | **Pull requests**        | Öppna pull requests-sidan        |
-| **Milltime**             | Öppna tidrapporteringssidan      |
+| **Time tracking**        | Öppna tidrapporteringssidan      |
 | **Repositories**         | Öppna repository-hantering       |
 | **Start empty timer**    | Starta en timer                  |
 | **Save current timer**   | Spara aktiv timer                |

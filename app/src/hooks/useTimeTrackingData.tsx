@@ -1,25 +1,28 @@
-/* eslint-disable react-compiler/react-compiler */
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useTimeTrackingActions } from "./useTimeTrackingStore";
-import { useTimeTrackingIsAuthenticated } from "./useTimeTrackingStore";
 
 export const useTimeTrackingData = (options?: {
   projectId?: string;
   enabled?: boolean;
 }) => {
-  const isAuthenticated = useTimeTrackingIsAuthenticated();
+  const isEnabled = options?.enabled ?? true;
   const { reset } = useTimeTrackingActions();
+  const { data: connectionStatus } = useQuery({
+    ...timeTrackingQueries.connectionStatus(),
+    enabled: isEnabled,
+  });
+  const isAuthenticated = connectionStatus?.connected ?? false;
 
   const { data: projects } = useQuery({
     ...timeTrackingQueries.listProjects(),
-    enabled: isAuthenticated && options?.enabled,
+    enabled: isAuthenticated && isEnabled,
   });
 
   const { data: activities } = useQuery({
     ...timeTrackingQueries.listActivities(options?.projectId ?? ""),
-    enabled: isAuthenticated && !!options?.projectId && options?.enabled,
+    enabled: isAuthenticated && !!options?.projectId && isEnabled,
   });
 
   useEffect(() => {
@@ -28,14 +31,10 @@ export const useTimeTrackingData = (options?: {
     }
   }, [isAuthenticated, reset]);
 
-  const result = useMemo(() => {
-    return {
-      projects,
-      activities,
-      isAuthenticated,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options?.projectId, projects, activities, isAuthenticated]);
-
-  return result;
+  return {
+    projects,
+    activities,
+    isAuthenticated,
+    connectionStatus,
+  };
 };

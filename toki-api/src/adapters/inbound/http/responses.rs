@@ -6,8 +6,8 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::domain::models::{
-    ActiveTimer, Activity, AttestLevel, BoardColumn, BoardData, BoardState, Iteration, Project,
-    PullRequestRef, TimeEntry, TimeInfo, TimerHistoryEntry, WorkItem, WorkItemCategory,
+    ActiveTimer, Activity, BoardColumn, BoardData, BoardState, Iteration, Project, PullRequestRef,
+    TimeEntry, TimeEntryStatus, TimerHistoryEntry, WeeklyStats, WorkItem, WorkItemCategory,
     WorkItemPerson, WorkItemProject, WorkItemRef,
 };
 
@@ -114,7 +114,7 @@ pub struct TimeEntryResponse {
     #[serde(with = "time::serde::rfc3339::option")]
     pub end_time: Option<OffsetDateTime>,
     pub week_number: u8,
-    pub attest_level: AttestLevel,
+    pub status: TimeEntryStatus,
 }
 
 impl From<TimeEntry> for TimeEntryResponse {
@@ -131,7 +131,7 @@ impl From<TimeEntry> for TimeEntryResponse {
             start_time: entry.start_time,
             end_time: entry.end_time,
             week_number: entry.week_number,
-            attest_level: entry.attest_level,
+            status: entry.status,
         }
     }
 }
@@ -174,25 +174,21 @@ impl From<TimerHistoryEntry> for TimerHistoryEntryResponse {
     }
 }
 
-/// Time info response - period statistics.
+/// Weekly stats response.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TimeInfoResponse {
-    pub period_time_left: f64,
-    pub worked_period_time: f64,
-    pub scheduled_period_time: f64,
-    pub worked_period_with_absence_time: f64,
-    pub flex_time_current: f64,
+pub struct WeeklyStatsResponse {
+    pub worked_hours: f64,
+    pub scheduled_hours: f64,
+    pub remaining_hours: f64,
 }
 
-impl From<TimeInfo> for TimeInfoResponse {
-    fn from(info: TimeInfo) -> Self {
+impl From<WeeklyStats> for WeeklyStatsResponse {
+    fn from(info: WeeklyStats) -> Self {
         Self {
-            period_time_left: info.period_time_left,
-            worked_period_time: info.worked_period_time,
-            scheduled_period_time: info.scheduled_period_time,
-            worked_period_with_absence_time: info.worked_period_with_absence_time,
-            flex_time_current: info.flex_time_current,
+            worked_hours: info.worked_hours,
+            scheduled_hours: info.scheduled_hours,
+            remaining_hours: info.remaining_hours,
         }
     }
 }

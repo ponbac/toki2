@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
-  AttestLevel,
   TimeEntry,
   timeTrackingQueries,
 } from "@/lib/api/queries/time-tracking";
@@ -467,7 +466,7 @@ function DayColumn({
             dayContentWidthPx={dayContentWidthPx}
             color={colorMap.get(entry.projectName) || COLORS[0]}
             isWeekView={isWeekView}
-            isEditable={entry.attestLevel === AttestLevel.None}
+            isEditable={entry.status === "open"}
             onClick={() => onEntryClick(entry)}
           />
         ))}
@@ -704,7 +703,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
   }, [positionedByDay]);
 
   const handleEntryClick = (entry: TimelineLaidOutEntry) => {
-    if (entry.attestLevel !== AttestLevel.None) return;
+    if (entry.status !== "open") return;
     setEditingEntry(entry);
   };
 

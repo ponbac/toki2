@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 az-devops = { path = "../az-devops" }
-milltime = { path = "../milltime" }
+kleer = { path = "../kleer" }
 dotenvy.workspace = true
 itertools = "0.13.0"
 serde.workspace = true
@@ -43,8 +43,8 @@ sqlx = { version = "0.8.0", features = [
     "migrate",
 ] }
 axum-login = "0.16.0"
-thiserror = "1.0"
-oauth2 = "4.4.2"
+thiserror.workspace = true
+oauth2 = "5.0.0"
 reqwest = { workspace = true, features = ["json"] }
 async-trait = "0.1.77"
 crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }

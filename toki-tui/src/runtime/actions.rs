@@ -41,9 +41,6 @@ pub(super) async fn run_action(
     client: &mut ApiClient,
 ) -> Result<()> {
     match action {
-        Action::SubmitMilltimeReauth => {
-            handle_milltime_reauth_submit(app, client).await;
-        }
         Action::ApplyProjectSelection {
             had_edit_state,
             saved_selected_project,
@@ -145,17 +142,17 @@ pub(super) async fn handle_start_timer(app: &mut App, client: &mut ApiClient) ->
             let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
             let note = {
                 let full = app.full_note_value();
-                if full.is_empty() { None } else { Some(full) }
+                if full.is_empty() {
+                    None
+                } else {
+                    Some(full)
+                }
             };
             if let Err(e) = client
                 .start_timer(project_id, project_name, activity_id, activity_name, note)
                 .await
             {
-                if is_milltime_auth_error(&e) {
-                    app.open_milltime_reauth();
-                } else {
-                    app.set_status(format!("Error starting timer: {}", e));
-                }
+                app.set_status(format!("Error starting timer: {}", e));
                 return Ok(());
             }
             let auto_resize = app.auto_resize_timer;
@@ -320,14 +317,11 @@ async fn handle_apply_template(
     ensure_activities_for_project(app, client, &project.id).await;
 
     // Find activity by name (case-insensitive)
-    let activity = app
-        .activity_cache
-        .get(&project.id)
-        .and_then(|acts| {
-            acts.iter()
-                .find(|a| a.name.eq_ignore_ascii_case(&template.activity))
-                .cloned()
-        });
+    let activity = app.activity_cache.get(&project.id).and_then(|acts| {
+        acts.iter()
+            .find(|a| a.name.eq_ignore_ascii_case(&template.activity))
+            .cloned()
+    });
 
     if let Some(activity) = activity {
         app.selected_activity = Some(activity);
@@ -353,7 +347,14 @@ async fn handle_apply_template(
         let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
         let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
         if let Err(e) = client
-            .update_active_timer(project_id, project_name, activity_id, activity_name, Some(note), None)
+            .update_active_timer(
+                project_id,
+                project_name,
+                activity_id,
+                activity_name,
+                Some(note),
+                None,
+            )
             .await
         {
             app.set_status(format!("Warning: Could not sync template to server: {}", e));
@@ -406,14 +407,8 @@ async fn stop_server_timer_and_clear(app: &mut App, client: &mut ApiClient) {
 }
 
 async fn refresh_history_background(app: &mut App, client: &mut ApiClient) {
-    match fetch_recent_history(client).await {
-        Ok(entries) => {
-            apply_recent_history(app, entries);
-        }
-        Err(e) if is_milltime_auth_error(&e) => {
-            app.open_milltime_reauth();
-        }
-        Err(_) => {}
+    if let Ok(entries) = fetch_recent_history(client).await {
+        apply_recent_history(app, entries);
     }
 }
 
@@ -428,7 +423,11 @@ async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiCl
         let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
         let note = {
             let full = app.full_note_value();
-            if full.is_empty() { None } else { Some(full) }
+            if full.is_empty() {
+                None
+            } else {
+                Some(full)
+            }
         };
         if let Err(e) = client
             .update_active_timer(
@@ -441,9 +440,15 @@ async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiCl
             )
             .await
         {
-            app.set_status(format!("Warning: Could not sync copied entry to server: {}", e));
+            app.set_status(format!(
+                "Warning: Could not sync copied entry to server: {}",
+                e
+            ));
         } else {
-            app.set_status(format!("Copied: {}: {}", entry.project_name, entry.activity_name));
+            app.set_status(format!(
+                "Copied: {}: {}",
+                entry.project_name, entry.activity_name
+            ));
         }
         return;
     }
@@ -470,11 +475,7 @@ async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiCl
             ));
         }
         Err(e) => {
-            if is_milltime_auth_error(&e) {
-                app.open_milltime_reauth();
-            } else {
-                app.set_status(format!("Error resuming entry: {}", e));
-            }
+            app.set_status(format!("Error resuming entry: {}", e));
         }
     }
 }
@@ -492,7 +493,11 @@ pub(super) async fn handle_save_timer_with_action(
     let duration = app.elapsed_duration();
     let note = {
         let full = app.full_note_value();
-        if full.is_empty() { None } else { Some(full) }
+        if full.is_empty() {
+            None
+        } else {
+            Some(full)
+        }
     };
 
     let project_display = app.current_project_name();
@@ -505,7 +510,7 @@ pub(super) async fn handle_save_timer_with_action(
         activity_name: app.selected_activity.as_ref().map(|a| a.name.clone()),
     };
 
-    // Save the active timer to Milltime
+    // Save the active timer to the time tracking backend
     match client.save_timer(save_request).await {
         Ok(()) => {
             let hours = duration.as_secs() / 3600;
@@ -571,11 +576,7 @@ pub(super) async fn handle_save_timer_with_action(
             app.navigate_to(app::View::Timer);
         }
         Err(e) => {
-            if is_milltime_auth_error(&e) {
-                app.open_milltime_reauth();
-            } else {
-                app.set_status(format!("Error saving timer: {}", e));
-            }
+            app.set_status(format!("Error saving timer: {}", e));
             app.navigate_to(app::View::Timer);
         }
     }
@@ -666,11 +667,7 @@ pub(super) async fn handle_this_week_edit_save(
     };
     app.exit_this_week_edit_mode();
     if let Err(e) = handle_saved_entry_edit_save(state, app, client).await {
-        if is_milltime_auth_error(&e) {
-            app.open_milltime_reauth();
-        } else {
-            app.set_status(format!("Error saving entry: {}", e));
-        }
+        app.set_status(format!("Error saving entry: {}", e));
     }
     Ok(())
 }
@@ -776,11 +773,7 @@ pub(super) async fn handle_history_edit_save(app: &mut App, client: &mut ApiClie
     };
     app.exit_history_edit_mode();
     if let Err(e) = handle_saved_entry_edit_save(state, app, client).await {
-        if is_milltime_auth_error(&e) {
-            app.open_milltime_reauth();
-        } else {
-            app.set_status(format!("Error saving entry: {}", e));
-        }
+        app.set_status(format!("Error saving entry: {}", e));
     }
     Ok(())
 }
@@ -895,36 +888,6 @@ async fn handle_saved_entry_edit_save(
 
     app.set_status("Entry updated".to_string());
     Ok(())
-}
-
-/// Attempt Milltime re-authentication with the credentials from the overlay.
-/// On success: updates cookies and closes the overlay.
-/// On failure: sets the error message on the overlay so the user can retry.
-pub(super) async fn handle_milltime_reauth_submit(app: &mut App, client: &mut ApiClient) {
-    let (username, password) = match app.milltime_reauth_credentials() {
-        Some(creds) => creds,
-        None => return,
-    };
-    if username.is_empty() {
-        app.milltime_reauth_set_error("Username is required".to_string());
-        return;
-    }
-    match client.authenticate(&username, &password).await {
-        Ok(()) => {
-            app.close_milltime_reauth();
-            app.set_status("Milltime re-authenticated successfully".to_string());
-        }
-        Err(e) => {
-            app.milltime_reauth_set_error(format!("Authentication failed: {}", e));
-        }
-    }
-}
-
-/// Returns true when an error looks like a Milltime authentication failure.
-/// Used to decide whether to open the re-auth overlay.
-pub(super) fn is_milltime_auth_error(e: &anyhow::Error) -> bool {
-    let msg = e.to_string().to_lowercase();
-    msg.contains("unauthorized") || msg.contains("authenticate") || msg.contains("milltime")
 }
 
 /// Open an existing log file for a history/today entry.
@@ -1045,7 +1008,10 @@ mod tests {
         restore_active_timer(&mut app, timer);
 
         assert_eq!(app.timer_state, app::TimerState::Running);
-        assert_eq!(app.selected_project.as_ref().map(|p| p.id.as_str()), Some("proj-1"));
+        assert_eq!(
+            app.selected_project.as_ref().map(|p| p.id.as_str()),
+            Some("proj-1")
+        );
         assert_eq!(
             app.selected_activity.as_ref().map(|a| a.name.as_str()),
             Some("Activity One")
@@ -1092,7 +1058,11 @@ mod tests {
         let mut app = test_app();
         // Empty id → sets "No log linked to this entry"
         handle_open_entry_log_note("", &mut app).await;
-        assert!(app.status_message.as_deref().unwrap_or("").contains("No log"));
+        assert!(app
+            .status_message
+            .as_deref()
+            .unwrap_or("")
+            .contains("No log"));
     }
 
     #[tokio::test]
@@ -1100,7 +1070,11 @@ mod tests {
         let mut app = test_app();
         // Invalid id (non-hex) → log_path returns Err → sets "Log error: ..."
         handle_open_entry_log_note("ZZZZZZ", &mut app).await;
-        assert!(app.status_message.as_deref().unwrap_or("").contains("Log error"));
+        assert!(app
+            .status_message
+            .as_deref()
+            .unwrap_or("")
+            .contains("Log error"));
     }
 
     #[tokio::test]
@@ -1108,10 +1082,7 @@ mod tests {
         let mut app = test_app();
         // Valid hex id but file doesn't exist → sets "Log file not found"
         handle_open_entry_log_note("abcdef", &mut app).await;
-        assert_eq!(
-            app.status_message.as_deref(),
-            Some("Log file not found")
-        );
+        assert_eq!(app.status_message.as_deref(), Some("Log file not found"));
     }
 
     #[tokio::test]

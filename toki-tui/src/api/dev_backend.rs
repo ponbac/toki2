@@ -49,7 +49,7 @@ impl DevBackend {
                 start_time: Some(e.start_time),
                 end_time: e.end_time,
                 week_number: e.start_time.iso_week(),
-                attest_level: Default::default(),
+                status: Default::default(),
             })
             .collect()
     }
@@ -124,11 +124,7 @@ impl DevBackend {
 
     pub fn time_info(&self) -> crate::types::TimeInfo {
         crate::types::TimeInfo {
-            period_time_left: 6.0,
-            worked_period_time: 26.0,
-            scheduled_period_time: 32.0,
-            worked_period_with_absence_time: 26.0,
-            flex_time_current: 1.5,
+            scheduled_hours: 32.0,
         }
     }
 }

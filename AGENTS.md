@@ -2,12 +2,12 @@
 
 Toki2 is a **provider-agnostic** time tracking and development workflow platform:
 
-- Track work time via pluggable time tracking providers (currently: Milltime)
+- Track work time via pluggable time tracking providers (currently: Kleer)
 - Monitor pull requests across pluggable SCM providers (currently: Azure DevOps)
 - Real-time notifications for PR activity (comments, closures, mentions)
 - Generate time entry notes from work items linked to PRs
 
-**Design goal:** The system is designed to support multiple time tracking backends (not just Milltime) and multiple PR/issue providers (not just Azure DevOps). All new backend features should be built with this provider-agnosticism in mind.
+**Design goal:** The system is designed to support multiple time tracking backends (not just Kleer) and multiple PR/issue providers (not just Azure DevOps). All new backend features should be built with this provider-agnosticism in mind.
 
 ## Tech Stack
 
@@ -19,9 +19,13 @@ Toki2 is a **provider-agnostic** time tracking and development workflow platform
 ```
 toki-api/       # Main Axum backend
 az-devops/      # Azure DevOps API wrapper crate
-milltime/       # Milltime API client crate (reverse-engineered, no official docs)
+kleer/          # Kleer API client crate
 app/            # React frontend
 ```
+
+## Kleer Notes
+
+Read `.docs/kleer.md` before Kleer-specific changes. It contains durable Kleer API URLs, service-account configuration, mapping rules, status/stat semantics, and implementation touchpoints.
 
 ## Version Control
 
@@ -31,7 +35,7 @@ app/            # React frontend
 
 **Hexagonal architecture (ports & adapters)** is the target pattern for all backend domain logic. When adding or modifying backend features:
 
-1. **Domain logic must not depend on specific providers.** Business logic lives in `domain/services/` and depends only on traits defined in `domain/ports/`. Never import `az_devops::*` or `milltime::*` from domain code.
+1. **Domain logic must not depend on specific providers.** Business logic lives in `domain/services/` and depends only on traits defined in `domain/ports/`. Never import `az_devops::*` or `kleer::*` from domain code.
 2. **Define ports (traits) for external interactions.** Inbound ports in `domain/ports/inbound/` define use cases. Outbound ports in `domain/ports/outbound/` define what the domain needs from external systems.
 3. **Adapters implement ports.** Provider-specific code lives in `adapters/outbound/{provider}/`. HTTP handlers live in `adapters/inbound/http/`.
 4. **Prefer extending existing traits** over creating provider-specific shortcuts. If a new capability is needed, add it to the relevant port trait and implement it in the adapter.
@@ -40,8 +44,8 @@ app/            # React frontend
 
 | Domain | Status | Notes |
 |--------|--------|-------|
-| **Time tracking** | Fully hexagonal | `TimeTrackingClient` + `TimeTrackingService` ports, `MilltimeAdapter` |
-| **Work items** | Partial | `WorkItemProvider` outbound port exists, missing inbound service trait |
+| **Time tracking** | Fully hexagonal | `TimeTrackingClient` + `TimeTrackingService` ports, `KleerAdapter` |
+| **Work items** | Fully hexagonal | `WorkItemProvider` + `WorkItemService` ports, `AzureDevOpsWorkItemAdapter` |
 | **Pull requests** | Not abstracted | `RepoDiffer` directly uses `az_devops::RepoClient` — needs refactoring |
 | **Notifications** | Not abstracted | Coupled to PR change events |
 
@@ -70,9 +74,9 @@ toki-api/src/
 │   ├── services/         # TimeTrackingServiceImpl (business logic)
 │   └── error.rs          # TimeTrackingError
 └── adapters/
-    ├── inbound/http/     # TimeTrackingServiceExt, HTTP response types
+    ├── inbound/http/     # TimeTrackingServiceFactory, HTTP response types
     └── outbound/
-        ├── milltime/     # MilltimeAdapter (implements TimeTrackingClient)
+        ├── kleer/        # KleerAdapter (implements TimeTrackingClient)
         └── postgres/     # PostgresTimerHistoryAdapter (implements TimerHistoryRepository)
 ```
 
@@ -80,9 +84,9 @@ toki-api/src/
 - `TimeTrackingClient` (outbound): Interface for time tracking providers (timer, projects, calendar)
 - `TimerHistoryRepository` (outbound): Interface for local timer history storage
 - `TimeTrackingService` (inbound): Use cases for HTTP handlers
-- `TimeTrackingServiceExt`: Creates service instances from HTTP cookies
+- `TimeTrackingServiceFactory`: Creates service instances for authenticated Toki users
 
-**Per-request service creation:** The service is created per-request from cookies (not stored in AppState) because credentials are user-specific. The service merges provider data with local timer history for accurate start/end times.
+**Per-request service creation:** The service is created per request from the authenticated Toki user and the local Kleer mapping. Kleer credentials are server-side service-account config, not browser cookies or frontend state. The service merges provider data with local timer history for accurate start/end times.
 
 ### Frontend
 
@@ -120,8 +124,8 @@ SQLX_OFFLINE=true just check
 
 ## Important Notes
 
-1. **Provider-agnostic by default** - New backend features should use ports/adapters, not couple directly to Milltime or Azure DevOps
-2. **Milltime API is unofficial** - reverse-engineered, no documentation
+1. **Provider-agnostic by default** - New backend features should use ports/adapters, not couple directly to Kleer or Azure DevOps
+2. **Kleer integration uses a service account** - normal users must be locally mapped to Kleer users; read `.docs/kleer.md` for Kleer-specific changes
 3. **Minimal test coverage** - be careful with changes
 4. **Coordinated changes** - Backend API changes typically require frontend updates
 5. **Route generation** - Don't edit `routeTree.gen.ts` manually
@@ -130,4 +134,4 @@ SQLX_OFFLINE=true just check
 ## Configuration
 
 Backend config: `toki-api/config/{base,local,production}.yaml` + `TOKI_*` env vars
-Required secrets: Azure AD OAuth credentials, `MT_CRYPTO_KEY` for Milltime password encryption
+Required secrets: Azure AD OAuth credentials, Kleer integration token and company id

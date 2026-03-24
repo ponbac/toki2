@@ -30,8 +30,8 @@ pub async fn open_editor(path: &Path) -> Result<()> {
 
     // Re-enter TUI — always attempt restoration even if the editor failed.
     // If restoration itself fails, combine with any prior editor error.
-    let restore_res = enable_raw_mode()
-        .and_then(|_| execute!(std::io::stdout(), EnterAlternateScreen));
+    let restore_res =
+        enable_raw_mode().and_then(|_| execute!(std::io::stdout(), EnterAlternateScreen));
 
     // Prefer the original editor error; surface restoration error only if no prior error.
     let status = match (status_res, restore_res) {

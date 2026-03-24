@@ -37,10 +37,6 @@ pub fn session_path() -> Result<PathBuf> {
     Ok(root_path()?.join("session"))
 }
 
-pub fn mt_cookies_path() -> Result<PathBuf> {
-    Ok(root_path()?.join("mt_cookies"))
-}
-
 pub fn load_session() -> Result<Option<String>> {
     let path = session_path()?;
     if !path.exists() {
@@ -62,46 +58,6 @@ pub fn save_session(session_id: &str) -> Result<()> {
 
 pub fn clear_session() -> Result<()> {
     let path = session_path()?;
-    if path.exists() {
-        std::fs::remove_file(path)?;
-    }
-    Ok(())
-}
-
-pub fn load_mt_cookies() -> Result<Vec<(String, String)>> {
-    let path = mt_cookies_path()?;
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-
-    let raw = std::fs::read_to_string(path).context("Failed to read mt_cookies")?;
-    Ok(raw
-        .lines()
-        .filter_map(|line| {
-            let mut parts = line.splitn(2, '=');
-            let name = parts.next()?.trim().to_string();
-            let value = parts.next()?.trim().to_string();
-            if name.is_empty() {
-                None
-            } else {
-                Some((name, value))
-            }
-        })
-        .collect())
-}
-
-pub fn save_mt_cookies(cookies: &[(String, String)]) -> Result<()> {
-    let path = mt_cookies_path()?;
-    let content = cookies
-        .iter()
-        .map(|(name, value)| format!("{}={}", name, value))
-        .collect::<Vec<_>>()
-        .join("\n");
-    secure_write(path.as_path(), &content)
-}
-
-pub fn clear_mt_cookies() -> Result<()> {
-    let path = mt_cookies_path()?;
     if path.exists() {
         std::fs::remove_file(path)?;
     }

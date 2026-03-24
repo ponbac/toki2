@@ -486,9 +486,6 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &mut App) {
     };
 
     let worked = app.worked_hours_this_week();
-    // Use Milltime's total accumulated flex, adjusted live for the running timer
-    let timer_elapsed_hours = app.elapsed_duration().as_secs_f64() / 3600.0;
-    let flex = app.flex_time_current + timer_elapsed_hours;
     let percent_f = app.weekly_hours_percent();
 
     // Format strings
@@ -518,25 +515,16 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &mut App) {
     ]);
     let stats_width = stats_text.width() as u16;
 
-    // Format flex label
-    let flex_abs = flex.abs();
-    let flex_h = flex_abs.floor() as u64;
-    let flex_m = ((flex_abs - flex_h as f64) * 60.0).round() as u64;
-    let flex_sign = if flex >= 0.0 { " +" } else { " -" };
-    let flex_str = format!("{}{}h:{:02}m ", flex_sign, flex_h, flex_m);
-
-    // Column widths — throbber (1 char) + " Toki Timer TUI"
+    // Column widths: throbber (1 char) + " Toki Timer TUI"
     const LABEL: &str = " Toki Timer TUI";
     let title_width = 1 + LABEL.len() as u16 + 1; // leading space + symbol + label
-    let flex_col_width = 3 + "Flex:".len() as u16 + flex_str.len() as u16; // " | " + "Flex:" + value
 
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(title_width),    // App title
-            Constraint::Min(10),                // LineGauge (stretches)
-            Constraint::Length(stats_width),    // "This week / Remaining" labels
-            Constraint::Length(flex_col_width), // " | " + Flex value
+            Constraint::Length(title_width), // App title
+            Constraint::Min(10),             // LineGauge (stretches)
+            Constraint::Length(stats_width), // "This week / Remaining" labels
         ])
         .split(area);
 
@@ -567,7 +555,7 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &mut App) {
         Paragraph::new(Span::styled(LABEL, Style::default().fg(Color::Yellow))),
         label_area,
     );
-    let (gauge_col, stats_col, flex_col) = (cols[1], cols[2], cols[3]);
+    let (gauge_col, stats_col) = (cols[1], cols[2]);
 
     // --- LineGauge (no default label) ---
     let ratio = (percent_f / 100.0).clamp(0.0, 1.0);
@@ -582,17 +570,4 @@ pub fn render_compact_stats(frame: &mut Frame, area: Rect, app: &mut App) {
 
     // --- Stats labels (right of gauge) ---
     frame.render_widget(Paragraph::new(stats_text), stats_col);
-
-    // --- Flex (separator + colored value) ---
-    let flex_color = if flex >= 0.0 {
-        Style::default().fg(Color::Green)
-    } else {
-        Style::default().fg(Color::Red)
-    };
-    let flex_line = Line::from(vec![
-        Span::styled(" | ", muted),
-        Span::styled("Flex:", yellow),
-        Span::styled(flex_str, flex_color),
-    ]);
-    frame.render_widget(Paragraph::new(flex_line), flex_col);
 }

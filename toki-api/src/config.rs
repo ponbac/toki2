@@ -10,6 +10,7 @@ pub struct Settings {
     pub application: ApplicationSettings,
     pub database: DatabaseSettings,
     pub auth: AuthSettings,
+    pub kleer: KleerSettings,
 }
 
 #[serde_as]
@@ -20,7 +21,6 @@ pub struct ApplicationSettings {
     pub host: String,
     pub app_url: String,
     pub api_url: String,
-    pub cookie_domain: String,
     pub disable_auth: bool,
     #[serde(default)]
     pub cors_allowed_origin_suffix: Option<String>,
@@ -45,6 +45,42 @@ pub struct AuthSettings {
     pub auth_url: String,
     pub token_url: String,
     pub redirect_url: String,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct KleerSettings {
+    pub token: Option<String>,
+    pub company_id: Option<String>,
+    #[serde(default = "default_kleer_base_url")]
+    pub base_url: String,
+}
+
+impl KleerSettings {
+    pub fn credentials(&self) -> Result<kleer::KleerCredentials, String> {
+        let token = self
+            .token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "missing Kleer integration token".to_string())?;
+        let company_id = self
+            .company_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "missing Kleer company id".to_string())?;
+        let base_url = self.base_url.trim();
+
+        Ok(kleer::KleerCredentials::new(
+            token,
+            company_id,
+            Some(base_url),
+        ))
+    }
+}
+
+fn default_kleer_base_url() -> String {
+    kleer::DEFAULT_BASE_URL.to_string()
 }
 
 impl DatabaseSettings {

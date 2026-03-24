@@ -1,4 +1,3 @@
-import { useTimeTrackingStore } from "@/hooks/useTimeTrackingStore";
 import ky from "ky";
 
 export const API_URL =
@@ -12,14 +11,8 @@ export const api = ky.create({
   retry: 0,
   hooks: {
     afterResponse: [
-      async (_, __, response) => {
+      (_, __, response) => {
         if (response.status === 401) {
-          const body = await response.clone().json().catch(() => null);
-          if (body?.code === "TIME_TRACKING_AUTHENTICATION_FAILED") {
-            useTimeTrackingStore.getState().actions.setIsAuthenticated(false);
-            return response;
-          }
-
           window.location.replace(`/login?next=${window.location.pathname}`);
         }
 

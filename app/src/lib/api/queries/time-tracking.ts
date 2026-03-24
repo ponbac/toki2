@@ -9,6 +9,14 @@ export const timeTrackingQueries = {
       queryFn: async () =>
         api.get("time-tracking/projects").json<Array<Project>>(),
     }),
+  connectionStatus: () =>
+    queryOptions({
+      queryKey: ["time-tracking", "connection"],
+      queryFn: async () =>
+        api
+          .get("time-tracking/connection")
+          .json<TimeTrackingConnectionStatus>(),
+    }),
   listActivities: (projectId: string) =>
     queryOptions({
       queryKey: ["time-tracking", "activities", projectId],
@@ -41,7 +49,7 @@ export const timeTrackingQueries = {
               to: dayjs().endOf("month").format("YYYY-MM-DD"),
             },
           })
-          .json<TimeInfo>();
+          .json<WeeklyStats>();
       },
     }),
   timeEntries: (query?: { from: string; to: string; unique?: boolean }) =>
@@ -64,10 +72,25 @@ export const timeTrackingQueries = {
           .json<Array<TimeEntry>>();
       },
     }),
+  adminMappings: () =>
+    queryOptions({
+      queryKey: ["time-tracking", "admin", "kleer-users"],
+      queryFn: async () =>
+        api
+          .get("time-tracking/admin/kleer-users")
+          .json<TimeTrackingAdminMappings>(),
+    }),
 };
 
 export type GetTimerResponse = {
   timer: TimerResponse | null;
+};
+
+export type TimeTrackingConnectionStatus = {
+  connected: boolean;
+  providerUserId: string | null;
+  providerUserEmail: string | null;
+  providerUserName: string | null;
 };
 
 /** Active timer response. */
@@ -98,12 +121,10 @@ export type TimerHistoryEntry = {
   createdAt: string;
 };
 
-export type TimeInfo = {
-  periodTimeLeft: number;
-  workedPeriodTime: number;
-  scheduledPeriodTime: number;
-  workedPeriodWithAbsenceTime: number;
-  flexTimeCurrent: number;
+export type WeeklyStats = {
+  workedHours: number;
+  scheduledHours: number;
+  remainingHours: number;
 };
 
 export type Project = {
@@ -128,11 +149,41 @@ export type TimeEntry = {
   startTime: string | null;
   endTime: string | null;
   weekNumber: number;
-  attestLevel: AttestLevel;
+  status: TimeEntryStatus;
 };
 
-export enum AttestLevel {
-  None = 0,
-  Week = 1,
-  Month = 2,
-}
+export type TimeEntryStatus = "open" | "approved" | "certified";
+
+export type TimeTrackingAdminMappings = {
+  users: Array<TimeTrackingAdminUser>;
+  kleerUsers: Array<TimeTrackingAdminKleerUser>;
+  links: Array<TimeTrackingAdminUserLink>;
+};
+
+export type TimeTrackingAdminUser = {
+  id: number;
+  email: string;
+  fullName: string;
+};
+
+export type TimeTrackingAdminKleerUser = {
+  providerUserId: string;
+  foreignId: string | null;
+  internalId: string | null;
+  name: string;
+  email: string | null;
+  active: boolean;
+  mappedUserId: number | null;
+  mappedUserEmail: string | null;
+  mappedUserName: string | null;
+  lastSyncedAt: string;
+};
+
+export type TimeTrackingAdminUserLink = {
+  id: number;
+  userId: number;
+  providerUserId: string;
+  providerUserEmail: string | null;
+  providerUserName: string | null;
+  updatedAt: string;
+};

@@ -14,8 +14,8 @@ mod state;
 pub use history::parse_date_str;
 pub use state::{
     DailyProjectStat, DayStat, DeleteContext, DeleteOrigin, EntryEditField, EntryEditState,
-    FocusedBox, GitContext, MilltimeReauthField, MilltimeReauthState, ProjectStat, SaveAction,
-    TaskEntry, TaskwarriorOverlay, TextInput, TimerSize, TimerState, View,
+    FocusedBox, GitContext, ProjectStat, SaveAction, TaskEntry, TaskwarriorOverlay, TextInput,
+    TimerSize, TimerState, View,
 };
 
 pub struct App {
@@ -93,11 +93,8 @@ pub struct App {
     pub is_loading: bool,
     pub throbber_state: throbber_widgets_tui::ThrobberState,
 
-    // Scheduled hours per week from Milltime (defaults to 40.0 until fetched)
+    // Scheduled hours per week from the time tracking backend (defaults to 40.0 until fetched)
     pub scheduled_hours_per_week: f64,
-
-    /// Total accumulated flex time from Milltime (0.0 until fetched at startup)
-    pub flex_time_current: f64,
 
     // Activity cache: project_id -> fetched activities
     pub activity_cache: HashMap<String, Vec<Activity>>,
@@ -105,9 +102,6 @@ pub struct App {
     // Statistics cache — computed once per history update, used every render frame
     pub weekly_stats_cache: Vec<ProjectStat>,
     pub weekly_daily_stats_cache: Vec<DayStat>,
-
-    // Milltime re-auth overlay — shown when Milltime cookies expire mid-session
-    pub milltime_reauth: Option<MilltimeReauthState>,
 
     // Config values used at runtime
     pub task_filter: String,
@@ -190,11 +184,9 @@ impl App {
             is_loading: false,
             throbber_state: throbber_widgets_tui::ThrobberState::default(),
             scheduled_hours_per_week: 40.0,
-            flex_time_current: 0.0,
             activity_cache: HashMap::new(),
             weekly_stats_cache: Vec::new(),
             weekly_daily_stats_cache: Vec::new(),
-            milltime_reauth: None,
             task_filter: cfg.task_filter.clone(),
             git_default_prefix: cfg.git_default_prefix.clone(),
             auto_resize_timer: cfg.auto_resize_timer,
@@ -475,23 +467,17 @@ impl App {
     /// Select next item in current list
     pub fn select_next(&mut self) {
         match self.current_view {
-            View::SelectProject => {
-                if !self.filtered_projects.is_empty() {
-                    self.filtered_project_index =
-                        (self.filtered_project_index + 1) % self.filtered_projects.len();
-                }
+            View::SelectProject if !self.filtered_projects.is_empty() => {
+                self.filtered_project_index =
+                    (self.filtered_project_index + 1) % self.filtered_projects.len();
             }
-            View::SelectActivity => {
-                if !self.filtered_activities.is_empty() {
-                    self.filtered_activity_index =
-                        (self.filtered_activity_index + 1) % self.filtered_activities.len();
-                }
+            View::SelectActivity if !self.filtered_activities.is_empty() => {
+                self.filtered_activity_index =
+                    (self.filtered_activity_index + 1) % self.filtered_activities.len();
             }
-            View::SelectTemplate => {
-                if !self.filtered_templates.is_empty() {
-                    self.filtered_template_index =
-                        (self.filtered_template_index + 1) % self.filtered_templates.len();
-                }
+            View::SelectTemplate if !self.filtered_templates.is_empty() => {
+                self.filtered_template_index =
+                    (self.filtered_template_index + 1) % self.filtered_templates.len();
             }
             View::History => {
                 self.history_focus_down();
@@ -503,32 +489,26 @@ impl App {
     /// Select previous item in current list
     pub fn select_previous(&mut self) {
         match self.current_view {
-            View::SelectProject => {
-                if !self.filtered_projects.is_empty() {
-                    self.filtered_project_index = if self.filtered_project_index == 0 {
-                        self.filtered_projects.len() - 1
-                    } else {
-                        self.filtered_project_index - 1
-                    };
-                }
+            View::SelectProject if !self.filtered_projects.is_empty() => {
+                self.filtered_project_index = if self.filtered_project_index == 0 {
+                    self.filtered_projects.len() - 1
+                } else {
+                    self.filtered_project_index - 1
+                };
             }
-            View::SelectActivity => {
-                if !self.filtered_activities.is_empty() {
-                    self.filtered_activity_index = if self.filtered_activity_index == 0 {
-                        self.filtered_activities.len() - 1
-                    } else {
-                        self.filtered_activity_index - 1
-                    };
-                }
+            View::SelectActivity if !self.filtered_activities.is_empty() => {
+                self.filtered_activity_index = if self.filtered_activity_index == 0 {
+                    self.filtered_activities.len() - 1
+                } else {
+                    self.filtered_activity_index - 1
+                };
             }
-            View::SelectTemplate => {
-                if !self.filtered_templates.is_empty() {
-                    self.filtered_template_index = if self.filtered_template_index == 0 {
-                        self.filtered_templates.len() - 1
-                    } else {
-                        self.filtered_template_index - 1
-                    };
-                }
+            View::SelectTemplate if !self.filtered_templates.is_empty() => {
+                self.filtered_template_index = if self.filtered_template_index == 0 {
+                    self.filtered_templates.len() - 1
+                } else {
+                    self.filtered_template_index - 1
+                };
             }
             View::History => {
                 self.history_focus_up();
@@ -760,7 +740,7 @@ impl App {
             })
             .collect();
 
-        scored_projects.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_projects.sort_by_key(|project| std::cmp::Reverse(project.1));
         self.filtered_projects = scored_projects.into_iter().map(|(p, _)| p).collect();
         self.filtered_project_index = 0;
     }
@@ -819,7 +799,7 @@ impl App {
             })
             .collect();
 
-        scored_activities.sort_by(|a, b| b.1.cmp(&a.1));
+        scored_activities.sort_by_key(|activity| std::cmp::Reverse(activity.1));
         self.filtered_activities = scored_activities.into_iter().map(|(a, _)| a).collect();
         self.filtered_activity_index = 0;
     }
@@ -844,7 +824,7 @@ impl App {
                         .map(|score| (score, t.clone()))
                 })
                 .collect();
-            scored.sort_by(|a, b| b.0.cmp(&a.0));
+            scored.sort_by_key(|template| std::cmp::Reverse(template.0));
             self.filtered_templates = scored.into_iter().map(|(_, t)| t).collect();
         }
         self.filtered_template_index = 0;
@@ -1055,57 +1035,6 @@ impl App {
             self.cwd_input = Some(input);
             Err(format!("Not a directory: {}", path.display()))
         }
-    }
-
-    pub fn open_milltime_reauth(&mut self) {
-        self.milltime_reauth = Some(MilltimeReauthState::default());
-    }
-
-    pub fn close_milltime_reauth(&mut self) {
-        self.milltime_reauth = None;
-    }
-
-    pub fn milltime_reauth_input_char(&mut self, c: char) {
-        if let Some(state) = &mut self.milltime_reauth {
-            match state.focused_field {
-                MilltimeReauthField::Username => state.username_input.insert(c),
-                MilltimeReauthField::Password => state.password_input.insert(c),
-            }
-        }
-    }
-
-    pub fn milltime_reauth_backspace(&mut self) {
-        if let Some(state) = &mut self.milltime_reauth {
-            match state.focused_field {
-                MilltimeReauthField::Username => state.username_input.backspace(),
-                MilltimeReauthField::Password => state.password_input.backspace(),
-            }
-        }
-    }
-
-    pub fn milltime_reauth_next_field(&mut self) {
-        if let Some(state) = &mut self.milltime_reauth {
-            state.focused_field = match state.focused_field {
-                MilltimeReauthField::Username => MilltimeReauthField::Password,
-                MilltimeReauthField::Password => MilltimeReauthField::Username,
-            };
-        }
-    }
-
-    pub fn milltime_reauth_set_error(&mut self, err: String) {
-        if let Some(state) = &mut self.milltime_reauth {
-            state.error = Some(err);
-        }
-    }
-
-    /// Returns (username, password) for the re-auth overlay, if present.
-    pub fn milltime_reauth_credentials(&self) -> Option<(String, String)> {
-        self.milltime_reauth.as_ref().map(|s| {
-            (
-                s.username_input.value.clone(),
-                s.password_input.value.clone(),
-            )
-        })
     }
 
     pub fn cwd_tab_complete(&mut self) {

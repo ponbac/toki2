@@ -1,0 +1,12 @@
+[package]
+name = "kleer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+reqwest = { workspace = true, features = ["json"] }
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tracing.workspace = true
+thiserror.workspace = true

@@ -67,6 +67,24 @@ dev:
     (cd app && bun dev) &
     wait
 
+# Run both backend and frontend against the Kleer test environment
+dev-sandbox:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -f toki-api/.env.local ]]; then
+        set -a
+        source toki-api/.env.local
+        set +a
+    fi
+    : "${TOKI_KLEER__SANDBOX_TOKEN:?Set TOKI_KLEER__SANDBOX_TOKEN in toki-api/.env.local}"
+    export TOKI_KLEER__TOKEN="$TOKI_KLEER__SANDBOX_TOKEN"
+    export TOKI_KLEER__COMPANY_ID="${TOKI_KLEER__COMPANY_ID:-4875}"
+    export TOKI_KLEER__BASE_URL="${TOKI_KLEER__BASE_URL:-https://test-api.kleer.se/v1}"
+    trap 'kill 0' EXIT
+    (cd toki-api && cargo run) &
+    (cd app && bun dev) &
+    wait
+
 # Verify all code compiles/passes checks
 check-all: check clippy tsc lint
 
@@ -100,7 +118,7 @@ tui-config:
 tui-version:
     cd toki-tui && cargo run -- version
 
-# Show toki-tui session and Milltime status
+# Show toki-tui session status
 tui-status:
     cd toki-tui && cargo run -- status
 

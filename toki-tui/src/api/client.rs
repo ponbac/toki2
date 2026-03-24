@@ -1,18 +1,14 @@
 use anyhow::{Context, Result};
-use reqwest::{
-    cookie::{CookieStore, Jar},
-    Client, RequestBuilder, Response, StatusCode, Url,
-};
+use reqwest::{cookie::Jar, Client, RequestBuilder, Response, StatusCode, Url};
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 
 use crate::api::dev_backend::DevBackend;
 use crate::api::dto::{
-    ActivityDto, AuthenticateRequest, DeleteEntryRequest, EditEntryRequest, ProjectDto,
-    StartTimerRequest, UpdateActiveTimerRequest,
+    ActivityDto, DeleteEntryRequest, EditEntryRequest, ProjectDto, StartTimerRequest,
+    UpdateActiveTimerRequest,
 };
 use crate::api::SaveTimerRequest;
-use crate::session_store;
 use crate::types::{
     ActiveTimerState, Activity, GetTimerResponse, Me, Project, TimeEntry, TimeInfo,
 };
@@ -21,23 +17,16 @@ const SESSION_COOKIE: &str = "id";
 const UNAUTH_INVALID_SESSION: &str =
     "Session expired or invalid. Run `toki-tui login` to authenticate.";
 const UNAUTH_RELOGIN: &str = "Session expired. Run `toki-tui login` to re-authenticate.";
-const UNAUTH_INVALID_MILLTIME_CREDENTIALS: &str = "Invalid Milltime credentials.";
 
 #[derive(Debug, Clone)]
 pub struct ApiClient {
     client: Client,
     base_url: Url,
-    jar: Arc<Jar>,
-    mt_cookies: Vec<(String, String)>,
     dev_backend: Option<DevBackend>,
 }
 
 impl ApiClient {
-    pub fn new(
-        base_url: &str,
-        session_id: &str,
-        mt_cookies: Vec<(String, String)>,
-    ) -> Result<Self> {
+    pub fn new(base_url: &str, session_id: &str) -> Result<Self> {
         let base_url = Url::parse(base_url.trim_end_matches('/'))
             .with_context(|| format!("Invalid API URL: {}", base_url))?;
         let jar = Arc::new(Jar::default());
@@ -46,9 +35,6 @@ impl ApiClient {
             &format!("{}={}; Path=/", SESSION_COOKIE, session_id),
             &base_url,
         );
-        for (name, value) in &mt_cookies {
-            jar.add_cookie_str(&format!("{}={}; Path=/", name, value), &base_url);
-        }
 
         let client = Client::builder()
             .cookie_provider(jar.clone())
@@ -58,8 +44,6 @@ impl ApiClient {
         Ok(Self {
             client,
             base_url,
-            jar,
-            mt_cookies,
             dev_backend: None,
         })
     }
@@ -75,8 +59,6 @@ impl ApiClient {
         Ok(Self {
             client,
             base_url,
-            jar,
-            mt_cookies: vec![],
             dev_backend: Some(DevBackend::new()),
         })
     }
@@ -85,44 +67,6 @@ impl ApiClient {
         self.base_url
             .join(path)
             .with_context(|| format!("Failed to build URL for path {}", path))
-    }
-
-    fn sync_mt_cookies_from_jar(&mut self) -> Result<()> {
-        let Some(header_value) = self.jar.cookies(&self.base_url) else {
-            return Ok(());
-        };
-
-        let header = header_value
-            .to_str()
-            .context("Invalid cookie header from cookie jar")?;
-
-        let mut cookies = header
-            .split(';')
-            .filter_map(|segment| {
-                let pair = segment.trim();
-                if pair.is_empty() {
-                    return None;
-                }
-
-                let mut parts = pair.splitn(2, '=');
-                let name = parts.next()?.trim();
-                let value = parts.next()?.trim();
-                if name.is_empty() || name == SESSION_COOKIE {
-                    return None;
-                }
-
-                Some((name.to_string(), value.to_string()))
-            })
-            .collect::<Vec<_>>();
-
-        cookies.sort_by(|a, b| a.0.cmp(&b.0));
-
-        if cookies != self.mt_cookies {
-            self.mt_cookies = cookies;
-            session_store::save_mt_cookies(&self.mt_cookies)?;
-        }
-
-        Ok(())
     }
 
     async fn send(
@@ -147,7 +91,6 @@ impl ApiClient {
             .error_for_status_ref()
             .with_context(|| format!("{} returned error", call_name))?;
 
-        self.sync_mt_cookies_from_jar()?;
         Ok(response)
     }
 
@@ -424,25 +367,6 @@ impl ApiClient {
             UNAUTH_RELOGIN,
         )
         .await
-    }
-
-    pub async fn authenticate(&mut self, username: &str, password: &str) -> Result<()> {
-        if self.dev_backend.is_some() {
-            return Ok(());
-        }
-
-        self.send_without_body(
-            self.client
-                .post(self.endpoint("/time-tracking/authenticate")?)
-                .json(&AuthenticateRequest { username, password }),
-            "POST /time-tracking/authenticate",
-            UNAUTH_INVALID_MILLTIME_CREDENTIALS,
-        )
-        .await
-    }
-
-    pub fn mt_cookies(&self) -> &[(String, String)] {
-        &self.mt_cookies
     }
 
     pub async fn get_projects(&mut self) -> Result<Vec<Project>> {

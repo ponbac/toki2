@@ -2,12 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { formatHoursMinutes } from "@/lib/utils";
 import { endOfWeek, format, startOfWeek } from "date-fns";
-import {
-  CalendarClockIcon,
-  PiggyBankIcon,
-  TrendingUp,
-  Sparkles,
-} from "lucide-react";
+import { CalendarClockIcon, ClockIcon, TrendingUp, Sparkles } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -27,13 +22,13 @@ export const TimeStats = () => {
     staleTime: 5 * 60 * 1000,
   });
 
-  const workedHours = timeInfo ? timeInfo.workedPeriodTime : 0;
-  const scheduledHours = timeInfo ? timeInfo.scheduledPeriodTime : 40;
+  const workedHours = timeInfo ? timeInfo.workedHours : 0;
+  const scheduledHours = timeInfo ? timeInfo.scheduledHours : 40;
+  const remainingHours = timeInfo ? timeInfo.remainingHours : 0;
   const percentageCompleted =
-    timeInfo && timeInfo.scheduledPeriodTime > 0
-      ? (timeInfo.workedPeriodTime / timeInfo.scheduledPeriodTime) * 100
+    timeInfo && timeInfo.scheduledHours > 0
+      ? (timeInfo.workedHours / timeInfo.scheduledHours) * 100
       : 0;
-  const flexTime = timeInfo?.flexTimeCurrent ?? 0;
   const isAhead = percentageCompleted >= 100;
 
   return (
@@ -108,7 +103,7 @@ export const TimeStats = () => {
                 </div>
                 <p className="time-display text-xl font-semibold">
                   {formatHoursMinutes(
-                    Math.max(0, timeInfo?.periodTimeLeft ?? 0),
+                    Math.max(0, remainingHours),
                   )}
                 </p>
               </div>
@@ -120,22 +115,17 @@ export const TimeStats = () => {
             <TooltipTrigger asChild>
               <div className="group cursor-default rounded-xl bg-muted/30 p-4 transition-colors hover:bg-muted/50">
                 <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-                  <PiggyBankIcon className="h-4 w-4" />
+                  <ClockIcon className="h-4 w-4" />
                   <span className="text-xs font-medium uppercase tracking-wider">
-                    Flex
+                    Scheduled
                   </span>
                 </div>
-                <p
-                  className={`time-display text-xl font-semibold ${
-                    flexTime >= 0 ? "text-emerald-500" : "text-amber-500"
-                  }`}
-                >
-                  {flexTime >= 0 ? "+" : ""}
-                  {formatHoursMinutes(flexTime)}
+                <p className="time-display text-xl font-semibold">
+                  {formatHoursMinutes(scheduledHours)}
                 </p>
               </div>
             </TooltipTrigger>
-            <TooltipContent>Total flex time</TooltipContent>
+            <TooltipContent>Scheduled hours this week</TooltipContent>
           </Tooltip>
         </div>
       </div>

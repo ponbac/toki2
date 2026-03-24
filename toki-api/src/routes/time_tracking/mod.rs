@@ -1,20 +1,20 @@
-mod authenticate;
+mod admin;
 mod calendar;
+mod connection;
 mod projects;
 mod timer;
 
 use axum::{
-    routing::{get, post, put},
+    routing::{get, put},
     Router,
 };
-use axum_extra::extract::CookieJar;
 
-use super::ApiError;
 use crate::app_state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/authenticate", post(authenticate::authenticate))
+        .nest("/admin", admin::router())
+        .route("/connection", get(connection::connection_status))
         .route("/projects", get(projects::list_projects))
         .route(
             "/projects/:project_id/activities",
@@ -38,5 +38,3 @@ pub fn router() -> Router<AppState> {
         )
         .route("/update-timer", put(timer::edit_timer))
 }
-
-type CookieJarResult<T> = Result<(CookieJar, T), ApiError>;

@@ -16,6 +16,7 @@ use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
     adapters::inbound::http::{TimeTrackingServiceFactory, WorkItemServiceFactory},
+    config::KleerSettings,
     domain::{
         ports::inbound::AvatarService, CachedIdentities, NotificationHandler, PullRequest,
         RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey,
@@ -51,7 +52,7 @@ impl IntoResponse for AppStateError {
 pub struct AppState {
     pub app_url: Url,
     pub api_url: Url,
-    pub cookie_domain: String,
+    pub kleer_settings: KleerSettings,
     pub db_pool: Arc<PgPool>,
     pub user_repo: Arc<UserRepositoryImpl>,
     pub repository_repo: Arc<RepoRepositoryImpl>,
@@ -74,10 +75,11 @@ impl std::fmt::Debug for AppState {
 }
 
 impl AppState {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         app_url: String,
         api_url: String,
-        cookie_domain: String,
+        kleer_settings: KleerSettings,
         db_pool: PgPool,
         repo_configs: Vec<RepoConfig>,
         time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
@@ -148,7 +150,7 @@ impl AppState {
         Self {
             app_url: Url::parse(&app_url).expect("Invalid app URL"),
             api_url: parsed_api_url,
-            cookie_domain,
+            kleer_settings,
             db_pool: Arc::new(db_pool.clone()),
             user_repo,
             repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),

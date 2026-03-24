@@ -1,6 +1,5 @@
 import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { TimeTrackingLoginDialog } from "@/components/time-tracking-login-dialog";
 import { FloatingTimer } from "@/components/floating-timer";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
@@ -10,12 +9,7 @@ import { Suspense } from "react";
 import { TimerEditDialog } from "@/components/timer-edit-dialog";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery } from "@tanstack/react-query";
-import {
-  useTimeTrackingActions,
-  useTimeTrackingEditTimerDialogOpen,
-  useTimeTrackingIsAuthenticated,
-  useTimeTrackingLoginDialogOpen,
-} from "@/hooks/useTimeTrackingStore";
+import { useTimeTrackingEditTimerDialogOpen, useTimeTrackingActions } from "@/hooks/useTimeTrackingStore";
 
 export const Route = createFileRoute("/_layout")({
   component: LayoutComponent,
@@ -46,12 +40,13 @@ function LayoutComponent() {
 }
 
 function TimerProvider() {
-  const isAuthenticated = useTimeTrackingIsAuthenticated();
-
   const editTimerDialogOpen = useTimeTrackingEditTimerDialogOpen();
-  const loginDialogOpen = useTimeTrackingLoginDialogOpen();
-  const { setLoginDialogOpen, setEditTimerDialogOpen } =
-    useTimeTrackingActions();
+  const { setEditTimerDialogOpen } = useTimeTrackingActions();
+
+  const { data: connectionStatus } = useQuery(
+    timeTrackingQueries.connectionStatus(),
+  );
+  const isAuthenticated = connectionStatus?.connected ?? false;
 
   const { data: timerResponse } = useQuery({
     ...timeTrackingQueries.getTimer(),
@@ -59,7 +54,11 @@ function TimerProvider() {
   });
   const timer = timerResponse?.timer;
 
-  return isAuthenticated ? (
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  return (
     <>
       <FloatingTimer />
       {!!timer && (
@@ -70,11 +69,6 @@ function TimerProvider() {
         />
       )}
     </>
-  ) : (
-    <TimeTrackingLoginDialog
-      open={loginDialogOpen}
-      onOpenChange={setLoginDialogOpen}
-    />
   );
 }
 

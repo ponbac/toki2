@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE time_tracking_user_links\n            SET active = FALSE, updated_at = CURRENT_TIMESTAMP\n            WHERE user_id = $1 AND provider = $2 AND active\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "263562de497ad4da4789fec793f1beb2db318bec2ebcaf17aa0edc26be49033d"
+}

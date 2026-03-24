@@ -3,7 +3,6 @@ application:
   port: 8080
   app_url: "https://toki.spinit.se"
   api_url: "https://toki-api.spinit.se"
-  cookie_domain: ".spinit.se"
   disable_auth: false
   cors_allowed_origin_suffix: "-ponbacs-projects.vercel.app"
 database:

@@ -72,10 +72,3 @@ pub struct EditEntryRequest<'a> {
 pub struct DeleteEntryRequest<'a> {
     pub project_registration_id: &'a str,
 }
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthenticateRequest<'a> {
-    pub username: &'a str,
-    pub password: &'a str,
-}
