@@ -148,8 +148,9 @@ async fn new_auth_layer(
     let cache_store = MokaStore::new(Some(2_000));
     let session_store = CachingSessionStore::new(cache_store, db_store);
 
+    let secure_cookies = config.application.api_url.starts_with("https://");
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false) // todo: explore production values
+        .with_secure(secure_cookies)
         .with_same_site(SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(Duration::days(7)));
 

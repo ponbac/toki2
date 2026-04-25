@@ -5,6 +5,7 @@ SCRIPT_NAME=$(basename "$0")
 
 YES=false
 KEEP_DUMP=false
+DUMP_ONLY=false
 DUMP_PATH=""
 USER_PROVIDED_DUMP_PATH=false
 TEMP_DIR=""
@@ -35,6 +36,7 @@ Pull a PostgreSQL snapshot from Fly production and restore it into local DB.
 Options:
   --yes                      Skip destructive confirmation prompt.
   --keep-dump                Keep the created dump file.
+  --dump-only                Create a production dump and skip local drop/recreate/restore.
   --dump-path <path>         Path for dump output file.
   --fly-app <name>           Fly app to read DB env from (default: toki2).
   --fly-db-app <name>        Fly Postgres app for proxy (default: derived from *.flycast host).
@@ -72,6 +74,11 @@ parse_args() {
                 shift
                 ;;
             --keep-dump)
+                KEEP_DUMP=true
+                shift
+                ;;
+            --dump-only)
+                DUMP_ONLY=true
                 KEEP_DUMP=true
                 shift
                 ;;
@@ -135,9 +142,12 @@ parse_args() {
 ensure_prerequisites() {
     require_cmd flyctl
     require_cmd pg_dump
-    require_cmd pg_restore
     require_cmd psql
     require_cmd mktemp
+
+    if [[ "${DUMP_ONLY}" == "false" ]]; then
+        require_cmd pg_restore
+    fi
 }
 
 ensure_fly_auth() {
@@ -162,8 +172,13 @@ ensure_safe_local_target() {
 
 prepare_dump_path() {
     if [[ -z "${DUMP_PATH}" ]]; then
-        TEMP_DIR="$(mktemp -d)"
-        DUMP_PATH="${TEMP_DIR}/prod.dump"
+        if [[ "${DUMP_ONLY}" == "true" ]]; then
+            DUMP_PATH="./prod.dump"
+            USER_PROVIDED_DUMP_PATH=true
+        else
+            TEMP_DIR="$(mktemp -d)"
+            DUMP_PATH="${TEMP_DIR}/prod.dump"
+        fi
     fi
 }
 
@@ -322,13 +337,21 @@ main() {
     trap cleanup EXIT
 
     ensure_prerequisites
-    ensure_safe_local_target
+    if [[ "${DUMP_ONLY}" == "false" ]]; then
+        ensure_safe_local_target
+    fi
     ensure_fly_auth
     prepare_dump_path
 
     fetch_production_connection
     start_fly_proxy_if_needed
     create_production_dump
+
+    if [[ "${DUMP_ONLY}" == "true" ]]; then
+        log "Done. Production dump saved at ${DUMP_PATH}"
+        return
+    fi
+
     confirm_destructive_restore
     recreate_local_database
     restore_dump

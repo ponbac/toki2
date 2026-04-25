@@ -1,9 +1,11 @@
 import ky from "ky";
 
+const defaultApiUrl = import.meta.env.DEV
+  ? "http://localhost:8180"
+  : "https://toki-api.bkmn.xyz";
+
 export const API_URL =
-  import.meta.env.MODE === "development"
-    ? "http://localhost:8180"
-    : "https://toki-api.spinit.se";
+  import.meta.env.VITE_API_URL?.trim() || defaultApiUrl;
 
 export const api = ky.create({
   prefixUrl: API_URL,
