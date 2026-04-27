@@ -125,6 +125,9 @@ export type WeeklyStats = {
   workedHours: number;
   scheduledHours: number;
   remainingHours: number;
+  absenceHours: number;
+  coveredHours: number;
+  periodFlexHours: number;
 };
 
 export type Project = {

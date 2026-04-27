@@ -212,6 +212,60 @@ pub struct KleerEventList {
     pub event_readables: Vec<KleerEventReadable>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum KleerPayrollEventType {
+    #[serde(alias = "Sick")]
+    Sick,
+    #[serde(alias = "Vacation")]
+    Vacation,
+    #[serde(alias = "LeaveOfAbsence")]
+    LeaveOfAbsence,
+    #[serde(alias = "LeaveOfAbsenceVacationEarned")]
+    LeaveOfAbsenceVacationEarned,
+    #[serde(alias = "WorkHour")]
+    WorkHour,
+    #[serde(alias = "ParentalLeave")]
+    ParentalLeave,
+    #[serde(alias = "Childcare")]
+    Childcare,
+    #[serde(alias = "CloseRelativeCare")]
+    CloseRelativeCare,
+    #[serde(alias = "PaternityLeave")]
+    PaternityLeave,
+    #[serde(alias = "Furlough")]
+    Furlough,
+    #[serde(alias = "OtherLeave")]
+    OtherLeave,
+    #[serde(alias = "OtherLeaveVacationNotEarned")]
+    OtherLeaveVacationNotEarned,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct KleerPayrollEvent {
+    #[serde(default)]
+    pub id: Option<i64>,
+    #[serde(with = "date_format")]
+    pub date: Date,
+    pub hours: f64,
+    #[serde(rename = "type")]
+    pub event_type: KleerPayrollEventType,
+    #[serde(default)]
+    pub child: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct KleerPayrollEventList {
+    #[serde(default)]
+    pub payroll_events: Vec<KleerPayrollEvent>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KleerEventRestrictionReadable {
     pub status: KleerEventStatus,
@@ -324,6 +378,51 @@ mod tests {
                 .unwrap()
                 .status_type,
             KleerStatusType::Open
+        );
+    }
+
+    #[test]
+    fn deserializes_payroll_event_list_example_shape() {
+        let raw = r#"{
+            "payroll-events": [
+                {
+                    "id": 4493036,
+                    "date": "2020-07-13",
+                    "hours": 8,
+                    "type": "VACATION",
+                    "comment": ""
+                },
+                {
+                    "id": 4493056,
+                    "date": "2020-07-29",
+                    "hours": 8,
+                    "type": "SICK",
+                    "comment": ""
+                },
+                {
+                    "id": 4493057,
+                    "date": "2020-07-30",
+                    "hours": 2,
+                    "type": "WorkHour",
+                    "comment": ""
+                }
+            ]
+        }"#;
+
+        let parsed: KleerPayrollEventList = serde_json::from_str(raw).unwrap();
+
+        assert_eq!(parsed.payroll_events.len(), 3);
+        assert_eq!(
+            parsed.payroll_events[0].event_type,
+            KleerPayrollEventType::Vacation
+        );
+        assert_eq!(
+            parsed.payroll_events[1].event_type,
+            KleerPayrollEventType::Sick
+        );
+        assert_eq!(
+            parsed.payroll_events[2].event_type,
+            KleerPayrollEventType::WorkHour
         );
     }
 

@@ -5,8 +5,8 @@ use time::Date;
 
 use crate::types::{
     KleerActivityList, KleerClientProjectList, KleerEventList, KleerEventReadable,
-    KleerEventRestrictionList, KleerEventWritable, KleerSavedId, KleerScheduleMetadataList,
-    KleerUserList, KleerUserMe,
+    KleerEventRestrictionList, KleerEventWritable, KleerPayrollEventList, KleerSavedId,
+    KleerScheduleMetadataList, KleerUserList, KleerUserMe,
 };
 
 pub const DEFAULT_BASE_URL: &str = "https://api.kleer.se/v1";
@@ -176,6 +176,19 @@ impl KleerClient {
     ) -> Result<KleerScheduleMetadataList, KleerError> {
         self.get(
             &format!("payroll/user/{user_id}/schedule/{start_date}/to/{end_date}"),
+            &[],
+        )
+        .await
+    }
+
+    pub async fn list_payroll_events(
+        &self,
+        user_id: i64,
+        from_date: Date,
+        to_date: Date,
+    ) -> Result<KleerPayrollEventList, KleerError> {
+        self.get(
+            &format!("payroll/user/{user_id}/event/from/{from_date}/to/{to_date}"),
             &[],
         )
         .await

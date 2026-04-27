@@ -181,6 +181,9 @@ pub struct WeeklyStatsResponse {
     pub worked_hours: f64,
     pub scheduled_hours: f64,
     pub remaining_hours: f64,
+    pub absence_hours: f64,
+    pub covered_hours: f64,
+    pub period_flex_hours: f64,
 }
 
 impl From<WeeklyStats> for WeeklyStatsResponse {
@@ -189,6 +192,9 @@ impl From<WeeklyStats> for WeeklyStatsResponse {
             worked_hours: info.worked_hours,
             scheduled_hours: info.scheduled_hours,
             remaining_hours: info.remaining_hours,
+            absence_hours: info.absence_hours,
+            covered_hours: info.covered_hours,
+            period_flex_hours: info.period_flex_hours,
         }
     }
 }

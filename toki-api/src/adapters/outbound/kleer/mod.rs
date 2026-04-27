@@ -19,8 +19,8 @@ use crate::domain::{
 };
 
 use self::conversions::{
-    to_domain_activity, to_domain_project, to_domain_scheduled_hours, to_domain_status,
-    to_domain_time_entry, to_domain_weekly_stats,
+    to_domain_absence_hours, to_domain_activity, to_domain_project, to_domain_scheduled_hours,
+    to_domain_status, to_domain_time_entry,
 };
 
 pub struct KleerAdapter {
@@ -284,6 +284,11 @@ impl TimeTrackingClient for KleerAdapter {
             .list_schedule_summary(self.target_user_id, date_range.0, date_range.1)
             .await
             .or_else(empty_schedule_for_missing_payroll_user)?;
+        let payroll_events = self
+            .client
+            .list_payroll_events(self.target_user_id, date_range.0, date_range.1)
+            .await
+            .or_else(empty_payroll_events_for_missing_payroll_user)?;
 
         let worked_hours: f64 = events
             .event_readables
@@ -292,8 +297,13 @@ impl TimeTrackingClient for KleerAdapter {
             .map(|event| event.hours)
             .sum();
         let scheduled_hours = to_domain_scheduled_hours(&schedule.payroll_user_schedule_metadatas);
+        let absence_hours = to_domain_absence_hours(&payroll_events.payroll_events);
 
-        Ok(to_domain_weekly_stats(worked_hours, scheduled_hours))
+        Ok(WeeklyStats::new(
+            worked_hours,
+            scheduled_hours,
+            absence_hours,
+        ))
     }
 
     async fn get_time_entries(
@@ -467,6 +477,16 @@ fn map_kleer_error(error: KleerError) -> TimeTrackingError {
 fn empty_schedule_for_missing_payroll_user(
     error: KleerError,
 ) -> Result<kleer::KleerScheduleMetadataList, TimeTrackingError> {
+    if is_missing_payroll_user(&error) {
+        Ok(Default::default())
+    } else {
+        Err(map_kleer_error(error))
+    }
+}
+
+fn empty_payroll_events_for_missing_payroll_user(
+    error: KleerError,
+) -> Result<kleer::KleerPayrollEventList, TimeTrackingError> {
     if is_missing_payroll_user(&error) {
         Ok(Default::default())
     } else {

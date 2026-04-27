@@ -144,14 +144,21 @@ pub struct WeeklyStats {
     pub worked_hours: f64,
     pub scheduled_hours: f64,
     pub remaining_hours: f64,
+    pub absence_hours: f64,
+    pub covered_hours: f64,
+    pub period_flex_hours: f64,
 }
 
 impl WeeklyStats {
-    pub fn new(worked_hours: f64, scheduled_hours: f64, remaining_hours: f64) -> Self {
+    pub fn new(worked_hours: f64, scheduled_hours: f64, absence_hours: f64) -> Self {
+        let covered_hours = worked_hours + absence_hours;
         Self {
             worked_hours,
             scheduled_hours,
-            remaining_hours,
+            absence_hours,
+            covered_hours,
+            remaining_hours: (scheduled_hours - covered_hours).max(0.0),
+            period_flex_hours: covered_hours - scheduled_hours,
         }
     }
 }

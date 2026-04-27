@@ -5,6 +5,7 @@ import {
   CalendarClockIcon,
   EditIcon,
   Minimize2Icon,
+  PiggyBankIcon,
   SaveIcon,
   Trash2Icon,
   WatchIcon,
@@ -509,13 +510,22 @@ function TimeSummary(props: {
 
   const timeLeft =
     timeInfo.remainingHours - (props.timerHours + props.timerMinutes / 60);
+  const flexTime =
+    timeInfo.periodFlexHours + props.timerHours + props.timerMinutes / 60;
+  const flexLabel = `${flexTime > 0 ? "+" : ""}${formatHoursMinutes(flexTime)}`;
+  const flexColor =
+    flexTime > 0
+      ? "text-emerald-500"
+      : flexTime < 0
+        ? "text-amber-500"
+        : undefined;
 
   const {
     hours: timeTodayHours,
     minutes: timeTodayMinutes,
     seconds: timeTodaySeconds,
   } = secondsToHoursMinutesSeconds(
-    timeInfoToday.workedHours * 3600 +
+    timeInfoToday.coveredHours * 3600 +
       props.timerHours * 3600 +
       props.timerMinutes * 60 +
       props.timerSeconds,
@@ -533,6 +543,13 @@ function TimeSummary(props: {
       </SummaryIcon>
       <SummaryIcon icon={<WatchIcon size={20} />} tooltip="Time worked today">
         {timeTodayHours}:{timeTodayMinutes}:{timeTodaySeconds}
+      </SummaryIcon>
+      <SummaryIcon
+        icon={<PiggyBankIcon size={20} />}
+        tooltip="Estimated flex this week, including leave"
+        className={flexColor}
+      >
+        {flexLabel}
       </SummaryIcon>
     </div>
   );

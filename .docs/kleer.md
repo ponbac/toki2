@@ -65,6 +65,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - `POST /company/{companyId}/event/{eventId}`
 - `DELETE /company/{companyId}/event/{eventId}`
 - `GET /company/{companyId}/event/statuses`
+- `GET /company/{companyId}/payroll/user/{userId}/event/from/{fromDate}/to/{toDate}`
 - `GET /company/{companyId}/payroll/user/{userId}/schedule/{startDate}/to/{endDate}`
 
 ## Events, Statuses, And Stats
@@ -75,11 +76,17 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
   - `Approved` -> `approved`
   - `Certified` -> `certified`
 - Only `open` entries are editable. `approved` and `certified` entries are locked.
-- Weekly stats expose only:
+- Weekly stats expose:
   - `workedHours`
   - `scheduledHours`
   - `remainingHours`
-- Do not synthesize flex or komptid values until Kleer has a confirmed balance endpoint.
+- Weekly stats also expose estimated Kleer period flex fields:
+  - `absenceHours`
+  - `coveredHours`
+  - `periodFlexHours`
+- Kleer support confirmed on 2026-04-27 that flex balance is not directly available through the API. Toki estimates period flex as `coveredHours - scheduledHours`, where `coveredHours = workedHours + absenceHours`.
+- `periodFlexHours` is a selected-period estimate, not Kleer's stored historical flex balance and not Milltime's previous `FlexTimeCurrent` equivalent.
+- Absence hours come from payroll events. Count leave/absence payroll event types as schedule-covering hours, but do not count `WorkHour` as absence to avoid double-counting normal project time.
 - Weekly scheduled hours come from the payroll schedule endpoint. Use `actual-hours` from `payroll-user-schedule-metadatas`; it accounts for employment rate and bank holidays.
 
 ## Project And Activity Rules
