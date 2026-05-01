@@ -9,6 +9,9 @@ default:
 
 # Run the backend
 run:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/dev-env.sh
     cd toki-api && cargo run
 
 # Check backend compiles
@@ -29,7 +32,7 @@ init-db:
 
 # Pull production Dokploy Postgres DB over Tailscale SSH and restore into local DB
 db-prod-pull *args:
-    ./toki-api/scripts/db_prod_pull.sh {{args}}
+    ./toki-api/scripts/db_prod_pull.sh {{ args }}
 
 # Prepare SQLx offline query data (run after changing SQL queries)
 sqlx-prepare:
@@ -53,18 +56,36 @@ lint:
 build-app:
     cd app && bun run build
 
-# Preview production build
-preview:
-    cd app && bun preview
+# Preview production frontend build
+preview-app:
+    cd app && VITE_API_URL=http://localhost:8180 bun run build && bun run preview -- --port 5173 --strictPort
 
 # === Combined ===
 
 # Run both backend and frontend
 dev:
     #!/usr/bin/env bash
+    set -euo pipefail
     trap 'kill 0' EXIT
-    (cd toki-api && cargo run) &
+    (
+        source scripts/dev-env.sh
+        cd toki-api && cargo run
+    ) &
     (cd app && bun dev) &
+    wait
+
+# Build the frontend, then run backend with production frontend preview
+preview:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd app && VITE_API_URL=http://localhost:8180 bun run build
+    cd ..
+    trap 'kill 0' EXIT
+    (
+        source scripts/dev-env.sh
+        cd toki-api && cargo run
+    ) &
+    (cd app && bun run preview -- --port 5173 --strictPort) &
     wait
 
 # Run both backend and frontend against the Kleer test environment
@@ -81,7 +102,12 @@ dev-sandbox:
     export TOKI_KLEER__COMPANY_ID="${TOKI_KLEER__COMPANY_ID:-4875}"
     export TOKI_KLEER__BASE_URL="${TOKI_KLEER__BASE_URL:-https://test-api.kleer.se/v1}"
     trap 'kill 0' EXIT
-    (cd toki-api && cargo run) &
+    (
+        set -a
+        [[ -f .env ]] && source .env
+        set +a
+        cd toki-api && cargo run
+    ) &
     (cd app && bun dev) &
     wait
 

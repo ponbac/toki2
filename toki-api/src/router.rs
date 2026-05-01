@@ -36,6 +36,7 @@ pub async fn create(
 ) -> Router<()> {
     let base_app = Router::new()
         .route("/", get(|| async { "Hello, little World!" }))
+        .nest("/agent-runs", routes::agent_runs::router())
         .nest("/pull-requests", routes::pull_requests::router())
         .nest("/differs", routes::differs::router())
         .nest("/repositories", routes::repositories::router())
@@ -80,6 +81,7 @@ pub async fn create(
         config.application.app_url.clone(),
         config.application.api_url.clone(),
         config.kleer.clone(),
+        config.agent.clone(),
         connection_pool.clone(),
         repo_configs,
         time_tracking_factory,

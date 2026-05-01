@@ -1,3 +1,4 @@
+mod agent_run_repo;
 mod notification_repo;
 mod push_subscriptions_repo;
 mod repo_error;
@@ -6,6 +7,7 @@ mod time_tracking_user_link_repo;
 mod timer_repo;
 mod user_repo;
 
+pub use agent_run_repo::*;
 pub use notification_repo::*;
 pub use push_subscriptions_repo::*;
 pub use repo_error::RepositoryError;
