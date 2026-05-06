@@ -34,6 +34,8 @@ struct VerifiedKleerEventTarget {
 }
 
 impl KleerAdapter {
+    const MISSING_NOTE_COMMENT: &'static str = "missing note";
+
     pub fn new(
         credentials: KleerCredentials,
         target_user_id: i64,
@@ -186,6 +188,8 @@ impl KleerAdapter {
         note: &str,
         user_id: i64,
     ) -> KleerEventWritable {
+        let note = Self::event_comment(note);
+
         KleerEventWritable {
             foreign_id: Self::event_foreign_id(
                 user_id,
@@ -205,6 +209,14 @@ impl KleerAdapter {
             hours: (end_time - start_time).whole_seconds() as f64 / 3600.0,
             comment: note.to_string(),
             internal_comment: Some(note.to_string()),
+        }
+    }
+
+    fn event_comment(note: &str) -> &str {
+        if note.trim().is_empty() {
+            Self::MISSING_NOTE_COMMENT
+        } else {
+            note
         }
     }
 
@@ -533,5 +545,34 @@ mod tests {
             payload.internal_comment.as_deref(),
             Some("Worked on PR review")
         );
+    }
+
+    #[test]
+    fn event_payload_replaces_empty_note_with_missing_note() {
+        let start_time = Date::from_calendar_date(2026, Month::May, 6)
+            .unwrap()
+            .with_hms(8, 0, 0)
+            .unwrap()
+            .assume_utc();
+        let end_time = start_time + time::Duration::hours(2);
+
+        for note in ["", "   ", "\n\t"] {
+            let payload = KleerAdapter::build_event_writable(
+                VerifiedKleerEventTarget {
+                    project_id: 321,
+                    activity_id: 654,
+                },
+                start_time,
+                end_time,
+                note,
+                987,
+            );
+
+            assert_eq!(payload.comment, KleerAdapter::MISSING_NOTE_COMMENT);
+            assert_eq!(
+                payload.internal_comment.as_deref(),
+                Some(KleerAdapter::MISSING_NOTE_COMMENT)
+            );
+        }
     }
 }
