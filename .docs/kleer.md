@@ -47,9 +47,11 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - Partial unique indexes enforce one active mapping per `(user_id, provider)` and one active mapped local user per `(provider, provider_company_id, provider_user_id)`.
 - Admin-only endpoints live under `/time-tracking/admin`:
   - `POST /kleer-users/import`
+  - `POST /kleer-users/link-by-email`
   - `GET /kleer-users`
   - `PUT /user-links`
   - `DELETE /user-links/{userId}`
+- Email matching only links active, imported Kleer users when the normalized email has exactly one unmapped Toki user and exactly one unmapped Kleer user. It does not overwrite existing manual mappings.
 
 ## Kleer Endpoints Used
 

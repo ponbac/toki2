@@ -17,6 +17,7 @@ export const timeTrackingMutations = {
   useDeleteProjectRegistration,
   useCreateProjectRegistration,
   useImportKleerUsers,
+  useLinkKleerUsersByEmail,
   useUpsertKleerUserLink,
   useDeactivateKleerUserLink,
 };
@@ -273,6 +274,28 @@ function useImportKleerUsers(options?: DefaultMutationOptions<void>) {
   });
 }
 
+function useLinkKleerUsersByEmail(
+  options?: DefaultMutationOptions<void, LinkKleerUsersByEmailResponse>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["time-tracking", "admin", "linkKleerUsersByEmail"],
+    mutationFn: () =>
+      api
+        .post("time-tracking/admin/kleer-users/link-by-email")
+        .json<LinkKleerUsersByEmailResponse>(),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: timeTrackingQueries.adminMappings().queryKey,
+      });
+      queryClient.invalidateQueries({ queryKey: ["time-tracking"] });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
 function useUpsertKleerUserLink(
   options?: DefaultMutationOptions<UpsertKleerUserLinkPayload>,
 ) {
@@ -379,6 +402,10 @@ export type CreateProjectRegistrationPayload = {
 export type UpsertKleerUserLinkPayload = {
   userId: number;
   providerUserId: string;
+};
+
+export type LinkKleerUsersByEmailResponse = {
+  createdLinkCount: number;
 };
 
 export type DeactivateKleerUserLinkPayload = {

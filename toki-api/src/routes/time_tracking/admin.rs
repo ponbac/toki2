@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use axum::{
     extract::{Path, State},
@@ -29,6 +29,10 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/kleer-users", get(list_mappings))
         .route("/kleer-users/import", post(import_kleer_users))
+        .route(
+            "/kleer-users/link-by-email",
+            post(link_kleer_users_by_email),
+        )
         .route("/user-links", put(upsert_user_link))
         .route("/user-links/:user_id", delete(deactivate_user_link))
         .route_layer(permission_required!(AuthBackend, Role::Admin))
@@ -101,6 +105,12 @@ struct AdminMappingStateResponse {
     links: Vec<AdminUserLinkResponse>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminEmailLinkResponse {
+    created_link_count: usize,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpsertUserLinkPayload {
@@ -138,6 +148,30 @@ async fn import_kleer_users(
     repo.upsert_provider_users(&imported_users).await?;
 
     mapping_state(&app_state).await.map(Json)
+}
+
+async fn link_kleer_users_by_email(
+    State(app_state): State<AppState>,
+) -> Result<Json<AdminEmailLinkResponse>, ApiError> {
+    let credentials = kleer_credentials(&app_state)?;
+    let repo = mapping_repo(&app_state);
+    let users = app_state.user_repo.get_users().await?;
+    let provider_users = repo
+        .list_provider_users(KLEER_TIME_TRACKING_PROVIDER, &credentials.company_id)
+        .await?;
+    let active_links = repo
+        .list_active_links(KLEER_TIME_TRACKING_PROVIDER, &credentials.company_id)
+        .await?;
+
+    // Match only against the imported directory snapshot; Sync stays explicit.
+    let link_candidates = email_match_link_candidates(&users, &provider_users, &active_links);
+    let created_link_count = link_candidates.len();
+
+    for link in link_candidates {
+        repo.upsert_active_link(&link).await?;
+    }
+
+    Ok(Json(AdminEmailLinkResponse { created_link_count }))
 }
 
 async fn list_mappings(
@@ -263,6 +297,98 @@ fn provider_user_response(
     }
 }
 
+fn email_match_link_candidates(
+    users: &[User],
+    provider_users: &[TimeTrackingProviderUser],
+    active_links: &[TimeTrackingUserLink],
+) -> Vec<NewTimeTrackingUserLink> {
+    let linked_user_ids: HashSet<_> = active_links
+        .iter()
+        .map(|link| link.user_id.as_i32())
+        .collect();
+    let linked_provider_user_ids: HashSet<_> = active_links
+        .iter()
+        .map(|link| link.provider_user_id.as_str())
+        .collect();
+
+    // Group both sides first so ambiguous duplicate emails can be skipped.
+    let mut users_by_email: HashMap<String, Vec<&User>> = HashMap::new();
+    for user in users {
+        if let Some(email) = normalized_email(&user.email) {
+            users_by_email.entry(email).or_default().push(user);
+        }
+    }
+
+    let mut provider_users_by_email: HashMap<String, Vec<&TimeTrackingProviderUser>> =
+        HashMap::new();
+    for provider_user in provider_users {
+        if !provider_user.active {
+            continue;
+        }
+
+        let Some(email) = provider_user.email.as_deref().and_then(normalized_email) else {
+            continue;
+        };
+
+        provider_users_by_email
+            .entry(email)
+            .or_default()
+            .push(provider_user);
+    }
+
+    let mut candidates = Vec::new();
+    for (email, provider_matches) in provider_users_by_email {
+        if provider_matches.len() != 1 {
+            continue;
+        }
+
+        let Some(user_matches) = users_by_email.get(&email) else {
+            continue;
+        };
+
+        if user_matches.len() != 1 {
+            continue;
+        }
+
+        let user = user_matches[0];
+        let provider_user = provider_matches[0];
+
+        // Existing manual links win; this pass only fills clear gaps.
+        if linked_user_ids.contains(&user.id.as_i32())
+            || linked_provider_user_ids.contains(provider_user.provider_user_id.as_str())
+        {
+            continue;
+        }
+
+        candidates.push(NewTimeTrackingUserLink {
+            user_id: user.id.clone(),
+            provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
+            provider_company_id: provider_user.provider_company_id.clone(),
+            provider_user_id: provider_user.provider_user_id.clone(),
+            provider_user_email: provider_user.email.clone(),
+            provider_user_name: Some(provider_user.name.clone()),
+        });
+    }
+
+    candidates.sort_by(|left, right| {
+        left.user_id
+            .as_i32()
+            .cmp(&right.user_id.as_i32())
+            .then(left.provider_user_id.cmp(&right.provider_user_id))
+    });
+    candidates
+}
+
+fn normalized_email(email: &str) -> Option<String> {
+    let email = email.trim();
+
+    if email.is_empty() {
+        None
+    } else {
+        Some(email.to_lowercase())
+    }
+}
+
 fn mapping_repo(app_state: &AppState) -> TimeTrackingUserLinkRepositoryImpl {
     TimeTrackingUserLinkRepositoryImpl::new((*app_state.db_pool).clone())
 }
@@ -297,5 +423,86 @@ fn kleer_request_error(error: KleerError) -> ApiError {
             ApiError::internal("failed to process Kleer response")
         }
         _ => ApiError::internal(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    fn toki_user(id: i32, email: &str) -> User {
+        User {
+            id: UserId::from(id),
+            email: email.to_string(),
+            full_name: format!("User {id}"),
+            picture: String::new(),
+            access_token: String::new(),
+            roles: vec![Role::User],
+            session_auth_hash: String::new(),
+        }
+    }
+
+    fn provider_user(id: &str, email: Option<&str>, active: bool) -> TimeTrackingProviderUser {
+        TimeTrackingProviderUser {
+            id: id.parse().unwrap_or_default(),
+            provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
+            provider_company_id: "4875".to_string(),
+            provider_user_id: id.to_string(),
+            foreign_id: None,
+            internal_id: None,
+            name: format!("Kleer {id}"),
+            email: email.map(str::to_string),
+            active,
+            last_synced_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    fn active_link(user_id: i32, provider_user_id: &str) -> TimeTrackingUserLink {
+        TimeTrackingUserLink {
+            id: 1,
+            user_id: UserId::from(user_id),
+            provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
+            provider_company_id: "4875".to_string(),
+            provider_user_id: provider_user_id.to_string(),
+            provider_user_email: None,
+            provider_user_name: None,
+            active: true,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+            last_synced_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    #[test]
+    fn email_match_link_candidates_matches_unmapped_users_case_insensitively() {
+        let candidates = email_match_link_candidates(
+            &[toki_user(1, "Ada@example.com")],
+            &[provider_user("10", Some(" ada@EXAMPLE.com "), true)],
+            &[],
+        );
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].user_id, UserId::from(1));
+        assert_eq!(candidates[0].provider_user_id, "10");
+    }
+
+    #[test]
+    fn email_match_link_candidates_skips_ambiguous_or_existing_links() {
+        let candidates = email_match_link_candidates(
+            &[
+                toki_user(1, "ada@example.com"),
+                toki_user(2, "grace@example.com"),
+            ],
+            &[
+                provider_user("10", Some("ada@example.com"), true),
+                provider_user("11", Some("ada@example.com"), true),
+                provider_user("12", Some("grace@example.com"), true),
+            ],
+            &[active_link(2, "12")],
+        );
+
+        assert!(candidates.is_empty());
     }
 }
