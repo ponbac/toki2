@@ -204,7 +204,7 @@ impl KleerAdapter {
             date: start_time.date(),
             hours: (end_time - start_time).whole_seconds() as f64 / 3600.0,
             comment: note.to_string(),
-            internal_comment: None,
+            internal_comment: Some(note.to_string()),
         }
     }
 
@@ -501,4 +501,37 @@ fn is_missing_payroll_user(error: &KleerError) -> bool {
             if *status == reqwest::StatusCode::INTERNAL_SERVER_ERROR
                 && body.contains("PayrollUserDoesNotExistException")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::Month;
+
+    #[test]
+    fn event_payload_saves_note_as_external_and_internal_comment() {
+        let start_time = Date::from_calendar_date(2026, Month::May, 6)
+            .unwrap()
+            .with_hms(8, 0, 0)
+            .unwrap()
+            .assume_utc();
+        let end_time = start_time + time::Duration::hours(2);
+
+        let payload = KleerAdapter::build_event_writable(
+            VerifiedKleerEventTarget {
+                project_id: 321,
+                activity_id: 654,
+            },
+            start_time,
+            end_time,
+            "Worked on PR review",
+            987,
+        );
+
+        assert_eq!(payload.comment, "Worked on PR review");
+        assert_eq!(
+            payload.internal_comment.as_deref(),
+            Some("Worked on PR review")
+        );
+    }
 }
