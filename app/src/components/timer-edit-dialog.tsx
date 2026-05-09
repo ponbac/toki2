@@ -14,10 +14,14 @@ import { Combobox } from "./combobox";
 import { flushSync } from "react-dom";
 import { Input } from "./ui/input";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
-import { TimerResponse } from "@/lib/api/queries/time-tracking";
+import {
+  TimerResponse,
+  timeTrackingQueries,
+} from "@/lib/api/queries/time-tracking";
 import { TimerHistory } from "./timer-history";
 import dayjs from "dayjs";
 import { Label } from "./ui/label";
+import { useQueryClient } from "@tanstack/react-query";
 
 export const TimerEditDialog = (props: {
   open: boolean;
@@ -34,8 +38,12 @@ export const TimerEditDialog = (props: {
   const [startTimeISO, setStartTimeISO] = React.useState<string | undefined>(
     props.timer.startTime,
   );
+  const activitiesRef = React.useRef<HTMLButtonElement>(null);
+  const noteInputRef = React.useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
 
-  const { projects, activities } = useTimeTrackingData({
+  const { projects, activities, isProjectsLoading, isActivitiesLoading } =
+    useTimeTrackingData({
     projectId: projectId,
     enabled: props.open,
   });
@@ -47,6 +55,28 @@ export const TimerEditDialog = (props: {
   const selectedActivity = React.useMemo(
     () => activities?.find((a) => a.activityName === activityName),
     [activities, activityName],
+  );
+
+  const prefetchActivities = React.useCallback(
+    (nextProjectId: string | undefined) => {
+      if (!nextProjectId) return;
+      void queryClient.prefetchQuery(
+        timeTrackingQueries.listActivities(nextProjectId),
+      );
+    },
+    [queryClient],
+  );
+
+  const handleProjectChange = React.useCallback(
+    (nextProjectId: string) => {
+      flushSync(() => {
+        setProjectId(nextProjectId);
+        setActivityName(undefined);
+      });
+      prefetchActivities(nextProjectId);
+      activitiesRef.current?.focus();
+    },
+    [prefetchActivities],
   );
 
   const closeDialog = () => {
@@ -80,11 +110,10 @@ export const TimerEditDialog = (props: {
     // While open, keep local edits as source of truth even if timer query refetches.
     if (props.open) {
       hydrateDraftFromCurrentTimer();
+      void queryClient.prefetchQuery(timeTrackingQueries.listProjects());
+      prefetchActivities(props.timer.projectId ?? undefined);
     }
-  }, [props.open]);
-
-  const activitiesRef = React.useRef<HTMLButtonElement>(null);
-  const noteInputRef = React.useRef<HTMLInputElement>(null);
+  }, [prefetchActivities, props.open, props.timer.projectId, queryClient]);
 
   const timeInputDisplayValue = React.useMemo(() => {
     return startTimeISO ? dayjs(startTimeISO).format("HH:mm") : "06:00";
@@ -118,8 +147,7 @@ export const TimerEditDialog = (props: {
     setStartTimeISO(newFullDateTime.toISOString());
   };
 
-  // TODO: should skeleton while loading...
-  if (!props.open || !projects) return null;
+  if (!props.open) return null;
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
@@ -150,16 +178,20 @@ export const TimerEditDialog = (props: {
                 }
                 placeholder="Select project..."
                 searchPlaceholder="Search projects..."
-                onSelect={(value) => setProjectId(value)}
                 emptyMessage="No projects found"
-                value={projectId ?? ""}
-                onChange={(projectId) => {
-                  flushSync(() => {
-                    setProjectId(projectId);
-                    setActivityName(undefined);
-                  });
-                  activitiesRef.current?.focus();
+                isLoading={isProjectsLoading}
+                onOpenChange={(open) => {
+                  if (open) {
+                    void queryClient.prefetchQuery(
+                      timeTrackingQueries.listProjects(),
+                    );
+                  }
                 }}
+                onItemMouseEnter={(nextProjectId) => {
+                  prefetchActivities(nextProjectId);
+                }}
+                value={projectId ?? ""}
+                onChange={handleProjectChange}
               />
               <Combobox
                 ref={activitiesRef}
@@ -171,8 +203,9 @@ export const TimerEditDialog = (props: {
                 }
                 placeholder="Select activity..."
                 searchPlaceholder="Search activities..."
-                onSelect={(value) => setActivityName(value)}
                 emptyMessage="No activities found"
+                isLoading={isActivitiesLoading}
+                loadingMessage="Loading activities..."
                 disabled={!projectId}
                 value={activityName ?? ""}
                 onChange={(value) => {
@@ -210,6 +243,7 @@ export const TimerEditDialog = (props: {
                   updateTimer();
                 } else {
                   setProjectId(timeEntry.projectId);
+                  prefetchActivities(timeEntry.projectId);
                   setActivityName(timeEntry.activityName);
                   setNote(timeEntry.note);
                 }

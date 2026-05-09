@@ -4,7 +4,7 @@ use time::Date;
 use crate::domain::{
     models::{
         ActiveTimer, Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimerHistoryEntry, TimerId, UserId, WeeklyStats,
+        TimeEntry, TimeEntryDayStatus, TimerHistoryEntry, UserId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -45,7 +45,7 @@ pub trait TimeTrackingService: Send + Sync + 'static {
         &self,
         user_id: &UserId,
         note: Option<String>,
-    ) -> Result<TimerId, TimeTrackingError>;
+    ) -> Result<TimeEntry, TimeTrackingError>;
 
     /// Edit the active timer for a user.
     async fn edit_timer(
@@ -99,12 +99,11 @@ pub trait TimeTrackingService: Send + Sync + 'static {
     /// Create a new time entry.
     ///
     /// Creates the entry in the provider and persists to local timer history.
-    /// Returns the registration ID from the provider.
     async fn create_time_entry(
         &self,
         user_id: &UserId,
         request: &CreateTimeEntryRequest,
-    ) -> Result<TimerId, TimeTrackingError>;
+    ) -> Result<TimeEntry, TimeTrackingError>;
 
     /// Edit an existing time entry.
     ///
@@ -112,7 +111,7 @@ pub trait TimeTrackingService: Send + Sync + 'static {
     async fn edit_time_entry(
         &self,
         request: &EditTimeEntryRequest,
-    ) -> Result<(), TimeTrackingError>;
+    ) -> Result<TimeEntry, TimeTrackingError>;
 
     /// Delete a time entry.
     async fn delete_time_entry(&self, registration_id: &str) -> Result<(), TimeTrackingError>;

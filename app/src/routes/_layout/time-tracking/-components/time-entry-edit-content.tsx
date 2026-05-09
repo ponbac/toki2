@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dayjs from "dayjs";
 import { CalendarIcon, SaveIcon, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
-import { TimeEntry } from "@/lib/api/queries/time-tracking";
+import {
+  TimeEntry,
+  timeTrackingQueries,
+} from "@/lib/api/queries/time-tracking";
 import { apiErrorToast } from "@/lib/api/errors";
 import { cn, getWeekNumber } from "@/lib/utils";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
@@ -17,6 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { useQueryClient } from "@tanstack/react-query";
 
 type TimeEntryEditContentProps = {
   entry: TimeEntry;
@@ -59,11 +63,20 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
   const [projectName, setProjectName] = useState(props.entry.projectName);
   const [activityId, setActivityId] = useState(props.entry.activityId);
   const [activityName, setActivityName] = useState(props.entry.activityName);
+  const queryClient = useQueryClient();
 
-  const { projects, activities } = useTimeTrackingData({
+  const { projects, activities, isProjectsLoading, isActivitiesLoading } =
+    useTimeTrackingData({
     projectId,
     enabled: true,
   });
+
+  useEffect(() => {
+    void queryClient.prefetchQuery(timeTrackingQueries.listProjects());
+    void queryClient.prefetchQuery(
+      timeTrackingQueries.listActivities(props.entry.projectId),
+    );
+  }, [props.entry.projectId, queryClient]);
 
   const updateTimeRange = (start: string, end: string) => {
     setStartTime(start);
@@ -180,8 +193,20 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
               }
               placeholder="Select project..."
               searchPlaceholder="Search projects..."
-              onSelect={() => {}}
               emptyMessage="No projects found"
+              isLoading={isProjectsLoading}
+              onOpenChange={(open) => {
+                if (open) {
+                  void queryClient.prefetchQuery(
+                    timeTrackingQueries.listProjects(),
+                  );
+                }
+              }}
+              onItemMouseEnter={(nextProjectId) => {
+                void queryClient.prefetchQuery(
+                  timeTrackingQueries.listActivities(nextProjectId),
+                );
+              }}
               value={projectId}
               onChange={handleProjectChange}
             />
@@ -197,8 +222,9 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
               }
               placeholder="Select activity..."
               searchPlaceholder="Search activities..."
-              onSelect={() => {}}
               emptyMessage="No activities found"
+              isLoading={isActivitiesLoading}
+              loadingMessage="Loading activities..."
               disabled={!projectId}
               value={activityId}
               onChange={handleActivityChange}

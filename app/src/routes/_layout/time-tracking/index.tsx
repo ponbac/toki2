@@ -6,7 +6,7 @@ import { SearchBar } from "@/routes/_layout/time-tracking/-components/search-bar
 import { Summary } from "@/routes/_layout/time-tracking/-components/summary";
 import { TimeEntriesList } from "./-components/time-entries-list";
 import { DateRangeSelector } from "./-components/date-range-selector";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { apiErrorToast } from "@/lib/api/errors";
 import { userQueries } from "@/lib/api/queries/user";
@@ -59,14 +59,13 @@ export const Route = createFileRoute("/_layout/time-tracking/")({
     }
 
     const currentWeekDateRange = getCurrentWeekDateRange();
-    await Promise.all([
-      context.queryClient.ensureQueryData(
-        timeTrackingQueries.timeEntries(currentWeekDateRange),
-      ),
-      context.queryClient.ensureQueryData(
-        timeTrackingQueries.timeInfo(currentWeekDateRange),
-      ),
-    ]);
+    void context.queryClient.prefetchQuery(
+      timeTrackingQueries.timeEntries(currentWeekDateRange),
+    );
+    void context.queryClient.prefetchQuery(
+      timeTrackingQueries.timeInfo(currentWeekDateRange),
+    );
+    void context.queryClient.prefetchQuery(timeTrackingQueries.listProjects());
   },
   component: TimeTrackingPage,
 });
@@ -95,6 +94,7 @@ function TimeTrackingPage() {
   const [mergeSameDay, setMergeSameDay] = useAtom(mergeSameDayPersistedAtom);
   const [storedViewMode, setViewMode] = useAtom(viewModePersistedAtom);
   const isDesktop = useMediaQuery("(min-width: 768px)");
+  const queryClient = useQueryClient();
   const viewMode = isDesktop ? storedViewMode : "list";
   const [rememberLastProject, setRememberLastProject] = useAtom(
     rememberLastProjectAtom,
@@ -105,7 +105,7 @@ function TimeTrackingPage() {
   const { data: user } = useQuery(userQueries.me());
   const isAdmin = user?.roles.includes("Admin") ?? false;
 
-  const { data: timeEntries } = useQuery({
+  const { data: timeEntries, isLoading: isTimeEntriesLoading } = useQuery({
     ...timeTrackingQueries.timeEntries({
       from: dateRange.from,
       to: dateRange.to,
@@ -147,6 +147,10 @@ function TimeTrackingPage() {
       }),
     });
   }, [rememberLastProject, lastProject, lastActivity, startTimer]);
+
+  const prefetchProjects = React.useCallback(() => {
+    void queryClient.prefetchQuery(timeTrackingQueries.listProjects());
+  }, [queryClient]);
 
   return (
     <div className="min-h-screen">
@@ -210,6 +214,8 @@ function TimeTrackingPage() {
                   )}
                   <Button
                     onClick={() => setIsNewEntryOpen(true)}
+                    onMouseEnter={prefetchProjects}
+                    onFocus={prefetchProjects}
                     className="btn-glow h-11 gap-2 rounded-xl bg-primary px-5 font-semibold text-primary-foreground shadow-md transition-all hover:bg-primary/90 hover:shadow-glow"
                   >
                     <Plus className="h-4 w-4" />
@@ -292,7 +298,11 @@ function TimeTrackingPage() {
             <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_380px]">
               {/* Time Entries */}
               <div className="min-w-0">
-                {timeEntries?.length ? (
+                {isTimeEntriesLoading ? (
+                  <div className="min-h-[400px] rounded-2xl border border-border/50 bg-card/30 p-8 text-sm text-muted-foreground">
+                    Loading entries...
+                  </div>
+                ) : timeEntries?.length ? (
                   viewMode === "timeline" ? (
                     <TimelineView
                       timeEntries={filteredTimeEntries ?? []}

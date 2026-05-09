@@ -26,11 +26,15 @@ type ComboboxProps = {
   items: ComboboxItem[];
   placeholder: string;
   searchPlaceholder?: string;
-  onSelect: (value: string) => void;
+  onSelect?: (value: string) => void;
   emptyMessage?: string;
   disabled?: boolean;
   value: string;
   onChange: (value: string) => void;
+  isLoading?: boolean;
+  loadingMessage?: string;
+  onOpenChange?: (open: boolean) => void;
+  onItemMouseEnter?: (value: string) => void;
 };
 
 export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
@@ -45,8 +49,13 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
       );
     }, [props.items, search]);
 
+    const handleOpenChange = (nextOpen: boolean) => {
+      setOpen(nextOpen);
+      props.onOpenChange?.(nextOpen);
+    };
+
     return (
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
@@ -74,20 +83,23 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
             />
             <CommandList className="h-[300px]">
               <CommandEmpty>
-                {props.emptyMessage || "No items found"}
+                {props.isLoading
+                  ? props.loadingMessage || "Loading..."
+                  : props.emptyMessage || "No items found"}
               </CommandEmpty>
               <CommandGroup>
                 {filteredItems.map((item) => (
                   <CommandItem
                     key={item.value}
                     value={item.value}
+                    onMouseEnter={() => props.onItemMouseEnter?.(item.value)}
                     onSelect={(currentValue) => {
                       props.onChange(
                         currentValue === props.value ? "" : currentValue,
                       );
                       setOpen(false);
                       setSearch("");
-                      props.onSelect(currentValue);
+                      props.onSelect?.(currentValue);
                     }}
                   >
                     <Check

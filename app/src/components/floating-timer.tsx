@@ -96,7 +96,6 @@ export const FloatingTimer = () => {
     };
   }, [rememberLastProject, timer]);
 
-  const { mutate: startTimer } = timeTrackingMutations.useStartTimer();
   const { mutate: stopTimer, isPending: isStoppingTimer } =
     timeTrackingMutations.useStopTimer({
       onSuccess: () => {
@@ -150,18 +149,20 @@ export const FloatingTimer = () => {
       saveTimer(
         {
           userNote: note,
+          restartTimer: shouldAutoRestart
+            ? {
+                userNote: CONTINUING_MY_WORK_NOTE,
+                ...restartTimerParams,
+              }
+            : undefined,
         },
         {
           onSuccess: () => {
             toast.success("Timer successfully saved");
-            removeSegment("timer");
-            rememberCurrentTimerSelection();
-            if (shouldAutoRestart) {
-              startTimer({
-                userNote: CONTINUING_MY_WORK_NOTE,
-                ...restartTimerParams,
-              });
+            if (!shouldAutoRestart) {
+              removeSegment("timer");
             }
+            rememberCurrentTimerSelection();
           },
         },
       );
@@ -171,7 +172,6 @@ export const FloatingTimer = () => {
       rememberCurrentTimerSelection,
       restartTimerParams,
       saveTimer,
-      startTimer,
       timer,
     ],
   );

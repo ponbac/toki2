@@ -106,7 +106,9 @@ pub async fn get_time_entry_day_statuses(
 pub struct EditProjectRegistrationPayload {
     project_registration_id: String,
     project_id: String,
+    project_name: String,
     activity_id: String,
+    activity_name: String,
     start_time: String,
     end_time: String,
     user_note: String,
@@ -117,7 +119,7 @@ pub async fn edit_project_registration(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(payload): Json<EditProjectRegistrationPayload>,
-) -> Result<StatusCode, ApiError> {
+) -> Result<Json<TimeEntryResponse>, ApiError> {
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -126,15 +128,17 @@ pub async fn edit_project_registration(
     let request = EditTimeEntryRequest {
         registration_id: payload.project_registration_id,
         project_id: ProjectId::new(payload.project_id),
+        project_name: payload.project_name,
         activity_id: ActivityId::new(payload.activity_id),
+        activity_name: payload.activity_name,
         start_time: parse_rfc3339(&payload.start_time, "start time")?,
         end_time: parse_rfc3339(&payload.end_time, "end time")?,
         note: payload.user_note,
     };
 
-    service.edit_time_entry(&request).await?;
+    let entry = service.edit_time_entry(&request).await?;
 
-    Ok(StatusCode::OK)
+    Ok(Json(entry.into()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -178,7 +182,7 @@ pub async fn create_project_registration(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(payload): Json<CreateProjectRegistrationPayload>,
-) -> Result<StatusCode, ApiError> {
+) -> Result<(StatusCode, Json<TimeEntryResponse>), ApiError> {
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -194,7 +198,7 @@ pub async fn create_project_registration(
         note: payload.user_note,
     };
 
-    service.create_time_entry(&user.id, &request).await?;
+    let entry = service.create_time_entry(&user.id, &request).await?;
 
-    Ok(StatusCode::CREATED)
+    Ok((StatusCode::CREATED, Json(entry.into())))
 }

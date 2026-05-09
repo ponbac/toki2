@@ -187,7 +187,9 @@ pub struct CreateTimeEntryRequest {
 pub struct EditTimeEntryRequest {
     pub registration_id: String,
     pub project_id: ProjectId,
+    pub project_name: String,
     pub activity_id: ActivityId,
+    pub activity_name: String,
     pub start_time: OffsetDateTime,
     pub end_time: OffsetDateTime,
     pub note: String,

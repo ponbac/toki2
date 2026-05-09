@@ -1,5 +1,5 @@
 import React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import type { CreateProjectRegistrationPayload } from "@/lib/api/mutations/time-tracking";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
+import { getCachedTimeEntries } from "@/lib/api/time-tracking-cache";
 
 export function NewEntryDialog(props: {
   open: boolean;
@@ -39,8 +40,10 @@ export function NewEntryDialog(props: {
   const [endTime, setEndTime] = React.useState("");
   const [hours, setHours] = React.useState(0);
   const [minutes, setMinutes] = React.useState(0);
+  const queryClient = useQueryClient();
 
-  const { projects, activities } = useTimeTrackingData({
+  const { projects, activities, isProjectsLoading, isActivitiesLoading } =
+    useTimeTrackingData({
     projectId,
     enabled: props.open,
   });
@@ -98,11 +101,46 @@ export function NewEntryDialog(props: {
     setMinutes(0);
   };
 
+  const prefetchProjects = React.useCallback(() => {
+    void queryClient.prefetchQuery(timeTrackingQueries.listProjects());
+  }, [queryClient]);
+
+  const prefetchActivities = React.useCallback(
+    (nextProjectId: string) => {
+      if (!nextProjectId) return;
+      void queryClient.prefetchQuery(
+        timeTrackingQueries.listActivities(nextProjectId),
+      );
+    },
+    [queryClient],
+  );
+
+  const handleProjectChange = React.useCallback(
+    (nextProjectId: string) => {
+      setProjectId(nextProjectId);
+      setActivityName("");
+      prefetchActivities(nextProjectId);
+    },
+    [prefetchActivities],
+  );
+
+  React.useEffect(() => {
+    if (!props.open) return;
+
+    prefetchProjects();
+    const cachedEntries = getCachedTimeEntries(queryClient);
+    const recentProjectIds = Array.from(
+      new Set(cachedEntries.map((entry) => entry.projectId)),
+    ).slice(0, 3);
+    recentProjectIds.forEach(prefetchActivities);
+  }, [prefetchActivities, prefetchProjects, props.open, queryClient]);
+
   return (
     <Dialog
       open={props.open}
       onOpenChange={(open) => {
         props.onOpenChange(open);
+        if (open) prefetchProjects();
         if (!open) reset();
       }}
     >
@@ -153,10 +191,14 @@ export function NewEntryDialog(props: {
               }
               placeholder="Select project..."
               searchPlaceholder="Search projects..."
-              onSelect={(v) => setProjectId(v)}
               emptyMessage="No projects found"
+              isLoading={isProjectsLoading}
+              onOpenChange={(open) => {
+                if (open) prefetchProjects();
+              }}
+              onItemMouseEnter={prefetchActivities}
               value={projectId}
-              onChange={(v) => setProjectId(v)}
+              onChange={handleProjectChange}
             />
             <Combobox
               items={
@@ -167,8 +209,9 @@ export function NewEntryDialog(props: {
               }
               placeholder="Select activity..."
               searchPlaceholder="Search activities..."
-              onSelect={(v) => setActivityName(v)}
               emptyMessage="No activities found"
+              isLoading={isActivitiesLoading}
+              loadingMessage="Loading activities..."
               disabled={!projectId}
               value={activityName}
               onChange={(v) => setActivityName(v)}

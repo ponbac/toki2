@@ -18,6 +18,14 @@ pub struct GetTimerResponse {
     pub timer: Option<TimerResponse>,
 }
 
+/// Response for saving the active timer.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveTimerResponse {
+    pub entry: TimeEntryResponse,
+    pub timer: Option<TimerResponse>,
+}
+
 /// Active timer response - all timers are standalone now.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

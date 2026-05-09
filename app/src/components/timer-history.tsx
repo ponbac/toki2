@@ -1,6 +1,7 @@
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
+import { getCachedTimeEntries } from "@/lib/api/time-tracking-cache";
 import { cn } from "@/lib/utils";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { HistoryIcon, SearchCode } from "lucide-react";
 import React from "react";
@@ -22,6 +23,7 @@ export function TimerHistory(props: {
 }) {
   const [searchTerm, setSearchTerm] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
 
   const { data: timeEntries, isLoading } = useQuery({
     ...timeTrackingQueries.timeEntries({
@@ -31,15 +33,24 @@ export function TimerHistory(props: {
     }),
   });
 
+  const cachedSuggestions = React.useMemo(() => {
+    return dedupeSuggestions(getCachedTimeEntries(queryClient));
+  }, [queryClient]);
+
+  const suggestions = React.useMemo(
+    () => dedupeSuggestions([...(timeEntries ?? []), ...cachedSuggestions]),
+    [cachedSuggestions, timeEntries],
+  );
+
   const filteredEntries = React.useMemo(() => {
-    if (!timeEntries?.length) return [];
-    return timeEntries.filter((entry) =>
+    if (!suggestions.length) return [];
+    return suggestions.filter((entry) =>
       [entry.projectName, entry.activityName, entry.note]
         .join(" ")
         .toLowerCase()
         .includes(searchTerm.toLowerCase()),
     );
-  }, [timeEntries, searchTerm]);
+  }, [suggestions, searchTerm]);
 
   return (
     <div className={props.className}>
@@ -77,7 +88,7 @@ export function TimerHistory(props: {
           props.scrollAreaClassName,
         )}
       >
-        {isLoading
+        {isLoading && !filteredEntries.length
           ? Array.from({ length: 10 }).map((_, index) => (
               <HistoryEntrySkeleton key={index} />
             ))
@@ -117,6 +128,20 @@ export function TimerHistory(props: {
       </ScrollArea>
     </div>
   );
+}
+
+function dedupeSuggestions<T extends {
+  projectName: string;
+  activityName: string;
+  note: string | null;
+}>(entries: Array<T>) {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = `${entry.projectName}\u0000${entry.activityName}\u0000${entry.note ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function HistoryEntrySkeleton() {

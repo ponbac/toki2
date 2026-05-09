@@ -15,12 +15,12 @@ export const useTimeTrackingData = (options?: {
   });
   const isAuthenticated = connectionStatus?.connected ?? false;
 
-  const { data: projects } = useQuery({
+  const { data: projects, isLoading: isProjectsLoading } = useQuery({
     ...timeTrackingQueries.listProjects(),
     enabled: isAuthenticated && isEnabled,
   });
 
-  const { data: activities } = useQuery({
+  const { data: activities, isLoading: isActivitiesLoading } = useQuery({
     ...timeTrackingQueries.listActivities(options?.projectId ?? ""),
     enabled: isAuthenticated && !!options?.projectId && isEnabled,
   });
@@ -34,6 +34,8 @@ export const useTimeTrackingData = (options?: {
   return {
     projects,
     activities,
+    isProjectsLoading,
+    isActivitiesLoading,
     isAuthenticated,
     connectionStatus,
   };
