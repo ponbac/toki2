@@ -66,6 +66,9 @@ jobs:
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     env:
       RUSTC_WRAPPER: ""
     steps:
