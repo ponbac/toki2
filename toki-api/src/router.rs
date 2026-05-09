@@ -18,6 +18,7 @@ use tower_sessions_moka_store::MokaStore;
 use tower_sessions_sqlx_store::PostgresStore;
 
 type SessionStore = CachingSessionStore<MokaStore, PostgresStore>;
+const SESSION_COOKIE_NAME: &str = "toki.sid";
 
 use crate::{
     adapters::outbound::{media::WebpAvatarProcessor, postgres::PostgresAvatarRepository},
@@ -150,6 +151,7 @@ async fn new_auth_layer(
 
     let secure_cookies = config.application.api_url.starts_with("https://");
     let session_layer = SessionManagerLayer::new(session_store)
+        .with_name(SESSION_COOKIE_NAME)
         .with_secure(secure_cookies)
         .with_same_site(SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(Duration::days(7)));
