@@ -7,6 +7,7 @@ import {
 import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import { apiErrorToast } from "@/lib/api/errors";
 import { useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
 import { toast } from "sonner";
 import {
@@ -290,7 +291,7 @@ const StartAgainButton = React.memo(function StartAgainButton(props: {
         activityName: props.activityName,
       })
         .then(() => toast.success("Timer updated"))
-        .catch(() => toast.error("Failed to update timer"));
+        .catch(apiErrorToast("Failed to update timer"));
       return;
     }
 
@@ -304,7 +305,7 @@ const StartAgainButton = React.memo(function StartAgainButton(props: {
         })
       )
       .then(() => toast.success("Timer started"))
-      .catch(() => toast.error("Failed to start timer"));
+      .catch(apiErrorToast("Failed to start timer"));
   };
 
   return (

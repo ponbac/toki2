@@ -24,6 +24,7 @@ import {
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { COLORS, withAlpha, buildProjectColorMap } from "./colors";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import { apiErrorToast } from "@/lib/api/errors";
 import { useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
 import { toast } from "sonner";
 import { TimeEntryEditDialog } from "./time-entry-edit-dialog";
@@ -205,7 +206,7 @@ const PlayButton = React.memo(function PlayButton({
         activityName: entry.activityName,
       })
         .then(() => toast.success("Timer updated"))
-        .catch(() => toast.error("Failed to update timer"));
+        .catch(apiErrorToast("Failed to update timer"));
       return;
     }
 
@@ -219,7 +220,7 @@ const PlayButton = React.memo(function PlayButton({
         }),
       )
       .then(() => toast.success("Timer started"))
-      .catch(() => toast.error("Failed to start timer"));
+      .catch(apiErrorToast("Failed to start timer"));
   };
 
   return (

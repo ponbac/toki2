@@ -4,7 +4,7 @@ use time::Date;
 use crate::domain::{
     models::{
         ActiveTimer, Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimerHistoryEntry, TimerId, UserId, WeeklyStats,
+        TimeEntry, TimeEntryDayStatus, TimerHistoryEntry, TimerId, UserId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -89,6 +89,12 @@ pub trait TimeTrackingService: Send + Sync + 'static {
         date_range: (Date, Date),
         unique: bool,
     ) -> Result<Vec<TimeEntry>, TimeTrackingError>;
+
+    /// Get date-level statuses for a date range.
+    async fn get_time_entry_day_statuses(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<TimeEntryDayStatus>, TimeTrackingError>;
 
     /// Create a new time entry.
     ///

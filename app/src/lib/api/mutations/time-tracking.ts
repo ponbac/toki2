@@ -205,6 +205,9 @@ function useEditProjectRegistration(
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timeInfo().queryKey.slice(0, 2),
       });
+      queryClient.invalidateQueries({
+        queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
+      });
       options?.onSuccess?.(data, v, c);
     },
   });
@@ -229,6 +232,9 @@ function useDeleteProjectRegistration(
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timeInfo().queryKey.slice(0, 2),
       });
+      queryClient.invalidateQueries({
+        queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
+      });
       options?.onSuccess?.(data, v, c);
     },
   });
@@ -252,6 +258,9 @@ function useCreateProjectRegistration(
       });
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timeInfo().queryKey.slice(0, 2),
+      });
+      queryClient.invalidateQueries({
+        queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
       });
       options?.onSuccess?.(data, v, c);
     },

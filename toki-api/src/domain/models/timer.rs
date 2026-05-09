@@ -69,6 +69,13 @@ pub enum TimeEntryStatus {
     Certified,
 }
 
+/// Date-level attestation status for time entry creation/editing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimeEntryDayStatus {
+    pub date: Date,
+    pub status: TimeEntryStatus,
+}
+
 /// A completed time entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeEntry {

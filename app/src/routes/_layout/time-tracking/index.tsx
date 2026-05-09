@@ -8,6 +8,7 @@ import { TimeEntriesList } from "./-components/time-entries-list";
 import { DateRangeSelector } from "./-components/date-range-selector";
 import { useQuery } from "@tanstack/react-query";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
+import { apiErrorToast } from "@/lib/api/errors";
 import { userQueries } from "@/lib/api/queries/user";
 import { startOfWeek, endOfWeek, format } from "date-fns";
 import React from "react";
@@ -131,7 +132,7 @@ function TimeTrackingPage() {
         setIsNewEntryOpen(false);
         toast.success("Entry created");
       },
-      onError: () => toast.error("Failed to create entry"),
+      onError: apiErrorToast("Failed to create entry"),
     });
 
   const [isNewEntryOpen, setIsNewEntryOpen] = React.useState(false);

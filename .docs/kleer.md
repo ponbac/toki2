@@ -79,6 +79,8 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
   - `Approved` -> `approved`
   - `Certified` -> `certified`
 - Only `open` entries are editable. `approved` and `certified` entries are locked.
+- `GET /event/statuses` exposes date-level statuses even when no event from the current Toki view is present. Use it to gate create/edit attempts before calling `PUT /event`.
+  - Live validation on 2026-05-09: Pontus Backman (`131486`) on `2026-05-01` returned `APPROVED`; Martin Liljeberg (`129583`) returned `OPEN` after manually reopening `2026-05-09`.
 - Weekly stats expose:
   - `workedHours`
   - `scheduledHours`

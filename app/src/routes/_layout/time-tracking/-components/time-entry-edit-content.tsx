@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import { CalendarIcon, SaveIcon, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
 import { TimeEntry } from "@/lib/api/queries/time-tracking";
+import { apiErrorToast } from "@/lib/api/errors";
 import { cn, getWeekNumber } from "@/lib/utils";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
@@ -89,7 +90,7 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
   const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
     timeTrackingMutations.useEditProjectRegistration({
       onSuccess: () => props.onSaved(),
-      onError: () => toast.error(`Failed to update time entry, try again later`),
+      onError: apiErrorToast("Failed to update time entry"),
     });
 
   const { mutate: deleteTimeEntry, isPending: isDeletingTimeEntry } =
@@ -98,7 +99,7 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
         props.onSaved();
         toast.success("Time entry deleted successfully");
       },
-      onError: () => toast.error("Failed to delete time entry, try again later"),
+      onError: apiErrorToast("Failed to delete time entry"),
     });
 
   const handleSave = () => {

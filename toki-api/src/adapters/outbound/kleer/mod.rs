@@ -5,14 +5,15 @@ use std::collections::{HashMap, HashSet};
 use async_trait::async_trait;
 use kleer::{
     KleerActivityList, KleerClient, KleerClientProjectList, KleerClientProjectReadable,
-    KleerCredentials, KleerError, KleerEventReadable, KleerEventWritable, KleerIdRef,
+    KleerCredentials, KleerError, KleerEventReadable, KleerEventRestrictionList,
+    KleerEventWritable, KleerIdRef,
 };
 use time::Date;
 
 use crate::domain::{
     models::{
         Activity, ActivityId, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimerId, WeeklyStats,
+        TimeEntry, TimeEntryDayStatus, TimerId, WeeklyStats,
     },
     ports::outbound::TimeTrackingClient,
     TimeTrackingError,
@@ -233,6 +234,22 @@ impl KleerAdapter {
             start_time.unix_timestamp_nanos()
         )
     }
+
+    fn to_domain_day_statuses(statuses: KleerEventRestrictionList) -> Vec<TimeEntryDayStatus> {
+        statuses
+            .event_restriction_readables
+            .into_iter()
+            .filter_map(|restriction| {
+                restriction
+                    .status
+                    .event_date
+                    .map(|date| TimeEntryDayStatus {
+                        date,
+                        status: to_domain_status(restriction.status.status_type),
+                    })
+            })
+            .collect()
+    }
 }
 
 #[async_trait]
@@ -353,15 +370,9 @@ impl TimeTrackingClient for KleerAdapter {
             .iter()
             .map(|activity| (activity.id.id, activity.name.clone()))
             .collect();
-        let status_by_date: HashMap<_, _> = statuses
-            .event_restriction_readables
+        let status_by_date: HashMap<_, _> = Self::to_domain_day_statuses(statuses)
             .into_iter()
-            .filter_map(|restriction| {
-                restriction
-                    .status
-                    .event_date
-                    .map(|date| (date, to_domain_status(restriction.status.status_type)))
-            })
+            .map(|day_status| (day_status.date, day_status.status))
             .collect();
 
         let mut entries = Vec::new();
@@ -405,6 +416,19 @@ impl TimeTrackingClient for KleerAdapter {
         }
 
         Ok(entries)
+    }
+
+    async fn get_time_entry_day_statuses(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<TimeEntryDayStatus>, TimeTrackingError> {
+        let statuses = self
+            .client
+            .list_event_statuses(self.target_user_id, date_range.0, date_range.1)
+            .await
+            .map_err(map_kleer_error)?;
+
+        Ok(Self::to_domain_day_statuses(statuses))
     }
 
     async fn create_time_entry(
@@ -479,11 +503,28 @@ fn map_kleer_error(error: KleerError) -> TimeTrackingError {
         KleerError::InvalidConfig(message)
         | KleerError::Request(message)
         | KleerError::Deserialize { message, .. } => TimeTrackingError::unknown(message),
-        KleerError::Response { status, body: _ } => {
-            tracing::warn!("Kleer returned non-success response: status={status}");
-            TimeTrackingError::unknown(format!("Kleer returned {status}"))
+        KleerError::Response { status, body } => {
+            let message = kleer_response_message(&body);
+            tracing::warn!("Kleer returned non-success response: status={status}, body={message}");
+            TimeTrackingError::unknown(format!("Kleer returned {status}: {message}"))
         }
     }
+}
+
+fn kleer_response_message(body: &str) -> String {
+    let message = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("message")
+                .and_then(|message| message.as_str())
+                .map(str::to_string)
+        })
+        .filter(|message| !message.trim().is_empty())
+        .unwrap_or_else(|| "empty response body".to_string());
+
+    let message = message.replace(['\r', '\n', '\t'], " ");
+    message.chars().take(500).collect()
 }
 
 fn empty_schedule_for_missing_payroll_user(

@@ -7,7 +7,8 @@ use time::{Date, OffsetDateTime};
 use crate::domain::{
     models::{
         ActiveTimer, Activity, CreateTimeEntryRequest, EditTimeEntryRequest, NewTimerHistoryEntry,
-        Project, ProjectId, TimeEntry, TimerHistoryEntry, TimerId, UserId, WeeklyStats,
+        Project, ProjectId, TimeEntry, TimeEntryDayStatus, TimerHistoryEntry, TimerId, UserId,
+        WeeklyStats,
     },
     ports::{
         inbound::TimeTrackingService,
@@ -211,6 +212,13 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         }
 
         Ok(entries)
+    }
+
+    async fn get_time_entry_day_statuses(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<TimeEntryDayStatus>, TimeTrackingError> {
+        self.client.get_time_entry_day_statuses(date_range).await
     }
 
     async fn create_time_entry(

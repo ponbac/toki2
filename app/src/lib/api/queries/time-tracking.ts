@@ -72,6 +72,25 @@ export const timeTrackingQueries = {
           .json<Array<TimeEntry>>();
       },
     }),
+  timeEntryDayStatusesBaseKey: [
+    "time-tracking",
+    "time-entry-day-statuses",
+  ],
+  timeEntryDayStatuses: (query: { from: string; to: string }) =>
+    queryOptions({
+      queryKey: [
+        ...timeTrackingQueries.timeEntryDayStatusesBaseKey,
+        query.from,
+        query.to,
+      ],
+      queryFn: async () => {
+        return api
+          .get("time-tracking/time-entry-day-statuses", {
+            searchParams: query,
+          })
+          .json<Array<TimeEntryDayStatus>>();
+      },
+    }),
   adminMappings: () =>
     queryOptions({
       queryKey: ["time-tracking", "admin", "kleer-users"],
@@ -156,6 +175,11 @@ export type TimeEntry = {
 };
 
 export type TimeEntryStatus = "open" | "approved" | "certified";
+
+export type TimeEntryDayStatus = {
+  date: string;
+  status: TimeEntryStatus;
+};
 
 export type TimeTrackingAdminMappings = {
   users: Array<TimeTrackingAdminUser>;

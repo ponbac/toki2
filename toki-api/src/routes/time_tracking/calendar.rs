@@ -7,7 +7,7 @@ use serde::Deserialize;
 use tracing::instrument;
 
 use crate::{
-    adapters::inbound::http::{TimeEntryResponse, WeeklyStatsResponse},
+    adapters::inbound::http::{TimeEntryDayStatusResponse, TimeEntryResponse, WeeklyStatsResponse},
     app_state::AppState,
     auth::AuthUser,
     domain::models::{ActivityId, CreateTimeEntryRequest, EditTimeEntryRequest, ProjectId},
@@ -76,6 +76,25 @@ pub async fn get_time_entries(
         .await?;
 
     Ok(Json(time_entries.into_iter().map(Into::into).collect()))
+}
+
+#[instrument(name = "get_time_entry_day_statuses", skip(app_state))]
+pub async fn get_time_entry_day_statuses(
+    user: AuthUser,
+    State(app_state): State<AppState>,
+    Query(date_filter): Query<DateFilterQuery>,
+) -> Result<Json<Vec<TimeEntryDayStatusResponse>>, ApiError> {
+    let service = app_state
+        .time_tracking_factory
+        .create_service(user.id)
+        .await?;
+
+    let from = parse_date(&date_filter.from)?;
+    let to = parse_date(&date_filter.to)?;
+
+    let statuses = service.get_time_entry_day_statuses((from, to)).await?;
+
+    Ok(Json(statuses.into_iter().map(Into::into).collect()))
 }
 
 // ============================================================================

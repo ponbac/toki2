@@ -15,6 +15,7 @@ import { cn, formatHoursMinutes } from "@/lib/utils";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import { apiErrorToast } from "@/lib/api/errors";
 import dayjs from "dayjs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
@@ -103,14 +104,14 @@ export const FloatingTimer = () => {
       },
     });
   const { mutate: saveTimer, isPending: isSavingTimer } =
-    timeTrackingMutations.useSaveTimer();
+    timeTrackingMutations.useSaveTimer({
+      onError: apiErrorToast("Failed to save timer"),
+    });
   const { mutate: editTimer } = timeTrackingMutations.useEditTimer({
     onSuccess: () => {
       toast.success("Timer successfully updated");
     },
-    onError: () => {
-      toast.error(`Failed to update timer, try refreshing the page`);
-    },
+    onError: apiErrorToast("Failed to update timer"),
   });
 
   // Store the start time

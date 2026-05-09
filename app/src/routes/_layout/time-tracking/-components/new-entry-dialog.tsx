@@ -1,4 +1,5 @@
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +22,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import { CreateProjectRegistrationPayload } from "@/lib/api/mutations/time-tracking";
+import type { CreateProjectRegistrationPayload } from "@/lib/api/mutations/time-tracking";
+import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 
 export function NewEntryDialog(props: {
   open: boolean;
@@ -42,12 +44,26 @@ export function NewEntryDialog(props: {
     projectId,
     enabled: props.open,
   });
+  const { data: dayStatuses, isLoading: isDayStatusLoading } = useQuery({
+    ...timeTrackingQueries.timeEntryDayStatuses({ from: regDay, to: regDay }),
+    enabled: props.open,
+  });
   const selectedProject = projects?.find(
     (p) => p.projectId.toString() === projectId,
   );
   const selectedActivity = activities?.find(
     (a) => a.activityName === activityName,
   );
+  const selectedDayStatus =
+    dayStatuses?.find((dayStatus) => dayStatus.date === regDay)?.status ??
+    "open";
+  const isSelectedDayLocked = selectedDayStatus !== "open";
+  const canCreateEntry =
+    !!selectedProject &&
+    !!selectedActivity &&
+    !isDayStatusLoading &&
+    !isSelectedDayLocked &&
+    Boolean(endTime || hours > 0 || minutes > 0);
 
   const updateTimeRange = (start: string, end: string) => {
     setStartTime(start);
@@ -95,7 +111,9 @@ export function NewEntryDialog(props: {
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!selectedProject || !selectedActivity) return;
+            if (!canCreateEntry) {
+              return;
+            }
             const startISO = dayjs(`${regDay}T${startTime}`).toISOString();
             const computedEnd = endTime
               ? endTime
@@ -188,6 +206,12 @@ export function NewEntryDialog(props: {
                     />
                   </PopoverContent>
                 </Popover>
+                {isSelectedDayLocked && (
+                  <p className="text-sm font-medium text-destructive">
+                    This day is {selectedDayStatus} in Kleer and cannot be
+                    changed.
+                  </p>
+                )}
               </div>
               <div className="relative mt-2 flex gap-12">
                 <div className="space-y-4">
@@ -269,9 +293,7 @@ export function NewEntryDialog(props: {
               type="submit"
               size="sm"
               disabled={
-                !selectedProject ||
-                !selectedActivity ||
-                (!endTime && hours === 0 && minutes === 0)
+                !canCreateEntry
               }
             >
               Create

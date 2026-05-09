@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import { apiErrorToast } from "@/lib/api/errors";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCwIcon, Settings2Icon, UserCheckIcon } from "lucide-react";
@@ -42,7 +43,7 @@ export const TimeTrackingSettings = ({
   const { mutate: importKleerUsers, isPending: isImporting } =
     timeTrackingMutations.useImportKleerUsers({
       onSuccess: () => toast.success("Kleer users synced"),
-      onError: () => toast.error("Failed to sync Kleer users"),
+      onError: apiErrorToast("Failed to sync Kleer users"),
     });
   const { mutate: linkKleerUsersByEmail, isPending: isLinkingByEmail } =
     timeTrackingMutations.useLinkKleerUsersByEmail({
@@ -57,17 +58,17 @@ export const TimeTrackingSettings = ({
           count === 1 ? "1 mapping created" : `${count} mappings created`,
         );
       },
-      onError: () => toast.error("Failed to match Kleer users"),
+      onError: apiErrorToast("Failed to match Kleer users"),
     });
   const { mutate: upsertLink, isPending: isSavingLink } =
     timeTrackingMutations.useUpsertKleerUserLink({
       onSuccess: () => toast.success("Mapping saved"),
-      onError: () => toast.error("Failed to save mapping"),
+      onError: apiErrorToast("Failed to save mapping"),
     });
   const { mutate: deactivateLink, isPending: isRemovingLink } =
     timeTrackingMutations.useDeactivateKleerUserLink({
       onSuccess: () => toast.success("Mapping removed"),
-      onError: () => toast.error("Failed to remove mapping"),
+      onError: apiErrorToast("Failed to remove mapping"),
     });
   const isMappingBusy = isSavingLink || isRemovingLink || isLinkingByEmail;
 

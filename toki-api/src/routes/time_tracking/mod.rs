@@ -22,6 +22,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/time-info", get(calendar::get_time_info))
         .route(
+            "/time-entry-day-statuses",
+            get(calendar::get_time_entry_day_statuses),
+        )
+        .route(
             "/time-entries",
             get(calendar::get_time_entries)
                 .put(calendar::edit_project_registration)
