@@ -101,6 +101,10 @@ impl KleerClient {
     }
 
     pub async fn list_client_projects(&self) -> Result<KleerClientProjectList, KleerError> {
+        self.get("client-project", &[]).await
+    }
+
+    pub async fn list_active_client_projects(&self) -> Result<KleerClientProjectList, KleerError> {
         self.get("client-project", &[("filter", "active".to_string())])
             .await
     }

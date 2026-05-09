@@ -361,7 +361,7 @@ fn email_match_link_candidates(
         }
 
         candidates.push(NewTimeTrackingUserLink {
-            user_id: user.id.clone(),
+            user_id: user.id,
             provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
             provider_company_id: provider_user.provider_company_id.clone(),
             provider_user_id: provider_user.provider_user_id.clone(),

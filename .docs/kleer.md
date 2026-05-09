@@ -59,6 +59,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - `GET /company/{companyId}/user`
 - `GET /company/{companyId}/user/{userId}`
 - `GET /company/{companyId}/user/foreign-id/{foreignId}`
+- `GET /company/{companyId}/client-project`
 - `GET /company/{companyId}/client-project?filter=active`
 - `GET /company/{companyId}/activity`
 - `GET /company/{companyId}/event`

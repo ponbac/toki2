@@ -215,6 +215,27 @@ impl TimeTrackingUserLinkRepository for TimeTrackingUserLinkRepositoryImpl {
         link: &NewTimeTrackingUserLink,
     ) -> Result<TimeTrackingUserLink, TimeTrackingError> {
         let user_id = link.user_id.as_i32();
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+
+        sqlx::query!(
+            r#"
+            UPDATE time_tracking_user_links
+            SET active = FALSE, updated_at = CURRENT_TIMESTAMP
+            WHERE provider = $1
+                AND provider_company_id = $2
+                AND provider_user_id = $3
+                AND user_id != $4
+                AND active
+            "#,
+            link.provider,
+            link.provider_company_id,
+            link.provider_user_id,
+            user_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_error)?;
+
         let row = sqlx::query_as!(
             TimeTrackingUserLinkRow,
             r#"
@@ -242,9 +263,11 @@ impl TimeTrackingUserLinkRepository for TimeTrackingUserLinkRepositoryImpl {
             link.provider_user_email,
             link.provider_user_name
         )
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(map_sqlx_error)?;
+
+        tx.commit().await.map_err(map_sqlx_error)?;
 
         Ok(row.into())
     }

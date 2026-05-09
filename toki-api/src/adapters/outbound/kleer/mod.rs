@@ -141,7 +141,7 @@ impl KleerAdapter {
         let activity_id = Self::parse_kleer_id(activity_id.as_str(), "activity id")?;
         let projects = self
             .client
-            .list_client_projects()
+            .list_active_client_projects()
             .await
             .map_err(map_kleer_error)?;
         let activities = self
@@ -240,7 +240,7 @@ impl TimeTrackingClient for KleerAdapter {
     async fn get_projects(&self) -> Result<Vec<Project>, TimeTrackingError> {
         let projects = self
             .client
-            .list_client_projects()
+            .list_active_client_projects()
             .await
             .map_err(map_kleer_error)?;
 
@@ -259,7 +259,7 @@ impl TimeTrackingClient for KleerAdapter {
     ) -> Result<Vec<Activity>, TimeTrackingError> {
         let projects = self
             .client
-            .list_client_projects()
+            .list_active_client_projects()
             .await
             .map_err(map_kleer_error)?;
         let activities = self
