@@ -113,12 +113,16 @@ Finally, configure Dokploy database backups.
 
 ## App Environment
 
-Frontend build environment:
+Frontend build-time arguments:
 
 ```bash
 VITE_API_URL=https://toki-api.spinit.se
 VITE_TIME_TRACKING_PROVIDER_URL=<Kleer test or production web URL>
 ```
+
+Set these on the web application under **Environment -> Build-time Arguments**.
+The runtime **Environment Settings** are available to the nginx container after
+the Vite bundle has already been built, so they do not change `import.meta.env`.
 
 Backend production environment:
 
