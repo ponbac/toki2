@@ -1,4 +1,5 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
+import type { AgentRunIssueSummary } from "@/lib/api/queries/agentRuns";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import type { TimeReportMode } from "@/lib/time-report";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,9 @@ export function BoardColumn({
   onColumnDrop,
   onMoveItem,
   onTimerAction,
+  onLaunchAgent,
+  latestRunByWorkItemId,
+  onOpenAgentRun,
 }: {
   columnId: string;
   title: string;
@@ -40,6 +44,9 @@ export function BoardColumn({
     targetColumnId: string,
   ) => void;
   onTimerAction: (item: BoardWorkItem, mode: TimeReportMode) => Promise<void>;
+  onLaunchAgent: (item: BoardWorkItem) => void;
+  latestRunByWorkItemId: Map<string, AgentRunIssueSummary>;
+  onOpenAgentRun: (runId: string) => void;
 }) {
   const isDragging = draggingItemId !== null;
 
@@ -101,6 +108,9 @@ export function BoardColumn({
                 onDragEnd={onCardDragEnd}
                 onMoveToColumn={onMoveItem}
                 onTimerAction={onTimerAction}
+                onLaunchAgent={onLaunchAgent}
+                latestAgentRun={latestRunByWorkItemId.get(item.id) ?? null}
+                onOpenAgentRun={onOpenAgentRun}
               />
             ))
           )}

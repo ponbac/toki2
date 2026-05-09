@@ -8,6 +8,7 @@ import { mutations } from "@/lib/api/mutations/mutations";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
+import type { AgentRunIssueSummary } from "@/lib/api/queries/agentRuns";
 import {
   normalizeColumnName,
   resolveColumnIdForItem,
@@ -19,6 +20,11 @@ import {
 import { copyAndSyncTimeReport } from "@/lib/time-report-actions";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
+import { AgentRunDrawer } from "./agent-run-drawer";
+import {
+  LaunchAgentDialog,
+  type AgentLaunchTargetRepo,
+} from "./launch-agent-dialog";
 import {
   useCallback,
   useMemo,
@@ -78,7 +84,13 @@ export function BoardView({
     placeholderData: keepPreviousData,
   });
   const { data: user } = useSuspenseQuery(queries.me());
+  const { data: repositories = [] } = useQuery({
+    ...queries.differs(),
+    staleTime: 30_000,
+  });
   const { mutateAsync: moveBoardItem } = mutations.useMoveBoardItem();
+  const { mutateAsync: createAgentRun, isPending: isLaunchingAgent } =
+    mutations.useCreateAgentRun();
   const { data: timerResponse, isSuccess: timerQuerySuccess } = useQuery({
     ...timeTrackingQueries.getTimer(),
     retry: false,
@@ -128,6 +140,11 @@ export function BoardView({
   const [, setMovingItemVersion] = useState(0);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
+  const [agentLaunchItem, setAgentLaunchItem] = useState<BoardWorkItem | null>(
+    null,
+  );
+  const [activeAgentRunId, setActiveAgentRunId] = useState<string | null>(null);
+  const [isAgentDrawerOpen, setIsAgentDrawerOpen] = useState(false);
   const [hiddenColumnsByScope, setHiddenColumnsByScope] = useAtom(
     hiddenColumnsByScopeAtom,
   );
@@ -231,6 +248,32 @@ export function BoardView({
       columnsWithItems.filter((column) => !hiddenColumnIdSet.has(column.id)),
     [columnsWithItems, hiddenColumnIdSet],
   );
+  const visibleWorkItemIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          visibleColumns.flatMap((column) =>
+            column.items.map((item) => item.id),
+          ),
+        ),
+      ),
+    [visibleColumns],
+  );
+  const { data: latestAgentRunsResponse } = useQuery({
+    ...queries.latestByWorkItems({
+      sourceProvider: "azureDevOpsWorkItem",
+      organization,
+      project,
+      workItemIds: visibleWorkItemIds,
+    }),
+    retry: false,
+  });
+  const latestRunByWorkItemId = useMemo(() => {
+    const runs = latestAgentRunsResponse?.runs ?? [];
+    return new Map<string, AgentRunIssueSummary>(
+      runs.map((run) => [run.workItemId, run]),
+    );
+  }, [latestAgentRunsResponse]);
   const allColumns = useMemo(
     () =>
       columnsWithItems.map((column) => ({ id: column.id, name: column.name })),
@@ -374,6 +417,47 @@ export function BoardView({
     },
     [editTimer, startTimer, timer, timerQuerySuccess],
   );
+  const handleLaunchAgent = useCallback((item: BoardWorkItem) => {
+    setAgentLaunchItem(item);
+  }, []);
+  const handleOpenAgentRun = useCallback((runId: string) => {
+    setActiveAgentRunId(runId);
+    setIsAgentDrawerOpen(true);
+  }, []);
+  const handleConfirmAgentLaunch = useCallback(
+    async ({
+      targetRepo,
+      prompt,
+    }: {
+      targetRepo: AgentLaunchTargetRepo;
+      prompt?: string;
+    }) => {
+      if (!agentLaunchItem) {
+        return;
+      }
+
+      try {
+        const run = await createAgentRun({
+          source: {
+            id: agentLaunchItem.id,
+            title: agentLaunchItem.title,
+            url: agentLaunchItem.url,
+            organization,
+            project,
+          },
+          targetRepo,
+          prompt,
+        });
+        setAgentLaunchItem(null);
+        setActiveAgentRunId(run.id);
+        setIsAgentDrawerOpen(true);
+        toast.success("Agent run created.");
+      } catch {
+        toast.error("Failed to launch agent.");
+      }
+    },
+    [agentLaunchItem, createAgentRun, organization, project],
+  );
 
   if (!board) {
     if (isBoardError) {
@@ -399,7 +483,7 @@ export function BoardView({
   }
 
   return (
-    <div className="flex min-w-0 w-full flex-col gap-3">
+    <div className="flex w-full min-w-0 flex-col gap-3">
       <BoardFilters
         memberFilter={memberFilter}
         setMemberFilter={setMemberFilter}
@@ -413,7 +497,7 @@ export function BoardView({
         onToggleColumn={toggleColumnVisibility}
         onShowAllColumns={showAllColumns}
       />
-      <div className="h-[calc(100vh-15rem)] min-w-0 w-full">
+      <div className="h-[calc(100vh-15rem)] w-full min-w-0">
         {visibleColumns.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-border/40 bg-muted/20">
             <p className="text-sm text-muted-foreground">
@@ -424,7 +508,7 @@ export function BoardView({
             </Button>
           </div>
         ) : (
-          <div className="flex h-full min-w-0 w-full gap-4 overflow-x-auto pb-2">
+          <div className="flex h-full w-full min-w-0 gap-4 overflow-x-auto pb-2">
             {visibleColumns.map((column) => (
               <div
                 key={column.id}
@@ -448,12 +532,36 @@ export function BoardView({
                   onColumnDrop={handleColumnDrop}
                   onMoveItem={handleMoveItem}
                   onTimerAction={handleTimerAction}
+                  onLaunchAgent={handleLaunchAgent}
+                  latestRunByWorkItemId={latestRunByWorkItemId}
+                  onOpenAgentRun={handleOpenAgentRun}
                 />
               </div>
             ))}
           </div>
         )}
       </div>
+      <LaunchAgentDialog
+        item={agentLaunchItem}
+        organization={organization}
+        project={project}
+        repositories={repositories}
+        open={agentLaunchItem !== null}
+        isLaunching={isLaunchingAgent}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAgentLaunchItem(null);
+          }
+        }}
+        onLaunch={(payload) => {
+          void handleConfirmAgentLaunch(payload);
+        }}
+      />
+      <AgentRunDrawer
+        runId={activeAgentRunId}
+        open={isAgentDrawerOpen}
+        onOpenChange={setIsAgentDrawerOpen}
+      />
     </div>
   );
 }

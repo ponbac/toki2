@@ -13,6 +13,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import type {
+  AgentRunIssueSummary,
+  AgentRunStatus,
+} from "@/lib/api/queries/agentRuns";
 import type { BoardWorkItem } from "@/lib/api/queries/workItems";
 import type { TimeReportMode } from "@/lib/time-report";
 import { BOARD_CATEGORY_OPTIONS } from "../-lib/category-meta";
@@ -21,12 +25,16 @@ import { PrApprovalHoverCard } from "./pr-approval-hover-card";
 import { WorkItemDescriptionHoverCard } from "./work-item-description-hover-card";
 import {
   Check,
+  CheckCircle2,
+  Bot,
   CodeXmlIcon,
   GitBranch,
   Loader2,
   MessageCircleCodeIcon,
   MoreVertical,
   TimerIcon,
+  X,
+  XCircle,
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
@@ -57,6 +65,9 @@ export function BoardCard({
   onDragEnd,
   onMoveToColumn,
   onTimerAction,
+  onLaunchAgent,
+  latestAgentRun,
+  onOpenAgentRun,
 }: {
   item: BoardWorkItem;
   columnId: string;
@@ -73,6 +84,9 @@ export function BoardCard({
     targetColumnId: string,
   ) => void;
   onTimerAction: (item: BoardWorkItem, mode: TimeReportMode) => Promise<void>;
+  onLaunchAgent: (item: BoardWorkItem) => void;
+  latestAgentRun: AgentRunIssueSummary | null;
+  onOpenAgentRun: (runId: string) => void;
 }) {
   const categoryMeta = CATEGORY_META_BY_VALUE[item.category];
   const colors = categoryMeta
@@ -150,7 +164,9 @@ export function BoardCard({
       )}
 
       {/* Header row: metadata */}
-      <div className={cn("mb-1.5 min-h-7", branchName ? "pr-[7.5rem]" : "pr-24")}>
+      <div
+        className={cn("mb-1.5 min-h-7", branchName ? "pr-[7.5rem]" : "pr-24")}
+      >
         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
           <span
             className={cn(
@@ -199,6 +215,12 @@ export function BoardCard({
             {hasPullRequests && (
               <PrApprovalHoverCard pullRequests={pullRequests} />
             )}
+            {latestAgentRun && (
+              <LatestAgentRunButton
+                run={latestAgentRun}
+                onOpenAgentRun={onOpenAgentRun}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -244,6 +266,26 @@ export function BoardCard({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+        </div>
+
+        <div className="pointer-events-auto">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onLaunchAgent(item);
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isMoving}
+                aria-label="Launch agent"
+              >
+                <Bot className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Launch agent</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Move menu - shown on hover */}
@@ -370,4 +412,105 @@ export function BoardCard({
       </div>
     </div>
   );
+}
+
+const ACTIVE_AGENT_RUN_STATUSES = new Set<AgentRunStatus>([
+  "created",
+  "provisioningSandbox",
+  "checkingRepositoryAccess",
+  "cloningRepository",
+  "loadingWorkflow",
+  "planning",
+  "revisingPlan",
+  "planApproved",
+  "implementing",
+  "verifying",
+  "creatingDraftPr",
+  "awaitingBackendPublish",
+  "backendPublishing",
+  "draftPrCreated",
+]);
+
+function LatestAgentRunButton({
+  run,
+  onOpenAgentRun,
+}: {
+  run: AgentRunIssueSummary;
+  onOpenAgentRun: (runId: string) => void;
+}) {
+  const visual = latestAgentRunVisual(run.status);
+  const Icon = visual.icon;
+  const createdAt = new Date(run.createdAt).toLocaleString();
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "hover:bg-current/10 inline-flex h-5 shrink-0 items-center gap-1 rounded border px-1.5 text-[10px] font-semibold outline-none ring-offset-background transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            visual.className,
+          )}
+          aria-label={`Open latest agent run, ${run.status}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenAgentRun(run.id);
+          }}
+        >
+          <Icon className={cn("size-3", visual.spin && "animate-spin")} />
+          Agent
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[16rem]">
+        <div className="grid gap-1 text-xs">
+          <p className="font-medium">{run.status}</p>
+          <p>By {run.createdBy.displayName}</p>
+          <p>{createdAt}</p>
+          {run.syncState === "stale" && (
+            <p className="text-amber-300">Stale status</p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function latestAgentRunVisual(status: AgentRunStatus): {
+  icon: typeof Loader2;
+  className: string;
+  spin?: boolean;
+} {
+  if (ACTIVE_AGENT_RUN_STATUSES.has(status)) {
+    return {
+      icon: Loader2,
+      className: "border-blue-400/40 bg-blue-500/10 text-blue-300",
+      spin: true,
+    };
+  }
+
+  if (status === "awaitingPlanFeedback") {
+    return {
+      icon: MessageCircleCodeIcon,
+      className: "border-amber-400/40 bg-amber-500/10 text-amber-300",
+    };
+  }
+
+  if (status === "succeeded") {
+    return {
+      icon: CheckCircle2,
+      className: "border-green-400/40 bg-green-500/10 text-green-300",
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      icon: XCircle,
+      className: "border-red-400/40 bg-red-500/10 text-red-300",
+    };
+  }
+
+  return {
+    icon: X,
+    className: "border-border bg-muted/50 text-muted-foreground",
+  };
 }

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::{engine::general_purpose, Engine as _};
 use azure_devops_rust_api::{
     core,
     git::{self, models::GitCommitRef},
@@ -126,6 +127,13 @@ impl RepoClient {
 
     pub fn repo_id(&self) -> &str {
         &self.repo_id
+    }
+
+    pub fn git_basic_auth_header(&self) -> String {
+        format!(
+            "Basic {}",
+            general_purpose::STANDARD.encode(format!(":{}", self.pat))
+        )
     }
 
     pub async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, RepoClientError> {
