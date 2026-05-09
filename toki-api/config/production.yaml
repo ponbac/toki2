@@ -4,7 +4,6 @@ application:
   app_url: "https://toki.bkmn.xyz"
   api_url: "https://toki-api.bkmn.xyz"
   disable_auth: false
-  cors_allowed_origin_suffix: "-ponbacs-projects.vercel.app"
 database:
   require_ssl: true
 auth:

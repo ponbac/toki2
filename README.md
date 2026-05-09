@@ -96,28 +96,33 @@ The project is organized into several key components:
 
 ### Pull production DB into local Postgres
 
-This repository provides a one-command snapshot pull from Fly production into your local database:
+This repository can pull a PostgreSQL snapshot from the Dokploy production database
+over Tailscale SSH and restore it into your local database:
 
 ```bash
 just db-prod-pull
 ```
+
+By default the script connects with `tailscale ssh root@toki-dokploy-01`, looks for
+a running Docker container matching `toki-postgres`, and restores into local
+PostgreSQL at `localhost:5433`, database `toki`.
 
 Useful flags:
 
 ```bash
 just db-prod-pull --yes
 just db-prod-pull --yes --keep-dump
-just db-prod-pull --fly-app toki2 --local-db toki
-just db-prod-pull --fly-db-app toki-pg --proxy-port 15432
+just db-prod-pull --dump-only --dump-path ./prod.dump
+just db-prod-pull --ssh-target root@toki-dokploy-01
+just db-prod-pull --container-filter toki-postgres
+just db-prod-pull --local-db toki
 ```
 
 Requirements:
 
-- `flyctl` (authenticated with `fly auth login`)
-- `pg_dump`, `pg_restore`, `psql`
+- Tailscale with access to `root@toki-dokploy-01`
+- `pg_restore`, `psql`
 - local PostgreSQL running and reachable (defaults: `localhost:5433`, db `toki`)
-
-If production host is a Fly private address (`*.flycast`), the script automatically starts a temporary `flyctl proxy` tunnel.
 
 Safety notes:
 

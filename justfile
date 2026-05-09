@@ -27,9 +27,9 @@ build:
 init-db:
     cd toki-api && ./scripts/init_db.sh
 
-# Pull production Fly Postgres DB and restore into local DB
+# Pull production Dokploy Postgres DB over Tailscale SSH and restore into local DB
 db-prod-pull *args:
-    cd toki-api && ./scripts/db_prod_pull.sh {{args}}
+    ./toki-api/scripts/db_prod_pull.sh {{args}}
 
 # Prepare SQLx offline query data (run after changing SQL queries)
 sqlx-prepare:

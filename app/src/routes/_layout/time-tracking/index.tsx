@@ -23,6 +23,7 @@ import {
 } from "@/lib/time-tracking-preferences";
 import { TimeStats } from "./-components/time-stats";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import { TIME_TRACKING_PROVIDER_URL } from "@/lib/time-tracking-provider";
 import {
   FIRST_TIMER_OF_THE_WEEK_NOTE,
   TRY_CMD_K_NEXT_TIME_NOTE,
@@ -169,13 +170,13 @@ function TimeTrackingPage() {
                 {/* Title section */}
                 <div className="space-y-2">
                   <a
-                    href={import.meta.env.VITE_TIME_TRACKING_PROVIDER_URL}
+                    href={TIME_TRACKING_PROVIDER_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group inline-flex items-center gap-2"
                   >
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                      <span className="text-gradient">Time tracking</span>
+                      <span className="text-gradient">Kleer</span>
                     </h1>
                     <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                   </a>
@@ -376,7 +377,7 @@ function NotConnectedState({
           <Clock className="h-8 w-8" />
         </div>
         <h1 className="font-display text-4xl font-bold tracking-tight">
-          Time tracking
+          Kleer
         </h1>
         <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
           Your Toki account is not connected to a Kleer user yet. Contact an

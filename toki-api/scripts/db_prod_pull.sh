@@ -9,44 +9,46 @@ DUMP_ONLY=false
 DUMP_PATH=""
 USER_PROVIDED_DUMP_PATH=false
 TEMP_DIR=""
-PROXY_PID=""
-PROXY_LOG_FILE=""
 
-FLY_APP="${FLY_APP:-toki2}"
-FLY_DB_APP="${FLY_DB_APP:-}"
-PROXY_PORT="${PROXY_PORT:-15432}"
+SSH_TARGET="${DOKPLOY_SSH_TARGET:-root@toki-dokploy-01}"
+CONTAINER_FILTER="${DOKPLOY_POSTGRES_CONTAINER_FILTER:-toki-postgres}"
+REMOTE_DB="${DOKPLOY_POSTGRES_DB:-}"
+REMOTE_USER="${DOKPLOY_POSTGRES_USER:-}"
+
 LOCAL_HOST="${POSTGRES_HOST:-localhost}"
 LOCAL_PORT="${POSTGRES_PORT:-5433}"
 LOCAL_USER="${POSTGRES_USER:-postgres}"
 LOCAL_PASSWORD="${POSTGRES_PASSWORD:-password}"
 LOCAL_DB="${POSTGRES_DB:-toki}"
 
-PROD_HOST=""
-PROD_PORT=""
-PROD_USER=""
-PROD_PASSWORD=""
-PROD_DB=""
-
 usage() {
     cat <<EOF
 Usage: ${SCRIPT_NAME} [options]
 
-Pull a PostgreSQL snapshot from Fly production and restore it into local DB.
+Pull a PostgreSQL snapshot from the Dokploy production database over Tailscale SSH
+and restore it into the local DB.
 
 Options:
-  --yes                      Skip destructive confirmation prompt.
-  --keep-dump                Keep the created dump file.
-  --dump-only                Create a production dump and skip local drop/recreate/restore.
-  --dump-path <path>         Path for dump output file.
-  --fly-app <name>           Fly app to read DB env from (default: toki2).
-  --fly-db-app <name>        Fly Postgres app for proxy (default: derived from *.flycast host).
-  --proxy-port <port>        Local port for Fly DB proxy (default: 15432).
-  --local-host <host>        Local Postgres host (default: localhost).
-  --local-port <port>        Local Postgres port (default: 5433).
-  --local-user <user>        Local Postgres user (default: postgres).
-  --local-password <pass>    Local Postgres password (default: password).
-  --local-db <name>          Local Postgres database (default: toki).
-  -h, --help                 Show this help text.
+  --yes                           Skip destructive confirmation prompt.
+  --keep-dump                     Keep the created dump file.
+  --dump-only                     Create a production dump and skip local drop/recreate/restore.
+  --dump-path <path>              Path for dump output file.
+  --ssh-target <user@host>        Tailscale SSH target (default: root@toki-dokploy-01).
+  --container-filter <name>       Docker container name filter (default: toki-postgres).
+  --remote-db <name>              Production database name (default: POSTGRES_DB from container).
+  --remote-user <user>            Production database user (default: POSTGRES_USER from container).
+  --local-host <host>             Local Postgres host (default: localhost).
+  --local-port <port>             Local Postgres port (default: 5433).
+  --local-user <user>             Local Postgres user (default: postgres).
+  --local-password <pass>         Local Postgres password (default: password).
+  --local-db <name>               Local Postgres database (default: toki).
+  -h, --help                      Show this help text.
+
+Environment overrides:
+  DOKPLOY_SSH_TARGET
+  DOKPLOY_POSTGRES_CONTAINER_FILTER
+  DOKPLOY_POSTGRES_DB
+  DOKPLOY_POSTGRES_USER
 EOF
 }
 
@@ -88,19 +90,24 @@ parse_args() {
                 USER_PROVIDED_DUMP_PATH=true
                 shift 2
                 ;;
-            --fly-app)
-                [[ $# -ge 2 ]] || fail "--fly-app requires a value"
-                FLY_APP="$2"
+            --ssh-target)
+                [[ $# -ge 2 ]] || fail "--ssh-target requires a value"
+                SSH_TARGET="$2"
                 shift 2
                 ;;
-            --fly-db-app)
-                [[ $# -ge 2 ]] || fail "--fly-db-app requires a value"
-                FLY_DB_APP="$2"
+            --container-filter)
+                [[ $# -ge 2 ]] || fail "--container-filter requires a value"
+                CONTAINER_FILTER="$2"
                 shift 2
                 ;;
-            --proxy-port)
-                [[ $# -ge 2 ]] || fail "--proxy-port requires a value"
-                PROXY_PORT="$2"
+            --remote-db)
+                [[ $# -ge 2 ]] || fail "--remote-db requires a value"
+                REMOTE_DB="$2"
+                shift 2
+                ;;
+            --remote-user)
+                [[ $# -ge 2 ]] || fail "--remote-user requires a value"
+                REMOTE_USER="$2"
                 shift 2
                 ;;
             --local-host)
@@ -140,19 +147,12 @@ parse_args() {
 }
 
 ensure_prerequisites() {
-    require_cmd flyctl
-    require_cmd pg_dump
-    require_cmd psql
+    require_cmd tailscale
     require_cmd mktemp
 
     if [[ "${DUMP_ONLY}" == "false" ]]; then
+        require_cmd psql
         require_cmd pg_restore
-    fi
-}
-
-ensure_fly_auth() {
-    if ! flyctl auth whoami >/dev/null 2>&1; then
-        fail "Not authenticated with Fly. Run: flyctl auth login"
     fi
 }
 
@@ -164,10 +164,6 @@ ensure_safe_local_target() {
             fail "Refusing restore: local host must be localhost/127.0.0.1/::1 (got '${LOCAL_HOST}')"
             ;;
     esac
-
-    if [[ "${LOCAL_HOST}" == *".flycast" ]] || [[ "${LOCAL_HOST}" == *"fly.dev"* ]]; then
-        fail "Refusing restore: local host looks like Fly infrastructure (${LOCAL_HOST})"
-    fi
 }
 
 prepare_dump_path() {
@@ -183,16 +179,8 @@ prepare_dump_path() {
 }
 
 cleanup() {
-    if [[ -n "${PROXY_PID}" ]]; then
-        kill "${PROXY_PID}" >/dev/null 2>&1 || true
-    fi
-
     if [[ "${KEEP_DUMP}" == "false" ]] && [[ "${USER_PROVIDED_DUMP_PATH}" == "false" ]] && [[ -n "${DUMP_PATH}" ]] && [[ -f "${DUMP_PATH}" ]]; then
         rm -f "${DUMP_PATH}"
-    fi
-
-    if [[ -n "${PROXY_LOG_FILE}" ]] && [[ -f "${PROXY_LOG_FILE}" ]]; then
-        rm -f "${PROXY_LOG_FILE}"
     fi
 
     if [[ -n "${TEMP_DIR}" ]] && [[ -d "${TEMP_DIR}" ]]; then
@@ -200,85 +188,70 @@ cleanup() {
     fi
 }
 
-read_fly_environment() {
-    local env_output
-    if ! env_output="$(flyctl ssh console --app "${FLY_APP}" --quiet --command "env" 2>/dev/null)"; then
-        fail "Failed to read environment from Fly app '${FLY_APP}'. Ensure it has a running machine and you have access."
-    fi
-    printf '%s' "${env_output}"
-}
-
-extract_env_value() {
-    local env_blob="$1"
-    local key="$2"
-    local line
-    line="$(printf '%s\n' "${env_blob}" | grep -m1 "^${key}=" || true)"
-    if [[ -z "${line}" ]]; then
-        fail "Missing '${key}' in Fly app '${FLY_APP}' environment."
-    fi
-    printf '%s' "${line#*=}"
-}
-
-fetch_production_connection() {
-    local fly_env
-    fly_env="$(read_fly_environment)"
-
-    PROD_HOST="$(extract_env_value "${fly_env}" "TOKI_DATABASE__HOST")"
-    PROD_PORT="$(extract_env_value "${fly_env}" "TOKI_DATABASE__PORT")"
-    PROD_USER="$(extract_env_value "${fly_env}" "TOKI_DATABASE__USERNAME")"
-    PROD_PASSWORD="$(extract_env_value "${fly_env}" "TOKI_DATABASE__PASSWORD")"
-    PROD_DB="$(extract_env_value "${fly_env}" "TOKI_DATABASE__DATABASE_NAME")"
-}
-
-start_fly_proxy_if_needed() {
-    if [[ "${PROD_HOST}" != *.flycast ]]; then
-        return
-    fi
-
-    if [[ -z "${FLY_DB_APP}" ]]; then
-        FLY_DB_APP="${PROD_HOST%%.flycast}"
-    fi
-
-    PROXY_LOG_FILE="$(mktemp)"
-    log "Starting Fly DB proxy via app '${FLY_DB_APP}' on 127.0.0.1:${PROXY_PORT}"
-    flyctl proxy "${PROXY_PORT}:${PROD_PORT}" --app "${FLY_DB_APP}" --bind-addr 127.0.0.1 --quiet >"${PROXY_LOG_FILE}" 2>&1 &
-    PROXY_PID=$!
-
-    local attempt
-    for attempt in {1..20}; do
-        if ! kill -0 "${PROXY_PID}" >/dev/null 2>&1; then
-            local proxy_output
-            proxy_output="$(cat "${PROXY_LOG_FILE}" 2>/dev/null || true)"
-            fail "Fly proxy exited early. ${proxy_output}"
-        fi
-
-        if PGPASSWORD="${PROD_PASSWORD}" \
-           psql -h 127.0.0.1 -p "${PROXY_PORT}" -U "${PROD_USER}" -d "${PROD_DB}" -c '\q' >/dev/null 2>&1; then
-            PROD_HOST="127.0.0.1"
-            PROD_PORT="${PROXY_PORT}"
-            return
-        fi
-
-        sleep 1
-    done
-
-    local proxy_output
-    proxy_output="$(cat "${PROXY_LOG_FILE}" 2>/dev/null || true)"
-    fail "Timed out waiting for Fly DB proxy to become ready. ${proxy_output}"
-}
-
 create_production_dump() {
-    log "Creating production dump from ${PROD_HOST}:${PROD_PORT}/${PROD_DB}"
-    PGHOST="${PROD_HOST}" \
-    PGPORT="${PROD_PORT}" \
-    PGUSER="${PROD_USER}" \
-    PGPASSWORD="${PROD_PASSWORD}" \
-    PGDATABASE="${PROD_DB}" \
+    log "Creating production dump from Dokploy via tailscale ssh ${SSH_TARGET}"
+    log "Looking for remote Docker container matching '${CONTAINER_FILTER}'"
+
+    if ! tailscale ssh "${SSH_TARGET}" bash -s -- "${CONTAINER_FILTER}" "${REMOTE_DB}" "${REMOTE_USER}" >"${DUMP_PATH}" <<'REMOTE'
+set -euo pipefail
+
+container_filter="${1:-}"
+remote_db="${2:-}"
+remote_user="${3:-}"
+
+if [[ -z "${container_filter}" ]]; then
+    printf '[remote] Error: container filter was empty\n' >&2
+    exit 1
+fi
+
+container_ref="$(docker ps --filter "name=${container_filter}" --format '{{.ID}} {{.Names}}' | head -n1)"
+if [[ -z "${container_ref}" ]]; then
+    printf '[remote] Error: no running Docker container matched name filter %q\n' "${container_filter}" >&2
+    exit 1
+fi
+
+container_id="${container_ref%% *}"
+container_name="${container_ref#* }"
+
+if [[ -z "${remote_user}" ]]; then
+    remote_user="$(docker exec "${container_id}" printenv POSTGRES_USER 2>/dev/null || true)"
+fi
+
+if [[ -z "${remote_db}" ]]; then
+    remote_db="$(docker exec "${container_id}" printenv POSTGRES_DB 2>/dev/null || true)"
+fi
+
+remote_user="${remote_user:-postgres}"
+remote_db="${remote_db:-${remote_user}}"
+remote_password="$(docker exec "${container_id}" printenv POSTGRES_PASSWORD 2>/dev/null || true)"
+
+printf '[remote] Dumping container=%s database=%s user=%s\n' "${container_name}" "${remote_db}" "${remote_user}" >&2
+
+if [[ -n "${remote_password}" ]]; then
+    docker exec -e PGPASSWORD="${remote_password}" "${container_id}" \
         pg_dump \
             --format=custom \
             --no-owner \
             --no-privileges \
-            --file "${DUMP_PATH}"
+            -U "${remote_user}" \
+            -d "${remote_db}"
+else
+    docker exec "${container_id}" \
+        pg_dump \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            -U "${remote_user}" \
+            -d "${remote_db}"
+fi
+REMOTE
+    then
+        fail "Failed to create production dump over Tailscale SSH"
+    fi
+
+    if [[ ! -s "${DUMP_PATH}" ]]; then
+        fail "Production dump is empty: ${DUMP_PATH}"
+    fi
 }
 
 confirm_destructive_restore() {
@@ -340,11 +313,8 @@ main() {
     if [[ "${DUMP_ONLY}" == "false" ]]; then
         ensure_safe_local_target
     fi
-    ensure_fly_auth
     prepare_dump_path
 
-    fetch_production_connection
-    start_fly_proxy_if_needed
     create_production_dump
 
     if [[ "${DUMP_ONLY}" == "true" ]]; then

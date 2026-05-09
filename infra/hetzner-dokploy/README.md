@@ -158,79 +158,12 @@ When using Cloudflare, keep DNS simple while certificates are issued:
 - `toki-api.bkmn.xyz` -> Hetzner IPv4/IPv6
 - If Let's Encrypt issuance fails behind the Cloudflare proxy, temporarily switch the records to DNS-only until Dokploy has issued certificates.
 
-## Database Migration
-
-Create a Fly production dump without touching local databases:
-
-```bash
-just db-prod-pull --dump-only --dump-path ./prod.dump
-```
-
-Before restoring, scale the API to zero in Dokploy or with Docker Swarm so the application is not writing to the target database:
-
-```bash
-ssh root@<server-ip> 'docker service scale toki-api-8gdssr=0'
-```
-
-Transfer the dump to the VM over Tailscale/SSH:
-
-```bash
-scp prod.dump root@<server-ip>:/root/toki-fly-prod.dump
-```
-
-Copy the dump into the running Dokploy PostgreSQL container and restore into a clean schema set:
-
-```bash
-ssh root@<server-ip>
-
-cid=$(docker ps --filter name=toki-postgres --format '{{.ID}}' | head -n1)
-docker cp /root/toki-fly-prod.dump "$cid:/tmp/toki-fly-prod.dump"
-
-docker exec -i "$cid" psql -U toki -d toki -v ON_ERROR_STOP=1 <<'SQL'
-DROP SCHEMA IF EXISTS tower_sessions CASCADE;
-DROP SCHEMA IF EXISTS public CASCADE;
-CREATE SCHEMA public;
-GRANT ALL ON SCHEMA public TO toki;
-GRANT ALL ON SCHEMA public TO public;
-SQL
-
-docker exec "$cid" pg_restore \
-  --no-owner \
-  --no-privileges \
-  -U toki \
-  -d toki \
-  /tmp/toki-fly-prod.dump
-```
-
-Scale the API back up:
-
-```bash
-docker service scale toki-api-8gdssr=1
-```
-
-Validate row counts for:
-
-- `users`
-- `repositories`
-- `timer_history`
-- `time_tracking_provider_users`
-- `time_tracking_user_links`
-- `push_subscriptions`
-- `notifications`
-
-Cleanup dump files after verification:
-
-```bash
-rm -f prod.dump
-ssh root@<server-ip> 'rm -f /root/toki-fly-prod.dump; cid=$(docker ps --filter name=toki-postgres --format "{{.ID}}" | head -n1); [ -n "$cid" ] && docker exec "$cid" rm -f /tmp/toki-fly-prod.dump || true'
-```
-
-Expected smoke checks:
+## Smoke Checks
 
 ```bash
 curl -I https://toki.bkmn.xyz/prs
 curl -I https://toki-api.bkmn.xyz/
-ssh root@<server-ip> 'docker service ls'
+tailscale ssh root@toki-dokploy-01 'docker service ls'
 ```
 
 The API root returning `401` is normal because it is authenticated.
@@ -254,8 +187,8 @@ sudo tail -f /var/log/cloud-init-output.log
 Useful VM checks:
 
 ```bash
-ssh root@<server-ip> 'docker service ls'
-ssh root@<server-ip> 'docker service logs --tail 100 toki-api-8gdssr'
-ssh root@<server-ip> 'ufw status verbose'
-ssh root@<server-ip> 'tailscale status'
+tailscale ssh root@toki-dokploy-01 'docker service ls'
+tailscale ssh root@toki-dokploy-01 'docker service logs --tail 100 toki-api-8gdssr'
+tailscale ssh root@toki-dokploy-01 'ufw status verbose'
+tailscale ssh root@toki-dokploy-01 'tailscale status'
 ```

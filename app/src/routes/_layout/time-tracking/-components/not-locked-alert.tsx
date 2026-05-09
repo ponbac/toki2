@@ -1,4 +1,5 @@
 import { timeTrackingQueries, TimeEntry } from "@/lib/api/queries/time-tracking";
+import { TIME_TRACKING_PROVIDER_URL } from "@/lib/time-tracking-provider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
@@ -79,7 +80,7 @@ export const NotLockedAlert = () => {
 function ProviderLink() {
   return (
     <a
-      href={import.meta.env.VITE_TIME_TRACKING_PROVIDER_URL}
+      href={TIME_TRACKING_PROVIDER_URL}
       className="font-medium underline transition-colors hover:text-primary/50 hover:decoration-primary/50"
       target="_blank"
       rel="noopener noreferrer"
