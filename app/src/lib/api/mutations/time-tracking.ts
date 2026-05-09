@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions, MutationFnAsync } from "./mutations";
-import { z } from "zod";
 import {
   GetTimerResponse,
   TimerResponse,
@@ -10,7 +9,6 @@ import {
 import { useTimeTrackingActions } from "@/hooks/useTimeTrackingStore";
 
 export const timeTrackingMutations = {
-  useAuthenticate,
   useStartTimer,
   useStopTimer,
   useSaveTimer,
@@ -18,26 +16,11 @@ export const timeTrackingMutations = {
   useEditProjectRegistration,
   useDeleteProjectRegistration,
   useCreateProjectRegistration,
+  useImportKleerUsers,
+  useLinkKleerUsersByEmail,
+  useUpsertKleerUserLink,
+  useDeactivateKleerUserLink,
 };
-
-function useAuthenticate(options?: DefaultMutationOptions<AuthenticateBody>) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationKey: ["time-tracking", "authenticate"],
-    mutationFn: (body: AuthenticateBody) =>
-      api.post("time-tracking/authenticate", {
-        json: body,
-      }),
-    ...options,
-    onSuccess: (data, v, c) => {
-      queryClient.invalidateQueries({
-        queryKey: ["time-tracking"],
-      });
-      options?.onSuccess?.(data, v, c);
-    },
-  });
-}
 
 function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
   const queryClient = useQueryClient();
@@ -275,12 +258,83 @@ function useCreateProjectRegistration(
   });
 }
 
-export const authenticateSchema = z.object({
-  username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password is required"),
-});
+function useImportKleerUsers(options?: DefaultMutationOptions<void>) {
+  const queryClient = useQueryClient();
 
-export type AuthenticateBody = z.infer<typeof authenticateSchema>;
+  return useMutation({
+    mutationKey: ["time-tracking", "admin", "importKleerUsers"],
+    mutationFn: () => api.post("time-tracking/admin/kleer-users/import"),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: timeTrackingQueries.adminMappings().queryKey,
+      });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
+function useLinkKleerUsersByEmail(
+  options?: DefaultMutationOptions<void, LinkKleerUsersByEmailResponse>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["time-tracking", "admin", "linkKleerUsersByEmail"],
+    mutationFn: () =>
+      api
+        .post("time-tracking/admin/kleer-users/link-by-email")
+        .json<LinkKleerUsersByEmailResponse>(),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: timeTrackingQueries.adminMappings().queryKey,
+      });
+      queryClient.invalidateQueries({ queryKey: ["time-tracking"] });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
+function useUpsertKleerUserLink(
+  options?: DefaultMutationOptions<UpsertKleerUserLinkPayload>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["time-tracking", "admin", "upsertKleerUserLink"],
+    mutationFn: (body: UpsertKleerUserLinkPayload) =>
+      api.put("time-tracking/admin/user-links", { json: body }),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: timeTrackingQueries.adminMappings().queryKey,
+      });
+      queryClient.invalidateQueries({ queryKey: ["time-tracking"] });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
+
+function useDeactivateKleerUserLink(
+  options?: DefaultMutationOptions<DeactivateKleerUserLinkPayload>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["time-tracking", "admin", "deactivateKleerUserLink"],
+    mutationFn: (body: DeactivateKleerUserLinkPayload) =>
+      api.delete(`time-tracking/admin/user-links/${body.userId}`),
+    ...options,
+    onSuccess: (data, v, c) => {
+      queryClient.invalidateQueries({
+        queryKey: timeTrackingQueries.adminMappings().queryKey,
+      });
+      queryClient.invalidateQueries({ queryKey: ["time-tracking"] });
+      options?.onSuccess?.(data, v, c);
+    },
+  });
+}
 
 export type StartTimerPayload = {
   userNote?: string;
@@ -343,4 +397,17 @@ export type CreateProjectRegistrationPayload = {
   regDay: string; // YYYY-MM-DD
   weekNumber: number;
   userNote: string;
+};
+
+export type UpsertKleerUserLinkPayload = {
+  userId: number;
+  providerUserId: string;
+};
+
+export type LinkKleerUsersByEmailResponse = {
+  createdLinkCount: number;
+};
+
+export type DeactivateKleerUserLinkPayload = {
+  userId: number;
 };

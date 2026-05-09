@@ -114,19 +114,17 @@ impl App {
             .collect()
     }
 
-    /// Total hours worked this week (uses Milltime hours directly)
+    /// Total hours worked this week.
     pub fn worked_hours_this_week(&self) -> f64 {
         self.this_week_history().iter().map(|e| e.hours).sum()
     }
 
-    /// Flex time = worked hours - scheduled hours
-    #[allow(dead_code)]
-    pub fn flex_hours_this_week(&self) -> f64 {
-        self.worked_hours_this_week() - self.scheduled_hours_per_week
-    }
-
     /// Weekly hours as a percentage of scheduled hours (0–100, clamped)
     pub fn weekly_hours_percent(&self) -> f64 {
+        if self.scheduled_hours_per_week <= 0.0 {
+            return 0.0;
+        }
+
         (self.worked_hours_this_week() / self.scheduled_hours_per_week * 100.0).clamp(0.0, 100.0)
     }
 

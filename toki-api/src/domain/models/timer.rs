@@ -61,42 +61,12 @@ impl ActiveTimer {
 
 /// Attestation level for time entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(from = "i64", into = "i64")]
-#[repr(u8)]
-pub enum AttestLevel {
+#[serde(rename_all = "lowercase")]
+pub enum TimeEntryStatus {
     #[default]
-    None = 0,
-    Week = 1,
-    Month = 2,
-}
-
-impl From<u8> for AttestLevel {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => AttestLevel::None,
-            1 => AttestLevel::Week,
-            2 => AttestLevel::Month,
-            _ => AttestLevel::None,
-        }
-    }
-}
-
-impl From<i32> for AttestLevel {
-    fn from(value: i32) -> Self {
-        AttestLevel::from(value as u8)
-    }
-}
-
-impl From<i64> for AttestLevel {
-    fn from(value: i64) -> Self {
-        AttestLevel::from(value as u8)
-    }
-}
-
-impl From<AttestLevel> for i64 {
-    fn from(val: AttestLevel) -> Self {
-        val as i64
-    }
+    Open,
+    Approved,
+    Certified,
 }
 
 /// A completed time entry.
@@ -113,7 +83,7 @@ pub struct TimeEntry {
     pub start_time: Option<OffsetDateTime>,
     pub end_time: Option<OffsetDateTime>,
     pub week_number: u8,
-    pub attest_level: AttestLevel,
+    pub status: TimeEntryStatus,
 }
 
 impl TimeEntry {
@@ -138,7 +108,7 @@ impl TimeEntry {
             start_time: None,
             end_time: None,
             week_number: 0,
-            attest_level: AttestLevel::None,
+            status: TimeEntryStatus::Open,
         }
     }
 
@@ -162,36 +132,33 @@ impl TimeEntry {
         self
     }
 
-    pub fn with_attest_level(mut self, attest_level: AttestLevel) -> Self {
-        self.attest_level = attest_level;
+    pub fn with_status(mut self, status: TimeEntryStatus) -> Self {
+        self.status = status;
         self
     }
 }
 
 /// Time tracking statistics for a period.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TimeInfo {
-    pub period_time_left: f64,
-    pub worked_period_time: f64,
-    pub scheduled_period_time: f64,
-    pub worked_period_with_absence_time: f64,
-    pub flex_time_current: f64,
+pub struct WeeklyStats {
+    pub worked_hours: f64,
+    pub scheduled_hours: f64,
+    pub remaining_hours: f64,
+    pub absence_hours: f64,
+    pub covered_hours: f64,
+    pub period_flex_hours: f64,
 }
 
-impl TimeInfo {
-    pub fn new(
-        period_time_left: f64,
-        worked_period_time: f64,
-        scheduled_period_time: f64,
-        worked_period_with_absence_time: f64,
-        flex_time_current: f64,
-    ) -> Self {
+impl WeeklyStats {
+    pub fn new(worked_hours: f64, scheduled_hours: f64, absence_hours: f64) -> Self {
+        let covered_hours = worked_hours + absence_hours;
         Self {
-            period_time_left,
-            worked_period_time,
-            scheduled_period_time,
-            worked_period_with_absence_time,
-            flex_time_current,
+            worked_hours,
+            scheduled_hours,
+            absence_hours,
+            covered_hours,
+            remaining_hours: (scheduled_hours - covered_hours).max(0.0),
+            period_flex_hours: covered_hours - scheduled_hours,
         }
     }
 }
@@ -205,8 +172,6 @@ pub struct CreateTimeEntryRequest {
     pub activity_name: String,
     pub start_time: OffsetDateTime,
     pub end_time: OffsetDateTime,
-    pub reg_day: String,
-    pub week_number: i32,
     pub note: String,
 }
 
@@ -215,20 +180,10 @@ pub struct CreateTimeEntryRequest {
 pub struct EditTimeEntryRequest {
     pub registration_id: String,
     pub project_id: ProjectId,
-    pub project_name: String,
     pub activity_id: ActivityId,
-    pub activity_name: String,
     pub start_time: OffsetDateTime,
     pub end_time: OffsetDateTime,
-    pub reg_day: String,
-    pub week_number: i32,
     pub note: String,
-    /// Original registration day if the date changed.
-    pub original_reg_day: Option<String>,
-    /// Original project ID if the project changed.
-    pub original_project_id: Option<ProjectId>,
-    /// Original activity ID if the activity changed.
-    pub original_activity_id: Option<ActivityId>,
 }
 
 /// A local timer history entry (stored in our database).

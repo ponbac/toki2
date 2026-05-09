@@ -1,8 +1,5 @@
-import {
-  AttestLevel,
-  timeTrackingQueries,
-  TimeEntry,
-} from "@/lib/api/queries/time-tracking";
+import { timeTrackingQueries, TimeEntry } from "@/lib/api/queries/time-tracking";
+import { TIME_TRACKING_PROVIDER_URL } from "@/lib/time-tracking-provider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
@@ -56,7 +53,7 @@ export const NotLockedAlert = () => {
           <AlertCircle className="size-5" />
           <AlertTitle>Previous week unlocked</AlertTitle>
           <AlertDescription>
-            You need to lock last week in <MilltimeLink />.
+            Last week is still open in <ProviderLink />.
           </AlertDescription>
           <Button
             variant="link"
@@ -72,7 +69,7 @@ export const NotLockedAlert = () => {
           <AlertCircle className="size-5" />
           <AlertTitle>Previous month unlocked</AlertTitle>
           <AlertDescription>
-            You need to lock the previous month in <MilltimeLink />.
+            The previous month is still open in <ProviderLink />.
           </AlertDescription>
         </Alert>
       )}
@@ -80,15 +77,15 @@ export const NotLockedAlert = () => {
   );
 };
 
-function MilltimeLink() {
+function ProviderLink() {
   return (
     <a
-      href={import.meta.env.VITE_TIME_TRACKING_PROVIDER_URL}
+      href={TIME_TRACKING_PROVIDER_URL}
       className="font-medium underline transition-colors hover:text-primary/50 hover:decoration-primary/50"
       target="_blank"
       rel="noopener noreferrer"
     >
-      Milltime
+      Kleer
     </a>
   );
 }
@@ -130,14 +127,10 @@ function lockedStatus(timeEntries: Array<TimeEntry>): {
   }
 
   const lastWeekLocked = entriesLastWeek.every(
-    (entry) =>
-      entry.attestLevel === AttestLevel.Week ||
-      entry.attestLevel === AttestLevel.Month,
+    (entry) => entry.status === "approved" || entry.status === "certified",
   );
   const lastMonthLocked = entriesLastMonth.every(
-    (entry) =>
-      entry.attestLevel === AttestLevel.Week ||
-      entry.attestLevel === AttestLevel.Month,
+    (entry) => entry.status === "approved" || entry.status === "certified",
   );
 
   return { lastWeekLocked, lastMonthLocked };

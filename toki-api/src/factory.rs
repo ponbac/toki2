@@ -2,16 +2,13 @@
 //!
 //! This is the ONLY place that imports concrete outbound adapters and provider types.
 
-use std::collections::HashMap;
-use std::ops::Add;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum_extra::extract::cookie::Cookie;
-use axum_extra::extract::CookieJar;
 use az_devops::RepoClient;
-use time::{Duration, OffsetDateTime};
+use kleer::KleerCredentials;
 use tokio::sync::RwLock;
 use url::Url;
 
@@ -22,129 +19,94 @@ use crate::{
             WorkItemServiceFactory,
         },
         outbound::{
-            azure_devops::AzureDevOpsWorkItemAdapter,
-            milltime::{MilltimeAdapter, MilltimePassword},
+            azure_devops::AzureDevOpsWorkItemAdapter, kleer::KleerAdapter,
             postgres::PostgresTimerHistoryAdapter,
         },
     },
+    config::KleerSettings,
     domain::{
-        models::{UserId, WorkItemProject},
-        ports::inbound::{TimeTrackingService, WorkItemService},
+        models::{UserId, WorkItemProject, KLEER_TIME_TRACKING_PROVIDER},
+        ports::{
+            inbound::{TimeTrackingService, WorkItemService},
+            outbound::TimeTrackingUserLinkRepository,
+        },
         services::{TimeTrackingServiceImpl, WorkItemServiceImpl},
         RepoKey,
     },
     repositories::{TimerRepositoryImpl, UserRepository, UserRepositoryImpl},
 };
 
-/// Concrete factory that creates Milltime-backed TimeTrackingService instances.
-pub struct MilltimeServiceFactory {
+/// Concrete factory that creates Kleer-backed TimeTrackingService instances.
+pub struct KleerServiceFactory {
     timer_repo: Arc<TimerRepositoryImpl>,
+    user_link_repo: Arc<dyn TimeTrackingUserLinkRepository>,
+    credentials: Result<KleerCredentials, String>,
 }
 
-impl MilltimeServiceFactory {
-    pub fn new(timer_repo: Arc<TimerRepositoryImpl>) -> Self {
-        Self { timer_repo }
+impl KleerServiceFactory {
+    pub fn new(
+        timer_repo: Arc<TimerRepositoryImpl>,
+        user_link_repo: Arc<dyn TimeTrackingUserLinkRepository>,
+        settings: KleerSettings,
+    ) -> Self {
+        Self {
+            timer_repo,
+            user_link_repo,
+            credentials: settings.credentials(),
+        }
+    }
+
+    fn credentials(&self) -> Result<KleerCredentials, TimeTrackingServiceError> {
+        self.credentials
+            .clone()
+            .map_err(TimeTrackingServiceError::configuration)
+    }
+
+    async fn mapped_kleer_user_id(
+        &self,
+        user_id: UserId,
+        provider_company_id: &str,
+    ) -> Result<i64, TimeTrackingServiceError> {
+        let link = self
+            .user_link_repo
+            .get_active_link_for_user(&user_id, KLEER_TIME_TRACKING_PROVIDER)
+            .await
+            .map_err(|error| TimeTrackingServiceError::internal(error.to_string()))?
+            .filter(|link| link.provider_company_id == provider_company_id)
+            .ok_or_else(|| {
+                TimeTrackingServiceError::not_connected(
+                    "Your Toki account is not connected to a Kleer user. Contact an admin to set up time tracking access.",
+                )
+            })?;
+
+        link.provider_user_id.parse::<i64>().map_err(|_| {
+            TimeTrackingServiceError::internal(format!(
+                "invalid Kleer user id in mapping for Toki user {user_id}"
+            ))
+        })
     }
 }
 
 #[async_trait]
-impl TimeTrackingServiceFactory for MilltimeServiceFactory {
+impl TimeTrackingServiceFactory for KleerServiceFactory {
     async fn create_service(
         &self,
-        jar: CookieJar,
-        cookie_domain: &str,
-    ) -> Result<(Box<dyn TimeTrackingService>, CookieJar), TimeTrackingServiceError> {
-        let (credentials, jar) = extract_credentials(jar, cookie_domain).await?;
-
-        let adapter = MilltimeAdapter::new(credentials);
+        user_id: UserId,
+    ) -> Result<Box<dyn TimeTrackingService>, TimeTrackingServiceError> {
+        let credentials = self.credentials()?;
+        let kleer_user_id = self
+            .mapped_kleer_user_id(user_id, &credentials.company_id)
+            .await?;
+        let adapter = KleerAdapter::new(credentials, kleer_user_id).map_err(|error| {
+            TimeTrackingServiceError::configuration(format!(
+                "failed to create Kleer service: {error}"
+            ))
+        })?;
         let history_adapter = PostgresTimerHistoryAdapter::new(self.timer_repo.clone());
         let service = TimeTrackingServiceImpl::new(Arc::new(adapter), Arc::new(history_adapter));
 
-        Ok((Box::new(service), jar))
+        Ok(Box::new(service))
     }
-
-    async fn authenticate(
-        &self,
-        username: &str,
-        password: &str,
-        cookie_domain: &str,
-    ) -> Result<CookieJar, TimeTrackingServiceError> {
-        let credentials = milltime::Credentials::new(username, password)
-            .await
-            .map_err(|_| TimeTrackingServiceError::unauthorized("Invalid credentials"))?;
-
-        let encrypted_password = MilltimePassword::new(password.to_string()).to_encrypted();
-
-        let use_secure = cookie_domain != "localhost";
-
-        let mut jar = CookieJar::new()
-            .add(
-                Cookie::build(("mt_user", username.to_string()))
-                    .domain(cookie_domain.to_string())
-                    .path("/")
-                    .secure(use_secure)
-                    .http_only(true)
-                    .expires(OffsetDateTime::now_utc().add(Duration::days(180)))
-                    .build(),
-            )
-            .add(
-                Cookie::build(("mt_password", encrypted_password))
-                    .domain(cookie_domain.to_string())
-                    .path("/")
-                    .secure(use_secure)
-                    .http_only(true)
-                    .expires(OffsetDateTime::now_utc().add(Duration::days(180)))
-                    .build(),
-            );
-
-        for cookie in credentials.auth_cookies(cookie_domain.to_string()) {
-            jar = jar.add(cookie);
-        }
-
-        Ok(jar)
-    }
-}
-
-/// Extract provider credentials from cookies.
-///
-/// First tries to parse existing credential cookies, then falls back to
-/// username/password authentication.
-async fn extract_credentials(
-    jar: CookieJar,
-    cookie_domain: &str,
-) -> Result<(milltime::Credentials, CookieJar), TimeTrackingServiceError> {
-    // Try to use existing credentials from cookies first
-    if let Ok(credentials) = jar.clone().try_into() {
-        tracing::debug!("using existing provider credentials");
-        return Ok((credentials, jar));
-    }
-
-    // Fall back to username/password authentication
-    let user_cookie = jar
-        .get("mt_user")
-        .ok_or_else(|| TimeTrackingServiceError::unauthorized("missing mt_user cookie"))?;
-
-    let pass_cookie = jar
-        .get("mt_password")
-        .ok_or_else(|| TimeTrackingServiceError::unauthorized("missing mt_password cookie"))?;
-
-    let decrypted_pass = MilltimePassword::from_encrypted(pass_cookie.value().to_string());
-
-    let credentials = milltime::Credentials::new(user_cookie.value(), decrypted_pass.as_ref())
-        .await
-        .map_err(|e| {
-            tracing::error!("failed to create provider credentials: {:?}", e);
-            TimeTrackingServiceError::unauthorized(e.to_string())
-        })?;
-
-    // Update cookies with the new credentials
-    let mut updated_jar = jar;
-    for cookie in credentials.auth_cookies(cookie_domain.to_string()) {
-        updated_jar = updated_jar.add(cookie);
-    }
-
-    tracing::debug!("created new provider credentials");
-    Ok((credentials, updated_jar))
 }
 
 // ---------------------------------------------------------------------------
@@ -216,10 +178,27 @@ impl WorkItemServiceFactory for AzureDevOpsWorkItemServiceFactory {
                 message: format!("Failed to fetch followed repositories: {}", e),
             })?;
 
-        // Deduplicate into unique (organization, project) pairs
-        let mut seen = std::collections::HashSet::new();
+        let clients = self.repo_clients.read().await;
+        let available_projects: HashSet<(String, String)> = clients
+            .keys()
+            .map(|key| {
+                (
+                    key.organization.to_ascii_lowercase(),
+                    key.project.to_ascii_lowercase(),
+                )
+            })
+            .collect();
+
+        // Deduplicate into unique (organization, project) pairs that have a live client.
+        let mut seen = HashSet::new();
         let projects = repos
             .into_iter()
+            .filter(|repo| {
+                available_projects.contains(&(
+                    repo.organization.to_ascii_lowercase(),
+                    repo.project.to_ascii_lowercase(),
+                ))
+            })
             .filter(|repo| seen.insert((repo.organization.clone(), repo.project.clone())))
             .map(|repo| WorkItemProject {
                 organization: repo.organization,

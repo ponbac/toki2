@@ -1,6 +1,6 @@
 FROM lukemathwalker/cargo-chef:latest-rust-1.88.0 AS chef
 WORKDIR /app
-RUN cargo install cargo-chef
+RUN cargo install cargo-chef --locked
 RUN apt update && apt install lld clang -y
 
 
@@ -26,4 +26,5 @@ RUN apt-get update -y \
 # Copy necessary files from builder
 COPY --from=builder /app/target/release/toki-api toki-api
 COPY --from=builder /app/toki-api/config config
+EXPOSE 8080
 ENTRYPOINT ["./toki-api"]

@@ -1,12 +1,10 @@
 application:
   host: "0.0.0.0"
   port: 8080
-  app_url: "https://toki.spinit.se"
-  api_url: "https://toki-api.spinit.se"
-  cookie_domain: ".spinit.se"
+  app_url: "https://toki.bkmn.xyz"
+  api_url: "https://toki-api.bkmn.xyz"
   disable_auth: false
-  cors_allowed_origin_suffix: "-ponbacs-projects.vercel.app"
 database:
   require_ssl: true
 auth:
-  redirect_url: "https://toki-api.spinit.se/oauth/callback"
+  redirect_url: "https://toki-api.bkmn.xyz/oauth/callback"

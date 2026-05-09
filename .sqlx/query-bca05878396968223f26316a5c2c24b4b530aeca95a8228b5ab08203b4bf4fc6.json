@@ -1,0 +1,87 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO time_tracking_user_links (\n                user_id, provider, provider_company_id, provider_user_id,\n                provider_user_email, provider_user_name, active, created_at, updated_at,\n                last_synced_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)\n            ON CONFLICT (user_id, provider) WHERE active DO UPDATE\n            SET provider_company_id = EXCLUDED.provider_company_id,\n                provider_user_id = EXCLUDED.provider_user_id,\n                provider_user_email = EXCLUDED.provider_user_email,\n                provider_user_name = EXCLUDED.provider_user_name,\n                updated_at = CURRENT_TIMESTAMP,\n                last_synced_at = CURRENT_TIMESTAMP\n            RETURNING id, user_id, provider, provider_company_id, provider_user_id,\n                provider_user_email, provider_user_name, active, created_at, updated_at,\n                last_synced_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_company_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "provider_user_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "provider_user_email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "provider_user_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_synced_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bca05878396968223f26316a5c2c24b4b530aeca95a8228b5ab08203b4bf4fc6"
+}

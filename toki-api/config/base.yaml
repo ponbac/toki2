@@ -11,3 +11,7 @@ auth:
   # client_secret: "provide through env"
   auth_url: "https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/authorize?scope=https://graph.microsoft.com/.default"
   token_url: "https://login.microsoftonline.com/d89ef75c-38db-4904-9d78-b872502ca145/oauth2/v2.0/token"
+kleer:
+  # token: "provide through TOKI_KLEER__TOKEN"
+  # company_id: "provide through TOKI_KLEER__COMPANY_ID"
+  base_url: "https://api.kleer.se/v1"

@@ -41,8 +41,7 @@ pub async fn initialize_app_state(app: &mut App, client: &mut ApiClient) {
 
     match client.get_time_info(week_start, week_end).await {
         Ok(time_info) => {
-            app.scheduled_hours_per_week = time_info.scheduled_period_time;
-            app.flex_time_current = time_info.flex_time_current;
+            app.scheduled_hours_per_week = time_info.scheduled_hours;
         }
         Err(e) => eprintln!("Warning: Could not load time info: {}", e),
     }

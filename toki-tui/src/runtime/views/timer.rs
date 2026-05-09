@@ -6,6 +6,8 @@ use super::super::actions::handle_entry_edit_enter;
 use super::enqueue_action;
 
 pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionTx) {
+    let selected_today_history_index = selected_persisted_today_history_index(app);
+
     match key.code {
         // Quit
         KeyCode::Char('q') | KeyCode::Char('Q') => app.quit(),
@@ -56,16 +58,12 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
             }
         }
         KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('L')
-            if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            if !key.modifiers.contains(KeyModifiers::CONTROL) && is_editing_this_week(app) =>
         {
-            if is_editing_this_week(app) {
-                app.entry_edit_next_field();
-            }
+            app.entry_edit_next_field();
         }
-        KeyCode::Left => {
-            if is_editing_this_week(app) {
-                app.entry_edit_prev_field();
-            }
+        KeyCode::Left if is_editing_this_week(app) => {
+            app.entry_edit_prev_field();
         }
         KeyCode::Char('h') | KeyCode::Char('H') => {
             if is_editing_this_week(app) {
@@ -74,15 +72,11 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
                 enqueue_action(action_tx, Action::LoadHistoryAndOpen);
             }
         }
-        KeyCode::Home => {
-            if is_editing_this_week(app) {
-                app.entry_edit_cursor_home_end(true);
-            }
+        KeyCode::Home if is_editing_this_week(app) => {
+            app.entry_edit_cursor_home_end(true);
         }
-        KeyCode::End => {
-            if is_editing_this_week(app) {
-                app.entry_edit_cursor_home_end(false);
-            }
+        KeyCode::End if is_editing_this_week(app) => {
+            app.entry_edit_cursor_home_end(false);
         }
         KeyCode::Enter => {
             handle_enter_key(app, action_tx);
@@ -110,7 +104,7 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
                 && app.focused_box == app::FocusedBox::Description
             {
                 app.clear_note();
-            } else if is_persisted_today_row_selected(app) {
+            } else if selected_today_history_index.is_some() {
                 if app.focused_this_week_entry_is_locked() {
                     app.set_locked_delete_status();
                 } else {
@@ -144,7 +138,7 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
         KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             handle_ctrl_x_key(app, action_tx);
         }
-        KeyCode::Delete if !is_editing_this_week(app) && is_persisted_today_row_selected(app) => {
+        KeyCode::Delete if !is_editing_this_week(app) && selected_today_history_index.is_some() => {
             if app.focused_this_week_entry_is_locked() {
                 app.set_locked_delete_status();
             } else {
@@ -153,33 +147,22 @@ pub(super) fn handle_timer_key(key: KeyEvent, app: &mut App, action_tx: &ActionT
         }
         KeyCode::Char('z') | KeyCode::Char('Z') => app.toggle_zen_mode(),
         KeyCode::Char('r') | KeyCode::Char('R')
-            if !is_editing_this_week(app) && key.modifiers.contains(KeyModifiers::CONTROL) =>
+            if !is_editing_this_week(app)
+                && key.modifiers.contains(KeyModifiers::CONTROL)
+                && selected_today_history_index.is_some() =>
         {
-            if is_persisted_today_row_selected(app) {
-                let idx = app.focused_this_week_index.unwrap();
-                // When running, index 0 is the running-timer row so DB entries are shifted by 1
-                let db_idx = if app.timer_state == app::TimerState::Running {
-                    idx.saturating_sub(1)
-                } else {
-                    idx
-                };
-                let entry = app.this_week_history().get(db_idx).cloned().cloned();
-                if let Some(entry) = entry {
-                    enqueue_action(action_tx, Action::ResumeEntry(entry));
-                }
+            let db_idx = selected_today_history_index.unwrap();
+            let entry = app.this_week_history().get(db_idx).cloned().cloned();
+            if let Some(entry) = entry {
+                enqueue_action(action_tx, Action::ResumeEntry(entry));
             }
         }
         KeyCode::Char('l') | KeyCode::Char('L')
             if !is_editing_this_week(app)
                 && key.modifiers.contains(KeyModifiers::CONTROL)
-                && is_persisted_today_row_selected(app) =>
+                && selected_today_history_index.is_some() =>
         {
-            let idx = app.focused_this_week_index.unwrap();
-            let db_idx = if app.timer_state == app::TimerState::Running {
-                idx.saturating_sub(1)
-            } else {
-                idx
-            };
+            let db_idx = selected_today_history_index.unwrap();
             let note = app
                 .this_week_history()
                 .get(db_idx)
@@ -211,11 +194,21 @@ fn is_note_focused_in_this_week_edit(app: &App) -> bool {
         .is_some_and(|s| s.focused_field == app::EntryEditField::Note)
 }
 
-fn is_persisted_today_row_selected(app: &App) -> bool {
-    app.focused_box == app::FocusedBox::Today
-        && app
-            .focused_this_week_index
-            .is_some_and(|idx| !(app.timer_state == app::TimerState::Running && idx == 0))
+fn selected_persisted_today_history_index(app: &App) -> Option<usize> {
+    if app.focused_box != app::FocusedBox::Today {
+        return None;
+    }
+
+    let idx = app.focused_this_week_index?;
+    if app.timer_state == app::TimerState::Running && idx == 0 {
+        return None;
+    }
+
+    Some(if app.timer_state == app::TimerState::Running {
+        idx.saturating_sub(1)
+    } else {
+        idx
+    })
 }
 
 fn handle_enter_key(app: &mut App, action_tx: &ActionTx) {
@@ -303,7 +296,7 @@ fn handle_ctrl_x_key(app: &mut App, action_tx: &ActionTx) {
         return;
     }
 
-    if is_persisted_today_row_selected(app) {
+    if selected_persisted_today_history_index(app).is_some() {
         if app.focused_this_week_entry_is_locked() {
             app.set_locked_delete_status();
         } else {

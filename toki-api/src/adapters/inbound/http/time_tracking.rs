@@ -5,11 +5,10 @@
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use axum_extra::extract::CookieJar;
 
-use crate::domain::ports::inbound::TimeTrackingService;
+use crate::domain::{models::UserId, ports::inbound::TimeTrackingService};
 
-/// Error returned when creating a TimeTrackingService from cookies fails.
+/// Error returned when creating or validating a TimeTrackingService fails.
 #[derive(Debug)]
 pub struct TimeTrackingServiceError {
     pub status: StatusCode,
@@ -17,14 +16,20 @@ pub struct TimeTrackingServiceError {
 }
 
 impl TimeTrackingServiceError {
-    pub fn unauthorized(message: impl Into<String>) -> Self {
+    pub fn configuration(message: impl Into<String>) -> Self {
         Self {
-            status: StatusCode::UNAUTHORIZED,
+            status: StatusCode::SERVICE_UNAVAILABLE,
             message: message.into(),
         }
     }
 
-    #[allow(dead_code)]
+    pub fn not_connected(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            message: message.into(),
+        }
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -33,27 +38,17 @@ impl TimeTrackingServiceError {
     }
 }
 
-/// Factory trait for creating TimeTrackingService instances from HTTP cookies.
+/// Factory trait for creating TimeTrackingService instances from authenticated Toki users.
 ///
-/// This trait lives in the inbound adapter because it uses `CookieJar` (an HTTP type).
-/// The concrete implementation lives in `crate::factory` where it's allowed to know
-/// about concrete outbound adapters (MilltimeAdapter, PostgresTimerHistoryAdapter, etc.).
+/// The concrete implementation lives in `crate::factory` where it's allowed to know about
+/// concrete outbound adapters (KleerAdapter, PostgresTimerHistoryAdapter, etc.).
 #[async_trait]
 pub trait TimeTrackingServiceFactory: Send + Sync + 'static {
-    /// Create a TimeTrackingService from cookie credentials.
+    /// Create a TimeTrackingService for an authenticated local Toki user.
     ///
     /// Always includes timer history support — the factory owns the timer repo.
     async fn create_service(
         &self,
-        jar: CookieJar,
-        cookie_domain: &str,
-    ) -> Result<(Box<dyn TimeTrackingService>, CookieJar), TimeTrackingServiceError>;
-
-    /// Validate credentials and return a CookieJar with auth cookies set.
-    async fn authenticate(
-        &self,
-        username: &str,
-        password: &str,
-        cookie_domain: &str,
-    ) -> Result<CookieJar, TimeTrackingServiceError>;
+        user_id: UserId,
+    ) -> Result<Box<dyn TimeTrackingService>, TimeTrackingServiceError>;
 }

@@ -4,7 +4,7 @@ use time::Date;
 use crate::domain::{
     models::{
         ActiveTimer, Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeInfo, TimerHistoryEntry, TimerId, UserId,
+        TimeEntry, TimerHistoryEntry, TimerId, UserId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -73,7 +73,10 @@ pub trait TimeTrackingService: Send + Sync + 'static {
     // ========================================================================
 
     /// Get time tracking statistics for a date range.
-    async fn get_time_info(&self, date_range: (Date, Date)) -> Result<TimeInfo, TimeTrackingError>;
+    async fn get_time_info(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<WeeklyStats, TimeTrackingError>;
 
     /// Get time entries for a date range.
     ///

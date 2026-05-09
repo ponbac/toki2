@@ -27,8 +27,8 @@ All commands are available via the binary directly (`toki-tui <command>`) or thr
 | `run` | `just tui` | Run against the real toki-api server |
 | `dev` | `just tui-dev` | Run in dev mode with in-memory mock data |
 | `login` | `just tui-login` | Authenticate via browser OAuth |
-| `logout` | `just tui-logout` | Clear saved session and Milltime cookies |
-| `status` | `just tui-status` | Show current login and Milltime session status |
+| `logout` | `just tui-logout` | Clear saved session |
+| `status` | `just tui-status` | Show current login status |
 | `config-path` | `just tui-config` | Print config path; create default file if missing |
 | `logs-path` | `just tui-logs` | Print the log notes directory path |
 | `version` | `just tui-version` | Print the current version |

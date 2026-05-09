@@ -44,7 +44,7 @@ impl AsRef<i32> for UserId {
 
 /// A project identifier from the time tracking system.
 ///
-/// Wraps String as Milltime uses string IDs like "300000000000241970".
+/// Wraps the provider project identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProjectId(String);
 
@@ -84,7 +84,7 @@ impl From<&str> for ProjectId {
 
 /// An activity identifier from the time tracking system.
 ///
-/// Wraps String as Milltime uses string IDs like "201201111420550010".
+/// Wraps the provider activity identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ActivityId(String);
 
@@ -124,7 +124,7 @@ impl From<&str> for ActivityId {
 
 /// A timer/time entry identifier from the time tracking system.
 ///
-/// Wraps String as Milltime uses string IDs like "300000000000463334".
+/// Wraps the provider timer or time entry identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TimerId(String);
 

@@ -1,5 +1,5 @@
 use crate::app::{self, App};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 
 use super::action_queue::{Action, ActionTx};
 
@@ -14,28 +14,6 @@ mod timer;
 
 fn enqueue_action(action_tx: &ActionTx, action: Action) {
     let _ = action_tx.send(action);
-}
-
-pub(super) fn handle_milltime_reauth_key(key: KeyEvent, app: &mut App, action_tx: &ActionTx) {
-    match key.code {
-        KeyCode::Tab | KeyCode::BackTab => {
-            app.milltime_reauth_next_field();
-        }
-        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.milltime_reauth_input_char(c);
-        }
-        KeyCode::Backspace => {
-            app.milltime_reauth_backspace();
-        }
-        KeyCode::Enter => {
-            enqueue_action(action_tx, Action::SubmitMilltimeReauth);
-        }
-        KeyCode::Esc => {
-            app.close_milltime_reauth();
-            app.set_status("Milltime re-authentication cancelled".to_string());
-        }
-        _ => {}
-    }
 }
 
 pub(super) fn handle_view_key(key: KeyEvent, app: &mut App, action_tx: &ActionTx) {

@@ -9,16 +9,12 @@ pub enum TimeTrackingError {
     TimerAlreadyRunning,
     #[error("no timer running")]
     NoTimerRunning,
-    #[error("authentication failed")]
-    AuthenticationFailed,
     #[allow(dead_code)]
     #[error("project not found: {0}")]
     ProjectNotFound(String),
     #[allow(dead_code)]
     #[error("activity not found: {0}")]
     ActivityNotFound(String),
-    #[error("invalid date range")]
-    InvalidDateRange,
     #[error("{0}")]
     Unknown(String),
 }

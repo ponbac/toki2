@@ -74,7 +74,7 @@ pub fn build_display_row(
     is_overlapping: bool,
     available_width: u16,
 ) -> Line<'_> {
-    let is_locked = entry.attest_level.is_locked();
+    let is_locked = entry.status.is_locked();
 
     // Base colors - red for overlapping, normal otherwise (locked entries keep normal colors)
     let time_color = if is_overlapping {

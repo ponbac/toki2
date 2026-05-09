@@ -1,0 +1,39 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+ssh_pwauth: false
+
+users:
+  - name: deploy
+    groups: sudo
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+packages:
+  - ca-certificates
+  - curl
+  - fail2ban
+  - git
+  - jq
+  - ufw
+
+runcmd:
+  - [bash, -c, "until curl -fsS https://www.google.com >/dev/null; do sleep 2; done"]
+  - [bash, -c, "systemctl enable --now fail2ban || true"]
+  - [bash, -c, "ufw default deny incoming || true"]
+  - [bash, -c, "ufw default allow outgoing || true"]
+  - [bash, -c, "ufw allow 22/tcp || true"]
+  - [bash, -c, "ufw allow 80/tcp || true"]
+  - [bash, -c, "ufw allow 443/tcp || true"]
+  - [bash, -c, "ufw allow 41641/udp || true"]
+  - [bash, -c, "ufw allow in on tailscale0 || true"]
+  - [bash, -c, "ufw --force enable || true"]
+  - [bash, -c, "curl -fsSL https://tailscale.com/install.sh | sh"]
+  - [tailscale, up, "--auth-key=${tailscale_auth_key}", "--hostname=${hostname}"]
+%{ if enable_tailscale_ssh ~}
+  - [tailscale, set, --ssh]
+%{ endif ~}
+  - [bash, -c, "curl -sSL https://dokploy.com/install.sh | sh"]
+  - [bash, -c, "usermod -aG docker deploy || true"]

@@ -16,7 +16,7 @@ pub enum Commands {
     Dev,
     /// Authenticate via browser OAuth login
     Login,
-    /// Remove local session and Milltime cookies
+    /// Remove local session
     Logout,
     /// Print config path and create default file if missing
     ConfigPath,
@@ -24,6 +24,6 @@ pub enum Commands {
     LogsPath,
     /// Print the current version
     Version,
-    /// Show current login and Milltime session status
+    /// Show current login status
     Status,
 }

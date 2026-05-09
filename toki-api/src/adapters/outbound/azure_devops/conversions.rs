@@ -509,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_render_description_html_escapes_plain_text() {
-        let api_base_url = Url::parse("https://toki-api.spinit.se").unwrap();
+        let api_base_url = Url::parse("https://toki-api.bkmn.xyz").unwrap();
         let rendered =
             render_description_html("a < b\nsecond line", "myorg", "myproject", &api_base_url);
 
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_render_description_html_rewrites_ado_attachment_images() {
-        let api_base_url = Url::parse("https://toki-api.spinit.se").unwrap();
+        let api_base_url = Url::parse("https://toki-api.bkmn.xyz").unwrap();
         let rendered = render_description_html(
             r#"<p>image <img src="https://dev.azure.com/lerumsdjur/Lerums%20Djursjukhus/_apis/wit/attachments/123?fileName=test.png"></p>"#,
             "lerumsdjur",
@@ -526,7 +526,7 @@ mod tests {
             &api_base_url,
         );
 
-        assert!(rendered.contains("https://toki-api.spinit.se/work-items/image?"));
+        assert!(rendered.contains("https://toki-api.bkmn.xyz/work-items/image?"));
         assert!(rendered.contains("organization=lerumsdjur"));
         assert!(rendered.contains("project=Lerums+Djursjukhus"));
         assert!(rendered.contains("imageUrl=https%3A%2F%2Fdev.azure.com%2Flerumsdjur%2FLerums%2520Djursjukhus%2F_apis%2Fwit%2Fattachments%2F123%3FfileName%3Dtest.png"));
@@ -534,7 +534,7 @@ mod tests {
 
     #[test]
     fn test_render_description_html_drops_non_ado_images() {
-        let api_base_url = Url::parse("https://toki-api.spinit.se").unwrap();
+        let api_base_url = Url::parse("https://toki-api.bkmn.xyz").unwrap();
         let rendered = render_description_html(
             r#"<p>no image <img src="https://example.com/image.png"></p>"#,
             "lerumsdjur",
@@ -547,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_to_domain_work_item_maps_repro_steps() {
-        let api_base_url = Url::parse("https://toki-api.spinit.se").unwrap();
+        let api_base_url = Url::parse("https://toki-api.bkmn.xyz").unwrap();
         let domain = to_domain_work_item(
             az_devops::WorkItem {
                 id: 42,

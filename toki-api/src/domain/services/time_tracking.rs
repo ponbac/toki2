@@ -7,7 +7,7 @@ use time::{Date, OffsetDateTime};
 use crate::domain::{
     models::{
         ActiveTimer, Activity, CreateTimeEntryRequest, EditTimeEntryRequest, NewTimerHistoryEntry,
-        Project, ProjectId, TimeEntry, TimeInfo, TimerHistoryEntry, TimerId, UserId,
+        Project, ProjectId, TimeEntry, TimerHistoryEntry, TimerId, UserId, WeeklyStats,
     },
     ports::{
         inbound::TimeTrackingService,
@@ -82,15 +82,6 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         let now = OffsetDateTime::now_utc();
         let end_time = now + time::Duration::minutes(BONUS_TIME_MINUTES);
 
-        let current_day = now
-            .date()
-            .format(
-                &time::format_description::parse("[year]-[month]-[day]")
-                    .expect("valid format description"),
-            )
-            .expect("failed to format current day");
-        let week_number = now.iso_week() as i32;
-
         // Build the create request
         let req = CreateTimeEntryRequest {
             project_id: active_timer
@@ -111,8 +102,6 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
                 .ok_or_else(|| TimeTrackingError::unknown("activity name not set on timer"))?,
             start_time: active_timer.started_at,
             end_time,
-            reg_day: current_day,
-            week_number,
             note: note.unwrap_or_else(|| active_timer.note.clone()),
         };
 
@@ -156,7 +145,10 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
     // Calendar/Time Entry Operations
     // ========================================================================
 
-    async fn get_time_info(&self, date_range: (Date, Date)) -> Result<TimeInfo, TimeTrackingError> {
+    async fn get_time_info(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<WeeklyStats, TimeTrackingError> {
         self.client.get_time_info(date_range).await
     }
 

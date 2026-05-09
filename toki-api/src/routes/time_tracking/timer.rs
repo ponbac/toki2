@@ -7,12 +7,9 @@ use crate::{
 };
 
 use axum::{extract::State, http::StatusCode, Json};
-use axum_extra::extract::CookieJar;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use tracing::instrument;
-
-use super::CookieJarResult;
 
 const SAVE_TIMER_PARTIAL_UPDATE_ERROR: &str = "Project/activity update must be atomic: provide projectId, projectName, activityId, and activityName together.";
 
@@ -58,24 +55,21 @@ fn parse_save_timer_project_activity_update(
 // Get Timer
 // ============================================================================
 
-#[instrument(name = "get_timer", skip(jar))]
+#[instrument(name = "get_timer", skip(app_state))]
 pub async fn get_timer(
-    jar: CookieJar,
     user: AuthUser,
     State(app_state): State<AppState>,
-) -> CookieJarResult<Json<GetTimerResponse>> {
-    let (service, jar) = app_state
+) -> Result<Json<GetTimerResponse>, ApiError> {
+    let service = app_state
         .time_tracking_factory
-        .create_service(jar, &app_state.cookie_domain)
+        .create_service(user.id)
         .await?;
 
     let active_timer = service.get_active_timer(&user.id).await?;
 
-    let response = GetTimerResponse {
+    Ok(Json(GetTimerResponse {
         timer: active_timer.map(TimerResponse::from),
-    };
-
-    Ok((jar, Json(response)))
+    }))
 }
 
 // ============================================================================
@@ -92,16 +86,15 @@ pub struct StartTimerPayload {
     activity_name: Option<String>,
 }
 
-#[instrument(name = "start_timer", skip(jar))]
+#[instrument(name = "start_timer", skip(app_state))]
 pub async fn start_timer(
-    jar: CookieJar,
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<StartTimerPayload>,
-) -> CookieJarResult<StatusCode> {
-    let (service, jar) = app_state
+) -> Result<StatusCode, ApiError> {
+    let service = app_state
         .time_tracking_factory
-        .create_service(jar, &app_state.cookie_domain)
+        .create_service(user.id)
         .await?;
 
     let mut timer = ActiveTimer::new(OffsetDateTime::now_utc());
@@ -118,27 +111,26 @@ pub async fn start_timer(
 
     service.start_timer(&user.id, &timer).await?;
 
-    Ok((jar, StatusCode::OK))
+    Ok(StatusCode::OK)
 }
 
 // ============================================================================
 // Stop Timer
 // ============================================================================
 
-#[instrument(name = "stop_timer", skip(jar))]
+#[instrument(name = "stop_timer", skip(app_state))]
 pub async fn stop_timer(
-    jar: CookieJar,
     user: AuthUser,
     State(app_state): State<AppState>,
-) -> CookieJarResult<StatusCode> {
-    let (service, jar) = app_state
+) -> Result<StatusCode, ApiError> {
+    let service = app_state
         .time_tracking_factory
-        .create_service(jar, &app_state.cookie_domain)
+        .create_service(user.id)
         .await?;
 
     service.stop_timer(&user.id).await?;
 
-    Ok((jar, StatusCode::OK))
+    Ok(StatusCode::OK)
 }
 
 // ============================================================================
@@ -155,16 +147,15 @@ pub struct SaveTimerPayload {
     activity_name: Option<String>,
 }
 
-#[instrument(name = "save_timer", skip(jar))]
+#[instrument(name = "save_timer", skip(app_state))]
 pub async fn save_timer(
-    jar: CookieJar,
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<SaveTimerPayload>,
-) -> CookieJarResult<StatusCode> {
-    let (service, jar) = app_state
+) -> Result<StatusCode, ApiError> {
+    let service = app_state
         .time_tracking_factory
-        .create_service(jar, &app_state.cookie_domain)
+        .create_service(user.id)
         .await?;
 
     let parsed_update = parse_save_timer_project_activity_update(&body)?;
@@ -193,7 +184,7 @@ pub async fn save_timer(
 
     service.save_timer(&user.id, user_note).await?;
 
-    Ok((jar, StatusCode::OK))
+    Ok(StatusCode::OK)
 }
 
 // ============================================================================
@@ -211,16 +202,15 @@ pub struct EditTimerPayload {
     start_time: Option<String>,
 }
 
-#[instrument(name = "edit_timer", skip(jar))]
+#[instrument(name = "edit_timer", skip(app_state))]
 pub async fn edit_timer(
-    jar: CookieJar,
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<EditTimerPayload>,
-) -> CookieJarResult<StatusCode> {
-    let (service, jar) = app_state
+) -> Result<StatusCode, ApiError> {
+    let service = app_state
         .time_tracking_factory
-        .create_service(jar, &app_state.cookie_domain)
+        .create_service(user.id)
         .await?;
 
     // Get the current timer to merge with edits
@@ -272,28 +262,25 @@ pub async fn edit_timer(
 
     service.edit_timer(&user.id, &updated_timer).await?;
 
-    Ok((jar, StatusCode::OK))
+    Ok(StatusCode::OK)
 }
 
 // ============================================================================
 // Timer History
 // ============================================================================
 
-#[instrument(name = "get_timer_history", skip(jar))]
+#[instrument(name = "get_timer_history", skip(app_state))]
 pub async fn get_timer_history(
-    jar: CookieJar,
     user: AuthUser,
     State(app_state): State<AppState>,
-) -> CookieJarResult<Json<Vec<TimerHistoryEntryResponse>>> {
-    let (service, jar) = app_state
+) -> Result<Json<Vec<TimerHistoryEntryResponse>>, ApiError> {
+    let service = app_state
         .time_tracking_factory
-        .create_service(jar, &app_state.cookie_domain)
+        .create_service(user.id)
         .await?;
 
     let entries = service.get_timer_history(&user.id).await?;
-    let response: Vec<TimerHistoryEntryResponse> = entries.into_iter().map(Into::into).collect();
-
-    Ok((jar, Json(response)))
+    Ok(Json(entries.into_iter().map(Into::into).collect()))
 }
 
 #[cfg(test)]

@@ -6,17 +6,9 @@ use axum::{
 use serde::Serialize;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ErrorCode {
-    TimeTrackingAuthenticationFailed,
-}
-
 #[derive(Serialize)]
 struct ErrorBody {
     error: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    code: Option<ErrorCode>,
 }
 
 use crate::{
@@ -29,7 +21,6 @@ use crate::{
 pub struct ApiError {
     status: StatusCode,
     message: String,
-    code: Option<ErrorCode>,
 }
 
 impl ApiError {
@@ -37,13 +28,7 @@ impl ApiError {
         Self {
             status,
             message: message.into(),
-            code: None,
         }
-    }
-
-    pub fn with_code(mut self, code: ErrorCode) -> Self {
-        self.code = Some(code);
-        self
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
@@ -81,7 +66,6 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let body = ErrorBody {
             error: self.message,
-            code: self.code,
         };
         (self.status, Json(body)).into_response()
     }
@@ -114,13 +98,11 @@ impl From<AppStateError> for ApiError {
 impl From<TimeTrackingError> for ApiError {
     fn from(err: TimeTrackingError) -> Self {
         match err {
-            TimeTrackingError::AuthenticationFailed => Self::unauthorized("Authentication failed")
-                .with_code(ErrorCode::TimeTrackingAuthenticationFailed),
-            TimeTrackingError::TimerNotFound | TimeTrackingError::NoTimerRunning => {
-                Self::not_found(err.to_string())
-            }
+            TimeTrackingError::TimerNotFound
+            | TimeTrackingError::NoTimerRunning
+            | TimeTrackingError::ProjectNotFound(_)
+            | TimeTrackingError::ActivityNotFound(_) => Self::not_found(err.to_string()),
             TimeTrackingError::TimerAlreadyRunning => Self::conflict(err.to_string()),
-            TimeTrackingError::InvalidDateRange => Self::bad_request(err.to_string()),
             _ => Self::internal(err.to_string()),
         }
     }
@@ -128,12 +110,7 @@ impl From<TimeTrackingError> for ApiError {
 
 impl From<TimeTrackingServiceError> for ApiError {
     fn from(err: TimeTrackingServiceError) -> Self {
-        let api_error = Self::new(err.status, err.message);
-        if err.status == StatusCode::UNAUTHORIZED {
-            api_error.with_code(ErrorCode::TimeTrackingAuthenticationFailed)
-        } else {
-            api_error
-        }
+        Self::new(err.status, err.message)
     }
 }
 

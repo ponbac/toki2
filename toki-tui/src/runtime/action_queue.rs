@@ -3,7 +3,6 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 #[derive(Debug, Clone)]
 pub(super) enum Action {
-    SubmitMilltimeReauth,
     ApplyProjectSelection {
         had_edit_state: bool,
         saved_selected_project: Option<Project>,

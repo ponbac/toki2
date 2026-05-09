@@ -1,10 +1,11 @@
-import { useTimeTrackingStore } from "@/hooks/useTimeTrackingStore";
 import ky from "ky";
 
+const defaultApiUrl = import.meta.env.DEV
+  ? "http://localhost:8180"
+  : "https://toki-api.bkmn.xyz";
+
 export const API_URL =
-  import.meta.env.MODE === "development"
-    ? "http://localhost:8180"
-    : "https://toki-api.spinit.se";
+  import.meta.env.VITE_API_URL?.trim() || defaultApiUrl;
 
 export const api = ky.create({
   prefixUrl: API_URL,
@@ -12,14 +13,8 @@ export const api = ky.create({
   retry: 0,
   hooks: {
     afterResponse: [
-      async (_, __, response) => {
+      (_, __, response) => {
         if (response.status === 401) {
-          const body = await response.clone().json().catch(() => null);
-          if (body?.code === "TIME_TRACKING_AUTHENTICATION_FAILED") {
-            useTimeTrackingStore.getState().actions.setIsAuthenticated(false);
-            return response;
-          }
-
           window.location.replace(`/login?next=${window.location.pathname}`);
         }
 

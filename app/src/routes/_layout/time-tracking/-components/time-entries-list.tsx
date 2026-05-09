@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { AttestLevel, TimeEntry } from "@/lib/api/queries/time-tracking";
+import {
+  TimeEntry,
+  type TimeEntryStatus,
+} from "@/lib/api/queries/time-tracking";
 import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
@@ -29,7 +32,7 @@ type MergedTimeEntry = Omit<TimeEntry, "startTime" | "endTime"> & {
   timePeriods: Array<{
     startTime: string | null;
     endTime: string | null;
-    attestLevel: AttestLevel;
+    status: TimeEntryStatus;
   }>;
 };
 
@@ -69,7 +72,7 @@ export function TimeEntriesList(props: {
             mergedByProjectActivityAndNote[key].timePeriods.push({
               startTime: entry.startTime,
               endTime: entry.endTime,
-              attestLevel: entry.attestLevel,
+              status: entry.status,
             });
           });
           mergedEntries[dateKey] = Object.values(
@@ -337,7 +340,7 @@ function ViewEntryCard(props: {
           index: number;
           startTime: string;
           endTime: string;
-          attestLevel: AttestLevel;
+          status: TimeEntryStatus;
         }>
       >((acc, period, index) => {
         if (period.startTime && period.endTime) {
@@ -345,15 +348,15 @@ function ViewEntryCard(props: {
             index,
             startTime: period.startTime,
             endTime: period.endTime,
-            attestLevel: period.attestLevel,
+            status: period.status,
           });
         }
         return acc;
       }, [])
     : [];
   const isLocked = isMerged
-    ? entry.timePeriods.every((p) => p.attestLevel !== AttestLevel.None)
-    : entry.attestLevel !== AttestLevel.None;
+    ? entry.timePeriods.every((p) => p.status !== "open")
+    : entry.status !== "open";
 
   const Icon = isLocked ? LockIcon : (props.ProjectIcon ?? Briefcase);
 

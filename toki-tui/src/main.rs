@@ -21,7 +21,6 @@ use api::ApiClient;
 use app::App;
 use clap::Parser;
 use cli::{Cli, Commands};
-use std::io::Write;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,11 +40,12 @@ async fn main() -> Result<()> {
         }
         Commands::Status => {
             let session = session_store::load_session()?;
-            let mt_cookies = session_store::load_mt_cookies()?;
-            let session_status = if session.is_some() { "logged in" } else { "not logged in" };
-            let mt_status = if !mt_cookies.is_empty() { "authenticated" } else { "no cookies" };
+            let session_status = if session.is_some() {
+                "logged in"
+            } else {
+                "not logged in"
+            };
             println!("Azure AD: {}", session_status);
-            println!("Milltime: {}", mt_status);
         }
         Commands::Login => {
             let cfg = config::TokiConfig::load()?;
@@ -53,8 +53,7 @@ async fn main() -> Result<()> {
         }
         Commands::Logout => {
             session_store::clear_session()?;
-            session_store::clear_mt_cookies()?;
-            println!("Logged out. Session and Milltime cookies cleared.");
+            println!("Logged out. Session cleared.");
         }
         Commands::Dev => {
             run_dev_mode().await?;
@@ -86,15 +85,10 @@ async fn run_real_mode() -> Result<()> {
         }
     };
 
-    let mt_cookies = session_store::load_mt_cookies()?;
-    let mut client = ApiClient::new(&cfg.api_url, &session_id, mt_cookies)?;
+    let mut client = ApiClient::new(&cfg.api_url, &session_id)?;
 
     let me = client.me().await?;
     println!("Logged in as {} ({})\n", me.full_name, me.email);
-
-    if client.mt_cookies().is_empty() {
-        prompt_milltime_authentication(&mut client).await?;
-    }
 
     run_ui(App::new(me.id, &cfg), client).await
 }
@@ -112,24 +106,5 @@ async fn run_ui(mut app: App, mut client: ApiClient) -> Result<()> {
     }
 
     println!("\nGoodbye!");
-    Ok(())
-}
-
-async fn prompt_milltime_authentication(client: &mut ApiClient) -> Result<()> {
-    println!("Milltime credentials required.");
-    print!("Username: ");
-    std::io::stdout().flush()?;
-
-    let mut username = String::new();
-    std::io::stdin().read_line(&mut username)?;
-    let username = username.trim().to_string();
-
-    let password = rpassword::prompt_password("Password: ")?;
-
-    print!("Authenticating...");
-    std::io::stdout().flush()?;
-    client.authenticate(&username, &password).await?;
-    println!(" OK");
-
     Ok(())
 }

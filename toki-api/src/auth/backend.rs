@@ -4,8 +4,7 @@ use async_trait::async_trait;
 use axum_login::{AuthnBackend, AuthzBackend, UserId as SessionUserId};
 use oauth2::{
     basic::{BasicClient, BasicRequestTokenError},
-    reqwest::{async_http_client, AsyncHttpClientError},
-    AuthorizationCode, CsrfToken, TokenResponse,
+    AuthorizationCode, CsrfToken, EndpointNotSet, EndpointSet, HttpClientError, TokenResponse,
 };
 use reqwest::{
     header::{AUTHORIZATION, USER_AGENT},
@@ -43,18 +42,31 @@ pub enum BackendError {
     Reqwest(reqwest::Error),
 
     #[error(transparent)]
-    OAuth2(BasicRequestTokenError<AsyncHttpClientError>),
+    OAuth2(BasicRequestTokenError<HttpClientError<reqwest::Error>>),
 }
+
+type AuthClient =
+    BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
 
 #[derive(Debug, Clone)]
 pub struct AuthBackend {
     db: PgPool,
-    client: BasicClient,
+    client: AuthClient,
+    http_client: reqwest::Client,
 }
 
 impl AuthBackend {
-    pub fn new(db: PgPool, client: BasicClient) -> Self {
-        Self { db, client }
+    pub fn new(db: PgPool, client: AuthClient) -> Self {
+        let http_client = reqwest::ClientBuilder::new()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("Failed to build OAuth HTTP client");
+
+        Self {
+            db,
+            client,
+            http_client,
+        }
     }
 
     pub fn authorize_url(&self) -> (Url, CsrfToken) {
@@ -81,12 +93,13 @@ impl AuthnBackend for AuthBackend {
         let token_res = self
             .client
             .exchange_code(AuthorizationCode::new(creds.code))
-            .request_async(async_http_client)
+            .request_async(&self.http_client)
             .await
             .map_err(Self::Error::OAuth2)?;
 
         // Use access token to request user info.
-        let user_info = reqwest::Client::new()
+        let user_info = self
+            .http_client
             .get("https://graph.microsoft.com/oidc/userinfo")
             .header(USER_AGENT.as_str(), "toki-login")
             .header(

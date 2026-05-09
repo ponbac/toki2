@@ -32,7 +32,7 @@ impl App {
                 };
                 // Guard: locked entries cannot be edited
                 if let Some(entry) = self.this_week_history().get(db_idx) {
-                    if entry.attest_level.is_locked() {
+                    if entry.status.is_locked() {
                         self.set_status(LOCKED_ENTRY_MSG.to_string());
                         return;
                     }
@@ -84,7 +84,7 @@ impl App {
             if let Some(&history_idx) = self.history_list_entries.get(list_idx) {
                 // Guard: locked entries cannot be edited
                 if let Some(entry) = self.time_entries.get(history_idx) {
-                    if entry.attest_level.is_locked() {
+                    if entry.status.is_locked() {
                         self.set_status(LOCKED_ENTRY_MSG.to_string());
                         return;
                     }
@@ -513,10 +513,8 @@ impl App {
     pub fn entry_edit_validate(&self) -> Option<String> {
         let state = if let Some(s) = self.this_week_edit_state.as_ref() {
             s
-        } else if let Some(s) = self.history_edit_state.as_ref() {
-            s
         } else {
-            return None;
+            self.history_edit_state.as_ref()?
         };
 
         if state.registration_id.is_empty() {
@@ -633,7 +631,7 @@ impl App {
         self.focused_history_index
             .and_then(|list_idx| self.history_list_entries.get(list_idx))
             .and_then(|&history_idx| self.time_entries.get(history_idx))
-            .map(|e| e.attest_level.is_locked())
+            .map(|e| e.status.is_locked())
             .unwrap_or(false)
     }
 
@@ -648,7 +646,7 @@ impl App {
                 };
                 self.this_week_history()
                     .get(db_idx)
-                    .map(|e| e.attest_level.is_locked())
+                    .map(|e| e.status.is_locked())
                     .unwrap_or(false)
             })
             .unwrap_or(false)
@@ -694,7 +692,7 @@ impl App {
 /// Given an entry's optional start/end times, date string (YYYY-MM-DD), and hours,
 /// return a concrete (start, end) pair for pre-populating the edit form.
 ///
-/// When real times are absent (entry booked via Milltime web UI):
+/// When real times are absent for an entry:
 /// - start and end default to 00:00 (user must fill them in manually)
 fn derive_start_end(
     start_time: Option<time::OffsetDateTime>,

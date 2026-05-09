@@ -4,7 +4,7 @@ use time::Date;
 use crate::domain::{
     models::{
         Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId, TimeEntry,
-        TimeInfo, TimerId,
+        TimerId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -12,10 +12,10 @@ use crate::domain::{
 /// Outbound port for time tracking operations.
 ///
 /// This trait defines the contract that any time tracking provider
-/// (Milltime, or future providers) must implement.
+/// (Kleer, or future providers) must implement.
 ///
-/// Note: The client is created per-request with the user's credentials,
-/// so user_id is not passed to individual methods.
+/// Note: The client is created per-request with the provider target user already resolved,
+/// so user_id is not passed to individual provider methods.
 #[async_trait]
 pub trait TimeTrackingClient: Send + Sync + 'static {
     /// Get available projects for time tracking.
@@ -33,7 +33,10 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
     // ========================================================================
 
     /// Get time tracking statistics for a date range.
-    async fn get_time_info(&self, date_range: (Date, Date)) -> Result<TimeInfo, TimeTrackingError>;
+    async fn get_time_info(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<WeeklyStats, TimeTrackingError>;
 
     /// Get time entries from the provider for a date range.
     ///

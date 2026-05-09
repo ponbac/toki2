@@ -1,6 +1,6 @@
 # Toki2 🕒
 
-A Milltime and Azure DevOps integration platform built with Rust and React. Initially built because I wanted to try out Rust _(this is an excuse for the code quality)_.
+A Kleer (originally Milltime) and Azure DevOps integration platform built with Rust and React. Initially built because I wanted to try out Rust _(this is an excuse for the code quality)_.
 
 ## Documentation
 
@@ -19,12 +19,12 @@ Toki2 helps you manage your time entries, track pull requests, and stay notified
 - 🔄 Azure DevOps Integration
 
   - Pull Request tracking: see all your PRs across different projects and organizations in one place.
-  - Work item integration: generate Milltime notes based on connected work items.
+  - Work item integration: generate time entry notes based on connected work items.
 
 - ⏱️ Time Tracking
 
   - Clean and simple timer feature
-  - Instant sync with Milltime, no more syncing at the end of the week
+  - Instant sync with Kleer, no more syncing at the end of the week
   - Statistics showing how you've spent your time
 
 - 🔔 Real-time Notifications
@@ -47,7 +47,7 @@ Toki2 helps you manage your time entries, track pull requests, and stay notified
 <summary>⏱️ Time Tracking</summary>
 
 ![Timer](docs/images/timer.gif)
-![Milltime Integration](docs/images/milltime.png)
+![Time Tracking](docs/images/time-tracking.png)
 
 </details>
 
@@ -79,9 +79,9 @@ The project is organized into several key components:
 
 ### Backend Services
 
-- `toki-api/`: The main backend service, handles authentication, data persistence, business logic, and communication with Azure DevOps and Milltime.
+- `toki-api/`: The main backend service, handles authentication, data persistence, business logic, and communication with Azure DevOps and Kleer.
 - `az-devops/`: Azure DevOps integration crate, custom client with the goal of making it easier to use the Azure DevOps API.
-- `milltime/`: Milltime integration crate, created by reverse engineering the Milltime web app (no API exists as of yet).
+- `kleer/`: Kleer integration crate.
 
 ### Frontend Application
 
@@ -96,28 +96,33 @@ The project is organized into several key components:
 
 ### Pull production DB into local Postgres
 
-This repository provides a one-command snapshot pull from Fly production into your local database:
+This repository can pull a PostgreSQL snapshot from the Dokploy production database
+over Tailscale SSH and restore it into your local database:
 
 ```bash
 just db-prod-pull
 ```
+
+By default the script connects with `tailscale ssh root@toki-dokploy-01`, looks for
+a running Docker container matching `toki-postgres`, and restores into local
+PostgreSQL at `localhost:5433`, database `toki`.
 
 Useful flags:
 
 ```bash
 just db-prod-pull --yes
 just db-prod-pull --yes --keep-dump
-just db-prod-pull --fly-app toki2 --local-db toki
-just db-prod-pull --fly-db-app toki-pg --proxy-port 15432
+just db-prod-pull --dump-only --dump-path ./prod.dump
+just db-prod-pull --ssh-target root@toki-dokploy-01
+just db-prod-pull --container-filter toki-postgres
+just db-prod-pull --local-db toki
 ```
 
 Requirements:
 
-- `flyctl` (authenticated with `fly auth login`)
-- `pg_dump`, `pg_restore`, `psql`
+- Tailscale with access to `root@toki-dokploy-01`
+- `pg_restore`, `psql`
 - local PostgreSQL running and reachable (defaults: `localhost:5433`, db `toki`)
-
-If production host is a Fly private address (`*.flycast`), the script automatically starts a temporary `flyctl proxy` tunnel.
 
 Safety notes:
 
