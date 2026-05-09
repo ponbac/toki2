@@ -96,7 +96,7 @@ Create the backend app:
   - Dockerfile path: `Dockerfile`
   - Build context/path: repository root
   - Internal port: `8080`
-  - Domain: `toki-api.bkmn.xyz`
+  - Domain: `toki-api.spinit.se`
   - Enable HTTPS/TLS with Let's Encrypt.
 
 Create the frontend app:
@@ -106,7 +106,7 @@ Create the frontend app:
   - Dockerfile path: `app/Dockerfile`
   - Build context/path: repository root
   - Internal port: `80`
-  - Domain: `toki.bkmn.xyz`
+  - Domain: `toki.spinit.se`
   - Enable HTTPS/TLS with Let's Encrypt.
 
 Finally, configure Dokploy database backups.
@@ -116,7 +116,7 @@ Finally, configure Dokploy database backups.
 Frontend build environment:
 
 ```bash
-VITE_API_URL=https://toki-api.bkmn.xyz
+VITE_API_URL=https://toki-api.spinit.se
 VITE_TIME_TRACKING_PROVIDER_URL=<Kleer test or production web URL>
 ```
 
@@ -124,8 +124,8 @@ Backend production environment:
 
 ```bash
 APP_ENVIRONMENT=production
-TOKI_APPLICATION__APP_URL=https://toki.bkmn.xyz
-TOKI_APPLICATION__API_URL=https://toki-api.bkmn.xyz
+TOKI_APPLICATION__APP_URL=https://toki.spinit.se
+TOKI_APPLICATION__API_URL=https://toki-api.spinit.se
 TOKI_APPLICATION__HOST=0.0.0.0
 TOKI_APPLICATION__PORT=8080
 TOKI_DATABASE__HOST=<Dokploy Postgres service host>
@@ -137,7 +137,7 @@ TOKI_DATABASE__REQUIRE_SSL=false
 DATABASE_URL=postgres://<user>:<password>@<Dokploy Postgres service host>:5432/<database>
 TOKI_AUTH__CLIENT_ID=<Azure AD app client id>
 TOKI_AUTH__CLIENT_SECRET=<Azure AD app secret>
-TOKI_AUTH__REDIRECT_URL=https://toki-api.bkmn.xyz/oauth/callback
+TOKI_AUTH__REDIRECT_URL=https://toki-api.spinit.se/oauth/callback
 TOKI_KLEER__TOKEN=<Kleer service token>
 TOKI_KLEER__COMPANY_ID=<Kleer company id>
 TOKI_KLEER__BASE_URL=https://api.kleer.se/v1
@@ -147,22 +147,22 @@ TOKI_KLEER__BASE_URL=https://api.kleer.se/v1
 
 Before cutover, lower TTL for:
 
-- `toki.bkmn.xyz`
-- `toki-api.bkmn.xyz`
+- `toki.spinit.se`
+- `toki-api.spinit.se`
 
 Point A and AAAA records to the `ipv4_address` and `ipv6_address` outputs, then confirm Dokploy issues certificates and smoke-test login, API calls, Kleer time tracking, PR polling, and web push.
 
 When using Cloudflare, keep DNS simple while certificates are issued:
 
-- `toki.bkmn.xyz` -> Hetzner IPv4/IPv6
-- `toki-api.bkmn.xyz` -> Hetzner IPv4/IPv6
+- `toki.spinit.se` -> Hetzner IPv4/IPv6
+- `toki-api.spinit.se` -> Hetzner IPv4/IPv6
 - If Let's Encrypt issuance fails behind the Cloudflare proxy, temporarily switch the records to DNS-only until Dokploy has issued certificates.
 
 ## Smoke Checks
 
 ```bash
-curl -I https://toki.bkmn.xyz/prs
-curl -I https://toki-api.bkmn.xyz/
+curl -I https://toki.spinit.se/prs
+curl -I https://toki-api.spinit.se/
 tailscale ssh root@toki-dokploy-01 'docker service ls'
 ```
 

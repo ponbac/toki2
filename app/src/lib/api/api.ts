@@ -1,8 +1,19 @@
 import ky from "ky";
 
+const productionDefaultApiUrl = () => {
+  if (window.location.hostname.startsWith("toki.")) {
+    return `${window.location.protocol}//${window.location.hostname.replace(
+      /^toki\./,
+      "toki-api.",
+    )}`;
+  }
+
+  return "https://toki-api.spinit.se";
+};
+
 const defaultApiUrl = import.meta.env.DEV
   ? "http://localhost:8180"
-  : "https://toki-api.bkmn.xyz";
+  : productionDefaultApiUrl();
 
 export const API_URL =
   import.meta.env.VITE_API_URL?.trim() || defaultApiUrl;

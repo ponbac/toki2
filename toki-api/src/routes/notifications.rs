@@ -161,7 +161,7 @@ async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, ApiE
     let content = PushNotification::new(
         "Hello, World!",
         "This is a test notification",
-        Some("https://toki.bkmn.xyz"),
+        Some("https://toki.spinit.se"),
         None,
     );
     for subscriber in subscribers {
