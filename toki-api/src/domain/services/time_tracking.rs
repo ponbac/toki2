@@ -123,9 +123,7 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
             .ok_or(TimeTrackingError::NoTimerRunning)?;
 
         // Compute times
-        const BONUS_TIME_MINUTES: i64 = 1;
-        let now = OffsetDateTime::now_utc();
-        let end_time = now + time::Duration::minutes(BONUS_TIME_MINUTES);
+        let end_time = OffsetDateTime::now_utc();
 
         // Build the create request
         let req = CreateTimeEntryRequest {
@@ -358,5 +356,190 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         user_id: &UserId,
     ) -> Result<Vec<TimerHistoryEntry>, TimeTrackingError> {
         self.timer_repo.get_history(user_id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::models::{TimerHistoryId, TimerId};
+    use std::sync::Mutex;
+    use time::Duration;
+
+    #[derive(Default)]
+    struct MockTimeTrackingClient {
+        created_request: Mutex<Option<CreateTimeEntryRequest>>,
+    }
+
+    #[async_trait]
+    impl TimeTrackingClient for MockTimeTrackingClient {
+        async fn get_projects(&self) -> Result<Vec<Project>, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn get_activities(
+            &self,
+            _project_id: &ProjectId,
+            _date_range: (Date, Date),
+        ) -> Result<Vec<Activity>, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn get_time_info(
+            &self,
+            _date_range: (Date, Date),
+        ) -> Result<WeeklyStats, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn get_time_entries(
+            &self,
+            _date_range: (Date, Date),
+        ) -> Result<Vec<TimeEntry>, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn get_time_entry_day_statuses(
+            &self,
+            _date_range: (Date, Date),
+        ) -> Result<Vec<TimeEntryDayStatus>, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn create_time_entry(
+            &self,
+            request: &CreateTimeEntryRequest,
+        ) -> Result<TimerId, TimeTrackingError> {
+            *self.created_request.lock().unwrap() = Some(request.clone());
+            Ok(TimerId::new("entry-1"))
+        }
+
+        async fn edit_time_entry(
+            &self,
+            _request: &EditTimeEntryRequest,
+        ) -> Result<TimerId, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn delete_time_entry(&self, _registration_id: &str) -> Result<(), TimeTrackingError> {
+            unused_mock_method()
+        }
+    }
+
+    struct MockTimerHistoryRepository {
+        active_timer: Mutex<Option<ActiveTimer>>,
+        saved_end_time: Mutex<Option<OffsetDateTime>>,
+    }
+
+    #[async_trait]
+    impl TimerHistoryRepository for MockTimerHistoryRepository {
+        async fn get_active_timer(
+            &self,
+            _user_id: &UserId,
+        ) -> Result<Option<ActiveTimer>, TimeTrackingError> {
+            Ok(self.active_timer.lock().unwrap().clone())
+        }
+
+        async fn create_timer(
+            &self,
+            _user_id: &UserId,
+            _timer: &ActiveTimer,
+        ) -> Result<(), TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn update_timer(
+            &self,
+            _user_id: &UserId,
+            _timer: &ActiveTimer,
+        ) -> Result<(), TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn delete_timer(&self, _user_id: &UserId) -> Result<(), TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn save_timer_finished(
+            &self,
+            _user_id: &UserId,
+            end_time: &OffsetDateTime,
+            _registration_id: &str,
+        ) -> Result<(), TimeTrackingError> {
+            *self.saved_end_time.lock().unwrap() = Some(*end_time);
+            Ok(())
+        }
+
+        async fn get_history(
+            &self,
+            _user_id: &UserId,
+        ) -> Result<Vec<TimerHistoryEntry>, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn get_by_registration_id(
+            &self,
+            _registration_id: &str,
+        ) -> Result<Option<TimerHistoryEntry>, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn create_finished(
+            &self,
+            _entry: &NewTimerHistoryEntry,
+        ) -> Result<TimerHistoryId, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn update_times(
+            &self,
+            _registration_id: &str,
+            _start_time: &OffsetDateTime,
+            _end_time: &OffsetDateTime,
+        ) -> Result<(), TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn update_registration_and_times(
+            &self,
+            _old_registration_id: &str,
+            _new_registration_id: &str,
+            _start_time: &OffsetDateTime,
+            _end_time: &OffsetDateTime,
+        ) -> Result<(), TimeTrackingError> {
+            unused_mock_method()
+        }
+    }
+
+    fn unused_mock_method<T>() -> Result<T, TimeTrackingError> {
+        panic!("test called an unexpected mock method")
+    }
+
+    #[tokio::test]
+    async fn save_timer_uses_current_time_without_future_bonus() {
+        let started_at = OffsetDateTime::now_utc() - Duration::minutes(20);
+        let active_timer = ActiveTimer::new(started_at)
+            .with_project("project-1", "Project")
+            .with_activity("activity-1", "Activity")
+            .with_note("note");
+        let client = Arc::new(MockTimeTrackingClient::default());
+        let repo = Arc::new(MockTimerHistoryRepository {
+            active_timer: Mutex::new(Some(active_timer)),
+            saved_end_time: Mutex::new(None),
+        });
+        let service = TimeTrackingServiceImpl::new(client.clone(), repo.clone());
+        let user_id = UserId::new(1);
+
+        let before_save = OffsetDateTime::now_utc();
+        let saved_entry = service.save_timer(&user_id, None).await.unwrap();
+        let after_save = OffsetDateTime::now_utc();
+
+        let provider_request = client.created_request.lock().unwrap().clone().unwrap();
+        let history_end_time = repo.saved_end_time.lock().unwrap().unwrap();
+
+        assert!(provider_request.end_time >= before_save);
+        assert!(provider_request.end_time <= after_save);
+        assert_eq!(history_end_time, provider_request.end_time);
+        assert_eq!(saved_entry.end_time, Some(provider_request.end_time));
     }
 }
