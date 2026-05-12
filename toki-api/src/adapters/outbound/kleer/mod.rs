@@ -66,32 +66,38 @@ impl KleerAdapter {
             return all_activity_ids.clone();
         }
 
-        let mut allowed: HashSet<_> = project
+        let project_activity_ids: HashSet<_> = project
             .activities
             .iter()
             .map(|assignment| assignment.activity.id)
             .collect();
 
-        let Some(user_assignment) = project
+        let user_activity_ids = project
             .users
             .iter()
             .find(|assignment| assignment.user.id == user_id)
-        else {
-            return allowed;
-        };
+            .and_then(|assignment| {
+                if assignment.activities.is_empty() {
+                    None
+                } else {
+                    Some(
+                        assignment
+                            .activities
+                            .iter()
+                            .map(|assignment| assignment.activity.id)
+                            .collect(),
+                    )
+                }
+            });
 
-        if user_assignment.activities.is_empty() {
-            return allowed;
+        match (project_activity_ids.is_empty(), user_activity_ids) {
+            (true, Some(user_activity_ids)) => user_activity_ids,
+            (_, None) => project_activity_ids,
+            (false, Some(user_activity_ids)) => project_activity_ids
+                .intersection(&user_activity_ids)
+                .copied()
+                .collect(),
         }
-
-        let user_activity_ids: HashSet<_> = user_assignment
-            .activities
-            .iter()
-            .map(|assignment| assignment.activity.id)
-            .collect();
-        allowed.retain(|activity_id| user_activity_ids.contains(activity_id));
-
-        allowed
     }
 
     fn parse_kleer_id(raw: &str, label: &str) -> Result<i64, TimeTrackingError> {
@@ -632,6 +638,17 @@ mod tests {
             KleerAdapter::allowed_activity_ids(&project, TARGET_USER_ID, &all_activity_ids);
 
         assert_eq!(allowed, activity_ids([10, 30]));
+    }
+
+    #[test]
+    fn user_activity_assignment_allows_activities_when_project_activity_list_is_empty() {
+        let all_activity_ids = activity_ids([10, 20, 30]);
+        let project = project(false, [], vec![user_assignment(TARGET_USER_ID, [20])]);
+
+        let allowed =
+            KleerAdapter::allowed_activity_ids(&project, TARGET_USER_ID, &all_activity_ids);
+
+        assert_eq!(allowed, activity_ids([20]));
     }
 
     #[test]

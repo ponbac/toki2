@@ -98,6 +98,12 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 
 - Kleer projects can restrict activities globally at the project level and per user.
 - Activity pickers should respect project restrictions for the mapped Kleer user.
+- Live validation on 2026-05-12 showed project-level `activities` can be empty while
+  user-level `users[].activities` contains the allowed activities for that user. Example:
+  `XYZ` had `all-activities: false`, `activities: []`,
+  and Johnny Clayton (`123456`) had user activity `12345`
+  (`Maintenance/Operations/Support – time bank`). Treat a non-empty user activity list as
+  allowed when the project activity list is empty; intersect only when both lists are non-empty.
 - Kleer JSON payloads use kebab-case field names and plain `YYYY-MM-DD` dates. Prefer explicit serde helpers over implicit date serialization.
 
 ## Main Repo Touchpoints
