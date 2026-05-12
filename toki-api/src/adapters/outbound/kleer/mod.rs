@@ -62,30 +62,34 @@ impl KleerAdapter {
         user_id: i64,
         all_activity_ids: &HashSet<i64>,
     ) -> HashSet<i64> {
-        let mut allowed = if project.all_activities {
-            all_activity_ids.clone()
-        } else {
-            project
-                .activities
-                .iter()
-                .map(|assignment| assignment.activity.id)
-                .collect()
-        };
+        if project.all_activities {
+            return all_activity_ids.clone();
+        }
 
-        if let Some(user_assignment) = project
+        let mut allowed: HashSet<_> = project
+            .activities
+            .iter()
+            .map(|assignment| assignment.activity.id)
+            .collect();
+
+        let Some(user_assignment) = project
             .users
             .iter()
             .find(|assignment| assignment.user.id == user_id)
-        {
-            if !user_assignment.activities.is_empty() {
-                let user_activity_ids: HashSet<_> = user_assignment
-                    .activities
-                    .iter()
-                    .map(|assignment| assignment.activity.id)
-                    .collect();
-                allowed.retain(|activity_id| user_activity_ids.contains(activity_id));
-            }
+        else {
+            return allowed;
+        };
+
+        if user_assignment.activities.is_empty() {
+            return allowed;
         }
+
+        let user_activity_ids: HashSet<_> = user_assignment
+            .activities
+            .iter()
+            .map(|assignment| assignment.activity.id)
+            .collect();
+        allowed.retain(|activity_id| user_activity_ids.contains(activity_id));
 
         allowed
     }
@@ -559,7 +563,88 @@ fn is_missing_payroll_user(error: &KleerError) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kleer::{KleerProjectActivityAssignment, KleerProjectUserAssignment};
     use time::Month;
+
+    const TARGET_USER_ID: i64 = 987;
+
+    fn activity_assignment(activity_id: i64) -> KleerProjectActivityAssignment {
+        KleerProjectActivityAssignment {
+            activity: KleerIdRef { id: activity_id },
+        }
+    }
+
+    fn user_assignment(
+        user_id: i64,
+        activity_ids: impl IntoIterator<Item = i64>,
+    ) -> KleerProjectUserAssignment {
+        KleerProjectUserAssignment {
+            user: KleerIdRef { id: user_id },
+            activities: activity_ids.into_iter().map(activity_assignment).collect(),
+        }
+    }
+
+    fn project(
+        all_activities: bool,
+        project_activity_ids: impl IntoIterator<Item = i64>,
+        users: Vec<KleerProjectUserAssignment>,
+    ) -> KleerClientProjectReadable {
+        KleerClientProjectReadable {
+            id: KleerIdRef { id: 123 },
+            number: "P-123".to_string(),
+            name: "Project".to_string(),
+            active: true,
+            all_activities,
+            activities: project_activity_ids
+                .into_iter()
+                .map(activity_assignment)
+                .collect(),
+            all_users: false,
+            users,
+        }
+    }
+
+    fn activity_ids(ids: impl IntoIterator<Item = i64>) -> HashSet<i64> {
+        ids.into_iter().collect()
+    }
+
+    #[test]
+    fn all_project_activities_are_not_limited_by_user_assignment_activities() {
+        let all_activity_ids = activity_ids([10, 20, 30]);
+        let project = project(true, [], vec![user_assignment(TARGET_USER_ID, [10])]);
+
+        let allowed =
+            KleerAdapter::allowed_activity_ids(&project, TARGET_USER_ID, &all_activity_ids);
+
+        assert_eq!(allowed, all_activity_ids);
+    }
+
+    #[test]
+    fn explicit_project_activities_are_limited_by_user_assignment_activities() {
+        let all_activity_ids = activity_ids([10, 20, 30]);
+        let project = project(
+            false,
+            [10, 20, 30],
+            vec![user_assignment(TARGET_USER_ID, [10, 30])],
+        );
+
+        let allowed =
+            KleerAdapter::allowed_activity_ids(&project, TARGET_USER_ID, &all_activity_ids);
+
+        assert_eq!(allowed, activity_ids([10, 30]));
+    }
+
+    #[test]
+    fn explicit_project_activities_allow_all_project_activities_without_user_activity_restrictions()
+    {
+        let all_activity_ids = activity_ids([10, 20, 30]);
+        let project = project(false, [10, 20], vec![user_assignment(TARGET_USER_ID, [])]);
+
+        let allowed =
+            KleerAdapter::allowed_activity_ids(&project, TARGET_USER_ID, &all_activity_ids);
+
+        assert_eq!(allowed, activity_ids([10, 20]));
+    }
 
     #[test]
     fn event_payload_saves_note_as_external_and_internal_comment() {
