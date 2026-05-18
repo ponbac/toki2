@@ -1,18 +1,24 @@
 import { timeTrackingQueries, TimeEntry } from "@/lib/api/queries/time-tracking";
-import { TIME_TRACKING_PROVIDER_URL } from "@/lib/time-tracking-provider";
+import {
+  KLEER_TIME_REPORTING_MONTH_URL,
+  kleerTimeReportingWeekUrl,
+} from "@/lib/time-tracking-provider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import {
   endOfMonth,
+  endOfWeek,
   format,
+  getISOWeek,
+  getISOWeekYear,
   isAfter,
   isBefore,
   startOfMonth,
   startOfWeek,
+  subDays,
+  subMonths,
 } from "date-fns";
-import { subMonths } from "date-fns";
-import { endOfWeek, subDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useMemo } from "react";
 import { atomWithStorage } from "jotai/utils";
@@ -41,6 +47,11 @@ export const NotLockedAlert = () => {
     () => lockedStatus(timeEntries ?? []),
     [timeEntries],
   );
+  const previousWeekDate = subDays(new Date(), 7);
+  const previousWeekUrl = kleerTimeReportingWeekUrl({
+    isoWeek: getISOWeek(previousWeekDate),
+    isoWeekYear: getISOWeekYear(previousWeekDate),
+  });
 
   if (lastWeekLocked && lastMonthLocked) {
     return null;
@@ -53,7 +64,7 @@ export const NotLockedAlert = () => {
           <AlertCircle className="size-5" />
           <AlertTitle>Previous week unlocked</AlertTitle>
           <AlertDescription>
-            Last week is still open in <ProviderLink />.
+            Last week is still open in <ProviderLink href={previousWeekUrl} />.
           </AlertDescription>
           <Button
             variant="link"
@@ -69,7 +80,8 @@ export const NotLockedAlert = () => {
           <AlertCircle className="size-5" />
           <AlertTitle>Previous month unlocked</AlertTitle>
           <AlertDescription>
-            The previous month is still open in <ProviderLink />.
+            The previous month is still open in{" "}
+            <ProviderLink href={KLEER_TIME_REPORTING_MONTH_URL} />.
           </AlertDescription>
         </Alert>
       )}
@@ -77,10 +89,10 @@ export const NotLockedAlert = () => {
   );
 };
 
-function ProviderLink() {
+function ProviderLink({ href }: { href: string }) {
   return (
     <a
-      href={TIME_TRACKING_PROVIDER_URL}
+      href={href}
       className="font-medium underline transition-colors hover:text-primary/50 hover:decoration-primary/50"
       target="_blank"
       rel="noopener noreferrer"
