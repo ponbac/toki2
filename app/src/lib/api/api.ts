@@ -22,6 +22,7 @@ export const api = ky.create({
   prefixUrl: API_URL,
   credentials: "include",
   retry: 0,
+  timeout: 45_000,
   hooks: {
     afterResponse: [
       (_, __, response) => {
