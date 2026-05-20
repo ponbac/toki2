@@ -6,9 +6,10 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::domain::models::{
-    ActiveTimer, Activity, BoardColumn, BoardData, BoardState, Iteration, Project, PullRequestRef,
-    TimeEntry, TimeEntryDayStatus, TimeEntryStatus, TimerHistoryEntry, WeeklyStats, WorkItem,
-    WorkItemCategory, WorkItemPerson, WorkItemProject, WorkItemRef,
+    AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity, BoardColumn, BoardData,
+    BoardState, Iteration, Project, PullRequestRef, TimeEntry, TimeEntryDayStatus, TimeEntryStatus,
+    TimerHistoryEntry, WeeklyStats, WorkItem, WorkItemCategory, WorkItemPerson, WorkItemProject,
+    WorkItemRef,
 };
 
 /// Response for the get timer endpoint.
@@ -221,6 +222,71 @@ impl From<WeeklyStats> for WeeklyStatsResponse {
             absence_hours: info.absence_hours,
             covered_hours: info.covered_hours,
             period_flex_hours: info.period_flex_hours,
+        }
+    }
+}
+
+/// Absence entry response.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbsenceEntryResponse {
+    pub absence_id: String,
+    pub date: String,
+    pub hours: f64,
+    pub absence_type: AbsenceType,
+    pub absence_type_label: &'static str,
+    pub child: Option<String>,
+    pub comment: Option<String>,
+    pub managed: bool,
+    pub deletable: bool,
+}
+
+/// Available absence type response.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbsenceTypeResponse {
+    pub absence_type: AbsenceType,
+    pub absence_type_label: &'static str,
+}
+
+impl From<AbsenceType> for AbsenceTypeResponse {
+    fn from(absence_type: AbsenceType) -> Self {
+        Self {
+            absence_type,
+            absence_type_label: absence_type.label(),
+        }
+    }
+}
+
+impl From<AbsenceEntry> for AbsenceEntryResponse {
+    fn from(entry: AbsenceEntry) -> Self {
+        Self {
+            absence_id: entry.absence_id,
+            date: entry.date.to_string(),
+            hours: entry.hours,
+            absence_type: entry.absence_type,
+            absence_type_label: entry.absence_type.label(),
+            child: entry.child,
+            comment: entry.comment,
+            managed: entry.managed,
+            deletable: entry.deletable,
+        }
+    }
+}
+
+/// Default hours for one absence day.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbsenceDayDefaultResponse {
+    pub date: String,
+    pub scheduled_hours: f64,
+}
+
+impl From<AbsenceDayDefault> for AbsenceDayDefaultResponse {
+    fn from(day: AbsenceDayDefault) -> Self {
+        Self {
+            date: day.date.to_string(),
+            scheduled_hours: day.scheduled_hours,
         }
     }
 }

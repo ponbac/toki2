@@ -6,7 +6,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 
 - Kleer is the current time-tracking provider behind Toki's provider-agnostic time-tracking ports.
 - Domain logic must stay provider-agnostic. Keep Kleer request/response details in the `kleer/` crate and `toki-api/src/adapters/outbound/kleer/`.
-- Toki remains project-based for the first Kleer-backed release. Projectless or absence-only Kleer events are intentionally skipped.
+- Normal work time remains project-based. Absences are represented as projectless normal Kleer events whose activity identifies the absence type.
 - Timer history is still stored locally in Toki and merged with provider data for accurate start/end times.
 
 ## Important URLs
@@ -68,7 +68,6 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - `POST /company/{companyId}/event/{eventId}`
 - `DELETE /company/{companyId}/event/{eventId}`
 - `GET /company/{companyId}/event/statuses`
-- `GET /company/{companyId}/payroll/user/{userId}/event/from/{fromDate}/to/{toDate}`
 - `GET /company/{companyId}/payroll/user/{userId}/schedule/{startDate}/to/{endDate}`
 
 ## Events, Statuses, And Stats
@@ -91,8 +90,33 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
   - `periodFlexHours`
 - Kleer support confirmed on 2026-04-27 that flex balance is not directly available through the API. Toki estimates period flex as `coveredHours - scheduledHours`, where `coveredHours = workedHours + absenceHours`.
 - `periodFlexHours` is a selected-period estimate, not Kleer's stored historical flex balance and not Milltime's previous `FlexTimeCurrent` equivalent.
-- Absence hours come from payroll events. Count leave/absence payroll event types as schedule-covering hours, but do not count `WorkHour` as absence to avoid double-counting normal project time.
+- Absence hours come from projectless normal Kleer events whose activity id resolves to a known absence activity. Project-backed events count as worked hours; unknown projectless events count as neither worked nor absence hours.
 - Weekly scheduled hours come from the payroll schedule endpoint. Use `actual-hours` from `payroll-user-schedule-metadatas`; it accounts for employment rate and bank holidays.
+
+## Absence Reporting
+
+- Toki reports absences through Kleer normal `event` API entries with no `client-project`, matching the weekly time-report UI flow.
+- Absences are Kleer-only in the first release. There is no local persistence, audit table, or multi-day grouping table.
+- Multi-day reporting creates one independent projectless Kleer event per day.
+- Absence activity ids are resolved from `GET /activity` by exact trimmed Swedish activity name. Production code must not hardcode ids. `Sjuk` was observed as activity id `96858`, but this is only a fixture/example.
+- Activity-name mapping:
+  - `paternityLeave` -> `10 dagar vid barns födelse`
+  - `parentalLeave` -> `Föräldraledighet`
+  - `furlough` -> `Permission`
+  - `vacation` -> `Semester`
+  - `sick` -> `Sjuk`
+  - `leaveOfAbsence` -> `Tjänstledig`
+  - `leaveOfAbsenceVacationEarned` -> `Tjänstledig (Semestergrundande)`
+  - `childcare` -> `VAB`
+  - `closeRelativeCare` -> `Vård av nära anhörig`
+  - `otherLeave` -> `Övrig frånvaro`
+  - `otherLeaveVacationNotEarned` -> `Övrig frånvaro (Semestergrundande)`
+- Listing returns projectless events whose activity id maps to one of the resolved absence activities. Project-backed events and unknown projectless events are ignored.
+- Deletion is allowed only for the mapped user’s projectless events with a resolved absence activity id. The adapter fetches the event by id and validates ownership, projectlessness, and activity before calling Kleer delete.
+- `PARENTAL_LEAVE` and `CHILDCARE` require a non-empty child name.
+- Normal Kleer event writes send `comment`; send an empty string when the user did not enter one.
+- Use payroll schedule `actual-hours` only as the default per-day absence hours. Missing schedule days default to `0`, and users may manually override hours.
+- Existing same-day absence events are allowed and additive. Kleer remains the source of truth.
 
 ## Project And Activity Rules
 

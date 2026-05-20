@@ -2,9 +2,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { DefaultMutationOptions, MutationFnAsync } from "./mutations";
 import {
+  AbsenceEntry,
+  ManagedAbsenceType,
   SaveTimerResponse,
   TimeEntry,
   TimerResponse,
+  absenceTypeLabels,
   timeTrackingQueries,
 } from "../queries/time-tracking";
 import {
@@ -12,15 +15,21 @@ import {
   useTimeTrackingStore,
 } from "@/hooks/useTimeTrackingStore";
 import {
+  applyAbsenceTimeInfoDelta,
   applyTimeInfoDelta,
   buildTimeEntryFromCreatePayload,
   buildTimeEntryFromSave,
+  cancelAbsenceQueries,
   cancelTimeTrackingRangeQueries,
+  findCachedAbsence,
   findCachedEntry,
   markTimeTrackingListsStale,
+  removeAbsenceFromCachedRanges,
   removeEntryFromCachedRanges,
+  replaceAbsencesInCachedRanges,
   replaceEntryInCachedRanges,
   setTimerCache,
+  upsertAbsenceInCachedRanges,
   upsertEntryInCachedRanges,
 } from "../time-tracking-cache";
 
@@ -32,6 +41,8 @@ export const timeTrackingMutations = {
   useEditProjectRegistration,
   useDeleteProjectRegistration,
   useCreateProjectRegistration,
+  useCreateAbsences,
+  useDeleteAbsence,
   useImportKleerUsers,
   useLinkKleerUsersByEmail,
   useUpsertKleerUserLink,
@@ -360,11 +371,7 @@ function useDeleteProjectRegistration(
       );
       removeEntryFromCachedRanges(queryClient, vars.projectRegistrationId);
       if (removedEntry) {
-        applyTimeInfoDelta(
-          queryClient,
-          removedEntry.date,
-          -removedEntry.hours,
-        );
+        applyTimeInfoDelta(queryClient, removedEntry.date, -removedEntry.hours);
       }
 
       const optionsContext = await options?.onMutate?.(vars);
@@ -410,7 +417,10 @@ function useCreateProjectRegistration(
       await cancelTimeTrackingRangeQueries(queryClient);
 
       const optimisticId = `optimistic:create:${crypto.randomUUID()}`;
-      const optimisticEntry = buildTimeEntryFromCreatePayload(vars, optimisticId);
+      const optimisticEntry = buildTimeEntryFromCreatePayload(
+        vars,
+        optimisticId,
+      );
       upsertEntryInCachedRanges(queryClient, optimisticEntry);
       applyTimeInfoDelta(
         queryClient,
@@ -445,6 +455,144 @@ function useCreateProjectRegistration(
           c.optimisticEntry.date,
           -c.optimisticEntry.hours,
         );
+      }
+      options?.onError?.(error, v, c?.optionsContext);
+    },
+  });
+}
+
+function invalidateAbsenceQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  queryClient.invalidateQueries({
+    queryKey: timeTrackingQueries.absenceEntriesBaseKey,
+  });
+  queryClient.invalidateQueries({
+    queryKey: timeTrackingQueries.absenceDayDefaultsBaseKey,
+  });
+  queryClient.invalidateQueries({
+    queryKey: timeTrackingQueries.timeInfoBaseKey,
+  });
+}
+
+function buildOptimisticAbsences(
+  payload: CreateAbsencesPayload,
+): Array<AbsenceEntry> {
+  const batchId = crypto.randomUUID();
+  const comment = payload.comment.trim() ? payload.comment : null;
+
+  return payload.days.map((day) => ({
+    absenceId: `optimistic:absence:create:${batchId}:${day.date}`,
+    date: day.date,
+    hours: day.hours,
+    absenceType: payload.absenceType,
+    absenceTypeLabel: absenceTypeLabels[payload.absenceType],
+    child: payload.child,
+    comment,
+    managed: true,
+    deletable: false,
+  }));
+}
+
+function applyAbsenceEntriesTimeInfoDelta(
+  queryClient: ReturnType<typeof useQueryClient>,
+  entries: Array<AbsenceEntry>,
+  direction: 1 | -1,
+) {
+  for (const entry of entries) {
+    applyAbsenceTimeInfoDelta(
+      queryClient,
+      entry.date,
+      entry.hours * direction,
+    );
+  }
+}
+
+function useCreateAbsences(
+  options?: DefaultMutationOptions<CreateAbsencesPayload, Array<AbsenceEntry>>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["time-tracking", "createAbsences"],
+    mutationFn: (body: CreateAbsencesPayload) =>
+      api
+        .post("time-tracking/absences", {
+          json: body,
+        })
+        .json<Array<AbsenceEntry>>(),
+    ...options,
+    onMutate: async (vars) => {
+      await cancelAbsenceQueries(queryClient);
+
+      const optimisticEntries = buildOptimisticAbsences(vars);
+      for (const entry of optimisticEntries) {
+        upsertAbsenceInCachedRanges(queryClient, entry);
+      }
+      applyAbsenceEntriesTimeInfoDelta(queryClient, optimisticEntries, 1);
+
+      const optionsContext = await options?.onMutate?.(vars);
+      return { optimisticEntries, optionsContext };
+    },
+    onSuccess: (data, v, c) => {
+      if (c?.optimisticEntries) {
+        replaceAbsencesInCachedRanges(
+          queryClient,
+          c.optimisticEntries.map((entry) => entry.absenceId),
+          data,
+        );
+      } else {
+        for (const entry of data) {
+          upsertAbsenceInCachedRanges(queryClient, entry);
+        }
+      }
+      invalidateAbsenceQueries(queryClient);
+      options?.onSuccess?.(data, v, c?.optionsContext);
+    },
+    onError: (error, v, c) => {
+      if (c?.optimisticEntries) {
+        for (const entry of c.optimisticEntries) {
+          removeAbsenceFromCachedRanges(queryClient, entry.absenceId);
+        }
+        applyAbsenceEntriesTimeInfoDelta(queryClient, c.optimisticEntries, -1);
+      }
+      options?.onError?.(error, v, c?.optionsContext);
+    },
+  });
+}
+
+function useDeleteAbsence(
+  options?: DefaultMutationOptions<DeleteAbsencePayload>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["time-tracking", "deleteAbsence"],
+    mutationFn: (body: DeleteAbsencePayload) =>
+      api.delete("time-tracking/absences", {
+        json: body,
+      }),
+    ...options,
+    onMutate: async (vars) => {
+      await cancelAbsenceQueries(queryClient);
+
+      const removedAbsence = findCachedAbsence(queryClient, vars.absenceId);
+      if (removedAbsence) {
+        removeAbsenceFromCachedRanges(queryClient, vars.absenceId);
+        applyAbsenceEntriesTimeInfoDelta(queryClient, [removedAbsence], -1);
+      }
+
+      const optionsContext = await options?.onMutate?.(vars);
+      return { removedAbsence, optionsContext };
+    },
+    onSuccess: (data, v, c) => {
+      invalidateAbsenceQueries(queryClient);
+      options?.onSuccess?.(data, v, c?.optionsContext);
+    },
+    onError: (error, v, c) => {
+      if (c?.removedAbsence) {
+        upsertAbsenceInCachedRanges(queryClient, c.removedAbsence);
+        applyAbsenceEntriesTimeInfoDelta(queryClient, [c.removedAbsence], 1);
       }
       options?.onError?.(error, v, c?.optionsContext);
     },
@@ -597,6 +745,21 @@ export type CreateProjectRegistrationPayload = {
   regDay: string; // YYYY-MM-DD
   weekNumber: number;
   userNote: string;
+};
+
+export type CreateAbsencesPayload = {
+  absenceType: ManagedAbsenceType;
+  child: string | null;
+  comment: string;
+  days: Array<{
+    date: string;
+    hours: number;
+  }>;
+};
+
+export type DeleteAbsencePayload = {
+  absenceId: string;
+  date: string;
 };
 
 export type UpsertKleerUserLinkPayload = {

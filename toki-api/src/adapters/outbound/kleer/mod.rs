@@ -4,24 +4,25 @@ use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use kleer::{
-    KleerActivityList, KleerClient, KleerClientProjectList, KleerClientProjectReadable,
-    KleerCredentials, KleerError, KleerEventReadable, KleerEventRestrictionList,
-    KleerEventWritable, KleerIdRef,
+    KleerActivityList, KleerActivityReadable, KleerClient, KleerClientProjectList,
+    KleerClientProjectReadable, KleerCredentials, KleerError, KleerEventReadable,
+    KleerEventRestrictionList, KleerEventWritable, KleerIdRef,
 };
-use time::Date;
+use time::{Date, Duration};
 
 use crate::domain::{
     models::{
-        Activity, ActivityId, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimerId, WeeklyStats,
+        AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity, ActivityId, CreateAbsencesRequest,
+        CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId, TimeEntry,
+        TimeEntryDayStatus, TimerId, WeeklyStats,
     },
     ports::outbound::TimeTrackingClient,
     TimeTrackingError,
 };
 
 use self::conversions::{
-    to_domain_absence_hours, to_domain_activity, to_domain_project, to_domain_scheduled_hours,
-    to_domain_status, to_domain_time_entry,
+    to_domain_absence_entry_from_event, to_domain_activity, to_domain_project,
+    to_domain_scheduled_hours, to_domain_status, to_domain_time_entry,
 };
 
 pub struct KleerAdapter {
@@ -33,6 +34,32 @@ struct VerifiedKleerEventTarget {
     project_id: i64,
     activity_id: i64,
 }
+
+#[derive(Debug, Clone)]
+struct AbsenceActivityMap {
+    by_type: HashMap<AbsenceType, i64>,
+    by_activity_id: HashMap<i64, AbsenceType>,
+}
+
+const KLEER_ABSENCE_ACTIVITY_NAMES: &[(AbsenceType, &str)] = &[
+    (AbsenceType::PaternityLeave, "10 dagar vid barns födelse"),
+    (AbsenceType::ParentalLeave, "Föräldraledighet"),
+    (AbsenceType::Furlough, "Permission"),
+    (AbsenceType::Vacation, "Semester"),
+    (AbsenceType::Sick, "Sjuk"),
+    (AbsenceType::LeaveOfAbsence, "Tjänstledig"),
+    (
+        AbsenceType::LeaveOfAbsenceVacationEarned,
+        "Tjänstledig (Semestergrundande)",
+    ),
+    (AbsenceType::Childcare, "VAB"),
+    (AbsenceType::CloseRelativeCare, "Vård av nära anhörig"),
+    (AbsenceType::OtherLeave, "Övrig frånvaro"),
+    (
+        AbsenceType::OtherLeaveVacationNotEarned,
+        "Övrig frånvaro (Semestergrundande)",
+    ),
+];
 
 impl KleerAdapter {
     const MISSING_NOTE_COMMENT: &'static str = "missing note";
@@ -245,6 +272,159 @@ impl KleerAdapter {
         )
     }
 
+    fn absence_event_foreign_id(user_id: i64, activity_id: i64, date: Date) -> String {
+        format!(
+            "toki-absence-{user_id}-{activity_id}-{date}-{}",
+            time::OffsetDateTime::now_utc().unix_timestamp_nanos()
+        )
+    }
+
+    async fn load_absence_activity_map(&self) -> Result<AbsenceActivityMap, TimeTrackingError> {
+        let activities = self
+            .client
+            .list_activities()
+            .await
+            .map_err(map_kleer_error)?;
+
+        Self::build_absence_activity_map(&activities.activity_readables)
+    }
+
+    fn build_absence_activity_map(
+        activities: &[KleerActivityReadable],
+    ) -> Result<AbsenceActivityMap, TimeTrackingError> {
+        let mut ids_by_name: HashMap<&str, i64> = HashMap::new();
+        let mut duplicate_names = HashSet::new();
+
+        for activity in activities {
+            let name = activity.name.trim();
+            if KLEER_ABSENCE_ACTIVITY_NAMES
+                .iter()
+                .any(|(_, absence_name)| *absence_name == name)
+                && ids_by_name.insert(name, activity.id.id).is_some()
+            {
+                duplicate_names.insert(name.to_string());
+            }
+        }
+
+        if !duplicate_names.is_empty() {
+            tracing::warn!(
+                "duplicate Kleer absence activity names make writes ambiguous: {:?}",
+                duplicate_names
+            );
+            return Err(TimeTrackingError::unknown(
+                "Duplicate Kleer absence activity names make absence reporting ambiguous",
+            ));
+        }
+
+        let mut by_type = HashMap::new();
+        let mut by_activity_id = HashMap::new();
+        for (absence_type, name) in KLEER_ABSENCE_ACTIVITY_NAMES {
+            if let Some(activity_id) = ids_by_name.get(name).copied() {
+                by_type.insert(*absence_type, activity_id);
+                by_activity_id.insert(activity_id, *absence_type);
+            }
+        }
+
+        Ok(AbsenceActivityMap {
+            by_type,
+            by_activity_id,
+        })
+    }
+
+    fn absence_activity_id(
+        absence_type: AbsenceType,
+        map: &AbsenceActivityMap,
+    ) -> Result<i64, TimeTrackingError> {
+        map.by_type.get(&absence_type).copied().ok_or_else(|| {
+            TimeTrackingError::InvalidInput("This absence type is not available in Kleer".into())
+        })
+    }
+
+    fn absence_type_for_activity(
+        activity_id: i64,
+        map: &AbsenceActivityMap,
+    ) -> Option<AbsenceType> {
+        map.by_activity_id.get(&activity_id).copied()
+    }
+
+    fn build_absence_event_writable(
+        request: &CreateAbsencesRequest,
+        date: Date,
+        hours: f64,
+        activity_id: i64,
+        user_id: i64,
+    ) -> KleerEventWritable {
+        KleerEventWritable {
+            foreign_id: Self::absence_event_foreign_id(user_id, activity_id, date),
+            user: KleerIdRef { id: user_id },
+            activity: KleerIdRef { id: activity_id },
+            client_project: None,
+            child: request
+                .child
+                .as_ref()
+                .map(|child| child.trim().to_string())
+                .filter(|child| !child.is_empty()),
+            date,
+            hours,
+            comment: request.comment.clone(),
+            internal_comment: None,
+        }
+    }
+
+    fn to_domain_absence_entry_from_event(
+        event: &KleerEventReadable,
+        map: &AbsenceActivityMap,
+    ) -> Option<AbsenceEntry> {
+        let absence_type = Self::absence_type_for_activity(event.activity.id, map)?;
+        to_domain_absence_entry_from_event(event, absence_type)
+    }
+
+    fn to_owned_domain_absence_entry_from_event(
+        &self,
+        event: &KleerEventReadable,
+        map: &AbsenceActivityMap,
+    ) -> Option<AbsenceEntry> {
+        self.ensure_event_owned_by_target_user(event).ok()?;
+        Self::to_domain_absence_entry_from_event(event, map)
+    }
+
+    fn event_hours(events: &[KleerEventReadable], map: &AbsenceActivityMap) -> (f64, f64) {
+        let worked_hours = events
+            .iter()
+            .filter(|event| event.client_project.is_some())
+            .map(|event| event.hours)
+            .sum();
+        let absence_hours = events
+            .iter()
+            .filter(|event| {
+                event.client_project.is_none()
+                    && Self::absence_type_for_activity(event.activity.id, map).is_some()
+            })
+            .map(|event| event.hours)
+            .sum();
+
+        (worked_hours, absence_hours)
+    }
+
+    fn verify_deletable_absence_event(
+        &self,
+        event: &KleerEventReadable,
+        map: &AbsenceActivityMap,
+        date: Date,
+    ) -> Result<(), TimeTrackingError> {
+        self.ensure_event_owned_by_target_user(event)?;
+        if event.date != date {
+            return Err(TimeTrackingError::TimerNotFound);
+        }
+        if event.client_project.is_some() {
+            return Err(TimeTrackingError::TimerNotFound);
+        }
+        if Self::absence_type_for_activity(event.activity.id, map).is_none() {
+            return Err(TimeTrackingError::TimerNotFound);
+        }
+        Ok(())
+    }
+
     fn to_domain_day_statuses(statuses: KleerEventRestrictionList) -> Vec<TimeEntryDayStatus> {
         statuses
             .event_restriction_readables
@@ -259,6 +439,16 @@ impl KleerAdapter {
                     })
             })
             .collect()
+    }
+
+    fn inclusive_dates(from: Date, to: Date) -> Vec<Date> {
+        let mut dates = Vec::new();
+        let mut date = from;
+        while date <= to {
+            dates.push(date);
+            date += Duration::days(1);
+        }
+        dates
     }
 }
 
@@ -322,21 +512,12 @@ impl TimeTrackingClient for KleerAdapter {
             .client
             .list_schedule_summary(self.target_user_id, date_range.0, date_range.1)
             .await
-            .or_else(empty_schedule_for_missing_payroll_user)?;
-        let payroll_events = self
-            .client
-            .list_payroll_events(self.target_user_id, date_range.0, date_range.1)
-            .await
-            .or_else(empty_payroll_events_for_missing_payroll_user)?;
+            .or_else(default_for_missing_payroll_user)?;
+        let absence_activity_map = self.load_absence_activity_map().await?;
 
-        let worked_hours: f64 = events
-            .event_readables
-            .into_iter()
-            .filter(|event| event.client_project.is_some())
-            .map(|event| event.hours)
-            .sum();
         let scheduled_hours = to_domain_scheduled_hours(&schedule.payroll_user_schedule_metadatas);
-        let absence_hours = to_domain_absence_hours(&payroll_events.payroll_events);
+        let (worked_hours, absence_hours) =
+            Self::event_hours(&events.event_readables, &absence_activity_map);
 
         Ok(WeeklyStats::new(
             worked_hours,
@@ -501,6 +682,131 @@ impl TimeTrackingClient for KleerAdapter {
             .map_err(map_kleer_error)?;
         Ok(())
     }
+
+    async fn get_absence_types(&self) -> Result<Vec<AbsenceType>, TimeTrackingError> {
+        let map = self.load_absence_activity_map().await?;
+        Ok(KLEER_ABSENCE_ACTIVITY_NAMES
+            .iter()
+            .filter_map(|(absence_type, _)| {
+                map.by_type
+                    .contains_key(absence_type)
+                    .then_some(*absence_type)
+            })
+            .collect())
+    }
+
+    async fn get_absences(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<AbsenceEntry>, TimeTrackingError> {
+        let absence_activity_map = self.load_absence_activity_map().await?;
+        let events = self
+            .client
+            .list_events(self.target_user_id, date_range.0, date_range.1)
+            .await
+            .map_err(map_kleer_error)?;
+
+        let mut entries: Vec<_> = events
+            .event_readables
+            .iter()
+            .filter_map(|event| {
+                self.to_owned_domain_absence_entry_from_event(event, &absence_activity_map)
+            })
+            .collect();
+        entries.sort_by(|a, b| b.date.cmp(&a.date).then(a.absence_id.cmp(&b.absence_id)));
+        Ok(entries)
+    }
+
+    async fn get_absence_day_defaults(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<AbsenceDayDefault>, TimeTrackingError> {
+        let schedule = self
+            .client
+            .list_schedule_summary(self.target_user_id, date_range.0, date_range.1)
+            .await
+            .or_else(default_for_missing_payroll_user)?;
+        let hours_by_date: HashMap<_, _> = schedule
+            .payroll_user_schedule_metadatas
+            .into_iter()
+            .map(|day| (day.date, day.actual_hours))
+            .collect();
+
+        Ok(Self::inclusive_dates(date_range.0, date_range.1)
+            .into_iter()
+            .map(|date| AbsenceDayDefault {
+                date,
+                scheduled_hours: hours_by_date.get(&date).copied().unwrap_or(0.0),
+            })
+            .collect())
+    }
+
+    async fn create_absences(
+        &self,
+        request: &CreateAbsencesRequest,
+    ) -> Result<Vec<AbsenceEntry>, TimeTrackingError> {
+        let absence_activity_map = self.load_absence_activity_map().await?;
+        let activity_id = Self::absence_activity_id(request.absence_type, &absence_activity_map)?;
+        let mut created = Vec::new();
+
+        for day in &request.days {
+            let payload = Self::build_absence_event_writable(
+                request,
+                day.date,
+                day.hours,
+                activity_id,
+                self.target_user_id,
+            );
+            match self.client.create_event(&payload).await {
+                Ok(saved) => {
+                    created.push(AbsenceEntry {
+                        absence_id: saved.id.to_string(),
+                        date: day.date,
+                        hours: day.hours,
+                        absence_type: request.absence_type,
+                        child: payload.child,
+                        comment: Some(request.comment.clone())
+                            .filter(|value| !value.trim().is_empty()),
+                        managed: true,
+                        deletable: true,
+                    });
+                }
+                Err(error) => {
+                    for entry in &created {
+                        if let Ok(event_id) = Self::parse_kleer_id(&entry.absence_id, "event id") {
+                            if let Err(rollback_error) = self.client.delete_event(event_id).await {
+                                tracing::warn!(
+                                    "Failed to rollback Kleer absence event {}: {:?}",
+                                    entry.absence_id,
+                                    rollback_error
+                                );
+                            }
+                        }
+                    }
+                    return Err(map_kleer_event_write_error(error));
+                }
+            }
+        }
+
+        Ok(created)
+    }
+
+    async fn delete_absence(&self, absence_id: &str, date: Date) -> Result<(), TimeTrackingError> {
+        let event_id = Self::parse_kleer_id(absence_id, "event id")?;
+        let event = self
+            .client
+            .get_event(event_id)
+            .await
+            .map_err(map_kleer_event_lookup_error)?;
+        let absence_activity_map = self.load_absence_activity_map().await?;
+        self.verify_deletable_absence_event(&event, &absence_activity_map, date)?;
+
+        self.client
+            .delete_event(event_id)
+            .await
+            .map_err(map_kleer_event_write_error)?;
+        Ok(())
+    }
 }
 
 fn map_kleer_error(error: KleerError) -> TimeTrackingError {
@@ -521,6 +827,32 @@ fn map_kleer_error(error: KleerError) -> TimeTrackingError {
     }
 }
 
+fn map_kleer_event_write_error(error: KleerError) -> TimeTrackingError {
+    if is_event_access_denied(&error) {
+        return TimeTrackingError::Forbidden(kleer_error_response_message(&error));
+    }
+    if is_locked_period(&error) {
+        return TimeTrackingError::Conflict("This period is locked in Kleer".to_string());
+    }
+
+    map_kleer_error(error)
+}
+
+fn map_kleer_event_lookup_error(error: KleerError) -> TimeTrackingError {
+    if is_event_access_denied(&error) {
+        return TimeTrackingError::TimerNotFound;
+    }
+
+    map_kleer_event_write_error(error)
+}
+
+fn kleer_error_response_message(error: &KleerError) -> String {
+    match error {
+        KleerError::Response { body, .. } => kleer_response_message(body),
+        _ => error.to_string(),
+    }
+}
+
 fn kleer_response_message(body: &str) -> String {
     let message = serde_json::from_str::<serde_json::Value>(body)
         .ok()
@@ -537,19 +869,7 @@ fn kleer_response_message(body: &str) -> String {
     message.chars().take(500).collect()
 }
 
-fn empty_schedule_for_missing_payroll_user(
-    error: KleerError,
-) -> Result<kleer::KleerScheduleMetadataList, TimeTrackingError> {
-    if is_missing_payroll_user(&error) {
-        Ok(Default::default())
-    } else {
-        Err(map_kleer_error(error))
-    }
-}
-
-fn empty_payroll_events_for_missing_payroll_user(
-    error: KleerError,
-) -> Result<kleer::KleerPayrollEventList, TimeTrackingError> {
+fn default_for_missing_payroll_user<T: Default>(error: KleerError) -> Result<T, TimeTrackingError> {
     if is_missing_payroll_user(&error) {
         Ok(Default::default())
     } else {
@@ -566,10 +886,35 @@ fn is_missing_payroll_user(error: &KleerError) -> bool {
     )
 }
 
+fn is_locked_period(error: &KleerError) -> bool {
+    match error {
+        KleerError::Response { body, .. } => {
+            let body = body.to_lowercase();
+            body.contains("locked")
+                || body.contains("paid")
+                || body.contains("approved")
+                || body.contains("certified")
+                || body.contains("utbetald")
+                || body.contains("låst")
+        }
+        _ => false,
+    }
+}
+
+fn is_event_access_denied(error: &KleerError) -> bool {
+    matches!(
+        error,
+        KleerError::Response { body, .. } if body.contains("EventAccessDeniedException")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kleer::{KleerProjectActivityAssignment, KleerProjectUserAssignment};
+    use kleer::{
+        KleerEventStatus, KleerProjectActivityAssignment, KleerProjectUserAssignment,
+        KleerStatusType,
+    };
     use time::Month;
 
     const TARGET_USER_ID: i64 = 987;
@@ -612,6 +957,63 @@ mod tests {
 
     fn activity_ids(ids: impl IntoIterator<Item = i64>) -> HashSet<i64> {
         ids.into_iter().collect()
+    }
+
+    fn activity(id: i64, name: &str) -> KleerActivityReadable {
+        KleerActivityReadable {
+            id: KleerIdRef { id },
+            name: name.to_string(),
+            description: String::new(),
+            mandatory_child_when_reporting: false,
+        }
+    }
+
+    fn all_absence_activities() -> Vec<KleerActivityReadable> {
+        KLEER_ABSENCE_ACTIVITY_NAMES
+            .iter()
+            .enumerate()
+            .map(|(index, (_, name))| activity(10_000 + index as i64, name))
+            .collect()
+    }
+
+    fn event(
+        id: i64,
+        user_id: i64,
+        activity_id: i64,
+        client_project_id: Option<i64>,
+        hours: f64,
+    ) -> KleerEventReadable {
+        KleerEventReadable {
+            id: KleerIdRef { id },
+            foreign_id: String::new(),
+            user: KleerIdRef { id: user_id },
+            activity: KleerIdRef { id: activity_id },
+            client_project: client_project_id.map(|id| KleerIdRef { id }),
+            child: None,
+            date: event_date(),
+            hours,
+            comment: Some("comment".to_string()),
+            internal_comment: None,
+            approved: None,
+            status: Some(KleerEventStatus {
+                status_type: KleerStatusType::Open,
+                registration_user: None,
+                registration_date: None,
+                event_date: None,
+            }),
+        }
+    }
+
+    fn event_date() -> Date {
+        Date::from_calendar_date(2026, Month::May, 20).unwrap()
+    }
+
+    fn adapter() -> KleerAdapter {
+        KleerAdapter::new(
+            KleerCredentials::new("token", "company", None::<String>),
+            TARGET_USER_ID,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -717,5 +1119,177 @@ mod tests {
                 Some(KleerAdapter::MISSING_NOTE_COMMENT)
             );
         }
+    }
+
+    #[test]
+    fn absence_activity_map_resolves_all_known_swedish_names() {
+        let activities = all_absence_activities();
+        let map = KleerAdapter::build_absence_activity_map(&activities).unwrap();
+
+        assert_eq!(map.by_type.len(), KLEER_ABSENCE_ACTIVITY_NAMES.len());
+        assert_eq!(map.by_type.get(&AbsenceType::Sick).copied(), Some(10_004));
+        assert_eq!(
+            map.by_activity_id.get(&10_004).copied(),
+            Some(AbsenceType::Sick)
+        );
+    }
+
+    #[test]
+    fn missing_absence_activity_names_are_omitted() {
+        let activities = vec![activity(96858, "Sjuk")];
+        let map = KleerAdapter::build_absence_activity_map(&activities).unwrap();
+
+        assert_eq!(map.by_type.len(), 1);
+        assert_eq!(map.by_type.get(&AbsenceType::Sick).copied(), Some(96858));
+    }
+
+    #[test]
+    fn duplicate_absence_activity_names_are_an_error() {
+        let activities = vec![activity(1, "Sjuk"), activity(2, " Sjuk ")];
+        let error = KleerAdapter::build_absence_activity_map(&activities).unwrap_err();
+
+        assert!(matches!(error, TimeTrackingError::Unknown(_)));
+    }
+
+    #[test]
+    fn absence_event_payload_uses_projectless_event_fields() {
+        let date = Date::from_calendar_date(2026, Month::May, 20).unwrap();
+        let payload = KleerAdapter::build_absence_event_writable(
+            &CreateAbsencesRequest {
+                absence_type: AbsenceType::Sick,
+                child: None,
+                comment: "Flu".to_string(),
+                days: vec![],
+            },
+            date,
+            8.0,
+            96858,
+            TARGET_USER_ID,
+        );
+        let json = serde_json::to_value(&payload).unwrap();
+
+        assert_eq!(payload.user.id, TARGET_USER_ID);
+        assert_eq!(payload.activity.id, 96858);
+        assert_eq!(payload.client_project, None);
+        assert_eq!(payload.date, date);
+        assert_eq!(payload.hours, 8.0);
+        assert_eq!(payload.comment, "Flu");
+        assert!(payload
+            .foreign_id
+            .starts_with(&format!("toki-absence-{TARGET_USER_ID}-96858-2026-05-20-")));
+        assert!(json.get("client-project").is_none());
+    }
+
+    #[test]
+    fn projectless_resolved_event_converts_to_managed_absence() {
+        let map = KleerAdapter::build_absence_activity_map(&[activity(96858, "Sjuk")]).unwrap();
+        let entry = KleerAdapter::to_domain_absence_entry_from_event(
+            &event(1, TARGET_USER_ID, 96858, None, 4.0),
+            &map,
+        )
+        .unwrap();
+
+        assert_eq!(entry.absence_type, AbsenceType::Sick);
+        assert!(entry.managed);
+        assert!(entry.deletable);
+    }
+
+    #[test]
+    fn owned_absence_conversion_rejects_other_users_events() {
+        let adapter = adapter();
+        let map = KleerAdapter::build_absence_activity_map(&[activity(96858, "Sjuk")]).unwrap();
+
+        assert!(adapter
+            .to_owned_domain_absence_entry_from_event(
+                &event(1, TARGET_USER_ID + 1, 96858, None, 4.0),
+                &map,
+            )
+            .is_none());
+    }
+
+    #[test]
+    fn project_backed_or_unknown_projectless_events_are_not_absences() {
+        let map = KleerAdapter::build_absence_activity_map(&[activity(96858, "Sjuk")]).unwrap();
+
+        assert!(KleerAdapter::to_domain_absence_entry_from_event(
+            &event(1, TARGET_USER_ID, 96858, Some(123), 8.0),
+            &map,
+        )
+        .is_none());
+        assert!(KleerAdapter::to_domain_absence_entry_from_event(
+            &event(2, TARGET_USER_ID, 111, None, 8.0),
+            &map,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn time_info_counts_project_events_and_known_absence_events() {
+        let map = KleerAdapter::build_absence_activity_map(&[activity(96858, "Sjuk")]).unwrap();
+        let events = vec![
+            event(1, TARGET_USER_ID, 10, Some(123), 6.0),
+            event(2, TARGET_USER_ID, 96858, None, 8.0),
+            event(3, TARGET_USER_ID, 999, None, 2.0),
+        ];
+
+        assert_eq!(KleerAdapter::event_hours(&events, &map), (6.0, 8.0));
+    }
+
+    #[test]
+    fn delete_validation_rejects_non_absence_events() {
+        let adapter = adapter();
+        let map = KleerAdapter::build_absence_activity_map(&[activity(96858, "Sjuk")]).unwrap();
+
+        assert!(matches!(
+            adapter.verify_deletable_absence_event(
+                &event(1, TARGET_USER_ID + 1, 96858, None, 8.0),
+                &map,
+                event_date(),
+            ),
+            Err(TimeTrackingError::TimerNotFound)
+        ));
+        assert!(matches!(
+            adapter.verify_deletable_absence_event(
+                &event(2, TARGET_USER_ID, 96858, Some(123), 8.0),
+                &map,
+                event_date(),
+            ),
+            Err(TimeTrackingError::TimerNotFound)
+        ));
+        assert!(matches!(
+            adapter.verify_deletable_absence_event(
+                &event(3, TARGET_USER_ID, 111, None, 8.0),
+                &map,
+                event_date(),
+            ),
+            Err(TimeTrackingError::TimerNotFound)
+        ));
+    }
+
+    #[test]
+    fn delete_validation_rejects_wrong_absence_date() {
+        let adapter = adapter();
+        let map = KleerAdapter::build_absence_activity_map(&[activity(96858, "Sjuk")]).unwrap();
+
+        assert!(matches!(
+            adapter.verify_deletable_absence_event(
+                &event(1, TARGET_USER_ID, 96858, None, 8.0),
+                &map,
+                event_date() + Duration::days(1),
+            ),
+            Err(TimeTrackingError::TimerNotFound)
+        ));
+    }
+
+    #[test]
+    fn absence_event_access_denied_maps_to_forbidden() {
+        let error = map_kleer_event_write_error(KleerError::Response {
+            status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            body: r#"{"message":"EventAccessDeniedException: denied"}"#.to_string(),
+        });
+
+        assert!(
+            matches!(error, TimeTrackingError::Forbidden(message) if message.contains("EventAccessDeniedException"))
+        );
     }
 }

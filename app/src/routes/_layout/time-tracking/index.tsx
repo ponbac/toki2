@@ -10,7 +10,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { apiErrorToast } from "@/lib/api/errors";
 import { userQueries } from "@/lib/api/queries/user";
-import { startOfWeek, endOfWeek, format } from "date-fns";
+import dayjs from "dayjs";
+import isoWeek from "dayjs/plugin/isoWeek";
 import React from "react";
 import { atomWithStorage } from "jotai/utils";
 import { useAtom, useAtomValue } from "jotai/react";
@@ -39,11 +40,16 @@ import {
   Sparkles,
   List,
   CalendarDays,
+  CalendarX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { NewEntryDialog } from "./-components/new-entry-dialog";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { TimelineView } from "./-components/timeline-view";
+import { ReportAbsenceDialog } from "./-components/report-absence-dialog";
+import { AbsencesPanel } from "./-components/absences-panel";
+
+dayjs.extend(isoWeek);
 
 export const Route = createFileRoute("/_layout/time-tracking/")({
   loader: async ({ context }) => {
@@ -65,15 +71,22 @@ export const Route = createFileRoute("/_layout/time-tracking/")({
     void context.queryClient.prefetchQuery(
       timeTrackingQueries.timeInfo(currentWeekDateRange),
     );
+    void context.queryClient.prefetchQuery(
+      timeTrackingQueries.absenceEntries(currentWeekDateRange),
+    );
+    void context.queryClient.prefetchQuery(timeTrackingQueries.absenceTypes());
     void context.queryClient.prefetchQuery(timeTrackingQueries.listProjects());
   },
   component: TimeTrackingPage,
 });
 
 function getCurrentWeekDateRange() {
+  const today = dayjs();
+
   return {
-    from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-    to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+    // ISO weeks start on Monday.
+    from: today.startOf("isoWeek").format("YYYY-MM-DD"),
+    to: today.endOf("isoWeek").format("YYYY-MM-DD"),
   };
 }
 
@@ -134,8 +147,17 @@ function TimeTrackingPage() {
       },
       onError: apiErrorToast("Failed to create entry"),
     });
+  const { mutate: createAbsences, isPending: isCreatingAbsences } =
+    timeTrackingMutations.useCreateAbsences({
+      onSuccess: () => {
+        setIsReportAbsenceOpen(false);
+        toast.success("Absence reported");
+      },
+      onError: apiErrorToast("Failed to report absence"),
+    });
 
   const [isNewEntryOpen, setIsNewEntryOpen] = React.useState(false);
+  const [isReportAbsenceOpen, setIsReportAbsenceOpen] = React.useState(false);
 
   const onStartTimer = React.useCallback(() => {
     startTimer({
@@ -212,6 +234,15 @@ function TimeTrackingPage() {
                       <span>Start Timer</span>
                     </Button>
                   )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsReportAbsenceOpen(true)}
+                    className="group h-11 gap-2 rounded-xl border-border/50 bg-card/50 px-5 shadow-sm backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-card hover:shadow-glow-sm"
+                  >
+                    <CalendarX className="h-4 w-4 transition-transform group-hover:scale-110" />
+                    <span>Report Absence</span>
+                  </Button>
                   <Button
                     onClick={() => setIsNewEntryOpen(true)}
                     onMouseEnter={prefetchProjects}
@@ -325,6 +356,7 @@ function TimeTrackingPage() {
               {/* Sidebar */}
               <aside className="space-y-6">
                 <TimeStats />
+                <AbsencesPanel dateRange={dateRange} />
                 {!!timeEntries?.length && <Summary timeEntries={timeEntries} />}
               </aside>
             </div>
@@ -336,6 +368,14 @@ function TimeTrackingPage() {
         onOpenChange={setIsNewEntryOpen}
         onCreate={(payload) => {
           createProjectRegistration(payload);
+        }}
+      />
+      <ReportAbsenceDialog
+        open={isReportAbsenceOpen}
+        onOpenChange={setIsReportAbsenceOpen}
+        isCreating={isCreatingAbsences}
+        onCreate={(payload) => {
+          createAbsences(payload);
         }}
       />
     </div>
