@@ -1,3 +1,4 @@
+mod absence;
 mod avatar;
 mod ids;
 mod project;
@@ -5,6 +6,7 @@ mod time_tracking_user;
 mod timer;
 mod work_item;
 
+pub use absence::*;
 pub use avatar::*;
 pub use ids::*;
 pub use project::*;

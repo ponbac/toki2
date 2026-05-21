@@ -16,6 +16,12 @@ pub enum TimeTrackingError {
     #[error("activity not found: {0}")]
     ActivityNotFound(String),
     #[error("{0}")]
+    InvalidInput(String),
+    #[error("{0}")]
+    Conflict(String),
+    #[error("{0}")]
+    Forbidden(String),
+    #[error("{0}")]
     Unknown(String),
 }
 

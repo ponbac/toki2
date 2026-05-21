@@ -1,10 +1,12 @@
 import type { QueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import {
+  type AbsenceEntry,
   type DateRangeQuery,
   type TimeEntry,
   type TimeEntriesQuery,
   type TimerResponse,
+  parseAbsenceEntriesQueryKey,
   parseTimeEntriesQueryKey,
   parseTimeInfoQueryKey,
   timeTrackingQueries,
@@ -127,6 +129,59 @@ export function removeEntryFromCachedRanges(
   }
 }
 
+export function upsertAbsenceInCachedRanges(
+  queryClient: QueryClient,
+  entry: AbsenceEntry,
+) {
+  for (const { params } of getAbsenceEntryCaches(queryClient)) {
+    if (!isDateInRange(params, entry.date)) continue;
+
+    const query = timeTrackingQueries.absenceEntries(params);
+    queryClient.setQueryData(query.queryKey, (current = []) => {
+      const withoutEntry = current.filter(
+        (item) => item.absenceId !== entry.absenceId,
+      );
+      return [entry, ...withoutEntry].sort(compareAbsences);
+    });
+  }
+}
+
+export function replaceAbsencesInCachedRanges(
+  queryClient: QueryClient,
+  oldIds: Array<string>,
+  entries: Array<AbsenceEntry>,
+) {
+  const idsToReplace = new Set([
+    ...oldIds,
+    ...entries.map((entry) => entry.absenceId),
+  ]);
+
+  for (const { params } of getAbsenceEntryCaches(queryClient)) {
+    const query = timeTrackingQueries.absenceEntries(params);
+    queryClient.setQueryData(query.queryKey, (current = []) => {
+      const withoutOld = current.filter(
+        (item) => !idsToReplace.has(item.absenceId),
+      );
+      return [
+        ...entries.filter((entry) => isDateInRange(params, entry.date)),
+        ...withoutOld,
+      ].sort(compareAbsences);
+    });
+  }
+}
+
+export function removeAbsenceFromCachedRanges(
+  queryClient: QueryClient,
+  absenceId: string,
+) {
+  for (const { params } of getAbsenceEntryCaches(queryClient)) {
+    const query = timeTrackingQueries.absenceEntries(params);
+    queryClient.setQueryData(query.queryKey, (current = []) =>
+      current.filter((entry) => entry.absenceId !== absenceId),
+    );
+  }
+}
+
 export function applyTimeInfoDelta(
   queryClient: QueryClient,
   date: string,
@@ -142,6 +197,29 @@ export function applyTimeInfoDelta(
       return {
         ...current,
         workedHours: current.workedHours + deltaHours,
+        coveredHours: current.coveredHours + deltaHours,
+        remainingHours: current.remainingHours - deltaHours,
+        periodFlexHours: current.periodFlexHours + deltaHours,
+      };
+    });
+  }
+}
+
+export function applyAbsenceTimeInfoDelta(
+  queryClient: QueryClient,
+  date: string,
+  deltaHours: number,
+) {
+  for (const params of getTimeInfoCacheParams(queryClient)) {
+    if (!isDateInRange(params, date)) continue;
+
+    const query = timeTrackingQueries.timeInfo(params);
+    queryClient.setQueryData(query.queryKey, (current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        absenceHours: current.absenceHours + deltaHours,
         coveredHours: current.coveredHours + deltaHours,
         remainingHours: current.remainingHours - deltaHours,
         periodFlexHours: current.periodFlexHours + deltaHours,
@@ -172,6 +250,17 @@ export async function cancelTimeTrackingRangeQueries(queryClient: QueryClient) {
   ]);
 }
 
+export async function cancelAbsenceQueries(queryClient: QueryClient) {
+  await Promise.all([
+    queryClient.cancelQueries({
+      queryKey: timeTrackingQueries.absenceEntriesBaseKey,
+    }),
+    queryClient.cancelQueries({
+      queryKey: timeTrackingQueries.timeInfoBaseKey,
+    }),
+  ]);
+}
+
 export function findCachedEntry(
   queryClient: QueryClient,
   registrationId: string,
@@ -180,6 +269,16 @@ export function findCachedEntry(
     const found = entries?.find(
       (entry) => entry.registrationId === registrationId,
     );
+    if (found) return found;
+  }
+}
+
+export function findCachedAbsence(
+  queryClient: QueryClient,
+  absenceId: string,
+): AbsenceEntry | undefined {
+  for (const { absences } of getAbsenceEntryCaches(queryClient)) {
+    const found = absences?.find((entry) => entry.absenceId === absenceId);
     if (found) return found;
   }
 }
@@ -211,6 +310,24 @@ function getTimeEntryCaches(queryClient: QueryClient) {
         {
           params,
           entries: queryClient.getQueryData(options.queryKey),
+        },
+      ];
+  });
+}
+
+function getAbsenceEntryCaches(queryClient: QueryClient) {
+  return queryClient
+    .getQueryCache()
+    .findAll({ queryKey: timeTrackingQueries.absenceEntriesBaseKey })
+    .flatMap((query) => {
+      const params = parseAbsenceEntriesQueryKey(query.queryKey);
+      if (!params) return [];
+
+      const options = timeTrackingQueries.absenceEntries(params);
+      return [
+        {
+          params,
+          absences: queryClient.getQueryData(options.queryKey),
         },
       ];
     });
@@ -248,4 +365,10 @@ function compareEntries(a: TimeEntry, b: TimeEntry) {
   const dateCompare = b.date.localeCompare(a.date);
   if (dateCompare !== 0) return dateCompare;
   return (b.startTime ?? "").localeCompare(a.startTime ?? "");
+}
+
+function compareAbsences(a: AbsenceEntry, b: AbsenceEntry) {
+  const dateCompare = b.date.localeCompare(a.date);
+  if (dateCompare !== 0) return dateCompare;
+  return a.absenceId.localeCompare(b.absenceId);
 }

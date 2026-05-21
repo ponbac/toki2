@@ -16,6 +16,9 @@ const timeTrackingQueryKeys = {
   activitiesBase: ["time-tracking", "activities"] as const,
   timerBase: ["time-tracking", "timer"] as const,
   timeEntriesBase: ["time-tracking", "time-entries"] as const,
+  absenceEntriesBase: ["time-tracking", "absences"] as const,
+  absenceTypesBase: ["time-tracking", "absence-types"] as const,
+  absenceDayDefaultsBase: ["time-tracking", "absence-day-defaults"] as const,
   timeInfoBase: ["time-tracking", "time-info"] as const,
   timeEntryDayStatusesBase: [
     "time-tracking",
@@ -31,6 +34,18 @@ const timeTrackingQueryKeys = {
       query?.from,
       query?.to,
       query?.unique,
+    ] as const,
+  absenceEntries: (query: DateRangeQuery) =>
+    [
+      ...timeTrackingQueryKeys.absenceEntriesBase,
+      query.from,
+      query.to,
+    ] as const,
+  absenceDayDefaults: (query: DateRangeQuery) =>
+    [
+      ...timeTrackingQueryKeys.absenceDayDefaultsBase,
+      query.from,
+      query.to,
     ] as const,
   timeInfo: (query?: DateRangeQuery) =>
     [...timeTrackingQueryKeys.timeInfoBase, query?.from, query?.to] as const,
@@ -62,6 +77,22 @@ export function parseTimeEntriesQueryKey(
   };
 }
 
+export function parseAbsenceEntriesQueryKey(
+  queryKey: readonly unknown[],
+): DateRangeQuery | null {
+  const [scope, resource, from, to] = queryKey;
+  if (
+    scope !== "time-tracking" ||
+    resource !== "absences" ||
+    typeof from !== "string" ||
+    typeof to !== "string"
+  ) {
+    return null;
+  }
+
+  return { from, to };
+}
+
 export function parseTimeInfoQueryKey(
   queryKey: readonly unknown[],
 ): DateRangeQuery | null {
@@ -82,6 +113,9 @@ export const timeTrackingQueries = {
   projectsBaseKey: timeTrackingQueryKeys.projectsBase,
   activitiesBaseKey: timeTrackingQueryKeys.activitiesBase,
   timeEntriesBaseKey: timeTrackingQueryKeys.timeEntriesBase,
+  absenceEntriesBaseKey: timeTrackingQueryKeys.absenceEntriesBase,
+  absenceTypesBaseKey: timeTrackingQueryKeys.absenceTypesBase,
+  absenceDayDefaultsBaseKey: timeTrackingQueryKeys.absenceDayDefaultsBase,
   timeInfoBaseKey: timeTrackingQueryKeys.timeInfoBase,
   listProjects: () =>
     queryOptions({
@@ -151,6 +185,34 @@ export const timeTrackingQueries = {
       },
       staleTime: query?.unique ? 5 * 60 * 1000 : undefined,
       gcTime: query?.unique ? 30 * 60 * 1000 : undefined,
+    }),
+  absenceEntries: (query: DateRangeQuery) =>
+    queryOptions({
+      queryKey: timeTrackingQueryKeys.absenceEntries(query),
+      queryFn: async () =>
+        api
+          .get("time-tracking/absences", {
+            searchParams: query,
+          })
+          .json<Array<AbsenceEntry>>(),
+    }),
+  absenceTypes: () =>
+    queryOptions({
+      queryKey: timeTrackingQueries.absenceTypesBaseKey,
+      queryFn: async () =>
+        api.get("time-tracking/absence-types").json<Array<AbsenceTypeOption>>(),
+      staleTime: 60 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
+    }),
+  absenceDayDefaults: (query: DateRangeQuery) =>
+    queryOptions({
+      queryKey: timeTrackingQueryKeys.absenceDayDefaults(query),
+      queryFn: async () =>
+        api
+          .get("time-tracking/absence-day-defaults", {
+            searchParams: query,
+          })
+          .json<Array<AbsenceDayDefault>>(),
     }),
   timeEntryDayStatusesBaseKey: timeTrackingQueryKeys.timeEntryDayStatusesBase,
   timeEntryDayStatuses: (query: DateRangeQuery) =>
@@ -259,6 +321,59 @@ export type TimeEntryStatus = "open" | "approved" | "certified";
 export type TimeEntryDayStatus = {
   date: string;
   status: TimeEntryStatus;
+};
+
+export type AbsenceType =
+  | "sick"
+  | "vacation"
+  | "leaveOfAbsence"
+  | "leaveOfAbsenceVacationEarned"
+  | "parentalLeave"
+  | "childcare"
+  | "closeRelativeCare"
+  | "paternityLeave"
+  | "furlough"
+  | "otherLeave"
+  | "otherLeaveVacationNotEarned";
+
+export type ManagedAbsenceType = AbsenceType;
+
+export const absenceTypeLabels = {
+  sick: "Sick (Sjuk)",
+  vacation: "Vacation (Semester)",
+  leaveOfAbsence: "Leave of absence (Tjänstledig)",
+  leaveOfAbsenceVacationEarned:
+    "Leave of absence, vacation earned (Tjänstledig (Semestergrundande))",
+  parentalLeave: "Parental leave (Föräldraledighet)",
+  childcare: "Childcare (VAB)",
+  closeRelativeCare: "Close relative care (Vård av nära anhörig)",
+  paternityLeave: "Paternity leave (10 dagar vid barns födelse)",
+  furlough: "Furlough (Permission)",
+  otherLeave: "Other leave (Övrig frånvaro)",
+  otherLeaveVacationNotEarned:
+    "Other leave, vacation not earned (Övrig frånvaro (Semestergrundande))",
+} satisfies Record<AbsenceType, string>;
+
+export type AbsenceTypeOption = {
+  absenceType: ManagedAbsenceType;
+  absenceTypeLabel: string;
+};
+
+export type AbsenceEntry = {
+  absenceId: string;
+  date: string;
+  hours: number;
+  absenceType: AbsenceType;
+  absenceTypeLabel: string;
+  child: string | null;
+  comment: string | null;
+  managed: boolean;
+  deletable: boolean;
+};
+
+export type AbsenceDayDefault = {
+  date: string;
+  scheduledHours: number;
 };
 
 export type TimeTrackingAdminMappings = {

@@ -1,10 +1,10 @@
 use kleer::{
-    KleerActivityReadable, KleerClientProjectReadable, KleerEventReadable, KleerPayrollEvent,
-    KleerPayrollEventType, KleerScheduleMetadata, KleerStatusType,
+    KleerActivityReadable, KleerClientProjectReadable, KleerEventReadable, KleerScheduleMetadata,
+    KleerStatusType,
 };
 
 use crate::domain::{
-    models::{Activity, Project, ProjectId, TimeEntry, TimeEntryStatus},
+    models::{AbsenceEntry, AbsenceType, Activity, Project, ProjectId, TimeEntry, TimeEntryStatus},
     TimeTrackingError,
 };
 
@@ -76,17 +76,26 @@ pub fn to_domain_scheduled_hours(schedule: &[KleerScheduleMetadata]) -> f64 {
     schedule.iter().map(|day| day.actual_hours).sum()
 }
 
-pub fn to_domain_absence_hours(payroll_events: &[KleerPayrollEvent]) -> f64 {
-    payroll_events
-        .iter()
-        .filter(|event| {
-            !matches!(
-                event.event_type,
-                KleerPayrollEventType::WorkHour | KleerPayrollEventType::Unknown
-            )
-        })
-        .map(|event| event.hours)
-        .sum()
+pub fn to_domain_absence_entry_from_event(
+    event: &KleerEventReadable,
+    absence_type: AbsenceType,
+) -> Option<AbsenceEntry> {
+    if event.client_project.is_some() {
+        return None;
+    }
+    Some(AbsenceEntry {
+        absence_id: event.id.id.to_string(),
+        date: event.date,
+        hours: event.hours,
+        absence_type,
+        child: event.child.clone().filter(|value| !value.trim().is_empty()),
+        comment: event
+            .comment
+            .clone()
+            .filter(|value| !value.trim().is_empty()),
+        managed: true,
+        deletable: true,
+    })
 }
 
 #[cfg(test)]
@@ -136,45 +145,5 @@ mod tests {
         assert_eq!(positive.period_flex_hours, 2.0);
         assert_eq!(negative.remaining_hours, 10.0);
         assert_eq!(negative.period_flex_hours, -10.0);
-    }
-
-    #[test]
-    fn absence_hours_exclude_work_hour_payroll_events() {
-        let events = vec![
-            KleerPayrollEvent {
-                id: Some(1),
-                date: time::Date::from_calendar_date(2026, time::Month::April, 20).unwrap(),
-                hours: 8.0,
-                event_type: KleerPayrollEventType::Vacation,
-                child: None,
-                comment: Some(String::new()),
-            },
-            KleerPayrollEvent {
-                id: Some(2),
-                date: time::Date::from_calendar_date(2026, time::Month::April, 21).unwrap(),
-                hours: 2.0,
-                event_type: KleerPayrollEventType::WorkHour,
-                child: None,
-                comment: Some(String::new()),
-            },
-            KleerPayrollEvent {
-                id: Some(3),
-                date: time::Date::from_calendar_date(2026, time::Month::April, 22).unwrap(),
-                hours: 4.0,
-                event_type: KleerPayrollEventType::Sick,
-                child: None,
-                comment: Some(String::new()),
-            },
-            KleerPayrollEvent {
-                id: Some(4),
-                date: time::Date::from_calendar_date(2026, time::Month::April, 23).unwrap(),
-                hours: 1.0,
-                event_type: KleerPayrollEventType::Unknown,
-                child: None,
-                comment: Some(String::new()),
-            },
-        ];
-
-        assert_eq!(to_domain_absence_hours(&events), 12.0);
     }
 }

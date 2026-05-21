@@ -103,6 +103,9 @@ impl From<TimeTrackingError> for ApiError {
             | TimeTrackingError::ProjectNotFound(_)
             | TimeTrackingError::ActivityNotFound(_) => Self::not_found(err.to_string()),
             TimeTrackingError::TimerAlreadyRunning => Self::conflict(err.to_string()),
+            TimeTrackingError::InvalidInput(message) => Self::bad_request(message),
+            TimeTrackingError::Conflict(message) => Self::conflict(message),
+            TimeTrackingError::Forbidden(message) => Self::forbidden(message),
             _ => Self::internal(err.to_string()),
         }
     }

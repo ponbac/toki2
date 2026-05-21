@@ -3,7 +3,8 @@ use time::Date;
 
 use crate::domain::{
     models::{
-        Activity, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId, TimeEntry,
+        AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity, CreateAbsencesRequest,
+        CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId, TimeEntry,
         TimeEntryDayStatus, TimerId, WeeklyStats,
     },
     TimeTrackingError,
@@ -71,4 +72,28 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
 
     /// Delete a time entry.
     async fn delete_time_entry(&self, registration_id: &str) -> Result<(), TimeTrackingError>;
+
+    /// Get available provider-backed absence types.
+    async fn get_absence_types(&self) -> Result<Vec<AbsenceType>, TimeTrackingError>;
+
+    /// Get absence entries for a date range.
+    async fn get_absences(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<AbsenceEntry>, TimeTrackingError>;
+
+    /// Get scheduled-hour defaults for absence reporting.
+    async fn get_absence_day_defaults(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<AbsenceDayDefault>, TimeTrackingError>;
+
+    /// Create absence entries.
+    async fn create_absences(
+        &self,
+        request: &CreateAbsencesRequest,
+    ) -> Result<Vec<AbsenceEntry>, TimeTrackingError>;
+
+    /// Delete a managed absence entry.
+    async fn delete_absence(&self, absence_id: &str, date: Date) -> Result<(), TimeTrackingError>;
 }

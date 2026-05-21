@@ -1,3 +1,4 @@
+mod absences;
 mod admin;
 mod calendar;
 mod connection;
@@ -21,6 +22,17 @@ pub fn router() -> Router<AppState> {
             get(projects::list_activities),
         )
         .route("/time-info", get(calendar::get_time_info))
+        .route(
+            "/absences",
+            get(absences::get_absences)
+                .post(absences::create_absences)
+                .delete(absences::delete_absence),
+        )
+        .route(
+            "/absence-day-defaults",
+            get(absences::get_absence_day_defaults),
+        )
+        .route("/absence-types", get(absences::get_absence_types))
         .route(
             "/time-entry-day-statuses",
             get(calendar::get_time_entry_day_statuses),

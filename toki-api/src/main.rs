@@ -26,7 +26,11 @@ mod utils;
 async fn main() {
     // Load environment variables and initialize tracing
     #[cfg(debug_assertions)]
-    dotenvy::from_filename("./toki-api/.env.local").ok();
+    {
+        dotenvy::from_filename("./toki-api/.env.local")
+            .or_else(|_| dotenvy::from_filename(".env.local"))
+            .ok();
+    }
 
     tracing_subscriber::registry()
         .with(fmt::layer())
