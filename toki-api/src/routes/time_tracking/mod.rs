@@ -37,6 +37,7 @@ pub fn router() -> Router<AppState> {
             get(absences::get_absence_day_defaults),
         )
         .route("/absence-types", get(absences::get_absence_types))
+        .route("/absence-children", get(absences::get_absence_children))
         .route(
             "/time-entry-day-statuses",
             get(calendar::get_time_entry_day_statuses),

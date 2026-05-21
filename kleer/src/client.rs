@@ -7,8 +7,8 @@ use tracing::{field, Instrument};
 
 use crate::types::{
     KleerActivityList, KleerClientProjectList, KleerEventList, KleerEventReadable,
-    KleerEventRestrictionList, KleerEventWritable, KleerSavedId, KleerScheduleMetadataList,
-    KleerUserList, KleerUserMe,
+    KleerEventRestrictionList, KleerEventWritable, KleerPayrollUserReadable, KleerSavedId,
+    KleerScheduleMetadataList, KleerUserList, KleerUserMe,
 };
 
 pub const DEFAULT_BASE_URL: &str = "https://api.kleer.se/v1";
@@ -185,6 +185,13 @@ impl KleerClient {
             &[],
         )
         .await
+    }
+
+    pub async fn get_payroll_user(
+        &self,
+        user_id: i64,
+    ) -> Result<KleerPayrollUserReadable, KleerError> {
+        self.get(&format!("payroll/user/{user_id}"), &[]).await
     }
 
     async fn get<T>(&self, path: &str, query: &[(&str, String)]) -> Result<T, KleerError>

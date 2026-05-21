@@ -3,9 +3,9 @@ use time::Date;
 
 use crate::domain::{
     models::{
-        AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity, CreateAbsencesRequest,
-        CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId, TimeEntry,
-        TimeEntryDayStatus, TimerId, WeeklyStats,
+        AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity,
+        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
+        TimeEntry, TimeEntryDayStatus, TimerId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -75,6 +75,9 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
 
     /// Get available provider-backed absence types.
     async fn get_absence_types(&self) -> Result<Vec<AbsenceType>, TimeTrackingError>;
+
+    /// Get registered children available for child-related absence reporting.
+    async fn get_absence_children(&self) -> Result<Vec<AbsenceChild>, TimeTrackingError>;
 
     /// Get absence entries for a date range.
     async fn get_absences(

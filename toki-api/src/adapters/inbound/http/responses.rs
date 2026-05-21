@@ -6,10 +6,10 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::domain::models::{
-    AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity, BoardColumn, BoardData,
-    BoardState, Iteration, Project, PullRequestRef, TimeEntry, TimeEntryDayStatus, TimeEntryStatus,
-    TimerHistoryEntry, WeeklyStats, WorkItem, WorkItemCategory, WorkItemPerson, WorkItemProject,
-    WorkItemRef,
+    AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity, BoardColumn,
+    BoardData, BoardState, Iteration, Project, PullRequestRef, TimeEntry, TimeEntryDayStatus,
+    TimeEntryStatus, TimerHistoryEntry, WeeklyStats, WorkItem, WorkItemCategory, WorkItemPerson,
+    WorkItemProject, WorkItemRef,
 };
 
 /// Response for the get timer endpoint.
@@ -249,11 +249,28 @@ pub struct AbsenceTypeResponse {
     pub absence_type_label: &'static str,
 }
 
+/// Registered child available for child-related absence reporting.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AbsenceChildResponse {
+    pub name: String,
+    pub birth_date: Option<String>,
+}
+
 impl From<AbsenceType> for AbsenceTypeResponse {
     fn from(absence_type: AbsenceType) -> Self {
         Self {
             absence_type,
             absence_type_label: absence_type.label(),
+        }
+    }
+}
+
+impl From<AbsenceChild> for AbsenceChildResponse {
+    fn from(child: AbsenceChild) -> Self {
+        Self {
+            name: child.name,
+            birth_date: child.birth_date.map(|date| date.to_string()),
         }
     }
 }

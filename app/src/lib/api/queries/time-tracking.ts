@@ -18,6 +18,7 @@ const timeTrackingQueryKeys = {
   timeEntriesBase: ["time-tracking", "time-entries"] as const,
   absenceEntriesBase: ["time-tracking", "absences"] as const,
   absenceTypesBase: ["time-tracking", "absence-types"] as const,
+  absenceChildrenBase: ["time-tracking", "absence-children"] as const,
   absenceDayDefaultsBase: ["time-tracking", "absence-day-defaults"] as const,
   timeInfoBase: ["time-tracking", "time-info"] as const,
   timeEntryDayStatusesBase: [
@@ -115,6 +116,7 @@ export const timeTrackingQueries = {
   timeEntriesBaseKey: timeTrackingQueryKeys.timeEntriesBase,
   absenceEntriesBaseKey: timeTrackingQueryKeys.absenceEntriesBase,
   absenceTypesBaseKey: timeTrackingQueryKeys.absenceTypesBase,
+  absenceChildrenBaseKey: timeTrackingQueryKeys.absenceChildrenBase,
   absenceDayDefaultsBaseKey: timeTrackingQueryKeys.absenceDayDefaultsBase,
   timeInfoBaseKey: timeTrackingQueryKeys.timeInfoBase,
   listProjects: () =>
@@ -203,6 +205,16 @@ export const timeTrackingQueries = {
         api.get("time-tracking/absence-types").json<Array<AbsenceTypeOption>>(),
       staleTime: 60 * 60 * 1000,
       gcTime: 24 * 60 * 60 * 1000,
+    }),
+  absenceChildren: () =>
+    queryOptions({
+      queryKey: timeTrackingQueries.absenceChildrenBaseKey,
+      queryFn: async () =>
+        api
+          .get("time-tracking/absence-children")
+          .json<Array<AbsenceChild>>(),
+      staleTime: 5 * 60 * 1000,
+      gcTime: 60 * 60 * 1000,
     }),
   absenceDayDefaults: (query: DateRangeQuery) =>
     queryOptions({
@@ -357,6 +369,11 @@ export const absenceTypeLabels = {
 export type AbsenceTypeOption = {
   absenceType: ManagedAbsenceType;
   absenceTypeLabel: string;
+};
+
+export type AbsenceChild = {
+  name: string;
+  birthDate: string | null;
 };
 
 export type AbsenceEntry = {

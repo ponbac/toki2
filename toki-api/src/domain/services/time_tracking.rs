@@ -9,9 +9,10 @@ use time::{Date, OffsetDateTime};
 
 use crate::domain::{
     models::{
-        AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity, CreateAbsencesRequest,
-        CreateTimeEntryRequest, EditTimeEntryRequest, NewTimerHistoryEntry, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimeEntryStatus, TimerHistoryEntry, UserId, WeeklyStats,
+        AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity,
+        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, NewTimerHistoryEntry,
+        Project, ProjectId, TimeEntry, TimeEntryDayStatus, TimeEntryStatus, TimerHistoryEntry,
+        UserId, WeeklyStats,
     },
     ports::{
         inbound::TimeTrackingService,
@@ -80,6 +81,14 @@ impl<C, R> TimeTrackingServiceImpl<C, R> {
         .with_status(TimeEntryStatus::Open)
     }
 
+    fn trimmed_child_name(request: &CreateAbsencesRequest) -> Option<&str> {
+        request
+            .child
+            .as_deref()
+            .map(str::trim)
+            .filter(|child| !child.is_empty())
+    }
+
     fn validate_create_absences(request: &CreateAbsencesRequest) -> Result<(), TimeTrackingError> {
         if request.days.is_empty() {
             return Err(TimeTrackingError::InvalidInput(
@@ -87,14 +96,7 @@ impl<C, R> TimeTrackingServiceImpl<C, R> {
             ));
         }
 
-        if request.absence_type.requires_child()
-            && request
-                .child
-                .as_deref()
-                .map(str::trim)
-                .filter(|child| !child.is_empty())
-                .is_none()
-        {
+        if request.absence_type.requires_child() && Self::trimmed_child_name(request).is_none() {
             return Err(TimeTrackingError::InvalidInput(
                 "Child name is required for this absence type".to_string(),
             ));
@@ -118,6 +120,28 @@ impl<C, R> TimeTrackingServiceImpl<C, R> {
                     "Absence hours cannot exceed 24 per day".to_string(),
                 ));
             }
+        }
+
+        Ok(())
+    }
+
+    fn validate_registered_child(
+        requested_child: &str,
+        children: &[AbsenceChild],
+    ) -> Result<(), TimeTrackingError> {
+        if children.is_empty() {
+            return Err(TimeTrackingError::InvalidInput(
+                "Register a child in Kleer before reporting this absence type".to_string(),
+            ));
+        }
+
+        if !children
+            .iter()
+            .any(|registered| registered.name == requested_child)
+        {
+            return Err(TimeTrackingError::InvalidInput(
+                "Select a registered child for this absence type".to_string(),
+            ));
         }
 
         Ok(())
@@ -408,6 +432,10 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         self.client.get_absence_types().await
     }
 
+    async fn get_absence_children(&self) -> Result<Vec<AbsenceChild>, TimeTrackingError> {
+        self.client.get_absence_children().await
+    }
+
     async fn get_absence_day_defaults(
         &self,
         date_range: (Date, Date),
@@ -425,6 +453,12 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
             return Err(TimeTrackingError::InvalidInput(
                 "This absence type is not available in Kleer".to_string(),
             ));
+        }
+        if request.absence_type.requires_child() {
+            let child = Self::trimmed_child_name(request)
+                .expect("create_absences validates child-related absences before child lookup");
+            let children = self.client.get_absence_children().await?;
+            Self::validate_registered_child(child, &children)?;
         }
         self.client.create_absences(request).await
     }
@@ -452,6 +486,7 @@ mod tests {
     struct MockTimeTrackingClient {
         created_request: Mutex<Option<CreateTimeEntryRequest>>,
         absence_types: Vec<AbsenceType>,
+        absence_children: Vec<AbsenceChild>,
     }
 
     #[async_trait]
@@ -510,6 +545,10 @@ mod tests {
 
         async fn get_absence_types(&self) -> Result<Vec<AbsenceType>, TimeTrackingError> {
             Ok(self.absence_types.clone())
+        }
+
+        async fn get_absence_children(&self) -> Result<Vec<AbsenceChild>, TimeTrackingError> {
+            Ok(self.absence_children.clone())
         }
 
         async fn get_absences(
@@ -721,6 +760,7 @@ mod tests {
         let client = Arc::new(MockTimeTrackingClient {
             created_request: Mutex::new(None),
             absence_types: vec![AbsenceType::Vacation],
+            absence_children: Vec::new(),
         });
         let repo = Arc::new(MockTimerHistoryRepository {
             active_timer: Mutex::new(None),
@@ -740,6 +780,39 @@ mod tests {
 
         assert!(
             matches!(error, TimeTrackingError::InvalidInput(message) if message == "This absence type is not available in Kleer")
+        );
+    }
+
+    #[test]
+    fn registered_child_validation_requires_matching_child() {
+        let date = Date::from_calendar_date(2026, time::Month::May, 20).unwrap();
+        let request = CreateAbsencesRequest {
+            absence_type: AbsenceType::Childcare,
+            child: Some("Barn1".to_string()),
+            comment: String::new(),
+            days: vec![CreateAbsenceDay { date, hours: 8.0 }],
+        };
+        let children = vec![AbsenceChild {
+            name: "Barn1".to_string(),
+            birth_date: Some(date),
+        }];
+
+        let child = TimeTrackingServiceImpl::<MockTimeTrackingClient, MockTimerHistoryRepository>::trimmed_child_name(&request).unwrap();
+        assert!(TimeTrackingServiceImpl::<MockTimeTrackingClient, MockTimerHistoryRepository>::validate_registered_child(child, &children).is_ok());
+
+        let error = TimeTrackingServiceImpl::<MockTimeTrackingClient, MockTimerHistoryRepository>::validate_registered_child(child, &[])
+            .unwrap_err();
+        assert!(
+            matches!(error, TimeTrackingError::InvalidInput(message) if message == "Register a child in Kleer before reporting this absence type")
+        );
+
+        let error = TimeTrackingServiceImpl::<MockTimeTrackingClient, MockTimerHistoryRepository>::validate_registered_child(
+            "Other",
+            &children,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, TimeTrackingError::InvalidInput(message) if message == "Select a registered child for this absence type")
         );
     }
 }
