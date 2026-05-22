@@ -15,6 +15,7 @@ azure_devops_rust_api = { version = "0.28.0", features = [
     "work",
     "graph",
 ] }
+base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 reqwest = { workspace = true, features = ["json"] }

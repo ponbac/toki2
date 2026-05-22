@@ -15,3 +15,6 @@ kleer:
   # token: "provide through TOKI_KLEER__TOKEN"
   # company_id: "provide through TOKI_KLEER__COMPANY_ID"
   base_url: "https://api.kleer.se/v1"
+agent: {}
+  # base_url: "provide through TOKI_AGENT__BASE_URL"
+  # internal_token: "provide through TOKI_AGENT__INTERNAL_TOKEN"

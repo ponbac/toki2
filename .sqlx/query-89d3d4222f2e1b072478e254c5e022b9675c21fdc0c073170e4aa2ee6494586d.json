@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE agent_run_work_items\n            SET last_status = $2,\n                draft_pr_url = $3,\n                run_updated_at = $4,\n                last_synced_at = now()\n            WHERE run_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "89d3d4222f2e1b072478e254c5e022b9675c21fdc0c073170e4aa2ee6494586d"
+}

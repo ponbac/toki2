@@ -11,6 +11,8 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub auth: AuthSettings,
     pub kleer: KleerSettings,
+    #[serde(default)]
+    pub agent: AgentSettings,
 }
 
 #[serde_as]
@@ -53,6 +55,12 @@ pub struct KleerSettings {
     pub company_id: Option<String>,
     #[serde(default = "default_kleer_base_url")]
     pub base_url: String,
+}
+
+#[derive(Deserialize, Clone, Default)]
+pub struct AgentSettings {
+    pub base_url: Option<String>,
+    pub internal_token: Option<String>,
 }
 
 impl KleerSettings {

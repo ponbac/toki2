@@ -1,3 +1,4 @@
+import { agentRunQueries } from "./agentRuns";
 import { differsQueries } from "./differs";
 import { pullRequestsQueries } from "./pullRequests";
 import { commitsQueries } from "./commits";
@@ -6,6 +7,7 @@ import { userQueries } from "./user";
 import { workItemsQueries } from "./workItems";
 
 export const queries = {
+  ...agentRunQueries,
   ...userQueries,
   ...differsQueries,
   ...pullRequestsQueries,
