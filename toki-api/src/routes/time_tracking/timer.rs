@@ -12,17 +12,18 @@ use crate::{
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use time::OffsetDateTime;
-use tracing::instrument;
+
+use crate::observability::record_user_id;
 
 // ============================================================================
 // Get Timer
 // ============================================================================
 
-#[instrument(name = "get_timer", skip(app_state))]
 pub async fn get_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<GetTimerResponse>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -49,12 +50,12 @@ pub struct StartTimerPayload {
     activity_name: Option<String>,
 }
 
-#[instrument(name = "start_timer", skip(app_state))]
 pub async fn start_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<StartTimerPayload>,
 ) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -81,11 +82,11 @@ pub async fn start_timer(
 // Stop Timer
 // ============================================================================
 
-#[instrument(name = "stop_timer", skip(app_state))]
 pub async fn stop_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -117,12 +118,12 @@ pub struct RestartTimerPayload {
     activity_name: Option<String>,
 }
 
-#[instrument(name = "save_timer", skip(app_state))]
 pub async fn save_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<SaveTimerPayload>,
 ) -> Result<Json<SaveTimerResponse>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -174,12 +175,12 @@ pub struct EditTimerPayload {
     start_time: Option<String>,
 }
 
-#[instrument(name = "edit_timer", skip(app_state))]
 pub async fn edit_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<EditTimerPayload>,
 ) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -241,11 +242,11 @@ pub async fn edit_timer(
 // Timer History
 // ============================================================================
 
-#[instrument(name = "get_timer_history", skip(app_state))]
 pub async fn get_timer_history(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<TimerHistoryEntryResponse>>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)

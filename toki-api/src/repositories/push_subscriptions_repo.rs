@@ -1,5 +1,4 @@
-use sqlx::PgPool;
-
+use crate::db::DbPool;
 use crate::domain::PushSubscription;
 
 use super::repo_error::RepositoryError;
@@ -18,11 +17,11 @@ pub trait PushSubscriptionRepository {
 }
 
 pub struct PushSubscriptionRepositoryImpl {
-    pool: PgPool,
+    pool: DbPool,
 }
 
 impl PushSubscriptionRepositoryImpl {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 }

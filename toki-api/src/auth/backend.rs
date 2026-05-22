@@ -11,9 +11,10 @@ use reqwest::{
     Url,
 };
 use serde::Deserialize;
-use sqlx::PgPool;
+use tracing::Instrument;
 
 use crate::{
+    db::DbPool,
     domain::{models::UserId, Role, User},
     repositories::{NewUser, RepositoryError, UserRepository, UserRepositoryImpl},
 };
@@ -50,13 +51,13 @@ type AuthClient =
 
 #[derive(Debug, Clone)]
 pub struct AuthBackend {
-    db: PgPool,
+    db: DbPool,
     client: AuthClient,
     http_client: reqwest::Client,
 }
 
 impl AuthBackend {
-    pub fn new(db: PgPool, client: AuthClient) -> Self {
+    pub fn new(db: DbPool, client: AuthClient) -> Self {
         let http_client = reqwest::ClientBuilder::new()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -131,8 +132,19 @@ impl AuthnBackend for AuthBackend {
         &self,
         user_id: &SessionUserId<Self>,
     ) -> Result<Option<Self::User>, Self::Error> {
-        let user_repo = UserRepositoryImpl::new(self.db.clone());
-        let user = user_repo.get_user(UserId::from(*user_id as i32)).await?;
+        let user_id = UserId::from(*user_id as i32);
+        let span = tracing::info_span!(
+            "auth.get_user",
+            operation.name = "auth.get_user",
+            user.id = %user_id,
+        );
+
+        let user = async {
+            let user_repo = UserRepositoryImpl::new(self.db.clone());
+            user_repo.get_user(user_id).await
+        }
+        .instrument(span)
+        .await?;
 
         Ok(Some(user))
     }

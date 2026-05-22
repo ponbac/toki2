@@ -9,11 +9,11 @@ use axum::{
 use axum_login::permission_required;
 use az_devops::RepoClient;
 use serde::{Deserialize, Serialize};
-use tracing::instrument;
 
 use crate::{
     auth::{AuthBackend, AuthUser},
     domain::{RepoDifferMessage, RepoKey, Repository, Role},
+    observability::{record_repo_key, record_span_field, record_user_id},
     repositories::{NewRepository, RepoRepository, UserRepository},
     AppState,
 };
@@ -29,7 +29,6 @@ pub fn router() -> Router<AppState> {
         .route("/follow", post(follow_repository))
 }
 
-#[instrument(name = "GET /repositories")]
 async fn get_repositories(State(app_state): State<AppState>) -> Json<Vec<Repository>> {
     let repository_repo = app_state.repository_repo.clone();
     let repos = repository_repo
@@ -49,13 +48,14 @@ struct FollowRepositoryBody {
     follow: bool,
 }
 
-#[instrument(name = "POST /repositories/follow")]
 async fn follow_repository(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<FollowRepositoryBody>,
 ) -> Result<Json<()>, ApiError> {
+    record_user_id(user.id);
     let repo_key = RepoKey::new(&body.organization, &body.project, &body.repo_name);
+    record_repo_key(&repo_key);
     let user_repo = app_state.user_repo.clone();
 
     user_repo
@@ -85,19 +85,13 @@ struct AddRepositoryResponse {
     id: i32,
 }
 
-#[instrument(
-    name = "POST /repositories",
-    skip(body),
-    fields(
-        organization = %body.organization,
-        project = %body.project,
-        repo_name = %body.repo_name,
-    )
-)]
 async fn add_repository(
     State(app_state): State<AppState>,
     Json(body): Json<AddRepositoryBody>,
 ) -> Result<Json<AddRepositoryResponse>, ApiError> {
+    record_span_field("organization", &body.organization);
+    record_span_field("project", &body.project);
+    record_span_field("repo_name", &body.repo_name);
     let repo_client = RepoClient::new(
         &body.repo_name,
         &body.organization,
@@ -117,6 +111,7 @@ async fn add_repository(
     let id = repository_repo.upsert_repository(&new_repo).await?;
 
     let key = RepoKey::from(&body);
+    record_repo_key(&key);
     app_state.insert_repo(key.clone(), repo_client).await;
     tracing::info!("Added new repository: {}", key);
 
@@ -140,12 +135,12 @@ struct DeleteRepositoryBody {
     repo_name: String,
 }
 
-#[instrument(name = "DELETE /repositories")]
 async fn delete_repository(
     State(app_state): State<AppState>,
     Json(body): Json<DeleteRepositoryBody>,
 ) -> Result<StatusCode, ApiError> {
     let repo_key = RepoKey::new(&body.organization, &body.project, &body.repo_name);
+    record_repo_key(&repo_key);
     let repository_repo = app_state.repository_repo.clone();
 
     repository_repo.delete_repository(&repo_key).await?;

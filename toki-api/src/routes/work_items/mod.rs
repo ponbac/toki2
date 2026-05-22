@@ -15,7 +15,6 @@ use axum::{
 use futures_util::future::join_all;
 use moka::sync::Cache;
 use serde::Deserialize;
-use tracing::instrument;
 
 use crate::{
     adapters::inbound::http::{
@@ -29,6 +28,7 @@ use crate::{
         models::{BoardData, PullRequestRef, WorkItem, WorkItemProject},
         Email, RepoKey, WorkItemError,
     },
+    observability::{record_span_field, record_user_id},
 };
 
 use super::ApiError;
@@ -121,21 +121,23 @@ static AVAILABLE_PROJECTS_CACHE: LazyLock<Cache<i32, Vec<WorkItemProject>>> = La
 // Route handlers
 // ---------------------------------------------------------------------------
 
-#[instrument(name = "GET /work-items/projects")]
 async fn get_projects(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<WorkItemProjectResponse>>, ApiError> {
+    record_user_id(user.id);
     let projects = get_available_projects_cached(&app_state, &user).await?;
     Ok(Json(projects.into_iter().map(Into::into).collect()))
 }
 
-#[instrument(name = "GET /work-items/iterations")]
 async fn get_iterations(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<ProjectQuery>,
 ) -> Result<Json<Vec<IterationResponse>>, ApiError> {
+    record_user_id(user.id);
+    record_span_field("organization", &query.organization);
+    record_span_field("project", &query.project);
     ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
@@ -145,22 +147,14 @@ async fn get_iterations(
     Ok(Json(iterations.into_iter().map(Into::into).collect()))
 }
 
-#[instrument(
-    name = "GET /work-items/board",
-    skip(user, app_state),
-    fields(
-        user_id = %user.id,
-        organization = %query.organization,
-        project = %query.project,
-        iteration_path = ?query.iteration_path,
-        team = ?query.team,
-    )
-)]
 async fn get_board(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<BoardQuery>,
 ) -> Result<Json<BoardResponse>, ApiError> {
+    record_user_id(user.id);
+    record_span_field("organization", &query.organization);
+    record_span_field("project", &query.project);
     ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
@@ -177,12 +171,15 @@ async fn get_board(
     Ok(Json(response))
 }
 
-#[instrument(name = "GET /work-items/format-for-llm")]
 async fn format_for_llm(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<FormatForLlmQuery>,
 ) -> Result<Json<FormatForLlmResponse>, ApiError> {
+    record_user_id(user.id);
+    record_span_field("organization", &query.organization);
+    record_span_field("project", &query.project);
+    record_span_field("work_item_id", &query.work_item_id);
     ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
@@ -197,12 +194,14 @@ async fn format_for_llm(
     }))
 }
 
-#[instrument(name = "GET /work-items/image")]
 async fn get_image(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<WorkItemImageQuery>,
 ) -> Result<Response, ApiError> {
+    record_user_id(user.id);
+    record_span_field("organization", &query.organization);
+    record_span_field("project", &query.project);
     ensure_user_has_project_access(&app_state, &user, &query.organization, &query.project).await?;
     let service = app_state
         .work_item_factory
@@ -233,20 +232,16 @@ async fn get_image(
     Ok(response)
 }
 
-#[instrument(
-    name = "POST /work-items/move",
-    fields(
-        organization = %body.organization,
-        project = %body.project,
-        work_item_id = %body.work_item_id,
-        target_column_name = %body.target_column_name
-    )
-)]
 async fn move_work_item(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<MoveWorkItemBody>,
 ) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
+    record_span_field("organization", &body.organization);
+    record_span_field("project", &body.project);
+    record_span_field("work_item_id", &body.work_item_id);
+    record_span_field("target_column_name", &body.target_column_name);
     ensure_user_has_project_access(&app_state, &user, &body.organization, &body.project).await?;
     let service = app_state
         .work_item_factory

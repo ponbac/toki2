@@ -11,6 +11,8 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub auth: AuthSettings,
     pub kleer: KleerSettings,
+    #[serde(default)]
+    pub observability: ObservabilitySettings,
 }
 
 #[serde_as]
@@ -53,6 +55,34 @@ pub struct KleerSettings {
     pub company_id: Option<String>,
     #[serde(default = "default_kleer_base_url")]
     pub base_url: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct ObservabilitySettings {
+    #[serde(default)]
+    pub capture_request_bodies: bool,
+    #[serde(default = "default_request_body_max_logged_bytes")]
+    pub request_body_max_logged_bytes: usize,
+    #[serde(default = "default_request_body_max_buffered_bytes")]
+    pub request_body_max_buffered_bytes: usize,
+}
+
+impl Default for ObservabilitySettings {
+    fn default() -> Self {
+        Self {
+            capture_request_bodies: false,
+            request_body_max_logged_bytes: default_request_body_max_logged_bytes(),
+            request_body_max_buffered_bytes: default_request_body_max_buffered_bytes(),
+        }
+    }
+}
+
+fn default_request_body_max_logged_bytes() -> usize {
+    16_384
+}
+
+fn default_request_body_max_buffered_bytes() -> usize {
+    65_536
 }
 
 impl KleerSettings {

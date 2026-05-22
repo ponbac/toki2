@@ -1,7 +1,9 @@
 use reqwest::{Client, Method, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
+use std::time::Instant;
 use time::Date;
+use tracing::{field, Instrument};
 
 use crate::types::{
     KleerActivityList, KleerClientProjectList, KleerEventList, KleerEventReadable,
@@ -191,7 +193,7 @@ impl KleerClient {
     {
         let request = self.request(Method::GET, path).query(query);
 
-        self.send(request).await
+        self.send(request, "GET", path).await
     }
 
     async fn send_json<B, T>(
@@ -204,6 +206,7 @@ impl KleerClient {
         B: Serialize + ?Sized,
         T: DeserializeOwned,
     {
+        let method_name = method.as_str().to_string();
         let request = self.request(method, path);
 
         let request = if let Some(body) = body {
@@ -212,37 +215,87 @@ impl KleerClient {
             request
         };
 
-        self.send(request).await
+        self.send(request, &method_name, path).await
     }
 
-    async fn send<T>(&self, request: reqwest::RequestBuilder) -> Result<T, KleerError>
+    async fn send<T>(
+        &self,
+        request: reqwest::RequestBuilder,
+        method: &str,
+        path: &str,
+    ) -> Result<T, KleerError>
     where
         T: DeserializeOwned,
     {
-        let response = request
-            .send()
-            .await
-            .map_err(|e| KleerError::Request(e.to_string()))?;
+        let span_name = format!("Kleer {method} /{}", path.trim_start_matches('/'));
+        let span = tracing::info_span!(
+            "kleer.request",
+            otel.name = %span_name,
+            otel.kind = "client",
+            provider.name = "kleer",
+            kleer.method = %method,
+            kleer.route = %format!("/company/{{companyId}}/{}", path.trim_start_matches('/')),
+            url.path = %format!("/company/{}/{}", self.credentials.company_id, path.trim_start_matches('/')),
+            kleer.path = path,
+            kleer.status_code = field::Empty,
+            latency_ms = field::Empty,
+            otel.status_code = field::Empty,
+            otel.status_description = field::Empty,
+            error.message = field::Empty,
+            error.type = field::Empty,
+        );
+        let error_span = span.clone();
 
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|e| KleerError::Request(e.to_string()))?;
+        let result = async move {
+            let started_at = Instant::now();
+            let response = request
+                .send()
+                .await
+                .map_err(|e| KleerError::Request(e.to_string()))?;
 
-        if !status.is_success() {
-            return Err(match status {
-                StatusCode::UNAUTHORIZED => KleerError::Unauthorized,
-                StatusCode::FORBIDDEN => KleerError::Forbidden,
-                StatusCode::NOT_FOUND => KleerError::NotFound,
-                _ => KleerError::Response { status, body },
+            let status = response.status();
+            let latency_ms = started_at.elapsed().as_secs_f64() * 1000.0;
+            tracing::Span::current().record("kleer.status_code", status.as_u16());
+            tracing::Span::current().record("latency_ms", latency_ms);
+            tracing::debug!(
+                kleer.status_code = status.as_u16(),
+                latency_ms,
+                "Kleer request completed"
+            );
+            let body = response
+                .text()
+                .await
+                .map_err(|e| KleerError::Request(e.to_string()))?;
+
+            if !status.is_success() {
+                return Err(match status {
+                    StatusCode::UNAUTHORIZED => KleerError::Unauthorized,
+                    StatusCode::FORBIDDEN => KleerError::Forbidden,
+                    StatusCode::NOT_FOUND => KleerError::NotFound,
+                    _ => KleerError::Response { status, body },
+                });
+            }
+
+            serde_json::from_str(&body).map_err(|e| KleerError::Deserialize {
+                message: e.to_string(),
+                body,
+            })
+        }
+        .instrument(span)
+        .await;
+
+        if let Err(error) = &result {
+            let message = error.to_string();
+            error_span.record("otel.status_code", "ERROR");
+            error_span.record("otel.status_description", &message);
+            error_span.record("error.message", &message);
+            error_span.record("error.type", kleer_error_type(error));
+            error_span.in_scope(|| {
+                tracing::warn!(error = %error, "Kleer request failed");
             });
         }
 
-        serde_json::from_str(&body).map_err(|e| KleerError::Deserialize {
-            message: e.to_string(),
-            body,
-        })
+        result
     }
 
     fn request(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
@@ -259,6 +312,18 @@ impl KleerClient {
             "{}/company/{}/{}",
             self.credentials.base_url, self.credentials.company_id, path
         )
+    }
+}
+
+fn kleer_error_type(error: &KleerError) -> &'static str {
+    match error {
+        KleerError::InvalidConfig(_) => "invalid_config",
+        KleerError::Unauthorized => "unauthorized",
+        KleerError::Forbidden => "forbidden",
+        KleerError::NotFound => "not_found",
+        KleerError::Request(_) => "request",
+        KleerError::Response { .. } => "http_status",
+        KleerError::Deserialize { .. } => "deserialize",
     }
 }
 

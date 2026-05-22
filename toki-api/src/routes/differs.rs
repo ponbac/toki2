@@ -10,7 +10,6 @@ use axum::{
 use axum_login::permission_required;
 use serde::Serialize;
 use time::OffsetDateTime;
-use tracing::instrument;
 
 use crate::{
     app_state::AppState,
@@ -20,6 +19,7 @@ use crate::{
 };
 
 use super::ApiError;
+use crate::observability::{record_repo_key, record_user_id};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -44,8 +44,8 @@ struct Differ {
     is_invalid: bool,
 }
 
-#[instrument]
 async fn get_differs(user: AuthUser, State(app_state): State<AppState>) -> Json<Vec<Differ>> {
+    record_user_id(user.id);
     let user_repo = app_state.user_repo.clone();
     let repositories_repo = app_state.repository_repo.clone();
     let all_repos = repositories_repo
@@ -111,11 +111,11 @@ async fn get_differs(user: AuthUser, State(app_state): State<AppState>) -> Json<
     Json(differ_dtos)
 }
 
-#[instrument]
 async fn start_differ(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
 ) -> Result<StatusCode, ApiError> {
+    record_repo_key(&body);
     let sender = app_state.get_differ_sender(body).await?;
 
     let _ = sender
@@ -125,11 +125,11 @@ async fn start_differ(
     Ok(StatusCode::OK)
 }
 
-#[instrument]
 async fn stop_differ(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
 ) -> Result<StatusCode, ApiError> {
+    record_repo_key(&body);
     let sender = app_state.get_differ_sender(body).await?;
 
     let _ = sender.send(RepoDifferMessage::Stop).await;
@@ -137,11 +137,11 @@ async fn stop_differ(
     Ok(StatusCode::OK)
 }
 
-#[instrument]
 async fn force_update(
     State(app_state): State<AppState>,
     Json(body): Json<RepoKey>,
 ) -> Result<StatusCode, ApiError> {
+    record_repo_key(&body);
     let sender = app_state.get_differ_sender(body).await?;
 
     let _ = sender.send(RepoDifferMessage::ForceUpdate).await;

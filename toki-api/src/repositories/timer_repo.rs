@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde::Serialize;
-use sqlx::PgPool;
+
+use crate::db::DbPool;
 
 use super::repo_error::RepositoryError;
 
@@ -42,11 +43,11 @@ pub trait TimerRepository {
 }
 
 pub struct TimerRepositoryImpl {
-    pool: PgPool,
+    pool: DbPool,
 }
 
 impl TimerRepositoryImpl {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 }

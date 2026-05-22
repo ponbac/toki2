@@ -10,12 +10,10 @@ use axum_login::{
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use sqlx::PgPool;
 use time::Duration;
-use tower_http::{
-    cors::{AllowOrigin, CorsLayer},
-    trace::{DefaultMakeSpan, TraceLayer},
-};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_sessions_moka_store::MokaStore;
 use tower_sessions_sqlx_store::PostgresStore;
+use tracing::Instrument;
 
 type SessionStore = CachingSessionStore<MokaStore, PostgresStore>;
 const SESSION_COOKIE_NAME: &str = "toki.sid";
@@ -25,6 +23,7 @@ use crate::{
     app_state::AppState,
     auth::{self, AuthBackend},
     config::Settings,
+    db::DbPool,
     domain::{ports::inbound::AvatarService, services::AvatarServiceImpl, RepoConfig},
     factory::KleerServiceFactory,
     routes,
@@ -32,6 +31,7 @@ use crate::{
 
 pub async fn create(
     connection_pool: PgPool,
+    db_pool: DbPool,
     repo_configs: Vec<RepoConfig>,
     config: Settings,
 ) -> Router<()> {
@@ -49,7 +49,8 @@ pub async fn create(
     let app_with_auth = if config.application.disable_auth {
         base_app
     } else {
-        let auth_layer = new_auth_layer(connection_pool.clone(), config.clone()).await;
+        let auth_layer =
+            new_auth_layer(connection_pool.clone(), db_pool.clone(), config.clone()).await;
         base_app
             .route_layer(login_required!(AuthBackend))
             .merge(auth::router())
@@ -58,17 +59,16 @@ pub async fn create(
 
     // Create the time tracking factory (composition root wiring)
     let timer_repo = Arc::new(crate::repositories::TimerRepositoryImpl::new(
-        connection_pool.clone(),
+        db_pool.clone(),
     ));
-    let time_tracking_user_link_repo = Arc::new(
-        crate::repositories::TimeTrackingUserLinkRepositoryImpl::new(connection_pool.clone()),
-    );
+    let time_tracking_user_link_repo =
+        Arc::new(crate::repositories::TimeTrackingUserLinkRepositoryImpl::new(db_pool.clone()));
     let time_tracking_factory = Arc::new(KleerServiceFactory::new(
         timer_repo,
         time_tracking_user_link_repo,
         config.kleer.clone(),
     ));
-    let avatar_repository = Arc::new(PostgresAvatarRepository::new(connection_pool.clone()));
+    let avatar_repository = Arc::new(PostgresAvatarRepository::new(db_pool.clone()));
     let avatar_processor = Arc::new(WebpAvatarProcessor);
     let avatar_service: Arc<dyn AvatarService> = Arc::new(AvatarServiceImpl::new(
         avatar_repository,
@@ -81,7 +81,7 @@ pub async fn create(
         config.application.app_url.clone(),
         config.application.api_url.clone(),
         config.kleer.clone(),
-        connection_pool.clone(),
+        db_pool,
         repo_configs,
         time_tracking_factory,
         avatar_service,
@@ -112,11 +112,19 @@ pub async fn create(
     app_with_auth
         .with_state(app_state)
         .layer(cors)
-        .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
+        .layer(axum::middleware::from_fn_with_state(
+            config.observability.clone(),
+            crate::observability::capture_request_body_middleware,
+        ))
+        .layer(axum::middleware::from_fn(
+            crate::observability::log_http_response_middleware,
+        ))
+        .layer(crate::observability::http_trace_layer())
 }
 
 async fn new_auth_layer(
     connection_pool: PgPool,
+    db_pool: DbPool,
     config: Settings,
 ) -> AuthManagerLayer<AuthBackend, SessionStore> {
     let client = BasicClient::new(ClientId::new(config.auth.client_id))
@@ -133,6 +141,11 @@ async fn new_auth_layer(
     let db_store = PostgresStore::new(connection_pool.clone());
     db_store
         .migrate()
+        .instrument(crate::observability::db_operation_span(
+            &config.database,
+            "MIGRATE",
+            "tower_sessions_sqlx_store::PostgresStore::migrate()",
+        ))
         .await
         .expect("Failed to run session store migration");
 
@@ -156,6 +169,6 @@ async fn new_auth_layer(
         .with_same_site(SameSite::Lax)
         .with_expiry(Expiry::OnInactivity(Duration::days(7)));
 
-    let backend = AuthBackend::new(connection_pool, client);
+    let backend = AuthBackend::new(db_pool, client);
     AuthManagerLayerBuilder::new(backend, session_layer).build()
 }

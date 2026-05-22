@@ -1,18 +1,20 @@
 use async_trait::async_trait;
-use sqlx::PgPool;
 
-use crate::domain::{
-    models::{AvatarIdentityRecord, AvatarImage, UserId},
-    ports::outbound::AvatarRepository,
-    AvatarError,
+use crate::{
+    db::DbPool,
+    domain::{
+        models::{AvatarIdentityRecord, AvatarImage, UserId},
+        ports::outbound::AvatarRepository,
+        AvatarError,
+    },
 };
 
 pub struct PostgresAvatarRepository {
-    pool: PgPool,
+    pool: DbPool,
 }
 
 impl PostgresAvatarRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 }

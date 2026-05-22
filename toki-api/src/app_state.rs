@@ -6,7 +6,6 @@ use axum::{
 };
 use az_devops::RepoClient;
 use futures_util::{stream::FuturesUnordered, StreamExt};
-use sqlx::PgPool;
 use tokio::sync::{
     mpsc::{self, Sender},
     Mutex, RwLock,
@@ -17,6 +16,7 @@ use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 use crate::{
     adapters::inbound::http::{TimeTrackingServiceFactory, WorkItemServiceFactory},
     config::KleerSettings,
+    db::DbPool,
     domain::{
         ports::inbound::AvatarService, CachedIdentities, NotificationHandler, PullRequest,
         RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey,
@@ -53,7 +53,7 @@ pub struct AppState {
     pub app_url: Url,
     pub api_url: Url,
     pub kleer_settings: KleerSettings,
-    pub db_pool: Arc<PgPool>,
+    pub db_pool: DbPool,
     pub user_repo: Arc<UserRepositoryImpl>,
     pub repository_repo: Arc<RepoRepositoryImpl>,
     pub push_subscriptions_repo: Arc<PushSubscriptionRepositoryImpl>,
@@ -80,7 +80,7 @@ impl AppState {
         app_url: String,
         api_url: String,
         kleer_settings: KleerSettings,
-        db_pool: PgPool,
+        db_pool: DbPool,
         repo_configs: Vec<RepoConfig>,
         time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
         avatar_service: Arc<dyn AvatarService>,
@@ -127,9 +127,8 @@ impl AppState {
                 differs.insert(key.clone(), differ.clone());
 
                 let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
-                let arced_db_pool = Arc::new(db_pool.clone());
                 tokio::spawn(async move {
-                    differ.run(rx, arced_db_pool.clone()).await;
+                    differ.run(rx).await;
                 });
 
                 (key.clone(), tx)
@@ -151,7 +150,7 @@ impl AppState {
             app_url: Url::parse(&app_url).expect("Invalid app URL"),
             api_url: parsed_api_url,
             kleer_settings,
-            db_pool: Arc::new(db_pool.clone()),
+            db_pool: db_pool.clone(),
             user_repo,
             repository_repo: Arc::new(RepoRepositoryImpl::new(db_pool.clone())),
             push_subscriptions_repo: Arc::new(PushSubscriptionRepositoryImpl::new(db_pool.clone())),
@@ -266,9 +265,8 @@ impl AppState {
             .await
             .insert(key.clone(), differ.clone());
 
-        let db_pool = self.db_pool.clone();
         tokio::spawn(async move {
-            differ.run(rx, db_pool.clone()).await;
+            differ.run(rx).await;
         });
         differ_txs.insert(key, tx);
     }

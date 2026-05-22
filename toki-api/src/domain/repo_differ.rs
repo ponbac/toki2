@@ -6,11 +6,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use az_devops::{Identity, RepoClient};
+use futures_util::{stream, StreamExt, TryStreamExt};
 use serde::Serialize;
-use sqlx::PgPool;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
-use tracing::instrument;
+use tracing::{field, instrument, Span};
 
 use crate::domain::Email;
 
@@ -28,6 +28,19 @@ pub enum RepoDifferError {
     WorkItems,
     #[error("Could not fetch identities")]
     Identities,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum RepoDifferPollError {
+    #[error("{0}")]
+    Tick(#[from] RepoDifferError),
+    #[error("Tick operation timed out")]
+    Timeout,
+}
+
+struct RepoDifferTickResult {
+    pr_count: usize,
+    change_events: Vec<PullRequestDiff>,
 }
 
 impl IntoResponse for RepoDifferError {
@@ -93,9 +106,10 @@ impl RepoDiffer {
     const MAX_RETRIES: usize = 10;
     const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(30);
     const MAX_RETRY_DELAY: Duration = Duration::from_secs(3600);
+    const TICK_TIMEOUT: Duration = Duration::from_secs(120);
+    const PR_FETCH_CONCURRENCY: usize = 10;
 
-    #[instrument(name = "RepoDiffer::run", skip(self, receiver), fields(key = %self.key))]
-    pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>, db_pool: Arc<PgPool>) {
+    pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>) {
         let mut tick_interval: Option<tokio::time::Interval> = None;
 
         loop {
@@ -104,21 +118,20 @@ impl RepoDiffer {
                     match message {
                         RepoDifferMessage::Start(duration) => {
                             tracing::debug!(
-                                "Starting differ {} with interval: {:?}",
-                                self.key,
-                                duration
+                                repo.key = %self.key,
+                                interval_seconds = duration.as_secs(),
+                                "Starting repo differ"
                             );
                             tick_interval = Some(tokio::time::interval(duration));
                             self.interval.write().await.replace(duration);
                             *self.status.write().await = RepoDifferStatus::Running;
                         }
                         RepoDifferMessage::ForceUpdate => {
-                            // TODO: timeout
-                            tracing::debug!("Forcing update for differ {}", self.key);
-                            let _ = self.tick().await;
+                            tracing::debug!(repo.key = %self.key, "Forcing repo differ update");
+                            self.force_update().await;
                         }
                         RepoDifferMessage::Stop => {
-                            tracing::debug!("Stopping differ {}", self.key);
+                            tracing::debug!(repo.key = %self.key, "Stopping repo differ");
                             tick_interval = None;
                             self.interval.write().await.take();
                             *self.status.write().await = RepoDifferStatus::Stopped;
@@ -126,53 +139,153 @@ impl RepoDiffer {
                     }
                 }
                 _ = interval_tick_or_sleep(&mut tick_interval) => {
-                    tracing::debug!("Ticked");
-                    let mut retries = 0;
-                    let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
-
-                    'retry_loop: while retries < Self::MAX_RETRIES && self.is_running().await {
-                        match tokio::time::timeout(Duration::from_secs(120), self.tick()).await {
-                            Ok(Ok(change_events)) => {
-                                if !change_events.is_empty() {
-                                    if let Err(e) = self.notification_handler.notify_affected_users(change_events).await {
-                                        tracing::error!("Failed to notify affected users: {}", e);
-                                    }
-                                } else {
-                                    tracing::debug!("No changes to notify for {}", self.key);
-                                }
-                                break 'retry_loop;
-                            }
-                            Ok(Err(err)) => {
-                                tracing::error!("Error ticking for {}: {:?}", self.key, err);
-                                last_error = Some(Box::new(err));
-                            }
-                            Err(_) => {
-                                tracing::error!("Tick operation timed out for {}", self.key);
-                                last_error = Some(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, "Tick operation timed out")));
-                            }
-                        }
-
-                        retries += 1;
-                        if retries < Self::MAX_RETRIES {
-                            let backoff_duration = Self::calculate_backoff_duration(retries);
-                            tracing::warn!(
-                                "Retrying tick operation for {} (attempt {}/{}) after {:?}",
-                                self.key,
-                                retries + 1,
-                                Self::MAX_RETRIES,
-                                backoff_duration
-                            );
-                            tokio::time::sleep(backoff_duration).await;
-                        }
-                    }
-
-                    if retries == Self::MAX_RETRIES {
-                        tracing::error!("All retry attempts failed for {}. Last error: {:?}", self.key, last_error);
-                        *self.status.write().await = RepoDifferStatus::Errored;
-                    }
+                    tracing::debug!(repo.key = %self.key, "Repo differ interval ticked");
+                    self.poll_interval().await;
                 }
             }
         }
+    }
+
+    async fn force_update(&self) {
+        let _ = self.run_poll_attempts("force_update", 1, false).await;
+    }
+
+    async fn poll_interval(&self) {
+        if let Err(last_error) = self
+            .run_poll_attempts("interval", Self::MAX_RETRIES, true)
+            .await
+        {
+            tracing::error!(
+                repo.key = %self.key,
+                last_error = last_error.as_deref().unwrap_or("unknown"),
+                "All repo differ poll retry attempts failed"
+            );
+            *self.status.write().await = RepoDifferStatus::Errored;
+        }
+    }
+
+    async fn run_poll_attempts(
+        &self,
+        trigger: &'static str,
+        max_attempts: usize,
+        require_running: bool,
+    ) -> Result<(), Option<String>> {
+        let mut last_error: Option<String> = None;
+
+        for attempt in 0..max_attempts {
+            if require_running && !self.is_running().await {
+                return Ok(());
+            }
+
+            match self.poll_attempt(trigger, attempt).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    last_error = Some(err.to_string());
+                }
+            }
+
+            let next_attempt = attempt + 1;
+            if next_attempt < max_attempts {
+                let backoff_duration = Self::calculate_backoff_duration(next_attempt);
+                tracing::warn!(
+                    repo.key = %self.key,
+                    retry_attempt = next_attempt,
+                    max_retries = max_attempts,
+                    backoff_seconds = backoff_duration.as_secs_f64(),
+                    "Retrying repo differ poll after failed attempt"
+                );
+                tokio::time::sleep(backoff_duration).await;
+            }
+        }
+
+        Err(last_error)
+    }
+
+    #[instrument(
+        name = "repo_differ.poll",
+        skip(self),
+        fields(
+            repo.key = %self.key,
+            operation.name = "repo_differ.poll",
+            trigger = trigger,
+            retry_attempt = retry_attempt,
+            timeout_seconds = 120_u64,
+            pr_count = field::Empty,
+            changed_pr_count = field::Empty,
+            notification_count = field::Empty,
+            push_notification_count = field::Empty,
+            notification_error = field::Empty,
+            otel.status_code = field::Empty,
+            otel.status_description = field::Empty,
+            error.message = field::Empty,
+        )
+    )]
+    async fn poll_attempt(
+        &self,
+        trigger: &'static str,
+        retry_attempt: usize,
+    ) -> Result<(), RepoDifferPollError> {
+        let tick_result = match tokio::time::timeout(Self::TICK_TIMEOUT, self.tick()).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(err)) => {
+                mark_current_span_error(&err.to_string());
+                tracing::error!(error.message = %err, "Repo differ tick failed");
+                return Err(RepoDifferPollError::Tick(err));
+            }
+            Err(_) => {
+                let err = RepoDifferPollError::Timeout;
+                mark_current_span_error(&err.to_string());
+                tracing::error!(
+                    timeout_seconds = Self::TICK_TIMEOUT.as_secs(),
+                    "Repo differ tick timed out"
+                );
+                return Err(err);
+            }
+        };
+
+        let pr_count = tick_result.pr_count;
+        let changed_pr_count = tick_result.change_events.len();
+        Span::current().record("pr_count", pr_count);
+        Span::current().record("changed_pr_count", changed_pr_count);
+
+        let (notification_count, push_notification_count, notification_error) =
+            if tick_result.change_events.is_empty() {
+                tracing::debug!("No changes to notify");
+                (0, 0, false)
+            } else {
+                match self
+                    .notification_handler
+                    .notify_affected_users(tick_result.change_events)
+                    .await
+                {
+                    Ok(summary) => (
+                        summary.notification_count,
+                        summary.push_notification_count,
+                        false,
+                    ),
+                    Err(err) => {
+                        let message = format!("Failed to notify affected users: {err}");
+                        mark_current_span_error(&message);
+                        tracing::error!(error.message = %err, "Failed to notify affected users");
+                        (0, 0, true)
+                    }
+                }
+            };
+
+        Span::current().record("notification_count", notification_count);
+        Span::current().record("push_notification_count", push_notification_count);
+        Span::current().record("notification_error", notification_error);
+
+        tracing::info!(
+            pr_count,
+            changed_pr_count,
+            notification_count,
+            push_notification_count,
+            notification_error,
+            "Repo differ poll completed"
+        );
+
+        Ok(())
     }
 
     fn calculate_backoff_duration(retry_count: usize) -> Duration {
@@ -186,28 +299,53 @@ impl RepoDiffer {
         Duration::from_secs_f64(final_delay)
     }
 
-    #[instrument(name = "RepoDiffer::tick", skip(self), fields(key = %self.key))]
-    async fn tick(&self) -> Result<Vec<PullRequestDiff>, RepoDifferError> {
+    #[instrument(name = "repo_differ.fetch_and_diff", skip(self), fields(repo.key = %self.key, operation.name = "repo_differ.fetch_and_diff", pr_count = field::Empty, changed_pr_count = field::Empty))]
+    async fn tick(&self) -> Result<RepoDifferTickResult, RepoDifferError> {
         let base_pull_requests = self
             .az_client
             .get_open_pull_requests()
             .await
             .map_err(|_| RepoDifferError::PullRequests)?;
+        tracing::Span::current().record("pr_count", base_pull_requests.len());
 
-        let mut complete_pull_requests = Vec::new();
-        for pr in base_pull_requests {
-            let commits = pr
-                .commits(&self.az_client)
-                .await
-                .map_err(|_| RepoDifferError::Commits)?;
-            let work_items = pr
-                .work_items(&self.az_client)
-                .await
-                .map_err(|_| RepoDifferError::WorkItems)?;
-            let threads = pr
-                .threads(&self.az_client)
-                .await
-                .map_err(|_| RepoDifferError::Threads)?;
+        let pr_ids = base_pull_requests
+            .iter()
+            .map(|pr| pr.id)
+            .collect::<Vec<_>>();
+        let mut work_items_by_pr = self
+            .az_client
+            .get_work_items_for_pull_requests(&pr_ids)
+            .await
+            .map_err(|_| RepoDifferError::WorkItems)?;
+
+        let mut fetched_pull_requests = stream::iter(base_pull_requests.into_iter().enumerate())
+            .map(|(index, pr)| {
+                let client = self.az_client.clone();
+                async move {
+                    let (commits, threads) = tokio::try_join!(
+                        async {
+                            pr.commits(&client)
+                                .await
+                                .map_err(|_| RepoDifferError::Commits)
+                        },
+                        async {
+                            pr.threads(&client)
+                                .await
+                                .map_err(|_| RepoDifferError::Threads)
+                        },
+                    )?;
+
+                    Ok::<_, RepoDifferError>((index, pr, commits, threads))
+                }
+            })
+            .buffer_unordered(Self::PR_FETCH_CONCURRENCY)
+            .try_collect::<Vec<_>>()
+            .await?;
+        fetched_pull_requests.sort_by_key(|(index, _, _, _)| *index);
+
+        let mut complete_pull_requests = Vec::with_capacity(fetched_pull_requests.len());
+        for (_, pr, commits, threads) in fetched_pull_requests {
+            let work_items = work_items_by_pr.remove(&pr.id).unwrap_or_default();
 
             let url = format!(
                 "https://dev.azure.com/{}/{}/_git/{}/pullrequest/{}",
@@ -255,6 +393,13 @@ impl RepoDiffer {
                 None => Vec::new(),
             }
         };
+        let pr_count = complete_pull_requests.len();
+        tracing::Span::current().record("changed_pr_count", change_events.len());
+        tracing::info!(
+            pr_count,
+            changed_pr_count = change_events.len(),
+            "Repo differ calculated pull request changes"
+        );
 
         self.prev_pull_requests
             .write()
@@ -265,8 +410,18 @@ impl RepoDiffer {
             .await
             .replace(OffsetDateTime::now_utc());
 
-        Ok(change_events)
+        Ok(RepoDifferTickResult {
+            pr_count,
+            change_events,
+        })
     }
+}
+
+fn mark_current_span_error(message: &str) {
+    let span = Span::current();
+    span.record("otel.status_code", "ERROR");
+    span.record("otel.status_description", message);
+    span.record("error.message", message);
 }
 
 impl fmt::Debug for RepoDiffer {

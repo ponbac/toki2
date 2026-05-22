@@ -67,11 +67,11 @@ mod post {
 
 mod get {
     use axum::{extract::State, Json};
-    use tracing::instrument;
 
     use crate::{
         auth::backend::{AuthSession, Credentials},
         domain::User,
+        observability::record_span_field,
     };
 
     use super::*;
@@ -102,7 +102,6 @@ mod get {
         Ok(Json(MeResponse { user, avatar_url }))
     }
 
-    #[instrument(name = "auth_callback", skip(auth_session, session))]
     pub async fn callback(
         mut auth_session: AuthSession,
         session: Session,
@@ -144,6 +143,7 @@ mod get {
             Ok(Some(next_url)) => next_url,
             Ok(None) | Err(_) => String::new(),
         };
+        record_span_field("next_present", !next_url.is_empty());
 
         let redirect_url = match next_url.as_str() {
             next if is_tui_callback(next) => {

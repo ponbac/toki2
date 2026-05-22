@@ -1,24 +1,26 @@
 use async_trait::async_trait;
-use sqlx::PgPool;
 use time::OffsetDateTime;
 
-use crate::domain::{
-    models::{
-        NewTimeTrackingProviderUser, NewTimeTrackingUserLink, TimeTrackingProviderUser,
-        TimeTrackingUserLink, UserId,
+use crate::{
+    db::DbPool,
+    domain::{
+        models::{
+            NewTimeTrackingProviderUser, NewTimeTrackingUserLink, TimeTrackingProviderUser,
+            TimeTrackingUserLink, UserId,
+        },
+        ports::outbound::TimeTrackingUserLinkRepository,
+        TimeTrackingError,
     },
-    ports::outbound::TimeTrackingUserLinkRepository,
-    TimeTrackingError,
 };
 
 use super::RepositoryError;
 
 pub struct TimeTrackingUserLinkRepositoryImpl {
-    pool: PgPool,
+    pool: DbPool,
 }
 
 impl TimeTrackingUserLinkRepositoryImpl {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 }
@@ -101,7 +103,7 @@ impl TimeTrackingUserLinkRepository for TimeTrackingUserLinkRepositoryImpl {
                 user.email,
                 user.active
             )
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut tx.executor())
             .await
             .map_err(map_sqlx_error)?;
 
@@ -232,7 +234,7 @@ impl TimeTrackingUserLinkRepository for TimeTrackingUserLinkRepositoryImpl {
             link.provider_user_id,
             user_id
         )
-        .execute(&mut *tx)
+        .execute(&mut tx.executor())
         .await
         .map_err(map_sqlx_error)?;
 
@@ -263,7 +265,7 @@ impl TimeTrackingUserLinkRepository for TimeTrackingUserLinkRepositoryImpl {
             link.provider_user_email,
             link.provider_user_name
         )
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut tx.executor())
         .await
         .map_err(map_sqlx_error)?;
 

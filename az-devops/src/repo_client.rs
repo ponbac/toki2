@@ -1,6 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+    sync::Arc,
+    time::Duration,
+};
 
 use azure_devops_rust_api::{
     core,
@@ -9,7 +12,7 @@ use azure_devops_rust_api::{
     wit::{
         self,
         models::{
-            work_item_batch_get_request::Expand, Wiql, WorkItemBatchGetRequest,
+            work_item_batch_get_request::Expand, ArtifactUriQuery, Wiql, WorkItemBatchGetRequest,
             WorkItemClassificationNode,
         },
     },
@@ -18,7 +21,7 @@ use azure_devops_rust_api::{
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::sync::Semaphore;
-use tracing::debug;
+use tracing::{debug, field, Instrument, Span};
 
 use crate::{Identity, Iteration, PullRequest, Thread, WorkItem, WorkItemComment};
 
@@ -35,6 +38,8 @@ pub enum RepoClientError {
     HttpStatus { status: u16, body: String },
     #[error("Repository not found: {0}")]
     RepoNotFound(String),
+    #[error("Repository response did not include a project ID for: {0}")]
+    MissingProjectId(String),
     #[error("Response payload exceeds {max_bytes} bytes (actual: {actual_bytes} bytes)")]
     PayloadTooLarge { actual_bytes: u64, max_bytes: usize },
 }
@@ -66,6 +71,7 @@ pub struct RepoClient {
     http_client: reqwest::Client,
     organization: String,
     project: String,
+    project_id: String,
     repo_name: String,
     repo_id: String,
     pat: String,
@@ -96,6 +102,11 @@ impl RepoClient {
             .find(|repo| repo.name == repo_name)
             .cloned()
             .ok_or_else(|| RepoClientError::RepoNotFound(repo_name.to_string()))?;
+        let project_id = repo
+            .project
+            .id
+            .clone()
+            .ok_or_else(|| RepoClientError::MissingProjectId(repo_name.to_string()))?;
 
         Ok(Self {
             core_client,
@@ -106,6 +117,7 @@ impl RepoClient {
             http_client,
             organization: organization.to_owned(),
             project: project.to_owned(),
+            project_id,
             repo_name: repo.name,
             repo_id: repo.id,
             pat: pat.to_owned(),
@@ -128,125 +140,234 @@ impl RepoClient {
         &self.repo_id
     }
 
-    pub async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, RepoClientError> {
-        let pull_requests = self
-            .git_client
-            .pull_requests_client()
-            .get_pull_requests(&self.organization, &self.repo_id, &self.project)
-            .await?
-            .value;
+    // `tracing` span fields are fixed at the callsite, so keep provider-wide
+    // attributes and later-recorded fields in one place instead of repeating
+    // large `#[instrument(fields(...))]` blocks on every method.
+    fn azure_devops_span(&self, operation_name: &'static str) -> Span {
+        tracing::info_span!(
+            "azure_devops.operation",
+            otel.name = %format!("AZDO {operation_name}"),
+            otel.kind = "client",
+            provider.name = "azure_devops",
+            organization = %self.organization,
+            project = %self.project,
+            repo_name = %self.repo_name,
+            operation.name = operation_name,
+            attachment.id = field::Empty,
+            depth = field::Empty,
+            http.response.status_code = field::Empty,
+            iteration_id = field::Empty,
+            limit = field::Empty,
+            pull_request.id = field::Empty,
+            pull_request_count = field::Empty,
+            target_column_name = field::Empty,
+            team = field::Empty,
+            otel.status_code = field::Empty,
+            otel.status_description = field::Empty,
+            error.message = field::Empty,
+            error.type = field::Empty,
+            work_item_count = field::Empty,
+            work_item_id = field::Empty,
+        )
+    }
 
-        Ok(pull_requests.into_iter().map(PullRequest::from).collect())
+    async fn trace_azure_devops<T, Fut>(
+        &self,
+        operation_name: &'static str,
+        operation: Fut,
+    ) -> Result<T, RepoClientError>
+    where
+        Fut: Future<Output = Result<T, RepoClientError>>,
+    {
+        self.trace_azure_devops_with_fields(operation_name, |_| {}, operation)
+            .await
+    }
+
+    async fn trace_azure_devops_with_fields<T, Fut>(
+        &self,
+        operation_name: &'static str,
+        record_fields: impl FnOnce(&Span),
+        operation: Fut,
+    ) -> Result<T, RepoClientError>
+    where
+        Fut: Future<Output = Result<T, RepoClientError>>,
+    {
+        let span = self.azure_devops_span(operation_name);
+        record_fields(&span);
+
+        let result = operation.instrument(span.clone()).await;
+        if let Err(error) = &result {
+            let message = error.to_string();
+            span.record("otel.status_code", "ERROR");
+            span.record("otel.status_description", &message);
+            span.record("error.message", &message);
+            span.record("error.type", repo_client_error_type(error));
+            span.in_scope(|| {
+                tracing::warn!(error = %error, "Azure DevOps operation failed");
+            });
+        }
+
+        result
+    }
+
+    pub async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, RepoClientError> {
+        self.trace_azure_devops("get_open_pull_requests", async move {
+            let pull_requests = self
+                .git_client
+                .pull_requests_client()
+                .get_pull_requests(&self.organization, &self.repo_id, &self.project)
+                .await?
+                .value;
+
+            Ok(pull_requests.into_iter().map(PullRequest::from).collect())
+        })
+        .await
     }
 
     pub async fn get_all_pull_requests(
         &self,
         limit: Option<usize>,
     ) -> Result<Vec<PullRequest>, RepoClientError> {
-        const PAGE_SIZE: i32 = 50;
-        let max_items = limit.unwrap_or(usize::MAX);
+        self.trace_azure_devops_with_fields(
+            "get_all_pull_requests",
+            |span| {
+                span.record("limit", field::debug(limit));
+            },
+            async move {
+                const PAGE_SIZE: i32 = 50;
+                let max_items = limit.unwrap_or(usize::MAX);
 
-        if max_items == 0 {
-            return Ok(Vec::new());
-        }
+                if max_items == 0 {
+                    return Ok(Vec::new());
+                }
 
-        let mut pull_requests = Vec::new();
-        let mut skip = 0;
+                let mut pull_requests = Vec::new();
+                let mut skip = 0;
 
-        loop {
-            let page = self
-                .git_client
-                .pull_requests_client()
-                .get_pull_requests(&self.organization, &self.repo_id, &self.project)
-                .search_criteria_status("all")
-                .skip(skip)
-                .top(PAGE_SIZE)
-                .await?
-                .value;
+                loop {
+                    let page = self
+                        .git_client
+                        .pull_requests_client()
+                        .get_pull_requests(&self.organization, &self.repo_id, &self.project)
+                        .search_criteria_status("all")
+                        .skip(skip)
+                        .top(PAGE_SIZE)
+                        .await?
+                        .value;
 
-            if page.is_empty() {
-                break;
-            }
+                    if page.is_empty() {
+                        break;
+                    }
 
-            let remaining_capacity = max_items.saturating_sub(pull_requests.len());
-            pull_requests.extend(
-                page.into_iter()
-                    .take(remaining_capacity)
-                    .map(PullRequest::from),
-            );
+                    let remaining_capacity = max_items.saturating_sub(pull_requests.len());
+                    pull_requests.extend(
+                        page.into_iter()
+                            .take(remaining_capacity)
+                            .map(PullRequest::from),
+                    );
 
-            if pull_requests.len() >= max_items {
-                break;
-            }
+                    if pull_requests.len() >= max_items {
+                        break;
+                    }
 
-            skip += PAGE_SIZE;
-        }
+                    skip += PAGE_SIZE;
+                }
 
-        Ok(pull_requests)
+                Ok(pull_requests)
+            },
+        )
+        .await
     }
 
     pub async fn get_threads_in_pull_request(
         &self,
         pull_request_id: i32,
     ) -> Result<Vec<Thread>, RepoClientError> {
-        let threads = self
-            .git_client
-            .pull_request_threads_client()
-            .list(
-                &self.organization,
-                &self.repo_id,
-                pull_request_id,
-                &self.project,
-            )
-            .await?
-            .value;
+        self.trace_azure_devops_with_fields(
+            "get_threads_in_pull_request",
+            |span| {
+                span.record("pull_request.id", pull_request_id);
+            },
+            async move {
+                let threads = self
+                    .git_client
+                    .pull_request_threads_client()
+                    .list(
+                        &self.organization,
+                        &self.repo_id,
+                        pull_request_id,
+                        &self.project,
+                    )
+                    .await?
+                    .value;
 
-        Ok(threads
-            .into_iter()
-            .map(|t| Thread::from(t.comment_thread))
-            .collect())
+                Ok(threads
+                    .into_iter()
+                    .map(|t| Thread::from(t.comment_thread))
+                    .collect())
+            },
+        )
+        .await
     }
 
     pub async fn get_work_item_ids_in_pull_request(
         &self,
         pull_request_id: i32,
     ) -> Result<Vec<i32>, RepoClientError> {
-        let work_item_refs = self
-            .git_client
-            .pull_request_work_items_client()
-            .list(
-                &self.organization,
-                &self.repo_id,
-                pull_request_id,
-                &self.project,
-            )
-            .await?
-            .value;
+        self.trace_azure_devops_with_fields(
+            "get_work_item_ids_in_pull_request",
+            |span| {
+                span.record("pull_request.id", pull_request_id);
+            },
+            async move {
+                let work_item_refs = self
+                    .git_client
+                    .pull_request_work_items_client()
+                    .list(
+                        &self.organization,
+                        &self.repo_id,
+                        pull_request_id,
+                        &self.project,
+                    )
+                    .await?
+                    .value;
 
-        Ok(work_item_refs
-            .into_iter()
-            .filter_map(|r| r.id)
-            .filter_map(|id| id.parse().ok())
-            .collect())
+                Ok(work_item_refs
+                    .into_iter()
+                    .filter_map(|r| r.id)
+                    .filter_map(|id| id.parse().ok())
+                    .collect())
+            },
+        )
+        .await
     }
 
     pub async fn get_commits_in_pull_request(
         &self,
         pull_request_id: i32,
     ) -> Result<Vec<GitCommitRef>, RepoClientError> {
-        let commits = self
-            .git_client
-            .pull_request_commits_client()
-            .get_pull_request_commits(
-                &self.organization,
-                &self.repo_id,
-                pull_request_id,
-                &self.project,
-            )
-            .await?
-            .value;
+        self.trace_azure_devops_with_fields(
+            "get_commits_in_pull_request",
+            |span| {
+                span.record("pull_request.id", pull_request_id);
+            },
+            async move {
+                let commits = self
+                    .git_client
+                    .pull_request_commits_client()
+                    .get_pull_request_commits(
+                        &self.organization,
+                        &self.repo_id,
+                        pull_request_id,
+                        &self.project,
+                    )
+                    .await?
+                    .value;
 
-        Ok(commits)
+                Ok(commits)
+            },
+        )
+        .await
     }
 
     /// Fetch comments on a work item.
@@ -258,58 +379,155 @@ impl RepoClient {
         &self,
         work_item_id: i32,
     ) -> Result<Vec<WorkItemComment>, RepoClientError> {
-        let result = self
-            .work_item_client
-            .comments_client()
-            .get_comments(&self.organization, &self.project, work_item_id)
-            .await;
+        self.trace_azure_devops_with_fields(
+            "get_work_item_comments",
+            |span| {
+                span.record("work_item_id", work_item_id);
+            },
+            async move {
+                let result = self
+                    .work_item_client
+                    .comments_client()
+                    .get_comments(&self.organization, &self.project, work_item_id)
+                    .await;
 
-        match result {
-            Ok(comment_list) => Ok(comment_list
-                .comments
-                .into_iter()
-                .map(WorkItemComment::from)
-                .collect()),
-            Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("deserialize") {
-                    tracing::debug!(
-                        work_item_id,
-                        "Comments deserialization failed (likely empty), returning empty vec"
-                    );
-                    Ok(vec![])
-                } else {
-                    Err(e.into())
+                match result {
+                    Ok(comment_list) => Ok(comment_list
+                        .comments
+                        .into_iter()
+                        .map(WorkItemComment::from)
+                        .collect()),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        if msg.contains("deserialize") {
+                            tracing::debug!(
+                            work_item_id,
+                            "Comments deserialization failed (likely empty), returning empty vec"
+                        );
+                            Ok(vec![])
+                        } else {
+                            Err(e.into())
+                        }
+                    }
                 }
-            }
-        }
+            },
+        )
+        .await
     }
 
     pub async fn get_work_items(&self, ids: Vec<i32>) -> Result<Vec<WorkItem>, RepoClientError> {
-        const BATCH_SIZE: usize = 200;
+        let work_item_count = ids.len();
+        self.trace_azure_devops_with_fields(
+            "get_work_items",
+            |span| {
+                span.record("work_item_count", work_item_count);
+            },
+            async move {
+                const BATCH_SIZE: usize = 200;
 
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
+                if ids.is_empty() {
+                    return Ok(Vec::new());
+                }
 
-        let mut all_work_items = Vec::with_capacity(ids.len());
+                let mut all_work_items = Vec::with_capacity(ids.len());
 
-        for chunk in ids.chunks(BATCH_SIZE) {
-            let mut batch_request = WorkItemBatchGetRequest::new();
-            batch_request.expand = Some(Expand::Relations);
-            batch_request.ids = chunk.to_vec();
+                for chunk in ids.chunks(BATCH_SIZE) {
+                    let mut batch_request = WorkItemBatchGetRequest::new();
+                    batch_request.expand = Some(Expand::Relations);
+                    batch_request.ids = chunk.to_vec();
 
-            let work_items = self
-                .work_item_client
-                .work_items_client()
-                .get_work_items_batch(&self.organization, batch_request, &self.project)
-                .await?
-                .value;
+                    let work_items = self
+                        .work_item_client
+                        .work_items_client()
+                        .get_work_items_batch(&self.organization, batch_request, &self.project)
+                        .await?
+                        .value;
 
-            all_work_items.extend(work_items.into_iter().map(WorkItem::from));
-        }
+                    all_work_items.extend(work_items.into_iter().map(WorkItem::from));
+                }
 
-        Ok(all_work_items)
+                Ok(all_work_items)
+            },
+        )
+        .await
+    }
+
+    pub async fn get_work_items_for_pull_requests(
+        &self,
+        pull_request_ids: &[i32],
+    ) -> Result<HashMap<i32, Vec<WorkItem>>, RepoClientError> {
+        let pull_request_count = pull_request_ids.len();
+        self.trace_azure_devops_with_fields(
+            "get_work_items_for_pull_requests",
+            |span| {
+                span.record("pull_request_count", pull_request_count);
+            },
+            async move {
+                if pull_request_ids.is_empty() {
+                    return Ok(HashMap::new());
+                }
+
+                let artifacts_by_pr = pull_request_ids
+                    .iter()
+                    .map(|pr_id| (*pr_id, self.pull_request_artifact_uri(*pr_id)))
+                    .collect::<Vec<_>>();
+
+                let mut query = ArtifactUriQuery::new();
+                query.artifact_uris = artifacts_by_pr
+                    .iter()
+                    .map(|(_, artifact_uri)| artifact_uri.clone())
+                    .collect();
+
+                let result = self
+                    .work_item_client
+                    .artifact_uri_query_client()
+                    .query(&self.organization, query, &self.project)
+                    .await?;
+
+                let ids_by_artifact = parse_artifact_uri_query_work_item_ids(
+                    result.artifact_uris_query_result.as_ref(),
+                );
+
+                let mut unique_work_item_ids = HashSet::new();
+                let work_item_ids_by_pr = artifacts_by_pr
+                    .iter()
+                    .map(|(pr_id, artifact_uri)| {
+                        let work_item_ids = ids_by_artifact
+                            .get(artifact_uri)
+                            .cloned()
+                            .unwrap_or_default();
+                        unique_work_item_ids.extend(work_item_ids.iter().copied());
+                        (*pr_id, work_item_ids)
+                    })
+                    .collect::<Vec<_>>();
+
+                let work_items_by_id = self
+                    .get_work_items(unique_work_item_ids.into_iter().collect())
+                    .await?
+                    .into_iter()
+                    .map(|work_item| (work_item.id, work_item))
+                    .collect::<HashMap<_, _>>();
+
+                Ok(work_item_ids_by_pr
+                    .into_iter()
+                    .map(|(pr_id, work_item_ids)| {
+                        let work_items = work_item_ids
+                            .into_iter()
+                            .filter_map(|id| work_items_by_id.get(&id).cloned())
+                            .collect();
+                        (pr_id, work_items)
+                    })
+                    .collect())
+            },
+        )
+        .await
+    }
+
+    fn pull_request_artifact_uri(&self, pull_request_id: i32) -> String {
+        format!(
+            "vstfs:///Git/PullRequestId/{}%2F{}%2F{}",
+            self.project_id, self.repo_id, pull_request_id
+        )
     }
 
     /// Download a work item attachment by ID.
@@ -319,50 +537,60 @@ impl RepoClient {
         file_name: Option<&str>,
         max_download_bytes: Option<usize>,
     ) -> Result<(Vec<u8>, Option<String>), RepoClientError> {
-        let mut request = self
-            .work_item_client
-            .attachments_client()
-            .get(&self.organization, attachment_id, &self.project)
-            .download(true);
+        self.trace_azure_devops_with_fields(
+            "get_work_item_attachment",
+            |span| {
+                span.record("attachment.id", attachment_id);
+            },
+            async move {
+                let mut request = self
+                    .work_item_client
+                    .attachments_client()
+                    .get(&self.organization, attachment_id, &self.project)
+                    .download(true);
 
-        if let Some(file_name) = file_name {
-            request = request.file_name(file_name);
-        }
+                if let Some(file_name) = file_name {
+                    request = request.file_name(file_name);
+                }
 
-        let raw_response = request.send().await?.into_raw_response();
-        let mut content_type = None;
-        let mut content_length = None;
-        for (name, value) in raw_response.headers().iter() {
-            if name.as_str().eq_ignore_ascii_case("content-type") {
-                content_type = Some(value.as_str().to_string());
-                continue;
-            }
+                let raw_response = request.send().await?.into_raw_response();
+                let mut content_type = None;
+                let mut content_length = None;
+                for (name, value) in raw_response.headers().iter() {
+                    if name.as_str().eq_ignore_ascii_case("content-type") {
+                        content_type = Some(value.as_str().to_string());
+                        continue;
+                    }
 
-            if name.as_str().eq_ignore_ascii_case("content-length") {
-                content_length = value.as_str().parse::<u64>().ok();
-            }
-        }
+                    if name.as_str().eq_ignore_ascii_case("content-length") {
+                        content_length = value.as_str().parse::<u64>().ok();
+                    }
+                }
 
-        if let (Some(max_bytes), Some(actual_bytes)) = (max_download_bytes, content_length) {
-            if actual_bytes > max_bytes as u64 {
-                return Err(RepoClientError::PayloadTooLarge {
-                    actual_bytes,
-                    max_bytes,
-                });
-            }
-        }
+                if let (Some(max_bytes), Some(actual_bytes)) = (max_download_bytes, content_length)
+                {
+                    if actual_bytes > max_bytes as u64 {
+                        return Err(RepoClientError::PayloadTooLarge {
+                            actual_bytes,
+                            max_bytes,
+                        });
+                    }
+                }
 
-        let bytes: azure_core::Bytes = raw_response.into_raw_body().collect().await?;
-        if let Some(max_bytes) = max_download_bytes {
-            if bytes.len() > max_bytes {
-                return Err(RepoClientError::PayloadTooLarge {
-                    actual_bytes: bytes.len() as u64,
-                    max_bytes,
-                });
-            }
-        }
+                let bytes: azure_core::Bytes = raw_response.into_raw_body().collect().await?;
+                if let Some(max_bytes) = max_download_bytes {
+                    if bytes.len() > max_bytes {
+                        return Err(RepoClientError::PayloadTooLarge {
+                            actual_bytes: bytes.len() as u64,
+                            max_bytes,
+                        });
+                    }
+                }
 
-        Ok((bytes.to_vec(), content_type))
+                Ok((bytes.to_vec(), content_type))
+            },
+        )
+        .await
     }
 
     /// Query work item IDs using WIQL (Work Item Query Language).
@@ -374,32 +602,41 @@ impl RepoClient {
         query: &str,
         team: &str,
     ) -> Result<Vec<i32>, RepoClientError> {
-        let wiql = Wiql {
-            query: Some(query.to_string()),
-        };
+        self.trace_azure_devops_with_fields(
+            "query_work_item_ids_wiql",
+            |span| {
+                span.record("team", team);
+            },
+            async move {
+                let wiql = Wiql {
+                    query: Some(query.to_string()),
+                };
 
-        let result = tokio::time::timeout(
-            WIQL_QUERY_TIMEOUT,
-            self.work_item_client.wiql_client().query_by_wiql(
-                &self.organization,
-                wiql,
-                &self.project,
-                team,
-            ),
+                let result = tokio::time::timeout(
+                    WIQL_QUERY_TIMEOUT,
+                    self.work_item_client.wiql_client().query_by_wiql(
+                        &self.organization,
+                        wiql,
+                        &self.project,
+                        team,
+                    ),
+                )
+                .await
+                .map_err(|_| internal_http_error("WIQL query request timed out"))??;
+
+                let ids: Vec<i32> = result.work_items.into_iter().filter_map(|r| r.id).collect();
+
+                debug!(
+                    "WIQL query returned {} work item IDs for {}/{}",
+                    ids.len(),
+                    self.organization,
+                    self.project
+                );
+
+                Ok(ids)
+            },
         )
         .await
-        .map_err(|_| internal_http_error("WIQL query request timed out"))??;
-
-        let ids: Vec<i32> = result.work_items.into_iter().filter_map(|r| r.id).collect();
-
-        debug!(
-            "WIQL query returned {} work item IDs for {}/{}",
-            ids.len(),
-            self.organization,
-            self.project
-        );
-
-        Ok(ids)
     }
 
     /// Query work item IDs using WIQL at project scope (no team segment in URL).
@@ -410,64 +647,75 @@ impl RepoClient {
         &self,
         query: &str,
     ) -> Result<Vec<i32>, RepoClientError> {
-        let mut url = reqwest::Url::parse("https://dev.azure.com")
-            .map_err(|error| internal_http_error(format!("Failed to build WIQL URL: {error}")))?;
-        url.path_segments_mut()
-            .map_err(|_| internal_http_error("Failed to build WIQL URL path"))?
-            .extend([
-                self.organization.as_str(),
-                self.project.as_str(),
-                "_apis",
-                "wit",
-                "wiql",
-            ]);
-        url.query_pairs_mut()
-            .append_pair("api-version", WIQL_API_VERSION);
-
-        let response = self
-            .http_client
-            .post(url)
-            .basic_auth("", Some(&self.pat))
-            .timeout(WIQL_QUERY_TIMEOUT)
-            .json(&ProjectScopeWiqlBody { query })
-            .send()
-            .await
-            .map_err(|error| {
-                internal_http_error(format!("Project WIQL request failed: {error}"))
+        self.trace_azure_devops("query_work_item_ids_wiql_project_scope", async move {
+            let mut url = reqwest::Url::parse("https://dev.azure.com").map_err(|error| {
+                internal_http_error(format!("Failed to build WIQL URL: {error}"))
             })?;
+            url.path_segments_mut()
+                .map_err(|_| internal_http_error("Failed to build WIQL URL path"))?
+                .extend([
+                    self.organization.as_str(),
+                    self.project.as_str(),
+                    "_apis",
+                    "wit",
+                    "wiql",
+                ]);
+            url.query_pairs_mut()
+                .append_pair("api-version", WIQL_API_VERSION);
 
-        let status = response.status();
-        if !status.is_success() {
-            let body = response
-                .text()
+            let started_at = std::time::Instant::now();
+            let response = self
+                .http_client
+                .post(url)
+                .basic_auth("", Some(&self.pat))
+                .timeout(WIQL_QUERY_TIMEOUT)
+                .json(&ProjectScopeWiqlBody { query })
+                .send()
                 .await
-                .unwrap_or_else(|_| "<failed to read response body>".to_string());
-            return Err(RepoClientError::HttpStatus {
-                status: status.as_u16(),
-                body: body.chars().take(256).collect(),
-            });
-        }
+                .map_err(|error| {
+                    internal_http_error(format!("Project WIQL request failed: {error}"))
+                })?;
 
-        let result = response
-            .json::<ProjectScopeWiqlResult>()
-            .await
-            .map_err(|error| {
-                internal_http_error(format!("Failed to decode project WIQL response: {error}"))
-            })?;
-        let ids: Vec<i32> = result
-            .work_items
-            .into_iter()
-            .filter_map(|item| item.id)
-            .collect();
+            let status = response.status();
+            Span::current().record("http.response.status_code", status.as_u16());
+            debug!(
+                http.response.status_code = status.as_u16(),
+                elapsed_ms = started_at.elapsed().as_secs_f64() * 1000.0,
+                "Project-scope WIQL request completed"
+            );
+            if !status.is_success() {
+                let body = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "<failed to read response body>".to_string());
+                return Err(RepoClientError::HttpStatus {
+                    status: status.as_u16(),
+                    body: body.chars().take(256).collect(),
+                });
+            }
 
-        debug!(
-            "Project-scope WIQL query returned {} work item IDs for {}/{}",
-            ids.len(),
-            self.organization,
-            self.project
-        );
+            let result = response
+                .json::<ProjectScopeWiqlResult>()
+                .await
+                .map_err(|error| {
+                    internal_http_error(format!("Failed to decode project WIQL response: {error}"))
+                })?;
+            let ids: Vec<i32> = result
+                .work_items
+                .into_iter()
+                .filter_map(|item| item.id)
+                .collect();
 
-        Ok(ids)
+            debug!(
+                "Project-scope WIQL query returned {} work item IDs for {}/{}",
+                ids.len(),
+                self.organization,
+                self.project
+            );
+
+            Ok(ids)
+        })
+        .await
     }
 
     /// Get all iterations for the project, flattened from the classification node tree.
@@ -477,83 +725,101 @@ impl RepoClient {
         &self,
         depth: Option<i32>,
     ) -> Result<Vec<Iteration>, RepoClientError> {
-        let root_node = self
-            .work_item_client
-            .classification_nodes_client()
-            .get(&self.organization, &self.project, "iterations", "")
-            .depth(depth.unwrap_or(10))
-            .await?;
+        self.trace_azure_devops_with_fields(
+            "get_iterations",
+            |span| {
+                span.record("depth", field::debug(depth));
+            },
+            async move {
+                let root_node = self
+                    .work_item_client
+                    .classification_nodes_client()
+                    .get(&self.organization, &self.project, "iterations", "")
+                    .depth(depth.unwrap_or(10))
+                    .await?;
 
-        let mut iterations = Vec::new();
-        flatten_classification_nodes(&root_node, &mut iterations);
+                let mut iterations = Vec::new();
+                flatten_classification_nodes(&root_node, &mut iterations);
 
-        debug!(
-            "Found {} iterations for {}/{}",
-            iterations.len(),
-            self.organization,
-            self.project
-        );
+                debug!(
+                    "Found {} iterations for {}/{}",
+                    iterations.len(),
+                    self.organization,
+                    self.project
+                );
 
-        Ok(iterations)
+                Ok(iterations)
+            },
+        )
+        .await
     }
 
     // TODO: how to handle continuation token?
     pub async fn get_graph_users(&self) -> Result<Vec<GraphUser>, RepoClientError> {
-        let user_list_response = self
-            .graph_client
-            .users_client()
-            .list(&self.organization)
-            .await?;
+        self.trace_azure_devops("get_graph_users", async move {
+            let user_list_response = self
+                .graph_client
+                .users_client()
+                .list(&self.organization)
+                .await?;
 
-        if user_list_response.count.is_none_or(|count| count == 0) {
-            return Ok(vec![]);
-        }
+            if user_list_response.count.is_none_or(|count| count == 0) {
+                return Ok(vec![]);
+            }
 
-        Ok(user_list_response.value)
+            Ok(user_list_response.value)
+        })
+        .await
     }
 
     /// Workaround to get all identities as there is no way to list all identities with
     /// the same ID that is used in the git API.
     pub async fn get_git_identities(&self) -> Result<Vec<Identity>, RepoClientError> {
-        const MAX_PULL_REQUESTS: usize = 100;
-        const CONCURRENCY: usize = 10;
+        self.trace_azure_devops("get_git_identities", async move {
+            const MAX_PULL_REQUESTS: usize = 100;
+            const CONCURRENCY: usize = 10;
 
-        let pull_requests = self.get_all_pull_requests(Some(MAX_PULL_REQUESTS)).await?;
+            let pull_requests = self.get_all_pull_requests(Some(MAX_PULL_REQUESTS)).await?;
 
-        let semaphore = Arc::new(Semaphore::new(CONCURRENCY));
-        let mut handles = Vec::with_capacity(pull_requests.len());
-        for pr in &pull_requests {
-            let client = self.clone();
-            let pr_id = pr.id;
-            let semaphore = Arc::clone(&semaphore);
-            handles.push(tokio::spawn(async move {
-                let _permit = semaphore.acquire_owned().await.unwrap();
-                client.get_threads_in_pull_request(pr_id).await
-            }));
-        }
-
-        let mut threads = Vec::new();
-        for handle in handles {
-            if let Ok(Ok(pr_threads)) = handle.await {
-                threads.extend(pr_threads);
+            let semaphore = Arc::new(Semaphore::new(CONCURRENCY));
+            let mut handles = Vec::with_capacity(pull_requests.len());
+            for pr in &pull_requests {
+                let client = self.clone();
+                let pr_id = pr.id;
+                let semaphore = Arc::clone(&semaphore);
+                handles.push(tokio::spawn(
+                    async move {
+                        let _permit = semaphore.acquire_owned().await.unwrap();
+                        client.get_threads_in_pull_request(pr_id).await
+                    }
+                    .in_current_span(),
+                ));
             }
-        }
 
-        let mut identities = HashSet::new();
-        for pull_request in pull_requests {
-            identities.insert(pull_request.created_by);
-            pull_request.reviewers.iter().for_each(|reviewer| {
-                identities.insert(reviewer.identity.clone());
-            });
-        }
+            let mut threads = Vec::new();
+            for handle in handles {
+                if let Ok(Ok(pr_threads)) = handle.await {
+                    threads.extend(pr_threads);
+                }
+            }
 
-        for thread in threads {
-            thread.comments.iter().for_each(|comment| {
-                identities.insert(comment.author.clone());
-            });
-        }
+            let mut identities = HashSet::new();
+            for pull_request in pull_requests {
+                identities.insert(pull_request.created_by);
+                pull_request.reviewers.iter().for_each(|reviewer| {
+                    identities.insert(reviewer.identity.clone());
+                });
+            }
 
-        Ok(identities.into_iter().collect())
+            for thread in threads {
+                thread.comments.iter().for_each(|comment| {
+                    identities.insert(comment.author.clone());
+                });
+            }
+
+            Ok(identities.into_iter().collect())
+        })
+        .await
     }
 
     /// Get team iterations (sprints) from the work API.
@@ -564,23 +830,32 @@ impl RepoClient {
         &self,
         team: &str,
     ) -> Result<Vec<TeamIteration>, RepoClientError> {
-        let list = self
-            .work_client
-            .iterations_client()
-            .list(&self.organization, &self.project, team)
-            .await?;
+        self.trace_azure_devops_with_fields(
+            "get_team_iterations",
+            |span| {
+                span.record("team", team);
+            },
+            async move {
+                let list = self
+                    .work_client
+                    .iterations_client()
+                    .list(&self.organization, &self.project, team)
+                    .await?;
 
-        Ok(list
-            .value
-            .into_iter()
-            .filter_map(|it| {
-                Some(TeamIteration {
-                    id: it.id?,
-                    name: it.name.unwrap_or_default(),
-                    path: it.path.unwrap_or_default(),
-                })
-            })
-            .collect())
+                Ok(list
+                    .value
+                    .into_iter()
+                    .filter_map(|it| {
+                        Some(TeamIteration {
+                            id: it.id?,
+                            name: it.name.unwrap_or_default(),
+                            path: it.path.unwrap_or_default(),
+                        })
+                    })
+                    .collect())
+            },
+        )
+        .await
     }
 
     /// Get current team iterations using the Work API timeframe filter.
@@ -591,42 +866,54 @@ impl RepoClient {
         &self,
         team: &str,
     ) -> Result<Vec<String>, RepoClientError> {
-        let list = self
-            .work_client
-            .iterations_client()
-            .list(&self.organization, &self.project, team)
-            .timeframe("current")
-            .await?;
+        self.trace_azure_devops_with_fields(
+            "get_current_team_iteration_paths",
+            |span| {
+                span.record("team", team);
+            },
+            async move {
+                let list = self
+                    .work_client
+                    .iterations_client()
+                    .list(&self.organization, &self.project, team)
+                    .timeframe("current")
+                    .await?;
 
-        Ok(list.value.into_iter().filter_map(|it| it.path).collect())
+                Ok(list.value.into_iter().filter_map(|it| it.path).collect())
+            },
+        )
+        .await
     }
 
     /// List available team names for this project.
     pub async fn get_project_team_names(&self) -> Result<Vec<String>, RepoClientError> {
-        let teams = self
-            .core_client
-            .teams_client()
-            .get_teams(&self.organization, &self.project)
-            .await?;
+        self.trace_azure_devops("get_project_team_names", async move {
+            let teams = self
+                .core_client
+                .teams_client()
+                .get_teams(&self.organization, &self.project)
+                .await?;
 
-        let mut names: Vec<String> = teams
-            .value
-            .into_iter()
-            .filter_map(|team| team.web_api_team_ref.name)
-            .map(|name| name.trim().to_string())
-            .filter(|name| !name.is_empty())
-            .collect();
+            let mut names: Vec<String> = teams
+                .value
+                .into_iter()
+                .filter_map(|team| team.web_api_team_ref.name)
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .collect();
 
-        names.sort();
-        names.dedup();
+            names.sort();
+            names.dedup();
 
-        debug!(
-            project = %self.project,
-            team_count = names.len(),
-            "Got available teams for project"
-        );
+            debug!(
+                project = %self.project,
+                team_count = names.len(),
+                "Got available teams for project"
+            );
 
-        Ok(names)
+            Ok(names)
+        })
+        .await
     }
 
     /// Get ordered taskboard column definitions for a given team.
@@ -634,34 +921,43 @@ impl RepoClient {
         &self,
         team: &str,
     ) -> Result<Vec<TaskboardColumnDefinition>, RepoClientError> {
-        let response = self
-            .work_client
-            .taskboard_columns_client()
-            .get(&self.organization, &self.project, team)
-            .await?;
+        self.trace_azure_devops_with_fields(
+            "get_taskboard_columns",
+            |span| {
+                span.record("team", team);
+            },
+            async move {
+                let response = self
+                    .work_client
+                    .taskboard_columns_client()
+                    .get(&self.organization, &self.project, team)
+                    .await?;
 
-        let mut columns = Vec::with_capacity(response.columns.len());
-        for (idx, column) in response.columns.into_iter().enumerate() {
-            let Some(name) = column.name else {
-                continue;
-            };
-            let trimmed_name = name.trim();
-            if trimmed_name.is_empty() {
-                continue;
-            }
+                let mut columns = Vec::with_capacity(response.columns.len());
+                for (idx, column) in response.columns.into_iter().enumerate() {
+                    let Some(name) = column.name else {
+                        continue;
+                    };
+                    let trimmed_name = name.trim();
+                    if trimmed_name.is_empty() {
+                        continue;
+                    }
 
-            columns.push(TaskboardColumnDefinition {
-                id: column.id.filter(|id| !id.trim().is_empty()),
-                name: trimmed_name.to_string(),
-                order: column.order.unwrap_or((idx as i32) * 10),
-            });
-        }
+                    columns.push(TaskboardColumnDefinition {
+                        id: column.id.filter(|id| !id.trim().is_empty()),
+                        name: trimmed_name.to_string(),
+                        order: column.order.unwrap_or((idx as i32) * 10),
+                    });
+                }
 
-        columns.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
+                columns.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.name.cmp(&b.name)));
 
-        debug!("Got {} taskboard columns for team={}", columns.len(), team,);
+                debug!("Got {} taskboard columns for team={}", columns.len(), team,);
 
-        Ok(columns)
+                Ok(columns)
+            },
+        )
+        .await
     }
 
     /// Get taskboard work item column assignments for a given team and iteration.
@@ -674,34 +970,44 @@ impl RepoClient {
         team: &str,
         iteration_id: &str,
     ) -> Result<HashMap<i32, TaskboardWorkItemColumnAssignment>, RepoClientError> {
-        let items = self
-            .work_client
-            .taskboard_work_items_client()
-            .list(&self.organization, &self.project, team, iteration_id)
-            .await?;
+        self.trace_azure_devops_with_fields(
+            "get_taskboard_work_item_columns",
+            |span| {
+                span.record("team", team);
+                span.record("iteration_id", iteration_id);
+            },
+            async move {
+                let items = self
+                    .work_client
+                    .taskboard_work_items_client()
+                    .list(&self.organization, &self.project, team, iteration_id)
+                    .await?;
 
-        let mut map = HashMap::new();
-        for item in items.value {
-            if let (Some(id), Some(column_name)) = (item.work_item_id, item.column) {
-                map.insert(
-                    id,
-                    TaskboardWorkItemColumnAssignment {
-                        column_id: item.column_id,
-                        column_name,
-                        state: item.state,
-                    },
+                let mut map = HashMap::new();
+                for item in items.value {
+                    if let (Some(id), Some(column_name)) = (item.work_item_id, item.column) {
+                        map.insert(
+                            id,
+                            TaskboardWorkItemColumnAssignment {
+                                column_id: item.column_id,
+                                column_name,
+                                state: item.state,
+                            },
+                        );
+                    }
+                }
+
+                debug!(
+                    "Got {} taskboard column assignments for team={}, iteration={}",
+                    map.len(),
+                    team,
+                    iteration_id
                 );
-            }
-        }
 
-        debug!(
-            "Got {} taskboard column assignments for team={}, iteration={}",
-            map.len(),
-            team,
-            iteration_id
-        );
-
-        Ok(map)
+                Ok(map)
+            },
+        )
+        .await
     }
 
     /// Move a work item card to a new taskboard column.
@@ -712,30 +1018,53 @@ impl RepoClient {
         work_item_id: i32,
         target_column_name: &str,
     ) -> Result<(), RepoClientError> {
-        let mut body = work::models::UpdateTaskboardWorkItemColumn::new();
-        body.new_column = Some(target_column_name.to_string());
+        self.trace_azure_devops_with_fields(
+            "move_taskboard_work_item_to_column",
+            |span| {
+                span.record("team", team);
+                span.record("iteration_id", iteration_id);
+                span.record("work_item_id", work_item_id);
+                span.record("target_column_name", target_column_name);
+            },
+            async move {
+                let mut body = work::models::UpdateTaskboardWorkItemColumn::new();
+                body.new_column = Some(target_column_name.to_string());
 
-        self.work_client
-            .taskboard_work_items_client()
-            .update(
-                &self.organization,
-                body,
-                &self.project,
-                team,
-                iteration_id,
-                work_item_id,
-            )
-            .await?;
+                self.work_client
+                    .taskboard_work_items_client()
+                    .update(
+                        &self.organization,
+                        body,
+                        &self.project,
+                        team,
+                        iteration_id,
+                        work_item_id,
+                    )
+                    .await?;
 
-        debug!(
-            team = team,
-            iteration_id = iteration_id,
-            work_item_id = work_item_id,
-            target_column = target_column_name,
-            "Moved taskboard work item to new column"
-        );
+                debug!(
+                    team = team,
+                    iteration_id = iteration_id,
+                    work_item_id = work_item_id,
+                    target_column = target_column_name,
+                    "Moved taskboard work item to new column"
+                );
 
-        Ok(())
+                Ok(())
+            },
+        )
+        .await
+    }
+}
+
+fn repo_client_error_type(error: &RepoClientError) -> &'static str {
+    match error {
+        RepoClientError::AzureDevOpsError(_) => "azure_devops.api",
+        RepoClientError::AzureCoreError(_) => "azure_core",
+        RepoClientError::HttpStatus { .. } => "http_status",
+        RepoClientError::RepoNotFound(_) => "repo_not_found",
+        RepoClientError::MissingProjectId(_) => "missing_project_id",
+        RepoClientError::PayloadTooLarge { .. } => "payload_too_large",
     }
 }
 
@@ -832,9 +1161,36 @@ fn internal_http_error(body: impl Into<String>) -> RepoClientError {
     }
 }
 
+fn parse_artifact_uri_query_work_item_ids(
+    result: Option<&serde_json::Value>,
+) -> HashMap<String, Vec<i32>> {
+    let Some(result) = result.and_then(serde_json::Value::as_object) else {
+        return HashMap::new();
+    };
+
+    result
+        .iter()
+        .map(|(artifact_uri, work_items)| {
+            let ids = work_items
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|work_item| {
+                    work_item
+                        .get("id")
+                        .and_then(|id| id.as_i64().or_else(|| id.as_str()?.parse().ok()))
+                        .map(|id| id as i32)
+                })
+                .collect();
+            (artifact_uri.clone(), ids)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use time::{Duration, Time};
 
     async fn get_repo_client() -> RepoClient {
@@ -1087,6 +1443,59 @@ mod tests {
         }
 
         assert!(!identities.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real Azure DevOps connection"]
+    async fn test_get_work_items_for_pull_requests() {
+        let repo_client = get_repo_client().await;
+        let pull_requests = repo_client.get_open_pull_requests().await.unwrap();
+        let pull_request_ids = pull_requests
+            .iter()
+            .take(10)
+            .map(|pr| pr.id)
+            .collect::<Vec<_>>();
+
+        let work_items_by_pr = repo_client
+            .get_work_items_for_pull_requests(&pull_request_ids)
+            .await
+            .unwrap();
+
+        assert_eq!(work_items_by_pr.len(), pull_request_ids.len());
+
+        for pull_request_id in pull_request_ids {
+            let mut expected_ids = repo_client
+                .get_work_item_ids_in_pull_request(pull_request_id)
+                .await
+                .unwrap();
+            let mut actual_ids = work_items_by_pr[&pull_request_id]
+                .iter()
+                .map(|work_item| work_item.id)
+                .collect::<Vec<_>>();
+            expected_ids.sort_unstable();
+            actual_ids.sort_unstable();
+
+            assert_eq!(actual_ids, expected_ids);
+        }
+    }
+
+    #[test]
+    fn parses_artifact_uri_query_work_item_ids() {
+        let result = json!({
+            "vstfs:///Git/PullRequestId/project%2Frepo%2F1": [
+                { "id": 123, "url": "https://example.test/123" },
+                { "id": "456", "url": "https://example.test/456" }
+            ],
+            "vstfs:///Git/PullRequestId/project%2Frepo%2F2": []
+        });
+
+        let parsed = parse_artifact_uri_query_work_item_ids(Some(&result));
+
+        assert_eq!(
+            parsed["vstfs:///Git/PullRequestId/project%2Frepo%2F1"],
+            vec![123, 456]
+        );
+        assert!(parsed["vstfs:///Git/PullRequestId/project%2Frepo%2F2"].is_empty());
     }
 
     #[tokio::test]

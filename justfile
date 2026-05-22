@@ -59,11 +59,45 @@ preview:
 
 # === Combined ===
 
-# Run both backend and frontend
+# Run Aspire dashboard, backend, and frontend
 dev:
     #!/usr/bin/env bash
+    set -euo pipefail
+    command -v aspire >/dev/null || {
+        echo "aspire CLI is required for \`just dev\`."
+        echo "Install it or run backend/frontend separately with \`just run\` and \`just app\`."
+        exit 1
+    }
+
+    aspire_url="http://127.0.0.1:18888"
+    otlp_endpoint="http://127.0.0.1:18889"
+
+    echo "Starting Aspire dashboard at ${aspire_url}"
+    echo "Starting toki-api with OTLP export to ${otlp_endpoint}"
+
     trap 'kill 0' EXIT
-    (cd toki-api && cargo run) &
+    aspire dashboard run \
+        --non-interactive \
+        --nologo \
+        --allow-anonymous \
+        --frontend-url "${aspire_url}" \
+        --otlp-grpc-url "${otlp_endpoint}" &
+    sleep 1
+
+    (
+        export RUST_LOG="${RUST_LOG:-info,toki_api=debug,az_devops=info,kleer=info,tower_http=info,hyper=warn,h2=warn,tonic=warn,opentelemetry=warn}"
+        export OTEL_SERVICE_NAME="toki-api"
+        export OTEL_RESOURCE_ATTRIBUTES="deployment.environment=local"
+        export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"
+        export OTEL_EXPORTER_OTLP_ENDPOINT="${otlp_endpoint}"
+        export TOKI_OBSERVABILITY__CAPTURE_REQUEST_BODIES="${TOKI_OBSERVABILITY__CAPTURE_REQUEST_BODIES:-true}"
+        export TOKI_OBSERVABILITY__REQUEST_BODY_MAX_LOGGED_BYTES="${TOKI_OBSERVABILITY__REQUEST_BODY_MAX_LOGGED_BYTES:-16384}"
+        export TOKI_OBSERVABILITY__REQUEST_BODY_MAX_BUFFERED_BYTES="${TOKI_OBSERVABILITY__REQUEST_BODY_MAX_BUFFERED_BYTES:-65536}"
+        unset OTEL_EXPORTER_OTLP_HEADERS
+        unset OTEL_SDK_DISABLED
+        cd toki-api && cargo run
+    ) &
+
     (cd app && bun dev) &
     wait
 
