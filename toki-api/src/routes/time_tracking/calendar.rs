@@ -14,6 +14,8 @@ use crate::{
     routes::ApiError,
 };
 
+use super::normalize_user_note;
+
 #[derive(Debug, Deserialize)]
 pub struct DateFilterQuery {
     from: String,
@@ -133,7 +135,7 @@ pub async fn edit_project_registration(
         activity_name: payload.activity_name,
         start_time: parse_rfc3339(&payload.start_time, "start time")?,
         end_time: parse_rfc3339(&payload.end_time, "end time")?,
-        note: payload.user_note,
+        note: normalize_user_note(payload.user_note),
     };
 
     let entry = service.edit_time_entry(&request).await?;
@@ -195,7 +197,7 @@ pub async fn create_project_registration(
         activity_name: payload.activity_name,
         start_time: parse_rfc3339(&payload.start_time, "start time")?,
         end_time: parse_rfc3339(&payload.end_time, "end time")?,
-        note: payload.user_note,
+        note: normalize_user_note(payload.user_note),
     };
 
     let entry = service.create_time_entry(&user.id, &request).await?;

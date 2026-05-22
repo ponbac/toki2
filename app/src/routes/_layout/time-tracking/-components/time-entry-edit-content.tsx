@@ -12,6 +12,7 @@ import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
 import { Combobox } from "@/components/combobox";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -38,7 +39,9 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
   const [selectedDate, setSelectedDate] = useState(props.entry.date);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [startTime, setStartTime] = useState(
-    props.entry.startTime ? dayjs(props.entry.startTime).format("HH:mm") : "06:00",
+    props.entry.startTime
+      ? dayjs(props.entry.startTime).format("HH:mm")
+      : "06:00",
   );
   const [endTime, setEndTime] = useState(() => {
     if (props.entry.endTime) return dayjs(props.entry.endTime).format("HH:mm");
@@ -67,9 +70,9 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
 
   const { projects, activities, isProjectsLoading, isActivitiesLoading } =
     useTimeTrackingData({
-    projectId,
-    enabled: true,
-  });
+      projectId,
+      enabled: true,
+    });
 
   useEffect(() => {
     void queryClient.prefetchQuery(timeTrackingQueries.listProjects());
@@ -180,7 +183,9 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
 
   const body = (
     <>
-      <div className={cn("space-y-5", props.variant === "inline" ? "p-5" : "pb-2")}>
+      <div
+        className={cn("space-y-5", props.variant === "inline" ? "p-5" : "pb-2")}
+      >
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm font-medium">Project</label>
@@ -263,24 +268,28 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
 
         <div className="space-y-2">
           <label className="text-sm font-medium">Note</label>
-          <Input
+          <Textarea
             value={note ?? ""}
             onChange={(event) => setNote(event.target.value)}
-            className="rounded-xl border-border/50 bg-muted/30"
+            className="min-h-[7rem] resize-y rounded-xl border-border/50 bg-muted/30"
             placeholder="What did you work on?"
           />
         </div>
 
         <div className="flex flex-wrap items-end gap-6">
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">Time Range</h4>
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Time Range
+            </h4>
             <div className="flex gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">Start</label>
                 <Input
                   type="time"
                   value={startTime}
-                  onChange={(event) => updateTimeRange(event.target.value, endTime)}
+                  onChange={(event) =>
+                    updateTimeRange(event.target.value, endTime)
+                  }
                   className="time-display w-28 rounded-lg border-border/50 bg-muted/30"
                 />
               </div>
@@ -289,7 +298,9 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
                 <Input
                   type="time"
                   value={endTime}
-                  onChange={(event) => updateTimeRange(startTime, event.target.value)}
+                  onChange={(event) =>
+                    updateTimeRange(startTime, event.target.value)
+                  }
                   className="time-display w-28 rounded-lg border-border/50 bg-muted/30"
                 />
               </div>
@@ -299,7 +310,9 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
           <Separator orientation="vertical" className="hidden h-16 sm:block" />
 
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">Duration</h4>
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Duration
+            </h4>
             <div className="flex gap-3">
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">Hours</label>
@@ -350,7 +363,12 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
           Delete
         </Button>
         <div className="flex gap-3">
-          <Button variant="outline" size="sm" onClick={props.onCancel} className="rounded-lg">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={props.onCancel}
+            className="rounded-lg"
+          >
             Cancel
           </Button>
           <Button

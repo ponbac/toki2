@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
+import { AnimatePresence, motion } from "framer-motion";
+import { Clock } from "lucide-react";
 import type { AbsenceEntry, TimeEntry } from "@/lib/api/queries/time-tracking";
 import { formatHoursAsHoursMinutes } from "@/lib/utils";
-import { Clock } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { buildAbsenceDisplayRange } from "../-helpers/absence-display";
 import {
   isAbsenceListEntry,

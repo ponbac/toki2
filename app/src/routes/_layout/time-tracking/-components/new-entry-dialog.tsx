@@ -13,6 +13,7 @@ import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
 import dayjs from "dayjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { getWeekNumber } from "@/lib/utils";
 import { CalendarIcon } from "lucide-react";
@@ -44,9 +45,9 @@ export function NewEntryDialog(props: {
 
   const { projects, activities, isProjectsLoading, isActivitiesLoading } =
     useTimeTrackingData({
-    projectId,
-    enabled: props.open,
-  });
+      projectId,
+      enabled: props.open,
+    });
   const { data: dayStatuses, isLoading: isDayStatusLoading } = useQuery({
     ...timeTrackingQueries.timeEntryDayStatuses({ from: regDay, to: regDay }),
     enabled: props.open,
@@ -216,10 +217,11 @@ export function NewEntryDialog(props: {
               value={activityName}
               onChange={(v) => setActivityName(v)}
             />
-            <Input
+            <Textarea
               placeholder="Note"
               value={note}
               onChange={(e) => setNote(e.target.value)}
+              className="min-h-[7rem] resize-y"
             />
 
             <div className="flex flex-col gap-6">
@@ -332,13 +334,7 @@ export function NewEntryDialog(props: {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={
-                !canCreateEntry
-              }
-            >
+            <Button type="submit" size="sm" disabled={!canCreateEntry}>
               Create
             </Button>
           </DialogFooter>

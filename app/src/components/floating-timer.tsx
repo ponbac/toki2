@@ -10,7 +10,6 @@ import {
   Trash2Icon,
   WatchIcon,
 } from "lucide-react";
-import { Input } from "./ui/input";
 import { cn, formatHoursMinutes } from "@/lib/utils";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,11 +37,51 @@ import {
   CONTINUING_MY_WORK_NOTE,
   isDefaultStartTimerNote,
 } from "@/lib/time-tracking-default-notes";
+import { Textarea } from "./ui/textarea";
+import { ScrollArea } from "./ui/scroll-area";
 
 type PendingSaveConfirmation = {
   note: string;
   shouldAutoRestart: boolean;
 };
+
+const NOTE_TEXTAREA_MIN_HEIGHT = 40;
+const NOTE_TEXTAREA_MAX_HEIGHT = 240;
+
+function measureTimerNoteTextarea(textarea: HTMLTextAreaElement) {
+  textarea.style.height = `${NOTE_TEXTAREA_MIN_HEIGHT}px`;
+  const contentHeight = Math.max(
+    textarea.scrollHeight,
+    NOTE_TEXTAREA_MIN_HEIGHT,
+  );
+  textarea.style.height = `${contentHeight}px`;
+
+  return Math.min(contentHeight, NOTE_TEXTAREA_MAX_HEIGHT);
+}
+
+function syncTimerNoteTextareaHeight(
+  textarea: HTMLTextAreaElement,
+  setViewportHeight: React.Dispatch<React.SetStateAction<number>>,
+) {
+  const viewportHeight = measureTimerNoteTextarea(textarea);
+  setViewportHeight((currentHeight) =>
+    currentHeight === viewportHeight ? currentHeight : viewportHeight,
+  );
+}
+
+function scheduleTimerNoteTextareaHeightSync(
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>,
+  setViewportHeight: React.Dispatch<React.SetStateAction<number>>,
+) {
+  requestAnimationFrame(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    syncTimerNoteTextareaHeight(textarea, setViewportHeight);
+  });
+}
 
 export const FloatingTimer = () => {
   const queryClient = useQueryClient();
@@ -59,6 +98,9 @@ export const FloatingTimer = () => {
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [pendingSaveConfirmation, setPendingSaveConfirmation] =
     React.useState<PendingSaveConfirmation | null>(null);
+  const noteTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const [noteTextareaViewportHeight, setNoteTextareaViewportHeight] =
+    React.useState(NOTE_TEXTAREA_MIN_HEIGHT);
 
   const setLastProject = useSetAtom(lastProjectAtom);
   const setLastActivity = useSetAtom(lastActivityAtom);
@@ -117,6 +159,7 @@ export const FloatingTimer = () => {
   const startTimeRef = React.useRef<Date | null>(null);
 
   const { addSegment, removeSegment } = useTitleStore();
+
   const clearPendingSaveConfirmation = React.useCallback(
     () => setPendingSaveConfirmation(null),
     [],
@@ -207,8 +250,25 @@ export const FloatingTimer = () => {
         timeSeconds: totalSeconds,
       });
       setUserNote(timer.note || "");
+      scheduleTimerNoteTextareaHeightSync(
+        noteTextareaRef,
+        setNoteTextareaViewportHeight,
+      );
     }
   }, [timer, setTimer]);
+
+  React.useLayoutEffect(() => {
+    if (isMinimized) {
+      return;
+    }
+
+    const textarea = noteTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    syncTimerNoteTextareaHeight(textarea, setNoteTextareaViewportHeight);
+  }, [isMinimized]);
 
   // Make it tick
   React.useEffect(() => {
@@ -237,19 +297,16 @@ export const FloatingTimer = () => {
 
     updateTimer(); // Update immediately on mount
 
-    let interval: NodeJS.Timeout | null = null;
-    if (timerState === "running") {
-      interval = setInterval(updateTimer, 1000);
-      return () => {
-        clearInterval(interval!);
-        removeSegment("timer");
-      };
-    } else {
-      if (interval) {
-        clearInterval(interval);
-      }
+    if (timerState !== "running") {
       removeSegment("timer");
+      return;
     }
+
+    const interval = setInterval(updateTimer, 1000);
+    return () => {
+      clearInterval(interval);
+      removeSegment("timer");
+    };
   }, [
     timerState,
     setTimer,
@@ -368,27 +425,61 @@ export const FloatingTimer = () => {
               </div>
               <div className="w-full">
                 <div className="relative">
-                  <Input
-                    type="text"
-                    placeholder="Add a note..."
-                    value={userNote}
-                    onChange={(e) => setUserNote(e.target.value)}
-                    onBlur={() =>
-                      userNote !== timer?.note
-                        ? editTimer({ userNote })
-                        : undefined
-                    }
-                    className={cn(
-                      "w-full rounded-md border border-border bg-background px-4 py-2 pr-10 text-foreground",
-                    )}
-                  />
+                  <ScrollArea
+                    style={{
+                      height: noteTextareaViewportHeight,
+                      minHeight: NOTE_TEXTAREA_MIN_HEIGHT,
+                    }}
+                    className="rounded-md border border-border bg-background pr-10 ring-offset-background transition-[height] duration-150 ease-out focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 motion-reduce:transition-none"
+                  >
+                    <div className="pl-1.5">
+                      <Textarea
+                        ref={(textarea) => {
+                          noteTextareaRef.current = textarea;
+                          if (!textarea) {
+                            return;
+                          }
+
+                          syncTimerNoteTextareaHeight(
+                            textarea,
+                            setNoteTextareaViewportHeight,
+                          );
+
+                          return () => {
+                            noteTextareaRef.current = null;
+                          };
+                        }}
+                        placeholder="Add a note..."
+                        rows={1}
+                        wrap="off"
+                        value={userNote}
+                        onChange={(e) => {
+                          syncTimerNoteTextareaHeight(
+                            e.currentTarget,
+                            setNoteTextareaViewportHeight,
+                          );
+                          setUserNote(e.currentTarget.value);
+                        }}
+                        onBlur={() =>
+                          userNote !== timer?.note
+                            ? editTimer({ userNote })
+                            : undefined
+                        }
+                        style={{
+                          minHeight: NOTE_TEXTAREA_MIN_HEIGHT,
+                          scrollbarWidth: "none",
+                        }}
+                        className="block min-h-10 resize-none overflow-x-auto overflow-y-hidden whitespace-pre rounded-none border-0 bg-transparent py-2 pl-0 pr-1 text-foreground shadow-none outline-none ring-offset-transparent focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden"
+                      />
+                    </div>
+                  </ScrollArea>
                   <Popover open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <PopoverTrigger asChild>
                           <button
                             type="button"
-                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-500 hover:bg-accent hover:text-primary focus:outline-none"
+                            className="absolute right-2 top-2 z-10 grid size-6 place-items-center rounded-md border border-border/70 bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             aria-label="Show recent entries"
                             onMouseEnter={() =>
                               queryClient.prefetchQuery({
@@ -418,14 +509,19 @@ export const FloatingTimer = () => {
                         scrollAreaClassName="min-h-72"
                         searchInputClassName="focus-visible:ring-0 focus-visible:ring-shadow-none focus-visible:shadow-none focus-visible:ring-offset-0"
                         onHistoryClick={(timeEntry) => {
-                          setUserNote(timeEntry.note ?? "");
+                          const note = timeEntry.note ?? "";
+                          setUserNote(note);
                           editTimer({
-                            userNote: timeEntry.note ?? "",
+                            userNote: note,
                             projectId: timeEntry.projectId,
                             activityId: timeEntry.activityId,
                             projectName: timeEntry.projectName,
                             activityName: timeEntry.activityName,
                           });
+                          scheduleTimerNoteTextareaHeightSync(
+                            noteTextareaRef,
+                            setNoteTextareaViewportHeight,
+                          );
                           setIsHistoryOpen(false);
                         }}
                       />
@@ -436,9 +532,9 @@ export const FloatingTimer = () => {
             </div>
             <TimeSummary
               className="pt-2"
-              timerHours={Number.parseInt(hours)}
-              timerMinutes={Number.parseInt(minutes)}
-              timerSeconds={Number.parseInt(seconds)}
+              timerHours={Number.parseInt(hours, 10)}
+              timerMinutes={Number.parseInt(minutes, 10)}
+              timerSeconds={Number.parseInt(seconds, 10)}
             />
           </div>
         </div>

@@ -20,6 +20,7 @@ import {
   timeTrackingQueries,
   type TimeEntry,
 } from "@/lib/api/queries/time-tracking";
+import { formatNotePreview } from "@/lib/note-preview";
 import { cn, formatHoursAsHoursMinutes } from "@/lib/utils";
 import {
   isMergedTimeEntry,
@@ -149,11 +150,10 @@ export function WorkEntryCard(props: {
           </div>
         </div>
 
-        {entry.note && (
-          <p className="mt-2 line-clamp-2 font-mono text-sm text-foreground/80">
-            {entry.note}
-          </p>
-        )}
+        <EntryNotePreview
+          note={entry.note}
+          projectColor={props.projectColor}
+        />
 
         {timeRange ? <div className="mt-2">{timeRange}</div> : null}
       </div>
@@ -187,6 +187,42 @@ const StartAgainButton = memo(function StartAgainButton(props: {
     </Tooltip>
   );
 });
+
+function EntryNotePreview(props: {
+  note: string | null | undefined;
+  projectColor?: string;
+}) {
+  const preview = formatNotePreview(props.note);
+  if (!preview) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          tabIndex={0}
+          className="mt-3 flex min-w-0 items-start gap-2 border-l-2 pl-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          style={{
+            borderColor: props.projectColor ?? "hsl(var(--border))",
+          }}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-2 whitespace-normal break-words text-sm leading-relaxed text-foreground/85">
+              {preview.previewText}
+            </p>
+          </div>
+          {preview.isMultiline && (
+            <span className="mt-0.5 shrink-0 rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none text-muted-foreground">
+              {preview.lineLabel}
+            </span>
+          )}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[min(28rem,calc(100vw-2rem))] whitespace-pre-wrap text-left">
+        {preview.fullText}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function renderTimeRange(props: {
   entry: TimeEntry | MergedTimeEntry;

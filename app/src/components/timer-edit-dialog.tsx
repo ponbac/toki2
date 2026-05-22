@@ -13,9 +13,10 @@ import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
 import { Combobox } from "./combobox";
 import { flushSync } from "react-dom";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import {
-  TimerResponse,
+  type TimerResponse,
   timeTrackingQueries,
 } from "@/lib/api/queries/time-tracking";
 import { TimerHistory } from "./timer-history";
@@ -39,14 +40,14 @@ export const TimerEditDialog = (props: {
     props.timer.startTime,
   );
   const activitiesRef = React.useRef<HTMLButtonElement>(null);
-  const noteInputRef = React.useRef<HTMLInputElement>(null);
+  const noteInputRef = React.useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
 
   const { projects, activities, isProjectsLoading, isActivitiesLoading } =
     useTimeTrackingData({
-    projectId: projectId,
-    enabled: props.open,
-  });
+      projectId: projectId,
+      enabled: props.open,
+    });
 
   const selectedProject = React.useMemo(
     () => projects?.find((p) => p.projectId === projectId),
@@ -215,11 +216,12 @@ export const TimerEditDialog = (props: {
                   }
                 }}
               />
-              <Input
+              <Textarea
                 ref={noteInputRef}
                 placeholder="Note"
                 value={note ?? ""}
                 onChange={(e) => setNote(e.target.value)}
+                className="min-h-[7rem] resize-y"
               />
               <div className="mt-2 flex w-32 flex-col gap-2">
                 <Label htmlFor="timer-start-time">Start Time</Label>

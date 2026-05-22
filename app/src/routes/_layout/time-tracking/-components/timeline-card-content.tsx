@@ -162,7 +162,10 @@ function TimelineCardBodyBase({
       )}
     >
       <p
-        className={cn("truncate font-semibold leading-tight", config.projectTextClass)}
+        className={cn(
+          "truncate font-semibold leading-tight",
+          config.projectTextClass,
+        )}
         style={{ color: projectColor ?? color }}
       >
         {text.projectLabel}
@@ -174,6 +177,7 @@ function TimelineCardBodyBase({
             text.hasNote ? "text-foreground/85" : "text-muted-foreground",
             config.primaryTextClass,
             showTwoLinePrimary ? "line-clamp-2" : "line-clamp-1",
+            text.hasNote && "whitespace-pre-wrap",
           )}
         >
           {text.primaryDetail}
@@ -223,13 +227,20 @@ function TimelineCardTooltipBodyBase({
         </p>
       )}
       <div className="flex items-center gap-2">
-        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+        <div
+          className="h-2.5 w-2.5 rounded-full"
+          style={{ backgroundColor: color }}
+        />
         <p className="font-semibold">{text.projectLabel}</p>
       </div>
       {detailOrder === "activity-first" && (
         <p className="text-sm text-muted-foreground">{text.activityLabel}</p>
       )}
-      {text.hasNote && <p className="text-sm text-foreground/90">{text.note}</p>}
+      {text.hasNote && (
+        <p className="whitespace-pre-wrap text-sm text-foreground/90">
+          {text.note}
+        </p>
+      )}
       {detailOrder === "note-first" && (
         <p className="text-sm text-muted-foreground">{text.activityLabel}</p>
       )}
@@ -237,9 +248,15 @@ function TimelineCardTooltipBodyBase({
         <span className="time-display font-medium">
           {formatHoursAsHoursMinutes(hours)}
         </span>
-        {timeRangeLabel && <span className="time-display text-muted-foreground">{timeRangeLabel}</span>}
+        {timeRangeLabel && (
+          <span className="time-display text-muted-foreground">
+            {timeRangeLabel}
+          </span>
+        )}
       </div>
-      {footerHint && <p className="text-[10px] text-muted-foreground/60">{footerHint}</p>}
+      {footerHint && (
+        <p className="text-[10px] text-muted-foreground/60">{footerHint}</p>
+      )}
     </div>
   );
 }

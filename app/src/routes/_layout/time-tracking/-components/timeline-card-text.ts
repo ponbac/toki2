@@ -1,3 +1,5 @@
+import { formatNotePreview } from "@/lib/note-preview";
+
 export type TimelineCardText = {
   projectLabel: string;
   activityLabel: string;
@@ -16,7 +18,8 @@ export function buildTimelineCardText({
   note: string | null;
 }): TimelineCardText {
   const trimmedNote = note?.trim() ?? "";
-  const hasNote = trimmedNote.length > 0;
+  const notePreview = formatNotePreview(trimmedNote);
+  const hasNote = notePreview !== null;
   const activityLabel = activityName ?? "No activity selected";
 
   return {
@@ -24,6 +27,6 @@ export function buildTimelineCardText({
     activityLabel,
     note: trimmedNote,
     hasNote,
-    primaryDetail: hasNote ? trimmedNote : activityLabel,
+    primaryDetail: notePreview?.previewText ?? activityLabel,
   };
 }

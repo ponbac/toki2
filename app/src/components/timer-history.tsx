@@ -1,5 +1,6 @@
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { getCachedTimeEntries } from "@/lib/api/time-tracking-cache";
+import { formatNotePreview } from "@/lib/note-preview";
 import { cn } from "@/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -92,49 +93,65 @@ export function TimerHistory(props: {
           ? Array.from({ length: 10 }).map((_, index) => (
               <HistoryEntrySkeleton key={index} />
             ))
-          : filteredEntries.map((timeEntry, index) => (
-              <button
-                type="button"
-                className={cn(
-                  "group flex w-full cursor-pointer flex-col rounded-md py-1",
-                  "transition-colors focus:bg-accent/50 focus:text-primary focus:outline-none",
-                )}
-                key={index}
-                onClick={() =>
-                  props.onHistoryClick({
-                    projectId: timeEntry.projectId,
-                    projectName: timeEntry.projectName,
-                    activityId: timeEntry.activityId,
-                    activityName: timeEntry.activityName,
-                    note: timeEntry.note ?? "",
-                  })
-                }
-              >
-                <div className="flex w-full items-center justify-between">
-                  <span className="text-sm font-medium transition-colors group-hover:text-primary">
-                    {timeEntry.projectName}
-                  </span>
-                  <span className="text-xs text-muted-foreground transition-colors group-hover:text-primary/80">
-                    {timeEntry.activityName}
-                  </span>
-                </div>
-                {timeEntry.note && (
-                  <div className="mt-1 max-w-[55ch] truncate text-left text-sm text-muted-foreground transition-colors group-hover:text-primary/80">
-                    {timeEntry.note}
+          : filteredEntries.map((timeEntry, index) => {
+              const notePreview = formatNotePreview(timeEntry.note);
+
+              return (
+                <button
+                  type="button"
+                  className={cn(
+                    "group flex w-full cursor-pointer flex-col rounded-md py-1",
+                    "transition-colors focus:bg-accent/50 focus:text-primary focus:outline-none",
+                  )}
+                  key={index}
+                  onClick={() =>
+                    props.onHistoryClick({
+                      projectId: timeEntry.projectId,
+                      projectName: timeEntry.projectName,
+                      activityId: timeEntry.activityId,
+                      activityName: timeEntry.activityName,
+                      note: timeEntry.note ?? "",
+                    })
+                  }
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <span className="text-sm font-medium transition-colors group-hover:text-primary">
+                      {timeEntry.projectName}
+                    </span>
+                    <span className="text-xs text-muted-foreground transition-colors group-hover:text-primary/80">
+                      {timeEntry.activityName}
+                    </span>
                   </div>
-                )}
-              </button>
-            ))}
+                  {notePreview && (
+                    <div
+                      className="mt-1 flex max-w-[55ch] items-start gap-1.5 text-left text-sm text-muted-foreground transition-colors group-hover:text-primary/80"
+                      title={notePreview.fullText}
+                    >
+                      <span className="line-clamp-1 min-w-0 flex-1 break-words">
+                        {notePreview.previewText}
+                      </span>
+                      {notePreview.isMultiline && (
+                        <span className="mt-0.5 shrink-0 rounded border border-border/60 px-1 py-0.5 text-[9px] font-medium uppercase leading-none">
+                          {notePreview.lineLabel}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
       </ScrollArea>
     </div>
   );
 }
 
-function dedupeSuggestions<T extends {
-  projectName: string;
-  activityName: string;
-  note: string | null;
-}>(entries: Array<T>) {
+function dedupeSuggestions<
+  T extends {
+    projectName: string;
+    activityName: string;
+    note: string | null;
+  },
+>(entries: Array<T>) {
   const seen = new Set<string>();
   return entries.filter((entry) => {
     const key = `${entry.projectName}\u0000${entry.activityName}\u0000${entry.note ?? ""}`;
