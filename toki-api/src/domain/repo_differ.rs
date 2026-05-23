@@ -13,6 +13,7 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{field, instrument, Span};
 
 use crate::domain::Email;
+use crate::observability::metrics;
 
 use super::{NotificationHandler, PullRequest, PullRequestDiff, RepoKey};
 
@@ -225,11 +226,21 @@ impl RepoDiffer {
         trigger: &'static str,
         retry_attempt: usize,
     ) -> Result<(), RepoDifferPollError> {
+        let started_at = std::time::Instant::now();
+        let repo_key = self.key.to_string();
         let tick_result = match tokio::time::timeout(Self::TICK_TIMEOUT, self.tick()).await {
             Ok(Ok(result)) => result,
             Ok(Err(err)) => {
                 mark_current_span_error(&err.to_string());
                 tracing::error!(error.message = %err, "Repo differ tick failed");
+                metrics::record_repo_differ_poll(
+                    &repo_key,
+                    trigger,
+                    "error",
+                    started_at.elapsed(),
+                    None,
+                    None,
+                );
                 return Err(RepoDifferPollError::Tick(err));
             }
             Err(_) => {
@@ -238,6 +249,14 @@ impl RepoDiffer {
                 tracing::error!(
                     timeout_seconds = Self::TICK_TIMEOUT.as_secs(),
                     "Repo differ tick timed out"
+                );
+                metrics::record_repo_differ_poll(
+                    &repo_key,
+                    trigger,
+                    "timeout",
+                    started_at.elapsed(),
+                    None,
+                    None,
                 );
                 return Err(err);
             }
@@ -283,6 +302,14 @@ impl RepoDiffer {
             push_notification_count,
             notification_error,
             "Repo differ poll completed"
+        );
+        metrics::record_repo_differ_poll(
+            &repo_key,
+            trigger,
+            "success",
+            started_at.elapsed(),
+            Some(pr_count as u64),
+            Some(changed_pr_count as u64),
         );
 
         Ok(())

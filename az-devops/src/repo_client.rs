@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
@@ -27,6 +27,8 @@ use crate::{Identity, Iteration, PullRequest, Thread, WorkItem, WorkItemComment}
 
 const WIQL_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
 const WIQL_API_VERSION: &str = "7.1-preview";
+static PROVIDER_OPERATION_DURATION: OnceLock<opentelemetry::metrics::Histogram<f64>> =
+    OnceLock::new();
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoClientError {
@@ -195,6 +197,7 @@ impl RepoClient {
         let span = self.azure_devops_span(operation_name);
         record_fields(&span);
 
+        let started_at = std::time::Instant::now();
         let result = operation.instrument(span.clone()).await;
         if let Err(error) = &result {
             let message = error.to_string();
@@ -206,6 +209,7 @@ impl RepoClient {
                 tracing::warn!(error = %error, "Azure DevOps operation failed");
             });
         }
+        record_provider_operation(operation_name, started_at.elapsed(), &result);
 
         result
     }
@@ -1068,6 +1072,52 @@ fn repo_client_error_type(error: &RepoClientError) -> &'static str {
     }
 }
 
+fn record_provider_operation<T>(
+    operation_name: &'static str,
+    duration: Duration,
+    result: &Result<T, RepoClientError>,
+) {
+    provider_operation_duration().record(
+        duration.as_secs_f64(),
+        &provider_operation_attributes(operation_name, result),
+    );
+}
+
+fn provider_operation_duration() -> &'static opentelemetry::metrics::Histogram<f64> {
+    PROVIDER_OPERATION_DURATION.get_or_init(|| {
+        opentelemetry::global::meter("az-devops")
+            .f64_histogram("toki.provider.operation.duration")
+            .with_unit("s")
+            .build()
+    })
+}
+
+fn provider_operation_attributes<T>(
+    operation_name: &'static str,
+    result: &Result<T, RepoClientError>,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = vec![
+        opentelemetry::KeyValue::new("provider.name", "azure_devops"),
+        opentelemetry::KeyValue::new("operation.name", operation_name),
+        opentelemetry::KeyValue::new("result", if result.is_ok() { "success" } else { "error" }),
+    ];
+
+    if let Err(error) = result {
+        attrs.push(opentelemetry::KeyValue::new(
+            "error.type",
+            repo_client_error_type(error),
+        ));
+        if let RepoClientError::HttpStatus { status, .. } = error {
+            attrs.push(opentelemetry::KeyValue::new(
+                "http.response.status_code",
+                i64::from(*status),
+            ));
+        }
+    }
+
+    attrs
+}
+
 /// A team iteration from the work API, with a GUID ID.
 #[derive(Clone, Debug)]
 pub struct TeamIteration {
@@ -1225,6 +1275,31 @@ mod tests {
 
     fn normalize_column_name(name: &str) -> String {
         name.trim().to_ascii_lowercase()
+    }
+
+    #[test]
+    fn provider_metric_error_result_uses_low_cardinality_error_type() {
+        let attrs = provider_operation_attributes::<()>(
+            "query_work_item_ids_wiql_project_scope",
+            &Err(RepoClientError::HttpStatus {
+                status: 503,
+                body: "temporary upstream failure with request details".to_string(),
+            }),
+        );
+
+        assert!(attrs
+            .iter()
+            .any(|attr| attr.key.as_str() == "provider.name"
+                && attr.value.as_str() == "azure_devops"));
+        assert!(attrs
+            .iter()
+            .any(|attr| attr.key.as_str() == "result" && attr.value.as_str() == "error"));
+        assert!(attrs
+            .iter()
+            .any(|attr| attr.key.as_str() == "error.type" && attr.value.as_str() == "http_status"));
+        assert!(!attrs
+            .iter()
+            .any(|attr| attr.key.as_str() == "error.message"));
     }
 
     async fn wait_for_column_assignment(

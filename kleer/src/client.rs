@@ -1,7 +1,8 @@
 use reqwest::{Client, Method, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
-use std::time::Instant;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use time::Date;
 use tracing::{field, Instrument};
 
@@ -13,6 +14,8 @@ use crate::types::{
 
 pub const DEFAULT_BASE_URL: &str = "https://api.kleer.se/v1";
 const JSON_CONTENT_TYPE: &str = "application/json";
+static PROVIDER_OPERATION_DURATION: OnceLock<opentelemetry::metrics::Histogram<f64>> =
+    OnceLock::new();
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct KleerCredentials {
@@ -227,14 +230,16 @@ impl KleerClient {
     where
         T: DeserializeOwned,
     {
+        let operation_name = kleer_operation_name(method, path);
         let span_name = format!("Kleer {method} /{}", path.trim_start_matches('/'));
+        let normalized_route = normalized_kleer_route(path);
         let span = tracing::info_span!(
             "kleer.request",
             otel.name = %span_name,
             otel.kind = "client",
             provider.name = "kleer",
             kleer.method = %method,
-            kleer.route = %format!("/company/{{companyId}}/{}", path.trim_start_matches('/')),
+            kleer.route = %normalized_route,
             url.path = %format!("/company/{}/{}", self.credentials.company_id, path.trim_start_matches('/')),
             kleer.path = path,
             kleer.status_code = field::Empty,
@@ -245,9 +250,9 @@ impl KleerClient {
             error.type = field::Empty,
         );
         let error_span = span.clone();
+        let started_at = Instant::now();
 
         let result = async move {
-            let started_at = Instant::now();
             let response = request
                 .send()
                 .await
@@ -276,14 +281,17 @@ impl KleerClient {
                 });
             }
 
-            serde_json::from_str(&body).map_err(|e| KleerError::Deserialize {
+            let parsed = serde_json::from_str(&body).map_err(|e| KleerError::Deserialize {
                 message: e.to_string(),
                 body,
-            })
+            })?;
+
+            Ok((parsed, status))
         }
         .instrument(span)
         .await;
 
+        let duration = started_at.elapsed();
         if let Err(error) = &result {
             let message = error.to_string();
             error_span.record("otel.status_code", "ERROR");
@@ -295,7 +303,8 @@ impl KleerClient {
             });
         }
 
-        result
+        record_provider_operation(&operation_name, duration, &result);
+        result.map(|(value, _)| value)
     }
 
     fn request(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
@@ -325,6 +334,109 @@ fn kleer_error_type(error: &KleerError) -> &'static str {
         KleerError::Response { .. } => "http_status",
         KleerError::Deserialize { .. } => "deserialize",
     }
+}
+
+fn record_provider_operation<T>(
+    operation_name: &str,
+    duration: Duration,
+    result: &Result<(T, StatusCode), KleerError>,
+) {
+    provider_operation_duration().record(
+        duration.as_secs_f64(),
+        &provider_operation_attributes(operation_name, result),
+    );
+}
+
+fn provider_operation_duration() -> &'static opentelemetry::metrics::Histogram<f64> {
+    PROVIDER_OPERATION_DURATION.get_or_init(|| {
+        opentelemetry::global::meter("kleer")
+            .f64_histogram("toki.provider.operation.duration")
+            .with_unit("s")
+            .build()
+    })
+}
+
+fn provider_operation_attributes<T>(
+    operation_name: &str,
+    result: &Result<(T, StatusCode), KleerError>,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut attrs = vec![
+        opentelemetry::KeyValue::new("provider.name", "kleer"),
+        opentelemetry::KeyValue::new("operation.name", operation_name.to_string()),
+        opentelemetry::KeyValue::new("result", if result.is_ok() { "success" } else { "error" }),
+    ];
+
+    match result {
+        Ok((_, status)) => attrs.push(opentelemetry::KeyValue::new(
+            "http.response.status_code",
+            i64::from(status.as_u16()),
+        )),
+        Err(error) => {
+            attrs.push(opentelemetry::KeyValue::new(
+                "error.type",
+                kleer_error_type(error),
+            ));
+            if let Some(status) = kleer_error_status(error) {
+                attrs.push(opentelemetry::KeyValue::new(
+                    "http.response.status_code",
+                    i64::from(status.as_u16()),
+                ));
+            }
+        }
+    }
+
+    attrs
+}
+
+fn kleer_error_status(error: &KleerError) -> Option<StatusCode> {
+    match error {
+        KleerError::Unauthorized => Some(StatusCode::UNAUTHORIZED),
+        KleerError::Forbidden => Some(StatusCode::FORBIDDEN),
+        KleerError::NotFound => Some(StatusCode::NOT_FOUND),
+        KleerError::Response { status, .. } => Some(*status),
+        KleerError::InvalidConfig(_) | KleerError::Request(_) | KleerError::Deserialize { .. } => {
+            None
+        }
+    }
+}
+
+fn kleer_operation_name(method: &str, path: &str) -> String {
+    format!("{method} {}", normalized_kleer_route(path))
+}
+
+fn normalized_kleer_route(path: &str) -> String {
+    let segments = path
+        .trim_start_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(normalized_kleer_route_segment)
+        .collect::<Vec<_>>();
+
+    if segments.is_empty() {
+        "/company/{companyId}".to_string()
+    } else {
+        format!("/company/{{companyId}}/{}", segments.join("/"))
+    }
+}
+
+fn normalized_kleer_route_segment(segment: &str) -> &str {
+    if segment.chars().all(|ch| ch.is_ascii_digit()) {
+        return "{id}";
+    }
+
+    let bytes = segment.as_bytes();
+    if bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(idx, byte)| idx == 4 || idx == 7 || byte.is_ascii_digit())
+    {
+        return "{date}";
+    }
+
+    segment
 }
 
 fn normalize_base_url(base_url: Option<&str>) -> String {
@@ -366,5 +478,45 @@ mod tests {
 
         assert_eq!(request.headers()["accept"], JSON_CONTENT_TYPE);
         assert_eq!(request.headers()["content-type"], JSON_CONTENT_TYPE);
+    }
+
+    #[test]
+    fn provider_metric_route_normalization_omits_real_company_id() {
+        assert_eq!(
+            kleer_operation_name("GET", "event"),
+            "GET /company/{companyId}/event"
+        );
+        assert_eq!(
+            kleer_operation_name("POST", "event/123"),
+            "POST /company/{companyId}/event/{id}"
+        );
+        assert_eq!(
+            kleer_operation_name("GET", "payroll/user/42/schedule/2026-05-01/to/2026-05-31"),
+            "GET /company/{companyId}/payroll/user/{id}/schedule/{date}/to/{date}"
+        );
+    }
+
+    #[test]
+    fn provider_metric_attributes_do_not_include_error_messages() {
+        let attrs = provider_operation_attributes::<()>(
+            "GET /company/{companyId}/event",
+            &Err(KleerError::Response {
+                status: StatusCode::BAD_GATEWAY,
+                body: "upstream failure with details".to_string(),
+            }),
+        );
+
+        assert!(attrs
+            .iter()
+            .any(|attr| attr.key.as_str() == "provider.name" && attr.value.as_str() == "kleer"));
+        assert!(attrs
+            .iter()
+            .any(|attr| attr.key.as_str() == "result" && attr.value.as_str() == "error"));
+        assert!(attrs
+            .iter()
+            .any(|attr| attr.key.as_str() == "error.type" && attr.value.as_str() == "http_status"));
+        assert!(!attrs
+            .iter()
+            .any(|attr| attr.key.as_str() == "error.message"));
     }
 }
