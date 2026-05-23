@@ -1,5 +1,4 @@
-use sqlx::PgPool;
-
+use crate::db::DbPool;
 use crate::domain::{RepoKey, Repository};
 
 use super::repo_error::RepositoryError;
@@ -11,11 +10,11 @@ pub trait RepoRepository {
 }
 
 pub struct RepoRepositoryImpl {
-    pool: PgPool,
+    pool: DbPool,
 }
 
 impl RepoRepositoryImpl {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 }

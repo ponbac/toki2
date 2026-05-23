@@ -24,7 +24,24 @@ tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
     "time",
     "local-time",
+    "json",
 ] }
+opentelemetry = { version = "0.32", features = ["trace", "logs"] }
+opentelemetry_sdk = { version = "0.32", features = ["trace", "logs", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = [
+    "trace",
+    "logs",
+    "grpc-tonic",
+] }
+tracing-opentelemetry = { version = "0.33", default-features = false, features = [
+    "tracing-log",
+] }
+opentelemetry-appender-tracing = { version = "0.32", features = [
+    "experimental_span_attributes",
+] }
+bytes = "1"
+http-body-util = "0.1"
+regex = "1"
 htmd = "0.5"
 ammonia = "4.1.2"
 futures = "0.3.30"
@@ -42,6 +59,7 @@ sqlx = { version = "0.8.0", features = [
     "time",
     "migrate",
 ] }
+sqlx-tracing = { version = "0.2.1", features = ["postgres"] }
 axum-login = "0.16.0"
 thiserror.workspace = true
 oauth2 = "5.0.0"
@@ -57,4 +75,4 @@ tower-sessions-moka-store = "0.14"
 tower-sessions-sqlx-store = { version = "0.14.2", features = ["postgres"] }
 image = { version = "0.25.9", features = ["jpeg", "png"] }
 webp = "0.3.1"
-moka = { version = "0.12", features = ["sync"] }
+moka = { version = "0.12", features = ["future", "sync"] }

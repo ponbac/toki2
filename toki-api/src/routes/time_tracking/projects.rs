@@ -2,20 +2,20 @@ use axum::{
     extract::{Path, State},
     Json,
 };
-use tracing::instrument;
 
 use crate::{
     adapters::inbound::http::{ActivityResponse, ProjectResponse},
     app_state::AppState,
     auth::AuthUser,
+    observability::{record_span_field, record_user_id},
     routes::ApiError,
 };
 
-#[instrument(name = "list_projects", skip(app_state))]
 pub async fn list_projects(
     State(app_state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<Vec<ProjectResponse>>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -28,12 +28,13 @@ pub async fn list_projects(
     ))
 }
 
-#[instrument(name = "list_activities", skip(app_state))]
 pub async fn list_activities(
     Path(project_id): Path<String>,
     State(app_state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<Vec<ActivityResponse>>, ApiError> {
+    record_user_id(user.id);
+    record_span_field("project.id", &project_id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)

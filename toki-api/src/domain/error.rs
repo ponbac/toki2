@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Errors that can occur during time tracking operations.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum TimeTrackingError {
     #[error("timer not found")]
     TimerNotFound,

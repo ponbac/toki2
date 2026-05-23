@@ -1,6 +1,5 @@
 use axum::extract::State;
 use serde::Serialize;
-use tracing::instrument;
 
 use crate::{
     app_state::AppState,
@@ -8,6 +7,7 @@ use crate::{
     domain::{
         models::KLEER_TIME_TRACKING_PROVIDER, ports::outbound::TimeTrackingUserLinkRepository,
     },
+    observability::record_user_id,
     repositories::TimeTrackingUserLinkRepositoryImpl,
     routes::ApiError,
 };
@@ -21,16 +21,16 @@ pub struct ConnectionStatusResponse {
     provider_user_name: Option<String>,
 }
 
-#[instrument(name = "time_tracking_connection_status", skip(user, app_state))]
 pub async fn connection_status(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<axum::Json<ConnectionStatusResponse>, ApiError> {
+    record_user_id(user.id);
     let credentials = app_state
         .kleer_settings
         .credentials()
         .map_err(|error| ApiError::new(axum::http::StatusCode::SERVICE_UNAVAILABLE, error))?;
-    let repo = TimeTrackingUserLinkRepositoryImpl::new((*app_state.db_pool).clone());
+    let repo = TimeTrackingUserLinkRepositoryImpl::new(app_state.db_pool.clone());
     let link = repo
         .get_active_link_for_user(&user.id, KLEER_TIME_TRACKING_PROVIDER)
         .await?

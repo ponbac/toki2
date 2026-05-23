@@ -1,7 +1,8 @@
 use crate::adapters::outbound::azure_devops::AzureDevOpsUrl;
+use crate::db::DbPool;
 use crate::repositories::RepoRepository;
 use futures::future;
-use sqlx::PgPool;
+use tracing::{field, instrument};
 use web_push::{IsahcWebPushClient, WebPushClient};
 
 use crate::domain::{DbNotificationType, Notification, PRChangeEvent};
@@ -20,8 +21,14 @@ pub struct NotificationHandler {
     web_push_client: IsahcWebPushClient,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NotificationSummary {
+    pub notification_count: usize,
+    pub push_notification_count: usize,
+}
+
 impl NotificationHandler {
-    pub fn new(db_pool: PgPool, web_push_client: IsahcWebPushClient) -> Self {
+    pub fn new(db_pool: DbPool, web_push_client: IsahcWebPushClient) -> Self {
         Self {
             push_subscriptions_repo: PushSubscriptionRepositoryImpl::new(db_pool.clone()),
             user_repo: UserRepositoryImpl::new(db_pool.clone()),
@@ -31,7 +38,21 @@ impl NotificationHandler {
         }
     }
 
-    pub async fn notify_affected_users(&self, diffs: Vec<PullRequestDiff>) -> Result<(), String> {
+    #[instrument(
+        name = "notifications.notify_affected_users",
+        skip(self, diffs),
+        fields(
+            operation.name = "notifications.notify_affected_users",
+            changed_pr_count = diffs.len(),
+            notification_count = field::Empty,
+            push_notification_count = field::Empty,
+        )
+    )]
+    pub async fn notify_affected_users(
+        &self,
+        diffs: Vec<PullRequestDiff>,
+    ) -> Result<NotificationSummary, String> {
+        let mut summary = NotificationSummary::default();
         let users = self
             .user_repo
             .get_users()
@@ -161,6 +182,7 @@ impl NotificationHandler {
                         .await)
                         .is_ok()
                     {
+                        summary.notification_count += 1;
                         // Send push notification if enabled
                         let push_enabled = match (rule, exception) {
                             (_, Some(e)) => e.enabled, // exception overrides rule
@@ -175,6 +197,7 @@ impl NotificationHandler {
                                     &link,
                                 );
                                 push_futures.push(self.web_push_client.send(message));
+                                summary.push_notification_count += 1;
                             }
                         }
                     }
@@ -184,7 +207,15 @@ impl NotificationHandler {
             future::join_all(push_futures).await;
         }
 
-        Ok(())
+        tracing::Span::current().record("notification_count", summary.notification_count);
+        tracing::Span::current().record("push_notification_count", summary.push_notification_count);
+        tracing::info!(
+            notification_count = summary.notification_count,
+            push_notification_count = summary.push_notification_count,
+            "Notification processing completed"
+        );
+
+        Ok(summary)
     }
 }
 

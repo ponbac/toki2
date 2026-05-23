@@ -13,6 +13,7 @@ Toki2 is a **provider-agnostic** time tracking and development workflow platform
 
 **Backend (Rust)**: Axum, SQLx (PostgreSQL), Tokio, azure_devops_rust_api, web-push
 **Frontend (React/TS)**: Vite, TanStack Router + Query, Zustand, shadcn/ui, Tailwind
+**Package manager**: Bun — never use npm or npx, always use `bun` / `bunx`
 
 ## Project Structure
 
@@ -122,6 +123,32 @@ just lint       # Frontend - ESLint
 SQLX_OFFLINE=true just check
 ```
 
+## Observability
+
+`just dev` starts a standalone Aspire dashboard at `http://127.0.0.1:18888` and exports OTEL over gRPC to `http://127.0.0.1:18889`.
+
+When inspecting traces from the standalone dashboard, query it directly with `--dashboard-url`; `aspire ps` may report no AppHost because this repo runs the dashboard without an Aspire AppHost:
+
+```bash
+# A short trace id prefix works for trace lookup and returns the full trace id.
+aspire otel traces \
+  --dashboard-url http://127.0.0.1:18888 \
+  --trace-id 3e7db67 \
+  --format Json \
+  --limit 20 \
+  --non-interactive \
+  --nologo
+
+# Span lookup needs the full trace id from the trace result.
+aspire otel spans \
+  --dashboard-url http://127.0.0.1:18888 \
+  --trace-id 3e7db67019bfc8a3b46bbdde72a791af \
+  --format Json \
+  --limit 200 \
+  --non-interactive \
+  --nologo
+```
+
 ## Important Notes
 
 1. **Provider-agnostic by default** - New backend features should use ports/adapters, not couple directly to Kleer or Azure DevOps
@@ -133,5 +160,5 @@ SQLX_OFFLINE=true just check
 
 ## Configuration
 
-Backend config: `toki-api/config/{base,local,production}.yaml` + `TOKI_*` env vars
+Backend config: `toki-api/config/{base,local,production}.yaml` + `TOKI_*` env vars  
 Required secrets: Azure AD OAuth credentials, Kleer integration token and company id

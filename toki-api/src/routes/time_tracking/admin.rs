@@ -390,7 +390,7 @@ fn normalized_email(email: &str) -> Option<String> {
 }
 
 fn mapping_repo(app_state: &AppState) -> TimeTrackingUserLinkRepositoryImpl {
-    TimeTrackingUserLinkRepositoryImpl::new((*app_state.db_pool).clone())
+    TimeTrackingUserLinkRepositoryImpl::new(app_state.db_pool.clone())
 }
 
 fn kleer_credentials(app_state: &AppState) -> Result<KleerCredentials, ApiError> {

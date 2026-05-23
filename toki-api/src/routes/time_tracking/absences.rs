@@ -4,7 +4,6 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use tracing::instrument;
 
 use crate::{
     adapters::inbound::http::{
@@ -13,6 +12,7 @@ use crate::{
     app_state::AppState,
     auth::AuthUser,
     domain::models::{AbsenceType, CreateAbsenceDay, CreateAbsencesRequest},
+    observability::record_user_id,
     routes::ApiError,
 };
 
@@ -34,11 +34,11 @@ fn parse_date(s: &str) -> Result<time::Date, ApiError> {
         .map_err(|_| ApiError::bad_request(format!("could not parse date: {}", s)))
 }
 
-#[instrument(name = "get_absence_types", skip(app_state))]
 pub async fn get_absence_types(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<AbsenceTypeResponse>>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -49,12 +49,12 @@ pub async fn get_absence_types(
     Ok(Json(types.into_iter().map(Into::into).collect()))
 }
 
-#[instrument(name = "get_absences", skip(app_state))]
 pub async fn get_absences(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<DateFilterQuery>,
 ) -> Result<Json<Vec<AbsenceEntryResponse>>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -65,12 +65,12 @@ pub async fn get_absences(
     Ok(Json(entries.into_iter().map(Into::into).collect()))
 }
 
-#[instrument(name = "get_absence_day_defaults", skip(app_state))]
 pub async fn get_absence_day_defaults(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<DateFilterQuery>,
 ) -> Result<Json<Vec<AbsenceDayDefaultResponse>>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -125,12 +125,12 @@ impl CreateAbsenceDayPayload {
     }
 }
 
-#[instrument(name = "create_absences", skip(app_state))]
 pub async fn create_absences(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(payload): Json<CreateAbsencesPayload>,
 ) -> Result<(StatusCode, Json<Vec<AbsenceEntryResponse>>), ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -152,12 +152,12 @@ pub struct DeleteAbsencePayload {
     date: String,
 }
 
-#[instrument(name = "delete_absence", skip(app_state))]
 pub async fn delete_absence(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(payload): Json<DeleteAbsencePayload>,
 ) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)

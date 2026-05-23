@@ -111,6 +111,56 @@ Create the frontend app:
 
 Finally, configure Dokploy database backups.
 
+## Aspire Observability
+
+Deploy the standalone Aspire Dashboard as a Dokploy service/container:
+
+- Image: `mcr.microsoft.com/dotnet/aspire-dashboard:latest`
+- UI port: publish container port `18888` only for Tailscale access, for example `http://<vm-tailscale-ip>:18888`
+- OTLP port: keep container port `18889` private on the internal Dokploy/Docker network
+- Do not attach a public domain to the Aspire service
+
+Aspire service environment:
+
+```bash
+DASHBOARD__OTLP__AUTHMODE=ApiKey
+DASHBOARD__OTLP__PRIMARYAPIKEY=<shared-long-random-key>
+DASHBOARD__TELEMETRYLIMITS__MAXLOGCOUNT=50000
+DASHBOARD__TELEMETRYLIMITS__MAXTRACECOUNT=50000
+DASHBOARD__TELEMETRYLIMITS__MAXMETRICSCOUNT=50000
+DASHBOARD__TELEMETRYLIMITS__MAXATTRIBUTECOUNT=256
+DASHBOARD__TELEMETRYLIMITS__MAXATTRIBUTELENGTH=16384
+```
+
+The dashboard UI also has a browser login token. Retrieve it from the container logs:
+
+```bash
+tailscale ssh root@toki-dokploy-01 'docker ps --format "{{.Names}}" | grep aspire'
+tailscale ssh root@toki-dokploy-01 'docker logs <aspire-container-name> 2>&1 | grep -i token'
+```
+
+Configure `toki-api` to export directly to Aspire over the internal Dokploy network:
+
+```bash
+RUST_LOG=info,toki_api=debug,az_devops=info,kleer=info,tower_http=info,hyper=warn,h2=warn,tonic=warn,opentelemetry=warn
+OTEL_SERVICE_NAME=toki-api
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+OTEL_EXPORTER_OTLP_ENDPOINT=http://<aspire-dokploy-service-host>:18889
+OTEL_EXPORTER_OTLP_HEADERS=x-otlp-api-key=<shared-long-random-key>
+TOKI_OBSERVABILITY__CAPTURE_REQUEST_BODIES=true
+TOKI_OBSERVABILITY__REQUEST_BODY_MAX_LOGGED_BYTES=16384
+TOKI_OBSERVABILITY__REQUEST_BODY_MAX_BUFFERED_BYTES=65536
+```
+
+OTEL export is enabled only when `OTEL_EXPORTER_OTLP_ENDPOINT` is present and `OTEL_SDK_DISABLED` is not `true`. If deploying the API before Aspire is ready, set:
+
+```bash
+OTEL_SDK_DISABLED=true
+```
+
+Aspire is intentionally in-memory only for this deployment. If VM memory pressure is visible, lower `DASHBOARD__TELEMETRYLIMITS__MAXLOGCOUNT`, `DASHBOARD__TELEMETRYLIMITS__MAXTRACECOUNT`, or `TOKI_OBSERVABILITY__REQUEST_BODY_MAX_BUFFERED_BYTES`.
+
 ## App Environment
 
 Frontend build-time arguments:
@@ -145,6 +195,9 @@ TOKI_AUTH__REDIRECT_URL=https://toki-api.spinit.se/oauth/callback
 TOKI_KLEER__TOKEN=<Kleer service token>
 TOKI_KLEER__COMPANY_ID=<Kleer company id>
 TOKI_KLEER__BASE_URL=https://api.kleer.se/v1
+TOKI_OBSERVABILITY__CAPTURE_REQUEST_BODIES=true
+TOKI_OBSERVABILITY__REQUEST_BODY_MAX_LOGGED_BYTES=16384
+TOKI_OBSERVABILITY__REQUEST_BODY_MAX_BUFFERED_BYTES=65536
 ```
 
 ## DNS Cutover

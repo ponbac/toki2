@@ -4,13 +4,13 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use tracing::instrument;
 
 use crate::{
     adapters::inbound::http::{TimeEntryDayStatusResponse, TimeEntryResponse, WeeklyStatsResponse},
     app_state::AppState,
     auth::AuthUser,
     domain::models::{ActivityId, CreateTimeEntryRequest, EditTimeEntryRequest, ProjectId},
+    observability::record_user_id,
     routes::ApiError,
 };
 
@@ -31,12 +31,12 @@ fn parse_rfc3339(s: &str, field: &str) -> Result<time::OffsetDateTime, ApiError>
         .map_err(|_| ApiError::bad_request(format!("Invalid {} format", field)))
 }
 
-#[instrument(name = "get_time_info", skip(app_state))]
 pub async fn get_time_info(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(date_filter): Query<DateFilterQuery>,
 ) -> Result<Json<WeeklyStatsResponse>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -57,12 +57,12 @@ pub struct TimeEntriesQuery {
     unique: Option<bool>,
 }
 
-#[instrument(name = "get_time_entries", skip(app_state))]
 pub async fn get_time_entries(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<TimeEntriesQuery>,
 ) -> Result<Json<Vec<TimeEntryResponse>>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -78,12 +78,12 @@ pub async fn get_time_entries(
     Ok(Json(time_entries.into_iter().map(Into::into).collect()))
 }
 
-#[instrument(name = "get_time_entry_day_statuses", skip(app_state))]
 pub async fn get_time_entry_day_statuses(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(date_filter): Query<DateFilterQuery>,
 ) -> Result<Json<Vec<TimeEntryDayStatusResponse>>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -114,12 +114,12 @@ pub struct EditProjectRegistrationPayload {
     user_note: String,
 }
 
-#[instrument(name = "edit_project_registration", skip(app_state))]
 pub async fn edit_project_registration(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(payload): Json<EditProjectRegistrationPayload>,
 ) -> Result<Json<TimeEntryResponse>, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -147,12 +147,12 @@ pub struct DeleteProjectRegistrationPayload {
     project_registration_id: String,
 }
 
-#[instrument(name = "delete_project_registration", skip(app_state))]
 pub async fn delete_project_registration(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(payload): Json<DeleteProjectRegistrationPayload>,
 ) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
@@ -177,12 +177,12 @@ pub struct CreateProjectRegistrationPayload {
     user_note: String,
 }
 
-#[instrument(name = "create_project_registration", skip(app_state))]
 pub async fn create_project_registration(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(payload): Json<CreateProjectRegistrationPayload>,
 ) -> Result<(StatusCode, Json<TimeEntryResponse>), ApiError> {
+    record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)

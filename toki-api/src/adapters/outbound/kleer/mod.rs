@@ -1,6 +1,10 @@
 mod conversions;
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration as CacheDuration,
+};
 
 use async_trait::async_trait;
 use kleer::{
@@ -8,6 +12,7 @@ use kleer::{
     KleerClientProjectReadable, KleerCredentials, KleerError, KleerEventReadable,
     KleerEventRestrictionList, KleerEventWritable, KleerIdRef,
 };
+use moka::future::Cache;
 use time::{Date, Duration};
 
 use crate::domain::{
@@ -28,6 +33,21 @@ use self::conversions::{
 pub struct KleerAdapter {
     client: KleerClient,
     target_user_id: i64,
+    metadata_cache: Arc<KleerMetadataCache>,
+    metadata_cache_key: KleerMetadataCacheKey,
+}
+
+#[derive(Clone)]
+pub struct KleerMetadataCache {
+    client_projects: Cache<KleerMetadataCacheKey, KleerClientProjectList>,
+    active_client_projects: Cache<KleerMetadataCacheKey, KleerClientProjectList>,
+    activities: Cache<KleerMetadataCacheKey, KleerActivityList>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct KleerMetadataCacheKey {
+    base_url: String,
+    company_id: String,
 }
 
 struct VerifiedKleerEventTarget {
@@ -60,19 +80,102 @@ const KLEER_ABSENCE_ACTIVITY_NAMES: &[(AbsenceType, &str)] = &[
         "Övrig frånvaro (Semestergrundande)",
     ),
 ];
+const KLEER_METADATA_CACHE_TTL: CacheDuration = CacheDuration::from_secs(5 * 60);
+const KLEER_METADATA_CACHE_MAX_ENTRIES: u64 = 32;
+
+impl KleerMetadataCache {
+    pub fn new() -> Self {
+        Self {
+            client_projects: metadata_cache(),
+            active_client_projects: metadata_cache(),
+            activities: metadata_cache(),
+        }
+    }
+}
+
+impl Default for KleerMetadataCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl KleerMetadataCacheKey {
+    fn from_credentials(credentials: &KleerCredentials) -> Self {
+        Self {
+            base_url: credentials.base_url.clone(),
+            company_id: credentials.company_id.clone(),
+        }
+    }
+}
+
+fn metadata_cache<V>() -> Cache<KleerMetadataCacheKey, V>
+where
+    V: Clone + Send + Sync + 'static,
+{
+    Cache::builder()
+        .time_to_live(KLEER_METADATA_CACHE_TTL)
+        .max_capacity(KLEER_METADATA_CACHE_MAX_ENTRIES)
+        .build()
+}
+
+fn cached_load_error(error: Arc<TimeTrackingError>) -> TimeTrackingError {
+    (*error).clone()
+}
 
 impl KleerAdapter {
     const MISSING_NOTE_COMMENT: &'static str = "missing note";
 
-    pub fn new(
+    pub fn with_metadata_cache(
         credentials: KleerCredentials,
         target_user_id: i64,
+        metadata_cache: Arc<KleerMetadataCache>,
     ) -> Result<Self, TimeTrackingError> {
+        let metadata_cache_key = KleerMetadataCacheKey::from_credentials(&credentials);
         let client = KleerClient::new(credentials).map_err(map_kleer_error)?;
         Ok(Self {
             client,
             target_user_id,
+            metadata_cache,
+            metadata_cache_key,
         })
+    }
+
+    async fn cached_client_projects(&self) -> Result<KleerClientProjectList, TimeTrackingError> {
+        let client = self.client.clone();
+        self.metadata_cache
+            .client_projects
+            .try_get_with(self.metadata_cache_key.clone(), async move {
+                client.list_client_projects().await.map_err(map_kleer_error)
+            })
+            .await
+            .map_err(cached_load_error)
+    }
+
+    async fn cached_active_client_projects(
+        &self,
+    ) -> Result<KleerClientProjectList, TimeTrackingError> {
+        let client = self.client.clone();
+        self.metadata_cache
+            .active_client_projects
+            .try_get_with(self.metadata_cache_key.clone(), async move {
+                client
+                    .list_active_client_projects()
+                    .await
+                    .map_err(map_kleer_error)
+            })
+            .await
+            .map_err(cached_load_error)
+    }
+
+    async fn cached_activities(&self) -> Result<KleerActivityList, TimeTrackingError> {
+        let client = self.client.clone();
+        self.metadata_cache
+            .activities
+            .try_get_with(self.metadata_cache_key.clone(), async move {
+                client.list_activities().await.map_err(map_kleer_error)
+            })
+            .await
+            .map_err(cached_load_error)
     }
 
     fn project_visible_to_user(project: &KleerClientProjectReadable, user_id: i64) -> bool {
@@ -177,16 +280,10 @@ impl KleerAdapter {
     ) -> Result<VerifiedKleerEventTarget, TimeTrackingError> {
         let project_id = Self::parse_kleer_id(project_id.as_str(), "project id")?;
         let activity_id = Self::parse_kleer_id(activity_id.as_str(), "activity id")?;
-        let projects = self
-            .client
-            .list_active_client_projects()
-            .await
-            .map_err(map_kleer_error)?;
-        let activities = self
-            .client
-            .list_activities()
-            .await
-            .map_err(map_kleer_error)?;
+        let (projects, activities) = tokio::try_join!(
+            self.cached_active_client_projects(),
+            self.cached_activities()
+        )?;
 
         let project = Self::visible_project(&projects, project_id, self.target_user_id)?;
         Self::ensure_activity_allowed(project, &activities, self.target_user_id, activity_id)?;
@@ -280,11 +377,7 @@ impl KleerAdapter {
     }
 
     async fn load_absence_activity_map(&self) -> Result<AbsenceActivityMap, TimeTrackingError> {
-        let activities = self
-            .client
-            .list_activities()
-            .await
-            .map_err(map_kleer_error)?;
+        let activities = self.cached_activities().await?;
 
         Self::build_absence_activity_map(&activities.activity_readables)
     }
@@ -455,11 +548,7 @@ impl KleerAdapter {
 #[async_trait]
 impl TimeTrackingClient for KleerAdapter {
     async fn get_projects(&self) -> Result<Vec<Project>, TimeTrackingError> {
-        let projects = self
-            .client
-            .list_active_client_projects()
-            .await
-            .map_err(map_kleer_error)?;
+        let projects = self.cached_active_client_projects().await?;
 
         Ok(projects
             .client_project_readables
@@ -474,16 +563,10 @@ impl TimeTrackingClient for KleerAdapter {
         project_id: &ProjectId,
         _date_range: (Date, Date),
     ) -> Result<Vec<Activity>, TimeTrackingError> {
-        let projects = self
-            .client
-            .list_active_client_projects()
-            .await
-            .map_err(map_kleer_error)?;
-        let activities = self
-            .client
-            .list_activities()
-            .await
-            .map_err(map_kleer_error)?;
+        let (projects, activities) = tokio::try_join!(
+            self.cached_active_client_projects(),
+            self.cached_activities()
+        )?;
 
         let project_id_value = Self::parse_kleer_id(project_id.as_str(), "project id")?;
         let project = Self::visible_project(&projects, project_id_value, self.target_user_id)?;
@@ -530,26 +613,22 @@ impl TimeTrackingClient for KleerAdapter {
         &self,
         date_range: (Date, Date),
     ) -> Result<Vec<TimeEntry>, TimeTrackingError> {
-        let projects = self
-            .client
-            .list_client_projects()
-            .await
-            .map_err(map_kleer_error)?;
-        let activities = self
-            .client
-            .list_activities()
-            .await
-            .map_err(map_kleer_error)?;
-        let events = self
-            .client
-            .list_events(self.target_user_id, date_range.0, date_range.1)
-            .await
-            .map_err(map_kleer_error)?;
-        let statuses = self
-            .client
-            .list_event_statuses(self.target_user_id, date_range.0, date_range.1)
-            .await
-            .map_err(map_kleer_error)?;
+        let (projects, activities, events, statuses) = tokio::try_join!(
+            self.cached_client_projects(),
+            self.cached_activities(),
+            async {
+                self.client
+                    .list_events(self.target_user_id, date_range.0, date_range.1)
+                    .await
+                    .map_err(map_kleer_error)
+            },
+            async {
+                self.client
+                    .list_event_statuses(self.target_user_id, date_range.0, date_range.1)
+                    .await
+                    .map_err(map_kleer_error)
+            },
+        )?;
 
         let project_names: HashMap<_, _> = projects
             .client_project_readables
@@ -1009,9 +1088,10 @@ mod tests {
     }
 
     fn adapter() -> KleerAdapter {
-        KleerAdapter::new(
+        KleerAdapter::with_metadata_cache(
             KleerCredentials::new("token", "company", None::<String>),
             TARGET_USER_ID,
+            Arc::new(KleerMetadataCache::new()),
         )
         .unwrap()
     }

@@ -19,7 +19,8 @@ use crate::{
             WorkItemServiceFactory,
         },
         outbound::{
-            azure_devops::AzureDevOpsWorkItemAdapter, kleer::KleerAdapter,
+            azure_devops::AzureDevOpsWorkItemAdapter,
+            kleer::{KleerAdapter, KleerMetadataCache},
             postgres::PostgresTimerHistoryAdapter,
         },
     },
@@ -41,6 +42,7 @@ pub struct KleerServiceFactory {
     timer_repo: Arc<TimerRepositoryImpl>,
     user_link_repo: Arc<dyn TimeTrackingUserLinkRepository>,
     credentials: Result<KleerCredentials, String>,
+    metadata_cache: Arc<KleerMetadataCache>,
 }
 
 impl KleerServiceFactory {
@@ -53,6 +55,7 @@ impl KleerServiceFactory {
             timer_repo,
             user_link_repo,
             credentials: settings.credentials(),
+            metadata_cache: Arc::new(KleerMetadataCache::new()),
         }
     }
 
@@ -97,7 +100,12 @@ impl TimeTrackingServiceFactory for KleerServiceFactory {
         let kleer_user_id = self
             .mapped_kleer_user_id(user_id, &credentials.company_id)
             .await?;
-        let adapter = KleerAdapter::new(credentials, kleer_user_id).map_err(|error| {
+        let adapter = KleerAdapter::with_metadata_cache(
+            credentials,
+            kleer_user_id,
+            self.metadata_cache.clone(),
+        )
+        .map_err(|error| {
             TimeTrackingServiceError::configuration(format!(
                 "failed to create Kleer service: {error}"
             ))

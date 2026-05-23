@@ -11,12 +11,12 @@ use axum::{
 use az_devops::GitCommitRef;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use tracing::instrument;
 
 use crate::{
     app_state::AppStateError,
     auth::AuthUser,
     domain::{Email, PullRequest, RepoKey},
+    observability::{record_repo_key, record_user_id},
     repositories::UserRepository,
     AppState,
 };
@@ -46,11 +46,11 @@ impl From<&OpenPullRequestsQuery> for RepoKey {
     }
 }
 
-#[instrument(name = "GET /pull-requests")]
 async fn open_pull_requests(
     State(app_state): State<AppState>,
     Query(query): Query<OpenPullRequestsQuery>,
 ) -> Result<Json<Vec<az_devops::PullRequest>>, AppStateError> {
+    record_repo_key(RepoKey::from(&query));
     let client = app_state.get_repo_client(&query).await?;
 
     let pull_requests = client
@@ -79,21 +79,21 @@ async fn open_pull_requests(
     Ok(Json(pull_requests))
 }
 
-#[instrument(name = "GET /cached-pull-requests")]
 async fn cached_pull_requests(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<PullRequest>>, ApiError> {
+    record_user_id(user.id);
     let mut followed_prs = get_followed_pull_requests(&app_state, &user).await?;
     apply_avatar_overrides_to_pull_requests(&app_state, &mut followed_prs).await?;
     Ok(Json(followed_prs))
 }
 
-#[instrument(name = "GET /most-recent-commits")]
 async fn most_recent_commits(
     State(app_state): State<AppState>,
     Query(query): Query<RepoKey>,
 ) -> Result<Json<Vec<GitCommitRef>>, ApiError> {
+    record_repo_key(&query);
     let cached_prs = app_state
         .get_cached_pull_requests(query.clone())
         .await?
@@ -168,11 +168,11 @@ impl ListPullRequest {
     }
 }
 
-#[instrument(name = "GET /pull-requests/list")]
 async fn list_pull_requests(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<ListPullRequest>>, ApiError> {
+    record_user_id(user.id);
     let mut followed_prs = get_followed_pull_requests(&app_state, &user).await?;
     apply_avatar_overrides_to_pull_requests(&app_state, &mut followed_prs).await?;
     followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));

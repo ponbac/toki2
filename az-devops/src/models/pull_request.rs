@@ -46,18 +46,6 @@ impl PullRequest {
     pub async fn commits(&self, client: &RepoClient) -> Result<Vec<GitCommitRef>, RepoClientError> {
         client.get_commits_in_pull_request(self.id).await
     }
-
-    pub async fn work_items(
-        &self,
-        client: &RepoClient,
-    ) -> Result<Vec<crate::WorkItem>, RepoClientError> {
-        let ids = client.get_work_item_ids_in_pull_request(self.id).await?;
-        if ids.is_empty() {
-            return Ok(vec![]);
-        }
-
-        client.get_work_items(ids).await
-    }
 }
 
 impl From<GitPullRequest> for PullRequest {

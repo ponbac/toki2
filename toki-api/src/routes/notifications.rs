@@ -12,12 +12,12 @@ use axum::{
 };
 use serde::Deserialize;
 use std::collections::HashMap;
-use tracing::instrument;
 
 use crate::{
     app_state::AppState,
     auth::AuthUser,
     domain::{Notification, NotificationRule, PrNotificationException, PushNotification},
+    observability::{record_span_field, record_user_id},
     repositories::NewPushSubscription,
 };
 use strum::IntoEnumIterator;
@@ -58,13 +58,13 @@ pub struct SubscribePayload {
     device_name: Option<String>,
 }
 
-#[instrument(name = "subscribe")]
 async fn subscribe(
     user: AuthUser,
     client_hints: ClientHints,
     State(app_state): State<AppState>,
     Json(body): Json<SubscribePayload>,
 ) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let new_push_subscription = NewPushSubscription {
@@ -90,13 +90,13 @@ struct IsSubscribedPayload {
     device_name: Option<String>,
 }
 
-#[instrument(name = "is_subscribed")]
 async fn is_subscribed(
     user: AuthUser,
     client_hints: ClientHints,
     State(app_state): State<AppState>,
     Json(body): Json<IsSubscribedPayload>,
 ) -> Result<Json<bool>, ApiError> {
+    record_user_id(user.id);
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let user_subscriptions = push_subscription_repo
@@ -113,11 +113,11 @@ async fn is_subscribed(
     Ok(Json(is_subscribed_with_device_name))
 }
 
-#[instrument(name = "get_push_subscriptions")]
 async fn get_push_subscriptions(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<PushSubscriptionInfo>>, ApiError> {
+    record_user_id(user.id);
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let subscriptions = push_subscription_repo
@@ -132,12 +132,13 @@ async fn get_push_subscriptions(
     ))
 }
 
-#[instrument(name = "delete_push_subscription")]
 async fn delete_push_subscription(
     user: AuthUser,
     State(app_state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
+    record_span_field("push_subscription.id", id);
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
 
     let user_push_subscriptions = push_subscription_repo
@@ -153,7 +154,6 @@ async fn delete_push_subscription(
     Ok(StatusCode::OK)
 }
 
-#[instrument(name = "test_push")]
 async fn test_push(State(app_state): State<AppState>) -> Result<StatusCode, ApiError> {
     let push_subscription_repo = app_state.push_subscriptions_repo.clone();
     let subscribers = push_subscription_repo.get_push_subscriptions().await?;

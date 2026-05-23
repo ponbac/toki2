@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use sqlx::PgPool;
 
+use crate::db::DbPool;
 use crate::domain::{DbNotificationType, Notification, NotificationRule, PrNotificationException};
 use crate::repositories::repo_error::RepositoryError;
 
@@ -58,11 +58,11 @@ pub trait NotificationRepository {
 }
 
 pub struct NotificationRepositoryImpl {
-    pool: PgPool,
+    pool: DbPool,
 }
 
 impl NotificationRepositoryImpl {
-    pub fn new(pool: PgPool) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 }
