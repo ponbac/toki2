@@ -78,7 +78,7 @@ Create the Dokploy admin account through the Tailscale URL, then create one proj
 Use plain Git source if the GitHub integration is unavailable:
 
 - Repository: `https://github.com/ponbac/toki2.git`
-- Branch: `kleer`
+- Branch: `master`
 
 Create a Dokploy PostgreSQL service:
 
@@ -113,18 +113,36 @@ Finally, configure Dokploy database backups.
 
 ## Aspire Observability
 
-Deploy the standalone Aspire Dashboard as a Dokploy service/container:
+Deploy the standalone Aspire Dashboard as a normal Dokploy service. Prefer a
+single-container **Application** using the Docker provider because this keeps
+deployments, logs, monitoring, restarts, and shared environment variables inside
+Dokploy.
 
+Create the service from **Create Service -> Application**:
+
+- Name: `aspire-dashboard`
+- App name: `toki-aspire-dashboard`
+- Provider: Docker
 - Image: `mcr.microsoft.com/dotnet/aspire-dashboard:latest`
 - UI port: publish container port `18888` only for Tailscale access, for example `http://<vm-tailscale-ip>:18888`
-- OTLP port: keep container port `18889` private on the internal Dokploy/Docker network
-- Do not attach a public domain to the Aspire service
+- OTLP gRPC port: keep container port `18889` private on the internal Dokploy/Docker network.
+- Do not attach a public domain to the Aspire service.
+
+Use the stable app name `toki-aspire-dashboard` so Docker DNS resolves
+`http://toki-aspire-dashboard:18889` from the API container.
+
+Add shared values under the Dokploy production **Project Environment**:
+
+```bash
+ASPIRE_OTLP_API_KEY=<shared-long-random-key>
+ASPIRE_OTLP_ENDPOINT=http://toki-aspire-dashboard:18889
+```
 
 Aspire service environment:
 
 ```bash
 DASHBOARD__OTLP__AUTHMODE=ApiKey
-DASHBOARD__OTLP__PRIMARYAPIKEY=<shared-long-random-key>
+DASHBOARD__OTLP__PRIMARYAPIKEY=${{environment.ASPIRE_OTLP_API_KEY}}
 DASHBOARD__TELEMETRYLIMITS__MAXLOGCOUNT=50000
 DASHBOARD__TELEMETRYLIMITS__MAXTRACECOUNT=50000
 DASHBOARD__TELEMETRYLIMITS__MAXMETRICSCOUNT=50000
@@ -136,7 +154,7 @@ The dashboard UI also has a browser login token. Retrieve it from the container 
 
 ```bash
 tailscale ssh root@toki-dokploy-01 'docker ps --format "{{.Names}}" | grep aspire'
-tailscale ssh root@toki-dokploy-01 'docker logs <aspire-container-name> 2>&1 | grep -i token'
+tailscale ssh root@toki-dokploy-01 'docker service logs toki-aspire-dashboard 2>&1 | grep -i token'
 ```
 
 Configure `toki-api` to export directly to Aspire over the internal Dokploy network:
@@ -146,12 +164,16 @@ RUST_LOG=info,toki_api=debug,az_devops=info,kleer=info,tower_http=info,hyper=war
 OTEL_SERVICE_NAME=toki-api
 OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production
 OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-OTEL_EXPORTER_OTLP_ENDPOINT=http://<aspire-dokploy-service-host>:18889
-OTEL_EXPORTER_OTLP_HEADERS=x-otlp-api-key=<shared-long-random-key>
+OTEL_EXPORTER_OTLP_ENDPOINT=${{environment.ASPIRE_OTLP_ENDPOINT}}
+OTEL_EXPORTER_OTLP_HEADERS=x-otlp-api-key=${{environment.ASPIRE_OTLP_API_KEY}}
 TOKI_OBSERVABILITY__CAPTURE_REQUEST_BODIES=true
 TOKI_OBSERVABILITY__REQUEST_BODY_MAX_LOGGED_BYTES=16384
 TOKI_OBSERVABILITY__REQUEST_BODY_MAX_BUFFERED_BYTES=65536
 ```
+
+After adding these variables in Dokploy, redeploy or rebuild `toki-api`. A live
+Docker service update is useful for immediate verification, but Dokploy will
+overwrite live-only changes on the next deployment.
 
 OTEL export is enabled only when `OTEL_EXPORTER_OTLP_ENDPOINT` is present and `OTEL_SDK_DISABLED` is not `true`. If deploying the API before Aspire is ready, set:
 
@@ -160,6 +182,29 @@ OTEL_SDK_DISABLED=true
 ```
 
 Aspire is intentionally in-memory only for this deployment. If VM memory pressure is visible, lower `DASHBOARD__TELEMETRYLIMITS__MAXLOGCOUNT`, `DASHBOARD__TELEMETRYLIMITS__MAXTRACECOUNT`, or `TOKI_OBSERVABILITY__REQUEST_BODY_MAX_BUFFERED_BYTES`.
+
+If creating Aspire as a Dokploy Docker Compose/Stack service instead, use a
+prebuilt `image:`. Docker Stack mode does not support `build:`. No Traefik labels
+or Dokploy domain are needed for Aspire because the UI is Tailscale-only.
+
+Avoid managing Aspire only with `docker service create` except for temporary
+debugging. A service created outside Dokploy will not appear in the project, will
+not use Dokploy shared variables, and can drift from the documented application
+state.
+
+Observability smoke checks:
+
+```bash
+curl -I http://<vm-tailscale-ip>:18888/
+curl -I https://toki-api.spinit.se/
+tailscale ssh root@toki-dokploy-01 'docker service ps toki-aspire-dashboard'
+tailscale ssh root@toki-dokploy-01 'docker service ps toki-api-8gdssr'
+tailscale ssh root@toki-dokploy-01 'docker service logs --tail 100 toki-api-8gdssr'
+```
+
+The API root returning `401` is normal. In Aspire, confirm the `toki-api`
+resource appears under **Structured logs** and that **Traces** includes SQL,
+HTTP, or `repo_differ.poll` spans.
 
 ## App Environment
 
