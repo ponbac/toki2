@@ -12,6 +12,10 @@ use axum::{
 
 use crate::app_state::AppState;
 
+fn normalize_user_note(note: impl AsRef<str>) -> String {
+    note.as_ref().trim().to_owned()
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .nest("/admin", admin::router())

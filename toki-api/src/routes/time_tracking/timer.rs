@@ -13,6 +13,8 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use time::OffsetDateTime;
 
+use super::normalize_user_note;
+
 use crate::observability::record_user_id;
 
 // ============================================================================
@@ -70,6 +72,7 @@ pub async fn start_timer(
         timer = timer.with_activity(aid, aname);
     }
     if let Some(note) = body.user_note {
+        let note = normalize_user_note(note);
         timer = timer.with_note(note);
     }
 
@@ -129,13 +132,13 @@ pub async fn save_timer(
         .create_service(user.id)
         .await?;
 
-    let user_note = body.user_note;
+    let user_note = body.user_note.map(normalize_user_note);
 
     let entry = service.save_timer(&user.id, user_note).await?;
 
     let timer = if let Some(restart_timer) = body.restart_timer {
-        let mut timer =
-            ActiveTimer::new(OffsetDateTime::now_utc()).with_note(restart_timer.user_note);
+        let mut timer = ActiveTimer::new(OffsetDateTime::now_utc())
+            .with_note(normalize_user_note(restart_timer.user_note));
 
         if let (Some(project_id), Some(project_name)) =
             (restart_timer.project_id, restart_timer.project_name)
@@ -230,7 +233,10 @@ pub async fn edit_timer(
         updated_timer = updated_timer.with_activity(aid, aname);
     }
 
-    let note = body.user_note.unwrap_or(current_timer.note);
+    let note = body
+        .user_note
+        .map(normalize_user_note)
+        .unwrap_or(current_timer.note);
     updated_timer = updated_timer.with_note(note);
 
     service.edit_timer(&user.id, &updated_timer).await?;

@@ -18,7 +18,7 @@ import {
   KanbanSquare,
   TimerIcon,
 } from "lucide-react";
-import { ListPullRequest } from "@/lib/api/queries/pullRequests";
+import type { ListPullRequest } from "@/lib/api/queries/pullRequests";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { toast } from "sonner";
@@ -218,14 +218,12 @@ function ActionsCommandGroup(props: {
   return (
     <CommandGroup heading="Actions">
       {props.timerState !== "running" ? (
-        <>
-          <CommandItem onSelect={props.onStartEmptyTimer}>
-            <div className="flex flex-row items-center gap-2">
-              <DrumIcon className="h-1 w-1" />
-              Start empty timer
-            </div>
-          </CommandItem>
-        </>
+        <CommandItem onSelect={props.onStartEmptyTimer}>
+          <div className="flex flex-row items-center gap-2">
+            <DrumIcon className="h-1 w-1" />
+            Start empty timer
+          </div>
+        </CommandItem>
       ) : (
         <>
           <CommandItem
