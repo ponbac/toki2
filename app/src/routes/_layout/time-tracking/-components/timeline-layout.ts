@@ -1,5 +1,5 @@
 import { parseISO } from "date-fns";
-import type { TimeEntry } from "@/lib/api/queries/time-tracking";
+import type { AbsenceEntry, TimeEntry } from "@/lib/api/queries/time-tracking";
 
 export const SHORT_ENTRY_THRESHOLD_PX = 20;
 export const MICRO_CARD_HEIGHT_PX = 16;
@@ -8,7 +8,25 @@ export const MICRO_LANE_X_OFFSET_PX = 10;
 
 export type TimelineVisualVariant = "full" | "micro";
 
-export type TimelineLaidOutEntry = TimeEntry & {
+export type TimelineWorkEntry = TimeEntry & {
+  kind: "time";
+  id: string;
+};
+
+export type TimelineAbsenceEntry = {
+  kind: "absence";
+  id: string;
+  date: string;
+  hours: number;
+  startTime: string;
+  endTime: string;
+  absence: AbsenceEntry;
+  isCapped: boolean;
+};
+
+export type TimelineEntryInput = TimelineWorkEntry | TimelineAbsenceEntry;
+
+export type TimelineLaidOutEntry = TimelineEntryInput & {
   startMs: number;
   endMs: number;
   topPx: number;
@@ -158,7 +176,7 @@ export function layoutDayEntries({
   microCardHeightPx = MICRO_CARD_HEIGHT_PX,
   microMaxLanes = MICRO_MAX_LANES,
 }: {
-  dayEntries: TimeEntry[];
+  dayEntries: TimelineEntryInput[];
   gridStartHour: number;
   gridEndHour: number;
   hourHeightPx: number;

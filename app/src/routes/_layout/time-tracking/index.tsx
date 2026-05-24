@@ -48,6 +48,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { TimelineView } from "./-components/timeline-view";
 import { ReportAbsenceDialog } from "./-components/report-absence-dialog";
 import { AbsencesPanel } from "./-components/absences-panel";
+import { buildAbsenceSearchText } from "./-helpers/absence-display";
 
 dayjs.extend(isoWeek);
 
@@ -126,15 +127,36 @@ function TimeTrackingPage() {
     enabled: isAuthenticated,
   });
 
+  const { data: absenceEntries, isLoading: isAbsenceEntriesLoading } = useQuery({
+    ...timeTrackingQueries.absenceEntries({
+      from: dateRange.from,
+      to: dateRange.to,
+    }),
+    enabled: isAuthenticated,
+  });
+
   const filteredTimeEntries = React.useMemo(() => {
+    const normalizedSearch = search.toLowerCase();
     return timeEntries?.length
       ? timeEntries.filter((entry) =>
           `${entry.note} ${entry.projectName} ${entry.activityName}`
             .toLowerCase()
-            .includes(search.toLowerCase()),
+            .includes(normalizedSearch),
         )
       : [];
   }, [timeEntries, search]);
+
+  const filteredAbsences = React.useMemo(() => {
+    const normalizedSearch = search.toLowerCase();
+    return absenceEntries?.length
+      ? absenceEntries.filter((entry) =>
+          buildAbsenceSearchText(entry).includes(normalizedSearch),
+        )
+      : [];
+  }, [absenceEntries, search]);
+  const hasEntries = Boolean(timeEntries?.length || absenceEntries?.length);
+  const hasMatchingEntries =
+    filteredTimeEntries.length > 0 || filteredAbsences.length > 0;
 
   const { state: timerState } = useTimeTrackingTimer();
   const { mutate: startTimer, isPending: isStartingTimer } =
@@ -329,21 +351,27 @@ function TimeTrackingPage() {
             <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_380px]">
               {/* Time Entries */}
               <div className="min-w-0">
-                {isTimeEntriesLoading ? (
+                {isTimeEntriesLoading || isAbsenceEntriesLoading ? (
                   <div className="min-h-[400px] rounded-2xl border border-border/50 bg-card/30 p-8 text-sm text-muted-foreground">
                     Loading entries...
                   </div>
-                ) : timeEntries?.length ? (
-                  viewMode === "timeline" ? (
-                    <TimelineView
-                      timeEntries={filteredTimeEntries ?? []}
-                      dateRange={dateRange}
-                    />
+                ) : hasEntries ? (
+                  hasMatchingEntries ? (
+                    viewMode === "timeline" ? (
+                      <TimelineView
+                        timeEntries={filteredTimeEntries}
+                        absenceEntries={filteredAbsences}
+                        dateRange={dateRange}
+                      />
+                    ) : (
+                      <TimeEntriesList
+                        timeEntries={filteredTimeEntries}
+                        absenceEntries={filteredAbsences}
+                        mergeSameDay={mergeSameDay}
+                      />
+                    )
                   ) : (
-                    <TimeEntriesList
-                      timeEntries={filteredTimeEntries ?? []}
-                      mergeSameDay={mergeSameDay}
-                    />
+                    <NoMatchingEntriesState />
                   )
                 ) : (
                   <EmptyState
@@ -378,6 +406,19 @@ function TimeTrackingPage() {
           createAbsences(payload);
         }}
       />
+    </div>
+  );
+}
+
+function NoMatchingEntriesState() {
+  return (
+    <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/50 bg-card/30 p-8 text-center">
+      <h3 className="mb-2 font-display text-lg font-semibold">
+        No matching entries
+      </h3>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        Adjust the search to show time entries or absences in this range.
+      </p>
     </div>
   );
 }

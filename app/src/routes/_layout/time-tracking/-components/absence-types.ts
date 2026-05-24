@@ -38,3 +38,17 @@ export const absenceTypeAccent: Record<AbsenceType, string> = {
   otherLeave: "border-l-zinc-400/70 bg-zinc-500/5",
   otherLeaveVacationNotEarned: "border-l-zinc-400/70 bg-zinc-500/5",
 };
+
+export const absenceTypeColors: Record<AbsenceType, string> = {
+  sick: "hsl(0 84% 60%)",
+  vacation: "hsl(142 71% 45%)",
+  parentalLeave: "hsl(330 81% 60%)",
+  childcare: "hsl(199 89% 48%)",
+  paternityLeave: "hsl(262 83% 58%)",
+  furlough: "hsl(38 95% 55%)",
+  leaveOfAbsence: "hsl(215 16% 47%)",
+  leaveOfAbsenceVacationEarned: "hsl(215 16% 47%)",
+  closeRelativeCare: "hsl(350 89% 60%)",
+  otherLeave: "hsl(240 5% 46%)",
+  otherLeaveVacationNotEarned: "hsl(240 5% 46%)",
+};

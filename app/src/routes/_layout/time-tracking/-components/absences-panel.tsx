@@ -3,24 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { CalendarX2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
-import { apiErrorToast } from "@/lib/api/errors";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import type {
   AbsenceEntry,
   DateRangeQuery,
 } from "@/lib/api/queries/time-tracking";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { absenceTypeIcons, absenceTypeAccent } from "./absence-types";
+import { AbsenceDeleteDialog } from "./absence-delete-dialog";
 
 type AbsenceGroup = {
   date: string;
@@ -37,14 +27,6 @@ export function AbsencesPanel({ dateRange }: { dateRange: DateRangeQuery }) {
   const { data: absences = EMPTY_ABSENCES, isLoading } = useQuery(
     timeTrackingQueries.absenceEntries(dateRange),
   );
-  const { mutate: deleteAbsence, isPending: isDeleting } =
-    timeTrackingMutations.useDeleteAbsence({
-      onSuccess: () => {
-        setPendingDelete(null);
-        toast.success("Absence deleted");
-      },
-      onError: apiErrorToast("Failed to delete absence"),
-    });
 
   const { groups, totalHours } = React.useMemo(() => {
     const byDate = new Map<string, AbsenceGroup>();
@@ -180,44 +162,12 @@ export function AbsencesPanel({ dateRange }: { dateRange: DateRangeQuery }) {
         )}
       </div>
 
-      <Dialog
-        open={Boolean(pendingDelete)}
+      <AbsenceDeleteDialog
+        absence={pendingDelete}
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete absence?</DialogTitle>
-            <DialogDescription>
-              This removes the absence entry from Kleer.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPendingDelete(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={!pendingDelete || isDeleting}
-              onClick={() => {
-                if (!pendingDelete) return;
-                deleteAbsence({
-                  absenceId: pendingDelete.absenceId,
-                  date: pendingDelete.date,
-                });
-              }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
+  AbsenceEntry,
   TimeEntry,
   timeTrackingQueries,
 } from "@/lib/api/queries/time-tracking";
@@ -23,10 +24,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { COLORS, withAlpha, buildProjectColorMap } from "./colors";
-import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
-import { apiErrorToast } from "@/lib/api/errors";
 import { useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
-import { toast } from "sonner";
 import { TimeEntryEditDialog } from "./time-entry-edit-dialog";
 import {
   ActiveTimerBlock,
@@ -43,11 +41,20 @@ import { buildTimelineCardText } from "./timeline-card-text";
 import {
   MICRO_LANE_X_OFFSET_PX,
   layoutDayEntries,
+  type TimelineEntryInput,
   type TimelineLaidOutEntry,
+  type TimelineWorkEntry,
 } from "./timeline-layout";
+import { absenceTypeColors } from "./absence-types";
+import {
+  buildAbsenceDisplayRange,
+  formatAbsenceDetails,
+} from "../-helpers/absence-display";
+import { useStartAgainTimer } from "../-helpers/use-start-again-timer";
 
 type TimelineViewProps = {
   timeEntries: TimeEntry[];
+  absenceEntries: AbsenceEntry[];
   dateRange: { from: string; to: string };
 };
 
@@ -77,7 +84,7 @@ function getInRangeDate(fromIso: string, toIso: string) {
 
 /** Scan entries to find the earliest start and latest end, with 30 min padding */
 function computeGridBounds(
-  entries: TimeEntry[],
+  entries: TimelineEntryInput[],
   activeTimerBounds?: { earliestHour: number; latestHour: number } | null,
 ): {
   startHour: number;
@@ -185,42 +192,20 @@ const PlayButton = React.memo(function PlayButton({
   entry,
   isWeekView,
 }: {
-  entry: TimelineLaidOutEntry;
+  entry: TimelineLaidOutEntry & TimelineWorkEntry;
   isWeekView: boolean;
 }) {
-  const { mutateAsync: startTimerAsync, isPending: isStarting } =
-    timeTrackingMutations.useStartTimer();
-  const { mutateAsync: editTimerAsync } = timeTrackingMutations.useEditTimer();
-  const { state: timerState } = useTimeTrackingTimer();
+  const { isStarting, startAgain } = useStartAgainTimer();
 
   const handleStartAgain = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const isTimerActive = timerState === "running";
-
-    if (isTimerActive) {
-      editTimerAsync({
-        userNote: entry.note ?? "",
-        projectId: entry.projectId,
-        projectName: entry.projectName,
-        activityId: entry.activityId,
-        activityName: entry.activityName,
-      })
-        .then(() => toast.success("Timer updated"))
-        .catch(apiErrorToast("Failed to update timer"));
-      return;
-    }
-
-    startTimerAsync({ userNote: entry.note ?? "" })
-      .then(() =>
-        editTimerAsync({
-          projectId: entry.projectId,
-          projectName: entry.projectName,
-          activityId: entry.activityId,
-          activityName: entry.activityName,
-        }),
-      )
-      .then(() => toast.success("Timer started"))
-      .catch(apiErrorToast("Failed to start timer"));
+    startAgain({
+      note: entry.note ?? "",
+      projectId: entry.projectId,
+      projectName: entry.projectName,
+      activityId: entry.activityId,
+      activityName: entry.activityName,
+    });
   };
 
   return (
@@ -239,6 +224,33 @@ const PlayButton = React.memo(function PlayButton({
     </button>
   );
 });
+
+function TimelineMicroMarkers({
+  entry,
+  color,
+}: {
+  entry: TimelineLaidOutEntry;
+  color: string;
+}) {
+  return (
+    <>
+      <div
+        className="pointer-events-none absolute left-[5px] top-0 w-[2px] rounded-full"
+        style={{
+          height: Math.max(2, entry.durationPx),
+          backgroundColor: withAlpha(color, 0.7),
+        }}
+      />
+      <div
+        className="pointer-events-none absolute left-[3px] h-[2px] w-[6px]"
+        style={{
+          top: Math.max(1, entry.durationPx),
+          backgroundColor: withAlpha(color, 0.8),
+        }}
+      />
+    </>
+  );
+}
 
 const TimelineBlock = React.memo(function TimelineBlock({
   entry,
@@ -278,12 +290,98 @@ const TimelineBlock = React.memo(function TimelineBlock({
   const endTime = entry.endTime
     ? format(parseISO(entry.endTime), "HH:mm")
     : null;
+  const timeRangeLabel = startTime && endTime ? `${startTime} — ${endTime}` : null;
+  const isAbsence = entry.kind === "absence";
+
+  if (isAbsence) {
+    const details = formatAbsenceDetails(entry.absence);
+
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.25 }}
+            className={cn(
+              "group/block absolute z-10 rounded-lg border transition-all duration-200",
+              "cursor-default",
+              isMicro ? "overflow-visible" : "overflow-hidden",
+            )}
+            style={{
+              top: entry.topPx,
+              height: entry.visualHeightPx,
+              left: `calc(${leftPercent}% + ${blockLeftInsetPx}px)`,
+              width: blockWidthValue,
+              backgroundColor: withAlpha(color, 0.16),
+              borderColor: withAlpha(color, 0.45),
+              boxShadow: `0 1px 4px ${withAlpha(color, 0.15)}`,
+            }}
+          >
+            {isMicro && <TimelineMicroMarkers entry={entry} color={color} />}
+            <div
+              className="absolute inset-y-0 left-0 w-[3px]"
+              style={{ backgroundColor: color }}
+            />
+            <SavedTimelineCardBody
+              text={{
+                projectLabel: "Absence",
+                activityLabel: entry.absence.absenceTypeLabel,
+                primaryDetail: entry.absence.absenceTypeLabel,
+                note: details ?? "",
+                hasNote: Boolean(details),
+              }}
+              heightPx={entry.visualHeightPx}
+              widthPx={blockWidthPx}
+              color={color}
+              hours={entry.hours}
+              isWeekView={isWeekView}
+              forceProjectOnly={isMicro}
+            />
+          </motion.div>
+        </TooltipTrigger>
+        <TooltipContent
+          side="right"
+          className="max-w-xs rounded-lg border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-sm"
+        >
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Absence
+            </p>
+            <div className="flex items-center gap-2">
+              <div
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: color }}
+              />
+              <p className="font-semibold">{entry.absence.absenceTypeLabel}</p>
+            </div>
+            {details && <p className="text-sm text-foreground/90">{details}</p>}
+            <div className="flex items-center gap-3 pt-1 text-sm">
+              <span className="time-display font-medium">
+                {formatHoursAsHoursMinutes(entry.hours)}
+              </span>
+              {timeRangeLabel && (
+                <span className="time-display text-muted-foreground">
+                  {timeRangeLabel} scheduled
+                </span>
+              )}
+            </div>
+            {entry.isCapped && (
+              <p className="text-[10px] text-muted-foreground/60">
+                Display is capped at day end; reported hours are unchanged.
+              </p>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
   const text = buildTimelineCardText({
     projectName: entry.projectName,
     activityName: entry.activityName,
     note: entry.note,
   });
-  const timeRangeLabel = startTime && endTime ? `${startTime} — ${endTime}` : null;
 
   return (
     <Tooltip>
@@ -310,24 +408,7 @@ const TimelineBlock = React.memo(function TimelineBlock({
             boxShadow: `0 1px 4px ${withAlpha(color, 0.15)}`,
           }}
         >
-          {isMicro && (
-            <>
-              <div
-                className="pointer-events-none absolute left-[5px] top-0 w-[2px] rounded-full"
-                style={{
-                  height: Math.max(2, entry.durationPx),
-                  backgroundColor: withAlpha(color, 0.7),
-                }}
-              />
-              <div
-                className="pointer-events-none absolute left-[3px] h-[2px] w-[6px]"
-                style={{
-                  top: Math.max(1, entry.durationPx),
-                  backgroundColor: withAlpha(color, 0.8),
-                }}
-              />
-            </>
-          )}
+          {isMicro && <TimelineMicroMarkers entry={entry} color={color} />}
           <div
             className="absolute inset-y-0 left-0 w-[3px]"
             style={{ backgroundColor: color }}
@@ -462,12 +543,16 @@ function DayColumn({
         )}
         {entries.map((entry) => (
           <TimelineBlock
-            key={entry.registrationId}
+            key={entry.id}
             entry={entry}
             dayContentWidthPx={dayContentWidthPx}
-            color={colorMap.get(entry.projectName) || COLORS[0]}
+            color={
+              entry.kind === "absence"
+                ? absenceTypeColors[entry.absence.absenceType]
+                : colorMap.get(entry.projectName) || COLORS[0]
+            }
             isWeekView={isWeekView}
-            isEditable={entry.status === "open"}
+            isEditable={entry.kind === "time" && entry.status === "open"}
             onClick={() => onEntryClick(entry)}
           />
         ))}
@@ -495,7 +580,11 @@ function TimelineHeaderSpacer() {
   );
 }
 
-export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
+export function TimelineView({
+  timeEntries,
+  absenceEntries,
+  dateRange,
+}: TimelineViewProps) {
   const { state: timerState } = useTimeTrackingTimer();
 
   const [mode, setMode] = useState<TimelineMode>("week");
@@ -538,18 +627,36 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
     [timeEntries],
   );
 
-  // Pre-group timed entries by date so timeline only renders precise placements.
+  // Pre-group timed work and synthetic absence entries by date.
   const entriesByDate = useMemo(() => {
-    const map = new Map<string, TimeEntry[]>();
+    const map = new Map<string, TimelineEntryInput[]>();
     timeEntries.forEach((e) => {
       if (!e.startTime || !e.endTime) return;
       const key = e.date.slice(0, 10);
       const arr = map.get(key) || [];
-      arr.push(e);
+      arr.push({ ...e, kind: "time", id: e.registrationId });
       map.set(key, arr);
     });
+
+    absenceEntries.forEach((absence) => {
+      const range = buildAbsenceDisplayRange(absence);
+      const key = absence.date.slice(0, 10);
+      const arr = map.get(key) || [];
+      arr.push({
+        kind: "absence",
+        id: `absence:${absence.absenceId}`,
+        date: absence.date,
+        hours: absence.hours,
+        startTime: range.startTime,
+        endTime: range.endTime,
+        absence,
+        isCapped: range.isCapped,
+      });
+      map.set(key, arr);
+    });
+
     return map;
-  }, [timeEntries]);
+  }, [timeEntries, absenceEntries]);
 
   const weekCandidates = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(currentWeekStart, index)),
@@ -623,7 +730,7 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
 
   // Only use entries visible in current view for grid bounds
   const visibleEntries = useMemo(() => {
-    const entries: TimeEntry[] = [];
+    const entries: TimelineEntryInput[] = [];
     visibleDays.forEach((day) => {
       const key = toDayKey(day);
       const dayEntries = entriesByDate.get(key);
@@ -704,9 +811,23 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
   }, [positionedByDay]);
 
   const handleEntryClick = (entry: TimelineLaidOutEntry) => {
-    if (entry.status !== "open") return;
+    if (entry.kind !== "time" || entry.status !== "open") return;
     setEditingEntry(entry);
   };
+
+  const visibleAbsenceTypes = useMemo(() => {
+    const types = new Map<string, { label: string; color: string }>();
+    positionedByDay.forEach((entries) => {
+      entries.forEach((entry) => {
+        if (entry.kind !== "absence") return;
+        types.set(entry.absence.absenceType, {
+          label: entry.absence.absenceTypeLabel,
+          color: absenceTypeColors[entry.absence.absenceType],
+        });
+      });
+    });
+    return [...types.values()];
+  }, [positionedByDay]);
 
   return (
     <div className="card-elevated overflow-hidden rounded-2xl">
@@ -821,6 +942,24 @@ export function TimelineView({ timeEntries, dateRange }: TimelineViewProps) {
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
               {project}
+            </TooltipContent>
+          </Tooltip>
+        ))}
+        {visibleAbsenceTypes.map((absenceType) => (
+          <Tooltip key={`absence:${absenceType.label}`}>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: absenceType.color }}
+                />
+                <span className="max-w-[200px] truncate text-[11px] text-muted-foreground">
+                  Absence · {absenceType.label}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {absenceType.label}
             </TooltipContent>
           </Tooltip>
         ))}
