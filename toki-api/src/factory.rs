@@ -19,7 +19,7 @@ use crate::{
             WorkItemServiceFactory,
         },
         outbound::{
-            azure_devops::AzureDevOpsWorkItemAdapter,
+            azure_devops::{AzureDevOpsWorkItemAdapter, AzureDevOpsWorkItemMetadataCache},
             kleer::{KleerAdapter, KleerMetadataCache},
             postgres::PostgresTimerHistoryAdapter,
         },
@@ -129,6 +129,7 @@ pub struct AzureDevOpsWorkItemServiceFactory {
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     user_repo: Arc<UserRepositoryImpl>,
     api_base_url: Url,
+    metadata_cache: Arc<AzureDevOpsWorkItemMetadataCache>,
 }
 
 impl AzureDevOpsWorkItemServiceFactory {
@@ -141,6 +142,7 @@ impl AzureDevOpsWorkItemServiceFactory {
             repo_clients,
             user_repo,
             api_base_url,
+            metadata_cache: Arc::new(AzureDevOpsWorkItemMetadataCache::new()),
         }
     }
 }
@@ -167,7 +169,11 @@ impl WorkItemServiceFactory for AzureDevOpsWorkItemServiceFactory {
             })?;
 
         // 2. Create adapter and service
-        let adapter = AzureDevOpsWorkItemAdapter::new(client, self.api_base_url.clone());
+        let adapter = AzureDevOpsWorkItemAdapter::with_metadata_cache(
+            client,
+            self.api_base_url.clone(),
+            self.metadata_cache.clone(),
+        );
         let service = WorkItemServiceImpl::new(Arc::new(adapter));
         Ok(Box::new(service))
     }

@@ -4,10 +4,12 @@ pub(crate) use urls::AzureDevOpsUrl;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::sync::Arc;
+use std::time::Duration as CacheDuration;
 
 use async_trait::async_trait;
 use az_devops::RepoClientError;
-use tokio::sync::OnceCell;
+use moka::future::Cache;
 use url::Url;
 
 use crate::domain::{
@@ -28,18 +30,126 @@ use self::conversions::{
 pub struct AzureDevOpsWorkItemAdapter {
     client: az_devops::RepoClient,
     api_base_url: Url,
-    resolved_default_team: OnceCell<String>,
+    metadata_cache: Arc<AzureDevOpsWorkItemMetadataCache>,
+    metadata_cache_key: AzureDevOpsProjectCacheKey,
+}
+
+#[derive(Clone)]
+pub struct AzureDevOpsWorkItemMetadataCache {
+    default_teams: Cache<AzureDevOpsProjectCacheKey, String>,
+    taskboard_columns: Cache<AzureDevOpsTeamCacheKey, Vec<BoardColumn>>,
+    team_iterations: Cache<AzureDevOpsTeamCacheKey, Vec<az_devops::TeamIteration>>,
+    current_team_iteration_paths: Cache<AzureDevOpsTeamCacheKey, Vec<String>>,
+    taskboard_assignments:
+        Cache<AzureDevOpsTaskboardAssignmentsCacheKey, HashMap<String, BoardColumnAssignment>>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct AzureDevOpsProjectCacheKey {
+    organization: String,
+    project: String,
+    repo_name: String,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct AzureDevOpsTeamCacheKey {
+    project: AzureDevOpsProjectCacheKey,
+    team: String,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct AzureDevOpsTaskboardAssignmentsCacheKey {
+    team: AzureDevOpsTeamCacheKey,
+    iteration_id: String,
 }
 
 const MAX_WORK_ITEM_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+const AZURE_DEVOPS_METADATA_CACHE_TTL: CacheDuration = CacheDuration::from_secs(5 * 60);
+const AZURE_DEVOPS_TASKBOARD_ASSIGNMENTS_CACHE_TTL: CacheDuration = CacheDuration::from_secs(15);
+const AZURE_DEVOPS_METADATA_CACHE_MAX_ENTRIES: u64 = 128;
+const AZURE_DEVOPS_TASKBOARD_ASSIGNMENTS_CACHE_MAX_ENTRIES: u64 = 256;
+
+impl AzureDevOpsWorkItemMetadataCache {
+    pub fn new() -> Self {
+        Self {
+            default_teams: Cache::builder()
+                .time_to_live(AZURE_DEVOPS_METADATA_CACHE_TTL)
+                .max_capacity(AZURE_DEVOPS_METADATA_CACHE_MAX_ENTRIES)
+                .build(),
+            taskboard_columns: Cache::builder()
+                .time_to_live(AZURE_DEVOPS_METADATA_CACHE_TTL)
+                .max_capacity(AZURE_DEVOPS_METADATA_CACHE_MAX_ENTRIES)
+                .build(),
+            team_iterations: Cache::builder()
+                .time_to_live(AZURE_DEVOPS_METADATA_CACHE_TTL)
+                .max_capacity(AZURE_DEVOPS_METADATA_CACHE_MAX_ENTRIES)
+                .build(),
+            current_team_iteration_paths: Cache::builder()
+                .time_to_live(AZURE_DEVOPS_METADATA_CACHE_TTL)
+                .max_capacity(AZURE_DEVOPS_METADATA_CACHE_MAX_ENTRIES)
+                .build(),
+            taskboard_assignments: Cache::builder()
+                .time_to_live(AZURE_DEVOPS_TASKBOARD_ASSIGNMENTS_CACHE_TTL)
+                .max_capacity(AZURE_DEVOPS_TASKBOARD_ASSIGNMENTS_CACHE_MAX_ENTRIES)
+                .build(),
+        }
+    }
+}
+
+impl Default for AzureDevOpsWorkItemMetadataCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AzureDevOpsProjectCacheKey {
+    fn from_client(client: &az_devops::RepoClient) -> Self {
+        Self {
+            organization: normalize_cache_key_part(client.organization()),
+            project: normalize_cache_key_part(client.project()),
+            repo_name: normalize_cache_key_part(client.repo_name()),
+        }
+    }
+}
+
+impl AzureDevOpsTeamCacheKey {
+    fn new(project: &AzureDevOpsProjectCacheKey, team: &str) -> Self {
+        Self {
+            project: project.clone(),
+            team: normalize_cache_key_part(team),
+        }
+    }
+}
+
+impl AzureDevOpsTaskboardAssignmentsCacheKey {
+    fn new(project: &AzureDevOpsProjectCacheKey, team: &str, iteration_id: &str) -> Self {
+        Self {
+            team: AzureDevOpsTeamCacheKey::new(project, team),
+            iteration_id: normalize_cache_key_part(iteration_id),
+        }
+    }
+}
+
+fn normalize_cache_key_part(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn cached_work_item_error(error: Arc<WorkItemError>) -> WorkItemError {
+    (*error).clone()
+}
 
 impl AzureDevOpsWorkItemAdapter {
-    /// Create a new adapter wrapping the given `RepoClient`.
-    pub fn new(client: az_devops::RepoClient, api_base_url: Url) -> Self {
+    pub fn with_metadata_cache(
+        client: az_devops::RepoClient,
+        api_base_url: Url,
+        metadata_cache: Arc<AzureDevOpsWorkItemMetadataCache>,
+    ) -> Self {
+        let metadata_cache_key = AzureDevOpsProjectCacheKey::from_client(&client);
         Self {
             client,
             api_base_url,
-            resolved_default_team: OnceCell::new(),
+            metadata_cache,
+            metadata_cache_key,
         }
     }
 
@@ -56,14 +166,10 @@ impl AzureDevOpsWorkItemAdapter {
         };
 
         match self
-            .client
-            .get_current_team_iteration_paths(&default_team)
+            .cached_current_team_iteration_paths(&default_team)
             .await
         {
-            Ok(paths) => paths
-                .into_iter()
-                .map(|path| normalize_iteration_path(&path))
-                .collect(),
+            Ok(paths) => paths.into_iter().collect(),
             Err(e) => {
                 tracing::warn!(
                     error = %e,
@@ -416,11 +522,15 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
         let iteration = self
             .resolve_taskboard_iteration(iteration_path, &resolved_team)
             .await?;
-        let columns = self
-            .client
-            .get_taskboard_columns(&resolved_team)
-            .await
-            .map_err(to_provider_error)?;
+        let mut columns = self.cached_taskboard_columns(&resolved_team).await?;
+
+        if !columns
+            .iter()
+            .any(|column| column.name.eq_ignore_ascii_case(target_column_name))
+        {
+            self.invalidate_taskboard_columns(&resolved_team).await;
+            columns = self.cached_taskboard_columns(&resolved_team).await?;
+        }
 
         let Some(target_column) = columns
             .iter()
@@ -439,7 +549,12 @@ impl WorkItemProvider for AzureDevOpsWorkItemAdapter {
                 &target_column.name,
             )
             .await
-            .map_err(to_provider_error)
+            .map_err(to_provider_error)?;
+
+        self.invalidate_taskboard_assignments(&resolved_team, &iteration.id)
+            .await;
+
+        Ok(())
     }
 }
 
@@ -766,13 +881,7 @@ impl AzureDevOpsWorkItemAdapter {
         team: Option<&str>,
     ) -> Result<Vec<BoardColumn>, WorkItemError> {
         let resolved_team = self.resolve_default_team(team).await?;
-        let columns = self
-            .client
-            .get_taskboard_columns(&resolved_team)
-            .await
-            .map_err(to_provider_error)?;
-
-        Ok(map_taskboard_columns(columns))
+        self.cached_taskboard_columns(&resolved_team).await
     }
 
     /// Inner implementation for `get_taskboard_column_assignments` that returns a Result,
@@ -791,16 +900,11 @@ impl AzureDevOpsWorkItemAdapter {
             iteration_name = %iteration.name,
             iteration_id = %iteration.id,
             team = %resolved_team,
-            "Looking up taskboard columns"
+            "Looking up taskboard assignments"
         );
 
-        let assignments = self
-            .client
-            .get_taskboard_work_item_columns(&resolved_team, &iteration.id)
+        self.cached_taskboard_assignments(&resolved_team, &iteration.id)
             .await
-            .map_err(to_provider_error)?;
-
-        Ok(map_taskboard_assignments(assignments))
     }
 
     async fn resolve_default_team(&self, team: Option<&str>) -> Result<String, WorkItemError> {
@@ -808,35 +912,7 @@ impl AzureDevOpsWorkItemAdapter {
             return Ok(explicit_team.to_string());
         }
 
-        let selected_team = self
-            .resolved_default_team
-            .get_or_try_init(|| async {
-                let project = self.client.project();
-                let project_teams = self
-                    .client
-                    .get_project_team_names()
-                    .await
-                    .map_err(to_provider_error)?;
-                let selected_team =
-                    select_default_project_team(project, self.client.repo_name(), &project_teams)
-                        .ok_or_else(|| {
-                        WorkItemError::ProviderError(format!(
-                            "No teams were found for project '{project}'"
-                        ))
-                    })?;
-
-                tracing::debug!(
-                    project = %project,
-                    team = %selected_team,
-                    team_count = project_teams.len(),
-                    "Resolved default taskboard team"
-                );
-
-                Ok(selected_team)
-            })
-            .await?;
-
-        Ok(selected_team.clone())
+        self.cached_default_team().await
     }
 
     async fn resolve_taskboard_iteration(
@@ -846,11 +922,7 @@ impl AzureDevOpsWorkItemAdapter {
     ) -> Result<az_devops::TeamIteration, WorkItemError> {
         // Use the work API's team iterations (with GUID IDs) because
         // the taskboard endpoints require GUID iteration IDs.
-        let iterations = self
-            .client
-            .get_team_iterations(team)
-            .await
-            .map_err(to_provider_error)?;
+        let iterations = self.cached_team_iterations(team).await?;
 
         let iteration = match iteration_path {
             Some(path) => {
@@ -861,12 +933,9 @@ impl AzureDevOpsWorkItemAdapter {
             }
             None => {
                 let current_paths: HashSet<String> = self
-                    .client
-                    .get_current_team_iteration_paths(team)
-                    .await
-                    .map_err(to_provider_error)?
+                    .cached_current_team_iteration_paths(team)
+                    .await?
                     .into_iter()
-                    .map(|path| normalize_iteration_path(&path))
                     .collect();
 
                 iterations.into_iter().find(|it| {
@@ -884,6 +953,158 @@ impl AzureDevOpsWorkItemAdapter {
                 "No current team iteration found for taskboard lookup".into(),
             ),
         })
+    }
+
+    async fn cached_default_team(&self) -> Result<String, WorkItemError> {
+        let client = self.client.clone();
+        let project = self.client.project().to_string();
+        let repo_name = self.client.repo_name().to_string();
+
+        self.metadata_cache
+            .default_teams
+            .try_get_with(self.metadata_cache_key.clone(), async move {
+                let project_teams = client
+                    .get_project_team_names()
+                    .await
+                    .map_err(to_provider_error)?;
+                let selected_team =
+                    select_default_project_team(&project, &repo_name, &project_teams).ok_or_else(
+                        || {
+                            WorkItemError::ProviderError(format!(
+                                "No teams were found for project '{project}'"
+                            ))
+                        },
+                    )?;
+
+                tracing::debug!(
+                    project = %project,
+                    team = %selected_team,
+                    team_count = project_teams.len(),
+                    "Resolved default taskboard team"
+                );
+
+                Ok(selected_team)
+            })
+            .await
+            .map_err(cached_work_item_error)
+    }
+
+    async fn cached_taskboard_columns(
+        &self,
+        team: &str,
+    ) -> Result<Vec<BoardColumn>, WorkItemError> {
+        let cache_key = self.team_cache_key(team);
+        let client = self.client.clone();
+        let team = team.to_string();
+
+        self.metadata_cache
+            .taskboard_columns
+            .try_get_with(cache_key, async move {
+                client
+                    .get_taskboard_columns(&team)
+                    .await
+                    .map(map_taskboard_columns)
+                    .map_err(to_provider_error)
+            })
+            .await
+            .map_err(cached_work_item_error)
+    }
+
+    async fn cached_team_iterations(
+        &self,
+        team: &str,
+    ) -> Result<Vec<az_devops::TeamIteration>, WorkItemError> {
+        let cache_key = self.team_cache_key(team);
+        let client = self.client.clone();
+        let team = team.to_string();
+
+        self.metadata_cache
+            .team_iterations
+            .try_get_with(cache_key, async move {
+                client
+                    .get_team_iterations(&team)
+                    .await
+                    .map_err(to_provider_error)
+            })
+            .await
+            .map_err(cached_work_item_error)
+    }
+
+    async fn cached_current_team_iteration_paths(
+        &self,
+        team: &str,
+    ) -> Result<Vec<String>, WorkItemError> {
+        let cache_key = self.team_cache_key(team);
+        let client = self.client.clone();
+        let team = team.to_string();
+
+        self.metadata_cache
+            .current_team_iteration_paths
+            .try_get_with(cache_key, async move {
+                client
+                    .get_current_team_iteration_paths(&team)
+                    .await
+                    .map(|paths| {
+                        paths
+                            .into_iter()
+                            .map(|path| normalize_iteration_path(&path))
+                            .collect()
+                    })
+                    .map_err(to_provider_error)
+            })
+            .await
+            .map_err(cached_work_item_error)
+    }
+
+    async fn cached_taskboard_assignments(
+        &self,
+        team: &str,
+        iteration_id: &str,
+    ) -> Result<HashMap<String, BoardColumnAssignment>, WorkItemError> {
+        let cache_key = self.taskboard_assignments_cache_key(team, iteration_id);
+        let client = self.client.clone();
+        let team = team.to_string();
+        let iteration_id = iteration_id.to_string();
+
+        self.metadata_cache
+            .taskboard_assignments
+            .try_get_with(cache_key, async move {
+                client
+                    .get_taskboard_work_item_columns(&team, &iteration_id)
+                    .await
+                    .map(map_taskboard_assignments)
+                    .map_err(to_provider_error)
+            })
+            .await
+            .map_err(cached_work_item_error)
+    }
+
+    async fn invalidate_taskboard_columns(&self, team: &str) {
+        let cache_key = self.team_cache_key(team);
+        self.metadata_cache
+            .taskboard_columns
+            .invalidate(&cache_key)
+            .await;
+    }
+
+    async fn invalidate_taskboard_assignments(&self, team: &str, iteration_id: &str) {
+        let cache_key = self.taskboard_assignments_cache_key(team, iteration_id);
+        self.metadata_cache
+            .taskboard_assignments
+            .invalidate(&cache_key)
+            .await;
+    }
+
+    fn team_cache_key(&self, team: &str) -> AzureDevOpsTeamCacheKey {
+        AzureDevOpsTeamCacheKey::new(&self.metadata_cache_key, team)
+    }
+
+    fn taskboard_assignments_cache_key(
+        &self,
+        team: &str,
+        iteration_id: &str,
+    ) -> AzureDevOpsTaskboardAssignmentsCacheKey {
+        AzureDevOpsTaskboardAssignmentsCacheKey::new(&self.metadata_cache_key, team, iteration_id)
     }
 }
 

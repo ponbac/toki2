@@ -40,26 +40,31 @@ impl<P: WorkItemProvider> WorkItemService for WorkItemServiceImpl<P> {
         iteration_path: Option<&str>,
         team: Option<&str>,
     ) -> Result<BoardData, WorkItemError> {
-        let ids = self
-            .provider
-            .query_work_item_ids(iteration_path, team)
-            .await?;
-
         let fetch_items = async {
+            let ids = self
+                .provider
+                .query_work_item_ids(iteration_path, team)
+                .await?;
+
             if ids.is_empty() {
-                Ok(vec![])
+                Ok((ids, vec![]))
             } else {
-                self.provider.get_work_items(&ids).await
+                let items = self.provider.get_work_items(&ids).await?;
+                Ok((ids, items))
             }
         };
-        let fetch_columns = self.provider.get_board_columns(iteration_path, team);
-        let fetch_assignments = self
-            .provider
-            .get_taskboard_column_assignments(iteration_path, team);
 
-        let (items_result, mut columns, assignments) =
-            tokio::join!(fetch_items, fetch_columns, fetch_assignments);
-        let mut items = items_result?;
+        let fetch_board_metadata = async {
+            let metadata = tokio::join!(
+                self.provider.get_board_columns(iteration_path, team),
+                self.provider
+                    .get_taskboard_column_assignments(iteration_path, team)
+            );
+            Ok::<_, WorkItemError>(metadata)
+        };
+
+        let ((ids, mut items), (mut columns, assignments)) =
+            tokio::try_join!(fetch_items, fetch_board_metadata)?;
 
         for item in &mut items {
             if let Some(assignment) = assignments.get(&item.id) {
@@ -325,10 +330,14 @@ fn compare_work_item_ids(a: &str, b: &str) -> Ordering {
 mod tests {
     use std::cmp::Ordering;
     use std::collections::HashMap;
-    use std::sync::Arc;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
+        Arc,
+    };
 
     use async_trait::async_trait;
     use time::OffsetDateTime;
+    use tokio::sync::Notify;
 
     use crate::domain::models::{
         BoardColumnAssignment, PullRequestRef, WorkItemCategory, WorkItemPerson, WorkItemRef,
@@ -392,6 +401,82 @@ mod tests {
             _team: Option<&str>,
         ) -> HashMap<String, BoardColumnAssignment> {
             self.assignments.clone()
+        }
+
+        async fn get_work_item_comments(
+            &self,
+            _work_item_id: &str,
+        ) -> Result<Vec<crate::domain::models::WorkItemComment>, WorkItemError> {
+            Ok(vec![])
+        }
+
+        async fn format_work_item_for_llm(
+            &self,
+            _work_item_id: &str,
+        ) -> Result<(String, bool), WorkItemError> {
+            Ok((String::new(), false))
+        }
+
+        async fn fetch_image(&self, _image_url: &str) -> Result<WorkItemImage, WorkItemError> {
+            Ok(WorkItemImage {
+                bytes: vec![],
+                content_type: Some("image/png".to_string()),
+            })
+        }
+
+        async fn move_work_item_to_column(
+            &self,
+            _work_item_id: &str,
+            _target_column_name: &str,
+            _iteration_path: Option<&str>,
+            _team: Option<&str>,
+        ) -> Result<(), WorkItemError> {
+            Ok(())
+        }
+    }
+
+    #[derive(Clone)]
+    struct BlockingIdsProvider {
+        id_query_started: Arc<Notify>,
+        allow_ids_to_finish: Arc<Notify>,
+        metadata_started: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl WorkItemProvider for BlockingIdsProvider {
+        async fn get_iterations(&self) -> Result<Vec<Iteration>, WorkItemError> {
+            Ok(vec![])
+        }
+
+        async fn query_work_item_ids(
+            &self,
+            _iteration_path: Option<&str>,
+            _team: Option<&str>,
+        ) -> Result<Vec<String>, WorkItemError> {
+            self.id_query_started.notify_one();
+            self.allow_ids_to_finish.notified().await;
+            Ok(vec![])
+        }
+
+        async fn get_work_items(&self, _ids: &[String]) -> Result<Vec<WorkItem>, WorkItemError> {
+            Ok(vec![])
+        }
+
+        async fn get_board_columns(
+            &self,
+            _iteration_path: Option<&str>,
+            _team: Option<&str>,
+        ) -> Vec<BoardColumn> {
+            self.metadata_started.store(true, AtomicOrdering::SeqCst);
+            vec![]
+        }
+
+        async fn get_taskboard_column_assignments(
+            &self,
+            _iteration_path: Option<&str>,
+            _team: Option<&str>,
+        ) -> HashMap<String, BoardColumnAssignment> {
+            HashMap::new()
         }
 
         async fn get_work_item_comments(
@@ -611,6 +696,30 @@ mod tests {
         let item_ids: Vec<_> = board.items.iter().map(|item| item.id.as_str()).collect();
 
         assert_eq!(item_ids, vec!["3", "2", "1"]);
+    }
+
+    #[tokio::test]
+    async fn starts_board_metadata_before_work_item_ids_complete() {
+        let id_query_started = Arc::new(Notify::new());
+        let allow_ids_to_finish = Arc::new(Notify::new());
+        let metadata_started = Arc::new(AtomicBool::new(false));
+
+        let provider = BlockingIdsProvider {
+            id_query_started: id_query_started.clone(),
+            allow_ids_to_finish: allow_ids_to_finish.clone(),
+            metadata_started: metadata_started.clone(),
+        };
+        let service = WorkItemServiceImpl::new(Arc::new(provider));
+
+        let board_task = tokio::spawn(async move { service.get_board_data(None, None).await });
+
+        id_query_started.notified().await;
+        tokio::task::yield_now().await;
+
+        assert!(metadata_started.load(AtomicOrdering::SeqCst));
+
+        allow_ids_to_finish.notify_one();
+        board_task.await.unwrap().unwrap();
     }
 
     #[tokio::test]
