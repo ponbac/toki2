@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::{
     adapters::inbound::http::{
-        AbsenceDayDefaultResponse, AbsenceEntryResponse, AbsenceTypeResponse,
+        AbsenceChildResponse, AbsenceDayDefaultResponse, AbsenceEntryResponse, AbsenceTypeResponse,
     },
     app_state::AppState,
     auth::AuthUser,
@@ -47,6 +47,21 @@ pub async fn get_absence_types(
     let types = service.get_absence_types().await?;
 
     Ok(Json(types.into_iter().map(Into::into).collect()))
+}
+
+pub async fn get_absence_children(
+    user: AuthUser,
+    State(app_state): State<AppState>,
+) -> Result<Json<Vec<AbsenceChildResponse>>, ApiError> {
+    record_user_id(user.id);
+    let service = app_state
+        .time_tracking_factory
+        .create_service(user.id)
+        .await?;
+
+    let children = service.get_absence_children().await?;
+
+    Ok(Json(children.into_iter().map(Into::into).collect()))
 }
 
 pub async fn get_absences(

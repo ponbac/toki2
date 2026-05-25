@@ -17,17 +17,17 @@ use time::{Date, Duration};
 
 use crate::domain::{
     models::{
-        AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity, ActivityId, CreateAbsencesRequest,
-        CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId, TimeEntry,
-        TimeEntryDayStatus, TimerId, WeeklyStats,
+        AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity, ActivityId,
+        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
+        TimeEntry, TimeEntryDayStatus, TimerId, WeeklyStats,
     },
     ports::outbound::TimeTrackingClient,
     TimeTrackingError,
 };
 
 use self::conversions::{
-    to_domain_absence_entry_from_event, to_domain_activity, to_domain_project,
-    to_domain_scheduled_hours, to_domain_status, to_domain_time_entry,
+    to_domain_absence_child, to_domain_absence_entry_from_event, to_domain_activity,
+    to_domain_project, to_domain_scheduled_hours, to_domain_status, to_domain_time_entry,
 };
 
 pub struct KleerAdapter {
@@ -774,6 +774,22 @@ impl TimeTrackingClient for KleerAdapter {
             .collect())
     }
 
+    async fn get_absence_children(&self) -> Result<Vec<AbsenceChild>, TimeTrackingError> {
+        let payroll_user = self
+            .client
+            .get_payroll_user(self.target_user_id)
+            .await
+            .or_else(default_for_missing_payroll_user)?;
+
+        let mut children: Vec<_> = payroll_user
+            .children
+            .into_iter()
+            .map(to_domain_absence_child)
+            .collect();
+        children.sort_by(|a, b| a.name.cmp(&b.name).then(a.birth_date.cmp(&b.birth_date)));
+        Ok(children)
+    }
+
     async fn get_absences(
         &self,
         date_range: (Date, Date),
@@ -900,6 +916,9 @@ fn map_kleer_error(error: KleerError) -> TimeTrackingError {
         | KleerError::Deserialize { message, .. } => TimeTrackingError::unknown(message),
         KleerError::Response { status, body } => {
             let message = kleer_response_message(&body);
+            if is_single_access_denied_message(&message) {
+                return TimeTrackingError::Forbidden(message);
+            }
             tracing::warn!("Kleer returned non-success response: status={status}, body={message}");
             TimeTrackingError::unknown(format!("Kleer returned {status}: {message}"))
         }
@@ -985,6 +1004,10 @@ fn is_event_access_denied(error: &KleerError) -> bool {
         error,
         KleerError::Response { body, .. } if body.contains("EventAccessDeniedException")
     )
+}
+
+fn is_single_access_denied_message(message: &str) -> bool {
+    message.contains("SingleAccessDeniedException")
 }
 
 #[cfg(test)]
@@ -1370,6 +1393,18 @@ mod tests {
 
         assert!(
             matches!(error, TimeTrackingError::Forbidden(message) if message.contains("EventAccessDeniedException"))
+        );
+    }
+
+    #[test]
+    fn single_access_denied_maps_to_forbidden() {
+        let error = map_kleer_error(KleerError::Response {
+            status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            body: r#"{"message":"SingleAccessDeniedException: Otillåten access"}"#.to_string(),
+        });
+
+        assert!(
+            matches!(error, TimeTrackingError::Forbidden(message) if message.contains("SingleAccessDeniedException"))
         );
     }
 }

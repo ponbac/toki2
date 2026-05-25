@@ -55,6 +55,12 @@ pub struct AbsenceEntry {
     pub deletable: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AbsenceChild {
+    pub name: String,
+    pub birth_date: Option<Date>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AbsenceDayDefault {
     pub date: Date,

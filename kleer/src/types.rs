@@ -16,6 +16,42 @@ where
     }
 }
 
+fn payroll_children_from_any<'de, D>(deserializer: D) -> Result<Vec<KleerPayrollChild>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    parse_payroll_children_value(value.unwrap_or(serde_json::Value::Null))
+        .map_err(serde::de::Error::custom)
+}
+
+fn parse_payroll_children_value(
+    value: serde_json::Value,
+) -> Result<Vec<KleerPayrollChild>, serde_json::Error> {
+    match value {
+        serde_json::Value::Null => Ok(Vec::new()),
+        serde_json::Value::Array(values) => values
+            .into_iter()
+            .map(parse_payroll_children_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(|children| children.into_iter().flatten().collect()),
+        serde_json::Value::Object(mut object) => {
+            if let Some(value) = object.remove("child") {
+                return parse_payroll_children_value(value);
+            }
+            if let Some(value) = object.remove("children") {
+                return parse_payroll_children_value(value);
+            }
+            if object.contains_key("name") || object.contains_key("birth-date") {
+                return serde_json::from_value(serde_json::Value::Object(object))
+                    .map(|child| vec![child]);
+            }
+            Ok(Vec::new())
+        }
+        other => serde_json::from_value(other).map(|child| vec![child]),
+    }
+}
+
 mod date_format {
     use serde::{Deserialize, Deserializer, Serializer};
     use time::Date;
@@ -248,6 +284,21 @@ pub struct KleerSavedId {
     pub id: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct KleerPayrollChild {
+    pub name: String,
+    #[serde(with = "option_date_format", default)]
+    pub birth_date: Option<Date>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct KleerPayrollUserReadable {
+    #[serde(default, deserialize_with = "payroll_children_from_any")]
+    pub children: Vec<KleerPayrollChild>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct KleerScheduleMetadata {
@@ -351,5 +402,51 @@ mod tests {
         assert_eq!(parsed.users[0].foreign_id.as_deref(), Some("aad-user-id"));
         assert_eq!(parsed.users[0].internal_id.as_deref(), Some("123"));
         assert_eq!(parsed.users[0].email.as_deref(), Some("ada@example.com"));
+    }
+
+    #[test]
+    fn deserializes_payroll_user_children_collection_shapes() {
+        let raw = r#"{
+            "children": {
+                "child": [
+                    { "name": "Barn1", "birth-date": "2020-01-01" },
+                    { "name": "Barn2", "birth-date": "2022-02-02" }
+                ]
+            }
+        }"#;
+        let parsed: KleerPayrollUserReadable = serde_json::from_str(raw).unwrap();
+
+        assert_eq!(parsed.children.len(), 2);
+        assert_eq!(parsed.children[0].name, "Barn1");
+        assert_eq!(
+            parsed.children[0].birth_date,
+            Some(Date::from_calendar_date(2020, time::Month::January, 1).unwrap())
+        );
+
+        let raw = r#"{
+            "children": {
+                "children": [
+                    { "name": "Barn3", "birth-date": "2023-03-03" }
+                ]
+            }
+        }"#;
+        let parsed: KleerPayrollUserReadable = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.children[0].name, "Barn3");
+    }
+
+    #[test]
+    fn deserializes_payroll_user_children_without_birth_date() {
+        let raw = r#"{
+            "children": {
+                "children": [
+                    { "name": "Barn4" }
+                ]
+            }
+        }"#;
+        let parsed: KleerPayrollUserReadable = serde_json::from_str(raw).unwrap();
+
+        assert_eq!(parsed.children.len(), 1);
+        assert_eq!(parsed.children[0].name, "Barn4");
+        assert_eq!(parsed.children[0].birth_date, None);
     }
 }

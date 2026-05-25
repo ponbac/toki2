@@ -68,6 +68,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - `POST /company/{companyId}/event/{eventId}`
 - `DELETE /company/{companyId}/event/{eventId}`
 - `GET /company/{companyId}/event/statuses`
+- `GET /company/{companyId}/payroll/user/{userId}`
 - `GET /company/{companyId}/payroll/user/{userId}/schedule/{startDate}/to/{endDate}`
 
 ## Events, Statuses, And Stats
@@ -114,6 +115,12 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - Listing returns projectless events whose activity id maps to one of the resolved absence activities. Project-backed events and unknown projectless events are ignored.
 - Deletion is allowed only for the mapped user’s projectless events with a resolved absence activity id. The adapter fetches the event by id and validates ownership, projectlessness, and activity before calling Kleer delete.
 - `PARENTAL_LEAVE` and `CHILDCARE` require a non-empty child name.
+- Child options come from the mapped Kleer user's payroll employment contract:
+  `GET /payroll/user/{userId}` returns a `children` collection whose child entries
+  have `name` and may omit `birth-date`. The normal event API still writes the
+  child as a string field, so Toki sends the selected registered child name.
+- Kleer's docs also expose `PUT /payroll/user/{userId}/child` to register a child
+  with `name` and `birth-date`, but Toki currently only reads registered children.
 - Normal Kleer event writes send `comment`; send an empty string when the user did not enter one.
 - Use payroll schedule `actual-hours` only as the default per-day absence hours. Missing schedule days default to `0`, and users may manually override hours.
 - Existing same-day absence events are allowed and additive. Kleer remains the source of truth.

@@ -62,7 +62,7 @@ export function ReportAbsenceDialog(props: {
   const [absenceType, setAbsenceType] =
     React.useState<ManagedAbsenceType | null>(null);
   const [submitAttempted, setSubmitAttempted] = React.useState(false);
-  const [child, setChild] = React.useState("");
+  const [selectedChildName, setSelectedChildName] = React.useState("");
   const [comment, setComment] = React.useState("");
   const [hoursByDate, setHoursByDate] = React.useState<Record<string, string>>(
     {},
@@ -75,6 +75,14 @@ export function ReportAbsenceDialog(props: {
       ...timeTrackingQueries.absenceTypes(),
       enabled: props.open,
     });
+  const {
+    data: absenceChildren = [],
+    isError: isAbsenceChildrenError,
+    isLoading: isAbsenceChildrenLoading,
+  } = useQuery({
+    ...timeTrackingQueries.absenceChildren(),
+    enabled: props.open,
+  });
   const { data: defaults, isLoading: isDefaultsLoading } = useQuery({
     ...timeTrackingQueries.absenceDayDefaults({ from, to }),
     enabled: props.open && dateRangeIsValid,
@@ -103,6 +111,20 @@ export function ReportAbsenceDialog(props: {
     });
   }, [defaults, props.open]);
 
+  const childOptions = React.useMemo(
+    () => {
+      const seen = new Set<string>();
+      return absenceChildren.filter((child) => {
+        if (seen.has(child.name)) return false;
+        seen.add(child.name);
+        return true;
+      });
+    },
+    [absenceChildren],
+  );
+  const selectedChild =
+    childOptions.find((child) => child.name === selectedChildName) ?? null;
+
   const { positiveDays, totalHours } = React.useMemo(() => {
     const days: CreateAbsencesPayload["days"] = [];
     let hours = 0;
@@ -123,6 +145,11 @@ export function ReportAbsenceDialog(props: {
 
   const childRequired =
     absenceType !== null && childRequiredTypes.has(absenceType);
+  const childSelectionReady =
+    !childRequired ||
+    (!isAbsenceChildrenError &&
+      !isAbsenceChildrenLoading &&
+      selectedChild !== null);
   const canAttemptSubmit =
     dateRangeIsValid &&
     positiveDays.length > 0 &&
@@ -130,12 +157,28 @@ export function ReportAbsenceDialog(props: {
     !isAbsenceTypesLoading &&
     !isDefaultsLoading &&
     !props.isCreating &&
-    (!childRequired || child.trim().length > 0);
+    childSelectionReady;
   const canSubmit = Boolean(absenceType) && canAttemptSubmit;
 
   const SelectedTypeIcon = absenceType ? absenceTypeIcons[absenceType] : null;
   const showAbsenceTypeError = submitAttempted && absenceType === null;
+  const showChildError =
+    submitAttempted && childRequired && selectedChild === null;
   const submitDisabled = !canAttemptSubmit;
+
+  React.useEffect(() => {
+    if (!childRequired) {
+      setSelectedChildName("");
+      return;
+    }
+
+    if (
+      selectedChildName &&
+      !childOptions.some((child) => child.name === selectedChildName)
+    ) {
+      setSelectedChildName("");
+    }
+  }, [childOptions, childRequired, selectedChildName]);
 
   const reset = () => {
     const today = getTodayDate();
@@ -143,7 +186,7 @@ export function ReportAbsenceDialog(props: {
     setTo(today);
     setAbsenceType(null);
     setSubmitAttempted(false);
-    setChild("");
+    setSelectedChildName("");
     setComment("");
     setHoursByDate({});
   };
@@ -178,7 +221,7 @@ export function ReportAbsenceDialog(props: {
 
     props.onCreate({
       absenceType,
-      child: childRequired ? child.trim() : null,
+      child: childRequired ? selectedChild?.name ?? null : null,
       comment,
       days: positiveDays,
     });
@@ -298,14 +341,76 @@ export function ReportAbsenceDialog(props: {
               <div className="overflow-hidden p-0.5">
                 <div className="relative">
                   <Baby className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={child}
-                    onChange={(event) => setChild(event.target.value)}
-                    placeholder="Child name"
-                    className="pl-9"
-                    tabIndex={childRequired ? 0 : -1}
-                  />
+                  <Select
+                    value={selectedChildName}
+                    disabled={
+                      !childRequired ||
+                      isAbsenceChildrenError ||
+                      isAbsenceChildrenLoading ||
+                      absenceChildren.length === 0
+                    }
+                    onValueChange={(value) => {
+                      setSelectedChildName(value);
+                      setSubmitAttempted(false);
+                    }}
+                  >
+                    <SelectTrigger
+                      aria-invalid={showChildError}
+                      aria-describedby={
+                        showChildError ? "absence-child-error" : undefined
+                      }
+                      className={cn(
+                        "pl-9 data-[placeholder]:text-foreground/70",
+                        showChildError &&
+                          "border-destructive focus:ring-destructive",
+                      )}
+                      tabIndex={childRequired ? 0 : -1}
+                    >
+                      <SelectValue
+                        placeholder={
+                          isAbsenceChildrenLoading
+                            ? "Loading children..."
+                            : isAbsenceChildrenError
+                              ? "Could not load children"
+                            : "Select child..."
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {childOptions.map((child) => (
+                        <SelectItem
+                          key={`${child.name}:${child.birthDate ?? ""}`}
+                          value={child.name}
+                        >
+                          {child.birthDate
+                            ? `${child.name} - ${dayjs(child.birthDate).format("YYYY-MM-DD")}`
+                            : child.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+                {childRequired && isAbsenceChildrenError && (
+                  <p className="mt-1.5 text-sm text-destructive">
+                    Could not load registered children from Kleer.
+                  </p>
+                )}
+                {childRequired &&
+                  !isAbsenceChildrenError &&
+                  !isAbsenceChildrenLoading &&
+                  absenceChildren.length === 0 && (
+                    <p className="mt-1.5 text-sm text-muted-foreground">
+                      No registered children found in Kleer.
+                    </p>
+                  )}
+                {showChildError && (
+                  <p
+                    id="absence-child-error"
+                    className="mt-1.5 text-sm text-destructive"
+                  >
+                    Select a registered child to continue.
+                  </p>
+                )}
               </div>
             </div>
           </div>

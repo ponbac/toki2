@@ -1,10 +1,13 @@
 use kleer::{
-    KleerActivityReadable, KleerClientProjectReadable, KleerEventReadable, KleerScheduleMetadata,
-    KleerStatusType,
+    KleerActivityReadable, KleerClientProjectReadable, KleerEventReadable, KleerPayrollChild,
+    KleerScheduleMetadata, KleerStatusType,
 };
 
 use crate::domain::{
-    models::{AbsenceEntry, AbsenceType, Activity, Project, ProjectId, TimeEntry, TimeEntryStatus},
+    models::{
+        AbsenceChild, AbsenceEntry, AbsenceType, Activity, Project, ProjectId, TimeEntry,
+        TimeEntryStatus,
+    },
     TimeTrackingError,
 };
 
@@ -74,6 +77,13 @@ pub fn to_domain_time_entry(
 
 pub fn to_domain_scheduled_hours(schedule: &[KleerScheduleMetadata]) -> f64 {
     schedule.iter().map(|day| day.actual_hours).sum()
+}
+
+pub fn to_domain_absence_child(child: KleerPayrollChild) -> AbsenceChild {
+    AbsenceChild {
+        name: child.name,
+        birth_date: child.birth_date,
+    }
 }
 
 pub fn to_domain_absence_entry_from_event(
