@@ -141,6 +141,7 @@ ASPIRE_OTLP_ENDPOINT=http://toki-aspire-dashboard:18889
 Aspire service environment:
 
 ```bash
+ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
 DASHBOARD__OTLP__AUTHMODE=ApiKey
 DASHBOARD__OTLP__PRIMARYAPIKEY=${{environment.ASPIRE_OTLP_API_KEY}}
 DASHBOARD__TELEMETRYLIMITS__MAXLOGCOUNT=50000
@@ -150,12 +151,9 @@ DASHBOARD__TELEMETRYLIMITS__MAXATTRIBUTECOUNT=256
 DASHBOARD__TELEMETRYLIMITS__MAXATTRIBUTELENGTH=16384
 ```
 
-The dashboard UI also has a browser login token. Retrieve it from the container logs:
-
-```bash
-tailscale ssh root@toki-dokploy-01 'docker ps --format "{{.Names}}" | grep aspire'
-tailscale ssh root@toki-dokploy-01 'docker service logs toki-aspire-dashboard 2>&1 | grep -i token'
-```
+The dashboard UI allows anonymous browser access because it is reachable only
+over Tailscale. Keep the OTLP API key enabled so telemetry ingestion still
+requires `x-otlp-api-key`.
 
 Configure `toki-api` to export directly to Aspire over the internal Dokploy network:
 
