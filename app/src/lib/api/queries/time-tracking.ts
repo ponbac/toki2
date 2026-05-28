@@ -110,6 +110,15 @@ export function parseTimeInfoQueryKey(
   return { from, to };
 }
 
+function sortByName<T>(items: Array<T>, getName: (item: T) => string) {
+  return items.toSorted((a, b) =>
+    getName(a).localeCompare(getName(b), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    }),
+  );
+}
+
 export const timeTrackingQueries = {
   projectsBaseKey: timeTrackingQueryKeys.projectsBase,
   activitiesBaseKey: timeTrackingQueryKeys.activitiesBase,
@@ -123,7 +132,10 @@ export const timeTrackingQueries = {
     queryOptions({
       queryKey: timeTrackingQueries.projectsBaseKey,
       queryFn: async () =>
-        api.get("time-tracking/projects").json<Array<Project>>(),
+        sortByName(
+          await api.get("time-tracking/projects").json<Array<Project>>(),
+          (project) => project.projectName,
+        ),
       staleTime: 60 * 60 * 1000,
       gcTime: 24 * 60 * 60 * 1000,
     }),
@@ -139,9 +151,12 @@ export const timeTrackingQueries = {
     queryOptions({
       queryKey: timeTrackingQueryKeys.activities(projectId),
       queryFn: async () =>
-        api
-          .get(`time-tracking/projects/${projectId}/activities`)
-          .json<Array<Activity>>(),
+        sortByName(
+          await api
+            .get(`time-tracking/projects/${projectId}/activities`)
+            .json<Array<Activity>>(),
+          (activity) => activity.activityName,
+        ),
       staleTime: 60 * 60 * 1000,
       gcTime: 24 * 60 * 60 * 1000,
     }),
