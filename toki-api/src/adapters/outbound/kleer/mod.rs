@@ -343,7 +343,7 @@ impl KleerAdapter {
             date: start_time.date(),
             hours: (end_time - start_time).whole_seconds() as f64 / 3600.0,
             comment: note.to_string(),
-            internal_comment: Some(note.to_string()),
+            internal_comment: None,
         }
     }
 
@@ -1169,7 +1169,7 @@ mod tests {
     }
 
     #[test]
-    fn event_payload_saves_note_as_external_and_internal_comment() {
+    fn event_payload_saves_note_as_external_comment_only() {
         let start_time = Date::from_calendar_date(2026, Month::May, 6)
             .unwrap()
             .with_hms(8, 0, 0)
@@ -1189,10 +1189,7 @@ mod tests {
         );
 
         assert_eq!(payload.comment, "Worked on PR review");
-        assert_eq!(
-            payload.internal_comment.as_deref(),
-            Some("Worked on PR review")
-        );
+        assert_eq!(payload.internal_comment, None);
     }
 
     #[test]
@@ -1217,10 +1214,7 @@ mod tests {
             );
 
             assert_eq!(payload.comment, KleerAdapter::MISSING_NOTE_COMMENT);
-            assert_eq!(
-                payload.internal_comment.as_deref(),
-                Some(KleerAdapter::MISSING_NOTE_COMMENT)
-            );
+            assert_eq!(payload.internal_comment, None);
         }
     }
 
