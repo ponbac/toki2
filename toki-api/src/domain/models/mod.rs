@@ -1,4 +1,5 @@
 mod absence;
+mod api_token;
 mod avatar;
 mod ids;
 mod project;
@@ -7,6 +8,7 @@ mod timer;
 mod work_item;
 
 pub use absence::*;
+pub use api_token::*;
 pub use avatar::*;
 pub use ids::*;
 pub use project::*;

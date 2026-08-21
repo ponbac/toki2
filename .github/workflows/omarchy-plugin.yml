@@ -1,0 +1,23 @@
+name: Omarchy Plugin CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "omarchy-plugin/**"
+      - ".github/workflows/omarchy-plugin.yml"
+  pull_request:
+    paths:
+      - "omarchy-plugin/**"
+      - ".github/workflows/omarchy-plugin.yml"
+
+jobs:
+  test-helper:
+    name: Helper Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run helper tests
+        run: python3 -m unittest discover -s omarchy-plugin/tests -v

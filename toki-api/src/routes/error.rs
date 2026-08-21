@@ -154,3 +154,17 @@ impl From<WorkItemServiceError> for ApiError {
         Self::new(err.status, err.message)
     }
 }
+
+impl From<crate::domain::ApiTokenError> for ApiError {
+    fn from(err: crate::domain::ApiTokenError) -> Self {
+        match err {
+            crate::domain::ApiTokenError::InvalidName => Self::bad_request(err.to_string()),
+            crate::domain::ApiTokenError::TooManyTokens => Self::conflict(err.to_string()),
+            crate::domain::ApiTokenError::NotFound => Self::not_found(err.to_string()),
+            crate::domain::ApiTokenError::Storage(message) => {
+                tracing::error!("API token operation failed: {}", message);
+                Self::internal("api token operation failed")
+            }
+        }
+    }
+}

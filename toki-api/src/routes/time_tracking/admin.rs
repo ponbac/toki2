@@ -438,7 +438,6 @@ mod tests {
             email: email.to_string(),
             full_name: format!("User {id}"),
             picture: String::new(),
-            access_token: String::new(),
             roles: vec![Role::User],
             session_auth_hash: String::new(),
         }

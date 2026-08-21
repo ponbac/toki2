@@ -45,3 +45,16 @@ pub enum AvatarError {
     #[error("avatar storage error: {0}")]
     Storage(String),
 }
+
+/// Errors that can occur during API token operations.
+#[derive(Debug, Error)]
+pub enum ApiTokenError {
+    #[error("token name must contain 1 to 64 characters")]
+    InvalidName,
+    #[error("token limit reached")]
+    TooManyTokens,
+    #[error("token not found")]
+    NotFound,
+    #[error("api token storage error: {0}")]
+    Storage(String),
+}

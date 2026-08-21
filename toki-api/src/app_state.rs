@@ -18,8 +18,9 @@ use crate::{
     config::KleerSettings,
     db::DbPool,
     domain::{
-        ports::inbound::AvatarService, CachedIdentities, NotificationHandler, PullRequest,
-        RepoConfig, RepoDiffer, RepoDifferMessage, RepoKey,
+        ports::inbound::{ApiTokenService, AvatarService},
+        CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
+        RepoDifferMessage, RepoKey,
     },
     factory::AzureDevOpsWorkItemServiceFactory,
     repositories::{
@@ -60,6 +61,7 @@ pub struct AppState {
     pub notification_repo: Arc<NotificationRepositoryImpl>,
     pub time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
     pub avatar_service: Arc<dyn AvatarService>,
+    pub api_token_service: Arc<dyn ApiTokenService>,
     pub work_item_factory: Arc<dyn WorkItemServiceFactory>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
@@ -84,6 +86,7 @@ impl AppState {
         repo_configs: Vec<RepoConfig>,
         time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
         avatar_service: Arc<dyn AvatarService>,
+        api_token_service: Arc<dyn ApiTokenService>,
     ) -> Self {
         let client_futures = repo_configs
             .into_iter()
@@ -157,6 +160,7 @@ impl AppState {
             notification_repo: Arc::new(NotificationRepositoryImpl::new(db_pool.clone())),
             time_tracking_factory,
             avatar_service,
+            api_token_service,
             work_item_factory,
             repo_clients,
             differ_txs: Arc::new(Mutex::new(differ_txs)),
