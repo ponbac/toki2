@@ -3,16 +3,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Serialize;
 use std::fmt;
 
-#[derive(Serialize)]
-struct ErrorBody {
-    error: String,
-}
-
 use crate::{
-    adapters::inbound::http::{TimeTrackingServiceError, WorkItemServiceError},
+    adapters::inbound::http::{ErrorResponse, TimeTrackingServiceError, WorkItemServiceError},
     app_state::AppStateError,
     domain::{AvatarError, TimeTrackingError, WorkItemError},
     repositories::RepositoryError,
@@ -64,7 +58,7 @@ impl fmt::Display for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let body = ErrorBody {
+        let body = ErrorResponse {
             error: self.message,
         };
         (self.status, Json(body)).into_response()

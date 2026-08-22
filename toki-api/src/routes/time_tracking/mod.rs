@@ -59,4 +59,4 @@ pub fn router() -> Router<AppState> {
         .route("/update-timer", put(timer::edit_timer))
 }
 
-pub(crate) use timer::get_timer as get_timer_status;
+pub(crate) use timer::{__path_get_timer, get_timer};

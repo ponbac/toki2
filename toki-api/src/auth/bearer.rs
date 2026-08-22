@@ -15,8 +15,8 @@ use crate::{
 
 /// Resolves an explicit Bearer credential into a narrow request principal.
 ///
-/// Router composition applies this middleware only to active timer status. An
-/// Authorization header is authoritative over a cookie session on that route,
+/// Router composition applies this middleware to the automation router. An
+/// Authorization header is authoritative over a cookie session on those routes,
 /// so mixed credentials cannot silently select another identity.
 pub async fn authenticate_bearer(
     State(tokens): State<Arc<dyn ApiTokenAuthenticator>>,

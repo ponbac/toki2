@@ -1,7 +1,7 @@
 use crate::{
     adapters::inbound::http::{
-        GetTimerResponse, SaveTimerResponse, TimeEntryResponse, TimerHistoryEntryResponse,
-        TimerResponse,
+        ErrorResponse, GetTimerResponse, SaveTimerResponse, TimeEntryResponse,
+        TimerHistoryEntryResponse, TimerResponse,
     },
     app_state::AppState,
     auth::AuthUser,
@@ -21,6 +21,22 @@ use crate::observability::record_user_id;
 // Get Timer
 // ============================================================================
 
+/// Get the active timer
+///
+/// Returns the authenticated user's currently running timer, or `null` when
+/// none is running. This is the only automation read in the initial catalog.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/timer",
+    operation_id = "getActiveTimer",
+    tag = "Time tracking",
+    responses(
+        (status = 200, description = "Active timer, if any", body = GetTimerResponse),
+        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    ),
+    security(("bearerAuth" = []))
+)]
 pub async fn get_timer(
     user: AuthUser,
     State(app_state): State<AppState>,

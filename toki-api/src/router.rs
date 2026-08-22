@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{handler::Handler, http::Method, routing::get, Router};
+use axum::{http::Method, routing::get, Router};
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
     login_required,
@@ -19,9 +19,12 @@ type SessionStore = CachingSessionStore<MokaStore, PostgresStore>;
 const SESSION_COOKIE_NAME: &str = "toki.sid";
 
 use crate::{
-    adapters::outbound::{
-        media::WebpAvatarProcessor,
-        postgres::{PostgresApiTokenRepository, PostgresAvatarRepository},
+    adapters::{
+        inbound::http::{automation_parts, openapi_spec_router},
+        outbound::{
+            media::WebpAvatarProcessor,
+            postgres::{PostgresApiTokenRepository, PostgresAvatarRepository},
+        },
     },
     app_state::AppState,
     auth::{self, AuthBackend},
@@ -58,16 +61,17 @@ pub async fn create(
     let api_token_service: Arc<dyn ApiTokenService> = api_tokens.clone();
     let api_token_authenticator: Arc<dyn ApiTokenAuthenticator> = api_tokens;
 
+    let (automation_routes, _spec) = automation_parts();
+
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
-        base_app.merge(Router::new().route(
-            "/time-tracking/timer",
-            get(routes::time_tracking::get_timer_status),
-        ))
+        base_app
+            .merge(automation_routes)
+            .merge(openapi_spec_router())
     } else {
         let auth_layer =
             new_auth_layer(connection_pool.clone(), db_pool.clone(), config.clone()).await;
-        authenticated_routes(base_app, api_token_authenticator).layer(auth_layer)
+        authenticated_routes(base_app, automation_routes, api_token_authenticator).layer(auth_layer)
     };
 
     // Create the time tracking factory (composition root wiring)
@@ -138,31 +142,29 @@ pub async fn create(
 
 fn authenticated_routes(
     session_routes: Router<AppState>,
+    automation_routes: Router<AppState>,
     api_token_authenticator: Arc<dyn ApiTokenAuthenticator>,
 ) -> Router<AppState> {
     compose_authenticated_routes(
         session_routes,
-        routes::time_tracking::get_timer_status,
-        auth::router(),
+        automation_routes,
+        auth::router().merge(openapi_spec_router()),
         api_token_authenticator,
     )
 }
 
-fn compose_authenticated_routes<S, H, T>(
+fn compose_authenticated_routes<S>(
     session_routes: Router<S>,
-    timer_status_handler: H,
-    public_auth_routes: Router<S>,
+    automation_routes: Router<S>,
+    public_routes: Router<S>,
     api_token_authenticator: Arc<dyn ApiTokenAuthenticator>,
 ) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
-    H: Handler<T, S>,
-    T: 'static,
 {
-    // Construct the only bearer-capable route here so callers cannot widen the
-    // token's authority by passing a larger router or additional HTTP methods.
-    let timer_status_routes = Router::new()
-        .route("/time-tracking/timer", get(timer_status_handler))
+    // Bearer authentication is applied to the automation router as a whole.
+    // Adding a route there both documents it and makes it token-eligible.
+    let automation_routes = automation_routes
         .route_layer(axum::middleware::from_fn(auth::require_authenticated))
         .layer(axum::middleware::from_fn_with_state(
             api_token_authenticator,
@@ -171,8 +173,8 @@ where
 
     session_routes
         .route_layer(login_required!(AuthBackend))
-        .merge(timer_status_routes)
-        .merge(public_auth_routes)
+        .merge(automation_routes)
+        .merge(public_routes)
 }
 
 async fn new_auth_layer(
@@ -270,20 +272,26 @@ mod tests {
                     .delete(|| async { StatusCode::OK }),
             )
             .route("/users/me/api-tokens", get(|| async { StatusCode::OK }));
-        let public_auth_routes = Router::new().route(
-            "/me",
-            get(|session: crate::auth::AuthSession| async move {
-                if session.user.is_some() {
-                    StatusCode::OK
-                } else {
-                    StatusCode::UNAUTHORIZED
-                }
-            }),
+        let automation_routes = Router::new().route(
+            "/time-tracking/timer",
+            get(|user: crate::auth::AuthUser| async move { user.id.to_string() }),
         );
+        let public_routes = Router::new()
+            .route(
+                "/me",
+                get(|session: crate::auth::AuthSession| async move {
+                    if session.user.is_some() {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::UNAUTHORIZED
+                    }
+                }),
+            )
+            .merge(openapi_spec_router());
         let app = compose_authenticated_routes(
             base_routes,
-            |user: crate::auth::AuthUser| async move { user.id.to_string() },
-            public_auth_routes,
+            automation_routes,
+            public_routes,
             Arc::new(StubAuthenticator),
         )
         .layer(test_auth_layer());
@@ -311,6 +319,7 @@ mod tests {
                 "/users/me/api-tokens",
                 StatusCode::UNAUTHORIZED,
             ),
+            (Method::GET, "/openapi.json", StatusCode::OK),
         ] {
             let response = app
                 .clone()

@@ -1,9 +1,11 @@
 //! HTTP response types for time tracking and work item endpoints.
 //!
-//! These types serialize to the JSON format expected by the frontend.
+//! These types serialize to the JSON format expected by the frontend and the
+//! agent OpenAPI catalog.
 
 use serde::Serialize;
 use time::OffsetDateTime;
+use utoipa::ToSchema;
 
 use crate::domain::models::{
     AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity, BoardColumn,
@@ -12,8 +14,15 @@ use crate::domain::models::{
     WorkItemProject, WorkItemRef,
 };
 
+/// JSON error body returned by HTTP handlers.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorResponse {
+    /// Human-readable error message. Never contains credentials.
+    pub error: String,
+}
+
 /// Response for the get timer endpoint.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GetTimerResponse {
     pub timer: Option<TimerResponse>,
@@ -28,11 +37,12 @@ pub struct SaveTimerResponse {
 }
 
 /// Active timer response - all timers are standalone now.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimerResponse {
     /// When the timer was started (ISO 8601).
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = "date-time")]
     pub start_time: OffsetDateTime,
     /// Project ID (if set).
     pub project_id: Option<String>,

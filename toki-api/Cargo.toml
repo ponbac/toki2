@@ -73,6 +73,8 @@ base64.workspace = true
 strum_macros = "0.26.4"
 tower-sessions-moka-store = "0.15"
 tower-sessions-sqlx-store = { version = "0.15.0", features = ["postgres"] }
+utoipa = { version = "5.5", features = ["axum_extras", "time"] }
+utoipa-axum = "0.2"
 image = { version = "0.25.9", features = ["jpeg", "png"] }
 webp = "0.3.1"
 moka = { version = "0.12", features = ["future", "sync"] }
