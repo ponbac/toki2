@@ -1,19 +1,17 @@
 use std::fmt;
 
-use crate::domain::Email;
+use crate::domain::{Email, PullRequest, PullRequestComment, PullRequestThread};
 
 use super::{PushNotification, PushSubscription};
-use az_devops::Comment;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PRChangeEvent {
     PullRequestClosed,
-    ThreadAdded(az_devops::Thread),
-    ThreadUpdated(az_devops::Thread),
+    ThreadAdded(PullRequestThread),
+    ThreadUpdated(PullRequestThread),
     CommentMentioned {
-        comment: Comment,
+        comment: PullRequestComment,
         mentioned_email: Email,
-        thread_id: i32,
     },
 }
 
@@ -95,7 +93,7 @@ impl PRChangeEvent {
     pub fn to_web_push_message(
         &self,
         sub: &PushSubscription,
-        pr: &az_devops::PullRequest,
+        pr: &PullRequest,
         url: &str,
     ) -> web_push::WebPushMessage {
         self.to_push_notification(pr, url)
@@ -103,7 +101,7 @@ impl PRChangeEvent {
             .expect("Failed to create web push message")
     }
 
-    pub fn to_push_notification(&self, pr: &az_devops::PullRequest, url: &str) -> PushNotification {
+    pub fn to_push_notification(&self, pr: &PullRequest, url: &str) -> PushNotification {
         match self {
             PRChangeEvent::PullRequestClosed => PushNotification::new(
                 format!("{}: Pull Request Closed", pr.title).as_str(),

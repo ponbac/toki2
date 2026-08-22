@@ -18,10 +18,19 @@ export const pullRequestsQueries = {
     }),
 };
 
+export type ListPullRequestWorkItem = {
+  id: string;
+  title: string;
+  url: string;
+  parentId: string | null;
+  priority?: number | null;
+};
+
 export type ListPullRequest = {
   organization: string;
   project: string;
   repoName: string;
+  url: string;
   id: number;
   title: string;
   createdBy: User;
@@ -31,7 +40,7 @@ export type ListPullRequest = {
   isDraft: boolean;
   mergeStatus: MergeStatus | null;
   threads: Thread[];
-  workItems: WorkItem[];
+  workItems: ListPullRequestWorkItem[];
   reviewers: Reviewer[];
   blockedBy: Reviewer[];
   approvedBy: Reviewer[];

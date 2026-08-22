@@ -1,7 +1,9 @@
 use axum::extract::State;
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::{
+    adapters::inbound::http::ErrorResponse,
     app_state::AppState,
     auth::AuthUser,
     domain::{
@@ -12,7 +14,7 @@ use crate::{
     routes::ApiError,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionStatusResponse {
     connected: bool,
@@ -21,6 +23,21 @@ pub struct ConnectionStatusResponse {
     provider_user_name: Option<String>,
 }
 
+/// Get time-tracking connection status
+///
+/// Returns whether the authenticated user is mapped to a time-tracking
+/// provider user, plus the mapped identity when connected.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/connection",
+    operation_id = "getTimeTrackingConnection",
+    tag = "Time tracking",
+    responses(
+        (status = 200, description = "Connection status for the current user", body = ConnectionStatusResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn connection_status(
     user: AuthUser,
     State(app_state): State<AppState>,

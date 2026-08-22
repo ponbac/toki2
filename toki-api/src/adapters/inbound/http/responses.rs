@@ -13,6 +13,11 @@ use crate::domain::models::{
     TimeEntryStatus, TimerHistoryEntry, WeeklyStats, WorkItem, WorkItemCategory, WorkItemPerson,
     WorkItemProject, WorkItemRef,
 };
+use crate::domain::{
+    PullRequest, PullRequestComment, PullRequestCommentType, PullRequestIdentity,
+    PullRequestMergeStatus, PullRequestReviewer, PullRequestThread, PullRequestThreadStatus,
+    PullRequestVote, PullRequestWorkItemRef,
+};
 
 /// JSON error body returned by HTTP handlers.
 #[derive(Debug, Serialize, ToSchema)]
@@ -80,7 +85,7 @@ impl From<ActiveTimer> for TimerResponse {
 }
 
 /// Project response - simplified for frontend use.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectResponse {
     pub project_id: String,
@@ -97,7 +102,7 @@ impl From<Project> for ProjectResponse {
 }
 
 /// Activity response - simplified for frontend use.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityResponse {
     /// Activity code (used in API calls).
@@ -116,7 +121,25 @@ impl From<Activity> for ActivityResponse {
 }
 
 /// Time entry response - completed time registration.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TimeEntryStatusResponse {
+    Open,
+    Approved,
+    Certified,
+}
+
+impl From<TimeEntryStatus> for TimeEntryStatusResponse {
+    fn from(status: TimeEntryStatus) -> Self {
+        match status {
+            TimeEntryStatus::Open => Self::Open,
+            TimeEntryStatus::Approved => Self::Approved,
+            TimeEntryStatus::Certified => Self::Certified,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeEntryResponse {
     pub registration_id: String,
@@ -129,11 +152,14 @@ pub struct TimeEntryResponse {
     pub hours: f64,
     pub note: Option<String>,
     #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>, format = "date-time")]
     pub start_time: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>, format = "date-time")]
     pub end_time: Option<OffsetDateTime>,
     pub week_number: u8,
-    pub status: TimeEntryStatus,
+    /// Attestation status: `open`, `approved`, or `certified`.
+    pub status: TimeEntryStatusResponse,
 }
 
 impl From<TimeEntry> for TimeEntryResponse {
@@ -150,39 +176,42 @@ impl From<TimeEntry> for TimeEntryResponse {
             start_time: entry.start_time,
             end_time: entry.end_time,
             week_number: entry.week_number,
-            status: entry.status,
+            status: entry.status.into(),
         }
     }
 }
 
 /// Date-level time entry status response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeEntryDayStatusResponse {
     /// Date in YYYY-MM-DD format.
     pub date: String,
-    pub status: TimeEntryStatus,
+    /// Attestation status: `open`, `approved`, or `certified`.
+    pub status: TimeEntryStatusResponse,
 }
 
 impl From<TimeEntryDayStatus> for TimeEntryDayStatusResponse {
     fn from(day_status: TimeEntryDayStatus) -> Self {
         Self {
             date: day_status.date.to_string(),
-            status: day_status.status,
+            status: day_status.status.into(),
         }
     }
 }
 
 /// Timer history entry response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimerHistoryEntryResponse {
     pub id: i32,
     pub registration_id: Option<String>,
     pub user_id: i32,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = "date-time")]
     pub start_time: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>, format = "date-time")]
     pub end_time: Option<OffsetDateTime>,
     pub project_id: Option<String>,
     pub project_name: Option<String>,
@@ -190,6 +219,7 @@ pub struct TimerHistoryEntryResponse {
     pub activity_name: Option<String>,
     pub note: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = "date-time")]
     pub created_at: OffsetDateTime,
 }
 
@@ -212,7 +242,7 @@ impl From<TimerHistoryEntry> for TimerHistoryEntryResponse {
 }
 
 /// Weekly stats response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WeeklyStatsResponse {
     pub worked_hours: f64,
@@ -323,14 +353,35 @@ impl From<AbsenceDayDefault> for AbsenceDayDefaultResponse {
 // ---------------------------------------------------------------------------
 
 /// A work item as returned by the API.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum BoardStateResponse {
+    Todo,
+    InProgress,
+    Done,
+}
+
+impl From<BoardState> for BoardStateResponse {
+    fn from(state: BoardState) -> Self {
+        match state {
+            BoardState::Todo => Self::Todo,
+            BoardState::InProgress => Self::InProgress,
+            BoardState::Done => Self::Done,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkItemResponse {
     pub id: String,
     pub title: String,
-    pub board_state: BoardState,
+    /// Board column grouping: `todo`, `inProgress`, or `done`.
+    pub board_state: BoardStateResponse,
     pub board_column_id: Option<String>,
     pub board_column_name: Option<String>,
+    /// Work item type, for example `userStory`, `bug`, or `task`.
+    #[schema(value_type = String)]
     pub category: WorkItemCategory,
     pub state_name: String,
     pub priority: Option<i32>,
@@ -358,7 +409,7 @@ impl From<WorkItem> for WorkItemResponse {
         Self {
             id: item.id,
             title: item.title,
-            board_state: item.board_state,
+            board_state: item.board_state.into(),
             board_column_id: item.board_column_id,
             board_column_name: item.board_column_name,
             category: item.category,
@@ -385,7 +436,7 @@ impl From<WorkItem> for WorkItemResponse {
 }
 
 /// A board column.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardColumnResponse {
     pub id: String,
@@ -404,7 +455,7 @@ impl From<BoardColumn> for BoardColumnResponse {
 }
 
 /// Board response payload (columns + items).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardResponse {
     pub columns: Vec<BoardColumnResponse>,
@@ -421,7 +472,7 @@ impl From<BoardData> for BoardResponse {
 }
 
 /// A person associated with a work item.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkItemPersonResponse {
     pub display_name: String,
@@ -440,7 +491,7 @@ impl From<WorkItemPerson> for WorkItemPersonResponse {
 }
 
 /// A lightweight reference to another work item.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkItemRefResponse {
     pub id: String,
@@ -457,7 +508,7 @@ impl From<WorkItemRef> for WorkItemRefResponse {
 }
 
 /// A reference to a pull request linked to a work item.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestRefResponse {
     pub id: String,
@@ -485,14 +536,14 @@ impl From<PullRequestRef> for PullRequestRefResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestApprovalStatusResponse {
     pub approved_by: Vec<PullRequestReviewerResponse>,
     pub blocked_by: Vec<PullRequestReviewerResponse>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestReviewerResponse {
     pub id: String,
@@ -502,7 +553,7 @@ pub struct PullRequestReviewerResponse {
 }
 
 /// Response for the format-for-llm endpoint.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FormatForLlmResponse {
     pub markdown: String,
@@ -510,7 +561,7 @@ pub struct FormatForLlmResponse {
 }
 
 /// A sprint/iteration response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IterationResponse {
     pub id: String,
@@ -536,7 +587,7 @@ impl From<Iteration> for IterationResponse {
 }
 
 /// A project that has work items.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkItemProjectResponse {
     pub organization: String,
@@ -548,6 +599,293 @@ impl From<WorkItemProject> for WorkItemProjectResponse {
         Self {
             organization: project.organization,
             project: project.project,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pull request list response types (Toki-owned agent contract)
+// ---------------------------------------------------------------------------
+
+/// A person identity in the pull-request list.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestIdentityResponse {
+    pub id: String,
+    pub display_name: String,
+    pub unique_name: String,
+    pub avatar_url: Option<String>,
+}
+
+impl From<PullRequestIdentity> for PullRequestIdentityResponse {
+    fn from(identity: PullRequestIdentity) -> Self {
+        Self {
+            id: identity.id,
+            display_name: identity.display_name,
+            unique_name: identity.unique_name,
+            avatar_url: identity.avatar_url,
+        }
+    }
+}
+
+/// Reviewer vote on a pull request.
+#[derive(Debug, Serialize, ToSchema)]
+pub enum PullRequestVoteResponse {
+    NoResponse,
+    Approved,
+    ApprovedWithSuggestions,
+    WaitingForAuthor,
+    Rejected,
+}
+
+impl From<PullRequestVote> for PullRequestVoteResponse {
+    fn from(vote: PullRequestVote) -> Self {
+        match vote {
+            PullRequestVote::NoResponse => Self::NoResponse,
+            PullRequestVote::Approved => Self::Approved,
+            PullRequestVote::ApprovedWithSuggestions => Self::ApprovedWithSuggestions,
+            PullRequestVote::WaitingForAuthor => Self::WaitingForAuthor,
+            PullRequestVote::Rejected => Self::Rejected,
+        }
+    }
+}
+
+/// Provider-neutral merge state.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PullRequestMergeStatusResponse {
+    NotSet,
+    Queued,
+    Conflicts,
+    Succeeded,
+    RejectedByPolicy,
+    Failure,
+}
+
+impl From<PullRequestMergeStatus> for PullRequestMergeStatusResponse {
+    fn from(status: PullRequestMergeStatus) -> Self {
+        match status {
+            PullRequestMergeStatus::NotSet => Self::NotSet,
+            PullRequestMergeStatus::Queued => Self::Queued,
+            PullRequestMergeStatus::Conflicts => Self::Conflicts,
+            PullRequestMergeStatus::Succeeded => Self::Succeeded,
+            PullRequestMergeStatus::RejectedByPolicy => Self::RejectedByPolicy,
+            PullRequestMergeStatus::Failure => Self::Failure,
+        }
+    }
+}
+
+/// Kind of comment in a pull-request discussion.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PullRequestCommentTypeResponse {
+    Unknown,
+    Text,
+    CodeChange,
+    System,
+}
+
+impl From<PullRequestCommentType> for PullRequestCommentTypeResponse {
+    fn from(comment_type: PullRequestCommentType) -> Self {
+        match comment_type {
+            PullRequestCommentType::Unknown => Self::Unknown,
+            PullRequestCommentType::Text => Self::Text,
+            PullRequestCommentType::CodeChange => Self::CodeChange,
+            PullRequestCommentType::System => Self::System,
+        }
+    }
+}
+
+/// Resolution state of a pull-request discussion.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PullRequestThreadStatusResponse {
+    Unknown,
+    Active,
+    Fixed,
+    WontFix,
+    Closed,
+    ByDesign,
+    Pending,
+}
+
+impl From<PullRequestThreadStatus> for PullRequestThreadStatusResponse {
+    fn from(status: PullRequestThreadStatus) -> Self {
+        match status {
+            PullRequestThreadStatus::Unknown => Self::Unknown,
+            PullRequestThreadStatus::Active => Self::Active,
+            PullRequestThreadStatus::Fixed => Self::Fixed,
+            PullRequestThreadStatus::WontFix => Self::WontFix,
+            PullRequestThreadStatus::Closed => Self::Closed,
+            PullRequestThreadStatus::ByDesign => Self::ByDesign,
+            PullRequestThreadStatus::Pending => Self::Pending,
+        }
+    }
+}
+
+/// A reviewer together with their vote and flags.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestReviewerVoteResponse {
+    pub identity: PullRequestIdentityResponse,
+    pub vote: Option<PullRequestVoteResponse>,
+    pub has_declined: Option<bool>,
+    pub is_required: Option<bool>,
+    pub is_flagged: Option<bool>,
+}
+
+impl From<PullRequestReviewer> for PullRequestReviewerVoteResponse {
+    fn from(reviewer: PullRequestReviewer) -> Self {
+        Self {
+            identity: reviewer.identity.into(),
+            vote: reviewer.vote.map(Into::into),
+            has_declined: reviewer.has_declined,
+            is_required: reviewer.is_required,
+            is_flagged: reviewer.is_flagged,
+        }
+    }
+}
+
+/// A comment on a pull-request thread.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestCommentResponse {
+    pub id: i64,
+    pub author: PullRequestIdentityResponse,
+    pub content: Option<String>,
+    /// Comment kind, for example `text` or `system`.
+    pub comment_type: Option<PullRequestCommentTypeResponse>,
+    pub is_deleted: Option<bool>,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = "date-time")]
+    pub published_at: OffsetDateTime,
+}
+
+impl From<PullRequestComment> for PullRequestCommentResponse {
+    fn from(comment: PullRequestComment) -> Self {
+        Self {
+            id: comment.id,
+            author: comment.author.into(),
+            content: comment.content,
+            comment_type: comment.comment_type.map(Into::into),
+            is_deleted: comment.is_deleted,
+            published_at: comment.published_at,
+        }
+    }
+}
+
+/// A discussion thread on a pull request.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestThreadResponse {
+    pub id: i32,
+    pub comments: Vec<PullRequestCommentResponse>,
+    /// Thread status, for example `active` or `fixed`.
+    pub status: Option<PullRequestThreadStatusResponse>,
+    pub is_deleted: Option<bool>,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = "date-time")]
+    pub last_updated_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = "date-time")]
+    pub published_at: OffsetDateTime,
+}
+
+impl From<PullRequestThread> for PullRequestThreadResponse {
+    fn from(thread: PullRequestThread) -> Self {
+        Self {
+            id: thread.id,
+            comments: thread.comments.into_iter().map(Into::into).collect(),
+            status: thread.status.map(Into::into),
+            is_deleted: thread.is_deleted,
+            last_updated_at: thread.last_updated_at,
+            published_at: thread.published_at,
+        }
+    }
+}
+
+/// A work item linked to a pull request.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestWorkItemRefResponse {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub parent_id: Option<String>,
+    pub priority: Option<i32>,
+}
+
+impl From<PullRequestWorkItemRef> for PullRequestWorkItemRefResponse {
+    fn from(work_item: PullRequestWorkItemRef) -> Self {
+        Self {
+            id: work_item.id,
+            title: work_item.title,
+            url: work_item.url,
+            parent_id: work_item.parent_id,
+            priority: work_item.priority,
+        }
+    }
+}
+
+/// Trimmed pull request used by the agent catalog and the PR list UI.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListPullRequestResponse {
+    pub organization: String,
+    pub project: String,
+    pub repo_name: String,
+    pub url: String,
+    pub id: i32,
+    pub title: String,
+    pub created_by: PullRequestIdentityResponse,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String, format = "date-time")]
+    pub created_at: OffsetDateTime,
+    pub source_branch: String,
+    pub target_branch: String,
+    pub is_draft: bool,
+    /// Merge status, for example `succeeded` or `conflicts`.
+    pub merge_status: Option<PullRequestMergeStatusResponse>,
+    pub threads: Vec<PullRequestThreadResponse>,
+    pub work_items: Vec<PullRequestWorkItemRefResponse>,
+    pub reviewers: Vec<PullRequestReviewerVoteResponse>,
+    pub blocked_by: Vec<PullRequestReviewerVoteResponse>,
+    pub approved_by: Vec<PullRequestReviewerVoteResponse>,
+    pub waiting_for_user_review: bool,
+    pub review_required: bool,
+}
+
+impl ListPullRequestResponse {
+    pub fn from_domain(pull_request: PullRequest, user_email: &str) -> Self {
+        let blocked_by = pull_request.blocked_by();
+        let approved_by = pull_request.approved_by();
+        let (waiting_for_user_review, review_required) =
+            pull_request.waiting_for_user_review(user_email);
+
+        Self {
+            organization: pull_request.organization,
+            project: pull_request.project,
+            repo_name: pull_request.repo_name,
+            url: pull_request.url,
+            id: pull_request.id,
+            title: pull_request.title,
+            created_by: pull_request.created_by.into(),
+            created_at: pull_request.created_at,
+            source_branch: pull_request.source_branch,
+            target_branch: pull_request.target_branch,
+            is_draft: pull_request.is_draft,
+            merge_status: pull_request.merge_status.map(Into::into),
+            threads: pull_request.threads.into_iter().map(Into::into).collect(),
+            work_items: pull_request
+                .work_items
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            reviewers: pull_request.reviewers.into_iter().map(Into::into).collect(),
+            blocked_by: blocked_by.into_iter().map(Into::into).collect(),
+            approved_by: approved_by.into_iter().map(Into::into).collect(),
+            waiting_for_user_review,
+            review_required,
         }
     }
 }

@@ -128,10 +128,7 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
                 <WorkItemLink
                   key={wi.id}
                   tooltip={wi.title}
-                  data={{
-                    ...row.original,
-                    id: wi.id,
-                  }}
+                  data={wi}
                 />
               ))
             ) : (
@@ -141,10 +138,7 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
                   <WorkItemLink
                     key={wi.id}
                     tooltip={wi.title}
-                    data={{
-                      ...row.original,
-                      id: wi.id,
-                    }}
+                    data={wi}
                   />
                 ))}
                 <Tooltip>
@@ -161,10 +155,7 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
                           <WorkItemLink
                             key={wi.id}
                             text={wi.title}
-                            data={{
-                              ...row.original,
-                              id: wi.id,
-                            }}
+                            data={wi}
                           />
                         ))}
                     </div>

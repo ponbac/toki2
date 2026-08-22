@@ -1,39 +1,22 @@
 use core::fmt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use axum::{
-    http::StatusCode,
-    response::{IntoResponse, Response},
-};
-use az_devops::{Identity, RepoClient};
-use futures_util::{stream, StreamExt, TryStreamExt};
 use serde::Serialize;
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{field, instrument, Span};
 
-use crate::domain::Email;
+use crate::domain::{
+    ports::outbound::{PullRequestProvider, PullRequestProviderError},
+    Email, PullRequestIdentity,
+};
 
 use super::{NotificationHandler, PullRequest, PullRequestDiff, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
-pub enum RepoDifferError {
-    #[error("Could not fetch pull requests for repo")]
-    PullRequests,
-    #[error("Could not fetch threads for pull request")]
-    Threads,
-    #[error("Could not fetch commits for pull request")]
-    Commits,
-    #[error("Could not fetch work items for pull request")]
-    WorkItems,
-    #[error("Could not fetch identities")]
-    Identities,
-}
-
-#[derive(Debug, thiserror::Error)]
 enum RepoDifferPollError {
     #[error("{0}")]
-    Tick(#[from] RepoDifferError),
+    Tick(#[from] PullRequestProviderError),
     #[error("Tick operation timed out")]
     Timeout,
 }
@@ -41,14 +24,6 @@ enum RepoDifferPollError {
 struct RepoDifferTickResult {
     pr_count: usize,
     change_events: Vec<PullRequestDiff>,
-}
-
-impl IntoResponse for RepoDifferError {
-    fn into_response(self) -> Response {
-        let status = StatusCode::INTERNAL_SERVER_ERROR;
-
-        (status, self.to_string()).into_response()
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -68,7 +43,7 @@ pub enum RepoDifferMessage {
 #[derive(Clone)]
 pub struct RepoDiffer {
     pub key: RepoKey,
-    az_client: RepoClient,
+    pull_request_provider: Arc<dyn PullRequestProvider>,
     notification_handler: Arc<NotificationHandler>,
     pub identities: Arc<RwLock<CachedIdentities>>,
     pub prev_pull_requests: Arc<RwLock<Option<Vec<PullRequest>>>>,
@@ -80,12 +55,12 @@ pub struct RepoDiffer {
 impl RepoDiffer {
     pub fn new(
         key: RepoKey,
-        az_client: RepoClient,
+        pull_request_provider: Arc<dyn PullRequestProvider>,
         notification_handler: Arc<NotificationHandler>,
     ) -> Self {
         Self {
             key,
-            az_client,
+            pull_request_provider,
             notification_handler,
             identities: Arc::new(RwLock::new(CachedIdentities::new(Duration::from_secs(
                 60 * 60, // Refresh identities every hour
@@ -107,8 +82,6 @@ impl RepoDiffer {
     const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(30);
     const MAX_RETRY_DELAY: Duration = Duration::from_secs(3600);
     const TICK_TIMEOUT: Duration = Duration::from_secs(120);
-    const PR_FETCH_CONCURRENCY: usize = 10;
-
     pub async fn run(&self, mut receiver: mpsc::Receiver<RepoDifferMessage>) {
         let mut tick_interval: Option<tokio::time::Interval> = None;
 
@@ -300,71 +273,15 @@ impl RepoDiffer {
     }
 
     #[instrument(name = "repo_differ.fetch_and_diff", skip(self), fields(repo.key = %self.key, operation.name = "repo_differ.fetch_and_diff", pr_count = field::Empty, changed_pr_count = field::Empty))]
-    async fn tick(&self) -> Result<RepoDifferTickResult, RepoDifferError> {
-        let base_pull_requests = self
-            .az_client
-            .get_open_pull_requests()
-            .await
-            .map_err(|_| RepoDifferError::PullRequests)?;
-        tracing::Span::current().record("pr_count", base_pull_requests.len());
-
-        let pr_ids = base_pull_requests
-            .iter()
-            .map(|pr| pr.id)
-            .collect::<Vec<_>>();
-        let mut work_items_by_pr = self
-            .az_client
-            .get_work_items_for_pull_requests(&pr_ids)
-            .await
-            .map_err(|_| RepoDifferError::WorkItems)?;
-
-        let mut fetched_pull_requests = stream::iter(base_pull_requests.into_iter().enumerate())
-            .map(|(index, pr)| {
-                let client = self.az_client.clone();
-                async move {
-                    let (commits, threads) = tokio::try_join!(
-                        async {
-                            pr.commits(&client)
-                                .await
-                                .map_err(|_| RepoDifferError::Commits)
-                        },
-                        async {
-                            pr.threads(&client)
-                                .await
-                                .map_err(|_| RepoDifferError::Threads)
-                        },
-                    )?;
-
-                    Ok::<_, RepoDifferError>((index, pr, commits, threads))
-                }
-            })
-            .buffer_unordered(Self::PR_FETCH_CONCURRENCY)
-            .try_collect::<Vec<_>>()
-            .await?;
-        fetched_pull_requests.sort_by_key(|(index, _, _, _)| *index);
-
-        let mut complete_pull_requests = Vec::with_capacity(fetched_pull_requests.len());
-        for (_, pr, commits, threads) in fetched_pull_requests {
-            let work_items = work_items_by_pr.remove(&pr.id).unwrap_or_default();
-
-            let url = format!(
-                "https://dev.azure.com/{}/{}/_git/{}/pullrequest/{}",
-                self.key.organization, self.key.project, self.key.repo_name, pr.id
-            );
-            complete_pull_requests.push(PullRequest::new(
-                &self.key, url, pr, threads, commits, work_items,
-            ));
-        }
+    async fn tick(&self) -> Result<RepoDifferTickResult, PullRequestProviderError> {
+        let complete_pull_requests = self.pull_request_provider.get_open_pull_requests().await?;
+        tracing::Span::current().record("pr_count", complete_pull_requests.len());
 
         let id_to_email_map = {
             let cached_identities = self.identities.read().await;
             // Update the cached identities if they are stale.
             if cached_identities.is_stale() {
-                let identities = self
-                    .az_client
-                    .get_git_identities()
-                    .await
-                    .map_err(|_| RepoDifferError::Identities)?;
+                let identities = self.pull_request_provider.get_identities().await?;
 
                 drop(cached_identities); // Drop the read lock before acquiring write lock to avoid deadlock
                 let mut cached_identities = self.identities.write().await;
@@ -384,7 +301,7 @@ impl RepoDiffer {
                         prev_pr.changelog(
                             complete_pull_requests
                                 .iter()
-                                .find(|p| p.pull_request_base.id == prev_pr.pull_request_base.id),
+                                .find(|pull_request| pull_request.id == prev_pr.id),
                             &id_to_email_map,
                         )
                     })
@@ -445,7 +362,7 @@ async fn interval_tick_or_sleep(interval: &mut Option<tokio::time::Interval>) {
 
 #[derive(Debug, Clone, Default)]
 pub struct CachedIdentities {
-    pub identities: Vec<Identity>,
+    pub identities: Vec<PullRequestIdentity>,
     last_updated: Option<OffsetDateTime>,
     stale_after: Duration,
 }
@@ -466,7 +383,7 @@ impl CachedIdentities {
     }
 
     /// Update the cached identities and set the last updated time to now.
-    pub fn update(&mut self, identities: Vec<Identity>) {
+    pub fn update(&mut self, identities: Vec<PullRequestIdentity>) {
         self.identities = identities;
         self.last_updated = Some(OffsetDateTime::now_utc());
     }

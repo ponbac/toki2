@@ -15,6 +15,7 @@ use web_push::{IsahcWebPushClient, WebPushClient, WebPushMessage};
 
 use crate::{
     adapters::inbound::http::{TimeTrackingServiceFactory, WorkItemServiceFactory},
+    adapters::outbound::azure_devops::AzureDevOpsPullRequestAdapter,
     config::KleerSettings,
     db::DbPool,
     domain::{
@@ -122,9 +123,11 @@ impl AppState {
         let differ_txs = clients
             .iter()
             .map(|(key, client)| {
+                let pull_request_provider =
+                    Arc::new(AzureDevOpsPullRequestAdapter::new(client.clone()));
                 let differ = Arc::new(RepoDiffer::new(
                     key.clone(),
-                    client.clone(),
+                    pull_request_provider,
                     notification_handler.clone(),
                 ));
                 differs.insert(key.clone(), differ.clone());
@@ -259,9 +262,10 @@ impl AppState {
 
         let mut differ_txs = self.differ_txs.lock().await;
         let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
+        let pull_request_provider = Arc::new(AzureDevOpsPullRequestAdapter::new(client.clone()));
         let differ = Arc::new(RepoDiffer::new(
             key.clone(),
-            client.clone(),
+            pull_request_provider,
             self.notification_handler.clone(),
         ));
         self.differs
