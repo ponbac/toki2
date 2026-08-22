@@ -22,7 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/connection", get(connection::connection_status))
         .route("/projects", get(projects::list_projects))
         .route(
-            "/projects/:project_id/activities",
+            "/projects/{project_id}/activities",
             get(projects::list_activities),
         )
         .route("/time-info", get(calendar::get_time_info))

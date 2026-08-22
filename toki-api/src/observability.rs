@@ -860,8 +860,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            route_template_from_parts(Some("/repositories/:id"), request.uri().path()),
-            "/repositories/:id"
+            route_template_from_parts(Some("/repositories/{id}"), request.uri().path()),
+            "/repositories/{id}"
         );
         assert_eq!(
             sanitize_query(request.uri().query().unwrap()),

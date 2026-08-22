@@ -29,24 +29,24 @@ pub fn router() -> Router<AppState> {
         .route("/subscribe", post(subscribe))
         .route("/is-subscribed", post(is_subscribed))
         .route("/push-subscriptions", get(get_push_subscriptions))
-        .route("/push-subscriptions/:id", delete(delete_push_subscription))
+        .route("/push-subscriptions/{id}", delete(delete_push_subscription))
         .route("/test-push", post(test_push))
         .route("/", get(get_notifications))
-        .route("/:id/view", post(mark_notification_viewed))
+        .route("/{id}/view", post(mark_notification_viewed))
         .route("/view-all", post(mark_all_notifications_viewed))
-        .route("/:id", delete(delete_notification))
-        .route("/preferences/:repository_id", get(get_preferences))
-        .route("/preferences/:repository_id", post(update_preferences))
+        .route("/{id}", delete(delete_notification))
+        .route("/preferences/{repository_id}", get(get_preferences))
+        .route("/preferences/{repository_id}", post(update_preferences))
         .route(
-            "/repositories/:repository_id/pull-requests/:pull_request_id/exceptions",
+            "/repositories/{repository_id}/pull-requests/{pull_request_id}/exceptions",
             get(get_pr_exceptions),
         )
         .route(
-            "/repositories/:repository_id/pull-requests/:pull_request_id/exceptions",
+            "/repositories/{repository_id}/pull-requests/{pull_request_id}/exceptions",
             post(set_pr_exception),
         )
         .route(
-            "/repositories/:repository_id/pull-requests/:pull_request_id/exceptions/:notification_type",
+            "/repositories/{repository_id}/pull-requests/{pull_request_id}/exceptions/{notification_type}",
             delete(remove_pr_exception),
         )
 }

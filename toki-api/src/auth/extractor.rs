@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use axum::{async_trait, extract::FromRequestParts, http::request::Parts};
+use axum::{extract::FromRequestParts, http::request::Parts};
 
 use crate::{domain::UserPrincipal, routes::ApiError};
 
@@ -24,7 +24,6 @@ impl Deref for AuthUser {
 #[derive(Debug, Clone)]
 pub(super) struct ApiTokenPrincipal(pub UserPrincipal);
 
-#[async_trait]
 impl<S> FromRequestParts<S> for AuthUser
 where
     S: Send + Sync,
