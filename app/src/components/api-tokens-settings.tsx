@@ -12,9 +12,35 @@ import { apiErrorToast } from "@/lib/api/errors";
 import { userMutations } from "@/lib/api/mutations/user";
 import {
   userQueries,
+  API_TOKEN_CAPABILITIES,
   type ApiToken,
+  type ApiTokenCapability,
+  type ApiTokenCapabilities,
   type CreatedApiToken,
 } from "@/lib/api/queries/user";
+
+const CAPABILITY_OPTIONS: ReadonlyArray<{
+  value: ApiTokenCapability;
+  label: string;
+}> = [
+  { value: "timer:read", label: "Active timer" },
+  { value: "catalog:read", label: "Projects and activities" },
+  { value: "entries:read", label: "Time entries" },
+  { value: "work-items:read", label: "Work items" },
+  { value: "pull-requests:read", label: "Pull requests" },
+];
+
+function capabilitiesFromSelection(
+  selected: ReadonlySet<ApiTokenCapability>,
+): ApiTokenCapabilities | null {
+  const [first, ...rest] = API_TOKEN_CAPABILITIES.filter((capability) =>
+    selected.has(capability),
+  );
+  if (first === undefined) {
+    return null;
+  }
+  return [first, ...rest];
+}
 
 /** Account-settings section for issuing and revoking API tokens. */
 export function ApiTokensSettings({
@@ -23,6 +49,9 @@ export function ApiTokensSettings({
   issuance: ApiTokenIssuance;
 }) {
   const [name, setName] = React.useState("");
+  const [selected, setSelected] = React.useState<Set<ApiTokenCapability>>(
+    () => new Set(["timer:read"]),
+  );
   const tokensQuery = useQuery(userQueries.apiTokens());
   const revokeToken = userMutations.useRevokeApiToken({
     onSuccess: (_data, variables) => {
@@ -37,11 +66,17 @@ export function ApiTokensSettings({
   React.useEffect(() => {
     if (issuance.issued) {
       setName("");
+      setSelected(new Set(["timer:read"]));
     }
   }, [issuance.issued]);
 
+  const capabilities = capabilitiesFromSelection(selected);
   const creationDisabled =
-    !name.trim() || issuance.isPending || issuance.issued !== null;
+    !name.trim() ||
+    capabilities === null ||
+    issuance.isPending ||
+    issuance.issued !== null;
+  const formDisabled = issuance.isPending || issuance.issued !== null;
 
   return (
     <section className="space-y-3" aria-labelledby="api-tokens-heading">
@@ -55,7 +90,8 @@ export function ApiTokensSettings({
           API tokens
         </h3>
         <p className="text-xs text-muted-foreground">
-          Create an API token. The secret is shown only once.
+          Create an API token. The secret is shown only once. Existing tokens
+          keep only active-timer read access until you grant more.
         </p>
       </div>
 
@@ -68,31 +104,76 @@ export function ApiTokensSettings({
       )}
 
       <form
-        className="flex items-end gap-2"
+        className="space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
           const trimmed = name.trim();
-          if (!creationDisabled) {
-            issuance.issue(trimmed);
+          if (!creationDisabled && capabilities) {
+            issuance.issue(trimmed, capabilities);
           }
         }}
       >
-        <div className="min-w-0 flex-1 space-y-1">
-          <Label htmlFor="api-token-name" className="text-xs">
-            Name
-          </Label>
-          <Input
-            id="api-token-name"
-            value={name}
-            maxLength={64}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Token name"
-            disabled={issuance.isPending || issuance.issued !== null}
-          />
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label htmlFor="api-token-name" className="text-xs">
+              Name
+            </Label>
+            <Input
+              id="api-token-name"
+              value={name}
+              maxLength={64}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Token name"
+              disabled={formDisabled}
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={creationDisabled}>
+            {issuance.isPending ? "Creating..." : "Create"}
+          </Button>
         </div>
-        <Button type="submit" size="sm" disabled={creationDisabled}>
-          {issuance.isPending ? "Creating..." : "Create"}
-        </Button>
+        <fieldset className="space-y-2" disabled={formDisabled}>
+          <legend className="text-xs font-medium">Capabilities</legend>
+          <div className="grid gap-1.5">
+            {CAPABILITY_OPTIONS.map((option) => {
+              const checkboxId = `api-token-capability-${option.value}`;
+              const checked = selected.has(option.value);
+              return (
+                <div key={option.value} className="flex items-center gap-2">
+                  <input
+                    id={checkboxId}
+                    type="checkbox"
+                    className="size-3.5 accent-primary"
+                    checked={checked}
+                    disabled={formDisabled || (checked && selected.size === 1)}
+                    onChange={() => {
+                      setSelected((current) => {
+                        const next = new Set(current);
+                        if (next.has(option.value)) {
+                          if (next.size === 1) {
+                            return current;
+                          }
+                          next.delete(option.value);
+                        } else {
+                          next.add(option.value);
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+                  <Label
+                    htmlFor={checkboxId}
+                    className="text-xs font-normal leading-none"
+                  >
+                    {option.label}
+                    <span className="ml-1 font-mono text-muted-foreground">
+                      {option.value}
+                    </span>
+                  </Label>
+                </div>
+              );
+            })}
+          </div>
+        </fieldset>
       </form>
 
       {issuance.issued && (
@@ -174,6 +255,9 @@ function TokenList({
               <p className="truncate text-sm font-medium">{token.name}</p>
               <p className="font-mono text-xs text-muted-foreground">
                 {token.prefix}…
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {token.capabilities.join(", ")}
               </p>
             </div>
             <Button

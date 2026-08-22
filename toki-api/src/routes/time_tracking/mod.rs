@@ -6,18 +6,27 @@ mod projects;
 mod timer;
 
 use axum::{
+    middleware,
     routing::{get, put},
     Router,
 };
 
-use crate::app_state::AppState;
+use crate::{app_state::AppState, auth::require_capability, domain::models::ApiTokenCapability};
 
 fn normalize_user_note(note: impl AsRef<str>) -> String {
     note.as_ref().trim().to_owned()
 }
 
 pub fn router() -> Router<AppState> {
+    let timer_read_routes = Router::new()
+        .route("/timer", get(timer::get_timer))
+        .route_layer(middleware::from_fn_with_state(
+            ApiTokenCapability::TimerRead,
+            require_capability,
+        ));
+
     Router::new()
+        .merge(timer_read_routes)
         .nest("/admin", admin::router())
         .route("/connection", get(connection::connection_status))
         .route("/projects", get(projects::list_projects))
@@ -52,8 +61,7 @@ pub fn router() -> Router<AppState> {
         .route("/timer-history", get(timer::get_timer_history))
         .route(
             "/timer",
-            get(timer::get_timer)
-                .post(timer::start_timer)
+            axum::routing::post(timer::start_timer)
                 .delete(timer::stop_timer)
                 .put(timer::save_timer),
         )

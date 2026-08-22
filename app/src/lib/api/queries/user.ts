@@ -2,7 +2,15 @@ import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
 import { parseApiTokens, parseUser } from "../contracts/user";
 
-export type { ApiToken, CreatedApiToken, Role, User } from "../contracts/user";
+export type {
+  ApiToken,
+  ApiTokenCapability,
+  ApiTokenCapabilities,
+  CreatedApiToken,
+  Role,
+  User,
+} from "../contracts/user";
+export { API_TOKEN_CAPABILITIES } from "../contracts/user";
 
 const userQueryKeys = {
   profile: ["user", "profile"] as const,

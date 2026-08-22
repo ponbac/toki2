@@ -9,6 +9,7 @@ use axum::{
 
 use crate::{
     auth::{extractor::ApiTokenPrincipal, AuthSession},
+    domain::models::ApiTokenCapability,
     domain::ports::inbound::ApiTokenAuthenticator,
     routes::ApiError,
 };
@@ -30,10 +31,8 @@ pub async fn authenticate_bearer(
     };
 
     match tokens.authenticate(presented).await {
-        Ok(Some(principal)) => {
-            request
-                .extensions_mut()
-                .insert(ApiTokenPrincipal(principal));
+        Ok(Some(grant)) => {
+            request.extensions_mut().insert(ApiTokenPrincipal(grant));
             next.run(request).await
         }
         Ok(None) => bearer_unauthorized(),
@@ -58,6 +57,21 @@ pub async fn require_authenticated(request: Request<axum::body::Body>, next: Nex
         next.run(request).await
     } else {
         StatusCode::UNAUTHORIZED.into_response()
+    }
+}
+
+/// Restricts API-token callers to a required capability. Session users pass through.
+pub async fn require_capability(
+    axum::extract::State(required): axum::extract::State<ApiTokenCapability>,
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    match request.extensions().get::<ApiTokenPrincipal>() {
+        Some(ApiTokenPrincipal(grant)) if grant.capabilities.contains(required) => {
+            next.run(request).await
+        }
+        Some(_) => ApiError::forbidden("token is missing required capability").into_response(),
+        None => next.run(request).await,
     }
 }
 
@@ -96,7 +110,10 @@ mod tests {
 
     use crate::{
         auth::AuthUser,
-        domain::{ApiTokenError, Role, UserPrincipal},
+        domain::{
+            models::{ApiTokenCapabilities, ApiTokenCapability, ApiTokenGrant},
+            ApiTokenError, Role, UserPrincipal,
+        },
     };
 
     use super::*;
@@ -104,7 +121,7 @@ mod tests {
     const TIMER_STATUS_PATH: &str = "/time-tracking/timer";
 
     struct StubAuthenticator {
-        principal: Option<UserPrincipal>,
+        grant: Option<ApiTokenGrant>,
     }
 
     #[async_trait]
@@ -112,20 +129,23 @@ mod tests {
         async fn authenticate(
             &self,
             _presented: &str,
-        ) -> Result<Option<UserPrincipal>, ApiTokenError> {
-            Ok(self.principal.clone())
+        ) -> Result<Option<ApiTokenGrant>, ApiTokenError> {
+            Ok(self.grant.clone())
         }
     }
 
-    fn app(principal: Option<UserPrincipal>) -> Router {
-        let authenticator: Arc<dyn ApiTokenAuthenticator> =
-            Arc::new(StubAuthenticator { principal });
+    fn app(grant: Option<ApiTokenGrant>) -> Router {
+        let authenticator: Arc<dyn ApiTokenAuthenticator> = Arc::new(StubAuthenticator { grant });
 
         Router::new()
             .route(
                 TIMER_STATUS_PATH,
                 get(|user: AuthUser| async move { user.id.to_string() }),
             )
+            .route_layer(middleware::from_fn_with_state(
+                ApiTokenCapability::TimerRead,
+                require_capability,
+            ))
             .route_layer(middleware::from_fn(require_authenticated))
             .layer(middleware::from_fn_with_state(
                 authenticator,
@@ -141,6 +161,13 @@ mod tests {
         }
     }
 
+    fn grant(capabilities: ApiTokenCapabilities) -> ApiTokenGrant {
+        ApiTokenGrant {
+            principal: principal(),
+            capabilities,
+        }
+    }
+
     #[test]
     fn parses_bearer_scheme_case_insensitively() {
         let mut headers = HeaderMap::new();
@@ -150,7 +177,7 @@ mod tests {
 
     #[tokio::test]
     async fn valid_token_authenticates_timer_status_request() {
-        let response = app(Some(principal()))
+        let response = app(Some(grant(ApiTokenCapabilities::timer_read_only())))
             .oneshot(
                 Request::builder()
                     .uri(TIMER_STATUS_PATH)
@@ -162,6 +189,23 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn token_missing_required_capability_is_forbidden() {
+        let catalog_only = ApiTokenCapabilities::parse(["catalog:read"]).expect("known capability");
+        let response = app(Some(grant(catalog_only)))
+            .oneshot(
+                Request::builder()
+                    .uri(TIMER_STATUS_PATH)
+                    .header(AUTHORIZATION, "Bearer toki_secret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

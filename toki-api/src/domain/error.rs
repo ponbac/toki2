@@ -51,6 +51,8 @@ pub enum AvatarError {
 pub enum ApiTokenError {
     #[error("token name must contain 1 to 64 characters")]
     InvalidName,
+    #[error("token capabilities must be a non-empty set of known values")]
+    InvalidCapabilities,
     #[error("token limit reached")]
     TooManyTokens,
     #[error("token not found")]

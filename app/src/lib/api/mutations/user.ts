@@ -7,13 +7,20 @@ import { api } from "../api";
 import { parseCreatedApiToken } from "../contracts/user";
 import { pullRequestsQueries } from "../queries/pullRequests";
 import { workItemsQueries } from "../queries/workItems";
-import { userQueries, type CreatedApiToken } from "../queries/user";
+import {
+  userQueries,
+  type ApiTokenCapabilities,
+  type CreatedApiToken,
+} from "../queries/user";
 import type { DefaultMutationOptions } from "./mutations";
 
 /** Input for uploading the current user's avatar. */
 export type UploadAvatarVars = { file: File };
-/** Input for issuing a read-only timer-status token. */
-export type CreateApiTokenVars = { name: string };
+/** Input for issuing a personal API token with an explicit capability set. */
+export type CreateApiTokenVars = {
+  name: string;
+  capabilities: ApiTokenCapabilities;
+};
 /** Input for revoking one of the current user's API tokens. */
 export type RevokeApiTokenVars = { tokenId: number };
 
@@ -69,7 +76,7 @@ async function invalidateUserIdentityQueries(queryClient: QueryClient) {
   ]);
 }
 
-/** Issues a read-only timer-status token and refreshes token metadata. */
+/** Issues a personal API token and refreshes token metadata. */
 export function useCreateApiToken(
   options?: DefaultMutationOptions<CreateApiTokenVars, CreatedApiToken>,
 ) {
@@ -77,10 +84,10 @@ export function useCreateApiToken(
 
   return useMutation({
     mutationKey: ["user", "api-tokens", "create"],
-    mutationFn: async ({ name }: CreateApiTokenVars) =>
+    mutationFn: async ({ name, capabilities }: CreateApiTokenVars) =>
       parseCreatedApiToken(
         await api
-          .post("users/me/api-tokens", { json: { name } })
+          .post("users/me/api-tokens", { json: { name, capabilities } })
           .json<unknown>(),
       ),
     ...options,

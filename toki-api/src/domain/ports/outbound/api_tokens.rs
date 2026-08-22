@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{ApiToken, ApiTokenHash, ApiTokenId, NewApiToken, UserId},
-    ApiTokenError, UserPrincipal,
+    models::{ApiToken, ApiTokenGrant, ApiTokenHash, ApiTokenId, NewApiToken, UserId},
+    ApiTokenError,
 };
 
 #[async_trait]
@@ -22,8 +22,8 @@ pub trait ApiTokenRepository: Send + Sync + 'static {
         token_id: &ApiTokenId,
     ) -> Result<(), ApiTokenError>;
 
-    async fn find_principal_by_token_hash(
+    async fn find_grant_by_token_hash(
         &self,
         hash: &ApiTokenHash,
-    ) -> Result<Option<UserPrincipal>, ApiTokenError>;
+    ) -> Result<Option<ApiTokenGrant>, ApiTokenError>;
 }

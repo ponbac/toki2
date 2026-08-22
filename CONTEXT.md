@@ -16,6 +16,10 @@ _Avoid_: tool, endpoint (when referring to this catalog specifically)
 An opaque personal credential (`toki_...`) that authenticates a caller as a Toki user over HTTP bearer. The plaintext secret is shown once at issuance; only a hash is stored.
 _Avoid_: PAT, access token, session cookie
 
+**Capability**:
+A durable permission stored on an API token that narrows the Automation API for that credential. Session users are not capability-checked.
+_Avoid_: scope, role, permission (when referring to token grants)
+
 **Active timer**:
 The single in-progress time-tracking interval for a user, if any.
 _Avoid_: running entry, current registration

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT u.id, u.email, u.roles\n            FROM api_tokens t\n            INNER JOIN users u ON u.id = t.user_id\n            WHERE t.token_hash = $1\n            ",
+  "query": "\n            SELECT u.id, u.email, u.roles, t.capabilities\n            FROM api_tokens t\n            INNER JOIN users u ON u.id = t.user_id\n            WHERE t.token_hash = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,11 @@
         "ordinal": 2,
         "name": "roles",
         "type_info": "TextArray"
+      },
+      {
+        "ordinal": 3,
+        "name": "capabilities",
+        "type_info": "TextArray"
       }
     ],
     "parameters": {
@@ -27,8 +32,9 @@
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "84ac749a242eb8fe0309b060eb41bbe37fb10f0438d014f45d700bad8a3532aa"
+  "hash": "15c3a24e08580ff3a568d5b1e23a5259f9f99879ba38049232e776e2dff51229"
 }

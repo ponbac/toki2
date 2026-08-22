@@ -152,7 +152,10 @@ impl From<WorkItemServiceError> for ApiError {
 impl From<crate::domain::ApiTokenError> for ApiError {
     fn from(err: crate::domain::ApiTokenError) -> Self {
         match err {
-            crate::domain::ApiTokenError::InvalidName => Self::bad_request(err.to_string()),
+            crate::domain::ApiTokenError::InvalidName
+            | crate::domain::ApiTokenError::InvalidCapabilities => {
+                Self::bad_request(err.to_string())
+            }
             crate::domain::ApiTokenError::TooManyTokens => Self::conflict(err.to_string()),
             crate::domain::ApiTokenError::NotFound => Self::not_found(err.to_string()),
             crate::domain::ApiTokenError::Storage(message) => {

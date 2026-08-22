@@ -4,14 +4,14 @@ use async_trait::async_trait;
 
 use crate::domain::{
     models::{
-        ApiToken, ApiTokenId, ApiTokenName, ApiTokenSecret, IssuedApiToken, NewApiToken, UserId,
-        MAX_TOKENS_PER_USER,
+        ApiToken, ApiTokenCapabilities, ApiTokenGrant, ApiTokenId, ApiTokenName, ApiTokenSecret,
+        IssuedApiToken, NewApiToken, UserId, MAX_TOKENS_PER_USER,
     },
     ports::{
         inbound::{ApiTokenAuthenticator, ApiTokenService},
         outbound::ApiTokenRepository,
     },
-    ApiTokenError, UserPrincipal,
+    ApiTokenError,
 };
 
 pub struct ApiTokenServiceImpl<R> {
@@ -26,10 +26,15 @@ impl<R> ApiTokenServiceImpl<R> {
 
 #[async_trait]
 impl<R: ApiTokenRepository> ApiTokenService for ApiTokenServiceImpl<R> {
-    async fn create(&self, user_id: &UserId, name: &str) -> Result<IssuedApiToken, ApiTokenError> {
+    async fn create(
+        &self,
+        user_id: &UserId,
+        name: &str,
+        capabilities: ApiTokenCapabilities,
+    ) -> Result<IssuedApiToken, ApiTokenError> {
         let name = ApiTokenName::parse(name).ok_or(ApiTokenError::InvalidName)?;
         let secret = ApiTokenSecret::generate();
-        let new_token = NewApiToken::new(name, &secret);
+        let new_token = NewApiToken::new(name, &secret, capabilities);
         let token = self
             .repository
             .insert_if_below_limit(user_id, &new_token, MAX_TOKENS_PER_USER)
@@ -49,13 +54,13 @@ impl<R: ApiTokenRepository> ApiTokenService for ApiTokenServiceImpl<R> {
 
 #[async_trait]
 impl<R: ApiTokenRepository> ApiTokenAuthenticator for ApiTokenServiceImpl<R> {
-    async fn authenticate(&self, presented: &str) -> Result<Option<UserPrincipal>, ApiTokenError> {
+    async fn authenticate(&self, presented: &str) -> Result<Option<ApiTokenGrant>, ApiTokenError> {
         let Some(secret) = ApiTokenSecret::parse(presented) else {
             return Ok(None);
         };
 
         self.repository
-            .find_principal_by_token_hash(&secret.hash())
+            .find_grant_by_token_hash(&secret.hash())
             .await
     }
 }
@@ -69,7 +74,7 @@ mod tests {
 
     use crate::domain::{
         models::{ApiTokenHash, ApiTokenId},
-        Role,
+        Role, UserPrincipal,
     };
 
     use super::*;
@@ -119,6 +124,7 @@ mod tests {
                 user_id: *user_id,
                 name: new_token.name().clone(),
                 prefix: new_token.prefix().to_string(),
+                capabilities: new_token.capabilities().clone(),
                 created_at: OffsetDateTime::now_utc(),
             };
             tokens.push((token.clone(), *new_token.hash()));
@@ -150,15 +156,22 @@ mod tests {
             Ok(())
         }
 
-        async fn find_principal_by_token_hash(
+        async fn find_grant_by_token_hash(
             &self,
             hash: &ApiTokenHash,
-        ) -> Result<Option<UserPrincipal>, ApiTokenError> {
+        ) -> Result<Option<ApiTokenGrant>, ApiTokenError> {
             let tokens = self.tokens.lock().unwrap();
             let Some((token, _)) = tokens.iter().find(|(_, stored)| stored == hash) else {
                 return Ok(None);
             };
-            Ok(self.users.get(&token.user_id).cloned())
+            Ok(self
+                .users
+                .get(&token.user_id)
+                .cloned()
+                .map(|principal| ApiTokenGrant {
+                    principal,
+                    capabilities: token.capabilities.clone(),
+                }))
         }
     }
 
@@ -175,16 +188,30 @@ mod tests {
         let user = sample_user();
         let service = ApiTokenServiceImpl::new(Arc::new(MemoryTokens::with_user(user.clone())));
 
-        let issued = service.create(&user.id, "Omarchy bar").await.unwrap();
+        let issued = service
+            .create(
+                &user.id,
+                "Omarchy bar",
+                ApiTokenCapabilities::timer_read_only(),
+            )
+            .await
+            .unwrap();
         assert_eq!(issued.token.name.as_str(), "Omarchy bar");
         assert!(issued.token.prefix.starts_with("toki_"));
+        assert!(issued
+            .token
+            .capabilities
+            .contains(crate::domain::models::ApiTokenCapability::TimerRead));
 
         let authenticated = service
             .authenticate(issued.secret.as_str())
             .await
             .unwrap()
             .expect("issued secret should authenticate");
-        assert_eq!(authenticated.id, user.id);
+        assert_eq!(authenticated.principal.id, user.id);
+        assert!(authenticated
+            .capabilities
+            .contains(crate::domain::models::ApiTokenCapability::TimerRead));
 
         service.revoke(&user.id, &issued.token.id).await.unwrap();
         assert!(service
@@ -201,13 +228,23 @@ mod tests {
 
         for index in 0..MAX_TOKENS_PER_USER {
             service
-                .create(&user.id, &format!("Token {index}"))
+                .create(
+                    &user.id,
+                    &format!("Token {index}"),
+                    ApiTokenCapabilities::timer_read_only(),
+                )
                 .await
                 .expect("tokens below the limit should be created");
         }
 
         assert!(matches!(
-            service.create(&user.id, "One too many").await,
+            service
+                .create(
+                    &user.id,
+                    "One too many",
+                    ApiTokenCapabilities::timer_read_only()
+                )
+                .await,
             Err(ApiTokenError::TooManyTokens)
         ));
         assert_eq!(
@@ -226,5 +263,27 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn authenticate_returns_the_capabilities_persisted_on_the_token() {
+        let user = sample_user();
+        let service = ApiTokenServiceImpl::new(Arc::new(MemoryTokens::with_user(user.clone())));
+        let capabilities = ApiTokenCapabilities::parse(["timer:read", "catalog:read"]).unwrap();
+
+        let issued = service
+            .create(&user.id, "Agent reads", capabilities.clone())
+            .await
+            .unwrap();
+        let grant = service
+            .authenticate(issued.secret.as_str())
+            .await
+            .unwrap()
+            .expect("issued secret should authenticate");
+
+        assert_eq!(grant.capabilities, issued.token.capabilities);
+        assert!(grant
+            .capabilities
+            .contains(crate::domain::models::ApiTokenCapability::CatalogRead));
     }
 }

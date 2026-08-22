@@ -1,16 +1,113 @@
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use super::{ApiTokenId, UserId};
+use crate::domain::{ApiTokenError, UserPrincipal};
 
 const TOKEN_PREFIX: &str = "toki_";
 const TOKEN_SECRET_BYTES: usize = 32;
 const TOKEN_DISPLAY_PREFIX_LEN: usize = 12;
 pub const MAX_TOKENS_PER_USER: usize = 20;
 pub const MAX_TOKEN_NAME_LEN: usize = 64;
+
+/// A durable permission that narrows the Automation API for one API token.
+///
+/// The `Read` suffix names the permission action and leaves room for future
+/// write capabilities.
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ApiTokenCapability {
+    TimerRead,
+    CatalogRead,
+    EntriesRead,
+    WorkItemsRead,
+    PullRequestsRead,
+}
+
+impl ApiTokenCapability {
+    #[cfg(test)]
+    pub const ALL: [Self; 5] = [
+        Self::TimerRead,
+        Self::CatalogRead,
+        Self::EntriesRead,
+        Self::WorkItemsRead,
+        Self::PullRequestsRead,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TimerRead => "timer:read",
+            Self::CatalogRead => "catalog:read",
+            Self::EntriesRead => "entries:read",
+            Self::WorkItemsRead => "work-items:read",
+            Self::PullRequestsRead => "pull-requests:read",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "timer:read" => Some(Self::TimerRead),
+            "catalog:read" => Some(Self::CatalogRead),
+            "entries:read" => Some(Self::EntriesRead),
+            "work-items:read" => Some(Self::WorkItemsRead),
+            "pull-requests:read" => Some(Self::PullRequestsRead),
+            _ => None,
+        }
+    }
+}
+
+/// A non-empty set of known API token capabilities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiTokenCapabilities(BTreeSet<ApiTokenCapability>);
+
+impl ApiTokenCapabilities {
+    /// Least-privileged set for existing tokens and the Omarchy widget.
+    pub fn timer_read_only() -> Self {
+        Self(BTreeSet::from([ApiTokenCapability::TimerRead]))
+    }
+
+    pub fn parse<I, S>(values: I) -> Result<Self, ApiTokenError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut capabilities = BTreeSet::new();
+        for value in values {
+            let capability = ApiTokenCapability::parse(value.as_ref())
+                .ok_or(ApiTokenError::InvalidCapabilities)?;
+            capabilities.insert(capability);
+        }
+        if capabilities.is_empty() {
+            return Err(ApiTokenError::InvalidCapabilities);
+        }
+
+        Ok(Self(capabilities))
+    }
+
+    pub fn contains(&self, capability: ApiTokenCapability) -> bool {
+        self.0.contains(&capability)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = ApiTokenCapability> + '_ {
+        self.0.iter().copied()
+    }
+
+    pub fn as_strings(&self) -> Vec<String> {
+        self.iter()
+            .map(|capability| capability.as_str().to_string())
+            .collect()
+    }
+}
+
+/// Authenticated API-token identity for one request, including its capabilities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiTokenGrant {
+    pub principal: UserPrincipal,
+    pub capabilities: ApiTokenCapabilities,
+}
 
 /// A trimmed, non-empty label for a personal API token.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +138,7 @@ pub struct ApiToken {
     pub user_id: UserId,
     pub name: ApiTokenName,
     pub prefix: String,
+    pub capabilities: ApiTokenCapabilities,
     pub created_at: OffsetDateTime,
 }
 
@@ -59,14 +157,20 @@ pub struct NewApiToken {
     name: ApiTokenName,
     prefix: String,
     hash: ApiTokenHash,
+    capabilities: ApiTokenCapabilities,
 }
 
 impl NewApiToken {
-    pub fn new(name: ApiTokenName, secret: &ApiTokenSecret) -> Self {
+    pub fn new(
+        name: ApiTokenName,
+        secret: &ApiTokenSecret,
+        capabilities: ApiTokenCapabilities,
+    ) -> Self {
         Self {
             name,
             prefix: secret.prefix().to_string(),
             hash: secret.hash(),
+            capabilities,
         }
     }
 
@@ -80,6 +184,10 @@ impl NewApiToken {
 
     pub fn hash(&self) -> &ApiTokenHash {
         &self.hash
+    }
+
+    pub fn capabilities(&self) -> &ApiTokenCapabilities {
+        &self.capabilities
     }
 }
 
@@ -201,5 +309,35 @@ mod tests {
         assert!(ApiTokenName::parse("line\nbreak").is_none());
         assert!(ApiTokenName::parse(&"🦀".repeat(MAX_TOKEN_NAME_LEN)).is_some());
         assert!(ApiTokenName::parse(&"🦀".repeat(MAX_TOKEN_NAME_LEN + 1)).is_none());
+    }
+
+    #[test]
+    fn every_capability_round_trips_through_parse() {
+        for capability in ApiTokenCapability::ALL {
+            assert_eq!(
+                ApiTokenCapability::parse(capability.as_str()),
+                Some(capability)
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_parse_known_values_and_reject_empty_or_unknown() {
+        let capabilities =
+            ApiTokenCapabilities::parse(["timer:read", "catalog:read", "timer:read"]).unwrap();
+        assert!(capabilities.contains(ApiTokenCapability::TimerRead));
+        assert!(capabilities.contains(ApiTokenCapability::CatalogRead));
+        assert_eq!(
+            capabilities.as_strings(),
+            vec!["timer:read".to_string(), "catalog:read".to_string()]
+        );
+        assert!(matches!(
+            ApiTokenCapabilities::parse(Vec::<&str>::new()),
+            Err(ApiTokenError::InvalidCapabilities)
+        ));
+        assert!(matches!(
+            ApiTokenCapabilities::parse(["timer:write"]),
+            Err(ApiTokenError::InvalidCapabilities)
+        ));
     }
 }

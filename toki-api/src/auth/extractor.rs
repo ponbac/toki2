@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 
-use crate::{domain::UserPrincipal, routes::ApiError};
+use crate::{domain::models::ApiTokenGrant, domain::UserPrincipal, routes::ApiError};
 
 use super::AuthSession;
 
@@ -22,7 +22,7 @@ impl Deref for AuthUser {
 
 /// Request extension set only after successful API-token authentication.
 #[derive(Debug, Clone)]
-pub(super) struct ApiTokenPrincipal(pub UserPrincipal);
+pub(super) struct ApiTokenPrincipal(pub ApiTokenGrant);
 
 impl<S> FromRequestParts<S> for AuthUser
 where
@@ -33,7 +33,7 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         if let Some(principal) = parts.extensions.get::<ApiTokenPrincipal>() {
-            return Ok(Self(principal.0.clone()));
+            return Ok(Self(principal.0.principal.clone()));
         }
 
         let auth_session = AuthSession::from_request_parts(parts, state)

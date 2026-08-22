@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO api_tokens (user_id, name, token_prefix, token_hash)\n            VALUES ($1, $2, $3, $4)\n            RETURNING id, user_id, name, token_prefix, created_at\n            ",
+  "query": "\n            SELECT id, user_id, name, token_prefix, capabilities, created_at\n            FROM api_tokens\n            WHERE user_id = $1\n            ORDER BY created_at DESC, id DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -25,16 +25,18 @@
       },
       {
         "ordinal": 4,
+        "name": "capabilities",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Int4",
-        "Text",
-        "Text",
-        "Bytea"
+        "Int4"
       ]
     },
     "nullable": [
@@ -42,8 +44,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "4655d7e0974de36d1dd666e5c75279352cd55c883551118219d2dbcdd069f42e"
+  "hash": "7ae8a0fc90ece010015261e89e213da26f766d121d22558d38d4c3f1c2d64ec7"
 }

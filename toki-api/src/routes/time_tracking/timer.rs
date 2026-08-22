@@ -33,6 +33,7 @@ use crate::observability::record_user_id;
     responses(
         (status = 200, description = "Active timer, if any", body = GetTimerResponse),
         (status = 401, description = "Missing or invalid credentials"),
+        (status = 403, description = "Token is missing the timer:read capability", body = ErrorResponse),
         (status = 409, description = "User is not connected to a time tracking provider", body = ErrorResponse),
         (status = 500, description = "Timer lookup failed", body = ErrorResponse),
         (status = 503, description = "Time tracking integration is unavailable", body = ErrorResponse)

@@ -177,6 +177,10 @@ mod tests {
                 responses.contains_key("401"),
                 "{operation_id} is missing a 401 response"
             );
+            assert!(
+                responses.contains_key("403"),
+                "{operation_id} is missing a 403 response"
+            );
         }
     }
 

@@ -11,7 +11,7 @@ use time::OffsetDateTime;
 use crate::{
     app_state::AppState,
     auth::AuthUser,
-    domain::models::{ApiToken, ApiTokenId, IssuedApiToken},
+    domain::models::{ApiToken, ApiTokenCapabilities, ApiTokenId, IssuedApiToken},
     routes::ApiError,
 };
 
@@ -25,6 +25,7 @@ pub fn router() -> Router<AppState> {
 #[serde(rename_all = "camelCase")]
 struct CreateTokenRequest {
     name: String,
+    capabilities: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,6 +34,7 @@ struct ApiTokenResponse {
     id: i32,
     name: String,
     prefix: String,
+    capabilities: Vec<String>,
     #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
 }
@@ -51,6 +53,7 @@ impl From<&ApiToken> for ApiTokenResponse {
             id: token.id.as_i32(),
             name: token.name.as_str().to_string(),
             prefix: token.prefix.clone(),
+            capabilities: token.capabilities.as_strings(),
             created_at: token.created_at,
         }
     }
@@ -78,9 +81,13 @@ async fn create_token(
     State(app_state): State<AppState>,
     Json(body): Json<CreateTokenRequest>,
 ) -> Result<Response, ApiError> {
+    let capabilities = match body.capabilities {
+        Some(values) => ApiTokenCapabilities::parse(values)?,
+        None => ApiTokenCapabilities::timer_read_only(),
+    };
     let issued = app_state
         .api_token_service
-        .create(&user.id, &body.name)
+        .create(&user.id, &body.name, capabilities)
         .await?;
     let mut response = (
         StatusCode::CREATED,

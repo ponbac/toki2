@@ -2,13 +2,16 @@ import * as React from "react";
 import { toast } from "sonner";
 import { apiErrorToast } from "@/lib/api/errors";
 import { userMutations } from "@/lib/api/mutations/user";
-import type { CreatedApiToken } from "@/lib/api/queries/user";
+import type {
+  ApiTokenCapabilities,
+  CreatedApiToken,
+} from "@/lib/api/queries/user";
 
 /** State for a one-time token secret that must survive dialog close/reopen. */
 export type ApiTokenIssuance = Readonly<{
   issued: CreatedApiToken | null;
   isPending: boolean;
-  issue: (name: string) => void;
+  issue: (name: string, capabilities: ApiTokenCapabilities) => void;
   dismiss: () => void;
 }>;
 
@@ -34,13 +37,13 @@ export function useApiTokenIssuance(): ApiTokenIssuance {
   });
 
   const issue = React.useCallback(
-    (name: string) => {
+    (name: string, capabilities: ApiTokenCapabilities) => {
       if (issuanceBlockedRef.current || issuedRef.current) {
         return;
       }
 
       issuanceBlockedRef.current = true;
-      createToken.mutate({ name });
+      createToken.mutate({ name, capabilities });
     },
     [createToken],
   );

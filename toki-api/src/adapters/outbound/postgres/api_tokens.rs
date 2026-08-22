@@ -3,7 +3,10 @@ use async_trait::async_trait;
 use crate::{
     db::DbPool,
     domain::{
-        models::{ApiToken, ApiTokenHash, ApiTokenId, ApiTokenName, NewApiToken, UserId},
+        models::{
+            ApiToken, ApiTokenCapabilities, ApiTokenGrant, ApiTokenHash, ApiTokenId, ApiTokenName,
+            NewApiToken, UserId,
+        },
         ports::outbound::ApiTokenRepository,
         ApiTokenError, Role, UserPrincipal,
     },
@@ -62,16 +65,18 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
             return Err(ApiTokenError::TooManyTokens);
         }
 
+        let capabilities = token.capabilities().as_strings();
         let row = sqlx::query!(
             r#"
-            INSERT INTO api_tokens (user_id, name, token_prefix, token_hash)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, user_id, name, token_prefix, created_at
+            INSERT INTO api_tokens (user_id, name, token_prefix, token_hash, capabilities)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, user_id, name, token_prefix, capabilities, created_at
             "#,
             user_id.as_i32(),
             token.name().as_str(),
             token.prefix(),
             token.hash().as_bytes().as_slice(),
+            &capabilities,
         )
         .fetch_one(&mut transaction.executor())
         .await
@@ -84,6 +89,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
             user_id: UserId::from(row.user_id),
             name: stored_name(row.name)?,
             prefix: row.token_prefix,
+            capabilities: stored_capabilities(row.capabilities)?,
             created_at: row.created_at,
         })
     }
@@ -91,7 +97,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
     async fn list_for_user(&self, user_id: &UserId) -> Result<Vec<ApiToken>, ApiTokenError> {
         let rows = sqlx::query!(
             r#"
-            SELECT id, user_id, name, token_prefix, created_at
+            SELECT id, user_id, name, token_prefix, capabilities, created_at
             FROM api_tokens
             WHERE user_id = $1
             ORDER BY created_at DESC, id DESC
@@ -110,6 +116,7 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
                     user_id: UserId::from(row.user_id),
                     name: stored_name(row.name)?,
                     prefix: row.token_prefix,
+                    capabilities: stored_capabilities(row.capabilities)?,
                     created_at: row.created_at,
                 })
             })
@@ -140,13 +147,13 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         Ok(())
     }
 
-    async fn find_principal_by_token_hash(
+    async fn find_grant_by_token_hash(
         &self,
         hash: &ApiTokenHash,
-    ) -> Result<Option<UserPrincipal>, ApiTokenError> {
+    ) -> Result<Option<ApiTokenGrant>, ApiTokenError> {
         let row = sqlx::query!(
             r#"
-            SELECT u.id, u.email, u.roles
+            SELECT u.id, u.email, u.roles, t.capabilities
             FROM api_tokens t
             INNER JOIN users u ON u.id = t.user_id
             WHERE t.token_hash = $1
@@ -157,17 +164,29 @@ impl ApiTokenRepository for PostgresApiTokenRepository {
         .await
         .map_err(storage_error)?;
 
-        Ok(row.map(|row| UserPrincipal {
-            id: UserId::from(row.id),
-            email: row.email,
-            roles: row.roles.into_iter().map(Role::from).collect(),
-        }))
+        row.map(|row| {
+            Ok(ApiTokenGrant {
+                principal: UserPrincipal {
+                    id: UserId::from(row.id),
+                    email: row.email,
+                    roles: row.roles.into_iter().map(Role::from).collect(),
+                },
+                capabilities: stored_capabilities(row.capabilities)?,
+            })
+        })
+        .transpose()
     }
 }
 
 fn stored_name(name: String) -> Result<ApiTokenName, ApiTokenError> {
     ApiTokenName::parse(&name)
         .ok_or_else(|| ApiTokenError::Storage("stored API token name is invalid".to_string()))
+}
+
+fn stored_capabilities(capabilities: Vec<String>) -> Result<ApiTokenCapabilities, ApiTokenError> {
+    ApiTokenCapabilities::parse(capabilities).map_err(|_| {
+        ApiTokenError::Storage("stored API token capabilities are invalid".to_string())
+    })
 }
 
 fn storage_error(error: sqlx::Error) -> ApiTokenError {

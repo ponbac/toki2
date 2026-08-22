@@ -13,11 +13,24 @@ const userSchema = z
   })
   .strict();
 
+/** Closed set of Automation API capabilities a token may hold. */
+export const API_TOKEN_CAPABILITIES = [
+  "timer:read",
+  "catalog:read",
+  "entries:read",
+  "work-items:read",
+  "pull-requests:read",
+] as const;
+
+const apiTokenCapabilitySchema = z.enum(API_TOKEN_CAPABILITIES);
+const apiTokenCapabilitiesSchema = z.array(apiTokenCapabilitySchema).nonempty();
+
 const apiTokenSchema = z
   .object({
     id: z.number().int().positive(),
     name: z.string().trim().min(1).max(64),
     prefix: z.string().regex(/^toki_[0-9a-f]{7}$/),
+    capabilities: apiTokenCapabilitiesSchema,
     createdAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -31,6 +44,12 @@ export type Role = z.infer<typeof roleSchema>;
 
 /** Public profile data returned by the current-user endpoint. */
 export type User = Readonly<z.infer<typeof userSchema>>;
+
+/** A durable permission that narrows the Automation API for one API token. */
+export type ApiTokenCapability = z.infer<typeof apiTokenCapabilitySchema>;
+
+/** Non-empty set of known API token capabilities. */
+export type ApiTokenCapabilities = z.infer<typeof apiTokenCapabilitiesSchema>;
 
 /** Revocable metadata for an API token; it never contains the secret. */
 export type ApiToken = Readonly<z.infer<typeof apiTokenSchema>>;

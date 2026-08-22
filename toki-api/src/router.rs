@@ -227,7 +227,10 @@ mod tests {
 
     use crate::{
         config::DatabaseSettings,
-        domain::{ApiTokenError, Role, UserPrincipal},
+        domain::{
+            models::{ApiTokenCapabilities, ApiTokenGrant},
+            ApiTokenError, Role, UserPrincipal,
+        },
     };
 
     use super::*;
@@ -239,11 +242,14 @@ mod tests {
         async fn authenticate(
             &self,
             _presented: &str,
-        ) -> Result<Option<UserPrincipal>, ApiTokenError> {
-            Ok(Some(UserPrincipal {
-                id: crate::domain::models::UserId::new(7),
-                email: "ada@example.com".to_string(),
-                roles: vec![Role::User],
+        ) -> Result<Option<ApiTokenGrant>, ApiTokenError> {
+            Ok(Some(ApiTokenGrant {
+                principal: UserPrincipal {
+                    id: crate::domain::models::UserId::new(7),
+                    email: "ada@example.com".to_string(),
+                    roles: vec![Role::User],
+                },
+                capabilities: ApiTokenCapabilities::timer_read_only(),
             }))
         }
     }
