@@ -5,11 +5,11 @@ Toki is a provider-agnostic time tracking and development workflow platform.
 ## Language
 
 **Automation API**:
-The curated HTTP surface that agents may call. It is both the OpenAPI catalog and the only route set globally eligible for bearer authentication.
+The curated HTTP surface published to agents through the generated OpenAPI document. Runtime bearer authentication is composed independently and may cover routes outside this catalog.
 _Avoid_: public API, MCP API, agent gateway
 
 **Agent operation**:
-One HTTP method and path in the Automation API, identified by a stable operation ID. An endpoint becomes an agent operation only by entering the automation router.
+One HTTP method and path in the Automation API, identified by a stable operation ID. An endpoint becomes an agent operation only by being listed in the curated OpenAPI document.
 _Avoid_: tool, endpoint (when referring to this catalog specifically)
 
 **API token**:

@@ -17,7 +17,7 @@ use crate::domain::models::{
 /// JSON error body returned by HTTP handlers.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorResponse {
-    /// Human-readable error message. Never contains credentials.
+    /// Human-readable error message.
     pub error: String,
 }
 

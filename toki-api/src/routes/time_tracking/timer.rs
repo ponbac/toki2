@@ -24,7 +24,7 @@ use crate::observability::record_user_id;
 /// Get the active timer
 ///
 /// Returns the authenticated user's currently running timer, or `null` when
-/// none is running. This is the only automation read in the initial catalog.
+/// none is running.
 #[utoipa::path(
     get,
     path = "/time-tracking/timer",
@@ -32,10 +32,11 @@ use crate::observability::record_user_id;
     tag = "Time tracking",
     responses(
         (status = 200, description = "Active timer, if any", body = GetTimerResponse),
-        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
-    ),
-    security(("bearerAuth" = []))
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 409, description = "User is not connected to a time tracking provider", body = ErrorResponse),
+        (status = 500, description = "Timer lookup failed", body = ErrorResponse),
+        (status = 503, description = "Time tracking integration is unavailable", body = ErrorResponse)
+    )
 )]
 pub async fn get_timer(
     user: AuthUser,

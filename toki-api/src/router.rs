@@ -3,7 +3,6 @@ use std::sync::Arc;
 use axum::{http::Method, routing::get, Router};
 use axum_extra::extract::cookie::SameSite;
 use axum_login::{
-    login_required,
     tower_sessions::{CachingSessionStore, ExpiredDeletion, Expiry, SessionManagerLayer},
     AuthManagerLayer, AuthManagerLayerBuilder,
 };
@@ -20,7 +19,7 @@ const SESSION_COOKIE_NAME: &str = "toki.sid";
 
 use crate::{
     adapters::{
-        inbound::http::{automation_parts, openapi_spec_router},
+        inbound::http::{agent_openapi, openapi_spec_router},
         outbound::{
             media::WebpAvatarProcessor,
             postgres::{PostgresApiTokenRepository, PostgresAvatarRepository},
@@ -61,18 +60,17 @@ pub async fn create(
     let api_token_service: Arc<dyn ApiTokenService> = api_tokens.clone();
     let api_token_authenticator: Arc<dyn ApiTokenAuthenticator> = api_tokens;
 
-    let (automation_routes, _spec) = automation_parts();
+    let automation_openapi = agent_openapi();
 
     // If authentication is enabled, wrap the app with the auth middleware
     let app_with_auth = if config.application.disable_auth {
         base_app
-            .merge(automation_routes)
-            .merge(openapi_spec_router())
     } else {
         let auth_layer =
             new_auth_layer(connection_pool.clone(), db_pool.clone(), config.clone()).await;
-        authenticated_routes(base_app, automation_routes, api_token_authenticator).layer(auth_layer)
-    };
+        authenticated_routes(base_app, api_token_authenticator).layer(auth_layer)
+    }
+    .merge(openapi_spec_router(automation_openapi));
 
     // Create the time tracking factory (composition root wiring)
     let timer_repo = Arc::new(crate::repositories::TimerRepositoryImpl::new(
@@ -141,40 +139,28 @@ pub async fn create(
 }
 
 fn authenticated_routes(
-    session_routes: Router<AppState>,
-    automation_routes: Router<AppState>,
+    protected_routes: Router<AppState>,
     api_token_authenticator: Arc<dyn ApiTokenAuthenticator>,
 ) -> Router<AppState> {
-    compose_authenticated_routes(
-        session_routes,
-        automation_routes,
-        auth::router().merge(openapi_spec_router()),
-        api_token_authenticator,
-    )
+    compose_authenticated_routes(protected_routes, auth::router(), api_token_authenticator)
 }
 
 fn compose_authenticated_routes<S>(
-    session_routes: Router<S>,
-    automation_routes: Router<S>,
+    protected_routes: Router<S>,
     public_routes: Router<S>,
     api_token_authenticator: Arc<dyn ApiTokenAuthenticator>,
 ) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    // Bearer authentication is applied to the automation router as a whole.
-    // Adding a route there both documents it and makes it token-eligible.
-    let automation_routes = automation_routes
+    let protected_routes = protected_routes
         .route_layer(axum::middleware::from_fn(auth::require_authenticated))
         .layer(axum::middleware::from_fn_with_state(
             api_token_authenticator,
             auth::authenticate_bearer,
         ));
 
-    session_routes
-        .route_layer(login_required!(AuthBackend))
-        .merge(automation_routes)
-        .merge(public_routes)
+    protected_routes.merge(public_routes)
 }
 
 async fn new_auth_layer(
@@ -263,20 +249,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_tokens_are_scoped_to_get_timer_status_in_production_composition() {
+    async fn api_tokens_authenticate_all_protected_routes() {
         let base_routes = Router::new()
             .route(
                 "/time-tracking/timer",
-                axum::routing::post(|| async { StatusCode::OK })
+                get(|| async { StatusCode::OK })
+                    .post(|| async { StatusCode::OK })
                     .put(|| async { StatusCode::OK })
                     .delete(|| async { StatusCode::OK }),
             )
             .route("/users/me/api-tokens", get(|| async { StatusCode::OK }));
-        let automation_routes = Router::new().route(
-            "/time-tracking/timer",
-            get(|user: crate::auth::AuthUser| async move { user.id.to_string() }),
-        );
+        let automation_openapi = agent_openapi();
         let public_routes = Router::new()
+            .route("/public", get(|| async { StatusCode::OK }))
             .route(
                 "/me",
                 get(|session: crate::auth::AuthSession| async move {
@@ -286,39 +271,20 @@ mod tests {
                         StatusCode::UNAUTHORIZED
                     }
                 }),
-            )
-            .merge(openapi_spec_router());
-        let app = compose_authenticated_routes(
-            base_routes,
-            automation_routes,
-            public_routes,
-            Arc::new(StubAuthenticator),
-        )
-        .layer(test_auth_layer());
+            );
+        let app =
+            compose_authenticated_routes(base_routes, public_routes, Arc::new(StubAuthenticator))
+                .merge(openapi_spec_router(automation_openapi))
+                .layer(test_auth_layer());
 
         for (method, path, expected) in [
             (Method::GET, "/time-tracking/timer", StatusCode::OK),
-            (
-                Method::POST,
-                "/time-tracking/timer",
-                StatusCode::UNAUTHORIZED,
-            ),
-            (
-                Method::PUT,
-                "/time-tracking/timer",
-                StatusCode::UNAUTHORIZED,
-            ),
-            (
-                Method::DELETE,
-                "/time-tracking/timer",
-                StatusCode::UNAUTHORIZED,
-            ),
+            (Method::POST, "/time-tracking/timer", StatusCode::OK),
+            (Method::PUT, "/time-tracking/timer", StatusCode::OK),
+            (Method::DELETE, "/time-tracking/timer", StatusCode::OK),
             (Method::GET, "/me", StatusCode::UNAUTHORIZED),
-            (
-                Method::GET,
-                "/users/me/api-tokens",
-                StatusCode::UNAUTHORIZED,
-            ),
+            (Method::GET, "/users/me/api-tokens", StatusCode::OK),
+            (Method::GET, "/public", StatusCode::OK),
             (Method::GET, "/openapi.json", StatusCode::OK),
         ] {
             let response = app
@@ -335,6 +301,29 @@ mod tests {
                 .expect("router should respond");
             assert_eq!(response.status(), expected, "{path}");
         }
+
+        let anonymous_protected = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/time-tracking/timer")
+                    .body(Body::empty())
+                    .expect("valid test request"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(anonymous_protected.status(), StatusCode::UNAUTHORIZED);
+
+        let anonymous_public = app
+            .oneshot(
+                Request::builder()
+                    .uri("/public")
+                    .body(Body::empty())
+                    .expect("valid test request"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(anonymous_public.status(), StatusCode::OK);
     }
 
     fn test_auth_layer() -> AuthManagerLayer<AuthBackend, MokaStore> {
