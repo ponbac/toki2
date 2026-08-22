@@ -1,0 +1,29 @@
+use async_trait::async_trait;
+
+use crate::domain::{
+    models::{ApiToken, ApiTokenHash, ApiTokenId, NewApiToken, UserId},
+    ApiTokenError, UserPrincipal,
+};
+
+#[async_trait]
+pub trait ApiTokenRepository: Send + Sync + 'static {
+    async fn insert_if_below_limit(
+        &self,
+        user_id: &UserId,
+        token: &NewApiToken,
+        max_tokens: usize,
+    ) -> Result<ApiToken, ApiTokenError>;
+
+    async fn list_for_user(&self, user_id: &UserId) -> Result<Vec<ApiToken>, ApiTokenError>;
+
+    async fn delete_for_user(
+        &self,
+        user_id: &UserId,
+        token_id: &ApiTokenId,
+    ) -> Result<(), ApiTokenError>;
+
+    async fn find_principal_by_token_hash(
+        &self,
+        hash: &ApiTokenHash,
+    ) -> Result<Option<UserPrincipal>, ApiTokenError>;
+}

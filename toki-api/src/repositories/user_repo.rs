@@ -32,7 +32,7 @@ impl UserRepository for UserRepositoryImpl {
         let db_user = sqlx::query_as!(
             DbUser,
             r#"
-            SELECT id, email, full_name, picture, access_token, roles, session_auth_hash
+            SELECT id, email, full_name, picture, roles, session_auth_hash
             FROM users
             WHERE id = $1
             "#,
@@ -46,7 +46,6 @@ impl UserRepository for UserRepositoryImpl {
             email: db_user.email,
             full_name: db_user.full_name,
             picture: db_user.picture,
-            access_token: db_user.access_token,
             roles: db_user.roles.into_iter().map(Role::from).collect(),
             session_auth_hash: db_user.session_auth_hash,
         };
@@ -57,7 +56,7 @@ impl UserRepository for UserRepositoryImpl {
     async fn get_users(&self) -> Result<Vec<User>, RepositoryError> {
         let db_users = sqlx::query_as!(
             DbUser,
-            r#"SELECT id, email, full_name, picture, access_token, roles, session_auth_hash FROM users"#
+            r#"SELECT id, email, full_name, picture, roles, session_auth_hash FROM users"#
         )
         .fetch_all(&self.pool)
         .await?;
@@ -69,7 +68,6 @@ impl UserRepository for UserRepositoryImpl {
                 email: db_user.email,
                 full_name: db_user.full_name,
                 picture: db_user.picture,
-                access_token: db_user.access_token,
                 roles: db_user.roles.into_iter().map(Role::from).collect(),
                 session_auth_hash: db_user.session_auth_hash,
             })
@@ -92,7 +90,7 @@ impl UserRepository for UserRepositoryImpl {
             SET full_name = EXCLUDED.full_name,
                 picture = EXCLUDED.picture,
                 access_token = EXCLUDED.access_token
-            RETURNING id, email, full_name, picture, access_token, roles, session_auth_hash
+            RETURNING id, email, full_name, picture, roles, session_auth_hash
             "#,
             user.email,
             user.full_name,
@@ -108,7 +106,6 @@ impl UserRepository for UserRepositoryImpl {
             email: db_user.email,
             full_name: db_user.full_name,
             picture: db_user.picture,
-            access_token: db_user.access_token,
             roles: db_user.roles.into_iter().map(Role::from).collect(),
             session_auth_hash: db_user.session_auth_hash,
         };
@@ -209,7 +206,6 @@ struct DbUser {
     email: String,
     full_name: String,
     picture: String,
-    access_token: String,
     roles: Vec<String>,
     session_auth_hash: String,
 }

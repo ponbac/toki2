@@ -43,7 +43,7 @@ bytes = "1"
 http-body-util = "0.1"
 regex = "1"
 htmd = "0.5"
-ammonia = "4.1.2"
+ammonia = "4.1.4"
 futures = "0.3.30"
 futures-util = { version = "0.3.30", default-features = false, features = [
     "sink",
@@ -76,3 +76,5 @@ tower-sessions-sqlx-store = { version = "0.14.2", features = ["postgres"] }
 image = { version = "0.25.9", features = ["jpeg", "png"] }
 webp = "0.3.1"
 moka = { version = "0.12", features = ["future", "sync"] }
+rand = "0.8"
+sha2 = "0.10"

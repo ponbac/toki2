@@ -1,3 +1,4 @@
+mod api_tokens;
 mod avatar;
 mod avatar_processing;
 mod time_tracking;
@@ -5,6 +6,7 @@ mod time_tracking_user_links;
 mod timer_history;
 mod work_item_provider;
 
+pub use api_tokens::*;
 pub use avatar::*;
 pub use avatar_processing::*;
 pub use time_tracking::*;

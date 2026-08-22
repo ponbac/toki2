@@ -6,7 +6,7 @@ mod projects;
 mod timer;
 
 use axum::{
-    routing::{get, put},
+    routing::{get, post, put},
     Router,
 };
 
@@ -52,10 +52,11 @@ pub fn router() -> Router<AppState> {
         .route("/timer-history", get(timer::get_timer_history))
         .route(
             "/timer",
-            get(timer::get_timer)
-                .post(timer::start_timer)
+            post(timer::start_timer)
                 .delete(timer::stop_timer)
                 .put(timer::save_timer),
         )
         .route("/update-timer", put(timer::edit_timer))
 }
+
+pub(crate) use timer::get_timer as get_timer_status;

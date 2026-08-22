@@ -119,8 +119,12 @@ dev-sandbox:
     (cd app && bun dev) &
     wait
 
+# Verify the Omarchy helper's security and response-projection behavior
+check-omarchy-plugin:
+    python3 -m unittest discover -s omarchy-plugin/tests -v
+
 # Verify all code compiles/passes checks
-check-all: check clippy tsc lint
+check-all: check clippy tsc lint check-omarchy-plugin
 
 # Format frontend code with prettier
 fmt:

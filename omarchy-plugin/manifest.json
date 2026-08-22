@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "ponbac.toki",
+  "name": "Toki timer",
+  "version": "1.0.0",
+  "author": "ponbac",
+  "description": "Shows the active Toki timer when one is running",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Toki timer",
+    "description": "Active Toki timer",
+    "category": "Time",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}

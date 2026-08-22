@@ -3,3 +3,5 @@
 .env.local
 *.dump
 .tmp/db-prod-pull/
+__pycache__/
+*.py[cod]
