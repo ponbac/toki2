@@ -1,5 +1,6 @@
 use crate::adapters::outbound::azure_devops::AzureDevOpsUrl;
 use crate::db::DbPool;
+use crate::observability::metrics;
 use crate::repositories::RepoRepository;
 use futures::future;
 use tracing::{field, instrument};
@@ -183,6 +184,7 @@ impl NotificationHandler {
                         .is_ok()
                     {
                         summary.notification_count += 1;
+                        metrics::record_notification_created(notification_type);
                         // Send push notification if enabled
                         let push_enabled = match (rule, exception) {
                             (_, Some(e)) => e.enabled, // exception overrides rule
@@ -204,7 +206,11 @@ impl NotificationHandler {
                 }
             }
 
-            future::join_all(push_futures).await;
+            let push_results = future::join_all(push_futures).await;
+            let attempted = push_results.len() as u64;
+            let failed = push_results.iter().filter(|result| result.is_err()).count() as u64;
+            let sent = attempted.saturating_sub(failed);
+            metrics::record_push_notifications(attempted, sent, failed);
         }
 
         tracing::Span::current().record("notification_count", summary.notification_count);

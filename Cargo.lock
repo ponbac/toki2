@@ -444,6 +444,7 @@ dependencies = [
  "azure_core 0.25.0",
  "azure_devops_rust_api",
  "dotenvy",
+ "opentelemetry",
  "reqwest",
  "serde",
  "serde_json",
@@ -2741,6 +2742,7 @@ dependencies = [
 name = "kleer"
 version = "0.1.0"
 dependencies = [
+ "opentelemetry",
  "reqwest",
  "serde",
  "serde_json",

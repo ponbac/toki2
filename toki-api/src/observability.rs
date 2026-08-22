@@ -15,6 +15,7 @@ use opentelemetry::{global, trace::TracerProvider as _, KeyValue};
 use opentelemetry_appender_tracing::layer::{OpenTelemetryTracingBridge, TracingSpanAttributes};
 use opentelemetry_sdk::{
     logs::{SdkLogger, SdkLoggerProvider},
+    metrics::{Aggregation, Instrument, InstrumentKind, SdkMeterProvider, Stream},
     trace::SdkTracerProvider,
     Resource,
 };
@@ -32,10 +33,14 @@ use url::form_urlencoded;
 
 use crate::config::{DatabaseSettings, ObservabilitySettings, Settings};
 
+pub(crate) mod metrics;
 mod sql_spans;
 
 const REDACTED: &str = "[REDACTED]";
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
+const DURATION_HISTOGRAM_BOUNDARIES_SECONDS: &[f64] = &[
+    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0,
+];
 
 const SPAN_ATTRIBUTE_ALLOWLIST: &[&str] = &[
     "http.route",
@@ -91,10 +96,17 @@ const SPAN_ATTRIBUTE_ALLOWLIST: &[&str] = &[
 pub(crate) struct ObservabilityGuard {
     tracer_provider: Option<SdkTracerProvider>,
     logger_provider: Option<SdkLoggerProvider>,
+    meter_provider: Option<SdkMeterProvider>,
 }
 
 impl ObservabilityGuard {
     pub fn shutdown(self) {
+        if let Some(provider) = self.meter_provider {
+            if let Err(error) = provider.shutdown() {
+                eprintln!("failed to shutdown OTEL meter provider: {error}");
+            }
+        }
+
         if let Some(provider) = self.tracer_provider {
             if let Err(error) = provider.shutdown() {
                 eprintln!("failed to shutdown OTEL tracer provider: {error}");
@@ -135,13 +147,17 @@ pub(crate) fn init(settings: &Settings) -> Result<ObservabilityGuard, BoxError> 
         capture_request_bodies = settings.observability.capture_request_bodies,
         request_body_max_logged_bytes = settings.observability.request_body_max_logged_bytes,
         request_body_max_buffered_bytes = settings.observability.request_body_max_buffered_bytes,
-        otel_enabled = otel.tracer_provider.is_some() || otel.logger_provider.is_some(),
+        otel_enabled = otel.tracer_provider.is_some()
+            || otel.logger_provider.is_some()
+            || otel.meter_provider.is_some(),
+        otel_metrics_enabled = otel.meter_provider.is_some(),
         "Observability initialized"
     );
 
     Ok(ObservabilityGuard {
         tracer_provider: otel.tracer_provider,
         logger_provider: otel.logger_provider,
+        meter_provider: otel.meter_provider,
     })
 }
 
@@ -201,6 +217,7 @@ where
     log_layer: Option<OpenTelemetryTracingBridge<SdkLoggerProvider, SdkLogger>>,
     tracer_provider: Option<SdkTracerProvider>,
     logger_provider: Option<SdkLoggerProvider>,
+    meter_provider: Option<SdkMeterProvider>,
 }
 
 fn build_otel_layers<S>() -> Result<OtelLayers<S>, BoxError>
@@ -209,16 +226,19 @@ where
 {
     let traces_endpoint_configured = otel_endpoint_configured("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT");
     let logs_endpoint_configured = otel_endpoint_configured("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT");
-    let sdk_disabled = env::var("OTEL_SDK_DISABLED")
-        .map(|value| value.trim().eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+    let metrics_endpoint_configured =
+        otel_endpoint_configured("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT");
+    let sdk_disabled = otel_sdk_disabled();
 
-    if (!traces_endpoint_configured && !logs_endpoint_configured) || sdk_disabled {
+    if (!traces_endpoint_configured && !logs_endpoint_configured && !metrics_endpoint_configured)
+        || sdk_disabled
+    {
         return Ok(OtelLayers {
             trace_layer: None,
             log_layer: None,
             tracer_provider: None,
             logger_provider: None,
+            meter_provider: None,
         });
     }
 
@@ -252,7 +272,7 @@ where
             .with_tonic()
             .build()?;
         let logger_provider = SdkLoggerProvider::builder()
-            .with_resource(resource)
+            .with_resource(resource.clone())
             .with_batch_exporter(log_exporter)
             .build();
         let log_layer = OpenTelemetryTracingBridge::builder(&logger_provider)
@@ -265,12 +285,46 @@ where
         (None, None)
     };
 
+    let meter_provider = if metrics_endpoint_configured {
+        let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+            .with_tonic()
+            .build()?;
+        let meter_provider = SdkMeterProvider::builder()
+            .with_resource(resource)
+            .with_view(duration_histogram_view)
+            .with_periodic_exporter(metric_exporter)
+            .build();
+        global::set_meter_provider(meter_provider.clone());
+        metrics::init();
+        Some(meter_provider)
+    } else {
+        None
+    };
+
     Ok(OtelLayers {
         trace_layer,
         log_layer,
         tracer_provider,
         logger_provider,
+        meter_provider,
     })
+}
+
+fn duration_histogram_view(instrument: &Instrument) -> Option<Stream> {
+    if instrument.kind() == InstrumentKind::Histogram
+        && instrument.unit() == "s"
+        && instrument.name().ends_with(".duration")
+    {
+        Stream::builder()
+            .with_aggregation(Aggregation::ExplicitBucketHistogram {
+                boundaries: DURATION_HISTOGRAM_BOUNDARIES_SECONDS.to_vec(),
+                record_min_max: true,
+            })
+            .build()
+            .ok()
+    } else {
+        None
+    }
 }
 
 fn otel_endpoint_configured(signal_endpoint_var: &str) -> bool {
@@ -284,6 +338,19 @@ where
     ["OTEL_EXPORTER_OTLP_ENDPOINT", signal_endpoint_var]
         .into_iter()
         .any(|name| lookup(name).is_some_and(|value| !value.trim().is_empty()))
+}
+
+fn otel_sdk_disabled() -> bool {
+    otel_sdk_disabled_from(|name| env::var(name).ok())
+}
+
+fn otel_sdk_disabled_from<F>(mut lookup: F) -> bool
+where
+    F: FnMut(&str) -> Option<String>,
+{
+    lookup("OTEL_SDK_DISABLED")
+        .map(|value| value.trim().eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
 }
 
 fn resource_attributes_from_env() -> Vec<KeyValue> {
@@ -373,6 +440,15 @@ fn route_template(request: &Request<Body>) -> String {
     )
 }
 
+fn metrics_route_template(request: &Request<Body>) -> String {
+    request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(MatchedPath::as_str)
+        .unwrap_or("unknown")
+        .to_string()
+}
+
 fn route_template_from_parts(matched_path: Option<&str>, path: &str) -> String {
     matched_path
         .map(ToString::to_string)
@@ -409,10 +485,15 @@ pub(crate) async fn log_http_response_middleware(request: Request<Body>, next: N
 
     let method = request.method().clone();
     let route = route_template(&request);
+    let metrics_route = metrics_route_template(&request);
     let started_at = Instant::now();
+    metrics::record_http_active_request_delta(method.as_str(), &metrics_route, 1);
     let response = next.run(request).await;
-    let latency_ms = started_at.elapsed().as_secs_f64() * 1000.0;
+    let elapsed = started_at.elapsed();
+    metrics::record_http_active_request_delta(method.as_str(), &metrics_route, -1);
+    let latency_ms = elapsed.as_secs_f64() * 1000.0;
     let status = response.status().as_u16();
+    metrics::record_http_request(method.as_str(), &metrics_route, status, elapsed);
 
     let span = Span::current();
     span.record("http.response.status_code", status);
@@ -749,6 +830,75 @@ mod tests {
         assert!(logs_configured);
         assert!(generic_configured);
         assert!(!blank_value_is_ignored);
+    }
+
+    #[test]
+    fn observability_metrics_endpoint_detection_honors_metrics_specific_var() {
+        let metrics_configured = otel_endpoint_configured_from(
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+            |name| match name {
+                "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT" => Some("http://collector:4317".to_string()),
+                _ => None,
+            },
+        );
+
+        assert!(metrics_configured);
+    }
+
+    #[test]
+    fn observability_generic_endpoint_enables_metrics() {
+        let metrics_configured = otel_endpoint_configured_from(
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+            |name| match name {
+                "OTEL_EXPORTER_OTLP_ENDPOINT" => Some("http://collector:4317".to_string()),
+                _ => None,
+            },
+        );
+
+        assert!(metrics_configured);
+    }
+
+    #[test]
+    fn observability_blank_metrics_endpoint_is_ignored() {
+        let metrics_configured = otel_endpoint_configured_from(
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+            |name| match name {
+                "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT" => Some(" ".to_string()),
+                _ => None,
+            },
+        );
+
+        assert!(!metrics_configured);
+    }
+
+    #[test]
+    fn observability_sdk_disabled_disables_all_providers() {
+        let metrics_endpoint_configured = otel_endpoint_configured_from(
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+            |name| match name {
+                "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT" => Some("http://collector:4317".to_string()),
+                _ => None,
+            },
+        );
+        let sdk_disabled = otel_sdk_disabled_from(|name| match name {
+            "OTEL_SDK_DISABLED" => Some("true".to_string()),
+            _ => None,
+        });
+
+        assert!(metrics_endpoint_configured);
+        assert!(!(metrics_endpoint_configured && !sdk_disabled));
+        assert!(otel_sdk_disabled_from(|name| match name {
+            "OTEL_SDK_DISABLED" => Some("true".to_string()),
+            _ => None,
+        }));
+        assert!(otel_sdk_disabled_from(|name| match name {
+            "OTEL_SDK_DISABLED" => Some(" TRUE ".to_string()),
+            _ => None,
+        }));
+        assert!(!otel_sdk_disabled_from(|name| match name {
+            "OTEL_SDK_DISABLED" => Some("false".to_string()),
+            _ => None,
+        }));
     }
 
     #[test]

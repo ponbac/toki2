@@ -164,6 +164,8 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production
 OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 OTEL_EXPORTER_OTLP_ENDPOINT=${{environment.ASPIRE_OTLP_ENDPOINT}}
 OTEL_EXPORTER_OTLP_HEADERS=x-otlp-api-key=${{environment.ASPIRE_OTLP_API_KEY}}
+# Optional. Defaults to the SDK interval unless configured.
+# OTEL_METRIC_EXPORT_INTERVAL=5000
 TOKI_OBSERVABILITY__CAPTURE_REQUEST_BODIES=true
 TOKI_OBSERVABILITY__REQUEST_BODY_MAX_LOGGED_BYTES=16384
 TOKI_OBSERVABILITY__REQUEST_BODY_MAX_BUFFERED_BYTES=65536
@@ -173,7 +175,7 @@ After adding these variables in Dokploy, redeploy or rebuild `toki-api`. A live
 Docker service update is useful for immediate verification, but Dokploy will
 overwrite live-only changes on the next deployment.
 
-OTEL export is enabled only when `OTEL_EXPORTER_OTLP_ENDPOINT` is present and `OTEL_SDK_DISABLED` is not `true`. If deploying the API before Aspire is ready, set:
+OTEL trace, log, and metric export use the same OTLP endpoint. Export is enabled only when `OTEL_EXPORTER_OTLP_ENDPOINT` is present and `OTEL_SDK_DISABLED` is not `true`. If deploying the API before Aspire is ready, set:
 
 ```bash
 OTEL_SDK_DISABLED=true

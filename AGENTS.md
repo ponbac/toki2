@@ -125,7 +125,7 @@ SQLX_OFFLINE=true just check
 
 ## Observability
 
-`just dev` starts a standalone Aspire dashboard at `http://127.0.0.1:18888` and exports OTEL over gRPC to `http://127.0.0.1:18889`.
+`just dev` starts a standalone Aspire dashboard at `http://127.0.0.1:18888` and exports OTEL traces, logs, and metrics over gRPC to `http://127.0.0.1:18889`. Local metrics export every 5 seconds by default via `OTEL_METRIC_EXPORT_INTERVAL=5000`; override the environment variable when needed.
 
 When inspecting traces from the standalone dashboard, query it directly with `--dashboard-url`; `aspire ps` may report no AppHost because this repo runs the dashboard without an Aspire AppHost:
 

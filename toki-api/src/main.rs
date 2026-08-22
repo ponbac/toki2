@@ -51,6 +51,7 @@ async fn main() {
         connection_pool_result = PgPoolOptions::new().connect_with(pg_connect_options).await;
     }
     let connection_pool = connection_pool_result.expect("Failed to connect to database");
+    observability::metrics::register_db_pool(connection_pool.clone());
     let db_pool = db::traced_pool(connection_pool.clone(), &config.database);
 
     // Run migrations

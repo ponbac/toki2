@@ -26,11 +26,12 @@ tracing-subscriber = { version = "0.3.18", features = [
     "local-time",
     "json",
 ] }
-opentelemetry = { version = "0.32", features = ["trace", "logs"] }
-opentelemetry_sdk = { version = "0.32", features = ["trace", "logs", "rt-tokio"] }
+opentelemetry = { workspace = true, features = ["trace", "logs", "metrics"] }
+opentelemetry_sdk = { version = "0.32", features = ["trace", "logs", "metrics", "rt-tokio"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "trace",
     "logs",
+    "metrics",
     "grpc-tonic",
 ] }
 tracing-opentelemetry = { version = "0.33", default-features = false, features = [
