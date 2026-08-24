@@ -42,7 +42,6 @@ pub enum RepoDifferMessage {
 
 #[derive(Clone)]
 pub struct RepoDiffer {
-    pub key: RepoKey,
     pull_request_provider: Arc<dyn PullRequestProvider>,
     notification_handler: Arc<NotificationHandler>,
     pub identities: Arc<RwLock<CachedIdentities>>,
@@ -54,12 +53,10 @@ pub struct RepoDiffer {
 
 impl RepoDiffer {
     pub fn new(
-        key: RepoKey,
         pull_request_provider: Arc<dyn PullRequestProvider>,
         notification_handler: Arc<NotificationHandler>,
     ) -> Self {
         Self {
-            key,
             pull_request_provider,
             notification_handler,
             identities: Arc::new(RwLock::new(CachedIdentities::new(Duration::from_secs(
@@ -75,9 +72,11 @@ impl RepoDiffer {
     async fn is_running(&self) -> bool {
         *self.status.read().await == RepoDifferStatus::Running
     }
-}
 
-impl RepoDiffer {
+    pub fn repository(&self) -> &RepoKey {
+        self.pull_request_provider.repository()
+    }
+
     const MAX_RETRIES: usize = 10;
     const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(30);
     const MAX_RETRY_DELAY: Duration = Duration::from_secs(3600);
@@ -91,7 +90,7 @@ impl RepoDiffer {
                     match message {
                         RepoDifferMessage::Start(duration) => {
                             tracing::debug!(
-                                repo.key = %self.key,
+                                repo.key = %self.repository(),
                                 interval_seconds = duration.as_secs(),
                                 "Starting repo differ"
                             );
@@ -100,11 +99,11 @@ impl RepoDiffer {
                             *self.status.write().await = RepoDifferStatus::Running;
                         }
                         RepoDifferMessage::ForceUpdate => {
-                            tracing::debug!(repo.key = %self.key, "Forcing repo differ update");
+                            tracing::debug!(repo.key = %self.repository(), "Forcing repo differ update");
                             self.force_update().await;
                         }
                         RepoDifferMessage::Stop => {
-                            tracing::debug!(repo.key = %self.key, "Stopping repo differ");
+                            tracing::debug!(repo.key = %self.repository(), "Stopping repo differ");
                             tick_interval = None;
                             self.interval.write().await.take();
                             *self.status.write().await = RepoDifferStatus::Stopped;
@@ -112,7 +111,7 @@ impl RepoDiffer {
                     }
                 }
                 _ = interval_tick_or_sleep(&mut tick_interval) => {
-                    tracing::debug!(repo.key = %self.key, "Repo differ interval ticked");
+                    tracing::debug!(repo.key = %self.repository(), "Repo differ interval ticked");
                     self.poll_interval().await;
                 }
             }
@@ -129,7 +128,7 @@ impl RepoDiffer {
             .await
         {
             tracing::error!(
-                repo.key = %self.key,
+                repo.key = %self.repository(),
                 last_error = last_error.as_deref().unwrap_or("unknown"),
                 "All repo differ poll retry attempts failed"
             );
@@ -161,7 +160,7 @@ impl RepoDiffer {
             if next_attempt < max_attempts {
                 let backoff_duration = Self::calculate_backoff_duration(next_attempt);
                 tracing::warn!(
-                    repo.key = %self.key,
+                    repo.key = %self.repository(),
                     retry_attempt = next_attempt,
                     max_retries = max_attempts,
                     backoff_seconds = backoff_duration.as_secs_f64(),
@@ -178,7 +177,7 @@ impl RepoDiffer {
         name = "repo_differ.poll",
         skip(self),
         fields(
-            repo.key = %self.key,
+            repo.key = %self.repository(),
             operation.name = "repo_differ.poll",
             trigger = trigger,
             retry_attempt = retry_attempt,
@@ -272,7 +271,7 @@ impl RepoDiffer {
         Duration::from_secs_f64(final_delay)
     }
 
-    #[instrument(name = "repo_differ.fetch_and_diff", skip(self), fields(repo.key = %self.key, operation.name = "repo_differ.fetch_and_diff", pr_count = field::Empty, changed_pr_count = field::Empty))]
+    #[instrument(name = "repo_differ.fetch_and_diff", skip(self), fields(repo.key = %self.repository(), operation.name = "repo_differ.fetch_and_diff", pr_count = field::Empty, changed_pr_count = field::Empty))]
     async fn tick(&self) -> Result<RepoDifferTickResult, PullRequestProviderError> {
         let complete_pull_requests = self.pull_request_provider.get_open_pull_requests().await?;
         tracing::Span::current().record("pr_count", complete_pull_requests.len());
@@ -299,6 +298,7 @@ impl RepoDiffer {
                     .iter()
                     .map(|prev_pr| {
                         prev_pr.changelog(
+                            self.repository(),
                             complete_pull_requests
                                 .iter()
                                 .find(|pull_request| pull_request.id == prev_pr.id),
@@ -344,7 +344,7 @@ fn mark_current_span_error(message: &str) {
 impl fmt::Debug for RepoDiffer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RepoDiffer")
-            .field("key", &self.key)
+            .field("repository", self.repository())
             .field("prev_pull_requests", &self.prev_pull_requests)
             .field("last_updated", &self.last_updated)
             .finish()

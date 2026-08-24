@@ -216,29 +216,26 @@ pub struct PullRequestWorkItemRef {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestCommitAuthor {
-    #[serde(with = "time::serde::rfc3339")]
-    pub date: OffsetDateTime,
-    pub email: String,
-    pub name: String,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub date: Option<OffsetDateTime>,
+    pub email: Option<String>,
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequestCommit {
-    pub author: PullRequestCommitAuthor,
-    pub comment: String,
-    pub commit_id: String,
-    pub committer: PullRequestCommitAuthor,
-    pub url: String,
+    pub author: Option<PullRequestCommitAuthor>,
+    pub comment: Option<String>,
+    pub commit_id: Option<String>,
+    pub committer: Option<PullRequestCommitAuthor>,
+    pub url: Option<String>,
 }
 
 /// Provider-neutral snapshot used by change detection and HTTP projections.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequest {
-    pub organization: String,
-    pub project: String,
-    pub repo_name: String,
     pub url: String,
     pub id: i32,
     pub title: String,
@@ -274,12 +271,19 @@ impl PullRequest {
 
     pub fn changelog(
         &self,
+        repository: &RepoKey,
         new: Option<&Self>,
         id_to_email_map: &HashMap<String, Email>,
     ) -> PullRequestDiff {
         let new_pr = match new {
             Some(new) => new,
-            None => return (self.clone(), vec![PRChangeEvent::PullRequestClosed]).into(),
+            None => {
+                return PullRequestDiff::new(
+                    repository.clone(),
+                    self.clone(),
+                    vec![PRChangeEvent::PullRequestClosed],
+                );
+            }
         };
 
         let new_threads = new_pr
@@ -341,7 +345,7 @@ impl PullRequest {
         change_events.extend(new_threads);
         change_events.extend(updated_threads);
         change_events.extend(mention_events);
-        (new_pr.clone(), change_events).into()
+        PullRequestDiff::new(repository.clone(), new_pr.clone(), change_events)
     }
 
     /// Returns reviewers and discussion authors currently blocking this PR.
@@ -423,25 +427,18 @@ impl PullRequest {
 
 #[derive(Debug, Clone)]
 pub struct PullRequestDiff {
+    pub repository: RepoKey,
     pub pr: PullRequest,
     pub changes: Vec<PRChangeEvent>,
 }
 
 impl PullRequestDiff {
-    pub fn new(pr: PullRequest, changes: Vec<PRChangeEvent>) -> Self {
-        Self { pr, changes }
-    }
-}
-
-impl From<(PullRequest, Vec<PRChangeEvent>)> for PullRequestDiff {
-    fn from((pr, changes): (PullRequest, Vec<PRChangeEvent>)) -> Self {
-        Self::new(pr, changes)
-    }
-}
-
-impl From<&PullRequest> for RepoKey {
-    fn from(pr: &PullRequest) -> Self {
-        Self::new(&pr.organization, &pr.project, &pr.repo_name)
+    pub fn new(repository: RepoKey, pr: PullRequest, changes: Vec<PRChangeEvent>) -> Self {
+        Self {
+            repository,
+            pr,
+            changes,
+        }
     }
 }
 
@@ -471,8 +468,9 @@ mod tests {
             Email::try_from("mentioned@example.com").unwrap(),
         )]);
 
-        let diff = old_pr.changelog(Some(&new_pr), &id_to_email);
+        let diff = old_pr.changelog(&test_repository(), Some(&new_pr), &id_to_email);
 
+        assert_eq!(diff.repository, test_repository());
         assert!(diff.changes.iter().any(|event| matches!(
             event,
             PRChangeEvent::CommentMentioned {
@@ -487,7 +485,7 @@ mod tests {
         let old_pr = test_pull_request(vec![]);
         let new_pr = test_pull_request(vec![test_thread(38_706, vec![])]);
 
-        let diff = old_pr.changelog(Some(&new_pr), &HashMap::new());
+        let diff = old_pr.changelog(&test_repository(), Some(&new_pr), &HashMap::new());
 
         assert!(!diff
             .changes
@@ -503,7 +501,7 @@ mod tests {
             vec![test_comment(1, "author@example.com", "Initial comment")],
         )]);
 
-        let diff = old_pr.changelog(Some(&new_pr), &HashMap::new());
+        let diff = old_pr.changelog(&test_repository(), Some(&new_pr), &HashMap::new());
 
         assert!(diff.changes.iter().any(
             |event| matches!(event, PRChangeEvent::ThreadAdded(thread) if thread.id == 38_706)
@@ -512,9 +510,6 @@ mod tests {
 
     fn test_pull_request(threads: Vec<PullRequestThread>) -> PullRequest {
         PullRequest {
-            organization: "org".to_string(),
-            project: "project".to_string(),
-            repo_name: "repo".to_string(),
             url: "https://example.invalid/pr/2310".to_string(),
             id: 2310,
             title: "Test PR".to_string(),
@@ -530,6 +525,10 @@ mod tests {
             commits: vec![],
             work_items: vec![],
         }
+    }
+
+    fn test_repository() -> RepoKey {
+        RepoKey::new("org", "project", "repo")
     }
 
     fn test_thread(id: i32, comments: Vec<PullRequestComment>) -> PullRequestThread {

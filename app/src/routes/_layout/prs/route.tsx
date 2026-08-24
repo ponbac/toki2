@@ -12,7 +12,7 @@ import {
   NotebookPenIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { ListPullRequest } from "@/lib/api/queries/pullRequests";
+import type { ListPullRequest } from "@/lib/api/contracts/pull-request";
 import { Button } from "@/components/ui/button";
 import { User } from "@/lib/api/queries/user";
 import { PrCardList } from "./-components/pr-card-list";

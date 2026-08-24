@@ -1,5 +1,5 @@
 import { AzureAvatar } from "@/components/azure-avatar";
-import { ListPullRequest } from "@/lib/api/queries/pullRequests";
+import type { ListPullRequest } from "@/lib/api/contracts/pull-request";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { CopySlashIcon, PickaxeIcon } from "lucide-react";

@@ -3,24 +3,44 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::{
-    adapters::inbound::http::ErrorResponse,
-    app_state::AppState,
-    auth::AuthUser,
-    domain::{
-        models::KLEER_TIME_TRACKING_PROVIDER, ports::outbound::TimeTrackingUserLinkRepository,
-    },
-    observability::record_user_id,
-    repositories::TimeTrackingUserLinkRepositoryImpl,
-    routes::ApiError,
+    adapters::inbound::http::ErrorResponse, app_state::AppState, auth::AuthUser,
+    domain::models::TimeTrackingConnection, observability::record_user_id, routes::ApiError,
 };
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionStatusResponse {
+    provider: String,
     connected: bool,
     provider_user_id: Option<String>,
     provider_user_email: Option<String>,
     provider_user_name: Option<String>,
+}
+
+impl From<TimeTrackingConnection> for ConnectionStatusResponse {
+    fn from(connection: TimeTrackingConnection) -> Self {
+        match connection {
+            TimeTrackingConnection::Disconnected { provider } => Self {
+                provider,
+                connected: false,
+                provider_user_id: None,
+                provider_user_email: None,
+                provider_user_name: None,
+            },
+            TimeTrackingConnection::Connected {
+                provider,
+                provider_user_id,
+                provider_user_email,
+                provider_user_name,
+            } => Self {
+                provider,
+                connected: true,
+                provider_user_id: Some(provider_user_id),
+                provider_user_email,
+                provider_user_name,
+            },
+        }
+    }
 }
 
 /// Get time-tracking connection status
@@ -43,28 +63,10 @@ pub async fn connection_status(
     State(app_state): State<AppState>,
 ) -> Result<axum::Json<ConnectionStatusResponse>, ApiError> {
     record_user_id(user.id);
-    let credentials = app_state
-        .kleer_settings
-        .credentials()
-        .map_err(|error| ApiError::new(axum::http::StatusCode::SERVICE_UNAVAILABLE, error))?;
-    let repo = TimeTrackingUserLinkRepositoryImpl::new(app_state.db_pool.clone());
-    let link = repo
-        .get_active_link_for_user(&user.id, KLEER_TIME_TRACKING_PROVIDER)
-        .await?
-        .filter(|link| link.provider_company_id == credentials.company_id);
+    let connection = app_state
+        .time_tracking_factory
+        .connection_status(user.id)
+        .await?;
 
-    Ok(axum::Json(match link {
-        Some(link) => ConnectionStatusResponse {
-            connected: true,
-            provider_user_id: Some(link.provider_user_id),
-            provider_user_email: link.provider_user_email,
-            provider_user_name: link.provider_user_name,
-        },
-        None => ConnectionStatusResponse {
-            connected: false,
-            provider_user_id: None,
-            provider_user_email: None,
-            provider_user_name: None,
-        },
-    }))
+    Ok(axum::Json(connection.into()))
 }

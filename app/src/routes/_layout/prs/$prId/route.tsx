@@ -10,11 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
+import type {
   ListPullRequest,
-  Thread as PullRequestThread,
-  User,
-} from "@/lib/api/queries/pullRequests";
+  PullRequestIdentity,
+  PullRequestThread,
+} from "@/lib/api/contracts/pull-request";
 import { queries } from "@/lib/api/queries/queries";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -201,13 +201,13 @@ function Threads(props: { pullRequest: ListPullRequest }) {
 
 function Thread(props: {
   thread: PullRequestThread;
-  users: Array<User>;
+  users: Array<PullRequestIdentity>;
 }) {
   const nonDeletedComments = props.thread.comments
     .filter((c) => !c.isDeleted)
     .map((c) => ({
       ...c,
-      content: mdFormatMentions(c.content),
+      content: mdFormatMentions(c.content ?? ""),
     }));
 
   const firstComment = nonDeletedComments.at(0);

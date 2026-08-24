@@ -26,7 +26,10 @@ use crate::{
     },
     config::KleerSettings,
     domain::{
-        models::{UserId, WorkItemProject, KLEER_TIME_TRACKING_PROVIDER},
+        models::{
+            TimeTrackingConnection, TimeTrackingUserLink, UserId, WorkItemProject,
+            KLEER_TIME_TRACKING_PROVIDER,
+        },
         ports::{
             inbound::{TimeTrackingService, WorkItemService},
             outbound::TimeTrackingUserLinkRepository,
@@ -65,41 +68,76 @@ impl KleerServiceFactory {
             .map_err(TimeTrackingServiceError::configuration)
     }
 
-    async fn mapped_kleer_user_id(
+    async fn resolve_connection(
         &self,
         user_id: UserId,
         provider_company_id: &str,
-    ) -> Result<i64, TimeTrackingServiceError> {
+    ) -> Result<TimeTrackingConnection, TimeTrackingServiceError> {
         let link = self
             .user_link_repo
             .get_active_link_for_user(&user_id, KLEER_TIME_TRACKING_PROVIDER)
             .await
-            .map_err(|error| TimeTrackingServiceError::internal(error.to_string()))?
-            .filter(|link| link.provider_company_id == provider_company_id)
-            .ok_or_else(|| {
-                TimeTrackingServiceError::not_connected(
-                    "Your Toki account is not connected to a Kleer user. Contact an admin to set up time tracking access.",
-                )
-            })?;
+            .map_err(|error| TimeTrackingServiceError::internal(error.to_string()))?;
 
-        link.provider_user_id.parse::<i64>().map_err(|_| {
-            TimeTrackingServiceError::internal(format!(
-                "invalid Kleer user id in mapping for Toki user {user_id}"
-            ))
-        })
+        Ok(Self::connection_from_link(link, provider_company_id))
+    }
+
+    fn connection_from_link(
+        link: Option<TimeTrackingUserLink>,
+        provider_company_id: &str,
+    ) -> TimeTrackingConnection {
+        match link.filter(|link| link.provider_company_id == provider_company_id) {
+            Some(TimeTrackingUserLink {
+                provider,
+                provider_user_id,
+                provider_user_email,
+                provider_user_name,
+                ..
+            }) => TimeTrackingConnection::Connected {
+                provider,
+                provider_user_id,
+                provider_user_email,
+                provider_user_name,
+            },
+            None => TimeTrackingConnection::Disconnected {
+                provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
+            },
+        }
     }
 }
 
 #[async_trait]
 impl TimeTrackingServiceFactory for KleerServiceFactory {
+    async fn connection_status(
+        &self,
+        user_id: UserId,
+    ) -> Result<TimeTrackingConnection, TimeTrackingServiceError> {
+        let credentials = self.credentials()?;
+        self.resolve_connection(user_id, &credentials.company_id)
+            .await
+    }
+
     async fn create_service(
         &self,
         user_id: UserId,
     ) -> Result<Box<dyn TimeTrackingService>, TimeTrackingServiceError> {
         let credentials = self.credentials()?;
-        let kleer_user_id = self
-            .mapped_kleer_user_id(user_id, &credentials.company_id)
+        let connection = self
+            .resolve_connection(user_id, &credentials.company_id)
             .await?;
+        let TimeTrackingConnection::Connected {
+            provider_user_id, ..
+        } = connection
+        else {
+            return Err(TimeTrackingServiceError::not_connected(
+                "Your Toki account is not connected to a Kleer user. Contact an admin to set up time tracking access.",
+            ));
+        };
+        let kleer_user_id = provider_user_id.parse::<i64>().map_err(|_| {
+            TimeTrackingServiceError::internal(format!(
+                "invalid Kleer user id in mapping for Toki user {user_id}"
+            ))
+        })?;
         let adapter = KleerAdapter::with_metadata_cache(
             credentials,
             kleer_user_id,
@@ -221,5 +259,58 @@ impl WorkItemServiceFactory for AzureDevOpsWorkItemServiceFactory {
             .collect();
 
         Ok(projects)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::OffsetDateTime;
+
+    #[test]
+    fn maps_matching_provider_connection() {
+        let connection =
+            KleerServiceFactory::connection_from_link(Some(test_link("company-1")), "company-1");
+
+        assert_eq!(
+            connection,
+            TimeTrackingConnection::Connected {
+                provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
+                provider_user_id: "42".to_string(),
+                provider_user_email: Some("ada@example.com".to_string()),
+                provider_user_name: Some("Ada Lovelace".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn treats_other_provider_company_link_as_disconnected() {
+        let connection = KleerServiceFactory::connection_from_link(
+            Some(test_link("other-company")),
+            "company-1",
+        );
+
+        assert_eq!(
+            connection,
+            TimeTrackingConnection::Disconnected {
+                provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
+            }
+        );
+    }
+
+    fn test_link(provider_company_id: &str) -> TimeTrackingUserLink {
+        TimeTrackingUserLink {
+            id: 1,
+            user_id: UserId::new(7),
+            provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
+            provider_company_id: provider_company_id.to_string(),
+            provider_user_id: "42".to_string(),
+            provider_user_email: Some("ada@example.com".to_string()),
+            provider_user_name: Some("Ada Lovelace".to_string()),
+            active: true,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+            last_synced_at: OffsetDateTime::UNIX_EPOCH,
+        }
     }
 }

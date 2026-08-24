@@ -93,7 +93,10 @@ impl AppState {
             .into_iter()
             .map(|repo| async move {
                 match repo.to_client().await {
-                    Ok(client) => Some((repo.key(), client)),
+                    Ok(client) => Some((
+                        RepoKey::new(client.organization(), client.project(), client.repo_name()),
+                        client,
+                    )),
                     Err(err) => {
                         tracing::error!(
                             "Failed to create client for repo '{}': {}",
@@ -121,15 +124,15 @@ impl AppState {
 
         let mut differs = HashMap::new();
         let differ_txs = clients
-            .iter()
-            .map(|(key, client)| {
+            .values()
+            .map(|client| {
                 let pull_request_provider =
                     Arc::new(AzureDevOpsPullRequestAdapter::new(client.clone()));
                 let differ = Arc::new(RepoDiffer::new(
-                    key.clone(),
                     pull_request_provider,
                     notification_handler.clone(),
                 ));
+                let key = differ.repository().clone();
                 differs.insert(key.clone(), differ.clone());
 
                 let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
@@ -137,7 +140,7 @@ impl AppState {
                     differ.run(rx).await;
                 });
 
-                (key.clone(), tx)
+                (key, tx)
             })
             .collect::<HashMap<_, _>>();
 
@@ -254,20 +257,17 @@ impl AppState {
         Ok(cached_identities)
     }
 
-    pub async fn insert_repo(&self, key: impl Into<RepoKey>, client: RepoClient) {
-        let key: RepoKey = key.into();
-
-        let mut clients = self.repo_clients.write().await;
-        clients.insert(key.clone(), client.clone());
-
-        let mut differ_txs = self.differ_txs.lock().await;
-        let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
+    pub async fn insert_repo(&self, client: RepoClient) {
         let pull_request_provider = Arc::new(AzureDevOpsPullRequestAdapter::new(client.clone()));
         let differ = Arc::new(RepoDiffer::new(
-            key.clone(),
             pull_request_provider,
             self.notification_handler.clone(),
         ));
+        let key = differ.repository().clone();
+
+        self.repo_clients.write().await.insert(key.clone(), client);
+
+        let (tx, rx) = mpsc::channel::<RepoDifferMessage>(32);
         self.differs
             .write()
             .await
@@ -276,7 +276,7 @@ impl AppState {
         tokio::spawn(async move {
             differ.run(rx).await;
         });
-        differ_txs.insert(key, tx);
+        self.differ_txs.lock().await.insert(key, tx);
     }
 
     pub async fn delete_repo(&self, key: RepoKey) {

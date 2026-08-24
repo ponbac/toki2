@@ -1,4 +1,4 @@
-import { ListPullRequest } from "@/lib/api/queries/pullRequests";
+import type { ListPullRequest } from "@/lib/api/contracts/pull-request";
 import {
   DropdownMenu,
   DropdownMenuContent,

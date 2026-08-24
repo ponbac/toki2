@@ -8,7 +8,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::inbound::http::ListPullRequestResponse,
@@ -83,11 +83,16 @@ async fn open_pull_requests(
 async fn cached_pull_requests(
     user: AuthUser,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<PullRequest>>, ApiError> {
+) -> Result<Json<Vec<CachedPullRequestResponse>>, ApiError> {
     record_user_id(user.id);
     let mut followed_prs = get_followed_pull_requests(&app_state, &user).await?;
     apply_avatar_overrides_to_pull_requests(&app_state, &mut followed_prs).await?;
-    Ok(Json(followed_prs))
+    Ok(Json(
+        followed_prs
+            .into_iter()
+            .map(CachedPullRequestResponse::from)
+            .collect(),
+    ))
 }
 
 async fn most_recent_commits(
@@ -109,7 +114,8 @@ async fn most_recent_commits(
             commits.extend(pr.commits);
         }
     }
-    commits.sort_by_key(|commit| cmp::Reverse(commit.author.date));
+    commits
+        .sort_by_key(|commit| cmp::Reverse(commit.author.as_ref().and_then(|author| author.date)));
 
     Ok(Json(commits))
 }
@@ -135,11 +141,11 @@ pub async fn list_pull_requests(
     record_user_id(user.id);
     let mut followed_prs = get_followed_pull_requests(&app_state, &user).await?;
     apply_avatar_overrides_to_pull_requests(&app_state, &mut followed_prs).await?;
-    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.created_at));
+    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request.created_at));
 
     let list_prs = followed_prs
         .into_iter()
-        .map(|pr| ListPullRequestResponse::from_domain(pr, &user.email))
+        .map(|pr| ListPullRequestResponse::from_domain(pr.repository, pr.pull_request, &user.email))
         .collect::<Vec<_>>();
 
     Ok(Json(list_prs))
@@ -151,7 +157,7 @@ pub async fn list_pull_requests(
 async fn get_followed_pull_requests(
     app_state: &AppState,
     user: &AuthUser,
-) -> Result<Vec<PullRequest>, ApiError> {
+) -> Result<Vec<FollowedPullRequest>, ApiError> {
     let user_repo = app_state.user_repo.clone();
     let followed_repos = user_repo.followed_repositories(user.id).await?;
 
@@ -160,10 +166,10 @@ async fn get_followed_pull_requests(
         match app_state.get_cached_pull_requests(repo_key.clone()).await {
             Ok(Some(prs)) => {
                 let identities = app_state.get_cached_identities(repo_key.clone()).await?;
-                followed_prs.extend(
-                    prs.iter()
-                        .map(|pr| pr.with_replaced_mentions(&identities.id_to_name_map())),
-                );
+                followed_prs.extend(prs.iter().map(|pr| FollowedPullRequest {
+                    repository: repo_key.clone(),
+                    pull_request: pr.with_replaced_mentions(&identities.id_to_name_map()),
+                }));
             }
             Ok(None) => {
                 tracing::debug!("No cached PRs found for repo: {}", repo_key);
@@ -180,7 +186,7 @@ async fn get_followed_pull_requests(
 
 async fn apply_avatar_overrides_to_pull_requests(
     app_state: &AppState,
-    prs: &mut [PullRequest],
+    prs: &mut [FollowedPullRequest],
 ) -> Result<(), ApiError> {
     if prs.is_empty() {
         return Ok(());
@@ -188,8 +194,8 @@ async fn apply_avatar_overrides_to_pull_requests(
 
     let mut unique_emails = HashSet::new();
 
-    for pr in prs.iter() {
-        unique_emails.extend(collect_pr_participant_emails(pr));
+    for followed_pr in prs.iter() {
+        unique_emails.extend(collect_pr_participant_emails(&followed_pr.pull_request));
     }
 
     if unique_emails.is_empty() {
@@ -207,11 +213,38 @@ async fn apply_avatar_overrides_to_pull_requests(
         .map(|item| (item.email.to_lowercase(), item.avatar_url))
         .collect::<HashMap<_, _>>();
 
-    for pr in prs.iter_mut() {
-        apply_avatar_overrides_to_pull_request(pr, &avatar_by_email);
+    for followed_pr in prs.iter_mut() {
+        apply_avatar_overrides_to_pull_request(&mut followed_pr.pull_request, &avatar_by_email);
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+struct FollowedPullRequest {
+    repository: RepoKey,
+    pull_request: PullRequest,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CachedPullRequestResponse {
+    organization: String,
+    project: String,
+    repo_name: String,
+    #[serde(flatten)]
+    pull_request: PullRequest,
+}
+
+impl From<FollowedPullRequest> for CachedPullRequestResponse {
+    fn from(followed: FollowedPullRequest) -> Self {
+        Self {
+            organization: followed.repository.organization,
+            project: followed.repository.project,
+            repo_name: followed.repository.repo_name,
+            pull_request: followed.pull_request,
+        }
+    }
 }
 
 fn collect_pr_participant_emails(pr: &PullRequest) -> HashSet<String> {

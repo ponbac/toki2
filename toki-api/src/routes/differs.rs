@@ -1,5 +1,5 @@
 use crate::{auth::AuthBackend, domain::Role, repositories::RepoRepository};
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use axum::{
     extract::State,
@@ -58,37 +58,27 @@ async fn get_differs(user: AuthUser, State(app_state): State<AppState>) -> Json<
         .expect("Failed to query followed repos");
 
     let differs = app_state.get_repo_differs().await;
-    let differ_to_repo_id: HashMap<_, _> = differs
-        .iter()
-        .map(|d| {
-            (
-                d.key.clone(),
-                all_repos
-                    .iter()
-                    .find(|r| RepoKey::from(*r) == d.key)
-                    .unwrap()
-                    .id,
-            )
-        })
-        .collect();
-
     let mut differ_dtos = Vec::new();
     for differ in differs {
-        let differ = differ.clone();
-
-        let key = differ.key.clone();
+        let key = differ.repository().clone();
         let status = *differ.status.read().await;
         let last_updated = *differ.last_updated.read().await;
         let refresh_interval = *differ.interval.read().await;
+        let followed = followed_repos.contains(&key);
+        let repo_id = all_repos
+            .iter()
+            .find(|repository| RepoKey::from(*repository) == key)
+            .expect("repo differ should correspond to a stored repository")
+            .id;
 
         differ_dtos.push(Differ {
-            key: key.clone(),
+            key,
             status,
             last_updated,
             refresh_interval,
-            followed: followed_repos.contains(&key),
+            followed,
             is_invalid: false,
-            repo_id: differ_to_repo_id[&key],
+            repo_id,
         });
     }
 

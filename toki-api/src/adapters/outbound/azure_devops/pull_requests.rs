@@ -27,6 +27,10 @@ impl AzureDevOpsPullRequestAdapter {
 
 #[async_trait]
 impl PullRequestProvider for AzureDevOpsPullRequestAdapter {
+    fn repository(&self) -> &RepoKey {
+        &self.key
+    }
+
     async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, PullRequestProviderError> {
         let base_pull_requests = self
             .client
@@ -116,9 +120,6 @@ fn to_domain_pull_request(
     };
 
     PullRequest {
-        organization: key.organization.clone(),
-        project: key.project.clone(),
-        repo_name: key.repo_name.clone(),
         url: canonical_url.to_string(),
         id: pull_request.id,
         title: pull_request.title,
@@ -138,7 +139,7 @@ fn to_domain_pull_request(
             .into_iter()
             .map(|thread| to_domain_thread(thread, &canonical_url))
             .collect(),
-        commits: commits.into_iter().filter_map(to_domain_commit).collect(),
+        commits: commits.into_iter().map(to_domain_commit).collect(),
         work_items: work_items
             .into_iter()
             .map(|work_item| to_domain_work_item_ref(work_item, key))
@@ -271,25 +272,22 @@ fn to_domain_work_item_ref(
     }
 }
 
-fn to_domain_commit(commit: az_devops::GitCommitRef) -> Option<PullRequestCommit> {
-    let author = commit.author?;
-    let committer = commit.committer?;
-
-    Some(PullRequestCommit {
-        author: PullRequestCommitAuthor {
-            date: author.date?,
-            email: author.email?,
-            name: author.name?,
-        },
-        comment: commit.comment.unwrap_or_default(),
-        commit_id: commit.commit_id?,
-        committer: PullRequestCommitAuthor {
-            date: committer.date?,
-            email: committer.email?,
-            name: committer.name?,
-        },
-        url: commit.remote_url.or(commit.url).unwrap_or_default(),
-    })
+fn to_domain_commit(commit: az_devops::GitCommitRef) -> PullRequestCommit {
+    PullRequestCommit {
+        author: commit.author.map(|author| PullRequestCommitAuthor {
+            date: author.date,
+            email: author.email,
+            name: author.name,
+        }),
+        comment: commit.comment,
+        commit_id: commit.commit_id,
+        committer: commit.committer.map(|committer| PullRequestCommitAuthor {
+            date: committer.date,
+            email: committer.email,
+            name: committer.name,
+        }),
+        url: commit.remote_url.or(commit.url),
+    }
 }
 
 #[cfg(test)]
@@ -327,6 +325,25 @@ mod tests {
         assert_eq!(
             mapped.url,
             "https://dev.azure.com/org/proj/_workitems/edit/42"
+        );
+    }
+
+    #[test]
+    fn incomplete_commits_are_preserved_without_inventing_values() {
+        let commits = vec![az_devops::GitCommitRef::new()];
+
+        let mapped: Vec<_> = commits.into_iter().map(to_domain_commit).collect();
+
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(
+            mapped[0],
+            PullRequestCommit {
+                author: None,
+                comment: None,
+                commit_id: None,
+                committer: None,
+                url: None,
+            }
         );
     }
 }

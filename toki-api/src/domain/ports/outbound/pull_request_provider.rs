@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::domain::{PullRequest, PullRequestIdentity};
+use crate::domain::{PullRequest, PullRequestIdentity, RepoKey};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PullRequestProviderError {
@@ -23,6 +23,9 @@ pub enum PullRequestProviderError {
 /// any fan-out needed to fetch threads, commits, and linked work items.
 #[async_trait]
 pub trait PullRequestProvider: Send + Sync + 'static {
+    /// Repository this provider instance reads from.
+    fn repository(&self) -> &RepoKey;
+
     async fn get_open_pull_requests(&self) -> Result<Vec<PullRequest>, PullRequestProviderError>;
 
     async fn get_identities(&self) -> Result<Vec<PullRequestIdentity>, PullRequestProviderError>;

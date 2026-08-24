@@ -5,6 +5,19 @@ use super::UserId;
 pub const KLEER_TIME_TRACKING_PROVIDER: &str = "kleer";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TimeTrackingConnection {
+    Disconnected {
+        provider: String,
+    },
+    Connected {
+        provider: String,
+        provider_user_id: String,
+        provider_user_email: Option<String>,
+        provider_user_name: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimeTrackingProviderUser {
     pub id: i32,
     pub provider: String,
