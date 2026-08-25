@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use async_trait::async_trait;
 use axum_login::{AuthnBackend, AuthzBackend, UserId as SessionUserId};
 use oauth2::{
     basic::{BasicClient, BasicRequestTokenError},
@@ -75,7 +74,6 @@ impl AuthBackend {
     }
 }
 
-#[async_trait]
 impl AuthnBackend for AuthBackend {
     type User = User;
     type Credentials = Credentials;
@@ -150,7 +148,6 @@ impl AuthnBackend for AuthBackend {
     }
 }
 
-#[async_trait]
 impl AuthzBackend for AuthBackend {
     type Permission = Role;
 

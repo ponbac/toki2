@@ -34,7 +34,7 @@ pub fn router() -> Router<AppState> {
             post(link_kleer_users_by_email),
         )
         .route("/user-links", put(upsert_user_link))
-        .route("/user-links/:user_id", delete(deactivate_user_link))
+        .route("/user-links/{user_id}", delete(deactivate_user_link))
         .route_layer(permission_required!(AuthBackend, Role::Admin))
 }
 

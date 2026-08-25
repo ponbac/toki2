@@ -28,7 +28,7 @@ pub fn router() -> Router<AppState> {
                 .delete(delete_my_avatar),
         )
         .route_layer(DefaultBodyLimit::max(AVATAR_UPLOAD_BODY_LIMIT))
-        .route("/:user_id/avatar", get(user_avatar))
+        .route("/{user_id}/avatar", get(user_avatar))
         .nest("/me/api-tokens", crate::routes::api_tokens::router())
 }
 

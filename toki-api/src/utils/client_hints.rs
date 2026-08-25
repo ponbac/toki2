@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{request::Parts, HeaderMap},
 };
@@ -31,7 +30,6 @@ impl ClientHints {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for ClientHints
 where
     S: Send + Sync,

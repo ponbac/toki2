@@ -16,8 +16,8 @@ serde_with = "3.4.0"
 tokio.workspace = true
 time.workspace = true
 chrono.workspace = true
-axum = { version = "0.7.3", features = ["ws", "macros", "multipart"] }
-axum-extra = { version = "0.9.1", features = ["typed-header", "cookie"] }
+axum = { version = "0.8.9", features = ["ws", "macros", "multipart"] }
+axum-extra = { version = "0.12", features = ["typed-header", "cookie"] }
 config.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.18", features = [
@@ -50,7 +50,7 @@ futures-util = { version = "0.3.30", default-features = false, features = [
     "std",
 ] }
 tower = { version = "0.5.1", features = ["util"] }
-tower-http = { version = "0.5.0", features = ["trace", "cors"] }
+tower-http = { version = "0.6.8", features = ["trace", "cors"] }
 strum = { version = "0.26.2", features = ["derive"] }
 sqlx = { version = "0.8.0", features = [
     "postgres",
@@ -60,7 +60,7 @@ sqlx = { version = "0.8.0", features = [
     "migrate",
 ] }
 sqlx-tracing = { version = "0.2.1", features = ["postgres"] }
-axum-login = "0.16.0"
+axum-login = "0.18.0"
 thiserror.workspace = true
 oauth2 = "5.0.0"
 reqwest = { workspace = true, features = ["json"] }
@@ -71,8 +71,8 @@ url = "2.5.0"
 aes-gcm = "0.10.3"
 base64.workspace = true
 strum_macros = "0.26.4"
-tower-sessions-moka-store = "0.14"
-tower-sessions-sqlx-store = { version = "0.14.2", features = ["postgres"] }
+tower-sessions-moka-store = "0.15"
+tower-sessions-sqlx-store = { version = "0.15.0", features = ["postgres"] }
 image = { version = "0.25.9", features = ["jpeg", "png"] }
 webp = "0.3.1"
 moka = { version = "0.12", features = ["future", "sync"] }

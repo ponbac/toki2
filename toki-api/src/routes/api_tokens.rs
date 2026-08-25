@@ -18,7 +18,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_tokens).post(create_token))
-        .route("/:token_id", delete(revoke_token))
+        .route("/{token_id}", delete(revoke_token))
 }
 
 #[derive(Debug, Deserialize)]

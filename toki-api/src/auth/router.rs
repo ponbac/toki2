@@ -40,16 +40,17 @@ mod post {
 
     pub async fn login(
         auth_session: AuthSession,
-        session: Session,
         Query(NextUrl { next }): Query<NextUrl>,
     ) -> impl IntoResponse {
         let (auth_url, csrf_state) = auth_session.backend.authorize_url();
 
-        session
+        auth_session
+            .session
             .insert(CSRF_STATE_KEY, csrf_state.secret())
             .await
             .expect("Serialization should not fail.");
-        session
+        auth_session
+            .session
             .insert(NEXT_URL_KEY, next)
             .await
             .expect("Serialization should not fail.");
@@ -104,14 +105,13 @@ mod get {
 
     pub async fn callback(
         mut auth_session: AuthSession,
-        session: Session,
         Query(AuthzResp {
             code,
             state: new_state,
         }): Query<AuthzResp>,
         State(app_state): State<AppState>,
     ) -> impl IntoResponse {
-        let Ok(Some(old_state)) = session.get(CSRF_STATE_KEY).await else {
+        let Ok(Some(old_state)) = auth_session.session.get(CSRF_STATE_KEY).await else {
             tracing::error!("Failed to get CSRF state from session");
             return StatusCode::BAD_REQUEST.into_response();
         };
@@ -139,7 +139,7 @@ mod get {
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
 
-        let next_url = match session.remove::<String>(NEXT_URL_KEY).await {
+        let next_url = match auth_session.session.remove::<String>(NEXT_URL_KEY).await {
             Ok(Some(next_url)) => next_url,
             Ok(None) | Err(_) => String::new(),
         };
@@ -147,7 +147,7 @@ mod get {
 
         let redirect_url = match next_url.as_str() {
             next if is_tui_callback(next) => {
-                match tui_callback_redirect_url(&session, next).await {
+                match tui_callback_redirect_url(&auth_session.session, next).await {
                     Ok(url) => url,
                     Err(status) => return status.into_response(),
                 }
