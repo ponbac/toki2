@@ -77,7 +77,7 @@ impl KleerServiceFactory {
             .user_link_repo
             .get_active_link_for_user(&user_id, KLEER_TIME_TRACKING_PROVIDER)
             .await
-            .map_err(|error| TimeTrackingServiceError::internal(error.to_string()))?;
+            .map_err(|error| TimeTrackingServiceError::storage(error.to_string()))?;
 
         Ok(Self::connection_from_link(link, provider_company_id))
     }

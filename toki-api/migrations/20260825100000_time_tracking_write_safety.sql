@@ -24,17 +24,20 @@ CREATE TABLE time_tracking_idempotency
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     operation TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
-    request_hash TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
     provider_operation_id TEXT NOT NULL,
+    prepared_write JSONB NOT NULL,
     state TEXT NOT NULL DEFAULT 'pending'
         CHECK (state IN ('pending', 'completed')),
-    result JSONB,
-    locked_until TIMESTAMPTZ NOT NULL,
+    registration_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, operation, idempotency_key),
     CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
-    CHECK ((state = 'completed' AND result IS NOT NULL) OR state = 'pending')
+    CHECK (
+        (state = 'completed' AND registration_id IS NOT NULL)
+        OR (state = 'pending' AND registration_id IS NULL)
+    )
 );
 
 CREATE INDEX idx_time_tracking_idempotency_created_at

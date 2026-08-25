@@ -232,7 +232,7 @@ impl KleerAdapter {
 
     fn parse_kleer_id(raw: &str, label: &str) -> Result<i64, TimeTrackingError> {
         raw.parse::<i64>()
-            .map_err(|_| TimeTrackingError::unknown(format!("invalid Kleer {label}: {raw}")))
+            .map_err(|_| TimeTrackingError::InvalidInput(format!("invalid {label}: {raw}")))
     }
 
     fn visible_project(
@@ -390,7 +390,7 @@ impl KleerAdapter {
                 "duplicate Kleer absence activity names make writes ambiguous: {:?}",
                 duplicate_names
             );
-            return Err(TimeTrackingError::unknown(
+            return Err(TimeTrackingError::provider_unavailable(
                 "Duplicate Kleer absence activity names make absence reporting ambiguous",
             ));
         }
@@ -723,11 +723,18 @@ impl TimeTrackingClient for KleerAdapter {
             .list_events(self.target_user_id, date, date)
             .await
             .map_err(map_kleer_error)?;
-        Ok(events
+        let mut matches = events
             .event_readables
             .into_iter()
-            .find(|event| event.foreign_id == operation_id)
-            .map(|event| TimerId::new(event.id.id.to_string())))
+            .filter(|event| event.foreign_id == operation_id)
+            .map(|event| TimerId::new(event.id.id.to_string()));
+        let first = matches.next();
+        if matches.next().is_some() {
+            return Err(TimeTrackingError::provider_unavailable(format!(
+                "multiple Kleer events use operation id {operation_id}"
+            )));
+        }
+        Ok(first)
     }
 
     async fn get_time_entry(&self, registration_id: &str) -> Result<TimeEntry, TimeTrackingError> {
@@ -965,26 +972,28 @@ fn map_kleer_error(error: KleerError) -> TimeTrackingError {
     match error {
         KleerError::NotFound => TimeTrackingError::TimerNotFound,
         KleerError::Unauthorized => {
-            TimeTrackingError::unknown("Kleer integration token is invalid or expired")
+            TimeTrackingError::provider_unavailable("Kleer integration token is invalid or expired")
         }
-        KleerError::Forbidden => TimeTrackingError::unknown("Kleer access forbidden"),
-        KleerError::InvalidConfig(message)
-        | KleerError::Request(message)
-        | KleerError::Deserialize { message, .. } => TimeTrackingError::unknown(message),
+        KleerError::Forbidden => {
+            TimeTrackingError::Forbidden("time tracking provider denied access".into())
+        }
+        KleerError::InvalidConfig(message) => TimeTrackingError::provider_unavailable(message),
+        KleerError::Request(message) => TimeTrackingError::provider_unavailable(message),
+        KleerError::Deserialize { message, .. } => TimeTrackingError::provider_unavailable(message),
         KleerError::Response { status, body } => {
             let message = kleer_response_message(&body);
             if is_single_access_denied_message(&message) {
-                return TimeTrackingError::Forbidden(message);
+                return TimeTrackingError::Forbidden("time tracking provider denied access".into());
             }
             tracing::warn!("Kleer returned non-success response: status={status}, body={message}");
-            TimeTrackingError::unknown(format!("Kleer returned {status}: {message}"))
+            TimeTrackingError::provider_unavailable(format!("Kleer returned {status}: {message}"))
         }
     }
 }
 
 fn map_kleer_event_write_error(error: KleerError) -> TimeTrackingError {
     if is_event_access_denied(&error) {
-        return TimeTrackingError::Forbidden(kleer_error_response_message(&error));
+        return TimeTrackingError::Forbidden("time tracking provider denied access".into());
     }
     if is_locked_period(&error) {
         return TimeTrackingError::LockedPeriod;
@@ -999,13 +1008,6 @@ fn map_kleer_event_lookup_error(error: KleerError) -> TimeTrackingError {
     }
 
     map_kleer_event_write_error(error)
-}
-
-fn kleer_error_response_message(error: &KleerError) -> String {
-    match error {
-        KleerError::Response { body, .. } => kleer_response_message(body),
-        _ => error.to_string(),
-    }
 }
 
 fn kleer_response_message(body: &str) -> String {
@@ -1304,7 +1306,7 @@ mod tests {
         let activities = vec![activity(1, "Sjuk"), activity(2, " Sjuk ")];
         let error = KleerAdapter::build_absence_activity_map(&activities).unwrap_err();
 
-        assert!(matches!(error, TimeTrackingError::Unknown(_)));
+        assert!(matches!(error, TimeTrackingError::ProviderUnavailable(_)));
     }
 
     #[test]
@@ -1456,9 +1458,7 @@ mod tests {
             body: r#"{"message":"EventAccessDeniedException: denied"}"#.to_string(),
         });
 
-        assert!(
-            matches!(error, TimeTrackingError::Forbidden(message) if message.contains("EventAccessDeniedException"))
-        );
+        assert!(matches!(error, TimeTrackingError::Forbidden(_)));
     }
 
     #[test]
@@ -1468,8 +1468,42 @@ mod tests {
             body: r#"{"message":"SingleAccessDeniedException: Otillåten access"}"#.to_string(),
         });
 
-        assert!(
-            matches!(error, TimeTrackingError::Forbidden(message) if message.contains("SingleAccessDeniedException"))
-        );
+        assert!(matches!(error, TimeTrackingError::Forbidden(_)));
+    }
+
+    #[test]
+    fn provider_transport_configuration_and_server_failures_are_unavailable() {
+        let errors = [
+            KleerError::InvalidConfig("missing token".into()),
+            KleerError::Request("connection refused".into()),
+            KleerError::Deserialize {
+                message: "invalid response".into(),
+                body: "secret response".into(),
+            },
+            KleerError::Response {
+                status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                body: r#"{"message":"provider exploded"}"#.into(),
+            },
+            KleerError::Unauthorized,
+        ];
+
+        for error in errors {
+            assert!(matches!(
+                map_kleer_error(error),
+                TimeTrackingError::ProviderUnavailable(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn provider_forbidden_and_not_found_keep_domain_status_semantics() {
+        assert!(matches!(
+            map_kleer_error(KleerError::Forbidden),
+            TimeTrackingError::Forbidden(_)
+        ));
+        assert!(matches!(
+            map_kleer_error(KleerError::NotFound),
+            TimeTrackingError::TimerNotFound
+        ));
     }
 }

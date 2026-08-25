@@ -41,10 +41,9 @@ pub fn to_domain_time_entry(
     activity_name: String,
     status: TimeEntryStatus,
 ) -> Result<TimeEntry, TimeTrackingError> {
-    let project_id = event
-        .client_project
-        .as_ref()
-        .ok_or_else(|| TimeTrackingError::unknown("missing client project on event"))?;
+    let project_id = event.client_project.as_ref().ok_or_else(|| {
+        TimeTrackingError::provider_unavailable("missing client project on Kleer event")
+    })?;
 
     let note = event
         .comment

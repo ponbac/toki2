@@ -16,6 +16,14 @@ use crate::domain::{
 pub struct TimeTrackingServiceError {
     pub status: StatusCode,
     pub message: String,
+    pub kind: TimeTrackingServiceErrorKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeTrackingServiceErrorKind {
+    Provider,
+    Storage,
+    Other,
 }
 
 impl TimeTrackingServiceError {
@@ -23,6 +31,15 @@ impl TimeTrackingServiceError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             message: message.into(),
+            kind: TimeTrackingServiceErrorKind::Provider,
+        }
+    }
+
+    pub fn storage(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: message.into(),
+            kind: TimeTrackingServiceErrorKind::Storage,
         }
     }
 
@@ -30,6 +47,7 @@ impl TimeTrackingServiceError {
         Self {
             status: StatusCode::CONFLICT,
             message: message.into(),
+            kind: TimeTrackingServiceErrorKind::Other,
         }
     }
 
@@ -37,6 +55,7 @@ impl TimeTrackingServiceError {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: message.into(),
+            kind: TimeTrackingServiceErrorKind::Other,
         }
     }
 }

@@ -61,18 +61,28 @@ impl DevBackend {
             .retain(|entry| entry.registration_id != registration_id);
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn edit_entry(
         &self,
         registration_id: &str,
         project_id: &str,
-        project_name: &str,
         activity_id: &str,
-        activity_name: &str,
         start_time: OffsetDateTime,
         end_time: OffsetDateTime,
-        user_note: &str,
+        note: &str,
     ) {
+        let project_name = self
+            .projects()
+            .into_iter()
+            .find(|project| project.id == project_id)
+            .map(|project| project.name)
+            .unwrap_or_else(|| project_id.to_string());
+        let activity_name = self
+            .activities(project_id)
+            .into_iter()
+            .find(|activity| activity.id == activity_id)
+            .map(|activity| activity.name)
+            .unwrap_or_else(|| activity_id.to_string());
+
         if let Some(entry) = self
             .store
             .lock()
@@ -81,12 +91,12 @@ impl DevBackend {
             .find(|entry| entry.registration_id == registration_id)
         {
             entry.project_id = Some(project_id.to_string());
-            entry.project_name = Some(project_name.to_string());
+            entry.project_name = Some(project_name);
             entry.activity_id = Some(activity_id.to_string());
-            entry.activity_name = Some(activity_name.to_string());
+            entry.activity_name = Some(activity_name);
             entry.start_time = start_time;
             entry.end_time = Some(end_time);
-            entry.note = Some(user_note.to_string());
+            entry.note = Some(note.to_string());
         }
     }
 

@@ -37,6 +37,7 @@ toml = "0.8"
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 
 # Fuzzy matching
 fuzzy-matcher = "0.3"

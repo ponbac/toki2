@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import { api } from "../api";
 import { DefaultMutationOptions, MutationFnAsync } from "./mutations";
 import {
@@ -49,6 +50,62 @@ export const timeTrackingMutations = {
   useUpsertKleerUserLink,
   useDeactivateKleerUserLink,
 };
+
+type IdempotencyAttempt = {
+  fingerprint: string;
+  key: string;
+};
+
+function useIdempotencyKey<TPayload extends object>(
+  fingerprintPayload: (payload: TPayload) => string,
+) {
+  const attempts = useRef(new WeakMap<TPayload, IdempotencyAttempt>());
+  const reusable = useRef(new Map<string, IdempotencyAttempt>());
+
+  return {
+    forPayload(payload: TPayload) {
+      const fingerprint = fingerprintPayload(payload);
+      const existing = attempts.current.get(payload);
+      if (existing?.fingerprint === fingerprint) return existing.key;
+      if (existing && reusable.current.get(existing.fingerprint) === existing) {
+        reusable.current.delete(existing.fingerprint);
+      }
+
+      const attempt = reusable.current.get(fingerprint) ?? {
+        fingerprint,
+        key: crypto.randomUUID(),
+      };
+      attempts.current.set(payload, attempt);
+      reusable.current.set(fingerprint, attempt);
+      return attempt.key;
+    },
+    complete(payload: TPayload) {
+      const attempt = attempts.current.get(payload);
+      attempts.current.delete(payload);
+      if (attempt && reusable.current.get(attempt.fingerprint) === attempt) {
+        reusable.current.delete(attempt.fingerprint);
+      }
+    },
+    fail(payload: TPayload) {
+      const attempt = attempts.current.get(payload);
+      if (attempt) reusable.current.set(attempt.fingerprint, attempt);
+    },
+  };
+}
+
+function saveTimerRequest(body: SaveTimerPayload) {
+  return { note: body.userNote };
+}
+
+function createTimeEntryRequest(body: CreateTimeEntryPayload) {
+  return {
+    projectId: body.projectId,
+    activityId: body.activityId,
+    startTime: body.startTime,
+    endTime: body.endTime,
+    note: body.userNote,
+  };
+}
 
 function useStartTimer(
   options?: DefaultMutationOptions<StartTimerPayload, TimerResponse>,
@@ -117,14 +174,17 @@ function useSaveTimer(
   const queryClient = useQueryClient();
   const { setTimer } = useTimeTrackingActions();
   const timerQuery = timeTrackingQueries.getTimer();
+  const idempotencyKey = useIdempotencyKey((body: SaveTimerPayload) =>
+    JSON.stringify(saveTimerRequest(body)),
+  );
 
   return useMutation({
     mutationKey: ["time-tracking", "saveTimer"],
     mutationFn: (body: SaveTimerPayload) =>
       api
         .post("time-tracking/timer/save", {
-          headers: { "Idempotency-Key": crypto.randomUUID() },
-          json: { note: body.userNote },
+          headers: { "Idempotency-Key": idempotencyKey.forPayload(body) },
+          json: saveTimerRequest(body),
         })
         .json<SaveTimerResponse>(),
     ...options,
@@ -165,6 +225,7 @@ function useSaveTimer(
       };
     },
     onSuccess: (data, v, c) => {
+      idempotencyKey.complete(v);
       if (c?.optimisticEntry) {
         replaceEntryInCachedRanges(queryClient, c.optimisticId, data.entry);
       } else {
@@ -176,6 +237,7 @@ function useSaveTimer(
       options?.onSuccess?.(data, v, c?.optionsContext);
     },
     onError: (error, v, c) => {
+      idempotencyKey.fail(v);
       if (c?.optimisticEntry) {
         removeEntryFromCachedRanges(queryClient, c.optimisticId);
         applyTimeInfoDelta(
@@ -413,20 +475,17 @@ function useCreateTimeEntry(
   options?: DefaultMutationOptions<CreateTimeEntryPayload, TimeEntry>,
 ) {
   const queryClient = useQueryClient();
+  const idempotencyKey = useIdempotencyKey((body: CreateTimeEntryPayload) =>
+    JSON.stringify(createTimeEntryRequest(body)),
+  );
 
   return useMutation({
     mutationKey: ["time-tracking", "createTimeEntry"],
     mutationFn: (body: CreateTimeEntryPayload) =>
       api
         .post("time-tracking/time-entries", {
-          headers: { "Idempotency-Key": crypto.randomUUID() },
-          json: {
-            projectId: body.projectId,
-            activityId: body.activityId,
-            startTime: body.startTime,
-            endTime: body.endTime,
-            note: body.userNote,
-          },
+          headers: { "Idempotency-Key": idempotencyKey.forPayload(body) },
+          json: createTimeEntryRequest(body),
         })
         .json<TimeEntry>(),
     ...options,
@@ -449,6 +508,7 @@ function useCreateTimeEntry(
       return { optimisticId, optimisticEntry, optionsContext };
     },
     onSuccess: (data, v, c) => {
+      idempotencyKey.complete(v);
       replaceEntryInCachedRanges(
         queryClient,
         c?.optimisticId ?? data.registrationId,
@@ -462,6 +522,7 @@ function useCreateTimeEntry(
       options?.onSuccess?.(data, v, c?.optionsContext);
     },
     onError: (error, v, c) => {
+      idempotencyKey.fail(v);
       if (c?.optimisticEntry) {
         removeEntryFromCachedRanges(
           queryClient,

@@ -5,10 +5,9 @@ use std::sync::Arc;
 
 use crate::api::dev_backend::DevBackend;
 use crate::api::dto::{
-    ActivityDto, DeleteEntryRequest, EditEntryRequest, ProjectDto, StartTimerRequest,
+    ActivityDto, EditEntryRequest, ProjectDto, SaveTimerRequest, StartTimerRequest,
     UpdateActiveTimerRequest,
 };
-use crate::api::SaveTimerRequest;
 use crate::types::{
     ActiveTimerState, Activity, GetTimerResponse, Me, Project, TimeEntry, TimeInfo,
 };
@@ -207,9 +206,7 @@ impl ApiClient {
     pub async fn start_timer(
         &mut self,
         project_id: Option<String>,
-        project_name: Option<String>,
         activity_id: Option<String>,
-        activity_name: Option<String>,
         note: Option<String>,
     ) -> Result<()> {
         if self.dev_backend.is_some() {
@@ -221,10 +218,8 @@ impl ApiClient {
                 .post(self.endpoint("/time-tracking/timer")?)
                 .json(&StartTimerRequest {
                     project_id,
-                    project_name,
                     activity_id,
-                    activity_name,
-                    user_note: note,
+                    note,
                 }),
             "POST /time-tracking/timer",
             UNAUTH_RELOGIN,
@@ -232,16 +227,17 @@ impl ApiClient {
         .await
     }
 
-    pub async fn save_timer(&mut self, request: SaveTimerRequest) -> Result<()> {
+    pub async fn save_timer(&mut self, note: Option<String>, idempotency_key: &str) -> Result<()> {
         if self.dev_backend.is_some() {
             return Ok(());
         }
 
         self.send_without_body(
             self.client
-                .put(self.endpoint("/time-tracking/timer")?)
-                .json(&request),
-            "PUT /time-tracking/timer",
+                .post(self.endpoint("/time-tracking/timer/save")?)
+                .header("Idempotency-Key", idempotency_key)
+                .json(&SaveTimerRequest { note }),
+            "POST /time-tracking/timer/save",
             UNAUTH_RELOGIN,
         )
         .await
@@ -260,92 +256,63 @@ impl ApiClient {
         .await
     }
 
-    pub async fn update_active_timer(
-        &mut self,
-        project_id: Option<String>,
-        project_name: Option<String>,
-        activity_id: Option<String>,
-        activity_name: Option<String>,
-        note: Option<String>,
-        start_time: Option<time::OffsetDateTime>,
-    ) -> Result<()> {
+    pub async fn update_active_timer(&mut self, request: UpdateActiveTimerRequest) -> Result<()> {
         if self.dev_backend.is_some() {
             return Ok(());
         }
 
         self.send_without_body(
             self.client
-                .put(self.endpoint("/time-tracking/update-timer")?)
-                .json(&UpdateActiveTimerRequest {
-                    project_id,
-                    project_name,
-                    activity_id,
-                    activity_name,
-                    user_note: note,
-                    start_time,
-                }),
-            "PUT /time-tracking/update-timer",
+                .patch(self.endpoint("/time-tracking/timer")?)
+                .json(&request),
+            "PATCH /time-tracking/timer",
             UNAUTH_RELOGIN,
         )
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn edit_time_entry(
         &mut self,
-        project_registration_id: &str,
+        registration_id: &str,
         project_id: &str,
-        project_name: &str,
         activity_id: &str,
-        activity_name: &str,
         start_time: time::OffsetDateTime,
         end_time: time::OffsetDateTime,
-        reg_day: &str,
-        week_number: i32,
-        user_note: &str,
-        original_project_id: Option<&str>,
-        original_activity_id: Option<&str>,
+        note: &str,
     ) -> Result<()> {
         if let Some(dev) = &self.dev_backend {
             dev.edit_entry(
-                project_registration_id,
+                registration_id,
                 project_id,
-                project_name,
                 activity_id,
-                activity_name,
                 start_time,
                 end_time,
-                user_note,
+                note,
             );
             return Ok(());
         }
 
         let format = time::format_description::well_known::Rfc3339;
         let body = EditEntryRequest {
-            project_registration_id,
             project_id,
-            project_name,
             activity_id,
-            activity_name,
             start_time: start_time
                 .format(&format)
                 .context("Failed to format start_time")?,
             end_time: end_time
                 .format(&format)
                 .context("Failed to format end_time")?,
-            reg_day,
-            week_number,
-            user_note,
-            original_reg_day: None,
-            original_project_id,
-            original_activity_id,
+            note,
         };
 
         self.send_without_body(
             self.client
-                .put(self.endpoint("/time-tracking/time-entries")?)
+                .put(self.endpoint(&format!(
+                    "/time-tracking/time-entries/{}",
+                    urlencoding::encode(registration_id)
+                ))?)
                 .json(&body),
-            "PUT /time-tracking/time-entries",
+            "PUT /time-tracking/time-entries/:id",
             UNAUTH_RELOGIN,
         )
         .await
@@ -358,12 +325,11 @@ impl ApiClient {
         }
 
         self.send_without_body(
-            self.client
-                .delete(self.endpoint("/time-tracking/time-entries")?)
-                .json(&DeleteEntryRequest {
-                    project_registration_id: registration_id,
-                }),
-            "DELETE /time-tracking/time-entries",
+            self.client.delete(self.endpoint(&format!(
+                "/time-tracking/time-entries/{}",
+                urlencoding::encode(registration_id)
+            ))?),
+            "DELETE /time-tracking/time-entries/:id",
             UNAUTH_RELOGIN,
         )
         .await
@@ -420,5 +386,151 @@ impl ApiClient {
 
         activities.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(activities)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::macros::datetime;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        task::JoinHandle,
+    };
+
+    async fn capturing_client(status: &'static str) -> (ApiClient, JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("listener address");
+        let capture = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut request = Vec::new();
+            let mut chunk = [0; 4096];
+
+            loop {
+                let read = socket.read(&mut chunk).await.expect("read request");
+                assert!(read > 0, "connection closed before request completed");
+                request.extend_from_slice(&chunk[..read]);
+
+                let Some(header_end) = request.windows(4).position(|part| part == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let headers = String::from_utf8_lossy(&request[..header_end]).to_lowercase();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length: "))
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or_default();
+                if request.len() >= header_end + 4 + content_length {
+                    break;
+                }
+            }
+
+            let response =
+                format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            socket
+                .write_all(response.as_bytes())
+                .await
+                .expect("write response");
+            String::from_utf8(request).expect("HTTP request is UTF-8")
+        });
+
+        (
+            ApiClient::new(&format!("http://{address}"), "test-session").expect("client"),
+            capture,
+        )
+    }
+
+    fn json_body(request: &str) -> serde_json::Value {
+        let (_, body) = request.split_once("\r\n\r\n").expect("request body");
+        serde_json::from_str(body).expect("JSON body")
+    }
+
+    #[tokio::test]
+    async fn timer_write_requests_match_the_http_contract() {
+        let (mut client, capture) = capturing_client("201 Created").await;
+        client
+            .start_timer(
+                Some("project/1".into()),
+                Some("activity-1".into()),
+                Some("Ship it".into()),
+            )
+            .await
+            .expect("start timer");
+        let request = capture.await.expect("capture");
+        assert!(request.starts_with("POST /time-tracking/timer HTTP/1.1\r\n"));
+        assert_eq!(
+            json_body(&request),
+            serde_json::json!({
+                "projectId": "project/1",
+                "activityId": "activity-1",
+                "note": "Ship it"
+            })
+        );
+
+        let (mut client, capture) = capturing_client("201 Created").await;
+        client
+            .save_timer(Some("Done".into()), "save-key-1")
+            .await
+            .expect("save timer");
+        let request = capture.await.expect("capture");
+        assert!(request.starts_with("POST /time-tracking/timer/save HTTP/1.1\r\n"));
+        assert!(request
+            .to_lowercase()
+            .contains("\r\nidempotency-key: save-key-1\r\n"));
+        assert_eq!(json_body(&request), serde_json::json!({"note": "Done"}));
+
+        let (mut client, capture) = capturing_client("200 OK").await;
+        client
+            .update_active_timer(UpdateActiveTimerRequest::note("Changed".into()))
+            .await
+            .expect("patch timer");
+        let request = capture.await.expect("capture");
+        assert!(request.starts_with("PATCH /time-tracking/timer HTTP/1.1\r\n"));
+        assert_eq!(json_body(&request), serde_json::json!({"note": "Changed"}));
+
+        let (mut client, capture) = capturing_client("200 OK").await;
+        client
+            .edit_time_entry(
+                "entry/1",
+                "project-1",
+                "activity-1",
+                datetime!(2026-08-25 08:00 UTC),
+                datetime!(2026-08-25 09:30 UTC),
+                "Reviewed",
+            )
+            .await
+            .expect("edit entry");
+        let request = capture.await.expect("capture");
+        assert!(request.starts_with("PUT /time-tracking/time-entries/entry%2F1 HTTP/1.1\r\n"));
+        assert_eq!(
+            json_body(&request),
+            serde_json::json!({
+                "projectId": "project-1",
+                "activityId": "activity-1",
+                "startTime": "2026-08-25T08:00:00Z",
+                "endTime": "2026-08-25T09:30:00Z",
+                "note": "Reviewed"
+            })
+        );
+
+        let (mut client, capture) = capturing_client("204 No Content").await;
+        client
+            .delete_time_entry("entry/1")
+            .await
+            .expect("delete entry");
+        let request = capture.await.expect("capture");
+        assert!(request.starts_with("DELETE /time-tracking/time-entries/entry%2F1 HTTP/1.1\r\n"));
+        assert!(request.ends_with("\r\n\r\n"));
+    }
+
+    #[test]
+    fn timer_selection_patch_serializes_explicit_clears() {
+        let request = UpdateActiveTimerRequest::selection(None, None);
+        assert_eq!(
+            serde_json::to_value(request).expect("serialize patch"),
+            serde_json::json!({"projectId": null, "activityId": null})
+        );
     }
 }

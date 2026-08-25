@@ -1,7 +1,8 @@
-use crate::api::{ApiClient, SaveTimerRequest};
+use crate::api::{ApiClient, UpdateActiveTimerRequest};
 use crate::app::{self, App};
 use crate::types;
 use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 
 use super::action_queue::{Action, ActionTx};
@@ -136,22 +137,9 @@ pub(super) async fn run_action(
 pub(super) async fn handle_start_timer(app: &mut App, client: &mut ApiClient) -> Result<()> {
     match app.timer_state {
         app::TimerState::Stopped => {
-            let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
-            let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
-            let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
-            let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-            let note = {
-                let full = app.full_note_value();
-                if full.is_empty() {
-                    None
-                } else {
-                    Some(full)
-                }
-            };
-            if let Err(e) = client
-                .start_timer(project_id, project_name, activity_id, activity_name, note)
-                .await
-            {
+            let (project_id, activity_id) = selected_timer_ids(app);
+            let note = optional_note(app.full_note_value());
+            if let Err(e) = client.start_timer(project_id, activity_id, note).await {
                 app.set_status(format!("Error starting timer: {}", e));
                 return Ok(());
             }
@@ -164,6 +152,23 @@ pub(super) async fn handle_start_timer(app: &mut App, client: &mut ApiClient) ->
         }
     }
     Ok(())
+}
+
+fn selected_timer_ids(app: &App) -> (Option<String>, Option<String>) {
+    let project_id = app
+        .selected_project
+        .as_ref()
+        .map(|project| project.id.clone());
+    let activity_id = project_id.as_ref().and_then(|_| {
+        app.selected_activity
+            .as_ref()
+            .map(|activity| activity.id.clone())
+    });
+    (project_id, activity_id)
+}
+
+fn optional_note(note: String) -> Option<String> {
+    (!note.is_empty()).then_some(note)
 }
 
 async fn handle_project_selection_enter(
@@ -245,19 +250,9 @@ async fn handle_activity_selection_enter(
     app.pending_edit_selection_restore = None;
 
     if app.timer_state == app::TimerState::Running {
-        let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
-        let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
-        let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
-        let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+        let (project_id, activity_id) = selected_timer_ids(app);
         if let Err(e) = client
-            .update_active_timer(
-                project_id,
-                project_name,
-                activity_id,
-                activity_name,
-                None,
-                None,
-            )
+            .update_active_timer(UpdateActiveTimerRequest::selection(project_id, activity_id))
             .await
         {
             app.set_status(format!("Warning: Could not sync project to server: {}", e));
@@ -282,7 +277,7 @@ async fn sync_running_timer_note(note: String, app: &mut App, client: &mut ApiCl
     }
 
     if let Err(e) = client
-        .update_active_timer(None, None, None, None, Some(note), None)
+        .update_active_timer(UpdateActiveTimerRequest::note(note))
         .await
     {
         app.set_status(format!("Warning: Could not sync note to server: {}", e));
@@ -342,19 +337,14 @@ async fn handle_apply_template(
     // If timer is running, sync to server
     if app.timer_state == app::TimerState::Running {
         let note = app.full_note_value();
-        let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
-        let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
-        let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
-        let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
+        let (project_id, activity_id) = selected_timer_ids(app);
         if let Err(e) = client
-            .update_active_timer(
+            .update_active_timer(UpdateActiveTimerRequest::replace(
                 project_id,
-                project_name,
                 activity_id,
-                activity_name,
-                Some(note),
+                note,
                 None,
-            )
+            ))
             .await
         {
             app.set_status(format!("Warning: Could not sync template to server: {}", e));
@@ -417,27 +407,15 @@ async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiCl
         // Timer already running — copy fields and sync to server (yank behaviour)
         app.copy_entry_fields(&entry);
 
-        let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
-        let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
-        let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
-        let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-        let note = {
-            let full = app.full_note_value();
-            if full.is_empty() {
-                None
-            } else {
-                Some(full)
-            }
-        };
+        let (project_id, activity_id) = selected_timer_ids(app);
+        let note = app.full_note_value();
         if let Err(e) = client
-            .update_active_timer(
+            .update_active_timer(UpdateActiveTimerRequest::replace(
                 project_id,
-                project_name,
                 activity_id,
-                activity_name,
                 note,
                 None,
-            )
+            ))
             .await
         {
             app.set_status(format!(
@@ -455,15 +433,10 @@ async fn resume_entry(entry: types::TimeEntry, app: &mut App, client: &mut ApiCl
 
     // Build server arguments from the entry directly (not from app state)
     let project_id = Some(entry.project_id.clone());
-    let project_name = Some(entry.project_name.clone());
     let activity_id = Some(entry.activity_id.clone());
-    let activity_name = Some(entry.activity_name.clone());
     let note = entry.note.clone().filter(|n| !n.is_empty());
 
-    match client
-        .start_timer(project_id, project_name, activity_id, activity_name, note)
-        .await
-    {
+    match client.start_timer(project_id, activity_id, note).await {
         Ok(()) => {
             // Only mutate local state after confirmed server success
             app.copy_entry_fields(&entry);
@@ -491,27 +464,17 @@ pub(super) async fn handle_save_timer_with_action(
     }
 
     let duration = app.elapsed_duration();
-    let note = {
-        let full = app.full_note_value();
-        if full.is_empty() {
-            None
-        } else {
-            Some(full)
-        }
-    };
+    let note = Some(app.full_note_value());
+    let started_at = app
+        .absolute_start
+        .context("Running timer is missing its start time")?;
+    let idempotency_key = save_timer_idempotency_key(started_at, note.as_deref());
 
     let project_display = app.current_project_name();
     let activity_display = app.current_activity_name();
-    let save_request = SaveTimerRequest {
-        user_note: note,
-        project_id: app.selected_project.as_ref().map(|p| p.id.clone()),
-        project_name: app.selected_project.as_ref().map(|p| p.name.clone()),
-        activity_id: app.selected_activity.as_ref().map(|a| a.id.clone()),
-        activity_name: app.selected_activity.as_ref().map(|a| a.name.clone()),
-    };
 
     // Save the active timer to the time tracking backend
-    match client.save_timer(save_request).await {
+    match client.save_timer(note, &idempotency_key).await {
         Ok(()) => {
             let hours = duration.as_secs() / 3600;
             let minutes = (duration.as_secs() % 3600) / 60;
@@ -528,14 +491,8 @@ pub(super) async fn handle_save_timer_with_action(
                     app.description_input.clear();
                     app.description_is_default = true;
                     // Start a new server-side timer with same project/activity
-                    let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
-                    let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
-                    let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
-                    let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-                    if let Err(e) = client
-                        .start_timer(project_id, project_name, activity_id, activity_name, None)
-                        .await
-                    {
+                    let (project_id, activity_id) = selected_timer_ids(app);
+                    if let Err(e) = client.start_timer(project_id, activity_id, None).await {
                         app.set_status(format!("Saved but could not restart timer: {}", e));
                     } else {
                         let auto_resize = app.auto_resize_timer;
@@ -552,7 +509,7 @@ pub(super) async fn handle_save_timer_with_action(
                     app.description_input.clear();
                     app.description_is_default = true;
                     // Start new timer with no project yet
-                    if let Err(e) = client.start_timer(None, None, None, None, None).await {
+                    if let Err(e) = client.start_timer(None, None, None).await {
                         app.set_status(format!("Saved but could not restart timer: {}", e));
                     } else {
                         let auto_resize = app.auto_resize_timer;
@@ -582,6 +539,17 @@ pub(super) async fn handle_save_timer_with_action(
     }
 
     Ok(())
+}
+
+fn save_timer_idempotency_key(started_at: time::OffsetDateTime, note: Option<&str>) -> String {
+    let fingerprint: String = Sha256::digest(note.unwrap_or_default().as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!(
+        "toki-tui-save-{}-{fingerprint}",
+        started_at.unix_timestamp_nanos()
+    )
 }
 
 // Helper functions for edit mode
@@ -741,25 +709,14 @@ async fn handle_running_timer_edit_save(app: &mut App, client: &mut ApiClient) {
     app.set_status("Running timer updated".to_string());
 
     // Sync updated start time / project / activity / note to server
-    let project_id = app.selected_project.as_ref().map(|p| p.id.clone());
-    let project_name = app.selected_project.as_ref().map(|p| p.name.clone());
-    let activity_id = app.selected_activity.as_ref().map(|a| a.id.clone());
-    let activity_name = app.selected_activity.as_ref().map(|a| a.name.clone());
-    let full_note = app.full_note_value();
-    let note = if full_note.is_empty() {
-        None
-    } else {
-        Some(full_note)
-    };
+    let (project_id, activity_id) = selected_timer_ids(app);
     if let Err(e) = client
-        .update_active_timer(
+        .update_active_timer(UpdateActiveTimerRequest::replace(
             project_id,
-            project_name,
             activity_id,
-            activity_name,
-            note,
+            app.full_note_value(),
             app.absolute_start,
-        )
+        ))
         .await
     {
         app.set_status(format!("Warning: Could not sync timer to server: {}", e));
@@ -828,47 +785,20 @@ async fn handle_saved_entry_edit_save(
 
     anyhow::ensure!(end_local > start_local, "End time must be after start time");
 
-    // Compute reg_day and week_number from the entry date
-    let reg_day = format!(
-        "{:04}-{:02}-{:02}",
-        entry_date.year(),
-        entry_date.month() as u8,
-        entry_date.day()
-    );
-    let week_number = entry_date.iso_week() as i32;
-
-    // Determine delta fields (only set if project/activity changed)
-    let original_project_id = if state.project_id.as_deref() != Some(entry.project_id.as_str()) {
-        Some(entry.project_id.as_str())
-    } else {
-        None
-    };
-    let original_activity_id = if state.activity_id.as_deref() != Some(entry.activity_id.as_str()) {
-        Some(entry.activity_id.as_str())
-    } else {
-        None
-    };
-
-    let project_id = state.project_id.as_deref().unwrap_or("");
-    let project_name = state.project_name.as_deref().unwrap_or("");
-    let activity_id = state.activity_id.as_deref().unwrap_or("");
-    let activity_name = state.activity_name.as_deref().unwrap_or("");
-    let user_note = &state.note.value;
+    let project_id = state.project_id.as_deref().context("Project is required")?;
+    let activity_id = state
+        .activity_id
+        .as_deref()
+        .context("Activity is required")?;
 
     client
         .edit_time_entry(
             &registration_id,
             project_id,
-            project_name,
             activity_id,
-            activity_name,
             start_local.to_offset(time::UtcOffset::UTC),
             end_local.to_offset(time::UtcOffset::UTC),
-            &reg_day,
-            week_number,
-            user_note,
-            original_project_id,
-            original_activity_id,
+            &state.note.value,
         )
         .await?;
 
@@ -1020,6 +950,20 @@ mod tests {
         assert!(!app.description_is_default);
         assert_eq!(app.absolute_start, Some(datetime!(2026-03-06 09:15 UTC)));
         assert!(app.local_start.is_some());
+    }
+
+    #[test]
+    fn save_key_is_stable_for_a_payload_and_rotates_when_it_changes() {
+        let started_at = datetime!(2026-03-06 09:15 UTC);
+
+        assert_eq!(
+            save_timer_idempotency_key(started_at, Some("work")),
+            save_timer_idempotency_key(started_at, Some("work"))
+        );
+        assert_ne!(
+            save_timer_idempotency_key(started_at, Some("work")),
+            save_timer_idempotency_key(started_at, Some("different"))
+        );
     }
 
     #[tokio::test]

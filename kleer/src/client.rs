@@ -1,7 +1,7 @@
 use reqwest::{Client, Method, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use time::Date;
 use tracing::{field, Instrument};
 
@@ -13,6 +13,7 @@ use crate::types::{
 
 pub const DEFAULT_BASE_URL: &str = "https://api.kleer.se/v1";
 const JSON_CONTENT_TYPE: &str = "application/json";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct KleerCredentials {
@@ -80,6 +81,7 @@ impl KleerClient {
 
         Ok(Self {
             http: Client::builder()
+                .timeout(REQUEST_TIMEOUT)
                 .build()
                 .map_err(|e| KleerError::Request(e.to_string()))?,
             credentials,

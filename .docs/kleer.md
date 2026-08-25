@@ -74,6 +74,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 ## Events, Statuses, And Stats
 
 - Toki-created Kleer events should always send a generated `foreign-id`. Live validation on 2026-04-21 showed `PUT /event` can return a generic `Tekniskt fel` 500 when `foreign-id` is omitted, even though the XSD marks it optional.
+- Kleer's official API documentation states that `foreign-id` is not validated and duplicate values are allowed. Treat it as a reconciliation handle, never as provider-enforced idempotency: after an ambiguous create outcome, retries may look up the existing event but must not submit another `PUT /event` for the same operation.
 - Kleer statuses map directly to Toki `TimeEntryStatus`:
   - `Open` -> `open`
   - `Approved` -> `approved`

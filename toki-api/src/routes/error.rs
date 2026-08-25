@@ -6,7 +6,9 @@ use axum::{
 use std::fmt;
 
 use crate::{
-    adapters::inbound::http::{ErrorResponse, TimeTrackingServiceError, WorkItemServiceError},
+    adapters::inbound::http::{
+        ErrorResponse, TimeTrackingServiceError, TimeTrackingServiceErrorKind, WorkItemServiceError,
+    },
     app_state::AppStateError,
     domain::{AvatarError, TimeTrackingError, WorkItemError},
     repositories::RepositoryError,
@@ -62,6 +64,10 @@ impl ApiError {
 
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, message)
+    }
+
+    fn service_unavailable(code: &'static str, message: &'static str) -> Self {
+        Self::coded(StatusCode::SERVICE_UNAVAILABLE, code, message)
     }
 }
 
@@ -142,6 +148,20 @@ impl From<TimeTrackingError> for ApiError {
             ),
             TimeTrackingError::InvalidInput(message) => Self::bad_request(message),
             TimeTrackingError::Forbidden(message) => Self::forbidden(message),
+            TimeTrackingError::ProviderUnavailable(message) => {
+                tracing::error!(error = %message, "Time tracking provider unavailable");
+                Self::service_unavailable(
+                    "time_tracking_provider_unavailable",
+                    "time tracking provider is unavailable",
+                )
+            }
+            TimeTrackingError::StorageUnavailable(message) => {
+                tracing::error!(error = %message, "Time tracking storage unavailable");
+                Self::service_unavailable(
+                    "time_tracking_storage_unavailable",
+                    "time tracking storage is unavailable",
+                )
+            }
             _ => Self::internal(err.to_string()),
         }
     }
@@ -149,7 +169,23 @@ impl From<TimeTrackingError> for ApiError {
 
 impl From<TimeTrackingServiceError> for ApiError {
     fn from(err: TimeTrackingServiceError) -> Self {
-        Self::new(err.status, err.message)
+        match err.kind {
+            TimeTrackingServiceErrorKind::Provider => {
+                tracing::error!(error = %err.message, "Time tracking provider unavailable");
+                Self::service_unavailable(
+                    "time_tracking_provider_unavailable",
+                    "time tracking provider is unavailable",
+                )
+            }
+            TimeTrackingServiceErrorKind::Storage => {
+                tracing::error!(error = %err.message, "Time tracking storage unavailable");
+                Self::service_unavailable(
+                    "time_tracking_storage_unavailable",
+                    "time tracking storage is unavailable",
+                )
+            }
+            TimeTrackingServiceErrorKind::Other => Self::new(err.status, err.message),
+        }
     }
 }
 
@@ -179,7 +215,10 @@ impl From<WorkItemError> for ApiError {
             WorkItemError::InvalidInput(message) => Self::bad_request(message),
             WorkItemError::ProviderError(message) => {
                 tracing::error!("Work item provider operation failed: {}", message);
-                Self::internal("work item provider operation failed")
+                Self::service_unavailable(
+                    "work_item_provider_unavailable",
+                    "work item provider is unavailable",
+                )
             }
         }
     }
@@ -187,7 +226,15 @@ impl From<WorkItemError> for ApiError {
 
 impl From<WorkItemServiceError> for ApiError {
     fn from(err: WorkItemServiceError) -> Self {
-        Self::new(err.status, err.message)
+        if err.status == StatusCode::SERVICE_UNAVAILABLE {
+            tracing::error!(error = %err.message, "Work item provider unavailable");
+            Self::service_unavailable(
+                "work_item_provider_unavailable",
+                "work item provider is unavailable",
+            )
+        } else {
+            Self::new(err.status, err.message)
+        }
     }
 }
 
@@ -201,6 +248,100 @@ impl From<crate::domain::ApiTokenError> for ApiError {
                 tracing::error!("API token operation failed: {}", message);
                 Self::internal("api token operation failed")
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{body::to_bytes, response::IntoResponse};
+
+    use super::*;
+
+    async fn response_parts(error: ApiError) -> (StatusCode, serde_json::Value) {
+        let response = error.into_response();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = serde_json::from_slice(&body).unwrap();
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn time_tracking_provider_failures_are_safe_service_unavailable_responses() {
+        let (status, body) = response_parts(
+            TimeTrackingError::provider_unavailable("secret provider response").into(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["code"], "time_tracking_provider_unavailable");
+        assert_eq!(body["error"], "time tracking provider is unavailable");
+    }
+
+    #[tokio::test]
+    async fn time_tracking_storage_failures_are_distinct_safe_responses() {
+        let (status, body) = response_parts(
+            TimeTrackingError::storage_unavailable("postgres connection string").into(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["code"], "time_tracking_storage_unavailable");
+        assert_eq!(body["error"], "time tracking storage is unavailable");
+    }
+
+    #[tokio::test]
+    async fn work_item_provider_failures_are_safe_service_unavailable_responses() {
+        let (status, body) = response_parts(
+            WorkItemError::ProviderError("secret provider response".to_string()).into(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["code"], "work_item_provider_unavailable");
+        assert_eq!(body["error"], "work item provider is unavailable");
+    }
+
+    #[tokio::test]
+    async fn factory_configuration_failures_do_not_expose_details() {
+        let (status, body) = response_parts(
+            TimeTrackingServiceError::configuration("secret configuration detail").into(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["code"], "time_tracking_provider_unavailable");
+        assert_eq!(body["error"], "time tracking provider is unavailable");
+    }
+
+    #[tokio::test]
+    async fn factory_storage_failures_keep_the_storage_contract() {
+        let (status, body) =
+            response_parts(TimeTrackingServiceError::storage("secret database detail").into())
+                .await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["code"], "time_tracking_storage_unavailable");
+        assert_eq!(body["error"], "time tracking storage is unavailable");
+    }
+
+    #[tokio::test]
+    async fn domain_failures_keep_existing_client_statuses() {
+        let cases = [
+            (
+                TimeTrackingError::InvalidInput("invalid".into()),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                TimeTrackingError::Forbidden("denied".into()),
+                StatusCode::FORBIDDEN,
+            ),
+            (TimeTrackingError::TimerNotFound, StatusCode::NOT_FOUND),
+            (TimeTrackingError::LockedPeriod, StatusCode::CONFLICT),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(response_parts(error.into()).await.0, expected);
         }
     }
 }

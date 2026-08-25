@@ -27,11 +27,23 @@ pub enum TimeTrackingError {
     InvalidInput(String),
     #[error("{0}")]
     Forbidden(String),
+    #[error("time tracking provider unavailable: {0}")]
+    ProviderUnavailable(String),
+    #[error("time tracking storage unavailable: {0}")]
+    StorageUnavailable(String),
     #[error("{0}")]
     Unknown(String),
 }
 
 impl TimeTrackingError {
+    pub fn provider_unavailable(message: impl Into<String>) -> Self {
+        Self::ProviderUnavailable(message.into())
+    }
+
+    pub fn storage_unavailable(message: impl Into<String>) -> Self {
+        Self::StorageUnavailable(message.into())
+    }
+
     pub fn unknown(msg: impl Into<String>) -> Self {
         Self::Unknown(msg.into())
     }

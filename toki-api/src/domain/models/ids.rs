@@ -45,8 +45,7 @@ impl AsRef<i32> for UserId {
 /// A project identifier from the time tracking system.
 ///
 /// Wraps the provider project identifier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ProjectId(String);
 
 impl ProjectId {
@@ -86,8 +85,7 @@ impl From<&str> for ProjectId {
 /// An activity identifier from the time tracking system.
 ///
 /// Wraps the provider activity identifier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ActivityId(String);
 
 impl ActivityId {
@@ -127,8 +125,7 @@ impl From<&str> for ActivityId {
 /// A timer/time entry identifier from the time tracking system.
 ///
 /// Wraps the provider timer or time entry identifier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TimerId(String);
 
 impl TimerId {

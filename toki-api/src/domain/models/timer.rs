@@ -77,7 +77,7 @@ pub struct TimeEntryDayStatus {
 }
 
 /// A completed time entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimeEntry {
     pub registration_id: String,
     pub project_id: ProjectId,
@@ -171,7 +171,7 @@ impl WeeklyStats {
 }
 
 /// Request to create a new time entry directly (without timer).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct CreateTimeEntryRequest {
     pub project_id: ProjectId,
     pub activity_id: ActivityId,
@@ -213,32 +213,6 @@ pub struct UpdateTimerRequest {
     pub activity_id: PatchValue<ActivityId>,
     pub started_at: Option<OffsetDateTime>,
     pub note: Option<String>,
-}
-
-/// Durable write operation names used for idempotency coordination.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TimeTrackingWriteOperation {
-    SaveActiveTimer,
-    CreateTimeEntry,
-}
-
-impl TimeTrackingWriteOperation {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::SaveActiveTimer => "save_active_timer",
-            Self::CreateTimeEntry => "create_time_entry",
-        }
-    }
-}
-
-/// Result of atomically claiming an idempotent write.
-#[derive(Debug, Clone, PartialEq)]
-pub enum IdempotencyClaim {
-    Fresh { operation_id: String },
-    Resumed { operation_id: String },
-    Replay(TimeEntry),
-    InProgress,
-    PayloadMismatch,
 }
 
 /// A local timer history entry (stored in our database).
@@ -309,18 +283,4 @@ impl TimerHistoryEntry {
         self.note = Some(note.into());
         self
     }
-}
-
-/// Data for creating a new finished timer history entry.
-#[derive(Debug, Clone)]
-pub struct NewTimerHistoryEntry {
-    pub user_id: UserId,
-    pub registration_id: String,
-    pub start_time: OffsetDateTime,
-    pub end_time: OffsetDateTime,
-    pub project_id: Option<ProjectId>,
-    pub project_name: Option<String>,
-    pub activity_id: Option<ActivityId>,
-    pub activity_name: Option<String>,
-    pub note: String,
 }
