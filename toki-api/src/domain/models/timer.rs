@@ -77,7 +77,7 @@ pub struct TimeEntryDayStatus {
 }
 
 /// A completed time entry.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimeEntry {
     pub registration_id: String,
     pub project_id: ProjectId,
@@ -171,12 +171,10 @@ impl WeeklyStats {
 }
 
 /// Request to create a new time entry directly (without timer).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CreateTimeEntryRequest {
     pub project_id: ProjectId,
-    pub project_name: String,
     pub activity_id: ActivityId,
-    pub activity_name: String,
     pub start_time: OffsetDateTime,
     pub end_time: OffsetDateTime,
     pub note: String,
@@ -185,14 +183,62 @@ pub struct CreateTimeEntryRequest {
 /// Request to edit an existing time entry.
 #[derive(Debug, Clone)]
 pub struct EditTimeEntryRequest {
-    pub registration_id: String,
     pub project_id: ProjectId,
-    pub project_name: String,
     pub activity_id: ActivityId,
-    pub activity_name: String,
     pub start_time: OffsetDateTime,
     pub end_time: OffsetDateTime,
     pub note: String,
+}
+
+/// Selection supplied when starting a timer. Display names are resolved by the domain service.
+#[derive(Debug, Clone)]
+pub struct StartTimerRequest {
+    pub project_id: Option<ProjectId>,
+    pub activity_id: Option<ActivityId>,
+    pub note: String,
+}
+
+/// A field in a partial active-timer update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatchValue<T> {
+    Unchanged,
+    Clear,
+    Set(T),
+}
+
+/// Partial update for an active timer.
+#[derive(Debug, Clone)]
+pub struct UpdateTimerRequest {
+    pub project_id: PatchValue<ProjectId>,
+    pub activity_id: PatchValue<ActivityId>,
+    pub started_at: Option<OffsetDateTime>,
+    pub note: Option<String>,
+}
+
+/// Durable write operation names used for idempotency coordination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimeTrackingWriteOperation {
+    SaveActiveTimer,
+    CreateTimeEntry,
+}
+
+impl TimeTrackingWriteOperation {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SaveActiveTimer => "save_active_timer",
+            Self::CreateTimeEntry => "create_time_entry",
+        }
+    }
+}
+
+/// Result of atomically claiming an idempotent write.
+#[derive(Debug, Clone, PartialEq)]
+pub enum IdempotencyClaim {
+    Fresh { operation_id: String },
+    Resumed { operation_id: String },
+    Replay(TimeEntry),
+    InProgress,
+    PayloadMismatch,
 }
 
 /// A local timer history entry (stored in our database).

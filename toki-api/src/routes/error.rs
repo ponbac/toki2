@@ -14,13 +14,28 @@ use crate::{
 
 pub struct ApiError {
     status: StatusCode,
+    code: String,
     message: String,
 }
 
 impl ApiError {
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        let code = match status {
+            StatusCode::BAD_REQUEST => "bad_request",
+            StatusCode::UNAUTHORIZED => "unauthorized",
+            StatusCode::FORBIDDEN => "forbidden",
+            StatusCode::NOT_FOUND => "not_found",
+            StatusCode::CONFLICT => "conflict",
+            StatusCode::SERVICE_UNAVAILABLE => "service_unavailable",
+            _ => "internal_error",
+        };
+        Self::coded(status, code, message)
+    }
+
+    pub fn coded(status: StatusCode, code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             status,
+            code: code.into(),
             message: message.into(),
         }
     }
@@ -59,6 +74,7 @@ impl fmt::Display for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let body = ErrorResponse {
+            code: self.code,
             error: self.message,
         };
         (self.status, Json(body)).into_response()
@@ -92,13 +108,39 @@ impl From<AppStateError> for ApiError {
 impl From<TimeTrackingError> for ApiError {
     fn from(err: TimeTrackingError) -> Self {
         match err {
-            TimeTrackingError::TimerNotFound
-            | TimeTrackingError::NoTimerRunning
-            | TimeTrackingError::ProjectNotFound(_)
-            | TimeTrackingError::ActivityNotFound(_) => Self::not_found(err.to_string()),
-            TimeTrackingError::TimerAlreadyRunning => Self::conflict(err.to_string()),
+            TimeTrackingError::TimerNotFound => Self::coded(
+                StatusCode::NOT_FOUND,
+                "time_entry_not_found",
+                err.to_string(),
+            ),
+            TimeTrackingError::NoTimerRunning => {
+                Self::coded(StatusCode::NOT_FOUND, "no_active_timer", err.to_string())
+            }
+            TimeTrackingError::ProjectNotFound(_) | TimeTrackingError::ActivityNotFound(_) => {
+                Self::not_found(err.to_string())
+            }
+            TimeTrackingError::TimerAlreadyRunning => Self::coded(
+                StatusCode::CONFLICT,
+                "timer_already_running",
+                err.to_string(),
+            ),
+            TimeTrackingError::InvalidProjectActivity(message) => {
+                Self::coded(StatusCode::BAD_REQUEST, "invalid_project_activity", message)
+            }
+            TimeTrackingError::LockedPeriod => {
+                Self::coded(StatusCode::CONFLICT, "locked_period", err.to_string())
+            }
+            TimeTrackingError::IdempotencyConflict => Self::coded(
+                StatusCode::CONFLICT,
+                "idempotency_conflict",
+                err.to_string(),
+            ),
+            TimeTrackingError::IdempotencyInProgress => Self::coded(
+                StatusCode::CONFLICT,
+                "idempotency_in_progress",
+                err.to_string(),
+            ),
             TimeTrackingError::InvalidInput(message) => Self::bad_request(message),
-            TimeTrackingError::Conflict(message) => Self::conflict(message),
             TimeTrackingError::Forbidden(message) => Self::forbidden(message),
             _ => Self::internal(err.to_string()),
         }

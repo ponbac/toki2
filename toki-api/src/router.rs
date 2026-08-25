@@ -112,8 +112,18 @@ pub async fn create(
     let app_url = config.application.app_url.clone();
     let allowed_suffix = config.application.cors_allowed_origin_suffix.clone();
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_headers(["content-type".parse().unwrap()])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
+        .allow_headers([
+            "content-type".parse().unwrap(),
+            "idempotency-key".parse().unwrap(),
+            "authorization".parse().unwrap(),
+        ])
         .allow_credentials(true)
         .allow_origin(AllowOrigin::predicate(move |origin, _| {
             let origin_str = origin.to_str().unwrap_or_default();
@@ -220,6 +230,7 @@ mod tests {
     use axum::{
         body::Body,
         http::{Request, StatusCode},
+        routing::post,
     };
     use oauth2::ClientSecret;
     use sqlx::postgres::PgPoolOptions;
@@ -255,9 +266,22 @@ mod tests {
                 "/time-tracking/timer",
                 get(|| async { StatusCode::OK })
                     .post(|| async { StatusCode::OK })
-                    .put(|| async { StatusCode::OK })
+                    .patch(|| async { StatusCode::OK })
                     .delete(|| async { StatusCode::OK }),
             )
+            .route(
+                "/time-tracking/timer/save",
+                post(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/time-tracking/time-entries",
+                post(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/time-tracking/time-entries/{registration_id}",
+                axum::routing::put(|| async { StatusCode::OK }).delete(|| async { StatusCode::OK }),
+            )
+            .route("/work-items/move", post(|| async { StatusCode::OK }))
             .route("/users/me/api-tokens", get(|| async { StatusCode::OK }));
         let automation_openapi = agent_openapi();
         let public_routes = Router::new()
@@ -280,8 +304,21 @@ mod tests {
         for (method, path, expected) in [
             (Method::GET, "/time-tracking/timer", StatusCode::OK),
             (Method::POST, "/time-tracking/timer", StatusCode::OK),
-            (Method::PUT, "/time-tracking/timer", StatusCode::OK),
+            (Method::PATCH, "/time-tracking/timer", StatusCode::OK),
             (Method::DELETE, "/time-tracking/timer", StatusCode::OK),
+            (Method::POST, "/time-tracking/timer/save", StatusCode::OK),
+            (Method::POST, "/time-tracking/time-entries", StatusCode::OK),
+            (
+                Method::PUT,
+                "/time-tracking/time-entries/entry-1",
+                StatusCode::OK,
+            ),
+            (
+                Method::DELETE,
+                "/time-tracking/time-entries/entry-1",
+                StatusCode::OK,
+            ),
+            (Method::POST, "/work-items/move", StatusCode::OK),
             (Method::GET, "/me", StatusCode::UNAUTHORIZED),
             (Method::GET, "/users/me/api-tokens", StatusCode::OK),
             (Method::GET, "/public", StatusCode::OK),

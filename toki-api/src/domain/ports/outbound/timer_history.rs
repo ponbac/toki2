@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 
 use crate::domain::{
-    models::{ActiveTimer, NewTimerHistoryEntry, TimerHistoryEntry, TimerHistoryId, UserId},
+    models::{
+        ActiveTimer, IdempotencyClaim, NewTimerHistoryEntry, TimeEntry, TimeTrackingWriteOperation,
+        TimerHistoryEntry, TimerHistoryId, UserId,
+    },
     TimeTrackingError,
 };
 
@@ -45,12 +48,14 @@ pub trait TimerHistoryRepository: Send + Sync + 'static {
     /// Delete the active timer for a user (stop without saving).
     async fn delete_timer(&self, user_id: &UserId) -> Result<(), TimeTrackingError>;
 
-    /// Mark the active timer as finished by setting end_time and registration_id.
-    async fn save_timer_finished(
+    /// Atomically finish the active timer and persist its replayable save result.
+    async fn finish_timer_idempotently(
         &self,
         user_id: &UserId,
         end_time: &OffsetDateTime,
         registration_id: &str,
+        key: &str,
+        result: &TimeEntry,
     ) -> Result<(), TimeTrackingError>;
 
     // ========================================================================
@@ -69,12 +74,14 @@ pub trait TimerHistoryRepository: Send + Sync + 'static {
         registration_id: &str,
     ) -> Result<Option<TimerHistoryEntry>, TimeTrackingError>;
 
-    /// Create a finished timer history entry.
+    /// Atomically create finished history and persist its replayable create result.
     ///
     /// Returns the ID of the created entry.
-    async fn create_finished(
+    async fn create_finished_idempotently(
         &self,
         entry: &NewTimerHistoryEntry,
+        key: &str,
+        result: &TimeEntry,
     ) -> Result<TimerHistoryId, TimeTrackingError>;
 
     /// Update the start and end times for a timer entry.
@@ -94,5 +101,23 @@ pub trait TimerHistoryRepository: Send + Sync + 'static {
         new_registration_id: &str,
         start_time: &OffsetDateTime,
         end_time: &OffsetDateTime,
+    ) -> Result<(), TimeTrackingError>;
+
+    /// Atomically claim or replay an idempotent provider write.
+    async fn claim_idempotency(
+        &self,
+        user_id: &UserId,
+        operation: TimeTrackingWriteOperation,
+        key: &str,
+        request_hash: &str,
+        operation_id: &str,
+    ) -> Result<IdempotencyClaim, TimeTrackingError>;
+
+    /// Release a failed claim so a retry can resume immediately.
+    async fn release_idempotency(
+        &self,
+        user_id: &UserId,
+        operation: TimeTrackingWriteOperation,
+        key: &str,
     ) -> Result<(), TimeTrackingError>;
 }

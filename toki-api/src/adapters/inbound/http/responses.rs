@@ -14,6 +14,8 @@ pub use work_items::*;
 /// JSON error body returned by HTTP handlers.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorResponse {
+    /// Stable machine-readable error code.
+    pub code: String,
     /// Human-readable error message.
     pub error: String,
 }

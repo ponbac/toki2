@@ -117,7 +117,7 @@ export const FloatingTimer = () => {
     () => (timer ? { ...timer, note: userNote } : null),
     [timer, userNote],
   );
-  const restartTimerParams = React.useMemo(() => {
+  const nextTimerSelection = React.useMemo(() => {
     if (!rememberLastProject || !timer) {
       return {};
     }
@@ -148,6 +148,11 @@ export const FloatingTimer = () => {
     timeTrackingMutations.useSaveTimer({
       onError: apiErrorToast("Failed to save timer"),
     });
+  const { mutate: startTimer } = timeTrackingMutations.useStartTimer({
+    onError: apiErrorToast(
+      "Timer was saved, but a new timer could not be started",
+    ),
+  });
   const { mutate: editTimer } = timeTrackingMutations.useEditTimer({
     onSuccess: () => {
       toast.success("Timer successfully updated");
@@ -192,17 +197,16 @@ export const FloatingTimer = () => {
       saveTimer(
         {
           userNote: note,
-          restartTimer: shouldAutoRestart
-            ? {
-                userNote: CONTINUING_MY_WORK_NOTE,
-                ...restartTimerParams,
-              }
-            : undefined,
         },
         {
           onSuccess: () => {
             toast.success("Timer successfully saved");
-            if (!shouldAutoRestart) {
+            if (shouldAutoRestart) {
+              startTimer({
+                userNote: CONTINUING_MY_WORK_NOTE,
+                ...nextTimerSelection,
+              });
+            } else {
               removeSegment("timer");
             }
             rememberCurrentTimerSelection();
@@ -213,8 +217,9 @@ export const FloatingTimer = () => {
     [
       removeSegment,
       rememberCurrentTimerSelection,
-      restartTimerParams,
+      nextTimerSelection,
       saveTimer,
+      startTimer,
       timer,
     ],
   );

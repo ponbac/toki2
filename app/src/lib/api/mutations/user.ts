@@ -12,7 +12,7 @@ import type { DefaultMutationOptions } from "./mutations";
 
 /** Input for uploading the current user's avatar. */
 export type UploadAvatarVars = { file: File };
-/** Input for issuing a read-only timer-status token. */
+/** Input for issuing a session-equivalent personal API token. */
 export type CreateApiTokenVars = { name: string };
 /** Input for revoking one of the current user's API tokens. */
 export type RevokeApiTokenVars = { tokenId: number };
@@ -69,7 +69,7 @@ async function invalidateUserIdentityQueries(queryClient: QueryClient) {
   ]);
 }
 
-/** Issues a read-only timer-status token and refreshes token metadata. */
+/** Issues a session-equivalent personal API token and refreshes token metadata. */
 export function useCreateApiToken(
   options?: DefaultMutationOptions<CreateApiTokenVars, CreatedApiToken>,
 ) {

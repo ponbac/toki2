@@ -5,7 +5,8 @@ use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity,
         CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimerHistoryEntry, UserId, WeeklyStats,
+        StartTimerRequest, TimeEntry, TimeEntryDayStatus, TimerHistoryEntry, UpdateTimerRequest,
+        UserId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -33,8 +34,8 @@ pub trait TimeTrackingService: Send + Sync + 'static {
     async fn start_timer(
         &self,
         user_id: &UserId,
-        timer: &ActiveTimer,
-    ) -> Result<(), TimeTrackingError>;
+        request: &StartTimerRequest,
+    ) -> Result<ActiveTimer, TimeTrackingError>;
 
     /// Stop the currently running timer without saving to the provider.
     async fn stop_timer(&self, user_id: &UserId) -> Result<(), TimeTrackingError>;
@@ -46,14 +47,15 @@ pub trait TimeTrackingService: Send + Sync + 'static {
         &self,
         user_id: &UserId,
         note: Option<String>,
+        idempotency_key: &str,
     ) -> Result<TimeEntry, TimeTrackingError>;
 
     /// Edit the active timer for a user.
     async fn edit_timer(
         &self,
         user_id: &UserId,
-        timer: &ActiveTimer,
-    ) -> Result<(), TimeTrackingError>;
+        request: &UpdateTimerRequest,
+    ) -> Result<ActiveTimer, TimeTrackingError>;
 
     // ========================================================================
     // Project/Activity Lookups
@@ -104,6 +106,7 @@ pub trait TimeTrackingService: Send + Sync + 'static {
         &self,
         user_id: &UserId,
         request: &CreateTimeEntryRequest,
+        idempotency_key: &str,
     ) -> Result<TimeEntry, TimeTrackingError>;
 
     /// Edit an existing time entry.
@@ -111,6 +114,7 @@ pub trait TimeTrackingService: Send + Sync + 'static {
     /// Updates both the provider and local timer history.
     async fn edit_time_entry(
         &self,
+        registration_id: &str,
         request: &EditTimeEntryRequest,
     ) -> Result<TimeEntry, TimeTrackingError>;
 

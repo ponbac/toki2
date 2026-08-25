@@ -17,6 +17,9 @@ const BEARER_SCHEME: &str = "bearerAuth";
     paths(
         crate::routes::pull_requests::list_pull_requests,
         crate::routes::time_tracking::connection_status,
+        crate::routes::time_tracking::create_time_entry,
+        crate::routes::time_tracking::delete_time_entry,
+        crate::routes::time_tracking::edit_timer,
         crate::routes::time_tracking::get_time_entries,
         crate::routes::time_tracking::get_time_entry_day_statuses,
         crate::routes::time_tracking::get_time_info,
@@ -24,14 +27,19 @@ const BEARER_SCHEME: &str = "bearerAuth";
         crate::routes::time_tracking::get_timer_history,
         crate::routes::time_tracking::list_activities,
         crate::routes::time_tracking::list_projects,
+        crate::routes::time_tracking::save_timer,
+        crate::routes::time_tracking::start_timer,
+        crate::routes::time_tracking::stop_timer,
+        crate::routes::time_tracking::update_time_entry,
         crate::routes::work_items::format_for_llm,
         crate::routes::work_items::get_board,
         crate::routes::work_items::get_iterations,
         crate::routes::work_items::get_projects,
+        crate::routes::work_items::move_work_item,
     ),
     info(
         title = "Toki Agent API",
-        version = "1.0.0",
+        version = "1.1.0",
         description = "Curated automation surface for Toki. Browser session, admin, and media endpoints are not included. Authenticate with a Toki personal API token via HTTP bearer; never embed a real token in this document."
     ),
     modifiers(&BearerSecurity),
@@ -92,6 +100,12 @@ mod tests {
     use super::*;
 
     const EXPECTED_OPERATIONS: &[(&str, &str, &str)] = &[
+        (
+            "delete",
+            "/time-tracking/time-entries/{registration_id}",
+            "deleteTimeEntry",
+        ),
+        ("delete", "/time-tracking/timer", "discardActiveTimer"),
         ("get", "/pull-requests/list", "listPullRequests"),
         (
             "get",
@@ -117,6 +131,16 @@ mod tests {
         ("get", "/work-items/format-for-llm", "formatWorkItemForLlm"),
         ("get", "/work-items/iterations", "listWorkItemIterations"),
         ("get", "/work-items/projects", "listWorkItemProjects"),
+        ("patch", "/time-tracking/timer", "updateActiveTimer"),
+        ("post", "/time-tracking/time-entries", "createTimeEntry"),
+        ("post", "/time-tracking/timer", "startActiveTimer"),
+        ("post", "/time-tracking/timer/save", "saveActiveTimer"),
+        ("post", "/work-items/move", "moveWorkItem"),
+        (
+            "put",
+            "/time-tracking/time-entries/{registration_id}",
+            "updateTimeEntry",
+        ),
     ];
 
     fn spec() -> Value {
@@ -149,7 +173,7 @@ mod tests {
             version.starts_with("3.1."),
             "expected OpenAPI 3.1.x, got {version}"
         );
-        assert_eq!(spec["info"]["version"], "1.0.0");
+        assert_eq!(spec["info"]["version"], "1.1.0");
         assert_eq!(spec["info"]["title"], "Toki Agent API");
     }
 
@@ -204,30 +228,127 @@ mod tests {
             let responses = operation["responses"]
                 .as_object()
                 .expect("operation responses");
-            assert!(
-                responses.contains_key("200"),
-                "{operation_id} is missing a 200 response"
-            );
-            assert!(
-                responses["200"].get("content").is_some(),
-                "{operation_id} 200 response must be typed"
-            );
+            let (success_status, success_response) = responses
+                .iter()
+                .find(|(status, _)| {
+                    status
+                        .parse::<u16>()
+                        .is_ok_and(|status| (200..300).contains(&status))
+                })
+                .unwrap_or_else(|| panic!("{operation_id} is missing a 2xx response"));
+            if success_status != "204" {
+                assert!(
+                    success_response["content"]
+                        .as_object()
+                        .is_some_and(|content| content
+                            .values()
+                            .all(|media| media.get("schema").is_some())),
+                    "{operation_id} {success_status} response must be typed"
+                );
+            }
             assert!(
                 responses.contains_key("401"),
                 "{operation_id} is missing a 401 response"
             );
+
+            if let Some(request_body) = operation.get("requestBody") {
+                assert!(
+                    request_body["content"].as_object().is_some_and(|content| {
+                        !content.is_empty()
+                            && content.values().all(|media| media.get("schema").is_some())
+                    }),
+                    "{operation_id} request body must be typed"
+                );
+            }
+            if let Some(parameters) = operation["parameters"].as_array() {
+                for parameter in parameters {
+                    let name = parameter["name"].as_str().unwrap_or("<unnamed>");
+                    assert!(
+                        parameter.get("schema").is_some() || parameter.get("content").is_some(),
+                        "{operation_id} parameter {name} must be typed"
+                    );
+                }
+            }
         }
     }
 
     #[test]
     fn document_does_not_publish_provider_wire_types() {
         let serialized = spec().to_string();
-        for leak in ["GitCommitRef", "IdentityRefWithVote", "CommentThread"] {
+        for leak in [
+            "GitCommitRef",
+            "IdentityRefWithVote",
+            "CommentThread",
+            "KleerEventWritable",
+            "KleerIdRef",
+            "KleerCredentials",
+            "X-token",
+        ] {
             assert!(
                 !serialized.contains(leak),
                 "{leak} leaked into the agent OpenAPI document"
             );
         }
+    }
+
+    #[test]
+    fn mutation_inputs_are_provider_neutral_and_retry_headers_are_required() {
+        let spec = spec();
+        let schemas = &spec["components"]["schemas"];
+
+        for schema_name in [
+            "StartActiveTimerRequest",
+            "UpdateActiveTimerRequest",
+            "CreateTimeEntryRequestBody",
+            "UpdateTimeEntryRequest",
+        ] {
+            let properties = schemas[schema_name]["properties"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{schema_name} properties"));
+            for forbidden in [
+                "projectName",
+                "activityName",
+                "registrationId",
+                "regDay",
+                "weekNumber",
+            ] {
+                assert!(
+                    !properties.contains_key(forbidden),
+                    "{schema_name} must not expose {forbidden}"
+                );
+            }
+        }
+
+        for path in ["/time-tracking/timer/save", "/time-tracking/time-entries"] {
+            let operation = &spec["paths"][path]["post"];
+            let header = operation["parameters"]
+                .as_array()
+                .expect("operation parameters")
+                .iter()
+                .find(|parameter| parameter["name"] == "Idempotency-Key")
+                .unwrap_or_else(|| panic!("{path} Idempotency-Key parameter"));
+            assert_eq!(header["in"], "header");
+            assert_eq!(header["required"], true);
+            assert_eq!(header["schema"]["type"], "string");
+        }
+
+        let patch_properties = schemas["UpdateActiveTimerRequest"]["properties"]
+            .as_object()
+            .expect("timer patch properties");
+        assert!(schema_allows_null(&patch_properties["projectId"]));
+        assert!(schema_allows_null(&patch_properties["activityId"]));
+    }
+
+    fn schema_allows_null(schema: &Value) -> bool {
+        schema["type"] == "null"
+            || schema["type"]
+                .as_array()
+                .is_some_and(|types| types.iter().any(|kind| kind == "null"))
+            || ["oneOf", "anyOf"]
+                .iter()
+                .filter_map(|key| schema[*key].as_array())
+                .flatten()
+                .any(schema_allows_null)
     }
 
     #[test]

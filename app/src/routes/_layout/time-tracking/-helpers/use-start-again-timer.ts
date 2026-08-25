@@ -33,15 +33,11 @@ export function useStartAgainTimer() {
       return;
     }
 
-    startTimerAsync({ userNote: params.note })
-      .then(() =>
-        editTimerAsync({
-          projectId: params.projectId,
-          projectName: params.projectName,
-          activityId: params.activityId,
-          activityName: params.activityName,
-        }),
-      )
+    startTimerAsync({
+      userNote: params.note,
+      projectId: params.projectId,
+      activityId: params.activityId,
+    })
       .then(() => toast.success("Timer started"))
       .catch(apiErrorToast("Failed to start timer"));
   };

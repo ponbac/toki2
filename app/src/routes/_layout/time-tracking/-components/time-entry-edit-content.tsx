@@ -7,7 +7,7 @@ import {
   timeTrackingQueries,
 } from "@/lib/api/queries/time-tracking";
 import { apiErrorToast } from "@/lib/api/errors";
-import { cn, getWeekNumber } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
 import { Combobox } from "@/components/combobox";
@@ -104,13 +104,13 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
   };
 
   const { mutate: updateTimeEntry, isPending: isUpdatingTimeEntry } =
-    timeTrackingMutations.useEditProjectRegistration({
+    timeTrackingMutations.useUpdateTimeEntry({
       onSuccess: () => props.onSaved(),
       onError: apiErrorToast("Failed to update time entry"),
     });
 
   const { mutate: deleteTimeEntry, isPending: isDeletingTimeEntry } =
-    timeTrackingMutations.useDeleteProjectRegistration({
+    timeTrackingMutations.useDeleteTimeEntry({
       onSuccess: () => {
         props.onSaved();
         toast.success("Time entry deleted successfully");
@@ -139,11 +139,6 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
       activityName,
       startTime: startDateTime.toISOString(),
       endTime: endDateTime.toISOString(),
-      regDay: selectedDate,
-      weekNumber: getWeekNumber(new Date(selectedDate)),
-      originalRegDay: dayjs(props.entry.date).format("YYYY-MM-DD"),
-      originalProjectId: props.entry.projectId,
-      originalActivityId: props.entry.activityId,
     });
   };
 

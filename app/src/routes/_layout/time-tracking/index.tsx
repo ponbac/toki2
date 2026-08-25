@@ -127,13 +127,15 @@ function TimeTrackingPage() {
     enabled: isAuthenticated,
   });
 
-  const { data: absenceEntries, isLoading: isAbsenceEntriesLoading } = useQuery({
-    ...timeTrackingQueries.absenceEntries({
-      from: dateRange.from,
-      to: dateRange.to,
-    }),
-    enabled: isAuthenticated,
-  });
+  const { data: absenceEntries, isLoading: isAbsenceEntriesLoading } = useQuery(
+    {
+      ...timeTrackingQueries.absenceEntries({
+        from: dateRange.from,
+        to: dateRange.to,
+      }),
+      enabled: isAuthenticated,
+    },
+  );
 
   const filteredTimeEntries = React.useMemo(() => {
     const normalizedSearch = search.toLowerCase();
@@ -161,14 +163,13 @@ function TimeTrackingPage() {
   const { state: timerState } = useTimeTrackingTimer();
   const { mutate: startTimer, isPending: isStartingTimer } =
     timeTrackingMutations.useStartTimer();
-  const { mutate: createProjectRegistration } =
-    timeTrackingMutations.useCreateProjectRegistration({
-      onSuccess: () => {
-        setIsNewEntryOpen(false);
-        toast.success("Entry created");
-      },
-      onError: apiErrorToast("Failed to create entry"),
-    });
+  const { mutate: createTimeEntry } = timeTrackingMutations.useCreateTimeEntry({
+    onSuccess: () => {
+      setIsNewEntryOpen(false);
+      toast.success("Entry created");
+    },
+    onError: apiErrorToast("Failed to create entry"),
+  });
   const { mutate: createAbsences, isPending: isCreatingAbsences } =
     timeTrackingMutations.useCreateAbsences({
       onSuccess: () => {
@@ -395,7 +396,7 @@ function TimeTrackingPage() {
         open={isNewEntryOpen}
         onOpenChange={setIsNewEntryOpen}
         onCreate={(payload) => {
-          createProjectRegistration(payload);
+          createTimeEntry(payload);
         }}
       />
       <ReportAbsenceDialog

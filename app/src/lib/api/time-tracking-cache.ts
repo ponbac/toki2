@@ -20,8 +20,6 @@ type EntryPayload = {
   activityName: string;
   startTime: string;
   endTime: string;
-  regDay?: string;
-  weekNumber?: number;
   userNote: string;
 };
 
@@ -39,12 +37,12 @@ export function buildTimeEntryFromCreatePayload(
     projectName: payload.projectName,
     activityId: payload.activityId,
     activityName: payload.activityName,
-    date: payload.regDay ?? start.format("YYYY-MM-DD"),
+    date: start.format("YYYY-MM-DD"),
     hours: end.diff(start, "hour", true),
     note: payload.userNote,
     startTime: payload.startTime,
     endTime: payload.endTime,
-    weekNumber: payload.weekNumber ?? getWeekNumber(start.toDate()),
+    weekNumber: getWeekNumber(start.toDate()),
     status: syncStatus,
   };
 }
@@ -105,7 +103,9 @@ export function replaceEntryInCachedRanges(
   for (const { params } of getTimeEntryCaches(queryClient)) {
     const query = timeTrackingQueries.timeEntries(params);
     queryClient.setQueryData(query.queryKey, (current = []) => {
-      const withoutOld = current.filter((item) => item.registrationId !== oldId);
+      const withoutOld = current.filter(
+        (item) => item.registrationId !== oldId,
+      );
       const withoutNew = withoutOld.filter(
         (item) => item.registrationId !== entry.registrationId,
       );
@@ -286,7 +286,9 @@ export function findCachedAbsence(
 export function getCachedTimeEntries(
   queryClient: QueryClient,
 ): Array<TimeEntry> {
-  return getTimeEntryCaches(queryClient).flatMap(({ entries }) => entries ?? []);
+  return getTimeEntryCaches(queryClient).flatMap(
+    ({ entries }) => entries ?? [],
+  );
 }
 
 export function setTimerCache(
@@ -312,7 +314,7 @@ function getTimeEntryCaches(queryClient: QueryClient) {
           entries: queryClient.getQueryData(options.queryKey),
         },
       ];
-  });
+    });
 }
 
 function getAbsenceEntryCaches(queryClient: QueryClient) {
@@ -333,7 +335,9 @@ function getAbsenceEntryCaches(queryClient: QueryClient) {
     });
 }
 
-function getTimeInfoCacheParams(queryClient: QueryClient): Array<DateRangeQuery> {
+function getTimeInfoCacheParams(
+  queryClient: QueryClient,
+): Array<DateRangeQuery> {
   return queryClient
     .getQueryCache()
     .findAll({ queryKey: timeTrackingQueries.timeInfoBaseKey })

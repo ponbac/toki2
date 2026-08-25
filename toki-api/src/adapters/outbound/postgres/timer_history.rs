@@ -7,15 +7,15 @@ use time::OffsetDateTime;
 
 use crate::domain::{
     models::{
-        ActiveTimer, ActivityId, NewTimerHistoryEntry, ProjectId, TimerHistoryEntry,
-        TimerHistoryId, UserId,
+        ActiveTimer, ActivityId, IdempotencyClaim, NewTimerHistoryEntry, ProjectId, TimeEntry,
+        TimeTrackingWriteOperation, TimerHistoryEntry, TimerHistoryId, UserId,
     },
     ports::outbound::TimerHistoryRepository,
     TimeTrackingError,
 };
 use crate::repositories::{
-    DatabaseTimer, FinishedDatabaseTimer, NewDatabaseTimer, TimerRepository, TimerRepositoryImpl,
-    UpdateDatabaseTimer,
+    DatabaseIdempotencyClaim, DatabaseTimer, FinishedDatabaseTimer, NewDatabaseTimer,
+    TimerRepository, TimerRepositoryImpl, UpdateDatabaseTimer,
 };
 
 /// Adapter that implements TimerHistoryRepository using PostgreSQL.
@@ -61,10 +61,13 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
             note: timer.note.clone(),
         };
 
-        self.repo
-            .create_timer(&new_timer)
-            .await
-            .map_err(|e| TimeTrackingError::unknown(e.to_string()))?;
+        self.repo.create_timer(&new_timer).await.map_err(|error| {
+            if is_active_timer_unique_violation(&error) {
+                TimeTrackingError::TimerAlreadyRunning
+            } else {
+                TimeTrackingError::unknown(error.to_string())
+            }
+        })?;
 
         Ok(())
     }
@@ -97,14 +100,24 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
             .map_err(|e| TimeTrackingError::unknown(e.to_string()))
     }
 
-    async fn save_timer_finished(
+    async fn finish_timer_idempotently(
         &self,
         user_id: &UserId,
         end_time: &OffsetDateTime,
         registration_id: &str,
+        key: &str,
+        result: &TimeEntry,
     ) -> Result<(), TimeTrackingError> {
+        let result = serde_json::to_value(result)
+            .map_err(|error| TimeTrackingError::unknown(error.to_string()))?;
         self.repo
-            .save_active_timer(&user_id.as_i32(), end_time, registration_id)
+            .finish_active_timer_idempotently(
+                &user_id.as_i32(),
+                end_time,
+                registration_id,
+                key,
+                result,
+            )
             .await
             .map_err(|e| TimeTrackingError::unknown(e.to_string()))
     }
@@ -135,9 +148,11 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
         Ok(timer.map(db_timer_to_domain))
     }
 
-    async fn create_finished(
+    async fn create_finished_idempotently(
         &self,
         entry: &NewTimerHistoryEntry,
+        key: &str,
+        result: &TimeEntry,
     ) -> Result<TimerHistoryId, TimeTrackingError> {
         let timer = FinishedDatabaseTimer {
             user_id: entry.user_id.as_i32(),
@@ -151,9 +166,11 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
             registration_id: entry.registration_id.clone(),
         };
 
+        let result = serde_json::to_value(result)
+            .map_err(|error| TimeTrackingError::unknown(error.to_string()))?;
         let id = self
             .repo
-            .create_finished_timer(&timer)
+            .create_finished_timer_idempotently(&timer, key, result)
             .await
             .map_err(|e| TimeTrackingError::unknown(e.to_string()))?;
 
@@ -189,6 +206,65 @@ impl<R: TimerRepository + Send + Sync + 'static> TimerHistoryRepository
             .await
             .map_err(|e| TimeTrackingError::unknown(e.to_string()))
     }
+
+    async fn claim_idempotency(
+        &self,
+        user_id: &UserId,
+        operation: TimeTrackingWriteOperation,
+        key: &str,
+        request_hash: &str,
+        operation_id: &str,
+    ) -> Result<IdempotencyClaim, TimeTrackingError> {
+        let claim = self
+            .repo
+            .claim_idempotency(
+                user_id.as_i32(),
+                operation.as_str(),
+                key,
+                request_hash,
+                operation_id,
+            )
+            .await
+            .map_err(|error| TimeTrackingError::unknown(error.to_string()))?;
+
+        match claim {
+            DatabaseIdempotencyClaim::Fresh { operation_id } => {
+                Ok(IdempotencyClaim::Fresh { operation_id })
+            }
+            DatabaseIdempotencyClaim::Resumed { operation_id } => {
+                Ok(IdempotencyClaim::Resumed { operation_id })
+            }
+            DatabaseIdempotencyClaim::Replay(value) => serde_json::from_value::<TimeEntry>(value)
+                .map(IdempotencyClaim::Replay)
+                .map_err(|error| {
+                    TimeTrackingError::unknown(format!(
+                        "invalid persisted idempotency result: {error}"
+                    ))
+                }),
+            DatabaseIdempotencyClaim::InProgress => Ok(IdempotencyClaim::InProgress),
+            DatabaseIdempotencyClaim::PayloadMismatch => Ok(IdempotencyClaim::PayloadMismatch),
+        }
+    }
+
+    async fn release_idempotency(
+        &self,
+        user_id: &UserId,
+        operation: TimeTrackingWriteOperation,
+        key: &str,
+    ) -> Result<(), TimeTrackingError> {
+        self.repo
+            .release_idempotency(user_id.as_i32(), operation.as_str(), key)
+            .await
+            .map_err(|error| TimeTrackingError::unknown(error.to_string()))
+    }
+}
+
+fn is_active_timer_unique_violation(error: &crate::repositories::RepositoryError) -> bool {
+    matches!(
+        error,
+        crate::repositories::RepositoryError::DatabaseError(sqlx::Error::Database(database))
+            if database.constraint() == Some("idx_timer_history_one_active_per_user")
+    )
 }
 
 /// Convert a database timer to a domain ActiveTimer.

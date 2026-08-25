@@ -306,14 +306,18 @@ impl KleerAdapter {
         }
     }
 
-    async fn ensure_event_owned(&self, event_id: i64) -> Result<(), TimeTrackingError> {
+    async fn get_owned_event(
+        &self,
+        event_id: i64,
+    ) -> Result<KleerEventReadable, TimeTrackingError> {
         let event = self
             .client
             .get_event(event_id)
             .await
-            .map_err(map_kleer_error)?;
+            .map_err(map_kleer_event_lookup_error)?;
 
-        self.ensure_event_owned_by_target_user(&event)
+        self.ensure_event_owned_by_target_user(&event)?;
+        Ok(event)
     }
 
     fn build_event_writable(
@@ -322,16 +326,12 @@ impl KleerAdapter {
         end_time: time::OffsetDateTime,
         note: &str,
         user_id: i64,
+        operation_id: &str,
     ) -> KleerEventWritable {
         let note = Self::event_comment(note);
 
         KleerEventWritable {
-            foreign_id: Self::event_foreign_id(
-                user_id,
-                target.project_id,
-                target.activity_id,
-                start_time,
-            ),
+            foreign_id: operation_id.to_string(),
             user: KleerIdRef { id: user_id },
             activity: KleerIdRef {
                 id: target.activity_id,
@@ -353,20 +353,6 @@ impl KleerAdapter {
         } else {
             note
         }
-    }
-
-    fn event_foreign_id(
-        user_id: i64,
-        project_id: i64,
-        activity_id: i64,
-        start_time: time::OffsetDateTime,
-    ) -> String {
-        // Kleer documents this as optional, but event creation returns a generic
-        // 500 in the test environment unless a foreign id is present.
-        format!(
-            "toki-{user_id}-{project_id}-{activity_id}-{}",
-            start_time.unix_timestamp_nanos()
-        )
     }
 
     fn absence_event_foreign_id(user_id: i64, activity_id: i64, date: Date) -> String {
@@ -704,6 +690,7 @@ impl TimeTrackingClient for KleerAdapter {
     async fn create_time_entry(
         &self,
         request: &CreateTimeEntryRequest,
+        operation_id: &str,
     ) -> Result<TimerId, TimeTrackingError> {
         let target = self
             .ensure_project_activity_allowed(&request.project_id, &request.activity_id)
@@ -715,50 +702,120 @@ impl TimeTrackingClient for KleerAdapter {
             request.end_time,
             &request.note,
             self.target_user_id,
+            operation_id,
         );
         let saved = self
             .client
             .create_event(&payload)
             .await
-            .map_err(map_kleer_error)?;
+            .map_err(map_kleer_event_write_error)?;
 
         Ok(TimerId::new(saved.id.to_string()))
     }
 
+    async fn find_time_entry_by_operation_id(
+        &self,
+        operation_id: &str,
+        date: Date,
+    ) -> Result<Option<TimerId>, TimeTrackingError> {
+        let events = self
+            .client
+            .list_events(self.target_user_id, date, date)
+            .await
+            .map_err(map_kleer_error)?;
+        Ok(events
+            .event_readables
+            .into_iter()
+            .find(|event| event.foreign_id == operation_id)
+            .map(|event| TimerId::new(event.id.id.to_string())))
+    }
+
+    async fn get_time_entry(&self, registration_id: &str) -> Result<TimeEntry, TimeTrackingError> {
+        let event_id = Self::parse_kleer_id(registration_id, "event id")?;
+        let event = self.get_owned_event(event_id).await?;
+        let project_id = event
+            .client_project
+            .as_ref()
+            .ok_or(TimeTrackingError::TimerNotFound)?
+            .id;
+        let (projects, activities, statuses) = tokio::try_join!(
+            self.cached_client_projects(),
+            self.cached_activities(),
+            async {
+                self.client
+                    .list_event_statuses(self.target_user_id, event.date, event.date)
+                    .await
+                    .map_err(map_kleer_error)
+            },
+        )?;
+        let project_name = projects
+            .client_project_readables
+            .iter()
+            .find(|project| project.id.id == project_id)
+            .map(|project| project.name.clone())
+            .ok_or_else(|| TimeTrackingError::ProjectNotFound(project_id.to_string()))?;
+        let activity_name = activities
+            .activity_readables
+            .iter()
+            .find(|activity| activity.id.id == event.activity.id)
+            .map(|activity| activity.name.clone())
+            .ok_or_else(|| TimeTrackingError::ActivityNotFound(event.activity.id.to_string()))?;
+        let status = event
+            .status
+            .as_ref()
+            .map(|status| to_domain_status(status.status_type.clone()))
+            .or_else(|| {
+                Self::to_domain_day_statuses(statuses)
+                    .into_iter()
+                    .find(|status| status.date == event.date)
+                    .map(|status| status.status)
+            })
+            .unwrap_or_default();
+
+        to_domain_time_entry(&event, project_name, activity_name, status)
+    }
+
     async fn edit_time_entry(
         &self,
+        registration_id: &str,
         request: &EditTimeEntryRequest,
     ) -> Result<TimerId, TimeTrackingError> {
-        let event_id = Self::parse_kleer_id(&request.registration_id, "event id")?;
-        self.ensure_event_owned(event_id).await?;
+        let event_id = Self::parse_kleer_id(registration_id, "event id")?;
+        let existing = self.get_owned_event(event_id).await?;
         let target = self
             .ensure_project_activity_allowed(&request.project_id, &request.activity_id)
             .await?;
 
+        let fallback_operation_id = format!("toki-entry-{}-{event_id}", self.target_user_id);
         let payload = Self::build_event_writable(
             target,
             request.start_time,
             request.end_time,
             &request.note,
             self.target_user_id,
+            if existing.foreign_id.is_empty() {
+                &fallback_operation_id
+            } else {
+                &existing.foreign_id
+            },
         );
         let saved = self
             .client
             .update_event(event_id, &payload)
             .await
-            .map_err(map_kleer_error)?;
+            .map_err(map_kleer_event_write_error)?;
 
         Ok(TimerId::new(saved.id.to_string()))
     }
 
     async fn delete_time_entry(&self, registration_id: &str) -> Result<(), TimeTrackingError> {
         let event_id = Self::parse_kleer_id(registration_id, "event id")?;
-        self.ensure_event_owned(event_id).await?;
+        self.get_owned_event(event_id).await?;
 
         self.client
             .delete_event(event_id)
             .await
-            .map_err(map_kleer_error)?;
+            .map_err(map_kleer_event_write_error)?;
         Ok(())
     }
 
@@ -930,7 +987,7 @@ fn map_kleer_event_write_error(error: KleerError) -> TimeTrackingError {
         return TimeTrackingError::Forbidden(kleer_error_response_message(&error));
     }
     if is_locked_period(&error) {
-        return TimeTrackingError::Conflict("This period is locked in Kleer".to_string());
+        return TimeTrackingError::LockedPeriod;
     }
 
     map_kleer_error(error)
@@ -1186,6 +1243,7 @@ mod tests {
             end_time,
             "Worked on PR review",
             987,
+            "toki-op-test",
         );
 
         assert_eq!(payload.comment, "Worked on PR review");
@@ -1211,6 +1269,7 @@ mod tests {
                 end_time,
                 note,
                 987,
+                "toki-op-test",
             );
 
             assert_eq!(payload.comment, KleerAdapter::MISSING_NOTE_COMMENT);
@@ -1302,6 +1361,18 @@ mod tests {
                 &map,
             )
             .is_none());
+    }
+
+    #[test]
+    fn time_entry_ownership_does_not_reveal_other_users_entries() {
+        let adapter = adapter();
+        let other_users_entry = event(1, TARGET_USER_ID + 1, 123, Some(456), 4.0);
+
+        let error = adapter
+            .ensure_event_owned_by_target_user(&other_users_entry)
+            .unwrap_err();
+
+        assert!(matches!(error, TimeTrackingError::TimerNotFound));
     }
 
     #[test]

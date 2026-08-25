@@ -22,6 +22,7 @@ owner:
 chmod 600 ~/.config/toki/credentials
 ```
 
-The token can only read `GET /time-tracking/timer`. The helper refuses
-group/world-readable credentials, remote plaintext HTTP APIs, oversized or
-malformed responses, and all HTTP redirects.
+API tokens authenticate as the issuing user and can call protected Toki routes;
+store them like passwords. This widget only calls `GET /time-tracking/timer`.
+The helper refuses group/world-readable credentials, remote plaintext HTTP APIs,
+oversized or malformed responses, and all HTTP redirects.

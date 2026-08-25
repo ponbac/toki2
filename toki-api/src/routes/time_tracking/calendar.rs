@@ -1,10 +1,10 @@
 use axum::{
-    extract::{Query, State},
-    http::StatusCode,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use serde::Deserialize;
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     adapters::inbound::http::{
@@ -17,7 +17,7 @@ use crate::{
     routes::ApiError,
 };
 
-use super::normalize_user_note;
+use super::{normalize_user_note, timer::idempotency_key};
 
 #[derive(Debug, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -161,23 +161,43 @@ pub async fn get_time_entry_day_statuses(
 // Time Entry Mutations (Create, Edit, Delete)
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EditProjectRegistrationPayload {
-    project_registration_id: String,
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateTimeEntryRequest {
     project_id: String,
-    project_name: String,
     activity_id: String,
-    activity_name: String,
+    /// RFC3339 interval start.
     start_time: String,
+    /// RFC3339 interval end.
     end_time: String,
-    user_note: String,
+    note: String,
 }
 
-pub async fn edit_project_registration(
+/// Update a time entry
+///
+/// Updates an owned, open time entry using the registration ID in the path.
+/// Project and activity names are resolved by Toki.
+#[utoipa::path(
+    put,
+    path = "/time-tracking/time-entries/{registration_id}",
+    operation_id = "updateTimeEntry",
+    tag = "Time tracking",
+    params(("registration_id" = String, Path, description = "Opaque provider registration ID")),
+    request_body = UpdateTimeEntryRequest,
+    responses(
+        (status = 200, description = "Time entry updated", body = TimeEntryResponse),
+        (status = 400, description = "Invalid interval or project/activity selection", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "Time entry not found or not owned by the user", body = ErrorResponse),
+        (status = 409, description = "The time period is locked", body = ErrorResponse),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
+pub async fn update_time_entry(
     user: AuthUser,
     State(app_state): State<AppState>,
-    Json(payload): Json<EditProjectRegistrationPayload>,
+    Path(registration_id): Path<String>,
+    Json(payload): Json<UpdateTimeEntryRequest>,
 ) -> Result<Json<TimeEntryResponse>, ApiError> {
     record_user_id(user.id);
     let service = app_state
@@ -186,31 +206,40 @@ pub async fn edit_project_registration(
         .await?;
 
     let request = EditTimeEntryRequest {
-        registration_id: payload.project_registration_id,
         project_id: ProjectId::new(payload.project_id),
-        project_name: payload.project_name,
         activity_id: ActivityId::new(payload.activity_id),
-        activity_name: payload.activity_name,
         start_time: parse_rfc3339(&payload.start_time, "start time")?,
         end_time: parse_rfc3339(&payload.end_time, "end time")?,
-        note: normalize_user_note(payload.user_note),
+        note: normalize_user_note(payload.note),
     };
 
-    let entry = service.edit_time_entry(&request).await?;
+    let entry = service.edit_time_entry(&registration_id, &request).await?;
 
     Ok(Json(entry.into()))
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteProjectRegistrationPayload {
-    project_registration_id: String,
-}
-
-pub async fn delete_project_registration(
+/// Delete a time entry
+///
+/// Permanently deletes an owned, open time entry. The registration ID is
+/// supplied only in the path.
+#[utoipa::path(
+    delete,
+    path = "/time-tracking/time-entries/{registration_id}",
+    operation_id = "deleteTimeEntry",
+    tag = "Time tracking",
+    params(("registration_id" = String, Path, description = "Opaque provider registration ID")),
+    responses(
+        (status = 204, description = "Time entry deleted"),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "Time entry not found or not owned by the user", body = ErrorResponse),
+        (status = 409, description = "The time period is locked", body = ErrorResponse),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
+pub async fn delete_time_entry(
     user: AuthUser,
     State(app_state): State<AppState>,
-    Json(payload): Json<DeleteProjectRegistrationPayload>,
+    Path(registration_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     record_user_id(user.id);
     let service = app_state
@@ -218,29 +247,47 @@ pub async fn delete_project_registration(
         .create_service(user.id)
         .await?;
 
-    service
-        .delete_time_entry(&payload.project_registration_id)
-        .await?;
+    service.delete_time_entry(&registration_id).await?;
 
-    Ok(StatusCode::OK)
+    Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateProjectRegistrationPayload {
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateTimeEntryRequestBody {
     project_id: String,
-    project_name: String,
     activity_id: String,
-    activity_name: String,
+    /// RFC3339 interval start.
     start_time: String,
+    /// RFC3339 interval end.
     end_time: String,
-    user_note: String,
+    note: String,
 }
 
-pub async fn create_project_registration(
+/// Create a time entry
+///
+/// Creates a direct time entry without using the active timer. The required
+/// `Idempotency-Key` makes successful retries replayable.
+#[utoipa::path(
+    post,
+    path = "/time-tracking/time-entries",
+    operation_id = "createTimeEntry",
+    tag = "Time tracking",
+    params(("Idempotency-Key" = String, Header, description = "Unique retry key for this create request")),
+    request_body = CreateTimeEntryRequestBody,
+    responses(
+        (status = 201, description = "Time entry created", body = TimeEntryResponse),
+        (status = 400, description = "Invalid interval, selection, or missing idempotency key", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 409, description = "Idempotency conflict or locked period", body = ErrorResponse),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
+pub async fn create_time_entry(
     user: AuthUser,
     State(app_state): State<AppState>,
-    Json(payload): Json<CreateProjectRegistrationPayload>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateTimeEntryRequestBody>,
 ) -> Result<(StatusCode, Json<TimeEntryResponse>), ApiError> {
     record_user_id(user.id);
     let service = app_state
@@ -250,15 +297,15 @@ pub async fn create_project_registration(
 
     let request = CreateTimeEntryRequest {
         project_id: ProjectId::new(payload.project_id),
-        project_name: payload.project_name,
         activity_id: ActivityId::new(payload.activity_id),
-        activity_name: payload.activity_name,
         start_time: parse_rfc3339(&payload.start_time, "start time")?,
         end_time: parse_rfc3339(&payload.end_time, "end time")?,
-        note: normalize_user_note(payload.user_note),
+        note: normalize_user_note(payload.note),
     };
 
-    let entry = service.create_time_entry(&user.id, &request).await?;
+    let entry = service
+        .create_time_entry(&user.id, &request, idempotency_key(&headers)?)
+        .await?;
 
     Ok((StatusCode::CREATED, Json(entry.into())))
 }

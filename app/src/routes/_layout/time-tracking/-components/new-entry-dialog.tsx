@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
-import { getWeekNumber } from "@/lib/utils";
 import { CalendarIcon } from "lucide-react";
 import {
   Popover,
@@ -23,14 +22,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import type { CreateProjectRegistrationPayload } from "@/lib/api/mutations/time-tracking";
+import type { CreateTimeEntryPayload } from "@/lib/api/mutations/time-tracking";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { getCachedTimeEntries } from "@/lib/api/time-tracking-cache";
 
 export function NewEntryDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (payload: CreateProjectRegistrationPayload) => void;
+  onCreate: (payload: CreateTimeEntryPayload) => void;
 }) {
   const [projectId, setProjectId] = React.useState("");
   const [activityName, setActivityName] = React.useState("");
@@ -170,8 +169,6 @@ export function NewEntryDialog(props: {
               activityName: selectedActivity.activityName,
               startTime: startISO,
               endTime: endISO,
-              regDay,
-              weekNumber: getWeekNumber(new Date(regDay)),
               userNote: note,
             });
           }}

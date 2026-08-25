@@ -15,7 +15,7 @@ use axum::{
 use futures_util::future::join_all;
 use moka::sync::Cache;
 use serde::Deserialize;
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     adapters::inbound::http::{
@@ -73,9 +73,9 @@ pub struct WorkItemImageQuery {
     pub image_url: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MoveWorkItemBody {
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MoveWorkItemRequest {
     pub organization: String,
     pub project: String,
     pub work_item_id: String,
@@ -294,10 +294,29 @@ async fn get_image(
     Ok(response)
 }
 
-async fn move_work_item(
+/// Move a work item
+///
+/// Moves an accessible work item to a named board column through the configured
+/// provider. Optional iteration and team values disambiguate board metadata.
+#[utoipa::path(
+    post,
+    path = "/work-items/move",
+    operation_id = "moveWorkItem",
+    tag = "Work items",
+    request_body = MoveWorkItemRequest,
+    responses(
+        (status = 204, description = "Work item moved"),
+        (status = 400, description = "Invalid move request", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 403, description = "Project access denied", body = ErrorResponse),
+        (status = 404, description = "Project or work item not found", body = ErrorResponse),
+        (status = 503, description = "Work item provider is unavailable", body = ErrorResponse)
+    )
+)]
+pub async fn move_work_item(
     user: AuthUser,
     State(app_state): State<AppState>,
-    Json(body): Json<MoveWorkItemBody>,
+    Json(body): Json<MoveWorkItemRequest>,
 ) -> Result<StatusCode, ApiError> {
     record_user_id(user.id);
     record_span_field("organization", &body.organization);

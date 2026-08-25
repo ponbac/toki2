@@ -225,9 +225,7 @@ export const timeTrackingQueries = {
     queryOptions({
       queryKey: timeTrackingQueries.absenceChildrenBaseKey,
       queryFn: async () =>
-        api
-          .get("time-tracking/absence-children")
-          .json<Array<AbsenceChild>>(),
+        api.get("time-tracking/absence-children").json<Array<AbsenceChild>>(),
       staleTime: 5 * 60 * 1000,
       gcTime: 60 * 60 * 1000,
     }),
@@ -269,9 +267,9 @@ export type GetTimerResponse = {
   timer: TimerResponse | null;
 };
 
+/** Replayable result returned after saving the active timer. */
 export type SaveTimerResponse = {
   entry: TimeEntry;
-  timer: TimerResponse | null;
 };
 
 export type TimeTrackingConnectionStatus = {

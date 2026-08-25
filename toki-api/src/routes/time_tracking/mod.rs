@@ -5,10 +5,7 @@ mod connection;
 mod projects;
 mod timer;
 
-use axum::{
-    routing::{get, put},
-    Router,
-};
+use axum::{routing::get, Router};
 
 use crate::app_state::AppState;
 
@@ -44,10 +41,11 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             "/time-entries",
-            get(calendar::get_time_entries)
-                .put(calendar::edit_project_registration)
-                .delete(calendar::delete_project_registration)
-                .post(calendar::create_project_registration),
+            get(calendar::get_time_entries).post(calendar::create_time_entry),
+        )
+        .route(
+            "/time-entries/{registration_id}",
+            axum::routing::put(calendar::update_time_entry).delete(calendar::delete_time_entry),
         )
         .route("/timer-history", get(timer::get_timer_history))
         .route(
@@ -55,14 +53,18 @@ pub fn router() -> Router<AppState> {
             get(timer::get_timer)
                 .post(timer::start_timer)
                 .delete(timer::stop_timer)
-                .put(timer::save_timer),
+                .patch(timer::edit_timer),
         )
-        .route("/update-timer", put(timer::edit_timer))
+        .route("/timer/save", axum::routing::post(timer::save_timer))
 }
 
 pub(crate) use calendar::{
-    __path_get_time_entries, __path_get_time_entry_day_statuses, __path_get_time_info,
+    __path_create_time_entry, __path_delete_time_entry, __path_get_time_entries,
+    __path_get_time_entry_day_statuses, __path_get_time_info, __path_update_time_entry,
 };
 pub(crate) use connection::__path_connection_status;
 pub(crate) use projects::{__path_list_activities, __path_list_projects};
-pub(crate) use timer::{__path_get_timer, __path_get_timer_history};
+pub(crate) use timer::{
+    __path_edit_timer, __path_get_timer, __path_get_timer_history, __path_save_timer,
+    __path_start_timer, __path_stop_timer,
+};

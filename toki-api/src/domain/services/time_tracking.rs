@@ -5,14 +5,16 @@ use std::{
 
 use async_trait::async_trait;
 use itertools::Itertools;
+use sha2::{Digest, Sha256};
 use time::{Date, OffsetDateTime};
 
 use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity,
-        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, NewTimerHistoryEntry,
-        Project, ProjectId, TimeEntry, TimeEntryDayStatus, TimeEntryStatus, TimerHistoryEntry,
-        UserId, WeeklyStats,
+        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, IdempotencyClaim,
+        NewTimerHistoryEntry, PatchValue, Project, ProjectId, StartTimerRequest, TimeEntry,
+        TimeEntryDayStatus, TimeEntryStatus, TimeTrackingWriteOperation, TimerHistoryEntry,
+        UpdateTimerRequest, UserId, WeeklyStats,
     },
     ports::{
         inbound::TimeTrackingService,
@@ -32,13 +34,20 @@ pub struct TimeTrackingServiceImpl<C, R> {
     timer_repo: Arc<R>,
 }
 
-impl<C, R> TimeTrackingServiceImpl<C, R> {
+enum ClaimedWrite {
+    Acquired { operation_id: String, resumed: bool },
+    Replay(TimeEntry),
+}
+
+impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingServiceImpl<C, R> {
     pub fn new(client: Arc<C>, timer_repo: Arc<R>) -> Self {
         Self { client, timer_repo }
     }
 
     fn time_entry_from_create_request(
         request: &CreateTimeEntryRequest,
+        project: &Project,
+        activity: &Activity,
         registration_id: impl Into<String>,
     ) -> TimeEntry {
         let date = request.start_time.date();
@@ -47,9 +56,9 @@ impl<C, R> TimeTrackingServiceImpl<C, R> {
         TimeEntry::new(
             registration_id,
             request.project_id.clone(),
-            request.project_name.clone(),
+            project.name.clone(),
             request.activity_id.clone(),
-            request.activity_name.clone(),
+            activity.name.clone(),
             date,
             hours,
         )
@@ -61,6 +70,8 @@ impl<C, R> TimeTrackingServiceImpl<C, R> {
 
     fn time_entry_from_edit_request(
         request: &EditTimeEntryRequest,
+        project: &Project,
+        activity: &Activity,
         registration_id: impl Into<String>,
     ) -> TimeEntry {
         let date = request.start_time.date();
@@ -69,9 +80,9 @@ impl<C, R> TimeTrackingServiceImpl<C, R> {
         TimeEntry::new(
             registration_id,
             request.project_id.clone(),
-            request.project_name.clone(),
+            project.name.clone(),
             request.activity_id.clone(),
-            request.activity_name.clone(),
+            activity.name.clone(),
             date,
             hours,
         )
@@ -79,6 +90,196 @@ impl<C, R> TimeTrackingServiceImpl<C, R> {
         .with_times(Some(request.start_time), Some(request.end_time))
         .with_week_number(date.iso_week())
         .with_status(TimeEntryStatus::Open)
+    }
+
+    fn validate_interval(
+        start_time: OffsetDateTime,
+        end_time: OffsetDateTime,
+    ) -> Result<(), TimeTrackingError> {
+        if end_time <= start_time {
+            return Err(TimeTrackingError::InvalidInput(
+                "end time must be after start time".to_string(),
+            ));
+        }
+        if end_time - start_time > time::Duration::hours(24) {
+            return Err(TimeTrackingError::InvalidInput(
+                "time entry duration cannot exceed 24 hours".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_idempotency_key(key: &str) -> Result<&str, TimeTrackingError> {
+        let key = key.trim();
+        if key.is_empty() || key.len() > 200 {
+            return Err(TimeTrackingError::InvalidInput(
+                "Idempotency-Key must contain between 1 and 200 characters".to_string(),
+            ));
+        }
+        Ok(key)
+    }
+
+    fn hash_bytes(bytes: &[u8]) -> String {
+        Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    fn provider_operation_id(
+        user_id: &UserId,
+        operation: TimeTrackingWriteOperation,
+        key: &str,
+    ) -> String {
+        let source = format!("{}:{}:{key}", user_id.as_i32(), operation.as_str());
+        format!("toki-op-{}", Self::hash_bytes(source.as_bytes()))
+    }
+
+    async fn claim_write(
+        &self,
+        user_id: &UserId,
+        operation: TimeTrackingWriteOperation,
+        key: &str,
+        request_hash: &str,
+    ) -> Result<ClaimedWrite, TimeTrackingError> {
+        let claim = self
+            .timer_repo
+            .claim_idempotency(
+                user_id,
+                operation,
+                key,
+                request_hash,
+                &Self::provider_operation_id(user_id, operation, key),
+            )
+            .await?;
+        match claim {
+            IdempotencyClaim::Fresh { operation_id } => Ok(ClaimedWrite::Acquired {
+                operation_id,
+                resumed: false,
+            }),
+            IdempotencyClaim::Resumed { operation_id } => Ok(ClaimedWrite::Acquired {
+                operation_id,
+                resumed: true,
+            }),
+            IdempotencyClaim::Replay(entry) => Ok(ClaimedWrite::Replay(entry)),
+            IdempotencyClaim::InProgress => Err(TimeTrackingError::IdempotencyInProgress),
+            IdempotencyClaim::PayloadMismatch => Err(TimeTrackingError::IdempotencyConflict),
+        }
+    }
+
+    async fn release_write(
+        &self,
+        user_id: &UserId,
+        operation: TimeTrackingWriteOperation,
+        key: &str,
+    ) {
+        if let Err(error) = self
+            .timer_repo
+            .release_idempotency(user_id, operation, key)
+            .await
+        {
+            tracing::error!(%error, "failed to release time-tracking idempotency claim");
+        }
+    }
+
+    async fn create_or_reconcile_entry(
+        &self,
+        request: &CreateTimeEntryRequest,
+        operation_id: &str,
+        resumed: bool,
+    ) -> Result<crate::domain::models::TimerId, TimeTrackingError> {
+        if resumed {
+            if let Some(entry_id) = self
+                .client
+                .find_time_entry_by_operation_id(operation_id, request.start_time.date())
+                .await?
+            {
+                return Ok(entry_id);
+            }
+        }
+        self.client.create_time_entry(request, operation_id).await
+    }
+
+    async fn resolve_required_selection(
+        &self,
+        project_id: &ProjectId,
+        activity_id: &crate::domain::models::ActivityId,
+        date: Date,
+    ) -> Result<(Project, Activity), TimeTrackingError> {
+        let project = self
+            .client
+            .get_projects()
+            .await?
+            .into_iter()
+            .find(|project| project.id == *project_id)
+            .ok_or_else(|| {
+                TimeTrackingError::InvalidProjectActivity(format!(
+                    "project {} is not available",
+                    project_id
+                ))
+            })?;
+        let activity = self
+            .client
+            .get_activities(project_id, (date, date))
+            .await?
+            .into_iter()
+            .find(|activity| activity.id == *activity_id)
+            .ok_or_else(|| {
+                TimeTrackingError::InvalidProjectActivity(format!(
+                    "activity {} is not available for project {}",
+                    activity_id, project_id
+                ))
+            })?;
+        Ok((project, activity))
+    }
+
+    async fn resolve_optional_selection(
+        &self,
+        project_id: Option<&ProjectId>,
+        activity_id: Option<&crate::domain::models::ActivityId>,
+        date: Date,
+    ) -> Result<(Option<Project>, Option<Activity>), TimeTrackingError> {
+        match (project_id, activity_id) {
+            (None, Some(_)) => Err(TimeTrackingError::InvalidProjectActivity(
+                "an activity cannot be selected without a project".to_string(),
+            )),
+            (None, None) => Ok((None, None)),
+            (Some(project_id), Some(activity_id)) => {
+                let (project, activity) = self
+                    .resolve_required_selection(project_id, activity_id, date)
+                    .await?;
+                Ok((Some(project), Some(activity)))
+            }
+            (Some(project_id), None) => {
+                let project = self
+                    .client
+                    .get_projects()
+                    .await?
+                    .into_iter()
+                    .find(|project| project.id == *project_id)
+                    .ok_or_else(|| {
+                        TimeTrackingError::InvalidProjectActivity(format!(
+                            "project {} is not available",
+                            project_id
+                        ))
+                    })?;
+                Ok((Some(project), None))
+            }
+        }
+    }
+
+    async fn ensure_day_is_open(&self, date: Date) -> Result<(), TimeTrackingError> {
+        let locked = self
+            .client
+            .get_time_entry_day_statuses((date, date))
+            .await?
+            .into_iter()
+            .any(|status| status.date == date && status.status != TimeEntryStatus::Open);
+        if locked {
+            Err(TimeTrackingError::LockedPeriod)
+        } else {
+            Ok(())
+        }
     }
 
     fn trimmed_child_name(request: &CreateAbsencesRequest) -> Option<&str> {
@@ -166,14 +367,30 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
     async fn start_timer(
         &self,
         user_id: &UserId,
-        timer: &ActiveTimer,
-    ) -> Result<(), TimeTrackingError> {
-        // Business logic: Check if a timer is already running
+        request: &StartTimerRequest,
+    ) -> Result<ActiveTimer, TimeTrackingError> {
         if self.timer_repo.get_active_timer(user_id).await?.is_some() {
             return Err(TimeTrackingError::TimerAlreadyRunning);
         }
 
-        self.timer_repo.create_timer(user_id, timer).await
+        let started_at = OffsetDateTime::now_utc();
+        let (project, activity) = self
+            .resolve_optional_selection(
+                request.project_id.as_ref(),
+                request.activity_id.as_ref(),
+                started_at.date(),
+            )
+            .await?;
+        let mut timer = ActiveTimer::new(started_at).with_note(request.note.clone());
+        if let Some(project) = project {
+            timer = timer.with_project(project.id, project.name);
+        }
+        if let Some(activity) = activity {
+            timer = timer.with_activity(activity.id, activity.name);
+        }
+
+        self.timer_repo.create_timer(user_id, &timer).await?;
+        Ok(timer)
     }
 
     async fn stop_timer(&self, user_id: &UserId) -> Result<(), TimeTrackingError> {
@@ -184,47 +401,105 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         &self,
         user_id: &UserId,
         note: Option<String>,
+        idempotency_key: &str,
     ) -> Result<TimeEntry, TimeTrackingError> {
-        // Get the active timer
+        let idempotency_key = Self::validate_idempotency_key(idempotency_key)?;
+        let operation = TimeTrackingWriteOperation::SaveActiveTimer;
+        let request_hash = Self::hash_bytes(
+            serde_json::to_string(&serde_json::json!({ "note": &note }))
+                .map_err(|error| TimeTrackingError::unknown(error.to_string()))?
+                .as_bytes(),
+        );
+        let claim = self
+            .claim_write(user_id, operation, idempotency_key, &request_hash)
+            .await?;
+        let (operation_id, resumed) = match claim {
+            ClaimedWrite::Acquired {
+                operation_id,
+                resumed,
+            } => (operation_id, resumed),
+            ClaimedWrite::Replay(entry) => return Ok(entry),
+        };
+
         let active_timer = self
             .timer_repo
             .get_active_timer(user_id)
             .await?
-            .ok_or(TimeTrackingError::NoTimerRunning)?;
+            .ok_or(TimeTrackingError::NoTimerRunning);
+        let active_timer = match active_timer {
+            Ok(timer) => timer,
+            Err(error) => {
+                self.release_write(user_id, operation, idempotency_key)
+                    .await;
+                return Err(error);
+            }
+        };
 
-        // Compute times
         let end_time = OffsetDateTime::now_utc();
-
-        // Build the create request
+        if let Err(error) = Self::validate_interval(active_timer.started_at, end_time) {
+            self.release_write(user_id, operation, idempotency_key)
+                .await;
+            return Err(error);
+        }
+        if let Err(error) = self
+            .ensure_day_is_open(active_timer.started_at.date())
+            .await
+        {
+            self.release_write(user_id, operation, idempotency_key)
+                .await;
+            return Err(error);
+        }
+        let selection = match (&active_timer.project_id, &active_timer.activity_id) {
+            (Some(project_id), Some(activity_id)) => {
+                self.resolve_required_selection(
+                    project_id,
+                    activity_id,
+                    active_timer.started_at.date(),
+                )
+                .await
+            }
+            _ => Err(TimeTrackingError::InvalidProjectActivity(
+                "a project and activity are required before saving a timer".to_string(),
+            )),
+        };
+        let (project, activity) = match selection {
+            Ok(selection) => selection,
+            Err(error) => {
+                self.release_write(user_id, operation, idempotency_key)
+                    .await;
+                return Err(error);
+            }
+        };
         let req = CreateTimeEntryRequest {
-            project_id: active_timer
-                .project_id
-                .clone()
-                .ok_or_else(|| TimeTrackingError::unknown("project id not set on timer"))?,
-            project_name: active_timer
-                .project_name
-                .clone()
-                .ok_or_else(|| TimeTrackingError::unknown("project name not set on timer"))?,
-            activity_id: active_timer
-                .activity_id
-                .clone()
-                .ok_or_else(|| TimeTrackingError::unknown("activity id not set on timer"))?,
-            activity_name: active_timer
-                .activity_name
-                .clone()
-                .ok_or_else(|| TimeTrackingError::unknown("activity name not set on timer"))?,
+            project_id: project.id.clone(),
+            activity_id: activity.id.clone(),
             start_time: active_timer.started_at,
             end_time,
             note: note.unwrap_or_else(|| active_timer.note.clone()),
         };
 
-        // Create time entry in the provider
-        let timer_id = self.client.create_time_entry(&req).await?;
-        let created_entry = Self::time_entry_from_create_request(&req, timer_id.to_string());
+        let timer_id = match self
+            .create_or_reconcile_entry(&req, &operation_id, resumed)
+            .await
+        {
+            Ok(timer_id) => timer_id,
+            Err(error) => {
+                self.release_write(user_id, operation, idempotency_key)
+                    .await;
+                return Err(error);
+            }
+        };
+        let created_entry =
+            Self::time_entry_from_create_request(&req, &project, &activity, timer_id.to_string());
 
-        // Mark the active timer as finished
         self.timer_repo
-            .save_timer_finished(user_id, &end_time, timer_id.as_str())
+            .finish_timer_idempotently(
+                user_id,
+                &end_time,
+                timer_id.as_str(),
+                idempotency_key,
+                &created_entry,
+            )
             .await?;
 
         Ok(created_entry)
@@ -233,9 +508,61 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
     async fn edit_timer(
         &self,
         user_id: &UserId,
-        timer: &ActiveTimer,
-    ) -> Result<(), TimeTrackingError> {
-        self.timer_repo.update_timer(user_id, timer).await
+        request: &UpdateTimerRequest,
+    ) -> Result<ActiveTimer, TimeTrackingError> {
+        let current = self
+            .timer_repo
+            .get_active_timer(user_id)
+            .await?
+            .ok_or(TimeTrackingError::NoTimerRunning)?;
+        let started_at = request.started_at.unwrap_or(current.started_at);
+        if started_at > OffsetDateTime::now_utc() {
+            return Err(TimeTrackingError::InvalidInput(
+                "timer start time cannot be in the future".to_string(),
+            ));
+        }
+
+        let project_id = match &request.project_id {
+            PatchValue::Unchanged => current.project_id.clone(),
+            PatchValue::Clear => None,
+            PatchValue::Set(project_id) => Some(project_id.clone()),
+        };
+        let project_changed = project_id != current.project_id;
+        let activity_id = if project_id.is_none() {
+            match request.activity_id {
+                PatchValue::Set(_) => {
+                    return Err(TimeTrackingError::InvalidProjectActivity(
+                        "an activity cannot be selected without a project".to_string(),
+                    ))
+                }
+                PatchValue::Unchanged | PatchValue::Clear => None,
+            }
+        } else {
+            match &request.activity_id {
+                PatchValue::Unchanged if project_changed => None,
+                PatchValue::Unchanged => current.activity_id.clone(),
+                PatchValue::Clear => None,
+                PatchValue::Set(activity_id) => Some(activity_id.clone()),
+            }
+        };
+        let (project, activity) = self
+            .resolve_optional_selection(
+                project_id.as_ref(),
+                activity_id.as_ref(),
+                started_at.date(),
+            )
+            .await?;
+        let mut timer =
+            ActiveTimer::new(started_at).with_note(request.note.clone().unwrap_or(current.note));
+        if let Some(project) = project {
+            timer = timer.with_project(project.id, project.name);
+        }
+        if let Some(activity) = activity {
+            timer = timer.with_activity(activity.id, activity.name);
+        }
+
+        self.timer_repo.update_timer(user_id, &timer).await?;
+        Ok(timer)
     }
 
     // ========================================================================
@@ -337,11 +664,68 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         &self,
         user_id: &UserId,
         request: &CreateTimeEntryRequest,
+        idempotency_key: &str,
     ) -> Result<TimeEntry, TimeTrackingError> {
-        // Create in provider
-        let registration_id = self.client.create_time_entry(request).await?;
-        let created_entry =
-            Self::time_entry_from_create_request(request, registration_id.to_string());
+        let idempotency_key = Self::validate_idempotency_key(idempotency_key)?;
+        let operation = TimeTrackingWriteOperation::CreateTimeEntry;
+        let request_hash = Self::hash_bytes(
+            &serde_json::to_vec(request)
+                .map_err(|error| TimeTrackingError::unknown(error.to_string()))?,
+        );
+        let claim = self
+            .claim_write(user_id, operation, idempotency_key, &request_hash)
+            .await?;
+        let (operation_id, resumed) = match claim {
+            ClaimedWrite::Acquired {
+                operation_id,
+                resumed,
+            } => (operation_id, resumed),
+            ClaimedWrite::Replay(entry) => return Ok(entry),
+        };
+
+        if let Err(error) = Self::validate_interval(request.start_time, request.end_time) {
+            self.release_write(user_id, operation, idempotency_key)
+                .await;
+            return Err(error);
+        }
+        if let Err(error) = self.ensure_day_is_open(request.start_time.date()).await {
+            self.release_write(user_id, operation, idempotency_key)
+                .await;
+            return Err(error);
+        }
+        let (project, activity) = match self
+            .resolve_required_selection(
+                &request.project_id,
+                &request.activity_id,
+                request.start_time.date(),
+            )
+            .await
+        {
+            Ok(selection) => selection,
+            Err(error) => {
+                self.release_write(user_id, operation, idempotency_key)
+                    .await;
+                return Err(error);
+            }
+        };
+
+        let registration_id = match self
+            .create_or_reconcile_entry(request, &operation_id, resumed)
+            .await
+        {
+            Ok(registration_id) => registration_id,
+            Err(error) => {
+                self.release_write(user_id, operation, idempotency_key)
+                    .await;
+                return Err(error);
+            }
+        };
+        let created_entry = Self::time_entry_from_create_request(
+            request,
+            &project,
+            &activity,
+            registration_id.to_string(),
+        );
 
         // Persist to local timer history
         let entry = NewTimerHistoryEntry {
@@ -350,44 +734,64 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
             start_time: request.start_time,
             end_time: request.end_time,
             project_id: Some(request.project_id.clone()),
-            project_name: Some(request.project_name.clone()),
+            project_name: Some(project.name.clone()),
             activity_id: Some(request.activity_id.clone()),
-            activity_name: Some(request.activity_name.clone()),
+            activity_name: Some(activity.name.clone()),
             note: request.note.clone(),
         };
 
-        if let Err(e) = self.timer_repo.create_finished(&entry).await {
-            tracing::error!("Failed to persist timer to local history: {:?}", e);
-            // Don't fail the request - the provider entry was created successfully
-        }
+        self.timer_repo
+            .create_finished_idempotently(&entry, idempotency_key, &created_entry)
+            .await?;
 
         Ok(created_entry)
     }
 
     async fn edit_time_entry(
         &self,
+        registration_id: &str,
         request: &EditTimeEntryRequest,
     ) -> Result<TimeEntry, TimeTrackingError> {
-        // Edit in provider (may return a new registration ID if day changed)
-        let new_registration_id = self.client.edit_time_entry(request).await?;
-        let updated_entry =
-            Self::time_entry_from_edit_request(request, new_registration_id.to_string());
+        Self::validate_interval(request.start_time, request.end_time)?;
+        let current = self.client.get_time_entry(registration_id).await?;
+        if current.status != TimeEntryStatus::Open {
+            return Err(TimeTrackingError::LockedPeriod);
+        }
+        self.ensure_day_is_open(request.start_time.date()).await?;
+        let (project, activity) = self
+            .resolve_required_selection(
+                &request.project_id,
+                &request.activity_id,
+                request.start_time.date(),
+            )
+            .await?;
+
+        let new_registration_id = self
+            .client
+            .edit_time_entry(registration_id, request)
+            .await?;
+        let updated_entry = Self::time_entry_from_edit_request(
+            request,
+            &project,
+            &activity,
+            new_registration_id.to_string(),
+        );
 
         // Update local timer history
         // Check if we have a local record for this registration
         if self
             .timer_repo
-            .get_by_registration_id(&request.registration_id)
+            .get_by_registration_id(registration_id)
             .await?
             .is_some()
         {
             // Check if registration ID changed (day changed)
-            if new_registration_id.as_str() != request.registration_id {
+            if new_registration_id.as_str() != registration_id {
                 // Update both registration ID and times
                 if let Err(e) = self
                     .timer_repo
                     .update_registration_and_times(
-                        &request.registration_id,
+                        registration_id,
                         new_registration_id.as_str(),
                         &request.start_time,
                         &request.end_time,
@@ -400,11 +804,7 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
                 // Just update times
                 if let Err(e) = self
                     .timer_repo
-                    .update_times(
-                        &request.registration_id,
-                        &request.start_time,
-                        &request.end_time,
-                    )
+                    .update_times(registration_id, &request.start_time, &request.end_time)
                     .await
                 {
                     tracing::error!("Failed to update timer times: {:?}", e);
@@ -416,7 +816,10 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
     }
 
     async fn delete_time_entry(&self, registration_id: &str) -> Result<(), TimeTrackingError> {
-        // Delete from provider
+        let existing = self.client.get_time_entry(registration_id).await?;
+        if existing.status != TimeEntryStatus::Open {
+            return Err(TimeTrackingError::LockedPeriod);
+        }
         self.client.delete_time_entry(registration_id).await
         // Note: We don't delete from local timer history - it serves as an audit log
     }
@@ -479,12 +882,23 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
 mod tests {
     use super::*;
     use crate::domain::models::{CreateAbsenceDay, TimerHistoryId, TimerId};
-    use std::sync::Mutex;
+    use std::{
+        collections::VecDeque,
+        sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Mutex,
+        },
+    };
     use time::Duration;
 
     #[derive(Default)]
     struct MockTimeTrackingClient {
         created_request: Mutex<Option<CreateTimeEntryRequest>>,
+        created_count: AtomicUsize,
+        create_error: Mutex<Option<TimeTrackingError>>,
+        found_entry: Mutex<Option<TimerId>>,
+        existing_entry: Mutex<Option<TimeEntry>>,
+        day_statuses: Vec<TimeEntryDayStatus>,
         absence_types: Vec<AbsenceType>,
         absence_children: Vec<AbsenceChild>,
     }
@@ -492,7 +906,7 @@ mod tests {
     #[async_trait]
     impl TimeTrackingClient for MockTimeTrackingClient {
         async fn get_projects(&self) -> Result<Vec<Project>, TimeTrackingError> {
-            unused_mock_method()
+            Ok(vec![Project::new("project-1", "Project")])
         }
 
         async fn get_activities(
@@ -500,7 +914,7 @@ mod tests {
             _project_id: &ProjectId,
             _date_range: (Date, Date),
         ) -> Result<Vec<Activity>, TimeTrackingError> {
-            unused_mock_method()
+            Ok(vec![Activity::new("activity-1", "Activity", "project-1")])
         }
 
         async fn get_time_info(
@@ -521,19 +935,44 @@ mod tests {
             &self,
             _date_range: (Date, Date),
         ) -> Result<Vec<TimeEntryDayStatus>, TimeTrackingError> {
-            unused_mock_method()
+            Ok(self.day_statuses.clone())
         }
 
         async fn create_time_entry(
             &self,
             request: &CreateTimeEntryRequest,
+            _operation_id: &str,
         ) -> Result<TimerId, TimeTrackingError> {
+            self.created_count.fetch_add(1, Ordering::SeqCst);
             *self.created_request.lock().unwrap() = Some(request.clone());
+            if let Some(error) = self.create_error.lock().unwrap().take() {
+                return Err(error);
+            }
             Ok(TimerId::new("entry-1"))
+        }
+
+        async fn find_time_entry_by_operation_id(
+            &self,
+            _operation_id: &str,
+            _date: Date,
+        ) -> Result<Option<TimerId>, TimeTrackingError> {
+            Ok(self.found_entry.lock().unwrap().clone())
+        }
+
+        async fn get_time_entry(
+            &self,
+            _registration_id: &str,
+        ) -> Result<TimeEntry, TimeTrackingError> {
+            self.existing_entry
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or(TimeTrackingError::TimerNotFound)
         }
 
         async fn edit_time_entry(
             &self,
+            _registration_id: &str,
             _request: &EditTimeEntryRequest,
         ) -> Result<TimerId, TimeTrackingError> {
             unused_mock_method()
@@ -581,9 +1020,14 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
     struct MockTimerHistoryRepository {
         active_timer: Mutex<Option<ActiveTimer>>,
         saved_end_time: Mutex<Option<OffsetDateTime>>,
+        claims: Mutex<VecDeque<IdempotencyClaim>>,
+        completed: Mutex<Vec<TimeEntry>>,
+        releases: AtomicUsize,
+        fail_save_once: AtomicBool,
     }
 
     #[async_trait]
@@ -598,9 +1042,14 @@ mod tests {
         async fn create_timer(
             &self,
             _user_id: &UserId,
-            _timer: &ActiveTimer,
+            timer: &ActiveTimer,
         ) -> Result<(), TimeTrackingError> {
-            unused_mock_method()
+            let mut active = self.active_timer.lock().unwrap();
+            if active.is_some() {
+                return Err(TimeTrackingError::TimerAlreadyRunning);
+            }
+            *active = Some(timer.clone());
+            Ok(())
         }
 
         async fn update_timer(
@@ -612,16 +1061,24 @@ mod tests {
         }
 
         async fn delete_timer(&self, _user_id: &UserId) -> Result<(), TimeTrackingError> {
-            unused_mock_method()
+            *self.active_timer.lock().unwrap() = None;
+            Ok(())
         }
 
-        async fn save_timer_finished(
+        async fn finish_timer_idempotently(
             &self,
             _user_id: &UserId,
             end_time: &OffsetDateTime,
             _registration_id: &str,
+            _key: &str,
+            result: &TimeEntry,
         ) -> Result<(), TimeTrackingError> {
+            if self.fail_save_once.swap(false, Ordering::SeqCst) {
+                return Err(TimeTrackingError::unknown("simulated local failure"));
+            }
             *self.saved_end_time.lock().unwrap() = Some(*end_time);
+            *self.active_timer.lock().unwrap() = None;
+            self.completed.lock().unwrap().push(result.clone());
             Ok(())
         }
 
@@ -639,11 +1096,14 @@ mod tests {
             unused_mock_method()
         }
 
-        async fn create_finished(
+        async fn create_finished_idempotently(
             &self,
             _entry: &NewTimerHistoryEntry,
+            _key: &str,
+            result: &TimeEntry,
         ) -> Result<TimerHistoryId, TimeTrackingError> {
-            unused_mock_method()
+            self.completed.lock().unwrap().push(result.clone());
+            Ok(TimerHistoryId::new(1))
         }
 
         async fn update_times(
@@ -664,10 +1124,66 @@ mod tests {
         ) -> Result<(), TimeTrackingError> {
             unused_mock_method()
         }
+
+        async fn claim_idempotency(
+            &self,
+            _user_id: &UserId,
+            _operation: TimeTrackingWriteOperation,
+            _key: &str,
+            _request_hash: &str,
+            operation_id: &str,
+        ) -> Result<IdempotencyClaim, TimeTrackingError> {
+            Ok(self
+                .claims
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| IdempotencyClaim::Fresh {
+                    operation_id: operation_id.to_string(),
+                }))
+        }
+
+        async fn release_idempotency(
+            &self,
+            _user_id: &UserId,
+            _operation: TimeTrackingWriteOperation,
+            _key: &str,
+        ) -> Result<(), TimeTrackingError> {
+            self.releases.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
     }
 
     fn unused_mock_method<T>() -> Result<T, TimeTrackingError> {
         panic!("test called an unexpected mock method")
+    }
+
+    fn sample_create_request(date: Date) -> CreateTimeEntryRequest {
+        let start_time = date.with_hms(9, 0, 0).unwrap().assume_utc();
+        CreateTimeEntryRequest {
+            project_id: ProjectId::new("project-1"),
+            activity_id: crate::domain::models::ActivityId::new("activity-1"),
+            start_time,
+            end_time: start_time + Duration::hours(1),
+            note: "Work".to_string(),
+        }
+    }
+
+    fn sample_time_entry(date: Date, status: TimeEntryStatus) -> TimeEntry {
+        let request = sample_create_request(date);
+        TimeEntry::new(
+            "entry-1",
+            request.project_id,
+            "Project",
+            request.activity_id,
+            "Activity",
+            date,
+            1.0,
+        )
+        .with_note(request.note)
+        .with_times(Some(request.start_time), Some(request.end_time))
+        .with_week_number(date.iso_week())
+        .with_status(status)
     }
 
     #[tokio::test]
@@ -680,13 +1196,16 @@ mod tests {
         let client = Arc::new(MockTimeTrackingClient::default());
         let repo = Arc::new(MockTimerHistoryRepository {
             active_timer: Mutex::new(Some(active_timer)),
-            saved_end_time: Mutex::new(None),
+            ..Default::default()
         });
         let service = TimeTrackingServiceImpl::new(client.clone(), repo.clone());
         let user_id = UserId::new(1);
 
         let before_save = OffsetDateTime::now_utc();
-        let saved_entry = service.save_timer(&user_id, None).await.unwrap();
+        let saved_entry = service
+            .save_timer(&user_id, None, "save-test-1")
+            .await
+            .unwrap();
         let after_save = OffsetDateTime::now_utc();
 
         let provider_request = client.created_request.lock().unwrap().clone().unwrap();
@@ -696,6 +1215,182 @@ mod tests {
         assert!(provider_request.end_time <= after_save);
         assert_eq!(history_end_time, provider_request.end_time);
         assert_eq!(saved_entry.end_time, Some(provider_request.end_time));
+    }
+
+    #[tokio::test]
+    async fn idempotent_create_replays_the_original_result_without_provider_calls() {
+        let date = Date::from_calendar_date(2026, time::Month::August, 25).unwrap();
+        let expected = sample_time_entry(date, TimeEntryStatus::Open);
+        let client = Arc::new(MockTimeTrackingClient::default());
+        let repo = Arc::new(MockTimerHistoryRepository {
+            claims: Mutex::new(VecDeque::from([IdempotencyClaim::Replay(expected.clone())])),
+            ..Default::default()
+        });
+        let service = TimeTrackingServiceImpl::new(client.clone(), repo);
+
+        let actual = service
+            .create_time_entry(
+                &UserId::new(1),
+                &sample_create_request(date),
+                "create-replay",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(actual, expected);
+        assert_eq!(client.created_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn idempotency_payload_mismatch_is_a_conflict() {
+        let date = Date::from_calendar_date(2026, time::Month::August, 25).unwrap();
+        let client = Arc::new(MockTimeTrackingClient::default());
+        let repo = Arc::new(MockTimerHistoryRepository {
+            claims: Mutex::new(VecDeque::from([IdempotencyClaim::PayloadMismatch])),
+            ..Default::default()
+        });
+        let service = TimeTrackingServiceImpl::new(client.clone(), repo);
+
+        let error = service
+            .create_time_entry(&UserId::new(1), &sample_create_request(date), "reused-key")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, TimeTrackingError::IdempotencyConflict));
+        assert_eq!(client.created_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn create_rejects_locked_periods_before_provider_writes() {
+        let date = Date::from_calendar_date(2026, time::Month::August, 25).unwrap();
+        let client = Arc::new(MockTimeTrackingClient {
+            day_statuses: vec![TimeEntryDayStatus {
+                date,
+                status: TimeEntryStatus::Approved,
+            }],
+            ..Default::default()
+        });
+        let repo = Arc::new(MockTimerHistoryRepository::default());
+        let service = TimeTrackingServiceImpl::new(client.clone(), repo.clone());
+
+        let error = service
+            .create_time_entry(
+                &UserId::new(1),
+                &sample_create_request(date),
+                "locked-create",
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, TimeTrackingError::LockedPeriod));
+        assert_eq!(client.created_count.load(Ordering::SeqCst), 0);
+        assert_eq!(repo.releases.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn save_recovers_provider_success_after_local_failure_without_duplicate_creation() {
+        let started_at = OffsetDateTime::now_utc() - Duration::minutes(20);
+        let active_timer = ActiveTimer::new(started_at)
+            .with_project("project-1", "Project")
+            .with_activity("activity-1", "Activity")
+            .with_note("note");
+        let operation_id = "toki-op-crash-window".to_string();
+        let client = Arc::new(MockTimeTrackingClient {
+            found_entry: Mutex::new(Some(TimerId::new("entry-1"))),
+            ..Default::default()
+        });
+        let repo = Arc::new(MockTimerHistoryRepository {
+            active_timer: Mutex::new(Some(active_timer)),
+            claims: Mutex::new(VecDeque::from([
+                IdempotencyClaim::Fresh {
+                    operation_id: operation_id.clone(),
+                },
+                IdempotencyClaim::Resumed { operation_id },
+            ])),
+            fail_save_once: AtomicBool::new(true),
+            ..Default::default()
+        });
+        let service = TimeTrackingServiceImpl::new(client.clone(), repo.clone());
+        let user_id = UserId::new(1);
+
+        let first_error = service
+            .save_timer(&user_id, None, "save-crash-window")
+            .await
+            .unwrap_err();
+        assert!(matches!(first_error, TimeTrackingError::Unknown(_)));
+
+        let recovered = service
+            .save_timer(&user_id, None, "save-crash-window")
+            .await
+            .unwrap();
+
+        assert_eq!(recovered.registration_id, "entry-1");
+        assert_eq!(client.created_count.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.completed.lock().unwrap().len(), 1);
+        assert_eq!(repo.releases.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn concurrent_starts_leave_exactly_one_active_timer() {
+        let client = Arc::new(MockTimeTrackingClient::default());
+        let repo = Arc::new(MockTimerHistoryRepository::default());
+        let service = TimeTrackingServiceImpl::new(client, repo.clone());
+        let user_id = UserId::new(1);
+        let request = StartTimerRequest {
+            project_id: None,
+            activity_id: None,
+            note: String::new(),
+        };
+
+        let (first, second) = tokio::join!(
+            service.start_timer(&user_id, &request),
+            service.start_timer(&user_id, &request)
+        );
+
+        assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
+        assert!(matches!(
+            first.err().or_else(|| second.err()),
+            Some(TimeTrackingError::TimerAlreadyRunning)
+        ));
+        assert!(repo.active_timer.lock().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn timer_selection_rejects_an_activity_without_a_project() {
+        let service = TimeTrackingServiceImpl::new(
+            Arc::new(MockTimeTrackingClient::default()),
+            Arc::new(MockTimerHistoryRepository::default()),
+        );
+        let request = StartTimerRequest {
+            project_id: None,
+            activity_id: Some(crate::domain::models::ActivityId::new("activity-1")),
+            note: String::new(),
+        };
+
+        let error = service
+            .start_timer(&UserId::new(1), &request)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            TimeTrackingError::InvalidProjectActivity(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn delete_rejects_locked_owned_entries() {
+        let date = Date::from_calendar_date(2026, time::Month::August, 25).unwrap();
+        let client = Arc::new(MockTimeTrackingClient {
+            existing_entry: Mutex::new(Some(sample_time_entry(date, TimeEntryStatus::Approved))),
+            ..Default::default()
+        });
+        let service =
+            TimeTrackingServiceImpl::new(client, Arc::new(MockTimerHistoryRepository::default()));
+
+        let error = service.delete_time_entry("entry-1").await.unwrap_err();
+
+        assert!(matches!(error, TimeTrackingError::LockedPeriod));
     }
 
     #[test]
@@ -761,10 +1456,11 @@ mod tests {
             created_request: Mutex::new(None),
             absence_types: vec![AbsenceType::Vacation],
             absence_children: Vec::new(),
+            ..Default::default()
         });
         let repo = Arc::new(MockTimerHistoryRepository {
             active_timer: Mutex::new(None),
-            saved_end_time: Mutex::new(None),
+            ..Default::default()
         });
         let service = TimeTrackingServiceImpl::new(client, repo);
 

@@ -15,10 +15,16 @@ pub enum TimeTrackingError {
     #[allow(dead_code)]
     #[error("activity not found: {0}")]
     ActivityNotFound(String),
+    #[error("invalid project/activity selection: {0}")]
+    InvalidProjectActivity(String),
+    #[error("the selected time period is locked")]
+    LockedPeriod,
+    #[error("idempotency key was already used with a different request")]
+    IdempotencyConflict,
+    #[error("an operation with this idempotency key is still in progress")]
+    IdempotencyInProgress,
     #[error("{0}")]
     InvalidInput(String),
-    #[error("{0}")]
-    Conflict(String),
     #[error("{0}")]
     Forbidden(String),
     #[error("{0}")]

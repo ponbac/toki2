@@ -33,14 +33,15 @@ import {
   upsertEntryInCachedRanges,
 } from "../time-tracking-cache";
 
+/** Mutation hooks for provider-neutral time-tracking writes. */
 export const timeTrackingMutations = {
   useStartTimer,
   useStopTimer,
   useSaveTimer,
   useEditTimer,
-  useEditProjectRegistration,
-  useDeleteProjectRegistration,
-  useCreateProjectRegistration,
+  useUpdateTimeEntry,
+  useDeleteTimeEntry,
+  useCreateTimeEntry,
   useCreateAbsences,
   useDeleteAbsence,
   useImportKleerUsers,
@@ -49,16 +50,24 @@ export const timeTrackingMutations = {
   useDeactivateKleerUserLink,
 };
 
-function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
+function useStartTimer(
+  options?: DefaultMutationOptions<StartTimerPayload, TimerResponse>,
+) {
   const queryClient = useQueryClient();
   const { setTimer } = useTimeTrackingActions();
 
   return useMutation({
     mutationKey: ["time-tracking", "startTimer"],
     mutationFn: (body: StartTimerPayload) =>
-      api.post("time-tracking/timer", {
-        json: body,
-      }),
+      api
+        .post("time-tracking/timer", {
+          json: {
+            projectId: body.projectId,
+            activityId: body.activityId,
+            note: body.userNote,
+          },
+        })
+        .json<TimerResponse>(),
     ...options,
     onMutate: (vars) => {
       queryClient.resetQueries({
@@ -67,9 +76,7 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
       options?.onMutate?.(vars);
     },
     onSuccess: (data, v, c) => {
-      queryClient.invalidateQueries({
-        queryKey: timeTrackingQueries.timerBaseKey,
-      });
+      setTimerCache(queryClient, data);
       setTimer({
         visible: true,
         state: "running",
@@ -115,8 +122,9 @@ function useSaveTimer(
     mutationKey: ["time-tracking", "saveTimer"],
     mutationFn: (body: SaveTimerPayload) =>
       api
-        .put("time-tracking/timer", {
-          json: body,
+        .post("time-tracking/timer/save", {
+          headers: { "Idempotency-Key": crypto.randomUUID() },
+          json: { note: body.userNote },
         })
         .json<SaveTimerResponse>(),
     ...options,
@@ -144,26 +152,8 @@ function useSaveTimer(
         );
       }
 
-      const restartTimer = vars.restartTimer
-        ? ({
-            startTime: new Date().toISOString(),
-            projectId: vars.restartTimer.projectId ?? null,
-            projectName: vars.restartTimer.projectName ?? null,
-            activityId: vars.restartTimer.activityId ?? null,
-            activityName: vars.restartTimer.activityName ?? null,
-            note: vars.restartTimer.userNote,
-            hours: 0,
-            minutes: 0,
-            seconds: 0,
-          } satisfies TimerResponse)
-        : null;
-
-      setTimerCache(queryClient, restartTimer);
-      setTimer(
-        restartTimer
-          ? { visible: true, state: "running", timeSeconds: 0 }
-          : { visible: false, state: "stopped", timeSeconds: null },
-      );
+      setTimerCache(queryClient, null);
+      setTimer({ visible: false, state: "stopped", timeSeconds: null });
 
       const optionsContext = await options?.onMutate?.(vars);
       return {
@@ -180,12 +170,8 @@ function useSaveTimer(
       } else {
         upsertEntryInCachedRanges(queryClient, data.entry);
       }
-      setTimerCache(queryClient, data.timer);
-      setTimer(
-        data.timer
-          ? { visible: true, state: "running", timeSeconds: 0 }
-          : { visible: false, state: "stopped", timeSeconds: null },
-      );
+      setTimerCache(queryClient, null);
+      setTimer({ visible: false, state: "stopped", timeSeconds: null });
       markTimeTrackingListsStale(queryClient);
       options?.onSuccess?.(data, v, c?.optionsContext);
     },
@@ -216,24 +202,38 @@ function mergeOptimisticTimerEdit(
   return {
     ...timer,
     note: body.userNote ?? timer.note,
-    projectId: body.projectId ?? timer.projectId,
-    projectName: body.projectName ?? timer.projectName,
-    activityId: body.activityId ?? timer.activityId,
-    activityName: body.activityName ?? timer.activityName,
+    projectId: body.projectId === undefined ? timer.projectId : body.projectId,
+    projectName:
+      body.projectId === null ? null : (body.projectName ?? timer.projectName),
+    activityId:
+      body.activityId === undefined ? timer.activityId : body.activityId,
+    activityName:
+      body.activityId === null
+        ? null
+        : (body.activityName ?? timer.activityName),
     startTime: body.startTime ?? timer.startTime,
   };
 }
 
-function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
+function useEditTimer(
+  options?: DefaultMutationOptions<EditTimerPayload, TimerResponse>,
+) {
   const queryClient = useQueryClient();
   const timerQuery = timeTrackingQueries.getTimer();
 
   return useMutation({
     mutationKey: ["time-tracking", "editTimer"],
     mutationFn: (body: EditTimerPayload) =>
-      api.put("time-tracking/update-timer", {
-        json: body,
-      }),
+      api
+        .patch("time-tracking/timer", {
+          json: {
+            projectId: body.projectId,
+            activityId: body.activityId,
+            note: body.userNote,
+            startTime: body.startTime,
+          },
+        })
+        .json<TimerResponse>(),
     ...options,
     onMutate: async (vars) => {
       await queryClient.cancelQueries({
@@ -255,6 +255,7 @@ function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
       return { previousTimer, optionsContext };
     },
     onSuccess: (data, v, c) => {
+      setTimerCache(queryClient, data);
       options?.onSuccess?.(data, v, c?.optionsContext);
     },
     onError: (error, v, c) => {
@@ -272,18 +273,27 @@ function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
   });
 }
 
-function useEditProjectRegistration(
-  options?: DefaultMutationOptions<EditProjectRegistrationPayload, TimeEntry>,
+function useUpdateTimeEntry(
+  options?: DefaultMutationOptions<UpdateTimeEntryPayload, TimeEntry>,
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationKey: ["time-tracking", "editProjectRegistration"],
-    mutationFn: (body: EditProjectRegistrationPayload) =>
+    mutationKey: ["time-tracking", "updateTimeEntry"],
+    mutationFn: (body: UpdateTimeEntryPayload) =>
       api
-        .put("time-tracking/time-entries", {
-          json: body,
-        })
+        .put(
+          `time-tracking/time-entries/${encodeURIComponent(body.projectRegistrationId)}`,
+          {
+            json: {
+              projectId: body.projectId,
+              activityId: body.activityId,
+              startTime: body.startTime,
+              endTime: body.endTime,
+              note: body.userNote,
+            },
+          },
+        )
         .json<TimeEntry>(),
     ...options,
     onMutate: async (vars) => {
@@ -350,17 +360,17 @@ function useEditProjectRegistration(
   });
 }
 
-function useDeleteProjectRegistration(
-  options?: DefaultMutationOptions<DeleteProjectRegistrationPayload>,
+function useDeleteTimeEntry(
+  options?: DefaultMutationOptions<DeleteTimeEntryPayload>,
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationKey: ["time-tracking", "deleteProjectRegistration"],
-    mutationFn: (body: DeleteProjectRegistrationPayload) =>
-      api.delete("time-tracking/time-entries", {
-        json: body,
-      }),
+    mutationKey: ["time-tracking", "deleteTimeEntry"],
+    mutationFn: (body: DeleteTimeEntryPayload) =>
+      api.delete(
+        `time-tracking/time-entries/${encodeURIComponent(body.projectRegistrationId)}`,
+      ),
     ...options,
     onMutate: async (vars) => {
       await cancelTimeTrackingRangeQueries(queryClient);
@@ -399,17 +409,24 @@ function useDeleteProjectRegistration(
   });
 }
 
-function useCreateProjectRegistration(
-  options?: DefaultMutationOptions<CreateProjectRegistrationPayload, TimeEntry>,
+function useCreateTimeEntry(
+  options?: DefaultMutationOptions<CreateTimeEntryPayload, TimeEntry>,
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationKey: ["time-tracking", "createProjectRegistration"],
-    mutationFn: (body: CreateProjectRegistrationPayload) =>
+    mutationKey: ["time-tracking", "createTimeEntry"],
+    mutationFn: (body: CreateTimeEntryPayload) =>
       api
         .post("time-tracking/time-entries", {
-          json: body,
+          headers: { "Idempotency-Key": crypto.randomUUID() },
+          json: {
+            projectId: body.projectId,
+            activityId: body.activityId,
+            startTime: body.startTime,
+            endTime: body.endTime,
+            note: body.userNote,
+          },
         })
         .json<TimeEntry>(),
     ...options,
@@ -500,11 +517,7 @@ function applyAbsenceEntriesTimeInfoDelta(
   direction: 1 | -1,
 ) {
   for (const entry of entries) {
-    applyAbsenceTimeInfoDelta(
-      queryClient,
-      entry.date,
-      entry.hours * direction,
-    );
+    applyAbsenceTimeInfoDelta(queryClient, entry.date, entry.hours * direction);
   }
 }
 
@@ -677,39 +690,36 @@ function useDeactivateKleerUserLink(
   });
 }
 
+/** Starts a timer using opaque provider-neutral selection IDs. */
 export type StartTimerPayload = {
   userNote?: string;
   projectId?: string;
-  projectName?: string;
   activityId?: string;
-  activityName?: string;
 };
 
+/** Async start-timer mutation callable used by shared time-report actions. */
 export type StartTimerMutationAsync = MutationFnAsync<typeof useStartTimer>;
 
+/** Saves the active timer, optionally replacing its note. */
 export type SaveTimerPayload = {
   userNote?: string;
-  restartTimer?: {
-    userNote: string;
-    projectId?: string;
-    projectName?: string;
-    activityId?: string;
-    activityName?: string;
-  };
 };
 
+/** Partially updates the active timer; null clears a selection. */
 export type EditTimerPayload = {
   userNote?: string;
-  projectId?: string;
+  projectId?: string | null;
   projectName?: string;
-  activityId?: string;
+  activityId?: string | null;
   activityName?: string;
   startTime?: string;
 };
 
+/** Async update-timer mutation callable used by shared time-report actions. */
 export type EditTimerMutationAsync = MutationFnAsync<typeof useEditTimer>;
 
-export type EditProjectRegistrationPayload = {
+/** Updates an entry; display names are local optimistic-cache hints only. */
+export type UpdateTimeEntryPayload = {
   projectRegistrationId: string;
   projectId: string;
   projectName: string;
@@ -717,33 +727,22 @@ export type EditProjectRegistrationPayload = {
   activityName: string;
   startTime: string;
   endTime: string;
-  regDay: string;
-  weekNumber: number;
   userNote: string;
-  originalRegDay?: string;
-  originalProjectId?: string;
-  originalActivityId?: string;
 };
 
-export type DeleteProjectRegistrationPayload = {
+/** Deletes the time entry identified by its opaque registration ID. */
+export type DeleteTimeEntryPayload = {
   projectRegistrationId: string;
 };
 
-export type UpdateTimeEntryPayload = {
-  id: string;
-  note: string;
-  hours: number;
-};
-
-export type CreateProjectRegistrationPayload = {
+/** Creates an entry; display names are local optimistic-cache hints only. */
+export type CreateTimeEntryPayload = {
   projectId: string;
   projectName: string;
   activityId: string;
   activityName: string;
   startTime: string; // ISO
   endTime: string; // ISO
-  regDay: string; // YYYY-MM-DD
-  weekNumber: number;
   userNote: string;
 };
 

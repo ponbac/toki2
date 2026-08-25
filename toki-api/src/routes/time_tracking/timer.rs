@@ -5,13 +5,18 @@ use crate::{
     },
     app_state::AppState,
     auth::AuthUser,
-    domain::models::ActiveTimer,
+    domain::models::{ActivityId, PatchValue, ProjectId, StartTimerRequest, UpdateTimerRequest},
     routes::ApiError,
 };
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::State,
+    http::{header::HeaderName, HeaderMap, StatusCode},
+    Json,
+};
 use serde::Deserialize;
 use time::OffsetDateTime;
+use utoipa::ToSchema;
 
 use super::normalize_user_note;
 
@@ -59,49 +64,76 @@ pub async fn get_timer(
 // Start Timer
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StartTimerPayload {
-    user_note: Option<String>,
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StartActiveTimerRequest {
+    /// Optional project selection. The canonical name is resolved by Toki.
     project_id: Option<String>,
-    project_name: Option<String>,
+    /// Optional activity selection. Requires `projectId` and must be valid for it.
     activity_id: Option<String>,
-    activity_name: Option<String>,
+    /// User-authored timer note.
+    note: Option<String>,
 }
 
+/// Start an active timer
+///
+/// Starts the authenticated user's single active timer and returns the canonical
+/// stored representation. Project and activity display names are resolved by Toki.
+#[utoipa::path(
+    post,
+    path = "/time-tracking/timer",
+    operation_id = "startActiveTimer",
+    tag = "Time tracking",
+    request_body = StartActiveTimerRequest,
+    responses(
+        (status = 201, description = "Timer started", body = TimerResponse),
+        (status = 400, description = "Invalid project/activity selection", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 409, description = "A timer is already running", body = ErrorResponse),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn start_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
-    Json(body): Json<StartTimerPayload>,
-) -> Result<StatusCode, ApiError> {
+    Json(body): Json<StartActiveTimerRequest>,
+) -> Result<(StatusCode, Json<TimerResponse>), ApiError> {
     record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
         .await?;
 
-    let mut timer = ActiveTimer::new(OffsetDateTime::now_utc());
+    let request = StartTimerRequest {
+        project_id: body.project_id.map(ProjectId::new),
+        activity_id: body.activity_id.map(ActivityId::new),
+        note: normalize_user_note(body.note.unwrap_or_default()),
+    };
+    let timer = service.start_timer(&user.id, &request).await?;
 
-    if let (Some(pid), Some(pname)) = (body.project_id, body.project_name) {
-        timer = timer.with_project(pid, pname);
-    }
-    if let (Some(aid), Some(aname)) = (body.activity_id, body.activity_name) {
-        timer = timer.with_activity(aid, aname);
-    }
-    if let Some(note) = body.user_note {
-        let note = normalize_user_note(note);
-        timer = timer.with_note(note);
-    }
-
-    service.start_timer(&user.id, &timer).await?;
-
-    Ok(StatusCode::OK)
+    Ok((StatusCode::CREATED, Json(timer.into())))
 }
 
 // ============================================================================
 // Stop Timer
 // ============================================================================
 
+/// Discard the active timer
+///
+/// Permanently discards the current timer without creating a time entry. This
+/// is destructive and intentionally distinct from saving. Repeated calls are
+/// idempotent and return `204` even when no timer is active.
+#[utoipa::path(
+    delete,
+    path = "/time-tracking/timer",
+    operation_id = "discardActiveTimer",
+    tag = "Time tracking",
+    responses(
+        (status = 204, description = "Timer discarded or no timer was active"),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 503, description = "Timer persistence is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn stop_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
@@ -114,103 +146,114 @@ pub async fn stop_timer(
 
     service.stop_timer(&user.id).await?;
 
-    Ok(StatusCode::OK)
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ============================================================================
 // Save Timer (pushes to provider via service layer)
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveTimerPayload {
-    user_note: Option<String>,
-    restart_timer: Option<RestartTimerPayload>,
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SaveActiveTimerRequest {
+    /// Optional note override. When omitted, the active timer's note is used.
+    note: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RestartTimerPayload {
-    user_note: String,
-    project_id: Option<String>,
-    project_name: Option<String>,
-    activity_id: Option<String>,
-    activity_name: Option<String>,
-}
-
+/// Save the active timer
+///
+/// Creates a provider time entry and finishes the local timer. `Idempotency-Key`
+/// is required; retrying the same payload with the same key replays the original
+/// result. A provider-neutral operation identifier is used for crash recovery.
+#[utoipa::path(
+    post,
+    path = "/time-tracking/timer/save",
+    operation_id = "saveActiveTimer",
+    tag = "Time tracking",
+    params(("Idempotency-Key" = String, Header, description = "Unique retry key for this save request")),
+    request_body = SaveActiveTimerRequest,
+    responses(
+        (status = 201, description = "Timer saved", body = SaveTimerResponse),
+        (status = 400, description = "Invalid timer or missing idempotency key", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "No active timer", body = ErrorResponse),
+        (status = 409, description = "Idempotency conflict or locked period", body = ErrorResponse),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn save_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
-    Json(body): Json<SaveTimerPayload>,
-) -> Result<Json<SaveTimerResponse>, ApiError> {
+    headers: HeaderMap,
+    Json(body): Json<SaveActiveTimerRequest>,
+) -> Result<(StatusCode, Json<SaveTimerResponse>), ApiError> {
     record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
         .await?;
 
-    let user_note = body.user_note.map(normalize_user_note);
+    let note = body.note.map(normalize_user_note);
+    let entry = service
+        .save_timer(&user.id, note, idempotency_key(&headers)?)
+        .await?;
 
-    let entry = service.save_timer(&user.id, user_note).await?;
-
-    let timer = if let Some(restart_timer) = body.restart_timer {
-        let mut timer = ActiveTimer::new(OffsetDateTime::now_utc())
-            .with_note(normalize_user_note(restart_timer.user_note));
-
-        if let (Some(project_id), Some(project_name)) =
-            (restart_timer.project_id, restart_timer.project_name)
-        {
-            timer = timer.with_project(project_id, project_name);
-        }
-        if let (Some(activity_id), Some(activity_name)) =
-            (restart_timer.activity_id, restart_timer.activity_name)
-        {
-            timer = timer.with_activity(activity_id, activity_name);
-        }
-
-        service.start_timer(&user.id, &timer).await?;
-        Some(TimerResponse::from(timer))
-    } else {
-        None
-    };
-
-    Ok(Json(SaveTimerResponse {
-        entry: TimeEntryResponse::from(entry),
-        timer,
-    }))
+    Ok((
+        StatusCode::CREATED,
+        Json(SaveTimerResponse {
+            entry: TimeEntryResponse::from(entry),
+        }),
+    ))
 }
 
 // ============================================================================
 // Edit Timer
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EditTimerPayload {
-    user_note: Option<String>,
-    project_id: Option<String>,
-    project_name: Option<String>,
-    activity_id: Option<String>,
-    activity_name: Option<String>,
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateActiveTimerRequest {
+    /// Omit to preserve, set to `null` to clear, or provide an ID to select.
+    #[serde(default, with = "serde_with::rust::double_option")]
+    project_id: Option<Option<String>>,
+    /// Omit to preserve, set to `null` to clear, or provide an ID to select.
+    #[serde(default, with = "serde_with::rust::double_option")]
+    activity_id: Option<Option<String>>,
+    /// Optional note replacement.
+    note: Option<String>,
+    /// Optional RFC3339 start-time replacement.
     start_time: Option<String>,
 }
 
+/// Update the active timer
+///
+/// Applies a partial update and returns the canonical timer. Explicit `null`
+/// clears a project or activity selection; clearing a project also clears its
+/// activity.
+#[utoipa::path(
+    patch,
+    path = "/time-tracking/timer",
+    operation_id = "updateActiveTimer",
+    tag = "Time tracking",
+    request_body = UpdateActiveTimerRequest,
+    responses(
+        (status = 200, description = "Timer updated", body = TimerResponse),
+        (status = 400, description = "Invalid patch or project/activity selection", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "No active timer", body = ErrorResponse),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn edit_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
-    Json(body): Json<EditTimerPayload>,
-) -> Result<StatusCode, ApiError> {
+    Json(body): Json<UpdateActiveTimerRequest>,
+) -> Result<Json<TimerResponse>, ApiError> {
     record_user_id(user.id);
     let service = app_state
         .time_tracking_factory
         .create_service(user.id)
         .await?;
-
-    // Get the current timer to merge with edits
-    let current_timer = service
-        .get_active_timer(&user.id)
-        .await?
-        .ok_or_else(|| ApiError::not_found("no active timer found"))?;
 
     let parsed_start_time: Option<OffsetDateTime> = body
         .start_time
@@ -231,34 +274,33 @@ pub async fn edit_timer(
         })
         .transpose()?;
 
-    let mut updated_timer = ActiveTimer::new(parsed_start_time.unwrap_or(current_timer.started_at));
+    let request = UpdateTimerRequest {
+        project_id: patch_id(body.project_id, ProjectId::new),
+        activity_id: patch_id(body.activity_id, ActivityId::new),
+        started_at: parsed_start_time,
+        note: body.note.map(normalize_user_note),
+    };
+    let timer = service.edit_timer(&user.id, &request).await?;
 
-    // Merge: use provided values or fall back to current timer
-    if let (Some(pid), Some(pname)) = (
-        body.project_id
-            .or(current_timer.project_id.map(|p| p.to_string())),
-        body.project_name.or(current_timer.project_name),
-    ) {
-        updated_timer = updated_timer.with_project(pid, pname);
+    Ok(Json(timer.into()))
+}
+
+fn patch_id<T>(value: Option<Option<String>>, map: impl FnOnce(String) -> T) -> PatchValue<T> {
+    match value {
+        None => PatchValue::Unchanged,
+        Some(None) => PatchValue::Clear,
+        Some(Some(value)) => PatchValue::Set(map(value)),
     }
+}
 
-    if let (Some(aid), Some(aname)) = (
-        body.activity_id
-            .or(current_timer.activity_id.map(|a| a.to_string())),
-        body.activity_name.or(current_timer.activity_name),
-    ) {
-        updated_timer = updated_timer.with_activity(aid, aname);
-    }
-
-    let note = body
-        .user_note
-        .map(normalize_user_note)
-        .unwrap_or(current_timer.note);
-    updated_timer = updated_timer.with_note(note);
-
-    service.edit_timer(&user.id, &updated_timer).await?;
-
-    Ok(StatusCode::OK)
+pub(super) fn idempotency_key(headers: &HeaderMap) -> Result<&str, ApiError> {
+    static IDEMPOTENCY_KEY: HeaderName = HeaderName::from_static("idempotency-key");
+    headers
+        .get(&IDEMPOTENCY_KEY)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiError::bad_request("Idempotency-Key header is required"))
 }
 
 // ============================================================================

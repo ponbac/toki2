@@ -59,7 +59,18 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
     async fn create_time_entry(
         &self,
         request: &CreateTimeEntryRequest,
+        operation_id: &str,
     ) -> Result<TimerId, TimeTrackingError>;
+
+    /// Find an entry previously created for a provider-neutral operation identifier.
+    async fn find_time_entry_by_operation_id(
+        &self,
+        operation_id: &str,
+        date: Date,
+    ) -> Result<Option<TimerId>, TimeTrackingError>;
+
+    /// Get one owned time entry by provider registration ID.
+    async fn get_time_entry(&self, registration_id: &str) -> Result<TimeEntry, TimeTrackingError>;
 
     /// Edit an existing time entry.
     ///
@@ -67,6 +78,7 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
     /// and recreate the entry. Returns the (possibly new) registration ID.
     async fn edit_time_entry(
         &self,
+        registration_id: &str,
         request: &EditTimeEntryRequest,
     ) -> Result<TimerId, TimeTrackingError>;
 
