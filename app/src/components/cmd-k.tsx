@@ -18,7 +18,7 @@ import {
   KanbanSquare,
   TimerIcon,
 } from "lucide-react";
-import type { ListPullRequest } from "@/lib/api/queries/pullRequests";
+import type { ListPullRequest } from "@/lib/api/contracts/pull-request";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { toast } from "sonner";

@@ -85,7 +85,7 @@ impl NotificationHandler {
             // Filter out diffs for unfollowed repos
             let diffs_for_user: Vec<_> = diffs
                 .iter()
-                .filter(|diff| following.contains(&RepoKey::from(&diff.pr)))
+                .filter(|diff| following.contains(&diff.repository))
                 .collect();
 
             let push_subscriptions_for_user: Vec<_> = push_subscriptions
@@ -97,7 +97,7 @@ impl NotificationHandler {
             for diff in diffs_for_user {
                 let repo_id = repos
                     .iter()
-                    .find(|r| RepoKey::from(&diff.pr) == RepoKey::from(*r))
+                    .find(|repository| diff.repository == RepoKey::from(*repository))
                     .ok_or_else(|| format!("Repository not found for PR {}", diff.pr.id))?
                     .id;
                 let pr_id = diff.pr.id;

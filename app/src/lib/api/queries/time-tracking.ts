@@ -276,6 +276,7 @@ export type SaveTimerResponse = {
 
 export type TimeTrackingConnectionStatus = {
   connected: boolean;
+  provider: string;
   providerUserId: string | null;
   providerUserEmail: string | null;
   providerUserName: string | null;

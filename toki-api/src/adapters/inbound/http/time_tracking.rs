@@ -6,7 +6,10 @@
 use async_trait::async_trait;
 use axum::http::StatusCode;
 
-use crate::domain::{models::UserId, ports::inbound::TimeTrackingService};
+use crate::domain::{
+    models::{TimeTrackingConnection, UserId},
+    ports::inbound::TimeTrackingService,
+};
 
 /// Error returned when creating or validating a TimeTrackingService fails.
 #[derive(Debug)]
@@ -44,6 +47,12 @@ impl TimeTrackingServiceError {
 /// concrete outbound adapters (KleerAdapter, PostgresTimerHistoryAdapter, etc.).
 #[async_trait]
 pub trait TimeTrackingServiceFactory: Send + Sync + 'static {
+    /// Resolve the configured provider connection for an authenticated Toki user.
+    async fn connection_status(
+        &self,
+        user_id: UserId,
+    ) -> Result<TimeTrackingConnection, TimeTrackingServiceError>;
+
     /// Create a TimeTrackingService for an authenticated local Toki user.
     ///
     /// Always includes timer history support — the factory owns the timer repo.

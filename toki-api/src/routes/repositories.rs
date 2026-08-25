@@ -112,7 +112,7 @@ async fn add_repository(
 
     let key = RepoKey::from(&body);
     record_repo_key(&key);
-    app_state.insert_repo(key.clone(), repo_client).await;
+    app_state.insert_repo(repo_client).await;
     tracing::info!("Added new repository: {}", key);
 
     // start differ

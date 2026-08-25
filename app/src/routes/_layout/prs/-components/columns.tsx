@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ConditionalTooltip } from "@/components/ui/tooltip";
 import { WorkItemLink } from "@/components/work-item-link";
-import { ListPullRequest } from "@/lib/api/queries/pullRequests";
+import type { ListPullRequest } from "@/lib/api/contracts/pull-request";
 import { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
 import {
