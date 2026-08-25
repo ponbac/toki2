@@ -4,9 +4,12 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
+use utoipa::IntoParams;
 
 use crate::{
-    adapters::inbound::http::{TimeEntryDayStatusResponse, TimeEntryResponse, WeeklyStatsResponse},
+    adapters::inbound::http::{
+        ErrorResponse, TimeEntryDayStatusResponse, TimeEntryResponse, WeeklyStatsResponse,
+    },
     app_state::AppState,
     auth::AuthUser,
     domain::models::{ActivityId, CreateTimeEntryRequest, EditTimeEntryRequest, ProjectId},
@@ -16,9 +19,12 @@ use crate::{
 
 use super::normalize_user_note;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct DateFilterQuery {
+    /// Inclusive range start, `YYYY-MM-DD`.
     from: String,
+    /// Inclusive range end, `YYYY-MM-DD`.
     to: String,
 }
 
@@ -33,6 +39,22 @@ fn parse_rfc3339(s: &str, field: &str) -> Result<time::OffsetDateTime, ApiError>
         .map_err(|_| ApiError::bad_request(format!("Invalid {} format", field)))
 }
 
+/// Get worked and remaining hours
+///
+/// Returns weekly time statistics for an inclusive date range.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/time-info",
+    operation_id = "getTimeInfo",
+    tag = "Time tracking",
+    params(DateFilterQuery),
+    responses(
+        (status = 200, description = "Worked, scheduled, and remaining hours", body = WeeklyStatsResponse),
+        (status = 400, description = "Invalid date range", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn get_time_info(
     user: AuthUser,
     State(app_state): State<AppState>,
@@ -52,13 +74,33 @@ pub async fn get_time_info(
     Ok(Json(time_info.into()))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct TimeEntriesQuery {
+    /// Inclusive range start, `YYYY-MM-DD`.
     from: String,
+    /// Inclusive range end, `YYYY-MM-DD`.
     to: String,
+    /// When true, collapse duplicate entries.
     unique: Option<bool>,
 }
 
+/// List time entries
+///
+/// Returns completed time registrations in an inclusive date range.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/time-entries",
+    operation_id = "listTimeEntries",
+    tag = "Time tracking",
+    params(TimeEntriesQuery),
+    responses(
+        (status = 200, description = "Time entries in the requested range", body = Vec<TimeEntryResponse>),
+        (status = 400, description = "Invalid date range", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn get_time_entries(
     user: AuthUser,
     State(app_state): State<AppState>,
@@ -80,6 +122,22 @@ pub async fn get_time_entries(
     Ok(Json(time_entries.into_iter().map(Into::into).collect()))
 }
 
+/// List time-entry day statuses
+///
+/// Returns attestation status for each day in an inclusive date range.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/time-entry-day-statuses",
+    operation_id = "listTimeEntryDayStatuses",
+    tag = "Time tracking",
+    params(DateFilterQuery),
+    responses(
+        (status = 200, description = "Per-day attestation statuses", body = Vec<TimeEntryDayStatusResponse>),
+        (status = 400, description = "Invalid date range", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn get_time_entry_day_statuses(
     user: AuthUser,
     State(app_state): State<AppState>,

@@ -1,24 +1,21 @@
-import { cn, LinkData, workItemUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { ConditionalTooltip } from "./ui/tooltip";
 
-type WorkItemLinkProps<T extends LinkData> = {
-  data: T;
-  text?: string;
-  tooltip?: string;
-  className?: string;
-};
-
-// https://dev.azure.com/ex-change-part/Quote%20Manager/hexagon/_workitems/edit/1489
-export function WorkItemLink<T extends LinkData>({
+export function WorkItemLink({
   data,
   text,
   tooltip,
   className,
-}: WorkItemLinkProps<T>) {
+}: {
+  data: { id: string | number; url: string };
+  text?: string;
+  tooltip?: string;
+  className?: string;
+}) {
   return (
     <ConditionalTooltip condition={!!tooltip} content={tooltip}>
       <a
-        href={workItemUrl(data)}
+        href={data.url}
         target="_blank"
         rel="noreferrer"
         className={cn("hover:underline", className)}

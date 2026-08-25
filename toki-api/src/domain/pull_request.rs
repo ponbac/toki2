@@ -1,54 +1,275 @@
-use az_devops::{IdentityWithVote, ThreadStatus, Vote};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::domain::Email;
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
-use super::{PRChangeEvent, RepoKey};
+use super::{Email, PRChangeEvent, RepoKey};
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestIdentity {
+    pub id: String,
+    pub display_name: String,
+    pub unique_name: String,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum PullRequestVote {
+    NoResponse,
+    Approved,
+    ApprovedWithSuggestions,
+    WaitingForAuthor,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestReviewer {
+    pub identity: PullRequestIdentity,
+    pub vote: Option<PullRequestVote>,
+    pub has_declined: Option<bool>,
+    pub is_required: Option<bool>,
+    pub is_flagged: Option<bool>,
+}
+
+impl From<PullRequestIdentity> for PullRequestReviewer {
+    fn from(identity: PullRequestIdentity) -> Self {
+        Self {
+            identity,
+            vote: None,
+            has_declined: None,
+            is_required: None,
+            is_flagged: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PullRequestMergeStatus {
+    NotSet,
+    Queued,
+    Conflicts,
+    Succeeded,
+    RejectedByPolicy,
+    Failure,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PullRequestCommentType {
+    Unknown,
+    Text,
+    CodeChange,
+    System,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestComment {
+    pub id: i64,
+    pub author: PullRequestIdentity,
+    pub content: Option<String>,
+    pub comment_type: Option<PullRequestCommentType>,
+    #[serde(skip)]
+    pub is_system: bool,
+    pub is_deleted: Option<bool>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub published_at: OffsetDateTime,
+    pub liked_by: Vec<PullRequestIdentity>,
+    /// Canonical provider URL for this exact comment.
+    #[serde(skip)]
+    pub url: String,
+}
+
+impl PullRequestComment {
+    pub fn is_system_comment(&self) -> bool {
+        self.is_system
+    }
+
+    pub fn mentions(&self) -> Vec<String> {
+        self.content
+            .as_deref()
+            .map(find_mention_ids)
+            .unwrap_or_default()
+    }
+
+    fn with_replaced_mentions(&self, name_map: &HashMap<String, &str>) -> Self {
+        let content = self
+            .content
+            .as_deref()
+            .map(|content| replace_mentions(content, name_map));
+
+        Self {
+            content,
+            ..self.clone()
+        }
+    }
+}
+
+fn find_mention_ids(content: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut remainder = content;
+
+    while let Some((_, after_start)) = remainder.split_once("@<") {
+        let Some((id, after_end)) = after_start.split_once('>') else {
+            break;
+        };
+        ids.push(id.to_uppercase());
+        remainder = after_end;
+    }
+
+    ids
+}
+
+fn replace_mentions(content: &str, name_map: &HashMap<String, &str>) -> String {
+    let mut rendered = String::with_capacity(content.len());
+    let mut remainder = content;
+
+    while let Some((before, after_start)) = remainder.split_once("@<") {
+        rendered.push_str(before);
+        let Some((id, after_end)) = after_start.split_once('>') else {
+            rendered.push_str("@<");
+            rendered.push_str(after_start);
+            return rendered;
+        };
+
+        rendered.push_str("@<");
+        rendered.push_str(name_map.get(&id.to_uppercase()).copied().unwrap_or(id));
+        rendered.push('>');
+        remainder = after_end;
+    }
+
+    rendered.push_str(remainder);
+    rendered
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PullRequestThreadStatus {
+    Unknown,
+    Active,
+    Fixed,
+    WontFix,
+    Closed,
+    ByDesign,
+    Pending,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestThread {
+    pub id: i32,
+    pub comments: Vec<PullRequestComment>,
+    pub status: Option<PullRequestThreadStatus>,
+    pub is_deleted: Option<bool>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub last_updated_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub published_at: OffsetDateTime,
+}
+
+impl PullRequestThread {
+    pub fn is_system_thread(&self) -> bool {
+        self.comments
+            .first()
+            .is_some_and(PullRequestComment::is_system_comment)
+    }
+
+    pub fn author(&self) -> &PullRequestIdentity {
+        &self
+            .comments
+            .first()
+            .expect("pull request thread should contain a comment")
+            .author
+    }
+
+    pub fn most_recent_comment(&self) -> &PullRequestComment {
+        self.comments
+            .last()
+            .expect("pull request thread should contain a comment")
+    }
+
+    fn with_replaced_mentions(&self, name_map: &HashMap<String, &str>) -> Self {
+        Self {
+            comments: self
+                .comments
+                .iter()
+                .map(|comment| comment.with_replaced_mentions(name_map))
+                .collect(),
+            ..self.clone()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestWorkItemRef {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub parent_id: Option<String>,
+    pub priority: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestCommitAuthor {
+    #[serde(with = "time::serde::rfc3339")]
+    pub date: OffsetDateTime,
+    pub email: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestCommit {
+    pub author: PullRequestCommitAuthor,
+    pub comment: String,
+    pub commit_id: String,
+    pub committer: PullRequestCommitAuthor,
+    pub url: String,
+}
+
+/// Provider-neutral snapshot used by change detection and HTTP projections.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PullRequest {
     pub organization: String,
     pub project: String,
     pub repo_name: String,
     pub url: String,
-    #[serde(flatten)]
-    pub pull_request_base: az_devops::PullRequest,
-    pub threads: Vec<az_devops::Thread>,
-    pub commits: Vec<az_devops::GitCommitRef>,
-    pub work_items: Vec<az_devops::WorkItem>,
+    pub id: i32,
+    pub title: String,
+    pub description: Option<String>,
+    pub created_by: PullRequestIdentity,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: OffsetDateTime,
+    pub source_branch: String,
+    pub target_branch: String,
+    pub is_draft: bool,
+    pub merge_status: Option<PullRequestMergeStatus>,
+    pub reviewers: Vec<PullRequestReviewer>,
+    pub threads: Vec<PullRequestThread>,
+    pub commits: Vec<PullRequestCommit>,
+    pub work_items: Vec<PullRequestWorkItemRef>,
 }
 
 impl PullRequest {
-    pub fn new(
-        key: &RepoKey,
-        url: String,
-        pull_request_base: az_devops::PullRequest,
-        threads: Vec<az_devops::Thread>,
-        commits: Vec<az_devops::GitCommitRef>,
-        work_items: Vec<az_devops::WorkItem>,
-    ) -> Self {
-        Self {
-            organization: key.organization.clone(),
-            project: key.project.clone(),
-            repo_name: key.repo_name.clone(),
-            url,
-            pull_request_base,
-            threads,
-            commits,
-            work_items,
-        }
-    }
-
-    pub fn with_replaced_mentions(&self, id_to_email_map: &HashMap<String, String>) -> Self {
-        let mut pr = self.clone();
-        pr.threads = pr
-            .threads
+    pub fn with_replaced_mentions(&self, id_to_name_map: &HashMap<String, String>) -> Self {
+        let normalized_name_map = id_to_name_map
             .iter()
-            .map(|t| t.with_replaced_mentions(id_to_email_map))
-            .collect();
-        pr
+            .map(|(id, name)| (id.to_uppercase(), name.as_str()))
+            .collect::<HashMap<_, _>>();
+        Self {
+            threads: self
+                .threads
+                .iter()
+                .map(|thread| thread.with_replaced_mentions(&normalized_name_map))
+                .collect(),
+            ..self.clone()
+        }
     }
 
     pub fn changelog(
@@ -64,42 +285,38 @@ impl PullRequest {
         let new_threads = new_pr
             .threads
             .iter()
-            .filter(|t| {
-                !self.threads.iter().any(|ot| ot.id == t.id)
-                    && !t.comments.is_empty()
-                    && !t.is_system_thread()
+            .filter(|thread| {
+                !self.threads.iter().any(|old| old.id == thread.id)
+                    && !thread.comments.is_empty()
+                    && !thread.is_system_thread()
             })
             .map(|thread| PRChangeEvent::ThreadAdded(thread.clone()));
 
         let updated_threads = new_pr
             .threads
             .iter()
-            .filter(|t| {
-                let old_thread = self.threads.iter().find(|ot| ot.id == t.id);
-
-                // New comments in the thread
-                old_thread.is_some_and(|ot| t.comments.len() > ot.comments.len())
+            .filter(|thread| {
+                self.threads
+                    .iter()
+                    .find(|old| old.id == thread.id)
+                    .is_some_and(|old| thread.comments.len() > old.comments.len())
             })
             .map(|thread| PRChangeEvent::ThreadUpdated(thread.clone()));
 
-        // Detect mentions in new comments
         let mention_events = new_pr
             .threads
             .iter()
             .flat_map(|new_thread| {
-                let old_thread = self.threads.iter().find(|ot| ot.id == new_thread.id);
-
-                // Get new comments (either all comments if thread is new, or only new comments if thread existed)
-                let new_comments: Vec<&az_devops::Comment> = match old_thread {
+                let old_thread = self.threads.iter().find(|old| old.id == new_thread.id);
+                let new_comments = match old_thread {
                     Some(old_thread) => new_thread
                         .comments
                         .iter()
                         .skip(old_thread.comments.len())
-                        .collect(),
-                    None => new_thread.comments.iter().collect(),
+                        .collect::<Vec<_>>(),
+                    None => new_thread.comments.iter().collect::<Vec<_>>(),
                 };
 
-                // For each new comment, create mention events for each mention
                 new_comments
                     .into_iter()
                     .filter(|comment| !comment.is_system_comment())
@@ -108,12 +325,10 @@ impl PullRequest {
                             .mentions()
                             .into_iter()
                             .filter_map(move |mention_id| {
-                                // Resolve mention ID to email
                                 id_to_email_map.get(&mention_id).map(|email| {
                                     PRChangeEvent::CommentMentioned {
                                         comment: comment.clone(),
                                         mentioned_email: email.clone(),
-                                        thread_id: new_thread.id,
                                     }
                                 })
                             })
@@ -129,39 +344,39 @@ impl PullRequest {
         (new_pr.clone(), change_events).into()
     }
 
-    /// Returns the identities that are blocking this PR.
-    ///
-    /// A PR is blocked if it has a reviewer that has voted Rejected or WaitingForAuthor,
-    /// or if it has an unresolved thread.
-    pub fn blocked_by(&self, threads: &[az_devops::Thread]) -> Vec<az_devops::IdentityWithVote> {
+    /// Returns reviewers and discussion authors currently blocking this PR.
+    pub fn blocked_by(&self) -> Vec<PullRequestReviewer> {
         let rejected_or_waiting = self
-            .pull_request_base
             .reviewers
             .iter()
-            .filter(|r| matches!(r.vote, Some(Vote::Rejected) | Some(Vote::WaitingForAuthor)))
+            .filter(|reviewer| {
+                matches!(
+                    reviewer.vote,
+                    Some(PullRequestVote::Rejected | PullRequestVote::WaitingForAuthor)
+                )
+            })
             .cloned()
             .collect::<Vec<_>>();
-        let unresolved_thread_authors = threads
+        let unresolved_thread_authors = self
+            .threads
             .iter()
-            .filter(|t| t.status == Some(ThreadStatus::Active) && !t.is_system_thread())
-            .filter_map(|t| {
-                t.comments
-                    .iter()
-                    .find(|c| c.is_deleted != Some(true) && !c.is_system_comment())
+            .filter(|thread| thread.status == Some(PullRequestThreadStatus::Active))
+            .filter(|thread| !thread.is_system_thread())
+            .filter_map(|thread| {
+                thread.comments.iter().find(|comment| {
+                    comment.is_deleted != Some(true) && !comment.is_system_comment()
+                })
             })
-            .map(|c| c.author.clone())
-            .map(IdentityWithVote::from)
-            .collect::<Vec<_>>();
+            .map(|comment| PullRequestReviewer::from(comment.author.clone()));
 
-        // add unresolved_thread_authors to rejected_or_waiting if they are not already there and not approved with suggestions
         let mut blocking_authors = rejected_or_waiting;
         for author in unresolved_thread_authors {
             if !blocking_authors
                 .iter()
-                .any(|r| r.identity.id == author.identity.id)
-                && !self.pull_request_base.reviewers.iter().any(|r| {
-                    r.identity.id == author.identity.id
-                        && r.vote == Some(Vote::ApprovedWithSuggestions)
+                .any(|reviewer| reviewer.identity.id == author.identity.id)
+                && !self.reviewers.iter().any(|reviewer| {
+                    reviewer.identity.id == author.identity.id
+                        && reviewer.vote == Some(PullRequestVote::ApprovedWithSuggestions)
                 })
             {
                 blocking_authors.push(author);
@@ -171,37 +386,37 @@ impl PullRequest {
         blocking_authors
     }
 
-    pub fn approved_by(&self) -> Vec<az_devops::IdentityWithVote> {
-        let blocked_by = self.blocked_by(&self.threads);
-        self.pull_request_base
-            .reviewers
+    pub fn approved_by(&self) -> Vec<PullRequestReviewer> {
+        let blocked_by = self.blocked_by();
+        self.reviewers
             .iter()
-            .filter(|r| {
+            .filter(|reviewer| {
                 matches!(
-                    r.vote,
-                    Some(Vote::Approved) | Some(Vote::ApprovedWithSuggestions)
-                ) && !blocked_by.iter().any(|b| b.identity.id == r.identity.id)
+                    reviewer.vote,
+                    Some(PullRequestVote::Approved | PullRequestVote::ApprovedWithSuggestions)
+                ) && !blocked_by
+                    .iter()
+                    .any(|blocked| blocked.identity.id == reviewer.identity.id)
             })
             .cloned()
             .collect()
     }
 
-    /// Returns whether the PR is waiting for user to review and whether the review is required.
     pub fn waiting_for_user_review(&self, user_email: &str) -> (bool, bool) {
-        let waiting_for_user_review = self.pull_request_base.reviewers.iter().find(|reviewer| {
+        let blocked_by = self.blocked_by();
+        let waiting = self.reviewers.iter().find(|reviewer| {
             reviewer.identity.unique_name == user_email
-                && reviewer.vote == Some(Vote::NoResponse)
-                && !self.pull_request_base.is_draft
-                && self.pull_request_base.created_by.unique_name != user_email
-                && !self
-                    .blocked_by(&self.threads)
+                && reviewer.vote == Some(PullRequestVote::NoResponse)
+                && !self.is_draft
+                && self.created_by.unique_name != user_email
+                && !blocked_by
                     .iter()
-                    .any(|b| b.identity.id == reviewer.identity.id)
+                    .any(|blocked| blocked.identity.id == reviewer.identity.id)
         });
 
         (
-            waiting_for_user_review.is_some(),
-            waiting_for_user_review.is_some_and(|r| r.is_required.unwrap_or_default()),
+            waiting.is_some(),
+            waiting.is_some_and(|reviewer| reviewer.is_required.unwrap_or_default()),
         )
     }
 }
@@ -232,17 +447,11 @@ impl From<&PullRequest> for RepoKey {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use time::OffsetDateTime;
-
-    use crate::domain::Email;
-
     use super::*;
 
     #[test]
-    fn changelog_includes_thread_id_for_comment_mentions() {
-        let thread_id = 38706;
+    fn changelog_emits_comment_mentions() {
+        let thread_id = 38_706;
         let old_thread = test_thread(
             thread_id,
             vec![test_comment(1, "author@example.com", "Initial comment")],
@@ -257,38 +466,27 @@ mod tests {
 
         let old_pr = test_pull_request(vec![old_thread]);
         let new_pr = test_pull_request(vec![new_thread]);
-
-        let mut id_to_email_map = HashMap::new();
-        id_to_email_map.insert(
+        let id_to_email = HashMap::from([(
             "USER-123".to_string(),
             Email::try_from("mentioned@example.com").unwrap(),
-        );
+        )]);
 
-        let diff = old_pr.changelog(Some(&new_pr), &id_to_email_map);
-        let mention_event = diff
-            .changes
-            .iter()
-            .find_map(|event| match event {
-                PRChangeEvent::CommentMentioned {
-                    thread_id,
-                    mentioned_email,
-                    ..
-                } => Some((*thread_id, mentioned_email.clone())),
-                _ => None,
-            })
-            .expect("expected a mention event");
+        let diff = old_pr.changelog(Some(&new_pr), &id_to_email);
 
-        assert_eq!(mention_event.0, thread_id);
-        assert_eq!(
-            mention_event.1,
-            Email::try_from("mentioned@example.com").unwrap()
-        );
+        assert!(diff.changes.iter().any(|event| matches!(
+            event,
+            PRChangeEvent::CommentMentioned {
+                comment,
+                mentioned_email,
+            } if comment.id == 2 && mentioned_email.as_ref() == "mentioned@example.com"
+        )));
     }
 
     #[test]
-    fn changelog_ignores_empty_new_threads_for_thread_added() {
+    fn changelog_ignores_new_empty_threads() {
         let old_pr = test_pull_request(vec![]);
-        let new_pr = test_pull_request(vec![test_thread(38706, vec![])]);
+        let new_pr = test_pull_request(vec![test_thread(38_706, vec![])]);
+
         let diff = old_pr.changelog(Some(&new_pr), &HashMap::new());
 
         assert!(!diff
@@ -301,73 +499,66 @@ mod tests {
     fn changelog_emits_thread_added_for_non_empty_new_threads() {
         let old_pr = test_pull_request(vec![]);
         let new_pr = test_pull_request(vec![test_thread(
-            38706,
-            vec![test_comment(1, "reviewer@example.com", "New thread")],
+            38_706,
+            vec![test_comment(1, "author@example.com", "Initial comment")],
         )]);
+
         let diff = old_pr.changelog(Some(&new_pr), &HashMap::new());
 
         assert!(diff.changes.iter().any(
-            |event| matches!(event, PRChangeEvent::ThreadAdded(thread) if thread.id == 38706)
+            |event| matches!(event, PRChangeEvent::ThreadAdded(thread) if thread.id == 38_706)
         ));
     }
 
-    fn test_pull_request(threads: Vec<az_devops::Thread>) -> PullRequest {
+    fn test_pull_request(threads: Vec<PullRequestThread>) -> PullRequest {
         PullRequest {
             organization: "org".to_string(),
             project: "project".to_string(),
             repo_name: "repo".to_string(),
-            url: "https://dev.azure.com/org/project/_git/repo/pullrequest/2310".to_string(),
-            pull_request_base: az_devops::PullRequest {
-                id: 2310,
-                title: "PR title".to_string(),
-                description: None,
-                source_branch: "refs/heads/feature".to_string(),
-                target_branch: "refs/heads/main".to_string(),
-                status: serde_json::from_str("\"active\"").unwrap(),
-                created_by: test_identity("author@example.com"),
-                created_at: OffsetDateTime::UNIX_EPOCH,
-                closed_at: None,
-                auto_complete_set_by: None,
-                completion_options: None,
-                is_draft: false,
-                merge_status: None,
-                merge_job_id: None,
-                merge_failure_type: None,
-                merge_failure_message: None,
-                reviewers: vec![],
-                url: "https://dev.azure.com/org/project/_git/repo/pullrequest/2310".to_string(),
-            },
+            url: "https://example.invalid/pr/2310".to_string(),
+            id: 2310,
+            title: "Test PR".to_string(),
+            description: None,
+            created_by: test_identity("author@example.com"),
+            created_at: OffsetDateTime::now_utc(),
+            source_branch: "refs/heads/feature".to_string(),
+            target_branch: "refs/heads/main".to_string(),
+            is_draft: false,
+            merge_status: None,
+            reviewers: vec![],
             threads,
             commits: vec![],
             work_items: vec![],
         }
     }
 
-    fn test_thread(id: i32, comments: Vec<az_devops::Comment>) -> az_devops::Thread {
-        az_devops::Thread {
+    fn test_thread(id: i32, comments: Vec<PullRequestComment>) -> PullRequestThread {
+        PullRequestThread {
             id,
             comments,
-            status: None,
+            status: Some(PullRequestThreadStatus::Active),
             is_deleted: Some(false),
-            last_updated_at: OffsetDateTime::UNIX_EPOCH,
-            published_at: OffsetDateTime::UNIX_EPOCH,
+            last_updated_at: OffsetDateTime::now_utc(),
+            published_at: OffsetDateTime::now_utc(),
         }
     }
 
-    fn test_comment(id: i64, author_email: &str, content: &str) -> az_devops::Comment {
-        az_devops::Comment {
+    fn test_comment(id: i64, author_email: &str, content: &str) -> PullRequestComment {
+        PullRequestComment {
             id,
             author: test_identity(author_email),
             content: Some(content.to_string()),
-            comment_type: Some(az_devops::CommentType::Text),
+            comment_type: Some(PullRequestCommentType::Text),
+            is_system: false,
             is_deleted: Some(false),
-            published_at: OffsetDateTime::UNIX_EPOCH,
+            published_at: OffsetDateTime::now_utc(),
             liked_by: vec![],
+            url: format!("https://example.invalid/comments/{id}"),
         }
     }
 
-    fn test_identity(email: &str) -> az_devops::Identity {
-        az_devops::Identity {
+    fn test_identity(email: &str) -> PullRequestIdentity {
+        PullRequestIdentity {
             id: email.to_string(),
             display_name: email.to_string(),
             unique_name: email.to_string(),

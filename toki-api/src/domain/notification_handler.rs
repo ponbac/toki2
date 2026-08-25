@@ -1,4 +1,3 @@
-use crate::adapters::outbound::azure_devops::AzureDevOpsUrl;
 use crate::db::DbPool;
 use crate::repositories::RepoRepository;
 use futures::future;
@@ -99,14 +98,9 @@ impl NotificationHandler {
                 let repo_id = repos
                     .iter()
                     .find(|r| RepoKey::from(&diff.pr) == RepoKey::from(*r))
-                    .ok_or_else(|| {
-                        format!(
-                            "Repository not found for PR {}",
-                            diff.pr.pull_request_base.id
-                        )
-                    })?
+                    .ok_or_else(|| format!("Repository not found for PR {}", diff.pr.id))?
                     .id;
-                let pr_id = diff.pr.pull_request_base.id;
+                let pr_id = diff.pr.id;
 
                 // Get notification rules for this repository
                 let rules = self
@@ -133,12 +127,11 @@ impl NotificationHandler {
                     })?;
 
                 // Process events that apply to the user
-                for event in diff.changes.iter().filter(|e| {
-                    e.applies_to(
-                        &user.email,
-                        &diff.pr.pull_request_base.created_by.unique_name,
-                    )
-                }) {
+                for event in diff
+                    .changes
+                    .iter()
+                    .filter(|e| e.applies_to(&user.email, &diff.pr.created_by.unique_name))
+                {
                     let notification_type = DbNotificationType::from(event);
 
                     // Check if notification is enabled via rules/exceptions
@@ -160,15 +153,14 @@ impl NotificationHandler {
                     }
 
                     let link = build_event_link(diff, event);
-                    let push_notification =
-                        event.to_push_notification(&diff.pr.pull_request_base, &link);
+                    let push_notification = event.to_push_notification(&diff.pr, &link);
                     let db_notification = Notification {
                         id: 0, // Will be set by database
                         user_id: user_id_i32,
                         repository_id: repo_id,
                         pull_request_id: pr_id,
                         notification_type,
-                        title: diff.pr.pull_request_base.title.clone(),
+                        title: diff.pr.title.clone(),
                         message: push_notification.body.clone(),
                         link: Some(link.clone()),
                         viewed_at: None,
@@ -191,11 +183,7 @@ impl NotificationHandler {
                         };
                         if push_enabled {
                             for sub in push_subscriptions_for_user.iter() {
-                                let message = event.to_web_push_message(
-                                    sub,
-                                    &diff.pr.pull_request_base,
-                                    &link,
-                                );
+                                let message = event.to_web_push_message(sub, &diff.pr, &link);
                                 push_futures.push(self.web_push_client.send(message));
                                 summary.push_notification_count += 1;
                             }
@@ -220,32 +208,20 @@ impl NotificationHandler {
 }
 
 fn build_event_link(diff: &PullRequestDiff, event: &PRChangeEvent) -> String {
-    let pr_id = diff.pr.pull_request_base.id.to_string();
-    let base_pr_url = AzureDevOpsUrl::PullRequest {
-        org: &diff.pr.organization,
-        project: &diff.pr.project,
-        repo: &diff.pr.repo_name,
-        id: &pr_id,
-    };
-
     match event {
-        PRChangeEvent::PullRequestClosed => base_pr_url.to_string(),
-        PRChangeEvent::ThreadAdded(thread) => {
-            let first_comment = thread
-                .comments
-                .first()
-                .expect("ThreadAdded event should always contain at least one comment");
-            base_pr_url.pull_request_comment_url(thread.id, first_comment.id)
-        }
-        PRChangeEvent::ThreadUpdated(thread) => {
-            let latest_comment = thread
-                .comments
-                .last()
-                .expect("ThreadUpdated event should always contain at least one comment");
-            base_pr_url.pull_request_comment_url(thread.id, latest_comment.id)
-        }
-        PRChangeEvent::CommentMentioned {
-            comment, thread_id, ..
-        } => base_pr_url.pull_request_comment_url(*thread_id, comment.id),
+        PRChangeEvent::PullRequestClosed => diff.pr.url.clone(),
+        PRChangeEvent::ThreadAdded(thread) => thread
+            .comments
+            .first()
+            .expect("ThreadAdded event should always contain at least one comment")
+            .url
+            .clone(),
+        PRChangeEvent::ThreadUpdated(thread) => thread
+            .comments
+            .last()
+            .expect("ThreadUpdated event should always contain at least one comment")
+            .url
+            .clone(),
+        PRChangeEvent::CommentMentioned { comment, .. } => comment.url.clone(),
     }
 }

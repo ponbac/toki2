@@ -15,18 +15,19 @@ use axum::{
 use futures_util::future::join_all;
 use moka::sync::Cache;
 use serde::Deserialize;
+use utoipa::IntoParams;
 
 use crate::{
     adapters::inbound::http::{
-        BoardResponse, FormatForLlmResponse, IterationResponse, PullRequestApprovalStatusResponse,
-        PullRequestRefResponse, PullRequestReviewerResponse, WorkItemProjectResponse,
-        WorkItemResponse,
+        BoardResponse, ErrorResponse, FormatForLlmResponse, IterationResponse,
+        PullRequestApprovalStatusResponse, PullRequestRefResponse, PullRequestReviewerResponse,
+        WorkItemProjectResponse, WorkItemResponse,
     },
     app_state::AppState,
     auth::AuthUser,
     domain::{
         models::{BoardData, PullRequestRef, WorkItem, WorkItemProject},
-        Email, RepoKey, WorkItemError,
+        Email, PullRequestIdentity, RepoKey, WorkItemError,
     },
     observability::{record_span_field, record_user_id},
 };
@@ -37,15 +38,17 @@ use super::ApiError;
 // Query parameter types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query, rename_all = "camelCase")]
 pub struct ProjectQuery {
     pub organization: String,
     pub project: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query, rename_all = "camelCase")]
 pub struct BoardQuery {
     pub organization: String,
     pub project: String,
@@ -53,8 +56,9 @@ pub struct BoardQuery {
     pub team: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query, rename_all = "camelCase")]
 pub struct FormatForLlmQuery {
     pub organization: String,
     pub project: String,
@@ -121,7 +125,20 @@ static AVAILABLE_PROJECTS_CACHE: LazyLock<Cache<i32, Vec<WorkItemProject>>> = La
 // Route handlers
 // ---------------------------------------------------------------------------
 
-async fn get_projects(
+/// List work-item projects
+///
+/// Returns organization/project pairs the authenticated user can read.
+#[utoipa::path(
+    get,
+    path = "/work-items/projects",
+    operation_id = "listWorkItemProjects",
+    tag = "Work items",
+    responses(
+        (status = 200, description = "Accessible work-item projects", body = Vec<WorkItemProjectResponse>),
+        (status = 401, description = "Missing or invalid credentials")
+    )
+)]
+pub(crate) async fn get_projects(
     user: AuthUser,
     State(app_state): State<AppState>,
 ) -> Result<Json<Vec<WorkItemProjectResponse>>, ApiError> {
@@ -130,7 +147,22 @@ async fn get_projects(
     Ok(Json(projects.into_iter().map(Into::into).collect()))
 }
 
-async fn get_iterations(
+/// List iterations
+///
+/// Returns sprints/iterations for one work-item project.
+#[utoipa::path(
+    get,
+    path = "/work-items/iterations",
+    operation_id = "listWorkItemIterations",
+    tag = "Work items",
+    params(ProjectQuery),
+    responses(
+        (status = 200, description = "Iterations for the project", body = Vec<IterationResponse>),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 403, description = "User does not have access to the project", body = ErrorResponse)
+    )
+)]
+pub(crate) async fn get_iterations(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<ProjectQuery>,
@@ -147,7 +179,22 @@ async fn get_iterations(
     Ok(Json(iterations.into_iter().map(Into::into).collect()))
 }
 
-async fn get_board(
+/// Get a work-item board
+///
+/// Returns columns and work items for a project iteration.
+#[utoipa::path(
+    get,
+    path = "/work-items/board",
+    operation_id = "getWorkItemBoard",
+    tag = "Work items",
+    params(BoardQuery),
+    responses(
+        (status = 200, description = "Board columns and work items", body = BoardResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 403, description = "User does not have access to the project", body = ErrorResponse)
+    )
+)]
+pub(crate) async fn get_board(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<BoardQuery>,
@@ -171,7 +218,22 @@ async fn get_board(
     Ok(Json(response))
 }
 
-async fn format_for_llm(
+/// Format a work item for an LLM
+///
+/// Returns markdown for one work item, plus whether it contains images.
+#[utoipa::path(
+    get,
+    path = "/work-items/format-for-llm",
+    operation_id = "formatWorkItemForLlm",
+    tag = "Work items",
+    params(FormatForLlmQuery),
+    responses(
+        (status = 200, description = "Markdown rendering of the work item", body = FormatForLlmResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 403, description = "User does not have access to the project", body = ErrorResponse)
+    )
+)]
+pub(crate) async fn format_for_llm(
     user: AuthUser,
     State(app_state): State<AppState>,
     Query(query): Query<FormatForLlmQuery>,
@@ -374,18 +436,18 @@ async fn build_pull_request_approval_index(
 
     for (repository_id, cached_pull_requests) in cached_repo_pull_requests.into_iter().flatten() {
         for pull_request in cached_pull_requests {
-            let pull_request_id = pull_request.pull_request_base.id.to_string();
+            let pull_request_id = pull_request.id.to_string();
             if !referenced_pr_ids.contains(&pull_request_id) {
                 continue;
             }
 
-            let blocked_by = pull_request.blocked_by(&pull_request.threads);
+            let blocked_by = pull_request.blocked_by();
             let approved_by = pull_request.approved_by();
 
             let enrichment = PullRequestRefEnrichment {
-                title: pull_request.pull_request_base.title.clone(),
-                source_branch: pull_request.pull_request_base.source_branch.clone(),
-                is_draft: pull_request.pull_request_base.is_draft,
+                title: pull_request.title.clone(),
+                source_branch: pull_request.source_branch.clone(),
+                is_draft: pull_request.is_draft,
                 approval_status: PullRequestApprovalStatusResponse {
                     approved_by: approved_by
                         .into_iter()
@@ -399,7 +461,7 @@ async fn build_pull_request_approval_index(
             };
 
             for work_item in &pull_request.work_items {
-                let work_item_id = work_item.id.to_string();
+                let work_item_id = work_item.id.clone();
                 if !referenced_work_item_ids.contains(&work_item_id) {
                     continue;
                 }
@@ -425,7 +487,7 @@ fn repo_matches_board_scope(repo_key: &RepoKey, query: &BoardQuery) -> bool {
         && repo_key.project.eq_ignore_ascii_case(&query.project)
 }
 
-fn to_pull_request_reviewer_response(identity: az_devops::Identity) -> PullRequestReviewerResponse {
+fn to_pull_request_reviewer_response(identity: PullRequestIdentity) -> PullRequestReviewerResponse {
     PullRequestReviewerResponse {
         id: identity.id,
         display_name: identity.display_name,
@@ -580,8 +642,8 @@ pub fn router() -> Router<AppState> {
         .route("/projects", get(get_projects))
         .route("/iterations", get(get_iterations))
         .route("/board", get(get_board))
-        .route("/image", get(get_image))
         .route("/format-for-llm", get(format_for_llm))
+        .route("/image", get(get_image))
         .route("/move", post(move_work_item))
 }
 

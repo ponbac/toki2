@@ -14,7 +14,21 @@ const BEARER_SCHEME: &str = "bearerAuth";
 /// Agent-facing OpenAPI metadata.
 #[derive(OpenApi)]
 #[openapi(
-    paths(crate::routes::time_tracking::get_timer),
+    paths(
+        crate::routes::pull_requests::list_pull_requests,
+        crate::routes::time_tracking::connection_status,
+        crate::routes::time_tracking::get_time_entries,
+        crate::routes::time_tracking::get_time_entry_day_statuses,
+        crate::routes::time_tracking::get_time_info,
+        crate::routes::time_tracking::get_timer,
+        crate::routes::time_tracking::get_timer_history,
+        crate::routes::time_tracking::list_activities,
+        crate::routes::time_tracking::list_projects,
+        crate::routes::work_items::format_for_llm,
+        crate::routes::work_items::get_board,
+        crate::routes::work_items::get_iterations,
+        crate::routes::work_items::get_projects,
+    ),
     info(
         title = "Toki Agent API",
         version = "1.0.0",
@@ -77,8 +91,33 @@ mod tests {
 
     use super::*;
 
-    const EXPECTED_OPERATIONS: &[(&str, &str, &str)] =
-        &[("get", "/time-tracking/timer", "getActiveTimer")];
+    const EXPECTED_OPERATIONS: &[(&str, &str, &str)] = &[
+        ("get", "/pull-requests/list", "listPullRequests"),
+        (
+            "get",
+            "/time-tracking/connection",
+            "getTimeTrackingConnection",
+        ),
+        ("get", "/time-tracking/projects", "listTimeTrackingProjects"),
+        (
+            "get",
+            "/time-tracking/projects/{project_id}/activities",
+            "listTimeTrackingActivities",
+        ),
+        ("get", "/time-tracking/time-entries", "listTimeEntries"),
+        (
+            "get",
+            "/time-tracking/time-entry-day-statuses",
+            "listTimeEntryDayStatuses",
+        ),
+        ("get", "/time-tracking/time-info", "getTimeInfo"),
+        ("get", "/time-tracking/timer", "getActiveTimer"),
+        ("get", "/time-tracking/timer-history", "listTimerHistory"),
+        ("get", "/work-items/board", "getWorkItemBoard"),
+        ("get", "/work-items/format-for-llm", "formatWorkItemForLlm"),
+        ("get", "/work-items/iterations", "listWorkItemIterations"),
+        ("get", "/work-items/projects", "listWorkItemProjects"),
+    ];
 
     fn spec() -> Value {
         serde_json::to_value(agent_openapi()).expect("OpenAPI document should serialize")
@@ -178,6 +217,43 @@ mod tests {
                 "{operation_id} is missing a 401 response"
             );
         }
+    }
+
+    #[test]
+    fn document_does_not_publish_provider_wire_types() {
+        let serialized = spec().to_string();
+        for leak in ["GitCommitRef", "IdentityRefWithVote", "CommentThread"] {
+            assert!(
+                !serialized.contains(leak),
+                "{leak} leaked into the agent OpenAPI document"
+            );
+        }
+    }
+
+    #[test]
+    fn document_preserves_closed_enum_values() {
+        let spec = spec();
+        let schemas = &spec["components"]["schemas"];
+
+        assert_eq!(
+            schemas["TimeEntryStatusResponse"]["enum"],
+            serde_json::json!(["open", "approved", "certified"])
+        );
+        assert_eq!(
+            schemas["BoardStateResponse"]["enum"],
+            serde_json::json!(["todo", "inProgress", "done"])
+        );
+        assert_eq!(
+            schemas["PullRequestMergeStatusResponse"]["enum"],
+            serde_json::json!([
+                "notSet",
+                "queued",
+                "conflicts",
+                "succeeded",
+                "rejectedByPolicy",
+                "failure"
+            ])
+        );
     }
 
     #[tokio::test]

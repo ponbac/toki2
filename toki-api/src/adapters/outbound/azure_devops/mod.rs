@@ -1,5 +1,7 @@
 mod conversions;
+mod pull_requests;
 mod urls;
+pub use pull_requests::AzureDevOpsPullRequestAdapter;
 pub(crate) use urls::AzureDevOpsUrl;
 
 use std::collections::{HashMap, HashSet};

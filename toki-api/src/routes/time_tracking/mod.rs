@@ -60,4 +60,9 @@ pub fn router() -> Router<AppState> {
         .route("/update-timer", put(timer::edit_timer))
 }
 
-pub(crate) use timer::__path_get_timer;
+pub(crate) use calendar::{
+    __path_get_time_entries, __path_get_time_entry_day_statuses, __path_get_time_info,
+};
+pub(crate) use connection::__path_connection_status;
+pub(crate) use projects::{__path_list_activities, __path_list_projects};
+pub(crate) use timer::{__path_get_timer, __path_get_timer_history};

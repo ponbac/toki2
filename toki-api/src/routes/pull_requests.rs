@@ -8,14 +8,15 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use az_devops::GitCommitRef;
-use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use serde::Deserialize;
 
 use crate::{
+    adapters::inbound::http::ListPullRequestResponse,
     app_state::AppStateError,
     auth::AuthUser,
-    domain::{Email, PullRequest, RepoKey},
+    domain::{
+        Email, PullRequest, PullRequestCommit, PullRequestIdentity, PullRequestReviewer, RepoKey,
+    },
     observability::{record_repo_key, record_user_id},
     repositories::UserRepository,
     AppState,
@@ -25,9 +26,9 @@ use super::ApiError;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/list", get(list_pull_requests))
         .route("/open", get(open_pull_requests))
         .route("/cached", get(cached_pull_requests))
-        .route("/list", get(list_pull_requests))
         .route("/most-recent-commits", get(most_recent_commits))
 }
 
@@ -92,13 +93,13 @@ async fn cached_pull_requests(
 async fn most_recent_commits(
     State(app_state): State<AppState>,
     Query(query): Query<RepoKey>,
-) -> Result<Json<Vec<GitCommitRef>>, ApiError> {
+) -> Result<Json<Vec<PullRequestCommit>>, ApiError> {
     record_repo_key(&query);
     let cached_prs = app_state
         .get_cached_pull_requests(query.clone())
         .await?
         .map(|mut prs| {
-            prs.sort_by_key(|pr| pr.pull_request_base.created_at);
+            prs.sort_by_key(|pr| pr.created_at);
             prs
         });
 
@@ -108,78 +109,37 @@ async fn most_recent_commits(
             commits.extend(pr.commits);
         }
     }
-    commits.sort_by_key(|commit| cmp::Reverse(commit.author.as_ref().unwrap().date));
+    commits.sort_by_key(|commit| cmp::Reverse(commit.author.date));
 
     Ok(Json(commits))
 }
 
-/// A trimmed down version of a pull request, only containing the fields we need for the UI.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ListPullRequest {
-    organization: String,
-    project: String,
-    repo_name: String,
-    url: String,
-    id: i32,
-    title: String,
-    created_by: az_devops::Identity,
-    #[serde(with = "time::serde::rfc3339")]
-    created_at: OffsetDateTime,
-    source_branch: String,
-    target_branch: String,
-    is_draft: bool,
-    merge_status: Option<az_devops::MergeStatus>,
-    threads: Vec<az_devops::Thread>,
-    work_items: Vec<az_devops::WorkItem>,
-    reviewers: Vec<az_devops::IdentityWithVote>,
-    blocked_by: Vec<az_devops::IdentityWithVote>,
-    approved_by: Vec<az_devops::IdentityWithVote>,
-    waiting_for_user_review: bool,
-    review_required: bool,
-}
-
-impl ListPullRequest {
-    fn from_pull_request(pr: PullRequest, user_email: &str) -> Self {
-        let blocked_by = pr.blocked_by(&pr.threads);
-        let approved_by = pr.approved_by();
-        let (waiting_for_user_review, review_required) = pr.waiting_for_user_review(user_email);
-        Self {
-            organization: pr.organization,
-            project: pr.project,
-            repo_name: pr.repo_name,
-            url: pr.url,
-            id: pr.pull_request_base.id,
-            title: pr.pull_request_base.title,
-            created_by: pr.pull_request_base.created_by,
-            created_at: pr.pull_request_base.created_at,
-            source_branch: pr.pull_request_base.source_branch,
-            target_branch: pr.pull_request_base.target_branch,
-            is_draft: pr.pull_request_base.is_draft,
-            merge_status: pr.pull_request_base.merge_status,
-            threads: pr.threads,
-            work_items: pr.work_items,
-            reviewers: pr.pull_request_base.reviewers,
-            blocked_by,
-            approved_by,
-            waiting_for_user_review,
-            review_required,
-        }
-    }
-}
-
-async fn list_pull_requests(
+/// List followed pull requests
+///
+/// Returns a Toki-owned projection of pull requests the user follows, including
+/// identities, merge status, simplified threads, and linked work-item refs.
+#[utoipa::path(
+    get,
+    path = "/pull-requests/list",
+    operation_id = "listPullRequests",
+    tag = "Pull requests",
+    responses(
+        (status = 200, description = "Followed pull requests", body = Vec<ListPullRequestResponse>),
+        (status = 401, description = "Missing or invalid credentials")
+    )
+)]
+pub async fn list_pull_requests(
     user: AuthUser,
     State(app_state): State<AppState>,
-) -> Result<Json<Vec<ListPullRequest>>, ApiError> {
+) -> Result<Json<Vec<ListPullRequestResponse>>, ApiError> {
     record_user_id(user.id);
     let mut followed_prs = get_followed_pull_requests(&app_state, &user).await?;
     apply_avatar_overrides_to_pull_requests(&app_state, &mut followed_prs).await?;
-    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.pull_request_base.created_at));
+    followed_prs.sort_by_key(|pr| cmp::Reverse(pr.created_at));
 
     let list_prs = followed_prs
         .into_iter()
-        .map(|pr| ListPullRequest::from_pull_request(pr, &user.email))
+        .map(|pr| ListPullRequestResponse::from_domain(pr, &user.email))
         .collect::<Vec<_>>();
 
     Ok(Json(list_prs))
@@ -256,13 +216,8 @@ async fn apply_avatar_overrides_to_pull_requests(
 
 fn collect_pr_participant_emails(pr: &PullRequest) -> HashSet<String> {
     let mut emails = HashSet::new();
-    collect_identity_email(&mut emails, &pr.pull_request_base.created_by);
-    collect_optional_identity_email(
-        &mut emails,
-        pr.pull_request_base.auto_complete_set_by.as_ref(),
-    );
-
-    collect_identity_with_vote_emails(&mut emails, &pr.pull_request_base.reviewers);
+    collect_identity_email(&mut emails, &pr.created_by);
+    collect_reviewer_emails(&mut emails, &pr.reviewers);
 
     for thread in &pr.threads {
         for comment in &thread.comments {
@@ -273,33 +228,16 @@ fn collect_pr_participant_emails(pr: &PullRequest) -> HashSet<String> {
         }
     }
 
-    for work_item in &pr.work_items {
-        collect_optional_identity_email(&mut emails, work_item.assigned_to.as_ref());
-        collect_optional_identity_email(&mut emails, work_item.created_by.as_ref());
-    }
-
     emails
 }
 
-fn collect_identity_with_vote_emails(
-    emails: &mut HashSet<String>,
-    identities: &[az_devops::IdentityWithVote],
-) {
-    for identity_with_vote in identities {
-        collect_identity_email(emails, &identity_with_vote.identity);
+fn collect_reviewer_emails(emails: &mut HashSet<String>, identities: &[PullRequestReviewer]) {
+    for reviewer in identities {
+        collect_identity_email(emails, &reviewer.identity);
     }
 }
 
-fn collect_optional_identity_email(
-    emails: &mut HashSet<String>,
-    identity: Option<&az_devops::Identity>,
-) {
-    if let Some(identity) = identity {
-        collect_identity_email(emails, identity);
-    }
-}
-
-fn collect_identity_email(emails: &mut HashSet<String>, identity: &az_devops::Identity) {
+fn collect_identity_email(emails: &mut HashSet<String>, identity: &PullRequestIdentity) {
     if let Some(email) = Email::normalize_lookup_key(&identity.unique_name) {
         emails.insert(email);
     }
@@ -309,13 +247,9 @@ fn apply_avatar_overrides_to_pull_request(
     pr: &mut PullRequest,
     avatar_by_email: &HashMap<String, String>,
 ) {
-    apply_avatar_override_to_identity(&mut pr.pull_request_base.created_by, avatar_by_email);
+    apply_avatar_override_to_identity(&mut pr.created_by, avatar_by_email);
 
-    if let Some(identity) = pr.pull_request_base.auto_complete_set_by.as_mut() {
-        apply_avatar_override_to_identity(identity, avatar_by_email);
-    }
-
-    for reviewer in &mut pr.pull_request_base.reviewers {
+    for reviewer in &mut pr.reviewers {
         apply_avatar_override_to_identity(&mut reviewer.identity, avatar_by_email);
     }
 
@@ -327,19 +261,10 @@ fn apply_avatar_overrides_to_pull_request(
             }
         }
     }
-
-    for work_item in &mut pr.work_items {
-        if let Some(assigned_to) = work_item.assigned_to.as_mut() {
-            apply_avatar_override_to_identity(assigned_to, avatar_by_email);
-        }
-        if let Some(created_by) = work_item.created_by.as_mut() {
-            apply_avatar_override_to_identity(created_by, avatar_by_email);
-        }
-    }
 }
 
 fn apply_avatar_override_to_identity(
-    identity: &mut az_devops::Identity,
+    identity: &mut PullRequestIdentity,
     avatar_by_email: &HashMap<String, String>,
 ) {
     let Some(email) = Email::normalize_lookup_key(&identity.unique_name) else {
@@ -355,7 +280,7 @@ fn apply_avatar_override_to_identity(
 mod tests {
     use std::collections::HashMap;
 
-    use crate::domain::Email;
+    use crate::domain::{Email, PullRequestIdentity};
 
     use super::apply_avatar_override_to_identity;
 
@@ -378,7 +303,7 @@ mod tests {
 
     #[test]
     fn apply_avatar_override_to_identity_replaces_avatar_url() {
-        let mut identity = az_devops::Identity {
+        let mut identity = PullRequestIdentity {
             id: "user-id".to_string(),
             display_name: "Test User".to_string(),
             unique_name: "USER@example.com".to_string(),
@@ -401,7 +326,7 @@ mod tests {
 
     #[test]
     fn apply_avatar_override_to_identity_supports_non_email_unique_name_fallback() {
-        let mut identity = az_devops::Identity {
+        let mut identity = PullRequestIdentity {
             id: "user-id".to_string(),
             display_name: "Test User".to_string(),
             unique_name: "  Display Name  ".to_string(),

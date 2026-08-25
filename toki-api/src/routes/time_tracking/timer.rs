@@ -265,6 +265,21 @@ pub async fn edit_timer(
 // Timer History
 // ============================================================================
 
+/// List timer history
+///
+/// Returns recent timer intervals for the authenticated user, including
+/// unsaved and saved runs.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/timer-history",
+    operation_id = "listTimerHistory",
+    tag = "Time tracking",
+    responses(
+        (status = 200, description = "Timer history entries", body = Vec<TimerHistoryEntryResponse>),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn get_timer_history(
     user: AuthUser,
     State(app_state): State<AppState>,

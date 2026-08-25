@@ -4,13 +4,27 @@ use axum::{
 };
 
 use crate::{
-    adapters::inbound::http::{ActivityResponse, ProjectResponse},
+    adapters::inbound::http::{ActivityResponse, ErrorResponse, ProjectResponse},
     app_state::AppState,
     auth::AuthUser,
     observability::{record_span_field, record_user_id},
     routes::ApiError,
 };
 
+/// List time-tracking projects
+///
+/// Returns projects the authenticated user can book time against.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/projects",
+    operation_id = "listTimeTrackingProjects",
+    tag = "Time tracking",
+    responses(
+        (status = 200, description = "Projects available for time booking", body = Vec<ProjectResponse>),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn list_projects(
     State(app_state): State<AppState>,
     user: AuthUser,
@@ -28,6 +42,23 @@ pub async fn list_projects(
     ))
 }
 
+/// List activities for a project
+///
+/// Returns bookable activities for one project, filtered to the current date.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/projects/{project_id}/activities",
+    operation_id = "listTimeTrackingActivities",
+    tag = "Time tracking",
+    params(
+        ("project_id" = String, Path, description = "Time-tracking project identifier")
+    ),
+    responses(
+        (status = 200, description = "Activities for the project", body = Vec<ActivityResponse>),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
 pub async fn list_activities(
     Path(project_id): Path<String>,
     State(app_state): State<AppState>,
