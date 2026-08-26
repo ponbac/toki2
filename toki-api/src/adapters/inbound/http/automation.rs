@@ -220,31 +220,28 @@ mod tests {
             let responses = operation["responses"]
                 .as_object()
                 .expect("operation responses");
-            let success_responses = responses
+            let (success_status, success_response) = responses
                 .iter()
-                .filter(|(status, _)| {
+                .find(|(status, _)| {
                     status
                         .parse::<u16>()
                         .is_ok_and(|status| (200..300).contains(&status))
                 })
-                .collect::<Vec<_>>();
-            assert!(
-                !success_responses.is_empty(),
-                "{operation_id} is missing a 2xx response"
-            );
+                .unwrap_or_else(|| panic!("{operation_id} is missing a 2xx response"));
+
+            let success_content = success_response["content"].as_object();
             if method == "get" {
+                assert_eq!(success_status, "200", "{operation_id} must return 200");
                 assert!(
-                    responses["200"].get("content").is_some(),
+                    success_content.is_some(),
                     "{operation_id} 200 response must be typed"
                 );
             }
-            for (status, response) in success_responses {
-                if let Some(content) = response["content"].as_object() {
-                    assert!(
-                        content.values().all(|media| media.get("schema").is_some()),
-                        "{operation_id} {status} response must be typed"
-                    );
-                }
+            if let Some(content) = success_content {
+                assert!(
+                    content.values().all(|media| media.get("schema").is_some()),
+                    "{operation_id} {success_status} response must be typed"
+                );
             }
             assert!(
                 responses.contains_key("401"),
