@@ -61,8 +61,13 @@ pub fn router() -> Router<AppState> {
 }
 
 pub(crate) use calendar::{
-    __path_get_time_entries, __path_get_time_entry_day_statuses, __path_get_time_info,
+    __path_create_project_registration, __path_delete_project_registration,
+    __path_edit_project_registration, __path_get_time_entries, __path_get_time_entry_day_statuses,
+    __path_get_time_info,
 };
 pub(crate) use connection::__path_connection_status;
 pub(crate) use projects::{__path_list_activities, __path_list_projects};
-pub(crate) use timer::{__path_get_timer, __path_get_timer_history};
+pub(crate) use timer::{
+    __path_edit_timer, __path_get_timer, __path_get_timer_history, __path_save_timer,
+    __path_start_timer, __path_stop_timer,
+};
