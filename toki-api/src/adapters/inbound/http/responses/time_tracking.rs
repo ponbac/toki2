@@ -15,7 +15,7 @@ pub struct GetTimerResponse {
 }
 
 /// Response for saving the active timer.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveTimerResponse {
     pub entry: TimeEntryResponse,

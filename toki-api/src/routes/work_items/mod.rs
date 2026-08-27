@@ -15,7 +15,7 @@ use axum::{
 use futures_util::future::join_all;
 use moka::sync::Cache;
 use serde::Deserialize;
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     adapters::inbound::http::{
@@ -73,7 +73,7 @@ pub struct WorkItemImageQuery {
     pub image_url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MoveWorkItemBody {
     pub organization: String,
@@ -294,7 +294,25 @@ async fn get_image(
     Ok(response)
 }
 
-async fn move_work_item(
+/// Move a work item
+///
+/// Moves an accessible work item to a named board column. Optional iteration
+/// and team values disambiguate the target board.
+#[utoipa::path(
+    post,
+    path = "/work-items/move",
+    operation_id = "moveWorkItem",
+    tag = "Work items",
+    request_body = MoveWorkItemBody,
+    responses(
+        (status = 204, description = "Work item moved"),
+        (status = 400, description = "Invalid move request", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 403, description = "Project access denied", body = ErrorResponse),
+        (status = 500, description = "Work item could not be moved", body = ErrorResponse)
+    )
+)]
+pub async fn move_work_item(
     user: AuthUser,
     State(app_state): State<AppState>,
     Json(body): Json<MoveWorkItemBody>,

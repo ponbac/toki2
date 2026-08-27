@@ -12,6 +12,7 @@ use crate::{
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use time::OffsetDateTime;
+use utoipa::ToSchema;
 
 use super::normalize_user_note;
 
@@ -59,16 +60,38 @@ pub async fn get_timer(
 // Start Timer
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StartTimerPayload {
     user_note: Option<String>,
+    /// Project ID. Provide together with `projectName`; omit both for no project.
     project_id: Option<String>,
+    /// Project name. Provide together with `projectId`; omit both for no project.
     project_name: Option<String>,
+    /// Activity ID. Provide together with `activityName`; omit both for no activity.
     activity_id: Option<String>,
+    /// Activity name. Provide together with `activityId`; omit both for no activity.
     activity_name: Option<String>,
 }
 
+/// Start a timer
+///
+/// Starts a timer for the authenticated user. Project and activity selections
+/// are optional; each selection requires both its ID and name.
+#[utoipa::path(
+    post,
+    path = "/time-tracking/timer",
+    operation_id = "startActiveTimer",
+    tag = "Time tracking",
+    request_body = StartTimerPayload,
+    responses(
+        (status = 200, description = "Timer started"),
+        (status = 400, description = "Invalid timer details", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 409, description = "A timer is already running", body = ErrorResponse),
+        (status = 500, description = "Timer could not be started", body = ErrorResponse)
+    )
+)]
 pub async fn start_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
@@ -102,6 +125,21 @@ pub async fn start_timer(
 // Stop Timer
 // ============================================================================
 
+/// Stop the active timer
+///
+/// Stops the authenticated user's timer without creating a time entry.
+#[utoipa::path(
+    delete,
+    path = "/time-tracking/timer",
+    operation_id = "stopActiveTimer",
+    tag = "Time tracking",
+    responses(
+        (status = 200, description = "Timer stopped"),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "No active timer found", body = ErrorResponse),
+        (status = 500, description = "Timer could not be stopped", body = ErrorResponse)
+    )
+)]
 pub async fn stop_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
@@ -121,23 +159,46 @@ pub async fn stop_timer(
 // Save Timer (pushes to provider via service layer)
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveTimerPayload {
     user_note: Option<String>,
     restart_timer: Option<RestartTimerPayload>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RestartTimerPayload {
     user_note: String,
+    /// Project ID. Provide together with `projectName`; omit both for no project.
     project_id: Option<String>,
+    /// Project name. Provide together with `projectId`; omit both for no project.
     project_name: Option<String>,
+    /// Activity ID. Provide together with `activityName`; omit both for no activity.
     activity_id: Option<String>,
+    /// Activity name. Provide together with `activityId`; omit both for no activity.
     activity_name: Option<String>,
 }
 
+/// Save the active timer
+///
+/// Creates a time entry from the authenticated user's active timer and can
+/// optionally start a replacement timer.
+#[utoipa::path(
+    put,
+    path = "/time-tracking/timer",
+    operation_id = "saveActiveTimer",
+    tag = "Time tracking",
+    request_body = SaveTimerPayload,
+    responses(
+        (status = 200, description = "Timer saved", body = SaveTimerResponse),
+        (status = 400, description = "Invalid timer details", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "No active timer found", body = ErrorResponse),
+        (status = 409, description = "The time entry conflicts with provider state", body = ErrorResponse),
+        (status = 500, description = "Timer could not be saved", body = ErrorResponse)
+    )
+)]
 pub async fn save_timer(
     user: AuthUser,
     State(app_state): State<AppState>,
@@ -184,7 +245,7 @@ pub async fn save_timer(
 // Edit Timer
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EditTimerPayload {
     user_note: Option<String>,
@@ -192,9 +253,28 @@ pub struct EditTimerPayload {
     project_name: Option<String>,
     activity_id: Option<String>,
     activity_name: Option<String>,
+    /// RFC 3339 timestamp for the adjusted timer start.
+    #[schema(value_type = Option<String>, format = "date-time")]
     start_time: Option<String>,
 }
 
+/// Update the active timer
+///
+/// Updates the supplied fields on the authenticated user's active timer.
+#[utoipa::path(
+    put,
+    path = "/time-tracking/update-timer",
+    operation_id = "updateActiveTimer",
+    tag = "Time tracking",
+    request_body = EditTimerPayload,
+    responses(
+        (status = 200, description = "Timer updated"),
+        (status = 400, description = "Invalid timer details", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "No active timer found", body = ErrorResponse),
+        (status = 500, description = "Timer could not be updated", body = ErrorResponse)
+    )
+)]
 pub async fn edit_timer(
     user: AuthUser,
     State(app_state): State<AppState>,

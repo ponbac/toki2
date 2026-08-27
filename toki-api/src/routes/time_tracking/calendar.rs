@@ -4,7 +4,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     adapters::inbound::http::{
@@ -161,7 +161,7 @@ pub async fn get_time_entry_day_statuses(
 // Time Entry Mutations (Create, Edit, Delete)
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EditProjectRegistrationPayload {
     project_registration_id: String,
@@ -169,11 +169,33 @@ pub struct EditProjectRegistrationPayload {
     project_name: String,
     activity_id: String,
     activity_name: String,
+    /// RFC 3339 interval start.
+    #[schema(value_type = String, format = "date-time")]
     start_time: String,
+    /// RFC 3339 interval end.
+    #[schema(value_type = String, format = "date-time")]
     end_time: String,
     user_note: String,
 }
 
+/// Update a time entry
+///
+/// Updates an existing time entry owned by the authenticated user.
+#[utoipa::path(
+    put,
+    path = "/time-tracking/time-entries",
+    operation_id = "updateTimeEntry",
+    tag = "Time tracking",
+    request_body = EditProjectRegistrationPayload,
+    responses(
+        (status = 200, description = "Time entry updated", body = TimeEntryResponse),
+        (status = 400, description = "Invalid time entry", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "Time entry not found", body = ErrorResponse),
+        (status = 409, description = "The time entry conflicts with provider state", body = ErrorResponse),
+        (status = 500, description = "Time entry could not be updated", body = ErrorResponse)
+    )
+)]
 pub async fn edit_project_registration(
     user: AuthUser,
     State(app_state): State<AppState>,
@@ -201,12 +223,29 @@ pub async fn edit_project_registration(
     Ok(Json(entry.into()))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteProjectRegistrationPayload {
     project_registration_id: String,
 }
 
+/// Delete a time entry
+///
+/// Deletes an existing time entry owned by the authenticated user.
+#[utoipa::path(
+    delete,
+    path = "/time-tracking/time-entries",
+    operation_id = "deleteTimeEntry",
+    tag = "Time tracking",
+    request_body = DeleteProjectRegistrationPayload,
+    responses(
+        (status = 200, description = "Time entry deleted"),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "Time entry not found", body = ErrorResponse),
+        (status = 409, description = "The time entry conflicts with provider state", body = ErrorResponse),
+        (status = 500, description = "Time entry could not be deleted", body = ErrorResponse)
+    )
+)]
 pub async fn delete_project_registration(
     user: AuthUser,
     State(app_state): State<AppState>,
@@ -225,18 +264,40 @@ pub async fn delete_project_registration(
     Ok(StatusCode::OK)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateProjectRegistrationPayload {
     project_id: String,
     project_name: String,
     activity_id: String,
     activity_name: String,
+    /// RFC 3339 interval start.
+    #[schema(value_type = String, format = "date-time")]
     start_time: String,
+    /// RFC 3339 interval end.
+    #[schema(value_type = String, format = "date-time")]
     end_time: String,
     user_note: String,
 }
 
+/// Create a time entry
+///
+/// Creates a time entry for the authenticated user without using the active
+/// timer.
+#[utoipa::path(
+    post,
+    path = "/time-tracking/time-entries",
+    operation_id = "createTimeEntry",
+    tag = "Time tracking",
+    request_body = CreateProjectRegistrationPayload,
+    responses(
+        (status = 201, description = "Time entry created", body = TimeEntryResponse),
+        (status = 400, description = "Invalid time entry", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 409, description = "The time entry conflicts with provider state", body = ErrorResponse),
+        (status = 500, description = "Time entry could not be created", body = ErrorResponse)
+    )
+)]
 pub async fn create_project_registration(
     user: AuthUser,
     State(app_state): State<AppState>,
