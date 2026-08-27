@@ -169,7 +169,11 @@ pub struct EditProjectRegistrationPayload {
     project_name: String,
     activity_id: String,
     activity_name: String,
+    /// RFC 3339 interval start.
+    #[schema(value_type = String, format = "date-time")]
     start_time: String,
+    /// RFC 3339 interval end.
+    #[schema(value_type = String, format = "date-time")]
     end_time: String,
     user_note: String,
 }
@@ -267,7 +271,11 @@ pub struct CreateProjectRegistrationPayload {
     project_name: String,
     activity_id: String,
     activity_name: String,
+    /// RFC 3339 interval start.
+    #[schema(value_type = String, format = "date-time")]
     start_time: String,
+    /// RFC 3339 interval end.
+    #[schema(value_type = String, format = "date-time")]
     end_time: String,
     user_note: String,
 }

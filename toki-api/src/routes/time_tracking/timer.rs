@@ -64,16 +64,20 @@ pub async fn get_timer(
 #[serde(rename_all = "camelCase")]
 pub struct StartTimerPayload {
     user_note: Option<String>,
+    /// Project ID. Provide together with `projectName`; omit both for no project.
     project_id: Option<String>,
+    /// Project name. Provide together with `projectId`; omit both for no project.
     project_name: Option<String>,
+    /// Activity ID. Provide together with `activityName`; omit both for no activity.
     activity_id: Option<String>,
+    /// Activity name. Provide together with `activityId`; omit both for no activity.
     activity_name: Option<String>,
 }
 
 /// Start a timer
 ///
 /// Starts a timer for the authenticated user. Project and activity selections
-/// are optional.
+/// are optional; each selection requires both its ID and name.
 #[utoipa::path(
     post,
     path = "/time-tracking/timer",
@@ -166,9 +170,13 @@ pub struct SaveTimerPayload {
 #[serde(rename_all = "camelCase")]
 pub struct RestartTimerPayload {
     user_note: String,
+    /// Project ID. Provide together with `projectName`; omit both for no project.
     project_id: Option<String>,
+    /// Project name. Provide together with `projectId`; omit both for no project.
     project_name: Option<String>,
+    /// Activity ID. Provide together with `activityName`; omit both for no activity.
     activity_id: Option<String>,
+    /// Activity name. Provide together with `activityId`; omit both for no activity.
     activity_name: Option<String>,
 }
 
@@ -245,6 +253,8 @@ pub struct EditTimerPayload {
     project_name: Option<String>,
     activity_id: Option<String>,
     activity_name: Option<String>,
+    /// RFC 3339 timestamp for the adjusted timer start.
+    #[schema(value_type = Option<String>, format = "date-time")]
     start_time: Option<String>,
 }
 

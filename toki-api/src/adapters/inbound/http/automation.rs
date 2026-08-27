@@ -276,6 +276,43 @@ mod tests {
     }
 
     #[test]
+    fn mutation_schemas_describe_pairing_and_timestamp_formats() {
+        let spec = spec();
+        let schemas = &spec["components"]["schemas"];
+
+        for schema_name in ["StartTimerPayload", "RestartTimerPayload"] {
+            let properties = &schemas[schema_name]["properties"];
+            for (field, paired_field) in [
+                ("projectId", "projectName"),
+                ("projectName", "projectId"),
+                ("activityId", "activityName"),
+                ("activityName", "activityId"),
+            ] {
+                let description = properties[field]["description"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{schema_name}.{field} is missing a description"));
+                assert!(
+                    description.contains(paired_field),
+                    "{schema_name}.{field} must document its dependency on {paired_field}"
+                );
+            }
+        }
+
+        for (schema_name, field) in [
+            ("EditTimerPayload", "startTime"),
+            ("EditProjectRegistrationPayload", "startTime"),
+            ("EditProjectRegistrationPayload", "endTime"),
+            ("CreateProjectRegistrationPayload", "startTime"),
+            ("CreateProjectRegistrationPayload", "endTime"),
+        ] {
+            assert_eq!(
+                schemas[schema_name]["properties"][field]["format"], "date-time",
+                "{schema_name}.{field} must use the OpenAPI date-time format"
+            );
+        }
+    }
+
+    #[test]
     fn document_preserves_closed_enum_values() {
         let spec = spec();
         let schemas = &spec["components"]["schemas"];
