@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
@@ -10,11 +11,15 @@ BarWidget {
   readonly property color tokiOrange: "#f9a91f"
 
   property var timer: null
+  property var week: null
+  property var recents: []
   property string appUrl: ""
   property string status: "loading"
   property date now: new Date()
+  property bool busy: actionProc.running || listProc.running
 
   readonly property bool running: root.status === "ok" && root.timer && root.elapsedText !== ""
+  readonly property bool ready: root.status !== "loading"
   readonly property string helperPath: {
     var url = Qt.resolvedUrl("toki_timer_status.py").toString()
     return url.replace(/^file:\/\//, "")
@@ -29,44 +34,18 @@ BarWidget {
     if (!root.running) return ""
     return root.elapsedText
   }
-  readonly property string tooltip: {
-    if (root.status !== "ok") return root.statusMessage(root.status)
-    if (!root.timer) return ""
-    var parts = []
-    if (root.projectName) parts.push(root.displayText(root.projectName, 80))
-    if (root.activityName) parts.push(root.displayText(root.activityName, 80))
-    if (root.note) parts.push(root.displayText(root.note, 120))
-    parts.push(root.elapsedText)
-    return parts.join(" · ")
-  }
-  readonly property color wellColor: {
-    var fg = root.bar ? root.bar.barForeground : Color.foreground
-    return Util.alpha(fg, 0.10)
-  }
-
-  function truncate(value, limit) {
-    if (value.length <= limit) return value
-    return value.slice(0, limit - 1) + "…"
-  }
-
-  function displayText(value, limit) {
-    var plain = String(value)
-      .replace(/[\x00-\x1f\x7f-\x9f]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .replace(/&/g, "＆")
-      .replace(/</g, "‹")
-      .replace(/>/g, "›")
-    return root.truncate(plain, limit)
-  }
-
-  function statusMessage(value) {
-    if (value === "unconfigured") return "Toki credentials are not configured"
-    if (value === "insecure_credentials") return "Toki credentials must have mode 600"
-    if (value === "invalid_api_url") return "Toki API URL must use HTTPS (or loopback HTTP)"
-    if (value === "unauthorized") return "Toki credentials were rejected"
-    return "Could not refresh Toki timer status"
-  }
+  readonly property color markColor: root.running
+    ? root.tokiOrange
+    : (root.bar ? root.bar.barForeground : Color.foreground)
+  readonly property bool peekIdle: root.status === "ok" && !root.running && (
+    root.opened
+    || (root.bar && root.bar.centerSectionRevealHeld === true && root.bar.centerHoverRevealSuppressed !== true)
+  )
+  readonly property bool shown: root.status !== "ok" || root.running || root.peekIdle
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+  readonly property real openPanelIndicatorWidth: mark.visible ? Math.max(Style.space(10), mark.width) : 0
+  readonly property real openPanelIndicatorHeight: Math.max(Style.space(10), Math.round(Style.bar.iconSlot * 0.55))
+  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
   function formatElapsed(timer, now) {
     if (!timer || !timer.startTime) return ""
@@ -81,8 +60,16 @@ BarWidget {
     return minutes + ":" + pad(seconds)
   }
 
+  function statusMessage(value) {
+    if (value === "unconfigured") return "Toki credentials are not configured"
+    if (value === "insecure_credentials") return "Toki credentials must have mode 600"
+    if (value === "invalid_api_url") return "Toki API URL must use HTTPS (or loopback HTTP)"
+    if (value === "unauthorized") return "Toki credentials were rejected"
+    return "Could not refresh Toki"
+  }
+
   function refresh() {
-    if (!statusProc.running) statusProc.running = true
+    if (!statusProc.running && !actionProc.running) statusProc.running = true
   }
 
   function openToki() {
@@ -90,44 +77,29 @@ BarWidget {
     root.bar.run("xdg-open " + Util.shellQuote(root.appUrl))
   }
 
-  visible: root.label !== ""
-  implicitWidth: {
-    if (!visible) return 0
-    if (root.vertical) return barSize
-    if (root.running) return pill.implicitWidth + Style.space(8)
-    return button.implicitWidth
-  }
-  implicitHeight: {
-    if (!visible) return 0
-    if (root.vertical && root.running) return pill.implicitHeight + Style.space(8)
-    return barSize
+  function open() {
+    if (panelLoader.item) panelLoader.item.open()
   }
 
-  Component.onCompleted: refresh()
+  function close() {
+    if (panelLoader.item) panelLoader.item.close()
+  }
 
-  Process {
-    id: statusProc
-    command: ["python3", root.helperPath]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var payload
-        try {
-          payload = JSON.parse(text || "{}")
-        } catch (e) {
-          root.applyPayload({"status": "error"})
-          return
-        }
-        root.applyPayload(payload)
-      }
-    }
-    onRunningChanged: {
-      if (running) {
-        stallTimer.restart()
-        return
-      }
-      stallTimer.stop()
-    }
+  function togglePanel() {
+    if (panelLoader.item) panelLoader.item.toggle()
+  }
+
+  function closeForPopoutSwitch() {
+    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
+  }
+
+  function injectPanel() {
+    var target = panelLoader.item
+    if (!target) return
+    if ("bar" in target) target.bar = root.bar
+    if ("settings" in target) target.settings = root.settings
+    if ("anchorItem" in target) target.anchorItem = button
+    if ("hostWidget" in target) target.hostWidget = root
   }
 
   function applyPayload(payload) {
@@ -141,19 +113,137 @@ BarWidget {
     root.status = nextStatus
     if (nextStatus !== "ok") {
       root.timer = null
+      root.week = null
+      root.recents = []
       root.appUrl = ""
       if (statusChanged) console.warn(root.statusMessage(nextStatus))
       return
     }
 
     root.timer = payload.timer || null
+    root.week = payload.week || null
+    root.recents = payload.recents || []
     root.appUrl = payload.appUrl ? String(payload.appUrl) : ""
     root.now = new Date()
   }
 
+  function startProcess(proc, args) {
+    if (proc.running) return false
+    proc.command = ["python3", root.helperPath].concat(args)
+    proc.running = true
+    return true
+  }
+
+  function runAction(action, fields) {
+    var args = ["--action", action]
+    if (fields) args.push("--payload", JSON.stringify(fields))
+    startProcess(actionProc, args)
+  }
+
+  function runList(kind, projectId) {
+    var args = ["--action", kind]
+    if (kind === "activities" && projectId) args.push("--project-id", projectId)
+    startProcess(listProc, args)
+  }
+
+  visible: root.ready && root.shown
+  implicitWidth: {
+    if (!visible) return 0
+    if (root.vertical) return barSize
+    if (root.status === "ok") {
+      if (root.running) return mark.implicitWidth + Style.space(8)
+      return Style.bar.statusSlot
+    }
+    return button.implicitWidth
+  }
+  implicitHeight: {
+    if (!visible) return 0
+    if (root.vertical && root.status === "ok") {
+      if (root.running) return mark.implicitHeight + Style.space(8)
+      return Style.bar.statusSlot
+    }
+    return barSize
+  }
+
+  Component.onCompleted: refresh()
+  onBarChanged: injectPanel()
+  onSettingsChanged: injectPanel()
+
+  Loader {
+    id: panelLoader
+    active: true
+    source: Qt.resolvedUrl("Panel.qml")
+    visible: false
+    onLoaded: {
+      root.injectPanel()
+      Qt.callLater(root.injectPanel)
+    }
+  }
+
+  IpcHandler {
+    target: "ponbac.toki"
+
+    function refresh(): void { root.broadcast("refresh") }
+    function open(): void { root.open() }
+    function close(): void { root.close() }
+    function show(): void { root.open() }
+    function hide(): void { root.close() }
+    function toggle(): void { root.togglePanel() }
+  }
+
+  Process {
+    id: statusProc
+    command: ["python3", root.helperPath]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          root.applyPayload(JSON.parse(text || "{}"))
+        } catch (e) {
+          root.applyPayload({"status": "error"})
+        }
+      }
+    }
+    onRunningChanged: {
+      if (running) stallTimer.restart()
+      else stallTimer.stop()
+    }
+  }
+
+  Process {
+    id: actionProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          root.applyPayload(JSON.parse(text || "{}"))
+        } catch (e) {
+          root.applyPayload({"status": "error"})
+        }
+      }
+    }
+  }
+
+  Process {
+    id: listProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var payload
+        try {
+          payload = JSON.parse(text || "{}")
+        } catch (e) {
+          return
+        }
+        if (panelLoader.item && panelLoader.item.applyListPayload)
+          panelLoader.item.applyListPayload(payload)
+      }
+    }
+  }
+
   Timer {
     id: stallTimer
-    interval: 8000
+    interval: 15000
     onTriggered: {
       statusProc.running = false
       root.applyPayload({"status": "error"})
@@ -174,50 +264,36 @@ BarWidget {
     onTriggered: root.now = new Date()
   }
 
-  Rectangle {
-    id: pill
-    visible: root.running
+  Item {
+    id: mark
+    visible: root.status === "ok"
     anchors.centerIn: parent
-    implicitWidth: root.vertical
-      ? Math.max(Style.space(18), content.implicitWidth + Style.space(12))
-      : content.implicitWidth + Style.space(19)
-    implicitHeight: root.vertical
-      ? content.implicitHeight + Style.space(12)
-      : Style.space(20)
+    implicitWidth: content.implicitWidth
+    implicitHeight: content.implicitHeight
     width: implicitWidth
     height: implicitHeight
-    radius: height / 2
-    color: root.wellColor
 
     Grid {
       id: content
       anchors.centerIn: parent
-      rows: root.vertical ? 2 : 1
-      columns: root.vertical ? 1 : 2
+      rows: root.vertical && root.running ? 2 : 1
+      columns: (!root.vertical && root.running) ? 2 : 1
       flow: root.vertical ? Grid.TopToBottom : Grid.LeftToRight
       horizontalItemAlignment: Grid.AlignHCenter
       verticalItemAlignment: Grid.AlignVCenter
-      columnSpacing: Style.space(7)
+      columnSpacing: Style.space(6)
       rowSpacing: Style.space(4)
 
-      Item {
-        width: Style.space(6)
-        height: Style.space(6)
-
-        Image {
-          anchors.centerIn: parent
-          width: Style.space(22)
-          height: Style.space(22)
-          source: Qt.resolvedUrl("ember.png")
-          sourceSize: Qt.size(88, 88)
-          fillMode: Image.PreserveAspectFit
-          smooth: true
-          mipmap: true
-          asynchronous: false
-        }
+      TimerMark {
+        width: Style.bar.iconCanvas
+        height: Style.bar.iconCanvas
+        color: root.markColor
+        fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+        opacity: root.running ? 1 : 0.45
       }
 
       Text {
+        visible: root.running
         text: root.elapsedText
         color: root.tokiOrange
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
@@ -235,11 +311,14 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.label
-    labelVisible: !root.running
-    keepSpace: root.running
+    labelVisible: root.status !== "ok"
+    keepSpace: root.status === "ok"
     fontSize: Style.font.caption
     horizontalMargin: 6
-    tooltipText: root.tooltip
-    onPressed: function() { root.openToki() }
+    tooltipText: root.opened ? "" : (root.status === "ok" ? (root.running ? "" : "Toki") : root.statusMessage(root.status))
+    onPressed: function(b) {
+      if (b === Qt.RightButton) root.openToki()
+      else root.togglePanel()
+    }
   }
 }

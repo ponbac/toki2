@@ -2,16 +2,16 @@
   "schemaVersion": 1,
   "id": "ponbac.toki",
   "name": "Toki timer",
-  "version": "1.0.0",
-  "author": "ponbac",
-  "description": "Shows the active Toki timer when one is running",
+    "version": "1.1.0",
+    "author": "ponbac",
+    "description": "Active Toki timer with a session popup to start and save time",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Toki timer",
-    "description": "Active Toki timer",
+    "description": "Toki timer and session popup",
     "category": "Time",
     "allowMultiple": false,
     "defaultSection": "center"
