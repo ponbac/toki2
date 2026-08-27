@@ -8,7 +8,13 @@ checkout:
 ```bash
 plugin_dir="$HOME/.config/omarchy/plugins/ponbac.toki"
 install -d -m 700 "$plugin_dir"
-install -m 644 omarchy-plugin/manifest.json omarchy-plugin/BarWidget.qml omarchy-plugin/ember.png "$plugin_dir/"
+install -m 644 \
+  omarchy-plugin/manifest.json \
+  omarchy-plugin/BarWidget.qml \
+  omarchy-plugin/Panel.qml \
+  omarchy-plugin/Model.js \
+  omarchy-plugin/TimerMark.qml \
+  "$plugin_dir/"
 install -m 644 omarchy-plugin/toki_timer_status.py "$plugin_dir/"
 omarchy-shell shell rescanPlugins
 omarchy plugin enable ponbac.toki
@@ -22,6 +28,12 @@ owner:
 chmod 600 ~/.config/toki/credentials
 ```
 
-The token can only read `GET /time-tracking/timer`. The helper refuses
-group/world-readable credentials, remote plaintext HTTP APIs, oversized or
-malformed responses, and all HTTP redirects.
+Left-click the timer mark to open the session popup (week meter, start/save,
+project and activity). Right-click opens Toki in the browser. The helper
+talks to Toki with your personal API token and never follows HTTP redirects.
+Credentials must be owner-only (`600`); remote plaintext HTTP APIs are
+rejected.
+
+```bash
+python3 -m unittest discover -s omarchy-plugin/tests -v
+```

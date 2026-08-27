@@ -71,7 +71,9 @@ class TimerStatusTest(unittest.TestCase):
                 "status": "ok",
                 "timer": {
                     "startTime": "2026-08-22T08:30:00Z",
+                    "projectId": None,
                     "projectName": "Toki",
+                    "activityId": None,
                     "activityName": None,
                     "note": "Review",
                 },
@@ -124,6 +126,128 @@ class TimerStatusTest(unittest.TestCase):
         self.assertEqual(payload, {"status": "error"})
         self.assertEqual(source_authorization, ["Bearer toki_secret"])
         self.assertFalse(sink_called.is_set())
+
+    def test_week_bounds_are_monday_through_sunday(self) -> None:
+        from datetime import date
+
+        monday, sunday = timer_status.iso_week_bounds(date(2026, 8, 27))
+        self.assertEqual(monday.isoformat(), "2026-08-24")
+        self.assertEqual(sunday.isoformat(), "2026-08-30")
+        self.assertEqual(monday.weekday(), 0)
+        self.assertEqual(sunday.weekday(), 6)
+
+    def test_day_hours_include_weekend_when_registered(self) -> None:
+        from datetime import date
+
+        monday = date(2026, 8, 24)
+        days = timer_status.aggregate_day_hours(
+            [
+                {"date": "2026-08-24", "hours": 8},
+                {"date": "2026-08-29", "hours": 2.5},
+            ],
+            monday,
+            date(2026, 8, 27),
+        )
+        self.assertEqual(len(days), 7)
+        self.assertEqual(days[0]["label"], "M")
+        self.assertEqual(days[0]["hours"], 8.0)
+        self.assertFalse(days[0]["today"])
+        self.assertEqual(days[3]["label"], "T")
+        self.assertTrue(days[3]["today"])
+        self.assertEqual(days[5]["label"], "S")
+        self.assertEqual(days[5]["hours"], 2.5)
+        self.assertEqual(days[6]["hours"], 0.0)
+
+    def test_recents_are_unique_project_activity_notes(self) -> None:
+        recents = timer_status.project_recents(
+            [
+                {
+                    "projectId": "p1",
+                    "projectName": "Toki",
+                    "activityId": "a1",
+                    "activityName": "Backend",
+                    "note": "panel",
+                },
+                {
+                    "projectId": "p1",
+                    "projectName": "Toki",
+                    "activityId": "a1",
+                    "activityName": "Backend",
+                    "note": "panel",
+                },
+                {
+                    "projectId": "p2",
+                    "projectName": "Kleer",
+                    "activityId": "a2",
+                    "activityName": "Mapping",
+                    "note": None,
+                },
+            ]
+        )
+        self.assertEqual(
+            recents,
+            [
+                {
+                    "projectId": "p1",
+                    "projectName": "Toki",
+                    "activityId": "a1",
+                    "activityName": "Backend",
+                    "note": "panel",
+                },
+                {
+                    "projectId": "p2",
+                    "projectName": "Kleer",
+                    "activityId": "a2",
+                    "activityName": "Mapping",
+                    "note": "",
+                },
+            ],
+        )
+
+    def test_timer_fields_are_allowlisted_and_capped(self) -> None:
+        fields = timer_status.sanitized_timer_fields(
+            {
+                "userNote": "ok",
+                "projectId": "p1",
+                "extra": "nope",
+                "activityId": 12,
+            }
+        )
+        self.assertEqual(fields, {"userNote": "ok", "projectId": "p1"})
+        self.assertEqual(
+            timer_status.sanitized_timer_fields({"userNote": ""}),
+            {"userNote": ""},
+        )
+
+    def test_activity_list_echoes_its_project_id(self) -> None:
+        with patch.object(
+            timer_status,
+            "api_call",
+            return_value=(
+                "ok",
+                [{"activity": "a1", "activityName": "Development"}],
+            ),
+        ):
+            self.assertEqual(
+                timer_status.list_activities_payload(
+                    "https://api.example", "toki_secret", "p1"
+                ),
+                {
+                    "status": "ok",
+                    "projectId": "p1",
+                    "activities": [
+                        {"activityId": "a1", "activityName": "Development"}
+                    ],
+                },
+            )
+
+    def test_cli_keeps_credentials_path_out_of_action_flags(self) -> None:
+        parsed = timer_status.parse_cli(
+            ["/tmp/creds", "--action", "start", "--payload", "{}"]
+        )
+        self.assertEqual(parsed.credentials, "/tmp/creds")
+        self.assertEqual(parsed.action, "start")
+        self.assertEqual(parsed.payload, "{}")
 
 
 if __name__ == "__main__":
