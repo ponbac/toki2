@@ -40,11 +40,16 @@ Panel {
   readonly property color tokiOrange: hostWidget ? hostWidget.tokiOrange : "#f9a91f"
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property real liveHours: running && timer ? Model.liveHours(timer.startTime, now) : 0
+  readonly property real todayLiveHours: running && timer
+    ? Model.liveHoursSince(timer.startTime, now, Model.startOfToday(now))
+    : 0
+  readonly property real weekLiveHours: running && timer
+    ? Model.liveHoursSince(timer.startTime, now, Model.startOfIsoWeek(now))
+    : 0
   readonly property var weekDays: week && week.days ? week.days : []
-  readonly property int dayCount: Model.visibleCount(weekDays, liveHours, running)
-  readonly property real workedHours: Model.weekWorked(week, liveHours, running)
-  readonly property real remainingHours: Model.weekRemaining(week, liveHours, running)
+  readonly property int dayCount: Model.visibleCount(weekDays, todayLiveHours, running)
+  readonly property real workedHours: Model.weekWorked(week, weekLiveHours, running)
+  readonly property real remainingHours: Model.weekRemaining(week, weekLiveHours, running)
   readonly property real scheduledHours: week ? Number(week.scheduledHours || 40) : 40
   readonly property real meterRatio: scheduledHours > 0
     ? Math.min(1, Math.max(0, workedHours / scheduledHours))
@@ -118,7 +123,8 @@ Panel {
   function applyListPayload(payload) {
     if (!payload || payload.status !== "ok") return
     if (payload.projects) projects = payload.projects
-    if (payload.activities) activities = payload.activities
+    if (payload.activities && String(payload.projectId || "") === draftProjectId)
+      activities = payload.activities
   }
 
   function startPicking(kind) {
@@ -254,7 +260,7 @@ Panel {
                 anchors.right: parent.right
                 text: root.remainingHours > 0.01
                   ? Model.formatHm(root.remainingHours) + " left"
-                  : "+" + Model.formatHm(Math.abs(Model.weekFlex(root.week, root.liveHours, root.running))) + " flex"
+                  : "+" + Model.formatHm(Math.abs(Model.weekFlex(root.week, root.weekLiveHours, root.running))) + " flex"
                 color: root.remainingHours > 0.01 ? root.tokiOrange : "#8fbf6a"
                 font.family: root.contentFontFamily
                 font.pixelSize: Style.font.subtitle
@@ -296,8 +302,8 @@ Panel {
 
               Item {
                 required property var modelData
-                readonly property bool show: Model.dayVisible(modelData, root.liveHours, root.running)
-                readonly property real hours: Model.dayHours(modelData, root.liveHours, root.running)
+                readonly property bool show: Model.dayVisible(modelData, root.todayLiveHours, root.running)
+                readonly property real hours: Model.dayHours(modelData, root.todayLiveHours, root.running)
                 readonly property real savedHours: Number(modelData.hours || 0)
                 readonly property real liveSlice: Math.max(0, hours - savedHours)
                 readonly property real cellWidth: weekRow.width > 0 && root.dayCount > 0

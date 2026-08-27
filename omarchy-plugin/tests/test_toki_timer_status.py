@@ -219,6 +219,28 @@ class TimerStatusTest(unittest.TestCase):
             {"userNote": ""},
         )
 
+    def test_activity_list_echoes_its_project_id(self) -> None:
+        with patch.object(
+            timer_status,
+            "api_call",
+            return_value=(
+                "ok",
+                [{"activity": "a1", "activityName": "Development"}],
+            ),
+        ):
+            self.assertEqual(
+                timer_status.list_activities_payload(
+                    "https://api.example", "toki_secret", "p1"
+                ),
+                {
+                    "status": "ok",
+                    "projectId": "p1",
+                    "activities": [
+                        {"activityId": "a1", "activityName": "Development"}
+                    ],
+                },
+            )
+
     def test_cli_keeps_credentials_path_out_of_action_flags(self) -> None:
         parsed = timer_status.parse_cli(
             ["/tmp/creds", "--action", "start", "--payload", "{}"]

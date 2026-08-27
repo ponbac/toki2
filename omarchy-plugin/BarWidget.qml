@@ -16,7 +16,10 @@ BarWidget {
   property string appUrl: ""
   property string status: "loading"
   property date now: new Date()
-  property bool busy: actionProc.running || listProc.running
+  property int stateGeneration: 0
+  property string pendingListKind: ""
+  property string pendingListProjectId: ""
+  property bool busy: actionProc.running || listProc.running || pendingListKind !== ""
 
   readonly property bool running: root.status === "ok" && root.timer && root.elapsedText !== ""
   readonly property bool ready: root.status !== "loading"
@@ -69,7 +72,10 @@ BarWidget {
   }
 
   function refresh() {
-    if (!statusProc.running && !actionProc.running) statusProc.running = true
+    if (!statusProc.running && !actionProc.running) {
+      statusProc.generation = root.stateGeneration
+      statusProc.running = true
+    }
   }
 
   function openToki() {
@@ -135,15 +141,37 @@ BarWidget {
   }
 
   function runAction(action, fields) {
+    if (actionProc.running) return false
     var args = ["--action", action]
     if (fields) args.push("--payload", JSON.stringify(fields))
-    startProcess(actionProc, args)
+    root.stateGeneration += 1
+    actionProc.generation = root.stateGeneration
+    return startProcess(actionProc, args)
+  }
+
+  function startList(kind, projectId) {
+    var args = ["--action", kind]
+    if (kind === "activities" && projectId) args.push("--project-id", projectId)
+    return startProcess(listProc, args)
   }
 
   function runList(kind, projectId) {
-    var args = ["--action", kind]
-    if (kind === "activities" && projectId) args.push("--project-id", projectId)
-    startProcess(listProc, args)
+    var requestedProjectId = projectId ? String(projectId) : ""
+    if (listProc.running) {
+      root.pendingListKind = kind
+      root.pendingListProjectId = requestedProjectId
+      return true
+    }
+    return root.startList(kind, requestedProjectId)
+  }
+
+  function runPendingList() {
+    if (listProc.running || root.pendingListKind === "") return
+    var kind = root.pendingListKind
+    var projectId = root.pendingListProjectId
+    root.pendingListKind = ""
+    root.pendingListProjectId = ""
+    root.startList(kind, projectId)
   }
 
   visible: root.ready && root.shown
@@ -193,10 +221,12 @@ BarWidget {
 
   Process {
     id: statusProc
+    property int generation: 0
     command: ["python3", root.helperPath]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
+        if (statusProc.generation !== root.stateGeneration) return
         try {
           root.applyPayload(JSON.parse(text || "{}"))
         } catch (e) {
@@ -212,9 +242,11 @@ BarWidget {
 
   Process {
     id: actionProc
+    property int generation: 0
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
+        if (actionProc.generation !== root.stateGeneration) return
         try {
           root.applyPayload(JSON.parse(text || "{}"))
         } catch (e) {
@@ -239,14 +271,19 @@ BarWidget {
           panelLoader.item.applyListPayload(payload)
       }
     }
+    onRunningChanged: {
+      if (!running && root.pendingListKind !== "")
+        Qt.callLater(root.runPendingList)
+    }
   }
 
   Timer {
     id: stallTimer
-    interval: 15000
+    interval: 30000
     onTriggered: {
+      var current = statusProc.generation === root.stateGeneration
       statusProc.running = false
-      root.applyPayload({"status": "error"})
+      if (current) root.applyPayload({"status": "error"})
     }
   }
 

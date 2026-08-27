@@ -24,11 +24,25 @@ function formatHm(hours) {
   return (negative ? "-" : "") + pad(h) + ":" + pad(m)
 }
 
-function liveHours(startTime, now) {
+function startOfToday(now) {
+  if (!now || isNaN(now.getTime())) return new Date(NaN)
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
+function startOfIsoWeek(now) {
+  var monday = startOfToday(now)
+  if (isNaN(monday.getTime())) return monday
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+  return monday
+}
+
+function liveHoursSince(startTime, now, boundary) {
   if (!startTime) return 0
   var started = Date.parse(startTime)
-  if (isNaN(started)) return 0
-  return Math.max(0, (now.getTime() - started) / 3600000)
+  var current = now && now.getTime ? now.getTime() : NaN
+  var bounded = boundary && boundary.getTime ? boundary.getTime() : NaN
+  if (isNaN(started) || isNaN(current) || isNaN(bounded)) return 0
+  return Math.max(0, (current - Math.max(started, bounded)) / 3600000)
 }
 
 function formatElapsed(startTime, now) {

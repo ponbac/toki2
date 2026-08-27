@@ -473,7 +473,11 @@ def list_activities_payload(
     if kind != "ok":
         return {"status": kind}
     try:
-        return {"status": "ok", "activities": parse_activities(body)}
+        return {
+            "status": "ok",
+            "projectId": project_id,
+            "activities": parse_activities(body),
+        }
     except ValueError:
         return {"status": "error"}
 
