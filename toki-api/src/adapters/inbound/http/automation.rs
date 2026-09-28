@@ -15,6 +15,7 @@ const BEARER_SCHEME: &str = "bearerAuth";
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::adapters::inbound::http::ai_usage::upload_usage,
         crate::routes::pull_requests::list_pull_requests,
         crate::routes::time_tracking::connection_status,
         crate::routes::time_tracking::create_project_registration,
@@ -39,7 +40,7 @@ const BEARER_SCHEME: &str = "bearerAuth";
     ),
     info(
         title = "Toki Agent API",
-        version = "1.1.0",
+        version = "1.2.0",
         description = "Curated automation surface for Toki. Browser session, admin, and media endpoints are not included. Authenticate with a Toki personal API token via HTTP bearer; never embed a real token in this document."
     ),
     modifiers(&BearerSecurity),
@@ -130,6 +131,11 @@ mod tests {
         ("post", "/time-tracking/time-entries", "createTimeEntry"),
         ("post", "/time-tracking/timer", "startActiveTimer"),
         ("post", "/work-items/move", "moveWorkItem"),
+        (
+            "put",
+            "/ai-usage/machines/{machine_id}/usage",
+            "uploadAiUsage",
+        ),
         ("put", "/time-tracking/time-entries", "updateTimeEntry"),
         ("put", "/time-tracking/timer", "saveActiveTimer"),
         ("put", "/time-tracking/update-timer", "updateActiveTimer"),
@@ -165,7 +171,7 @@ mod tests {
             version.starts_with("3.1."),
             "expected OpenAPI 3.1.x, got {version}"
         );
-        assert_eq!(spec["info"]["version"], "1.1.0");
+        assert_eq!(spec["info"]["version"], "1.2.0");
         assert_eq!(spec["info"]["title"], "Toki Agent API");
     }
 

@@ -1,3 +1,4 @@
+pub(crate) mod ai_usage;
 mod automation;
 mod responses;
 mod time_tracking;

@@ -50,6 +50,21 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # `#[sqlx::test]` creates and drops a database per test on this disposable server.
+      DATABASE_URL: postgres://postgres:password@localhost:5432/postgres
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
