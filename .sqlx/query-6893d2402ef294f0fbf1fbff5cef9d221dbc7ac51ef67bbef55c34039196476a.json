@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ai_project_mappings WHERE project_key = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6893d2402ef294f0fbf1fbff5cef9d221dbc7ac51ef67bbef55c34039196476a"
+}

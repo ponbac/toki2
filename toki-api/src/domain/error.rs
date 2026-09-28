@@ -73,3 +73,28 @@ pub enum AiUsageError {
     #[error("ai usage storage error: {0}")]
     Storage(String),
 }
+
+/// Errors that can occur while managing AI usage project mappings.
+#[derive(Debug, Error)]
+pub enum AiProjectMappingError {
+    #[error("{0}")]
+    InvalidProjectKey(String),
+    #[error("unattributed usage cannot be mapped to a project")]
+    Unattributed,
+    #[error("the project key does not appear in your AI usage")]
+    NotInOwnUsage,
+    #[error("the project key is already mapped; ask an admin to change its mapping")]
+    AlreadyMapped,
+    #[error("only an admin signed in to Toki, not using an API token, can delete a mapping; ask an admin")]
+    AdminOnly,
+    #[error("time-tracking project {0} does not exist or is not active")]
+    UnknownProject(String),
+    #[error("no mapping exists for the project key")]
+    NotFound,
+    #[error("time tracking is not configured")]
+    NotConfigured,
+    #[error("time-tracking projects are unavailable: {0}")]
+    ProjectsUnavailable(String),
+    #[error("ai project mapping storage error: {0}")]
+    Storage(String),
+}

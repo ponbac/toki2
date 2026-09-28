@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use crate::domain::{
     models::{
         AiUsageDateRange, AiUsageIngestReceipt, AiUsagePeriod, AiUsagePeriodTotals,
-        AiUsageTimeZone, AiUsageUpload, UserId,
+        AiUsageTimeZone, AiUsageUpload, TimeTrackingCompany, UserId,
     },
     ports::{inbound::AiUsageService, outbound::AiUsageRepository},
     AiUsageError,
@@ -14,14 +14,22 @@ use crate::domain::{
 pub struct AiUsageServiceImpl<R> {
     repository: Arc<R>,
     time_zone: AiUsageTimeZone,
+    mapping_company: Option<TimeTrackingCompany>,
 }
 
 impl<R> AiUsageServiceImpl<R> {
-    /// `time_zone` defines usage days and billing months.
-    pub fn new(repository: Arc<R>, time_zone: AiUsageTimeZone) -> Self {
+    /// `time_zone` defines usage days and billing months. Only project mappings
+    /// to `mapping_company`, the configured time-tracking company, resolve; with
+    /// `None`, all usage is unassigned.
+    pub fn new(
+        repository: Arc<R>,
+        time_zone: AiUsageTimeZone,
+        mapping_company: Option<TimeTrackingCompany>,
+    ) -> Self {
         Self {
             repository,
             time_zone,
+            mapping_company,
         }
     }
 }
@@ -45,7 +53,13 @@ impl<R: AiUsageRepository> AiUsageService for AiUsageServiceImpl<R> {
         period: AiUsagePeriod,
     ) -> Result<Vec<AiUsagePeriodTotals>, AiUsageError> {
         self.repository
-            .period_totals(user_id, dates, period, &self.time_zone)
+            .period_totals(
+                user_id,
+                dates,
+                period,
+                &self.time_zone,
+                self.mapping_company.as_ref(),
+            )
             .await
     }
 }

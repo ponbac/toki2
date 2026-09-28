@@ -20,7 +20,7 @@ use crate::{
         },
         outbound::{
             azure_devops::{AzureDevOpsWorkItemAdapter, AzureDevOpsWorkItemMetadataCache},
-            kleer::{KleerAdapter, KleerMetadataCache},
+            kleer::{KleerAdapter, KleerMetadataCache, KleerProjectCatalog},
             postgres::PostgresTimerHistoryAdapter,
         },
     },
@@ -60,6 +60,14 @@ impl KleerServiceFactory {
             credentials: settings.credentials(),
             metadata_cache: Arc::new(KleerMetadataCache::new()),
         }
+    }
+
+    /// The configured company's Kleer project list, sharing this factory's
+    /// credentials and metadata cache. Fails when Kleer is not configured.
+    pub fn project_catalog(&self) -> Result<KleerProjectCatalog, String> {
+        let credentials = self.credentials.clone()?;
+        KleerProjectCatalog::new(credentials, self.metadata_cache.clone())
+            .map_err(|error| error.to_string())
     }
 
     fn credentials(&self) -> Result<KleerCredentials, TimeTrackingServiceError> {

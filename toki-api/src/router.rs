@@ -23,7 +23,8 @@ use crate::{
         outbound::{
             media::WebpAvatarProcessor,
             postgres::{
-                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresAiProjectMappingRepository, PostgresAiUsageRepository,
+                PostgresApiTokenRepository, PostgresAvatarRepository,
             },
         },
     },
@@ -33,8 +34,16 @@ use crate::{
     db::DbPool,
     domain::{
         models::AiUsageTimeZone,
-        ports::inbound::{AiUsageService, ApiTokenAuthenticator, ApiTokenService, AvatarService},
-        services::{AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl},
+        ports::{
+            inbound::{
+                AiProjectMappingService, AiUsageService, ApiTokenAuthenticator, ApiTokenService,
+                AvatarService,
+            },
+            outbound::TimeTrackingProjectCatalog,
+        },
+        services::{
+            AiProjectMappingServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
+        },
         RepoConfig,
     },
     factory::KleerServiceFactory,
@@ -56,7 +65,11 @@ pub async fn create(
         .nest("/time-tracking", routes::time_tracking::router())
         .nest("/users", routes::users::router())
         .nest("/work-items", routes::work_items::router())
-        .nest("/ai-usage", http::ai_usage::router());
+        .nest("/ai-usage", http::ai_usage::router())
+        .nest(
+            "/ai-usage/project-mappings",
+            http::ai_project_mappings::router(),
+        );
 
     let api_tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db_pool.clone()),
@@ -107,9 +120,32 @@ pub async fn create(
         "ai_usage.time_zone {:?} is not a time zone the database knows",
         ai_usage_time_zone.as_str()
     );
+    // Mappings accept any active project in the company, not only the projects
+    // the caller can book time on: mappings are team-wide and admins map keys
+    // for everyone. Time tracking may be unconfigured, as elsewhere; then no
+    // mapping can be made or resolve, and this is reported once, here.
+    let project_catalog = time_tracking_factory
+        .project_catalog()
+        .inspect_err(|error| {
+            tracing::error!(
+                "AI usage project mappings are unavailable: time tracking is not configured: {error}"
+            );
+        })
+        .ok()
+        .map(Arc::new);
+    let mapping_company = project_catalog
+        .as_ref()
+        .map(|catalog| catalog.company().clone());
+    let ai_project_mapping_service: Arc<dyn AiProjectMappingService> =
+        Arc::new(AiProjectMappingServiceImpl::new(
+            Arc::new(PostgresAiProjectMappingRepository::new(db_pool.clone())),
+            project_catalog,
+            ai_usage_time_zone.clone(),
+        ));
     let ai_usage_service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(
         ai_usage_repository,
         ai_usage_time_zone,
+        mapping_company,
     ));
 
     // Create app state
@@ -123,6 +159,7 @@ pub async fn create(
         avatar_service,
         api_token_service,
         ai_usage_service,
+        ai_project_mapping_service,
     )
     .await;
 

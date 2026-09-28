@@ -8,7 +8,7 @@ use std::fmt;
 use crate::{
     adapters::inbound::http::{ErrorResponse, TimeTrackingServiceError, WorkItemServiceError},
     app_state::AppStateError,
-    domain::{AiUsageError, AvatarError, TimeTrackingError, WorkItemError},
+    domain::{AiProjectMappingError, AiUsageError, AvatarError, TimeTrackingError, WorkItemError},
     repositories::RepositoryError,
 };
 
@@ -174,6 +174,36 @@ impl From<AiUsageError> for ApiError {
             AiUsageError::Storage(message) => {
                 tracing::error!("AI usage operation failed: {}", message);
                 Self::internal("ai usage operation failed")
+            }
+        }
+    }
+}
+
+impl From<AiProjectMappingError> for ApiError {
+    fn from(err: AiProjectMappingError) -> Self {
+        match err {
+            AiProjectMappingError::InvalidProjectKey(message) => Self::bad_request(message),
+            AiProjectMappingError::Unattributed | AiProjectMappingError::UnknownProject(_) => {
+                Self::bad_request(err.to_string())
+            }
+            AiProjectMappingError::NotInOwnUsage
+            | AiProjectMappingError::AlreadyMapped
+            | AiProjectMappingError::AdminOnly => Self::forbidden(err.to_string()),
+            AiProjectMappingError::NotFound => Self::not_found(err.to_string()),
+            // Reported once at startup; each request only says so.
+            AiProjectMappingError::NotConfigured => {
+                Self::new(StatusCode::SERVICE_UNAVAILABLE, err.to_string())
+            }
+            AiProjectMappingError::ProjectsUnavailable(message) => {
+                tracing::error!("Time-tracking projects are unavailable: {}", message);
+                Self::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "time-tracking projects are unavailable",
+                )
+            }
+            AiProjectMappingError::Storage(message) => {
+                tracing::error!("AI project mapping operation failed: {}", message);
+                Self::internal("ai project mapping operation failed")
             }
         }
     }

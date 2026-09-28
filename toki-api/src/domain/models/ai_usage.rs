@@ -12,6 +12,7 @@ use std::{collections::HashSet, fmt};
 use time::{Date, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
+use super::AiMappedProject;
 use crate::domain::AiUsageError;
 
 const SECONDS_PER_HOUR: i64 = 3_600;
@@ -464,6 +465,9 @@ pub struct AiUsagePeriodTotals {
     /// as partial rather than labelled as the whole month.
     pub dates: AiUsageDateRange,
     pub project_key: String,
+    /// The project the key is mapped to when the totals are read, so a mapping
+    /// applies retroactively. `None` is unassigned, as `unattributed` usage always is.
+    pub project: Option<AiMappedProject>,
     pub totals: AiUsageTotals,
 }
 
@@ -541,7 +545,7 @@ fn is_safe_count(count: i64) -> bool {
 /// Describes why uploaded text cannot be stored, if it cannot: it is empty when
 /// required, longer than `MAX_TEXT_CHARS`, or contains NUL, which JSON strings can
 /// carry but Postgres text cannot.
-fn text_problem(field: &str, text: &str, required: bool) -> Option<String> {
+pub(super) fn text_problem(field: &str, text: &str, required: bool) -> Option<String> {
     if required && text.is_empty() {
         Some(format!("{field} must not be empty"))
     } else if text.chars().count() > MAX_TEXT_CHARS {
