@@ -3,41 +3,24 @@ import type {
   EditTimerMutationAsync,
   StartTimerMutationAsync,
 } from "@/lib/api/mutations/time-tracking";
-import { ClipboardCopy, TimerIcon } from "lucide-react";
+import { TimerIcon } from "lucide-react";
 import { toast } from "sonner";
 
-export async function copyAndSyncTimeReport({
+export async function syncTimeReportToTimer({
   text,
   timer,
   timerQuerySuccess,
   startTimer,
   editTimer,
-  onTimerSyncError,
 }: {
   text: string;
   timer: TimerResponse | null | undefined;
   timerQuerySuccess: boolean;
   startTimer: StartTimerMutationAsync;
   editTimer: EditTimerMutationAsync;
-  onTimerSyncError?: () => void;
 }) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    toast.error("Failed to copy time report text.");
-    return;
-  }
-
-  toast.info(
-    <div className="flex flex-row items-center">
-      <ClipboardCopy className="mr-2 inline-block" size="1.25rem" />
-      <p className="text-pretty">
-        Copied <span className="font-mono">{text}</span> to clipboard
-      </p>
-    </div>,
-  );
-
   if (!timerQuerySuccess) {
+    toast.error("Timer is unavailable, could not set timer note.");
     return;
   }
 
@@ -47,7 +30,9 @@ export async function copyAndSyncTimeReport({
       toast.success(
         <div className="flex flex-row items-center">
           <TimerIcon className="mr-2 inline-block" size="1.25rem" />
-          Timer note updated
+          <p className="text-pretty">
+            Timer note set to <span className="font-mono">{text}</span>
+          </p>
         </div>,
       );
       return;
@@ -58,11 +43,13 @@ export async function copyAndSyncTimeReport({
       toast.success(
         <div className="flex flex-row items-center">
           <TimerIcon className="mr-2 inline-block" size="1.25rem" />
-          Timer started
+          <p className="text-pretty">
+            Timer started: <span className="font-mono">{text}</span>
+          </p>
         </div>,
       );
     }
   } catch {
-    onTimerSyncError?.();
+    toast.error("Failed to update timer.");
   }
 }

@@ -16,7 +16,7 @@ import {
   buildWorkItemTimeReportText,
   type TimeReportMode,
 } from "@/lib/time-report";
-import { copyAndSyncTimeReport } from "@/lib/time-report-actions";
+import { syncTimeReportToTimer } from "@/lib/time-report-actions";
 import { BoardColumn } from "./board-column";
 import { BoardFilters } from "./board-filters";
 import {
@@ -361,15 +361,12 @@ export function BoardView({
         mode,
       });
 
-      await copyAndSyncTimeReport({
+      await syncTimeReportToTimer({
         text,
         timer,
         timerQuerySuccess,
         startTimer,
         editTimer,
-        onTimerSyncError: () => {
-          console.warn("Failed to synchronize timer state from board action.");
-        },
       });
     },
     [editTimer, startTimer, timer, timerQuerySuccess],
