@@ -1,0 +1,87 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH resolved_projects AS (\n                SELECT project_key, project_id\n                FROM UNNEST($5::text[], $6::text[]) AS mapping(project_key, project_id)\n            )\n            SELECT\n                bucket.user_id,\n                bucket.provider,\n                (bucket.hour_start AT TIME ZONE $3)::date AS \"day!\",\n                MIN(bucket.project_key) AS \"project_key!\",\n                SUM(bucket.input_tokens)::int8 AS \"input_tokens!\",\n                SUM(bucket.cache_read_tokens)::int8 AS \"cache_read_tokens!\",\n                SUM(bucket.cache_write_tokens)::int8 AS \"cache_write_tokens!\",\n                SUM(bucket.output_tokens)::int8 AS \"output_tokens!\",\n                SUM(bucket.records)::int8 AS \"records!\",\n                round(COALESCE(SUM(bucket.estimated_cost_usd), 0) * 1000000000)::int8\n                    AS \"priced_cost_nanos!\",\n                SUM(bucket.unpriced_records)::int8 AS \"unpriced_records!\"\n            FROM ai_usage_buckets AS bucket\n            LEFT JOIN resolved_projects AS mapping ON mapping.project_key = bucket.project_key\n            WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)\n              AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)\n              AND ($4::int4 IS NULL OR bucket.user_id = $4)\n            GROUP BY bucket.user_id, bucket.provider, 3, mapping.project_id\n            ORDER BY bucket.user_id, bucket.provider, 3, mapping.project_id NULLS LAST\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "day!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 3,
+        "name": "project_key!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "input_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "cache_read_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "cache_write_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "output_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "records!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "priced_cost_nanos!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "unpriced_records!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date",
+        "Text",
+        "Int4",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "55e18373a07bc3c4b1850a3558f781e3b3fa5eb625e19876a842b33989adf24e"
+}

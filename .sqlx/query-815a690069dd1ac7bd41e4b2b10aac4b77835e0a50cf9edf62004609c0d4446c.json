@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_usage_coverage_log (\n                machine_id, provider, window_start, covered_until, reported_at\n            )\n            SELECT $1, provider, $2, least($3::timestamptz, now()), now()\n            FROM UNNEST($4::text[]) AS provider\n            WHERE $2::timestamptz < least($3::timestamptz, now())\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "815a690069dd1ac7bd41e4b2b10aac4b77835e0a50cf9edf62004609c0d4446c"
+}

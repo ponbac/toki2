@@ -1,5 +1,6 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
+import { AI_USAGE_QUERY_KEY } from "../ai-cache";
 import {
   parseAiMappingProjectList,
   parseAiUsageMachineList,
@@ -30,18 +31,30 @@ export type {
 
 /** Query keys of the current user's own usage; mappings change all of them. */
 export const aiUsageReportQueryKeys = {
-  all: ["ai-usage", "personal"] as const,
+  all: [...AI_USAGE_QUERY_KEY, "personal"] as const,
   report: (params: AiUsageReportParams) =>
-    ["ai-usage", "personal", "report", params] as const,
+    [...AI_USAGE_QUERY_KEY, "personal", "report", params] as const,
   sessions: (
     params: AiUsageReportParams,
     sort: AiSessionSort,
     pageSize: number,
-  ) => ["ai-usage", "personal", "sessions", params, sort, pageSize] as const,
+  ) =>
+    [
+      ...AI_USAGE_QUERY_KEY,
+      "personal",
+      "sessions",
+      params,
+      sort,
+      pageSize,
+    ] as const,
   machines: (range: AiUsageRange) =>
-    ["ai-usage", "personal", "machines", range] as const,
-  projectKeys: ["ai-usage", "personal", "project-keys"] as const,
-  mappingProjects: ["ai-usage", "project-mappings", "projects"] as const,
+    [...AI_USAGE_QUERY_KEY, "personal", "machines", range] as const,
+  projectKeys: [...AI_USAGE_QUERY_KEY, "personal", "project-keys"] as const,
+  mappingProjects: [
+    ...AI_USAGE_QUERY_KEY,
+    "project-mappings",
+    "projects",
+  ] as const,
 };
 
 /**

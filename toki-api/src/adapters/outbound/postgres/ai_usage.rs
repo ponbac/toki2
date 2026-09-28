@@ -143,6 +143,27 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         .await
         .map_err(storage_error)?;
 
+        // Logs what the upload proves for each replaced provider: its stored
+        // usage is complete from the window start until the window end or now,
+        // whichever is earlier, since later usage cannot be in the upload.
+        sqlx::query!(
+            r#"
+            INSERT INTO ai_usage_coverage_log (
+                machine_id, provider, window_start, covered_until, reported_at
+            )
+            SELECT $1, provider, $2, least($3::timestamptz, now()), now()
+            FROM UNNEST($4::text[]) AS provider
+            WHERE $2::timestamptz < least($3::timestamptz, now())
+            "#,
+            machine.id.as_uuid(),
+            window.start(),
+            window.end(),
+            &replaced as &[&str],
+        )
+        .execute(&mut transaction.executor())
+        .await
+        .map_err(storage_error)?;
+
         // Only providers covered as ok or partial are replaced: missing data is
         // not zero, so other providers' stored usage stays.
         sqlx::query!(

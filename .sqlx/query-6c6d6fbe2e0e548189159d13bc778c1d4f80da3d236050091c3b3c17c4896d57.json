@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                log.machine_id::text AS \"machine_id!\",\n                log.provider,\n                log.window_start,\n                log.covered_until\n            FROM ai_usage_coverage_log AS log\n            JOIN ai_usage_machines AS machine ON machine.id = log.machine_id\n            WHERE ($1::int4 IS NULL OR machine.user_id = $1)\n              AND log.covered_until > ($2::date::timestamp AT TIME ZONE $4)\n              AND log.window_start < ($3::date::timestamp AT TIME ZONE $4)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "machine_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "window_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "covered_until",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6c6d6fbe2e0e548189159d13bc778c1d4f80da3d236050091c3b3c17c4896d57"
+}

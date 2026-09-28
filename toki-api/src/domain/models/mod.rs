@@ -1,7 +1,9 @@
 mod absence;
+mod ai_billing;
 mod ai_project_mapping;
 mod ai_subscription;
 mod ai_usage;
+mod ai_usage_completeness;
 mod ai_usage_numeric;
 mod ai_usage_report;
 mod api_token;
@@ -13,9 +15,11 @@ mod timer;
 mod work_item;
 
 pub use absence::*;
+pub use ai_billing::*;
 pub use ai_project_mapping::*;
 pub use ai_subscription::*;
 pub use ai_usage::*;
+pub use ai_usage_completeness::*;
 pub use ai_usage_report::*;
 pub use api_token::*;
 pub use avatar::*;

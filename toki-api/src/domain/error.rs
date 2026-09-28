@@ -117,3 +117,14 @@ pub enum AiSubscriptionError {
     #[error("ai subscription storage error: {0}")]
     Storage(String),
 }
+
+/// Errors that can occur while billing AI usage.
+#[derive(Debug, Error)]
+pub enum AiBillingError {
+    #[error("user not found")]
+    UserNotFound,
+    #[error("ai billing totals exceed the supported numeric range")]
+    NumericRange,
+    #[error("ai billing storage error: {0}")]
+    Storage(String),
+}

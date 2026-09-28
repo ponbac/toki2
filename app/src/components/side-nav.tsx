@@ -5,6 +5,7 @@ import {
   FolderGit2,
   GitPullRequest,
   KanbanSquare,
+  ShieldCheck,
   TimerIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { ScrollArea } from "./ui/scroll-area";
 import { router } from "@/main";
 import { useQuery } from "@tanstack/react-query";
 import { differsQueries } from "@/lib/api/queries/differs";
+import { userQueries } from "@/lib/api/queries/user";
 import { NotificationsPopover } from "./notifications-popover/notifications-popover";
 import { ThemeSwitcher } from "./theme-switcher";
 import { AccountSettings } from "./account-settings";
@@ -50,11 +52,23 @@ const MENU_ITEMS = [
     variant: "ghost",
     to: "/ai-usage",
   },
+  {
+    title: "Admin",
+    icon: ShieldCheck,
+    variant: "ghost",
+    to: "/admin",
+    adminOnly: true,
+    matchNested: true,
+  },
 ] as const satisfies readonly {
   title: string;
   icon: LucideIcon;
   variant: "default" | "ghost";
   to: LinkDestination;
+  /** Shown only to admins. */
+  adminOnly?: boolean;
+  /** Active on nested routes too, such as the admin sections. */
+  matchNested?: boolean;
 }[];
 const BOARD_MENU_ORGANIZATION = "lerumsdjur";
 
@@ -75,9 +89,19 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
     [differs],
   );
 
+  const { data: isAdmin = false } = useQuery({
+    ...userQueries.me(),
+    select: (me) => me.roles.includes("Admin"),
+  });
+
   const menuItems = React.useMemo(
-    () => MENU_ITEMS.filter((item) => item.to !== "/board" || canSeeBoard),
-    [canSeeBoard],
+    () =>
+      MENU_ITEMS.filter(
+        (item) =>
+          (item.to !== "/board" || canSeeBoard) &&
+          (!("adminOnly" in item) || isAdmin),
+      ),
+    [canSeeBoard, isAdmin],
   );
 
   return (
@@ -136,6 +160,7 @@ function Nav({
     icon: LucideIcon;
     variant: "default" | "ghost";
     to: UsedLink;
+    matchNested?: boolean;
   }[];
 }) {
   return (
@@ -149,6 +174,7 @@ function Nav({
             link={{
               icon: link.icon,
               to: link.to,
+              matchNested: link.matchNested,
             }}
           />
         ))}
@@ -167,6 +193,7 @@ function NavLink({
   link: {
     icon: LucideIcon;
     to: UsedLink;
+    matchNested?: boolean;
   };
 }) {
   return (
@@ -178,7 +205,7 @@ function NavLink({
             "group relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-300",
             "hover:bg-primary/10",
           )}
-          activeOptions={{ exact: true, includeSearch: false }}
+          activeOptions={{ exact: !link.matchNested, includeSearch: false }}
           activeProps={{
             className: cn(
               "bg-primary/15 text-primary",
