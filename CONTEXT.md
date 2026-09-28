@@ -35,3 +35,11 @@ _Avoid_: plan type, tier
 **Plan hint**:
 A billing plan a provider reported during an hour of uploaded usage, such as Codex `plan_type`. Evidence only: a hint of a paid plan (not `free`) on a day that bills as API usage is a mismatch to review, and declared AI subscriptions stay authoritative.
 _Avoid_: detected subscription
+
+**Unassigned usage**:
+AI usage that counts for no time-tracking project: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping.
+_Avoid_: unmapped usage (it is only one of these cases)
+
+**Stale machine**:
+A machine that has not synced AI usage for more than seven days. Its usage since the last sync is missing, not zero.
+_Avoid_: inactive machine, offline machine

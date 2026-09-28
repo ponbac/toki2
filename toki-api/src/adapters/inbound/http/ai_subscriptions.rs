@@ -559,7 +559,7 @@ async fn mismatches(
 }
 
 /// Local calendar dates as `YYYY-MM-DD`.
-mod iso_date {
+pub(crate) mod iso_date {
     use serde::{de::Error, Deserialize, Deserializer, Serializer};
     use time::{format_description::BorrowedFormatItem, macros::format_description, Date};
 

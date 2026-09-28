@@ -24,7 +24,8 @@ pub trait AiProjectMappingService: Send + Sync + 'static {
 
     /// Project keys with usage but no mapping, in the actor's own usage or
     /// everyone's for an admin session, most recently used first. Unmappable
-    /// keys such as `unattributed` are listed and marked as such.
+    /// keys such as `unattributed` are listed and marked as such, and no key
+    /// is mappable while time tracking is not configured.
     async fn list_unmapped_keys(
         &self,
         actor: &AiProjectMappingActor,

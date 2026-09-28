@@ -18,6 +18,7 @@ import { Route as LayoutRepositoriesRouteImport } from "./routes/_layout/reposit
 import { Route as LayoutPrsRouteImport } from "./routes/_layout/prs/route"
 import { Route as LayoutBoardRouteImport } from "./routes/_layout/board/route"
 import { Route as LayoutTimeTrackingIndexImport } from "./routes/_layout/time-tracking/index"
+import { Route as LayoutAiUsageIndexImport } from "./routes/_layout/ai-usage/index"
 import { Route as LayoutRepositoriesAddRouteImport } from "./routes/_layout/repositories/add/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
 import { Route as LayoutRepositoriesNotificationsRepoIdRouteImport } from "./routes/_layout/repositories/notifications/$repoId/route"
@@ -62,6 +63,12 @@ const LayoutBoardRouteRoute = LayoutBoardRouteImport.update({
 const LayoutTimeTrackingIndexRoute = LayoutTimeTrackingIndexImport.update({
   id: "/time-tracking/",
   path: "/time-tracking/",
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
+
+const LayoutAiUsageIndexRoute = LayoutAiUsageIndexImport.update({
+  id: "/ai-usage/",
+  path: "/ai-usage/",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
@@ -146,6 +153,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutRepositoriesAddRouteImport
       parentRoute: typeof LayoutRepositoriesRouteImport
     }
+    "/_layout/ai-usage/": {
+      id: "/_layout/ai-usage/"
+      path: "/ai-usage"
+      fullPath: "/ai-usage"
+      preLoaderRoute: typeof LayoutAiUsageIndexImport
+      parentRoute: typeof LayoutRouteImport
+    }
     "/_layout/time-tracking/": {
       id: "/_layout/time-tracking/"
       path: "/time-tracking"
@@ -199,6 +213,7 @@ interface LayoutRouteRouteChildren {
   LayoutPrsRouteRoute: typeof LayoutPrsRouteRouteWithChildren
   LayoutRepositoriesRouteRoute: typeof LayoutRepositoriesRouteRouteWithChildren
   LayoutIndexRoute: typeof LayoutIndexRoute
+  LayoutAiUsageIndexRoute: typeof LayoutAiUsageIndexRoute
   LayoutTimeTrackingIndexRoute: typeof LayoutTimeTrackingIndexRoute
 }
 
@@ -207,6 +222,7 @@ const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutPrsRouteRoute: LayoutPrsRouteRouteWithChildren,
   LayoutRepositoriesRouteRoute: LayoutRepositoriesRouteRouteWithChildren,
   LayoutIndexRoute: LayoutIndexRoute,
+  LayoutAiUsageIndexRoute: LayoutAiUsageIndexRoute,
   LayoutTimeTrackingIndexRoute: LayoutTimeTrackingIndexRoute,
 }
 
@@ -223,6 +239,7 @@ export interface FileRoutesByFullPath {
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
+  "/ai-usage": typeof LayoutAiUsageIndexRoute
   "/time-tracking": typeof LayoutTimeTrackingIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
@@ -235,6 +252,7 @@ export interface FileRoutesByTo {
   "/": typeof LayoutIndexRoute
   "/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/repositories/add": typeof LayoutRepositoriesAddRouteRoute
+  "/ai-usage": typeof LayoutAiUsageIndexRoute
   "/time-tracking": typeof LayoutTimeTrackingIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
@@ -249,6 +267,7 @@ export interface FileRoutesById {
   "/_layout/": typeof LayoutIndexRoute
   "/_layout/prs/$prId": typeof LayoutPrsPrIdRouteRoute
   "/_layout/repositories/add": typeof LayoutRepositoriesAddRouteRoute
+  "/_layout/ai-usage/": typeof LayoutAiUsageIndexRoute
   "/_layout/time-tracking/": typeof LayoutTimeTrackingIndexRoute
   "/_layout/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
 }
@@ -264,6 +283,7 @@ export interface FileRouteTypes {
     | "/"
     | "/prs/$prId"
     | "/repositories/add"
+    | "/ai-usage"
     | "/time-tracking"
     | "/repositories/notifications/$repoId"
   fileRoutesByTo: FileRoutesByTo
@@ -275,6 +295,7 @@ export interface FileRouteTypes {
     | "/"
     | "/prs/$prId"
     | "/repositories/add"
+    | "/ai-usage"
     | "/time-tracking"
     | "/repositories/notifications/$repoId"
   id:
@@ -287,6 +308,7 @@ export interface FileRouteTypes {
     | "/_layout/"
     | "/_layout/prs/$prId"
     | "/_layout/repositories/add"
+    | "/_layout/ai-usage/"
     | "/_layout/time-tracking/"
     | "/_layout/repositories/notifications/$repoId"
   fileRoutesById: FileRoutesById
@@ -323,6 +345,7 @@ export const routeTree = rootRoute
         "/_layout/prs",
         "/_layout/repositories",
         "/_layout/",
+        "/_layout/ai-usage/",
         "/_layout/time-tracking/"
       ]
     },
@@ -359,6 +382,10 @@ export const routeTree = rootRoute
     "/_layout/repositories/add": {
       "filePath": "_layout/repositories/add/route.tsx",
       "parent": "/_layout/repositories"
+    },
+    "/_layout/ai-usage/": {
+      "filePath": "_layout/ai-usage/index.tsx",
+      "parent": "/_layout"
     },
     "/_layout/time-tracking/": {
       "filePath": "_layout/time-tracking/index.tsx",

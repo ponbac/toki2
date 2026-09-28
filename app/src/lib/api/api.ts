@@ -15,8 +15,7 @@ const defaultApiUrl = import.meta.env.DEV
   ? "http://localhost:8180"
   : productionDefaultApiUrl();
 
-export const API_URL =
-  import.meta.env.VITE_API_URL?.trim() || defaultApiUrl;
+export const API_URL = import.meta.env.VITE_API_URL?.trim() || defaultApiUrl;
 
 export const api = ky.create({
   prefixUrl: API_URL,

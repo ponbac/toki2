@@ -24,7 +24,8 @@ use crate::{
             media::WebpAvatarProcessor,
             postgres::{
                 PostgresAiProjectMappingRepository, PostgresAiSubscriptionRepository,
-                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresAiUsageReportRepository, PostgresAiUsageRepository,
+                PostgresApiTokenRepository, PostgresAvatarRepository,
             },
         },
     },
@@ -36,14 +37,14 @@ use crate::{
         models::AiUsageTimeZone,
         ports::{
             inbound::{
-                AiProjectMappingService, AiSubscriptionService, AiUsageService,
-                ApiTokenAuthenticator, ApiTokenService, AvatarService,
+                AiProjectMappingService, AiSubscriptionService, AiUsageReportService,
+                AiUsageService, ApiTokenAuthenticator, ApiTokenService, AvatarService,
             },
             outbound::TimeTrackingProjectCatalog,
         },
         services::{
-            AiProjectMappingServiceImpl, AiSubscriptionServiceImpl, AiUsageServiceImpl,
-            ApiTokenServiceImpl, AvatarServiceImpl,
+            AiProjectMappingServiceImpl, AiSubscriptionServiceImpl, AiUsageReportServiceImpl,
+            AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
         },
         RepoConfig,
     },
@@ -68,7 +69,9 @@ pub async fn create(
         .nest("/work-items", routes::work_items::router())
         .nest(
             "/ai-usage",
-            http::ai_usage::router().merge(http::ai_subscriptions::router()),
+            http::ai_usage::router()
+                .merge(http::ai_usage_reports::router())
+                .merge(http::ai_subscriptions::router()),
         )
         .nest(
             "/ai-usage/project-mappings",
@@ -149,8 +152,15 @@ pub async fn create(
     let ai_usage_service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(
         ai_usage_repository,
         ai_usage_time_zone.clone(),
-        mapping_company,
+        mapping_company.clone(),
     ));
+    // Personal usage reads: always the caller's own usage, admins included.
+    let ai_usage_report_service: Arc<dyn AiUsageReportService> =
+        Arc::new(AiUsageReportServiceImpl::new(
+            Arc::new(PostgresAiUsageReportRepository::new(db_pool.clone())),
+            ai_usage_time_zone.clone(),
+            mapping_company,
+        ));
     let ai_subscription_service: Arc<dyn AiSubscriptionService> =
         Arc::new(AiSubscriptionServiceImpl::new(
             Arc::new(PostgresAiSubscriptionRepository::new(db_pool.clone())),
@@ -168,6 +178,7 @@ pub async fn create(
         avatar_service,
         api_token_service,
         ai_usage_service,
+        ai_usage_report_service,
         ai_project_mapping_service,
         ai_subscription_service,
     )

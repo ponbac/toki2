@@ -1,6 +1,7 @@
 mod ai_project_mapping;
 mod ai_subscriptions;
 mod ai_usage;
+mod ai_usage_report;
 mod api_tokens;
 mod avatar;
 mod avatar_processing;
@@ -13,6 +14,7 @@ mod work_item_provider;
 pub use ai_project_mapping::*;
 pub use ai_subscriptions::*;
 pub use ai_usage::*;
+pub use ai_usage_report::*;
 pub use api_tokens::*;
 pub use avatar::*;
 pub use avatar_processing::*;

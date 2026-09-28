@@ -8,9 +8,9 @@ use crate::{
     adapters::outbound::postgres::PostgresAiProjectMappingRepository,
     domain::{
         models::{
-            AiCoverageStatus, AiMachine, AiMachineId, AiPricing, AiPricingStatus, AiProjectKey,
-            AiProvider, AiProviderCoverage, AiProviderHint, AiUsageBucket, AiUsageWindow,
-            UNATTRIBUTED_PROJECT_KEY,
+            AiCoverageStatus, AiMachine, AiMachineId, AiMappedProject, AiPricing, AiPricingStatus,
+            AiProjectKey, AiProvider, AiProviderCoverage, AiProviderHint, AiUsageBucket,
+            AiUsageWindow, ProjectId, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::AiProjectMappingRepository,
     },
