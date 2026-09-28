@@ -51,6 +51,17 @@ pub enum AuthMethod {
     ApiToken,
 }
 
+impl AuthMethod {
+    /// Whether a caller authenticated this way may use the admin role it holds.
+    /// Only a browser session may: API tokens are long-lived and sit in scripts
+    /// and on laptops, so they never carry admin power, not even an admin's. A
+    /// request with both a token and an admin's session cookie authenticates as
+    /// the token, so it gets no admin power either.
+    pub fn allows_admin_power(self) -> bool {
+        self == Self::Session
+    }
+}
+
 /// The identity data that request authorization may expose to application code.
 ///
 /// Provider credentials and session internals deliberately do not belong to the

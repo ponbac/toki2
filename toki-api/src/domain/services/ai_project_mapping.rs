@@ -12,7 +12,7 @@ use crate::domain::{
         inbound::AiProjectMappingService,
         outbound::{AiProjectMappingRepository, TimeTrackingProjectCatalog},
     },
-    AiProjectMappingError, AuthMethod,
+    AiProjectMappingError,
 };
 
 pub struct AiProjectMappingServiceImpl<R, P> {
@@ -34,11 +34,12 @@ impl<R, P> AiProjectMappingServiceImpl<R, P> {
     }
 }
 
-/// Whether the actor manages every mapping. That takes an admin in a browser
-/// session: a long-lived API token, such as a sync token on a laptop, must not
-/// re-attribute the whole team's usage.
+/// Whether the actor manages every mapping. That takes admin power, which only
+/// a browser session carries (`AuthMethod::allows_admin_power`): a long-lived
+/// API token, such as a sync token on a laptop, must not re-attribute the whole
+/// team's usage.
 fn manages_every_mapping(actor: &AiProjectMappingActor) -> bool {
-    actor.is_admin && actor.authenticated_by == AuthMethod::Session
+    actor.is_admin && actor.authenticated_by.allows_admin_power()
 }
 
 fn scope(actor: &AiProjectMappingActor) -> AiUsageScope {

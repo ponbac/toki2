@@ -463,6 +463,31 @@ fn machine_ids_and_time_zones_are_parsed_strictly() {
     assert!(AiUsageTimeZone::parse("Europe/Stockholm'; --").is_none());
 }
 
+#[test]
+fn date_ranges_convert_to_and_from_inclusive_ends() {
+    use time::macros::date;
+
+    let september =
+        AiUsageDateRange::from_inclusive(date!(2026 - 09 - 01), date!(2026 - 09 - 30)).unwrap();
+    assert_eq!(
+        (september.start(), september.end(), september.last_day()),
+        (
+            date!(2026 - 09 - 01),
+            date!(2026 - 10 - 01),
+            date!(2026 - 09 - 30)
+        )
+    );
+
+    let one_day =
+        AiUsageDateRange::from_inclusive(date!(2028 - 02 - 29), date!(2028 - 02 - 29)).unwrap();
+    assert_eq!(one_day.end(), date!(2028 - 03 - 01));
+    assert_eq!(one_day.last_day(), date!(2028 - 02 - 29));
+
+    assert!(
+        AiUsageDateRange::from_inclusive(date!(2026 - 09 - 02), date!(2026 - 09 - 01)).is_none()
+    );
+}
+
 fn bucket_at(hour: u8) -> AiUsageBucket {
     let mut bucket = bucket();
     bucket.hour_start = bucket.hour_start.replace_hour(hour).unwrap();

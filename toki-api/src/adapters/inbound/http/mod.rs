@@ -1,4 +1,5 @@
 pub(crate) mod ai_project_mappings;
+pub(crate) mod ai_subscriptions;
 pub(crate) mod ai_usage;
 mod automation;
 mod responses;
