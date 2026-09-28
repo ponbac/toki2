@@ -33,7 +33,7 @@ import { PRNotificationSettings } from "../-components/pr-notification-settings"
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { buildWorkItemTimeReportText } from "@/lib/time-report";
-import { copyAndSyncTimeReport } from "@/lib/time-report-actions";
+import { syncTimeReportToTimer } from "@/lib/time-report-actions";
 
 export const Route = createFileRoute("/_layout/prs/$prId")({
   loader: ({ context }) =>
@@ -78,15 +78,12 @@ function PRDetailsDialog() {
   const handleTimeReportClick = async (mode: "review" | "develop") => {
     const text = buildTimeReportText(mode);
 
-    await copyAndSyncTimeReport({
+    await syncTimeReportToTimer({
       text,
       timer,
       timerQuerySuccess,
       startTimer,
       editTimer,
-      onTimerSyncError: () => {
-        console.warn("Found no active timer to update");
-      },
     });
   };
 
