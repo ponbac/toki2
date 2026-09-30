@@ -19,10 +19,12 @@ const SESSION_COOKIE_NAME: &str = "toki.sid";
 
 use crate::{
     adapters::{
-        inbound::http::{agent_openapi, openapi_spec_router},
+        inbound::http::{self, agent_openapi, openapi_spec_router},
         outbound::{
             media::WebpAvatarProcessor,
-            postgres::{PostgresApiTokenRepository, PostgresAvatarRepository},
+            postgres::{
+                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
+            },
         },
     },
     app_state::AppState,
@@ -30,8 +32,9 @@ use crate::{
     config::Settings,
     db::DbPool,
     domain::{
-        ports::inbound::{ApiTokenAuthenticator, ApiTokenService, AvatarService},
-        services::{ApiTokenServiceImpl, AvatarServiceImpl},
+        models::AiUsageTimeZone,
+        ports::inbound::{AiUsageService, ApiTokenAuthenticator, ApiTokenService, AvatarService},
+        services::{AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl},
         RepoConfig,
     },
     factory::KleerServiceFactory,
@@ -52,7 +55,8 @@ pub async fn create(
         .nest("/notifications", routes::notifications::router())
         .nest("/time-tracking", routes::time_tracking::router())
         .nest("/users", routes::users::router())
-        .nest("/work-items", routes::work_items::router());
+        .nest("/work-items", routes::work_items::router())
+        .nest("/ai-usage", http::ai_usage::router());
 
     let api_tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db_pool.clone()),
@@ -91,6 +95,23 @@ pub async fn create(
         config.application.api_url.clone(),
     ));
 
+    let ai_usage_repository = Arc::new(PostgresAiUsageRepository::new(db_pool.clone()));
+    let ai_usage_time_zone = AiUsageTimeZone::parse(&config.ai_usage.time_zone)
+        .expect("ai_usage.time_zone must be an IANA time zone name");
+    let time_zone_known = ai_usage_repository
+        .knows_time_zone(&ai_usage_time_zone)
+        .await
+        .expect("Failed to check ai_usage.time_zone");
+    assert!(
+        time_zone_known,
+        "ai_usage.time_zone {:?} is not a time zone the database knows",
+        ai_usage_time_zone.as_str()
+    );
+    let ai_usage_service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(
+        ai_usage_repository,
+        ai_usage_time_zone,
+    ));
+
     // Create app state
     let app_state = AppState::new(
         config.application.app_url.clone(),
@@ -101,6 +122,7 @@ pub async fn create(
         time_tracking_factory,
         avatar_service,
         api_token_service,
+        ai_usage_service,
     )
     .await;
 

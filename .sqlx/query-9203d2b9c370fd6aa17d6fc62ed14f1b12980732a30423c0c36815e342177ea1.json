@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_usage_machine_coverage\n            SET pricing_status = $3,\n                pricing_fetched_at = $4,\n                pricing_source = $5\n            WHERE machine_id = $1\n              AND provider = ANY($2::text[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Text",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9203d2b9c370fd6aa17d6fc62ed14f1b12980732a30423c0c36815e342177ea1"
+}

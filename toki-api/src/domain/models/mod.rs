@@ -1,4 +1,6 @@
 mod absence;
+mod ai_usage;
+mod ai_usage_numeric;
 mod api_token;
 mod avatar;
 mod ids;
@@ -8,6 +10,7 @@ mod timer;
 mod work_item;
 
 pub use absence::*;
+pub use ai_usage::*;
 pub use api_token::*;
 pub use avatar::*;
 pub use ids::*;

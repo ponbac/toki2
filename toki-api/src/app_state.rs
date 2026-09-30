@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use axum::{
+    extract::FromRef,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -19,7 +20,7 @@ use crate::{
     config::KleerSettings,
     db::DbPool,
     domain::{
-        ports::inbound::{ApiTokenService, AvatarService},
+        ports::inbound::{AiUsageService, ApiTokenService, AvatarService},
         CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
         RepoDifferMessage, RepoKey,
     },
@@ -63,6 +64,7 @@ pub struct AppState {
     pub time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
     pub avatar_service: Arc<dyn AvatarService>,
     pub api_token_service: Arc<dyn ApiTokenService>,
+    pub ai_usage_service: Arc<dyn AiUsageService>,
     pub work_item_factory: Arc<dyn WorkItemServiceFactory>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
@@ -77,6 +79,12 @@ impl std::fmt::Debug for AppState {
     }
 }
 
+impl FromRef<AppState> for Arc<dyn AiUsageService> {
+    fn from_ref(state: &AppState) -> Self {
+        state.ai_usage_service.clone()
+    }
+}
+
 impl AppState {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
@@ -88,6 +96,7 @@ impl AppState {
         time_tracking_factory: Arc<dyn TimeTrackingServiceFactory>,
         avatar_service: Arc<dyn AvatarService>,
         api_token_service: Arc<dyn ApiTokenService>,
+        ai_usage_service: Arc<dyn AiUsageService>,
     ) -> Self {
         let client_futures = repo_configs
             .into_iter()
@@ -167,6 +176,7 @@ impl AppState {
             time_tracking_factory,
             avatar_service,
             api_token_service,
+            ai_usage_service,
             work_item_factory,
             repo_clients,
             differ_txs: Arc::new(Mutex::new(differ_txs)),

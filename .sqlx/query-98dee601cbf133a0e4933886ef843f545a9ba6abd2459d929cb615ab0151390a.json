@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_usage_machine_coverage (\n                machine_id, provider, status, files, unreadable, malformed_lines,\n                skipped_records, duplicates, window_start, window_end\n            )\n            SELECT $1, entry.provider, entry.status, entry.files, entry.unreadable,\n                entry.malformed_lines, entry.skipped_records, entry.duplicates, $2, $3\n            FROM UNNEST(\n                $4::text[], $5::text[], $6::int8[], $7::int8[], $8::int8[], $9::int8[],\n                $10::int8[]\n            ) AS entry (\n                provider, status, files, unreadable, malformed_lines, skipped_records, duplicates\n            )\n            ON CONFLICT (machine_id, provider) DO UPDATE\n            SET status = EXCLUDED.status,\n                files = EXCLUDED.files,\n                unreadable = EXCLUDED.unreadable,\n                malformed_lines = EXCLUDED.malformed_lines,\n                skipped_records = EXCLUDED.skipped_records,\n                duplicates = EXCLUDED.duplicates,\n                window_start = EXCLUDED.window_start,\n                window_end = EXCLUDED.window_end,\n                reported_at = now()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "TextArray",
+        "TextArray",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "98dee601cbf133a0e4933886ef843f545a9ba6abd2459d929cb615ab0151390a"
+}
