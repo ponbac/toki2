@@ -13,11 +13,15 @@ run:
 
 # Check backend compiles
 check:
-    cargo check
+    SQLX_OFFLINE=true cargo check
 
-# Run cargo clippy
+# Run cargo clippy exactly as CI does (warnings are errors)
 clippy:
-    cargo clippy
+    SQLX_OFFLINE=true cargo clippy --all-targets --all-features -- -D warnings
+
+# Run backend tests as CI does
+test:
+    SQLX_OFFLINE=true cargo test --all-features
 
 # Build backend in release mode
 build:
@@ -123,8 +127,8 @@ dev-sandbox:
 check-omarchy-plugin:
     python3 -m unittest discover -s omarchy-plugin/tests -v
 
-# Verify all code compiles/passes checks
-check-all: check clippy tsc lint check-omarchy-plugin
+# Run every CI check except the security audit
+check-all: clippy test tsc lint build-app check-omarchy-plugin
 
 # Format frontend code with prettier
 fmt:

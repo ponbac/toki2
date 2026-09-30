@@ -112,16 +112,19 @@ just app        # Run frontend dev server
 ## Verifying Changes
 
 ```bash
-just check-all  # Verify everything (backend + frontend)
+just check-all  # Every CI check except the security audit: clippy with -D warnings,
+                # backend tests, frontend typecheck, lint and build, Omarchy plugin tests
 
 # Or individually:
 just check      # Backend - verify Rust compiles
+just clippy     # Backend - clippy as CI runs it
+just test       # Backend - tests as CI runs them
 just tsc        # Frontend - TypeScript check
 just lint       # Frontend - ESLint
-
-# Without a running database, use SQLX_OFFLINE=true:
-SQLX_OFFLINE=true just check
+just build-app  # Frontend - production build
 ```
+
+Backend recipes set `SQLX_OFFLINE=true`, as CI does, so they compile without a live database.
 
 ## Observability
 
