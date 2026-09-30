@@ -59,6 +59,16 @@ pub enum AiProvider {
 }
 
 impl AiProvider {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "codex" => Some(Self::Codex),
+            "claude" => Some(Self::Claude),
+            "grok" => Some(Self::Grok),
+            "copilot" => Some(Self::Copilot),
+            _ => None,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Codex => "codex",
@@ -416,7 +426,10 @@ pub enum AiUsagePeriod {
     Month,
 }
 
-/// A half-open `[start, end)` range of local calendar dates.
+/// A half-open `[start, end)` range of local calendar dates: `end` is the first
+/// day *after* the range. Subscription periods and API date parameters end
+/// inclusively instead; convert with `from_inclusive`, `last_day` and
+/// `AiSubscriptionPeriod::to_date_range`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AiUsageDateRange {
     start: Date,
@@ -426,6 +439,18 @@ pub struct AiUsageDateRange {
 impl AiUsageDateRange {
     pub fn new(start: Date, end: Date) -> Option<Self> {
         (start < end).then_some(Self { start, end })
+    }
+
+    /// The range from `first_day` through `last_day`, both inclusive, or `None`
+    /// when `last_day` is before `first_day`.
+    pub fn from_inclusive(first_day: Date, last_day: Date) -> Option<Self> {
+        Self::new(first_day, last_day.next_day()?)
+    }
+
+    /// The last day in the range, inclusive: the day before `end`.
+    pub fn last_day(&self) -> Date {
+        // `end` is after `start`, so it has a previous day.
+        self.end.previous_day().unwrap_or(self.start)
     }
 
     pub fn start(&self) -> Date {

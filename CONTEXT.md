@@ -16,6 +16,22 @@ _Avoid_: tool, endpoint (when referring to this catalog specifically)
 An opaque personal credential (`toki_...`) that authenticates a caller as a Toki user over HTTP bearer. The plaintext secret is shown once at issuance; only a hash is stored.
 _Avoid_: PAT, access token, session cookie
 
+**Admin power**:
+What an admin may do beyond their own data, such as managing everyone's AI subscriptions or project mappings. It takes an admin in a browser session: an API token never carries admin power, not even an admin's, and a request with a token and an admin's session cookie authenticates as the token.
+_Avoid_: admin mode, superuser
+
 **Active timer**:
 The single in-progress time-tracking interval for a user, if any.
 _Avoid_: running entry, current registration
+
+**AI subscription**:
+A fixed-fee plan a developer declares for one AI provider, such as Claude Max 5x, with a monthly cost in its own currency and an inclusive period of local dates. One user's subscriptions to one provider never overlap.
+_Avoid_: seat, license
+
+**Billing mode**:
+How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost.
+_Avoid_: plan type, tier
+
+**Plan hint**:
+A billing plan a provider reported during an hour of uploaded usage, such as Codex `plan_type`. Evidence only: a hint of a paid plan (not `free`) on a day that bills as API usage is a mismatch to review, and declared AI subscriptions stay authoritative.
+_Avoid_: detected subscription

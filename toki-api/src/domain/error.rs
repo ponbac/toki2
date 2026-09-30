@@ -98,3 +98,18 @@ pub enum AiProjectMappingError {
     #[error("ai project mapping storage error: {0}")]
     Storage(String),
 }
+
+/// Errors that can occur while declaring or reading AI subscriptions.
+#[derive(Debug, Error)]
+pub enum AiSubscriptionError {
+    #[error("{0}")]
+    Invalid(String),
+    #[error("subscription not found")]
+    NotFound,
+    #[error("user not found")]
+    UserNotFound,
+    #[error("the period overlaps another {} subscription of the same user", .0.as_str())]
+    Overlap(crate::domain::models::AiProvider),
+    #[error("ai subscription storage error: {0}")]
+    Storage(String),
+}

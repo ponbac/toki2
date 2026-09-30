@@ -1,4 +1,5 @@
 use axum::{
+    extract::rejection::{JsonRejection, PathRejection, QueryRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -8,7 +9,10 @@ use std::fmt;
 use crate::{
     adapters::inbound::http::{ErrorResponse, TimeTrackingServiceError, WorkItemServiceError},
     app_state::AppStateError,
-    domain::{AiProjectMappingError, AiUsageError, AvatarError, TimeTrackingError, WorkItemError},
+    domain::{
+        AiProjectMappingError, AiSubscriptionError, AiUsageError, AvatarError, TimeTrackingError,
+        WorkItemError,
+    },
     repositories::RepositoryError,
 };
 
@@ -206,5 +210,44 @@ impl From<AiProjectMappingError> for ApiError {
                 Self::internal("ai project mapping operation failed")
             }
         }
+    }
+}
+
+impl From<AiSubscriptionError> for ApiError {
+    fn from(err: AiSubscriptionError) -> Self {
+        match err {
+            AiSubscriptionError::Invalid(message) => Self::bad_request(message),
+            AiSubscriptionError::NotFound | AiSubscriptionError::UserNotFound => {
+                Self::not_found(err.to_string())
+            }
+            AiSubscriptionError::Overlap(_) => Self::conflict(err.to_string()),
+            AiSubscriptionError::Storage(message) => {
+                tracing::error!("AI subscription operation failed: {}", message);
+                Self::internal("ai subscription operation failed")
+            }
+        }
+    }
+}
+
+/// A body that is not the expected JSON, including a missing or wrong content
+/// type, is a bad request with the usual JSON error body. Use it through
+/// `WithRejection<Json<T>, ApiError>`.
+impl From<JsonRejection> for ApiError {
+    fn from(rejection: JsonRejection) -> Self {
+        Self::bad_request(format!("invalid request body: {}", rejection.body_text()))
+    }
+}
+
+/// A malformed path parameter, through `WithRejection<Path<T>, ApiError>`.
+impl From<PathRejection> for ApiError {
+    fn from(rejection: PathRejection) -> Self {
+        Self::bad_request(format!("invalid path: {}", rejection.body_text()))
+    }
+}
+
+/// A malformed query string, through `WithRejection<Query<T>, ApiError>`.
+impl From<QueryRejection> for ApiError {
+    fn from(rejection: QueryRejection) -> Self {
+        Self::bad_request(format!("invalid query: {}", rejection.body_text()))
     }
 }
