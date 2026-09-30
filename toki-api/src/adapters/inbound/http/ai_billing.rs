@@ -9,10 +9,14 @@
 //! is positive, `apiEquivalentUsd` is a known subtotal, and the rest is unknown.
 //! What a line bills (`billableAmount`) is an exact decimal string in its
 //! currency: a fee share, or an API estimate rounded to whole cents. Totals add
-//! up those amounts per currency; no amount is converted. Completeness reports
-//! days, never times of day: a machine's last sync is its local date.
+//! up those amounts per currency. Each amount is also converted to the billing
+//! currency (`billingCurrency`, SEK) at the month's exchange rate
+//! (`convertedAmount`), and converted totals add up the converted lines; see
+//! `domain::models::ai_exchange_rate`. Completeness reports days, never times
+//! of day: a machine's last sync is its local date, and a rate's fetch its
+//! local date.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     extract::{FromRef, Path, State},
@@ -22,23 +26,24 @@ use axum::{
     },
     middleware,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, put},
     Json, Router,
 };
 use axum_extra::extract::WithRejection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     adapters::inbound::http::{ai_usage::AiUsageProvider, ProjectResponse},
-    auth::require_admin_power,
+    auth::{require_admin_power, AuthUser},
     domain::{
         models::{
             AiAllocationBasis, AiBilledDayUsage, AiBillingCharge, AiBillingDeveloper,
-            AiBillingLine, AiBillingMonth, AiBillingUsage, AiDeveloperCompleteness,
-            AiDeveloperMonth, AiDeveloperReadiness, AiMachineCompleteness, AiMappedProject,
-            AiMonthBill, AiMonthCompleteness, AiMonthOverview, AiMonthTotals,
-            AiProviderCompleteness, AiSubscriptionMonth, AiUsageDateRange, AiUsdNanos, UserId,
-            MACHINE_STALE_AFTER,
+            AiBillingLine, AiBillingMonth, AiBillingUsage, AiConvertedAmount, AiConvertedBill,
+            AiConvertedTotals, AiCurrency, AiDeveloperCompleteness, AiDeveloperMonth,
+            AiDeveloperReadiness, AiExchangeRate, AiExchangeRateValue, AiFeeAmount,
+            AiMachineCompleteness, AiMappedProject, AiMonthBill, AiMonthCompleteness,
+            AiMonthTotals, AiProviderCompleteness, AiSubscriptionMonth, AiUsageDateRange, UserId,
+            BILLING_CURRENCY, MACHINE_STALE_AFTER,
         },
         ports::inbound::AiBillingService,
         AiBillingError,
@@ -48,10 +53,12 @@ use crate::{
 
 /// A path parameter whose rejection is a `400` JSON error.
 type PathParam<T> = WithRejection<Path<T>, ApiError>;
+/// A JSON body whose rejection is a `400` JSON error.
+type JsonBody<T> = WithRejection<Json<T>, ApiError>;
 
-/// How the CSV names usage without a project and fees without usage.
-const UNASSIGNED: &str = "Unassigned";
-const UNALLOCATED_OVERHEAD: &str = "Unallocated overhead";
+mod csv;
+
+pub use csv::render_csv;
 
 pub fn router<S>() -> Router<S>
 where
@@ -66,6 +73,10 @@ where
             get(developer_month),
         )
         .route("/billing/{month}/export.csv", get(export_csv))
+        .route(
+            "/billing/{month}/exchange-rates/{currency}",
+            put(override_exchange_rate).delete(reset_exchange_rate),
+        )
         .route("/developers", get(list_users))
         .route_layer(middleware::from_fn(require_admin_power))
 }
@@ -78,6 +89,7 @@ impl From<AiBillingError> for ApiError {
                 axum::http::StatusCode::UNPROCESSABLE_ENTITY,
                 err.to_string(),
             ),
+            AiBillingError::Invalid(message) => Self::bad_request(message),
             AiBillingError::Storage(message) => {
                 tracing::error!("AI billing operation failed: {}", message);
                 Self::internal("ai billing operation failed")
@@ -98,13 +110,12 @@ async fn month_overview(
 ) -> Result<Json<MonthOverviewResponse>, ApiError> {
     let month = parse_month(&month)?;
     let overview = service.month_overview(month).await?;
+    let bill = BillResponse::new(&overview.bill, &overview.converted)?;
 
     Ok(Json(MonthOverviewResponse {
         period: PeriodResponse::new(month, service.time_zone().as_str()),
         developers: overview.developers.iter().map(Into::into).collect(),
-        totals: overview.bill.totals()?.into(),
-        lines: overview.bill.lines.iter().map(Into::into).collect(),
-        subscriptions: overview.bill.subscriptions.iter().map(Into::into).collect(),
+        bill,
     }))
 }
 
@@ -118,6 +129,7 @@ async fn developer_month(
     let AiDeveloperMonth {
         developer,
         bill,
+        converted,
         usage,
         machines,
     } = service.developer_month(month, UserId::new(user_id)).await?;
@@ -125,9 +137,7 @@ async fn developer_month(
     Ok(Json(DeveloperMonthResponse {
         period: PeriodResponse::new(month, service.time_zone().as_str()),
         developer: (&developer).into(),
-        totals: bill.totals()?.into(),
-        lines: bill.lines.iter().map(Into::into).collect(),
-        subscriptions: bill.subscriptions.iter().map(Into::into).collect(),
+        bill: BillResponse::new(&bill, &converted)?,
         machines: machines
             .into_iter()
             .map(|machine| MachineLabelResponse {
@@ -176,6 +186,66 @@ async fn export_csv(
         .into_response())
 }
 
+fn parse_currency(raw: &str) -> Result<AiCurrency, ApiError> {
+    AiCurrency::parse(raw).map_err(|_| {
+        ApiError::bad_request(format!(
+            "expected a three-letter currency code, got {raw:?}"
+        ))
+    })
+}
+
+/// An admin's exchange rate for a month and currency.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ExchangeRateOverrideRequest {
+    /// Units of the billing currency per unit of the currency, as a decimal
+    /// string with at most six decimals, such as `"10.25"`.
+    rate: String,
+}
+
+/// Overrides a month's exchange rate. A fetched rate never replaces it.
+async fn override_exchange_rate(
+    State(service): State<Arc<dyn AiBillingService>>,
+    user: AuthUser,
+    WithRejection(Path((month, currency)), _): PathParam<(String, String)>,
+    WithRejection(Json(body), _): JsonBody<ExchangeRateOverrideRequest>,
+) -> Result<Json<ExchangeRateResponse>, ApiError> {
+    let month = parse_month(&month)?;
+    let currency = parse_currency(&currency)?;
+    let rate = AiExchangeRateValue::parse(body.rate.trim()).ok_or_else(|| {
+        ApiError::bad_request(format!(
+            "expected a positive rate with at most six decimals, got {:?}",
+            body.rate
+        ))
+    })?;
+    let rate = service
+        .override_exchange_rate(month, &currency, rate, &user.id)
+        .await?;
+
+    Ok(Json((&rate).into()))
+}
+
+/// What a reset leaves: the fetched rate, or null when none can be fetched.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExchangeRateResetResponse {
+    exchange_rate: Option<ExchangeRateResponse>,
+}
+
+/// Removes an override and fetches the provider's rate again.
+async fn reset_exchange_rate(
+    State(service): State<Arc<dyn AiBillingService>>,
+    WithRejection(Path((month, currency)), _): PathParam<(String, String)>,
+) -> Result<Json<ExchangeRateResetResponse>, ApiError> {
+    let month = parse_month(&month)?;
+    let currency = parse_currency(&currency)?;
+    let rate = service.reset_exchange_rate(month, &currency).await?;
+
+    Ok(Json(ExchangeRateResetResponse {
+        exchange_rate: rate.as_ref().map(Into::into),
+    }))
+}
+
 /// Every user, by name, such as to declare a subscription for.
 async fn list_users(
     State(service): State<Arc<dyn AiBillingService>>,
@@ -209,15 +279,141 @@ impl PeriodResponse {
     }
 }
 
+/// A bill in its original currencies and in the billing currency.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BillResponse {
+    /// The currency every amount is converted to, `SEK`.
+    billing_currency: &'static str,
+    lines: Vec<BillingLineResponse>,
+    subscriptions: Vec<SubscriptionMonthResponse>,
+    totals: TotalsResponse,
+    /// Every rate stored for the month, by currency: the ones the bill uses
+    /// and any other override.
+    exchange_rates: Vec<ExchangeRateResponse>,
+    /// Currencies the bill has non-zero amounts in but no rate for. Their
+    /// lines have no converted amount, and converted totals that include them
+    /// are null.
+    missing_rates: Vec<String>,
+    /// Currencies needed by the bill whose fetch is still in progress,
+    /// including provisional rates being refreshed. A later request sees the
+    /// fetched replacement once it arrives.
+    pending_rates: Vec<String>,
+}
+
+impl BillResponse {
+    fn new(bill: &AiMonthBill, converted: &AiConvertedBill) -> Result<Self, AiBillingError> {
+        Ok(Self {
+            billing_currency: BILLING_CURRENCY,
+            lines: bill
+                .lines
+                .iter()
+                .zip(&converted.lines)
+                .map(|(line, converted)| BillingLineResponse::new(line, converted))
+                .collect(),
+            subscriptions: bill
+                .subscriptions
+                .iter()
+                .zip(&converted.subscriptions)
+                .map(|(month, converted)| SubscriptionMonthResponse::new(month, converted))
+                .collect(),
+            totals: TotalsResponse::new(bill.totals()?, &converted.totals),
+            exchange_rates: converted.rates.iter().map(Into::into).collect(),
+            missing_rates: codes(&converted.missing_rates),
+            pending_rates: codes(&converted.pending_rates),
+        })
+    }
+}
+
+fn codes(currencies: &[AiCurrency]) -> Vec<String> {
+    currencies
+        .iter()
+        .map(|currency| currency.as_str().to_string())
+        .collect()
+}
+
+/// A month's exchange rate: the rate billed at, and the fetched rate and an
+/// admin's override it comes from. Dates only: never when in the day.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExchangeRateResponse {
+    /// `YYYY-MM`.
+    month: String,
+    currency: String,
+    /// What the month bills at: units of the billing currency per unit of
+    /// `currency`, an exact decimal. The override's rate, else the fetched one.
+    rate: String,
+    /// `admin` for an override, else the provider's name, such as `riksbank`.
+    source: String,
+    /// The rate billed at is a fetched average of the days published so far.
+    provisional: bool,
+    /// The provider's rate, kept beneath an override too.
+    fetched: Option<FetchedRateResponse>,
+    #[serde(rename = "override")]
+    overridden: Option<RateOverrideResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FetchedRateResponse {
+    rate: String,
+    /// The provider's name, such as `riksbank`.
+    source: String,
+    provisional: bool,
+    /// The latest day whose daily rate the average includes, `YYYY-MM-DD`.
+    observed_through: String,
+    /// The local date it was fetched on, `YYYY-MM-DD`.
+    fetched_on: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RateOverrideResponse {
+    rate: String,
+    /// The local date it was set on, `YYYY-MM-DD`.
+    overridden_on: String,
+    /// The admin who set it, if they still exist.
+    overridden_by: Option<String>,
+}
+
+impl From<&AiExchangeRate> for ExchangeRateResponse {
+    fn from(rate: &AiExchangeRate) -> Self {
+        Self {
+            month: rate.month.to_string(),
+            currency: rate.currency.as_str().to_string(),
+            rate: rate
+                .rate()
+                .map(AiExchangeRateValue::to_decimal)
+                .unwrap_or_default(),
+            source: rate.source().to_string(),
+            provisional: rate.is_provisional(),
+            fetched: rate.fetched.as_ref().map(|fetched| FetchedRateResponse {
+                rate: fetched.rate.to_decimal(),
+                source: fetched.provider.clone(),
+                provisional: fetched.provisional,
+                observed_through: fetched.observed_through.to_string(),
+                fetched_on: fetched.fetched_on.to_string(),
+            }),
+            overridden: rate
+                .overridden
+                .as_ref()
+                .map(|overridden| RateOverrideResponse {
+                    rate: overridden.rate.to_decimal(),
+                    overridden_on: overridden.set_on.to_string(),
+                    overridden_by: overridden.by.clone(),
+                }),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MonthOverviewResponse {
     #[serde(flatten)]
     period: PeriodResponse,
     developers: Vec<DeveloperResponse>,
-    lines: Vec<BillingLineResponse>,
-    subscriptions: Vec<SubscriptionMonthResponse>,
-    totals: TotalsResponse,
+    #[serde(flatten)]
+    bill: BillResponse,
 }
 
 #[derive(Debug, Serialize)]
@@ -226,9 +422,8 @@ struct DeveloperMonthResponse {
     #[serde(flatten)]
     period: PeriodResponse,
     developer: DeveloperResponse,
-    lines: Vec<BillingLineResponse>,
-    subscriptions: Vec<SubscriptionMonthResponse>,
-    totals: TotalsResponse,
+    #[serde(flatten)]
+    bill: BillResponse,
     machines: Vec<MachineLabelResponse>,
     /// Usage per local day, provider, model, machine and project key.
     daily_usage: Vec<DayUsageResponse>,
@@ -317,6 +512,15 @@ struct BillingLineResponse {
     billable_amount: Option<String>,
     /// The fee's currency, or `USD` for API usage.
     billable_currency: String,
+    /// What the line bills in the billing currency, an exact decimal:
+    /// `billableAmount × exchangeRate` rounded half up to hundredths, or for a
+    /// subscription its share of the converted pro-rated fee. Null when the
+    /// amount is unknown or its currency has no rate (`missingRate`).
+    converted_amount: Option<String>,
+    /// The rate `convertedAmount` used; null in the billing currency.
+    exchange_rate: Option<String>,
+    /// No rate for `billableCurrency`: the converted amount is unknown.
+    missing_rate: bool,
     /// The usage the line charges for, with its unrounded estimate.
     usage: UsageResponse,
 }
@@ -328,8 +532,8 @@ fn project_response(project: &Option<AiMappedProject>) -> Option<ProjectResponse
     })
 }
 
-impl From<&AiBillingLine> for BillingLineResponse {
-    fn from(line: &AiBillingLine) -> Self {
+impl BillingLineResponse {
+    fn new(line: &AiBillingLine, converted: &AiConvertedAmount) -> Self {
         let (billing_mode, overhead, subscription_id, currency) = match &line.charge {
             AiBillingCharge::Api => (BillingModeResponse::Api, false, None, "USD".to_string()),
             AiBillingCharge::Subscription {
@@ -361,6 +565,12 @@ impl From<&AiBillingLine> for BillingLineResponse {
             subscription_id,
             billable_amount: line.billable().map(|amount| amount.to_decimal()),
             billable_currency: currency,
+            converted_amount: converted.amount().map(AiFeeAmount::to_decimal),
+            exchange_rate: converted
+                .rate()
+                .and_then(AiExchangeRate::rate)
+                .map(AiExchangeRateValue::to_decimal),
+            missing_rate: matches!(converted, AiConvertedAmount::MissingRate { .. }),
             usage: (&line.usage).into(),
         }
     }
@@ -399,13 +609,18 @@ struct SubscriptionMonthResponse {
     days_in_month: u8,
     /// `monthlyCost × coveredDays / daysInMonth`, rounded half up.
     prorated_fee: String,
+    /// `proratedFee` in the billing currency, converted once and then split
+    /// like the fee; null without a rate.
+    converted_prorated_fee: Option<String>,
+    /// The rate it was converted at; null in the billing currency.
+    exchange_rate: Option<String>,
     allocation: AllocationResponse,
     /// Usage on the covered days, over all projects.
     usage: UsageResponse,
 }
 
-impl From<&AiSubscriptionMonth> for SubscriptionMonthResponse {
-    fn from(month: &AiSubscriptionMonth) -> Self {
+impl SubscriptionMonthResponse {
+    fn new(month: &AiSubscriptionMonth, converted: &AiConvertedAmount) -> Self {
         let subscription = &month.subscription;
         let terms = &subscription.terms;
         Self {
@@ -422,6 +637,11 @@ impl From<&AiSubscriptionMonth> for SubscriptionMonthResponse {
             covered_days: month.covered_days(),
             days_in_month: month.days_in_month,
             prorated_fee: month.prorated_fee.to_decimal(),
+            converted_prorated_fee: converted.amount().map(AiFeeAmount::to_decimal),
+            exchange_rate: converted
+                .rate()
+                .and_then(AiExchangeRate::rate)
+                .map(AiExchangeRateValue::to_decimal),
             allocation: match month.basis {
                 Some(AiAllocationBasis::ApiCost) => AllocationResponse::ApiCost,
                 Some(AiAllocationBasis::Tokens) => AllocationResponse::Tokens,
@@ -456,11 +676,37 @@ struct TotalsResponse {
     api_unpriced_records: i64,
     /// All usage, however it bills, with its unrounded API-equivalent estimate.
     usage: UsageResponse,
+    /// Totals in the billing currency: sums of the converted lines.
+    converted: ConvertedTotalsResponse,
 }
 
-impl From<AiMonthTotals> for TotalsResponse {
-    fn from(totals: AiMonthTotals) -> Self {
+/// Totals in the billing currency, exact decimals. Each is null when a line
+/// it includes has no exchange rate.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConvertedTotalsResponse {
+    currency: &'static str,
+    /// Everything billed.
+    billed: Option<String>,
+    /// Subscription fees, overhead included.
+    fees: Option<String>,
+    /// The unallocated overhead within `fees`.
+    overhead: Option<String>,
+    /// API usage.
+    api: Option<String>,
+}
+
+impl TotalsResponse {
+    fn new(totals: AiMonthTotals, converted: &AiConvertedTotals) -> Self {
+        let decimal = |amount: &Option<AiFeeAmount>| amount.as_ref().map(AiFeeAmount::to_decimal);
         Self {
+            converted: ConvertedTotalsResponse {
+                currency: BILLING_CURRENCY,
+                billed: decimal(&converted.billed),
+                fees: decimal(&converted.fees),
+                overhead: decimal(&converted.overhead),
+                api: decimal(&converted.api),
+            },
             fees: totals
                 .fees
                 .iter()
@@ -661,219 +907,6 @@ impl From<AiMonthCompleteness> for CompletenessResponse {
                 .collect(),
         }
     }
-}
-
-/// The CSV columns, in order.
-const CSV_HEADER: [&str; 18] = [
-    "month",
-    "project_id",
-    "project",
-    "developer",
-    "provider",
-    "billing_mode",
-    "plan",
-    "billable_amount",
-    "billable_currency",
-    "api_equivalent_usd",
-    "unpriced_records",
-    "input_tokens",
-    "cache_read_tokens",
-    "cache_write_tokens",
-    "output_tokens",
-    "total_tokens",
-    "allocation_basis",
-    "warning",
-];
-
-/// Renders a month's bill as RFC 4180 CSV with CRLF line ends and a UTF-8 byte
-/// order mark, so spreadsheet programs read names with accents correctly.
-///
-/// Each row is one charge of one developer's use of one provider to one
-/// project. `billable_amount` is what to bill, in `billable_currency`, and is
-/// the same amount the overview shows:
-///
-/// - `subscription` rows bill their share of the pro-rated fee, exactly, in the
-///   fee's currency. `api_equivalent_usd` is the estimate the share was weighed
-///   by. A fee without usage is `Unallocated overhead` with no project.
-/// - `api` rows bill their API-equivalent estimate in USD, rounded to whole
-///   cents; `api_equivalent_usd` keeps it unrounded.
-///
-/// Summing `billable_amount` per `billable_currency` gives the overview's
-/// totals. Amounts in different currencies are never combined or converted. An
-/// estimate that is wholly unknown, because every record is unpriced, is empty
-/// rather than zero. Rows are ordered by project (Unassigned, then overhead,
-/// last), developer, provider and billing mode. Every cell is quoted and
-/// guarded against spreadsheet formula injection (`csv_cell`).
-pub fn render_csv(overview: &AiMonthOverview) -> String {
-    let bill: &AiMonthBill = &overview.bill;
-    let names: HashMap<i32, &str> = overview
-        .developers
-        .iter()
-        .map(|developer| (developer.user_id.as_i32(), developer.full_name.as_str()))
-        .collect();
-    let subscriptions: HashMap<i32, &AiSubscriptionMonth> = bill
-        .subscriptions
-        .iter()
-        .map(|month| (month.subscription.id.as_i32(), month))
-        .collect();
-
-    let mut lines: Vec<&AiBillingLine> = bill.lines.iter().collect();
-    let project_rank = |line: &AiBillingLine| match (&line.charge, &line.project) {
-        (AiBillingCharge::UnallocatedOverhead { .. }, _) => 2,
-        (_, None) => 1,
-        (_, Some(_)) => 0,
-    };
-    let developer = |line: &AiBillingLine| names.get(&line.user_id.as_i32()).copied().unwrap_or("");
-    lines.sort_by(|a, b| {
-        project_rank(a)
-            .cmp(&project_rank(b))
-            .then_with(|| {
-                let name = |line: &AiBillingLine| {
-                    line.project
-                        .as_ref()
-                        .map(|project| (project.name.clone(), project.id.to_string()))
-                };
-                name(a).cmp(&name(b))
-            })
-            .then_with(|| developer(a).cmp(developer(b)))
-            .then_with(|| a.user_id.as_i32().cmp(&b.user_id.as_i32()))
-            .then_with(|| a.provider.as_str().cmp(b.provider.as_str()))
-            .then_with(|| {
-                let mode = |line: &AiBillingLine| matches!(line.charge, AiBillingCharge::Api);
-                mode(a).cmp(&mode(b))
-            })
-    });
-
-    let mut csv = String::from("\u{feff}");
-    push_row(&mut csv, CSV_HEADER.iter().map(|cell| cell.to_string()));
-    for line in lines {
-        let subscription = match &line.charge {
-            AiBillingCharge::Api => None,
-            AiBillingCharge::Subscription {
-                subscription_id, ..
-            }
-            | AiBillingCharge::UnallocatedOverhead {
-                subscription_id, ..
-            } => subscriptions.get(&subscription_id.as_i32()).copied(),
-        };
-        let (project_id, project) = match (&line.charge, &line.project) {
-            (AiBillingCharge::UnallocatedOverhead { .. }, _) => {
-                (String::new(), UNALLOCATED_OVERHEAD.to_string())
-            }
-            (_, Some(project)) => (project.id.to_string(), project.name.clone()),
-            (_, None) => (String::new(), UNASSIGNED.to_string()),
-        };
-        let usage = &line.usage;
-        let unknown_cost = usage.priced_cost == AiUsdNanos::ZERO && usage.unpriced_records > 0;
-        let billing_mode = match &line.charge {
-            AiBillingCharge::Api => "api",
-            _ => "subscription",
-        };
-        let billable = line.billable();
-        let (billable_amount, billable_currency) = match (&line.charge, &billable) {
-            (_, Some(amount)) => (amount.to_decimal(), amount.currency.as_str().to_string()),
-            (AiBillingCharge::Api, None) => (String::new(), "USD".to_string()),
-            (_, None) => (String::new(), String::new()),
-        };
-        let basis = subscription.and_then(|month| month.basis);
-
-        push_row(
-            &mut csv,
-            [
-                bill.month.to_string(),
-                project_id,
-                project,
-                developer(line).to_string(),
-                line.provider.as_str().to_string(),
-                billing_mode.to_string(),
-                subscription
-                    .map(|month| month.subscription.terms.plan.as_str().to_string())
-                    .unwrap_or_default(),
-                billable_amount,
-                billable_currency,
-                if unknown_cost {
-                    String::new()
-                } else {
-                    usage.priced_cost.to_decimal(4)
-                },
-                usage.unpriced_records.to_string(),
-                usage.tokens.input.to_string(),
-                usage.tokens.cache_read.to_string(),
-                usage.tokens.cache_write.to_string(),
-                usage.tokens.output.to_string(),
-                usage.total_tokens().to_string(),
-                match (&line.charge, basis) {
-                    (AiBillingCharge::Api, _) => "",
-                    (_, Some(AiAllocationBasis::ApiCost)) => "api_cost",
-                    (_, Some(AiAllocationBasis::Tokens)) => "tokens",
-                    (_, Some(AiAllocationBasis::Records)) => "records",
-                    (_, None) => "none",
-                }
-                .to_string(),
-                warning(line, basis),
-            ],
-        );
-    }
-
-    csv
-}
-
-/// Why a row's figures need a second look, if they do.
-fn warning(line: &AiBillingLine, basis: Option<AiAllocationBasis>) -> String {
-    let unpriced = line.usage.unpriced_records;
-    let mut warnings = Vec::new();
-    match (&line.charge, basis) {
-        (AiBillingCharge::UnallocatedOverhead { .. }, _) => {
-            warnings.push("no usage on the days the subscription covers".to_string());
-        }
-        (AiBillingCharge::Api, _) if unpriced > 0 => warnings.push(format!(
-            "{unpriced} unpriced records: their cost is unknown and not billed"
-        )),
-        (_, Some(AiAllocationBasis::Tokens)) => {
-            warnings.push("split by token share: no covered usage has a priced cost".to_string());
-        }
-        (_, Some(AiAllocationBasis::Records)) => warnings
-            .push("split by record share: covered usage has no priced cost or tokens".to_string()),
-        _ => {}
-    }
-    if unpriced > 0 && matches!(basis, Some(AiAllocationBasis::ApiCost)) {
-        warnings.push(format!(
-            "{unpriced} unpriced records: they carry no weight in the split"
-        ));
-    }
-
-    warnings.join("; ")
-}
-
-fn push_row(csv: &mut String, cells: impl IntoIterator<Item = String>) {
-    let cells: Vec<String> = cells.into_iter().map(|cell| csv_cell(&cell)).collect();
-    csv.push_str(&cells.join(","));
-    csv.push_str("\r\n");
-}
-
-/// Characters that make a spreadsheet read the text after them as a formula.
-const FORMULA_PREFIXES: [char; 6] = ['=', '+', '-', '@', '\t', '\r'];
-/// Characters a spreadsheet may split a cell on, whatever the file's separator:
-/// Swedish-locale Excel splits on `;`.
-const SEPARATORS: [char; 5] = [',', ';', '\t', '\r', '\n'];
-
-/// One CSV cell: always quoted, with quotes doubled, so no separator or line
-/// break inside a value splits it. A formula prefix at the start of the value,
-/// or right after a separator inside it, gets an apostrophe in front, so even
-/// a program that splits the value stays on text. Amounts and counts never
-/// start with one.
-fn csv_cell(value: &str) -> String {
-    let mut guarded = String::with_capacity(value.len() + 3);
-    let mut at_start = true;
-    for character in value.chars() {
-        if at_start && FORMULA_PREFIXES.contains(&character) {
-            guarded.push('\'');
-        }
-        guarded.push(character);
-        at_start = SEPARATORS.contains(&character);
-    }
-
-    format!("\"{}\"", guarded.replace('"', "\"\""))
 }
 
 #[cfg(test)]

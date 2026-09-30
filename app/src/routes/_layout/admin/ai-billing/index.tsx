@@ -16,6 +16,10 @@ import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
 import { BillingRules } from "./-components/billing-rules";
 import { BillingTable } from "./-components/billing-table";
 import { CompletenessPanel } from "./-components/completeness-panel";
+import {
+  ExchangeRatesPanel,
+  MissingRatesAlert,
+} from "./-components/exchange-rates";
 import { ProjectCostChart } from "./-components/project-cost-chart";
 import { SubscriptionMonths } from "./-components/subscription-months";
 import { TotalsTiles } from "./-components/totals-tiles";
@@ -113,7 +117,7 @@ function AiBillingPage() {
           {overviewQuery.data.lines.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
               <p className="font-medium">
-                Nothing to bill for {monthLabel(month)}
+                Nothing to bill for {monthLabel(overviewQuery.data.month)}
               </p>
               <p className="text-sm text-muted-foreground">
                 No AI usage was synced for this month and no subscription covers
@@ -122,7 +126,26 @@ function AiBillingPage() {
             </div>
           ) : (
             <>
-              <TotalsTiles totals={overviewQuery.data.totals} />
+              <MissingRatesAlert
+                month={overviewQuery.data.month}
+                billingCurrency={overviewQuery.data.billingCurrency}
+                missingRates={overviewQuery.data.missingRates}
+                pendingRates={overviewQuery.data.pendingRates}
+              />
+              <TotalsTiles
+                totals={overviewQuery.data.totals}
+                missingRates={overviewQuery.data.missingRates}
+                pendingRates={overviewQuery.data.pendingRates}
+              />
+              <ExchangeRatesPanel
+                key={overviewQuery.data.month}
+                month={overviewQuery.data.month}
+                disabled={overviewQuery.isPlaceholderData}
+                billingCurrency={overviewQuery.data.billingCurrency}
+                rates={overviewQuery.data.exchangeRates}
+                missingRates={overviewQuery.data.missingRates}
+                pendingRates={overviewQuery.data.pendingRates}
+              />
               <ProjectCostChart lines={overviewQuery.data.lines} />
               <section
                 aria-labelledby="billing-lines-heading"
@@ -132,11 +155,13 @@ function AiBillingPage() {
                   id="billing-lines-heading"
                   className="text-lg font-semibold"
                 >
-                  {monthLabel(month)} by {groupBy}
+                  {monthLabel(overviewQuery.data.month)} by {groupBy}
                 </h2>
                 <div className="rounded-xl border border-border/60 bg-card/60">
                   <BillingTable
-                    month={month}
+                    month={overviewQuery.data.month}
+                    billingCurrency={overviewQuery.data.billingCurrency}
+                    pendingRates={overviewQuery.data.pendingRates}
                     lines={overviewQuery.data.lines}
                     developers={overviewQuery.data.developers}
                     subscriptions={overviewQuery.data.subscriptions}
@@ -156,6 +181,7 @@ function AiBillingPage() {
                 </h2>
                 <div className="rounded-xl border border-border/60 bg-card/60">
                   <SubscriptionMonths
+                    billingCurrency={overviewQuery.data.billingCurrency}
                     subscriptions={overviewQuery.data.subscriptions}
                     developers={overviewQuery.data.developers}
                   />

@@ -23,10 +23,12 @@ use crate::{
         outbound::{
             media::WebpAvatarProcessor,
             postgres::{
-                PostgresAiBillingRepository, PostgresAiProjectMappingRepository,
-                PostgresAiSubscriptionRepository, PostgresAiUsageReportRepository,
-                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
+                PostgresAiProjectMappingRepository, PostgresAiSubscriptionRepository,
+                PostgresAiUsageReportRepository, PostgresAiUsageRepository,
+                PostgresApiTokenRepository, PostgresAvatarRepository,
             },
+            riksbank::RiksbankExchangeRateAdapter,
         },
     },
     app_state::AppState,
@@ -158,9 +160,18 @@ pub async fn create(
     ));
     let ai_subscription_repository =
         Arc::new(PostgresAiSubscriptionRepository::new(db_pool.clone()));
+    let exchange_rate_provider = Arc::new(
+        RiksbankExchangeRateAdapter::new(
+            &config.ai_usage.exchange_rates.base_url,
+            config.ai_usage.exchange_rates.subscription_key.clone(),
+        )
+        .expect("Failed to build the exchange rate client"),
+    );
     let ai_billing_service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::new(
         Arc::new(PostgresAiBillingRepository::new(db_pool.clone())),
         ai_subscription_repository.clone(),
+        Arc::new(PostgresAiExchangeRateRepository::new(db_pool.clone())),
+        exchange_rate_provider,
         ai_usage_time_zone.clone(),
         mapping_company.clone(),
     ));

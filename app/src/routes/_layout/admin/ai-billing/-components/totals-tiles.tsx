@@ -1,31 +1,86 @@
 import type { AiBillingTotals } from "@/lib/api/queries/ai-admin";
+import { allPending, PENDING_RATE_LABEL } from "../../-lib/billing";
 import { formatEstimate, formatFee, formatTokens } from "../../-lib/format";
 
-/** The month's headline figures. Fees stay in their own currencies. */
-export function TotalsTiles({ totals }: { totals: AiBillingTotals }) {
+/** A converted total, or why it is unknown: a line it includes has no rate,
+ * or its rate is still being fetched. */
+function converted(amount: string | null, currency: string, pending: boolean) {
+  return amount === null ? (
+    <span className="text-[#c98500] dark:text-[#fab219]">
+      {pending ? PENDING_RATE_LABEL : "No rate"}
+    </span>
+  ) : (
+    formatFee(amount, currency)
+  );
+}
+
+/** The month's headline figures: totals in the billing currency first, with
+ * the original amounts in their own currencies beneath. */
+export function TotalsTiles({
+  totals,
+  missingRates,
+  pendingRates,
+}: {
+  totals: AiBillingTotals;
+  missingRates: readonly string[];
+  pendingRates: readonly string[];
+}) {
+  const billing = totals.converted;
+  const missingFeeRates = totals.fees
+    .filter(
+      (fee) => fee.billed !== "0.00" && missingRates.includes(fee.currency),
+    )
+    .map((fee) => fee.currency);
+  const pending = (currencies: readonly string[]) =>
+    currencies.length > 0 && allPending(currencies, pendingRates);
+  const hasApi =
+    totals.apiBilledUsd !== "0.00" || totals.apiUnpricedRecords > 0;
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <Tile label={`Total billed (${billing.currency})`}>
+        <Value>
+          {converted(billing.billed, billing.currency, pending(missingRates))}
+        </Value>
+        <Note>
+          the sum of every line converted to {billing.currency}, as in the CSV
+          {totals.apiUnpricedRecords > 0 && "; unpriced usage is not included"}
+        </Note>
+      </Tile>
       <Tile label="Subscription fees">
         {totals.fees.length === 0 ? (
           <Value>—</Value>
         ) : (
-          totals.fees.map((fee) => (
-            <div key={fee.currency}>
-              <Value>{formatFee(fee.billed, fee.currency)}</Value>
-              {fee.overhead !== "0.00" && (
-                <Note>
-                  incl. {formatFee(fee.overhead, fee.currency)} unallocated
-                  overhead
-                </Note>
+          <>
+            <Value>
+              {converted(
+                billing.fees,
+                billing.currency,
+                pending(missingFeeRates),
               )}
-            </div>
-          ))
+            </Value>
+            {totals.fees.map((fee) => (
+              <Note key={fee.currency}>
+                {formatFee(fee.billed, fee.currency)}
+                {fee.overhead !== "0.00" &&
+                  ` incl. ${formatFee(fee.overhead, fee.currency)} unallocated overhead`}
+              </Note>
+            ))}
+          </>
         )}
       </Tile>
       <Tile label="API usage billed">
-        <Value>{formatFee(totals.apiBilledUsd, "USD")}</Value>
+        <Value>
+          {hasApi
+            ? converted(
+                billing.api,
+                billing.currency,
+                pendingRates.includes("USD"),
+              )
+            : "—"}
+        </Value>
         <Note>
-          each API line&apos;s estimate rounded to whole cents, as in the CSV
+          {formatFee(totals.apiBilledUsd, "USD")}: each API line&apos;s estimate
+          rounded to whole cents
           {totals.apiUnpricedRecords > 0 &&
             `; plus ${totals.apiUnpricedRecords} unpriced records of unknown cost`}
         </Note>

@@ -18,6 +18,10 @@ kleer:
 ai_usage:
   # IANA time zone that defines AI usage days and billing months.
   time_zone: "Europe/Stockholm"
+  # Monthly average exchange rates to SEK, the billing currency (Riksbank SWEA API).
+  exchange_rates:
+    base_url: "https://api.riksbank.se/swea/v1"
+    # subscription_key: "optional; provide through TOKI_AI_USAGE__EXCHANGE_RATES__SUBSCRIPTION_KEY"
 observability:
   capture_request_bodies: false
   request_body_max_logged_bytes: 16384

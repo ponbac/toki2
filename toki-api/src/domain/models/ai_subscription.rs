@@ -126,6 +126,11 @@ impl AiCurrency {
     pub fn usd() -> Self {
         Self("USD".to_string())
     }
+
+    /// The currency AI usage is billed in, `BILLING_CURRENCY`.
+    pub fn billing() -> Self {
+        Self(super::BILLING_CURRENCY.to_string())
+    }
 }
 
 /// The positive, four-digit-year local dates a subscription covers, representable

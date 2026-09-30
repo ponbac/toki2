@@ -38,8 +38,9 @@
 //!   without usage of a subscription that has usage on other days are not
 //!   overhead: the fee pays for the month, and the usage decides the split.
 //! - **Currencies.** Fees stay in the subscription's currency and estimates stay
-//!   in USD. Nothing here converts between currencies; converting to an invoice
-//!   currency is a separate, explicit step at an exchange rate the biller picks.
+//!   in USD, and totals here are per currency. Converting the bill to the
+//!   billing currency is a separate step at the month's exchange rates
+//!   (`convert_bill` in `ai_exchange_rate`), which keeps these amounts.
 //!
 //! Usage that no project mapping resolves, including `unattributed` usage,
 //! belongs to the Unassigned project (`None`).
@@ -51,9 +52,9 @@ use crate::domain::AiBillingError;
 use time::{Date, Month};
 
 use super::{
-    resolve_billing_mode, AiBillingDeveloper, AiBillingMode, AiCurrency, AiMachineId,
-    AiMappedProject, AiProvider, AiSubscription, AiSubscriptionId, AiTokenCounts, AiUsageDateRange,
-    UserId, MAX_SAFE_COUNT,
+    resolve_billing_mode, AiBillingDeveloper, AiBillingMode, AiConvertedBill, AiCurrency,
+    AiMachineId, AiMappedProject, AiProvider, AiSubscription, AiSubscriptionId, AiTokenCounts,
+    AiUsageDateRange, UserId, MAX_SAFE_COUNT,
 };
 
 const NANOS_PER_USD: i64 = 1_000_000_000;
@@ -352,6 +353,10 @@ pub struct AiSubscriptionMonth {
     /// How the fee was split, or `None` when nothing used the subscription and
     /// the whole fee is unallocated overhead.
     pub basis: Option<AiAllocationBasis>,
+    /// The weights the fee was split by, one per subscription line of the bill,
+    /// in the order of those lines; empty for overhead. Any other split of this
+    /// fee, such as in another currency, uses these same weights.
+    pub weights: Vec<u128>,
     /// Usage on the covered days, over all projects.
     pub usage: AiBillingUsage,
 }
@@ -685,7 +690,7 @@ pub fn bill_month(
 
             let (basis, weights) = allocation_weights(&projects);
             let shares = allocate_largest_remainder(prorated_fee.hundredths, &weights)?;
-            let basis = match shares {
+            let (basis, weights) = match shares {
                 Some(shares) => {
                     for (project, share) in projects.into_iter().zip(shares) {
                         lines.push(AiBillingLine {
@@ -702,7 +707,7 @@ pub fn bill_month(
                             usage: project.usage,
                         });
                     }
-                    Some(basis)
+                    (Some(basis), weights)
                 }
                 None => {
                     lines.push(AiBillingLine {
@@ -715,7 +720,7 @@ pub fn bill_month(
                         },
                         usage: AiBillingUsage::default(),
                     });
-                    None
+                    (None, Vec::new())
                 }
             };
 
@@ -725,6 +730,7 @@ pub fn bill_month(
                 days_in_month,
                 prorated_fee,
                 basis,
+                weights,
                 usage: covered_usage,
             });
         }
@@ -770,6 +776,8 @@ pub struct AiMonthOverview {
     pub bill: AiMonthBill,
     /// The users the bill's lines and subscriptions belong to, by name.
     pub developers: Vec<AiBillingDeveloper>,
+    /// The bill in the billing currency, with the month's exchange rates.
+    pub converted: AiConvertedBill,
 }
 
 /// A developer's day usage with the subscription that pays for it, if any.
@@ -793,6 +801,8 @@ pub struct AiMachineLabel {
 pub struct AiDeveloperMonth {
     pub developer: AiBillingDeveloper,
     pub bill: AiMonthBill,
+    /// The bill in the billing currency, with the month's exchange rates.
+    pub converted: AiConvertedBill,
     pub usage: Vec<AiBilledDayUsage>,
     /// The developer's machines, including ones without usage in the month.
     pub machines: Vec<AiMachineLabel>,

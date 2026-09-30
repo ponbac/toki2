@@ -55,6 +55,7 @@ import {
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
 import { UNASSIGNED_LABEL } from "../-lib/billing";
 import { BillingTable } from "./-components/billing-table";
+import { MissingRatesAlert } from "./-components/exchange-rates";
 import { DailyCostChart } from "./-components/daily-cost-chart";
 import { SubscriptionMonths } from "./-components/subscription-months";
 
@@ -191,9 +192,17 @@ function DeveloperMonthView({
         <h3 id="developer-billing-heading" className="text-lg font-semibold">
           Billing
         </h3>
+        <MissingRatesAlert
+          month={month}
+          billingCurrency={data.billingCurrency}
+          missingRates={data.missingRates}
+          pendingRates={data.pendingRates}
+        />
         <div className="rounded-xl border border-border/60 bg-card/60">
           <BillingTable
             month={month}
+            billingCurrency={data.billingCurrency}
+            pendingRates={data.pendingRates}
             lines={data.lines}
             developers={[data.developer]}
             subscriptions={data.subscriptions}
@@ -204,6 +213,7 @@ function DeveloperMonthView({
         {data.subscriptions.length > 0 && (
           <div className="rounded-xl border border-border/60 bg-card/60">
             <SubscriptionMonths
+              billingCurrency={data.billingCurrency}
               subscriptions={data.subscriptions}
               developers={[data.developer]}
               showDeveloper={false}
