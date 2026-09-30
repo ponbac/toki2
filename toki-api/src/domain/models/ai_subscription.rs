@@ -121,6 +121,11 @@ impl AiCurrency {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// US dollars, the currency of API-equivalent estimates.
+    pub fn usd() -> Self {
+        Self("USD".to_string())
+    }
 }
 
 /// The positive, four-digit-year local dates a subscription covers, representable
@@ -170,10 +175,6 @@ impl AiSubscriptionPeriod {
     /// end is the day *after* the last covered day, or `None` when it covers
     /// none of them. For example, a subscription through 15 March covers
     /// `[1 March, 16 March)` of the March range `[1 March, 1 April)`: 15 days.
-    #[allow(
-        dead_code,
-        reason = "billing (#148) clips subscriptions to billing months with this"
-    )]
     pub fn to_date_range(self, within: AiUsageDateRange) -> Option<AiUsageDateRange> {
         let start = self.valid_from.max(within.start());
         let end = match self.valid_to {
@@ -249,10 +250,6 @@ pub enum AiBillingMode<'a> {
 /// `valid_to` inclusive, or on without end when it is ongoing. Stored subscriptions
 /// of one user to one provider never overlap, so at most one covers a day; should
 /// the slice break that rule, the first covering subscription wins.
-#[allow(
-    dead_code,
-    reason = "billing (#148) resolves each usage day with this; tests pin the mismatch query to it"
-)]
 pub fn resolve_billing_mode(
     subscriptions: &[AiSubscription],
     user_id: UserId,

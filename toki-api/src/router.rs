@@ -23,9 +23,9 @@ use crate::{
         outbound::{
             media::WebpAvatarProcessor,
             postgres::{
-                PostgresAiProjectMappingRepository, PostgresAiSubscriptionRepository,
-                PostgresAiUsageReportRepository, PostgresAiUsageRepository,
-                PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresAiBillingRepository, PostgresAiProjectMappingRepository,
+                PostgresAiSubscriptionRepository, PostgresAiUsageReportRepository,
+                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
             },
         },
     },
@@ -37,14 +37,15 @@ use crate::{
         models::AiUsageTimeZone,
         ports::{
             inbound::{
-                AiProjectMappingService, AiSubscriptionService, AiUsageReportService,
-                AiUsageService, ApiTokenAuthenticator, ApiTokenService, AvatarService,
+                AiBillingService, AiProjectMappingService, AiSubscriptionService,
+                AiUsageReportService, AiUsageService, ApiTokenAuthenticator, ApiTokenService,
+                AvatarService,
             },
             outbound::TimeTrackingProjectCatalog,
         },
         services::{
-            AiProjectMappingServiceImpl, AiSubscriptionServiceImpl, AiUsageReportServiceImpl,
-            AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
+            AiBillingServiceImpl, AiProjectMappingServiceImpl, AiSubscriptionServiceImpl,
+            AiUsageReportServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
         },
         RepoConfig,
     },
@@ -76,7 +77,8 @@ pub async fn create(
         .nest(
             "/ai-usage/project-mappings",
             http::ai_project_mappings::router(),
-        );
+        )
+        .nest("/ai-usage/admin", http::ai_billing::router());
 
     let api_tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db_pool.clone()),
@@ -154,6 +156,14 @@ pub async fn create(
         ai_usage_time_zone.clone(),
         mapping_company.clone(),
     ));
+    let ai_subscription_repository =
+        Arc::new(PostgresAiSubscriptionRepository::new(db_pool.clone()));
+    let ai_billing_service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::new(
+        Arc::new(PostgresAiBillingRepository::new(db_pool.clone())),
+        ai_subscription_repository.clone(),
+        ai_usage_time_zone.clone(),
+        mapping_company.clone(),
+    ));
     // Personal usage reads: always the caller's own usage, admins included.
     let ai_usage_report_service: Arc<dyn AiUsageReportService> =
         Arc::new(AiUsageReportServiceImpl::new(
@@ -161,11 +171,9 @@ pub async fn create(
             ai_usage_time_zone.clone(),
             mapping_company,
         ));
-    let ai_subscription_service: Arc<dyn AiSubscriptionService> =
-        Arc::new(AiSubscriptionServiceImpl::new(
-            Arc::new(PostgresAiSubscriptionRepository::new(db_pool.clone())),
-            ai_usage_time_zone,
-        ));
+    let ai_subscription_service: Arc<dyn AiSubscriptionService> = Arc::new(
+        AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone),
+    );
 
     // Create app state
     let app_state = AppState::new(
@@ -181,6 +189,7 @@ pub async fn create(
         ai_usage_report_service,
         ai_project_mapping_service,
         ai_subscription_service,
+        ai_billing_service,
     )
     .await;
 

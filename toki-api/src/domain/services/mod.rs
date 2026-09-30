@@ -1,3 +1,4 @@
+mod ai_billing;
 mod ai_project_mapping;
 mod ai_subscriptions;
 mod ai_usage;
@@ -7,6 +8,7 @@ mod avatar;
 mod time_tracking;
 mod work_items;
 
+pub use ai_billing::AiBillingServiceImpl;
 pub use ai_project_mapping::AiProjectMappingServiceImpl;
 pub use ai_subscriptions::AiSubscriptionServiceImpl;
 pub use ai_usage::AiUsageServiceImpl;

@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                machine.id::text AS \"id!\",\n                machine.user_id,\n                machine.label,\n                machine.client_version,\n                machine.last_synced_at,\n                (machine.last_synced_at AT TIME ZONE $3)::date AS \"last_synced_on!\",\n                machine.last_synced_at >= ($2::date::timestamp AT TIME ZONE $3)\n                    AS \"synced_since_month_start!\"\n            FROM ai_usage_machines AS machine\n            WHERE $1::int4 IS NULL OR machine.user_id = $1\n            ORDER BY machine.user_id, machine.label, machine.id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "label",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "client_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_synced_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_synced_on!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "synced_since_month_start!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "d0f864f596e21fd7ca1def075c67d409bd049afeec5708b575bbc2961bde5915"
+}

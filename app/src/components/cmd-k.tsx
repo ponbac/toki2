@@ -17,11 +17,15 @@ import {
   FolderGit2,
   GitPullRequestIcon,
   KanbanSquare,
+  ReceiptText,
+  ShieldCheck,
   TimerIcon,
+  WalletCards,
 } from "lucide-react";
 import type { ListPullRequest } from "@/lib/api/contracts/pull-request";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
+import { userQueries } from "@/lib/api/queries/user";
 import { toast } from "sonner";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import {
@@ -183,14 +187,37 @@ const PAGES = [
   { title: "Time Tracking", to: "/time-tracking", icon: TimerIcon },
   { title: "Repositories", to: "/repositories", icon: FolderGit2 },
   { title: "AI usage", to: "/ai-usage", icon: BrainCircuit },
+  {
+    title: "Admin: AI billing",
+    to: "/admin/ai-billing",
+    icon: ReceiptText,
+    adminOnly: true,
+  },
+  {
+    title: "Admin: Project mappings",
+    to: "/admin/project-mappings",
+    icon: ShieldCheck,
+    adminOnly: true,
+  },
+  {
+    title: "Admin: AI subscriptions",
+    to: "/admin/ai-subscriptions",
+    icon: WalletCards,
+    adminOnly: true,
+  },
 ] as const;
 
 function PagesCommandGroup(props: { close: () => void }) {
   const navigate = useNavigate();
+  const { data: isAdmin = false } = useQuery({
+    ...userQueries.me(),
+    select: (me) => me.roles.includes("Admin"),
+  });
+  const pages = PAGES.filter((page) => !("adminOnly" in page) || isAdmin);
 
   return (
     <CommandGroup heading="Pages">
-      {PAGES.map((page) => (
+      {pages.map((page) => (
         <CommandItem
           key={page.to}
           onSelect={() => {

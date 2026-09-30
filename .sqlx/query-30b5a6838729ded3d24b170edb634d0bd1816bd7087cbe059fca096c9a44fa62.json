@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT bucket.machine_id::text AS \"machine_id!\", bucket.provider\n            FROM ai_usage_buckets AS bucket\n            WHERE bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)\n              AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)\n              AND ($1::int4 IS NULL OR bucket.user_id = $1)\n            GROUP BY bucket.machine_id, bucket.provider\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "machine_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      false
+    ]
+  },
+  "hash": "30b5a6838729ded3d24b170edb634d0bd1816bd7087cbe059fca096c9a44fa62"
+}

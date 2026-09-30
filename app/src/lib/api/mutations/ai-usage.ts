@@ -1,15 +1,8 @@
-import {
-  useMutation,
-  useQueryClient,
-  type QueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { invalidateAiQueries } from "../ai-cache";
 import { parseAiSubscription } from "../contracts/ai-usage";
-import {
-  aiUsageQueries,
-  type AiSubscription,
-  type AiSubscriptionTerms,
-} from "../queries/ai-usage";
+import type { AiSubscription, AiSubscriptionTerms } from "../queries/ai-usage";
 import type { DefaultMutationOptions } from "./mutations";
 
 /** Input for declaring one of the current user's AI subscriptions. */
@@ -45,7 +38,7 @@ export function useCreateAiSubscription(
       ),
     ...options,
     onSuccess: async (data, vars, ctx) => {
-      await invalidateSubscriptionQueries(queryClient);
+      await invalidateAiQueries(queryClient);
       await options?.onSuccess?.(data, vars, ctx);
     },
   });
@@ -67,7 +60,7 @@ export function useUpdateAiSubscription(
       ),
     ...options,
     onSuccess: async (data, vars, ctx) => {
-      await invalidateSubscriptionQueries(queryClient);
+      await invalidateAiQueries(queryClient);
       await options?.onSuccess?.(data, vars, ctx);
     },
   });
@@ -85,20 +78,8 @@ export function useDeleteAiSubscription(
       api.delete(`ai-usage/subscriptions/${subscriptionId}`),
     ...options,
     onSuccess: async (data, vars, ctx) => {
-      await invalidateSubscriptionQueries(queryClient);
+      await invalidateAiQueries(queryClient);
       await options?.onSuccess?.(data, vars, ctx);
     },
   });
-}
-
-/** Mismatches depend on the declared subscriptions, so both refresh together. */
-async function invalidateSubscriptionQueries(queryClient: QueryClient) {
-  await Promise.all([
-    queryClient.invalidateQueries({
-      queryKey: aiUsageQueries.aiSubscriptions().queryKey,
-    }),
-    queryClient.invalidateQueries({
-      queryKey: aiUsageQueries.aiSubscriptionMismatches().queryKey,
-    }),
-  ]);
 }
