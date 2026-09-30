@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT fetched_rate IS NOT NULL AS \"has_fetched!\"\n            FROM ai_billing_exchange_rates\n            WHERE month = $1 AND currency = $2\n            FOR UPDATE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "has_fetched!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "685ac57c2d24824d378c29d2b79483d8990c73925e75862b67952b3582b584c9"
+}

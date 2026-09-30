@@ -1,9 +1,16 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { invalidateAiQueries } from "../ai-cache";
+import { AI_ADMIN_QUERY_KEY, invalidateAiQueries } from "../ai-cache";
+import {
+  parseAiExchangeRate,
+  parseAiExchangeRateReset,
+} from "../contracts/ai-admin";
 import { parseAiProjectMapping } from "../contracts/ai-usage-report";
 import { parseAiSubscription } from "../contracts/ai-usage";
-import type { AiProjectMapping } from "../queries/ai-admin";
+import {
+  type AiExchangeRate,
+  type AiProjectMapping,
+} from "../queries/ai-admin";
 import type { AiSubscription, AiSubscriptionTerms } from "../queries/ai-usage";
 import type { DefaultMutationOptions } from "./mutations";
 
@@ -20,6 +27,14 @@ export type AdminUpdateSubscriptionVars = {
   terms: AiSubscriptionTerms;
 };
 export type AdminDeleteSubscriptionVars = { subscriptionId: number };
+/** Overrides a month's exchange rate: `rate` units of the billing currency
+ * per unit of `currency`, such as `"10.25"`. */
+export type OverrideExchangeRateVars = {
+  month: string;
+  currency: string;
+  rate: string;
+};
+export type ResetExchangeRateVars = { month: string; currency: string };
 
 /** Admin mutations: mappings and subscriptions, which both change billing. */
 export const aiAdminMutations = {
@@ -28,8 +43,58 @@ export const aiAdminMutations = {
   useAdminCreateSubscription,
   useAdminUpdateSubscription,
   useAdminDeleteSubscription,
+  useOverrideExchangeRate,
+  useResetExchangeRate,
   useDownloadBillingCsv,
 };
+
+export function useOverrideExchangeRate(
+  options?: DefaultMutationOptions<OverrideExchangeRateVars, AiExchangeRate>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "exchange-rates", "override"],
+    mutationFn: async ({ month, currency, rate }: OverrideExchangeRateVars) =>
+      parseAiExchangeRate(
+        await api
+          .put(`ai-usage/admin/billing/${month}/exchange-rates/${currency}`, {
+            json: { rate },
+          })
+          .json<unknown>(),
+      ),
+    ...options,
+    onSuccess: async (data, vars, ctx) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSuccess?.(data, vars, ctx);
+    },
+  });
+}
+
+/** Removes an override; the server fetches the Riksbank rate again. */
+export function useResetExchangeRate(
+  options?: DefaultMutationOptions<
+    ResetExchangeRateVars,
+    AiExchangeRate | null
+  >,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "exchange-rates", "reset"],
+    mutationFn: async ({ month, currency }: ResetExchangeRateVars) =>
+      parseAiExchangeRateReset(
+        await api
+          .delete(`ai-usage/admin/billing/${month}/exchange-rates/${currency}`)
+          .json<unknown>(),
+      ),
+    ...options,
+    onSuccess: async (data, vars, ctx) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSuccess?.(data, vars, ctx);
+    },
+  });
+}
 
 export function useSetProjectMapping(
   options?: DefaultMutationOptions<SetProjectMappingVars, AiProjectMapping>,

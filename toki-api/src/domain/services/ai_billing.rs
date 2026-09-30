@@ -3,46 +3,87 @@ use std::{collections::HashSet, sync::Arc};
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
+use super::{AiExchangeRateSettings, AiExchangeRates};
 use crate::domain::{
     models::{
-        assess_completeness, bill_month, billed_day_usage, AiBillingDeveloper, AiBillingMonth,
-        AiDeveloperMonth, AiMachineLabel, AiMonthCompleteness, AiMonthOverview, AiSubscription,
-        AiSubscriptionScope, AiUsageTimeZone, TimeTrackingCompany, UserId,
+        assess_completeness, bill_month, billed_day_usage, convert_bill, currencies_to_convert,
+        AiBillingDeveloper, AiBillingMonth, AiConvertedBill, AiCurrency, AiDeveloperMonth,
+        AiExchangeRate, AiExchangeRateValue, AiMachineLabel, AiMonthBill, AiMonthCompleteness,
+        AiMonthOverview, AiSubscription, AiSubscriptionScope, AiUsageTimeZone, TimeTrackingCompany,
+        UserId,
     },
     ports::{
         inbound::AiBillingService,
-        outbound::{AiBillingRepository, AiSubscriptionRepository},
+        outbound::{
+            AiBillingRepository, AiExchangeRateRepository, AiSubscriptionRepository,
+            ExchangeRateProvider,
+        },
     },
     AiBillingError, AiSubscriptionError,
 };
 
-pub struct AiBillingServiceImpl<R, S> {
+pub struct AiBillingServiceImpl<R, S, X> {
     repository: Arc<R>,
     subscriptions: Arc<S>,
+    rates: AiExchangeRates<X>,
     time_zone: AiUsageTimeZone,
     mapping_company: Option<TimeTrackingCompany>,
 }
 
-impl<R, S> AiBillingServiceImpl<R, S> {
+impl<R, S, X: AiExchangeRateRepository> AiBillingServiceImpl<R, S, X> {
     /// `time_zone` defines usage days and billing months. Only project mappings
     /// to `mapping_company`, the configured time-tracking company, resolve; with
-    /// `None`, all usage is Unassigned.
+    /// `None`, all usage is Unassigned. Exchange rates are stored in `rates`
+    /// and fetched from `rate_provider` when missing or due, as
+    /// `AiExchangeRates` bounds it.
     pub fn new(
         repository: Arc<R>,
         subscriptions: Arc<S>,
+        rates: Arc<X>,
+        rate_provider: Arc<dyn ExchangeRateProvider>,
         time_zone: AiUsageTimeZone,
         mapping_company: Option<TimeTrackingCompany>,
+    ) -> Self {
+        Self::with_rate_settings(
+            repository,
+            subscriptions,
+            rates,
+            rate_provider,
+            time_zone,
+            mapping_company,
+            AiExchangeRateSettings::default(),
+        )
+    }
+
+    pub fn with_rate_settings(
+        repository: Arc<R>,
+        subscriptions: Arc<S>,
+        rates: Arc<X>,
+        rate_provider: Arc<dyn ExchangeRateProvider>,
+        time_zone: AiUsageTimeZone,
+        mapping_company: Option<TimeTrackingCompany>,
+        settings: AiExchangeRateSettings,
     ) -> Self {
         Self {
             repository,
             subscriptions,
+            rates: AiExchangeRates::new(rates, rate_provider, time_zone.clone(), settings),
             time_zone,
             mapping_company,
         }
     }
+
+    /// The bill in the billing currency, at the month's rates.
+    async fn convert(&self, bill: &AiMonthBill) -> Result<AiConvertedBill, AiBillingError> {
+        let rates = self
+            .rates
+            .month_rates(bill.month, &currencies_to_convert(bill))
+            .await?;
+        convert_bill(bill, &rates.rates, &rates.pending)
+    }
 }
 
-impl<R, S: AiSubscriptionRepository> AiBillingServiceImpl<R, S> {
+impl<R, S: AiSubscriptionRepository, X> AiBillingServiceImpl<R, S, X> {
     async fn subscriptions(
         &self,
         scope: AiSubscriptionScope,
@@ -58,10 +99,11 @@ impl<R, S: AiSubscriptionRepository> AiBillingServiceImpl<R, S> {
 }
 
 #[async_trait]
-impl<R, S> AiBillingService for AiBillingServiceImpl<R, S>
+impl<R, S, X> AiBillingService for AiBillingServiceImpl<R, S, X>
 where
     R: AiBillingRepository,
     S: AiSubscriptionRepository,
+    X: AiExchangeRateRepository,
 {
     fn time_zone(&self) -> &AiUsageTimeZone {
         &self.time_zone
@@ -82,6 +124,7 @@ where
             .await?;
         let subscriptions = self.subscriptions(AiSubscriptionScope::AllUsers).await?;
         let bill = bill_month(month, &usage, &subscriptions)?;
+        let converted = self.convert(&bill).await?;
 
         let billed: HashSet<UserId> = bill
             .lines
@@ -101,7 +144,11 @@ where
             .filter(|user| billed.contains(&user.user_id))
             .collect();
 
-        Ok(AiMonthOverview { bill, developers })
+        Ok(AiMonthOverview {
+            bill,
+            developers,
+            converted,
+        })
     }
 
     async fn developer_month(
@@ -140,6 +187,7 @@ where
             .subscriptions(AiSubscriptionScope::User(user_id))
             .await?;
         let bill = bill_month(month, &daily, &subscriptions)?;
+        let converted = self.convert(&bill).await?;
         let machines = self
             .repository
             .machines(Some(&user_id), month.dates(), &self.time_zone)
@@ -154,6 +202,7 @@ where
         Ok(AiDeveloperMonth {
             developer,
             bill,
+            converted,
             usage: billed_day_usage(user_id, usage, &subscriptions),
             machines,
         })
@@ -214,5 +263,23 @@ where
 
     async fn users(&self) -> Result<Vec<AiBillingDeveloper>, AiBillingError> {
         self.repository.users().await
+    }
+
+    async fn override_exchange_rate(
+        &self,
+        month: AiBillingMonth,
+        currency: &AiCurrency,
+        rate: AiExchangeRateValue,
+        by: &UserId,
+    ) -> Result<AiExchangeRate, AiBillingError> {
+        self.rates.set_override(month, currency, rate, by).await
+    }
+
+    async fn reset_exchange_rate(
+        &self,
+        month: AiBillingMonth,
+        currency: &AiCurrency,
+    ) -> Result<Option<AiExchangeRate>, AiBillingError> {
+        self.rates.reset(month, currency).await
     }
 }

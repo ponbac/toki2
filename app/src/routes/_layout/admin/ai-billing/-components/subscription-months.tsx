@@ -19,10 +19,12 @@ import { formatEstimate, formatFee, shortDate } from "../../-lib/format";
 export function SubscriptionMonths({
   subscriptions,
   developers,
+  billingCurrency,
   showDeveloper = true,
 }: {
   subscriptions: readonly AiSubscriptionMonth[];
   developers: readonly AiBillingDeveloper[];
+  billingCurrency: string;
   showDeveloper?: boolean;
 }) {
   const names = new Map(developers.map((d) => [d.userId, d.fullName]));
@@ -73,8 +75,23 @@ export function SubscriptionMonths({
             <TableCell className="text-right tabular-nums">
               {formatFee(subscription.monthlyCost, subscription.currency)}
             </TableCell>
-            <TableCell className="text-right font-semibold tabular-nums">
-              {formatFee(subscription.proratedFee, subscription.currency)}
+            <TableCell className="text-right tabular-nums">
+              <div className="font-semibold">
+                {subscription.convertedProratedFee === null ? (
+                  <span className="text-[#c98500] dark:text-[#fab219]">
+                    No rate
+                  </span>
+                ) : (
+                  formatFee(subscription.convertedProratedFee, billingCurrency)
+                )}
+              </div>
+              {subscription.currency !== billingCurrency && (
+                <div className="text-xs text-muted-foreground">
+                  {formatFee(subscription.proratedFee, subscription.currency)}
+                  {subscription.exchangeRate !== null &&
+                    ` at ${subscription.exchangeRate}`}
+                </div>
+              )}
             </TableCell>
             <TableCell>
               {subscription.allocation === "apiCost" ? (

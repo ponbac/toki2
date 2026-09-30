@@ -40,6 +40,18 @@ _Avoid_: detected subscription
 What AI usage would cost at the provider's API prices, estimated in USD by token-ledger. Usage on days without an AI subscription bills at it, and on subscription days it weighs how the fee is split across projects. Unpriced usage has an unknown cost, never zero.
 _Avoid_: actual cost, spend, bill
 
+**Billing currency**:
+The one currency AI usage is billed in, SEK. Every billable amount is shown in it, converted at the month's exchange rate, next to its original amount and currency. Amounts already in SEK, and zero amounts, need no rate.
+_Avoid_: invoice currency, home currency
+
+**Exchange rate**:
+How many SEK one unit of another currency is worth for a billing month: the Riksbank's average of the month's daily rates, stored with the month so a bill can be reproduced. An admin's override applies instead; the fetched rate is kept beneath it and applies again when the override is reset. A missing rate is never guessed: amounts that need it have no SEK figure.
+_Avoid_: FX rate, conversion rate, spot rate
+
+**Provisional rate**:
+An exchange rate that is the average of the days published so far: that of a month in progress, or of a month whose average is not published yet. It is refreshed once a newer day may be published, at most hourly, until the month's final average replaces it.
+_Avoid_: estimated rate, temporary rate
+
 **Unassigned usage**:
 AI usage that counts for no time-tracking project: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. Billing charges it on its own line, and a mapping applies to past months too.
 _Avoid_: unmapped usage (it is only one of these cases)

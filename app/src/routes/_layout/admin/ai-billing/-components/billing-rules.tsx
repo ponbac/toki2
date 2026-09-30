@@ -55,11 +55,33 @@ export function BillingRules({ timeZone }: { timeZone: string }) {
               map its keys under Project mappings and the bill updates.
             </li>
             <li>
-              <span className="font-medium text-foreground">Currencies</span>{" "}
-              are never mixed or converted here. To invoice in one currency,
-              convert each amount in the CSV export from its{" "}
-              <code>billable_currency</code> at the exchange rate you choose, as
-              a separate step.
+              <span className="font-medium text-foreground">Currencies.</span>{" "}
+              Everything is billed in SEK at the Riksbank&apos;s average rate
+              for the month, stored with the month so the bill can be
+              reproduced; the original amount and currency stay beside it. A
+              month in progress uses its average so far, which is{" "}
+              <span className="font-medium text-foreground">provisional</span>{" "}
+              and refreshed after each Riksbank publication (12:15 on banking
+              days, at most hourly) until the month&apos;s final average
+              replaces it. An admin can override a month&apos;s rate; the
+              fetched rate is kept beneath it, never replaces it, and applies
+              again on reset.
+            </li>
+            <li>
+              Each line converts its billed amount (for API lines, the whole
+              cents) and rounds to öre. A subscription&apos;s pro-rated fee is
+              converted once and split across projects like the fee, so the SEK
+              shares add up to the converted fee exactly. SEK totals are sums of
+              the converted lines.
+            </li>
+            <li>
+              Without a rate, nothing is guessed: the SEK amounts that need it
+              and the totals that include them are left empty and flagged. The
+              CSV keeps <code>billable_amount</code> and{" "}
+              <code>billable_currency</code> beside <code>billable_sek</code>,{" "}
+              <code>rate</code>, <code>rate_source</code> and{" "}
+              <code>rate_provisional</code>, so it can still be billed per
+              currency.
             </li>
           </ul>
         </AccordionContent>

@@ -17,6 +17,9 @@ const monthSchema = z.string().regex(/^\d{4}-\d{2}$/);
 /** An exact amount with two decimals, such as `550.00`. */
 const decimalSchema = z.string().regex(/^\d+\.\d{2}$/);
 const currencySchema = z.string().regex(/^[A-Z]{3}$/);
+/** An exchange rate, units of the billing currency per unit, such as `10.50`
+ * or `0.064321`. */
+const rateSchema = z.string().regex(/^\d+\.\d{2,6}$/);
 
 const projectSchema = z
   .object({ projectId: z.string().min(1), projectName: z.string() })
@@ -55,6 +58,12 @@ const billingLineSchema = z
      * estimate rounded to whole cents; null when its cost is unknown. */
     billableAmount: decimalSchema.nullable(),
     billableCurrency: currencySchema,
+    /** What the line bills in the billing currency (SEK); null when its own
+     * amount is unknown or its currency has no rate (`missingRate`). */
+    convertedAmount: decimalSchema.nullable(),
+    /** The rate used; null for amounts already in the billing currency. */
+    exchangeRate: rateSchema.nullable(),
+    missingRate: z.boolean(),
     usage: usageSchema,
   })
   .strict();
@@ -74,6 +83,10 @@ const subscriptionMonthSchema = z
     coveredDays: z.number().int().positive(),
     daysInMonth: z.number().int().positive(),
     proratedFee: decimalSchema,
+    /** The pro-rated fee in the billing currency, converted once and split
+     * like the fee; null without a rate. */
+    convertedProratedFee: decimalSchema.nullable(),
+    exchangeRate: rateSchema.nullable(),
     allocation: z.enum(["apiCost", "tokens", "records", "unallocated"]),
     usage: usageSchema,
   })
@@ -94,8 +107,66 @@ const totalsSchema = z
     apiBilledUsd: decimalSchema,
     apiUnpricedRecords: count,
     usage: usageSchema,
+    /** Sums of the converted lines; null when a line it includes has no rate. */
+    converted: z
+      .object({
+        currency: currencySchema,
+        billed: decimalSchema.nullable(),
+        fees: decimalSchema.nullable(),
+        overhead: decimalSchema.nullable(),
+        api: decimalSchema.nullable(),
+      })
+      .strict(),
   })
   .strict();
+
+/** A month's exchange rate to the billing currency. Dates only. */
+const exchangeRateSchema = z
+  .object({
+    month: monthSchema,
+    currency: currencySchema,
+    /** What the month bills at: the override's rate, else the fetched one. */
+    rate: rateSchema,
+    /** `admin` for an override, else the provider's name, such as `riksbank`. */
+    source: z.string().min(1),
+    /** The rate billed at is an average of the days published so far. */
+    provisional: z.boolean(),
+    /** The provider's rate, kept beneath an override too. */
+    fetched: z
+      .object({
+        rate: rateSchema,
+        source: z.string().min(1),
+        provisional: z.boolean(),
+        /** The latest day whose daily rate the average includes. */
+        observedThrough: localDateSchema,
+        fetchedOn: localDateSchema,
+      })
+      .strict()
+      .nullable(),
+    override: z
+      .object({
+        rate: rateSchema,
+        overriddenOn: localDateSchema,
+        overriddenBy: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+/** A bill's lines, subscriptions and totals, with its conversion. */
+const billShape = {
+  billingCurrency: currencySchema,
+  lines: z.array(billingLineSchema),
+  subscriptions: z.array(subscriptionMonthSchema),
+  totals: totalsSchema,
+  exchangeRates: z.array(exchangeRateSchema),
+  /** Currencies the bill has non-zero amounts in but no rate for. */
+  missingRates: z.array(currencySchema),
+  /** Currencies needed by the bill whose fetch is still in progress,
+   * including usable provisional rates being refreshed. */
+  pendingRates: z.array(currencySchema),
+};
 
 const periodShape = {
   month: monthSchema,
@@ -108,9 +179,7 @@ const billingOverviewSchema = z
   .object({
     ...periodShape,
     developers: z.array(developerSchema),
-    lines: z.array(billingLineSchema),
-    subscriptions: z.array(subscriptionMonthSchema),
-    totals: totalsSchema,
+    ...billShape,
   })
   .strict();
 
@@ -131,9 +200,7 @@ const developerMonthSchema = z
   .object({
     ...periodShape,
     developer: developerSchema,
-    lines: z.array(billingLineSchema),
-    subscriptions: z.array(subscriptionMonthSchema),
-    totals: totalsSchema,
+    ...billShape,
     machines: z.array(
       z.object({ machineId: z.string().uuid(), label: z.string() }).strict(),
     ),
@@ -210,6 +277,7 @@ export type AiSubscriptionMonth = Readonly<
   z.infer<typeof subscriptionMonthSchema>
 >;
 export type AiBillingTotals = Readonly<z.infer<typeof totalsSchema>>;
+export type AiExchangeRate = Readonly<z.infer<typeof exchangeRateSchema>>;
 export type AiBillingOverview = Readonly<z.infer<typeof billingOverviewSchema>>;
 /** A developer's usage on one local day of one provider, model, machine and key. */
 export type AiDayUsage = Readonly<z.infer<typeof dayUsageSchema>>;
@@ -241,6 +309,21 @@ export function parseAiBillingCompleteness(
   input: unknown,
 ): AiBillingCompleteness {
   return completenessSchema.parse(input);
+}
+
+/** Parses an exchange rate an admin set. */
+export function parseAiExchangeRate(input: unknown): AiExchangeRate {
+  return exchangeRateSchema.parse(input);
+}
+
+/** Parses what resetting a rate left: the fetched rate, or null. */
+export function parseAiExchangeRateReset(
+  input: unknown,
+): AiExchangeRate | null {
+  return z
+    .object({ exchangeRate: exchangeRateSchema.nullable() })
+    .strict()
+    .parse(input).exchangeRate;
 }
 
 /** Parses the admin list of every user. */

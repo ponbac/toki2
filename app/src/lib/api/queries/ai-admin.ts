@@ -26,12 +26,25 @@ export type {
   AiDayUsage,
   AiDeveloperCompleteness,
   AiDeveloperMonth,
+  AiExchangeRate,
   AiMachineCompleteness,
   AiSubscriptionMonth,
   AiUnmappedProjectKey,
   AiUploadGap,
 } from "../contracts/ai-admin";
 export type { AiProjectMapping } from "../contracts/ai-usage-report";
+
+/** How often a bill whose exchange rates are still being fetched is reloaded. */
+const PENDING_RATES_POLL_MS = 3_000;
+
+/** Reloads a bill until the server has fetched its pending rates. */
+function whileRatesArePending(query: {
+  state: { data?: { pendingRates: readonly string[] } };
+}): number | false {
+  return (query.state.data?.pendingRates.length ?? 0) > 0
+    ? PENDING_RATES_POLL_MS
+    : false;
+}
 
 export { AI_ADMIN_QUERY_KEY } from "../ai-cache";
 
@@ -62,6 +75,7 @@ export const aiAdminQueries = {
         parseAiBillingOverview(
           await api.get(`ai-usage/admin/billing/${month}`).json<unknown>(),
         ),
+      refetchInterval: whileRatesArePending,
     }),
   /** Whether each developer's machines uploaded all of a month's usage. */
   completeness: (month: string) =>
@@ -84,6 +98,7 @@ export const aiAdminQueries = {
             .get(`ai-usage/admin/billing/${month}/developers/${userId}`)
             .json<unknown>(),
         ),
+      refetchInterval: whileRatesArePending,
     }),
   /** Every user, by name. */
   developers: () =>
