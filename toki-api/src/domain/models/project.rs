@@ -1,5 +1,12 @@
 use super::{ActivityId, ProjectId};
 
+/// The time-tracking provider and company that project ids belong to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimeTrackingCompany {
+    pub provider: String,
+    pub company_id: String,
+}
+
 /// A project in the time tracking system.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {

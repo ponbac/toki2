@@ -19,7 +19,8 @@ pub trait AiUsageService: Send + Sync + 'static {
     ) -> Result<AiUsageIngestReceipt, AiUsageError>;
 
     /// Sums the user's usage across machines per project and configured-zone
-    /// day or month. Each row reports the dates it covers, clipped to `dates`.
+    /// day or month. Each row reports the dates it covers, clipped to `dates`,
+    /// and the project its key is mapped to when read.
     async fn period_totals(
         &self,
         user_id: &UserId,

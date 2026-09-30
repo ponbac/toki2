@@ -136,6 +136,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
   (`Maintenance/Operations/Support – time bank`). Treat a non-empty user activity list as
   allowed when the project activity list is empty; intersect only when both lists are non-empty.
 - Kleer JSON payloads use kebab-case field names and plain `YYYY-MM-DD` dates. Prefer explicit serde helpers over implicit date serialization.
+- AI usage project mappings (`/ai-usage/project-mappings`) offer and validate against every active company project through `KleerProjectCatalog` (`TimeTrackingProjectCatalog` port), not the per-user bookable list. It shares the adapters' 5-minute active-project cache and needs no user mapping. Each mapping stores the provider (`kleer`), the company id and the project name at save time; only mappings for the configured company resolve, others are listed as stale. Missing Kleer credentials are logged once at startup, and mapping requests then answer `503 time tracking is not configured`.
 
 ## Main Repo Touchpoints
 

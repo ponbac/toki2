@@ -4,8 +4,8 @@ use crate::{
     db::DbPool,
     domain::{
         models::{
-            AiTokenCounts, AiUsageDateRange, AiUsagePeriod, AiUsagePeriodTotals, AiUsageTimeZone,
-            AiUsageTotals, AiUsageUpload, UserId,
+            AiMappedProject, AiTokenCounts, AiUsageDateRange, AiUsagePeriod, AiUsagePeriodTotals,
+            AiUsageTimeZone, AiUsageTotals, AiUsageUpload, ProjectId, TimeTrackingCompany, UserId,
         },
         ports::outbound::AiUsageRepository,
         AiUsageError,
@@ -262,6 +262,7 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         dates: AiUsageDateRange,
         period: AiUsagePeriod,
         time_zone: &AiUsageTimeZone,
+        mapping_company: Option<&TimeTrackingCompany>,
     ) -> Result<Vec<AiUsagePeriodTotals>, AiUsageError> {
         let unit = match period {
             AiUsagePeriod::Day => "day",
@@ -272,35 +273,47 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         // months correct across daylight-saving changes. A bucket belongs to the
         // local date of its start instant. Periods are clipped to the range, and
         // the range bounds stay comparable with the (user_id, hour_start) index.
+        // Mappings are joined here, never stored with usage, so they apply
+        // retroactively. Only mappings to the configured company resolve, so
+        // without one nothing does. Grouping by the mapping's key keeps one row
+        // per project key.
         let rows = sqlx::query!(
             r#"
             SELECT
                 greatest(period.start, $2::date) AS "start!",
                 least((period.start + ('1 ' || $4)::interval)::date, $3::date) AS "end!",
-                project_key,
-                SUM(input_tokens)::int8 AS "input_tokens!",
-                SUM(cache_read_tokens)::int8 AS "cache_read_tokens!",
-                SUM(cache_write_tokens)::int8 AS "cache_write_tokens!",
-                SUM(output_tokens)::int8 AS "output_tokens!",
-                SUM(records)::int8 AS "records!",
-                COALESCE(SUM(estimated_cost_usd), 0)::float8 AS "priced_cost_usd!",
-                COUNT(*) FILTER (WHERE estimated_cost_usd IS NULL) AS "unpriced_buckets!",
-                SUM(unpriced_records)::int8 AS "unpriced_records!"
-            FROM ai_usage_buckets
+                bucket.project_key,
+                mapping.project_id AS "mapped_project_id?",
+                mapping.project_name AS "mapped_project_name?",
+                SUM(bucket.input_tokens)::int8 AS "input_tokens!",
+                SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
+                SUM(bucket.cache_write_tokens)::int8 AS "cache_write_tokens!",
+                SUM(bucket.output_tokens)::int8 AS "output_tokens!",
+                SUM(bucket.records)::int8 AS "records!",
+                COALESCE(SUM(bucket.estimated_cost_usd), 0)::float8 AS "priced_cost_usd!",
+                COUNT(*) FILTER (WHERE bucket.estimated_cost_usd IS NULL) AS "unpriced_buckets!",
+                SUM(bucket.unpriced_records)::int8 AS "unpriced_records!"
+            FROM ai_usage_buckets AS bucket
             CROSS JOIN LATERAL (
-                SELECT date_trunc($4, hour_start AT TIME ZONE $5)::date AS start
+                SELECT date_trunc($4, bucket.hour_start AT TIME ZONE $5)::date AS start
             ) AS period
-            WHERE user_id = $1
-              AND hour_start >= ($2::date::timestamp AT TIME ZONE $5)
-              AND hour_start < ($3::date::timestamp AT TIME ZONE $5)
-            GROUP BY period.start, project_key
-            ORDER BY period.start, project_key
+            LEFT JOIN ai_project_mappings AS mapping
+                ON mapping.project_key = bucket.project_key
+                AND mapping.provider = $6
+                AND mapping.provider_company_id = $7
+            WHERE bucket.user_id = $1
+              AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $5)
+              AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $5)
+            GROUP BY period.start, bucket.project_key, mapping.project_key
+            ORDER BY period.start, bucket.project_key
             "#,
             user_id.as_i32(),
             dates.start(),
             dates.end(),
             unit,
             time_zone.as_str(),
+            mapping_company.map(|company| company.provider.as_str()),
+            mapping_company.map(|company| company.company_id.as_str()),
         )
         .fetch_all(&self.pool)
         .await
@@ -312,9 +325,23 @@ impl AiUsageRepository for PostgresAiUsageRepository {
                     AiUsageError::Storage("a usage period ends before it starts".to_string())
                 })?;
 
+                let project = match (row.mapped_project_id, row.mapped_project_name) {
+                    (Some(id), Some(name)) => Some(AiMappedProject {
+                        id: ProjectId::new(id),
+                        name,
+                    }),
+                    (None, None) => None,
+                    _ => {
+                        return Err(AiUsageError::Storage(
+                            "a project mapping has only one of its project id and name".to_string(),
+                        ))
+                    }
+                };
+
                 Ok(AiUsagePeriodTotals {
                     dates,
                     project_key: row.project_key,
+                    project,
                     totals: AiUsageTotals {
                         tokens: AiTokenCounts {
                             input: row.input_tokens,

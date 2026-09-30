@@ -2,21 +2,36 @@ use std::ops::Deref;
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 
-use crate::{domain::UserPrincipal, routes::ApiError};
+use crate::{
+    domain::{AuthMethod, UserPrincipal},
+    routes::ApiError,
+};
 
 use super::AuthSession;
 
-/// The narrow authenticated identity exposed to request handlers.
+/// The narrow authenticated identity exposed to request handlers, and how it
+/// was authenticated.
 ///
 /// Provider credentials and session hashes cannot cross this boundary.
 #[derive(Debug, Clone)]
-pub struct AuthUser(UserPrincipal);
+pub struct AuthUser {
+    principal: UserPrincipal,
+    method: AuthMethod,
+}
+
+impl AuthUser {
+    /// Whether the request came from a browser session or an API token. Routes
+    /// may withhold powers from long-lived tokens that sessions have.
+    pub fn method(&self) -> AuthMethod {
+        self.method
+    }
+}
 
 impl Deref for AuthUser {
     type Target = UserPrincipal;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.principal
     }
 }
 
@@ -33,7 +48,10 @@ where
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         if let Some(principal) = parts.extensions.get::<ApiTokenPrincipal>() {
-            return Ok(Self(principal.0.clone()));
+            return Ok(Self {
+                principal: principal.0.clone(),
+                method: AuthMethod::ApiToken,
+            });
         }
 
         let auth_session = AuthSession::from_request_parts(parts, state)
@@ -44,6 +62,9 @@ where
             .user
             .ok_or_else(|| ApiError::unauthorized("Not authenticated"))?;
 
-        Ok(Self(UserPrincipal::from(&user)))
+        Ok(Self {
+            principal: UserPrincipal::from(&user),
+            method: AuthMethod::Session,
+        })
     }
 }

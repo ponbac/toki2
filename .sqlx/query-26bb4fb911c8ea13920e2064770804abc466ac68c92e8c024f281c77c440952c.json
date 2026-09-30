@@ -1,0 +1,93 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH saved AS (\n                INSERT INTO ai_project_mappings (\n                    project_key, provider, provider_company_id, project_id, project_name,\n                    created_by, updated_by\n                )\n                VALUES ($1, $2, $3, $4, $5, $6, $6)\n                ON CONFLICT (project_key) DO UPDATE\n                SET provider = EXCLUDED.provider,\n                    provider_company_id = EXCLUDED.provider_company_id,\n                    project_id = EXCLUDED.project_id,\n                    project_name = EXCLUDED.project_name,\n                    updated_by = EXCLUDED.updated_by,\n                    updated_at = now()\n                RETURNING *\n            )\n            SELECT\n                saved.project_key AS \"project_key!\",\n                saved.provider AS \"provider!\",\n                saved.provider_company_id AS \"provider_company_id!\",\n                saved.project_id AS \"project_id!\",\n                saved.project_name AS \"project_name!\",\n                saved.created_by AS \"created_by?\",\n                creator.full_name AS \"created_by_name?\",\n                saved.created_at AS \"created_at!\",\n                saved.updated_by AS \"updated_by?\",\n                editor.full_name AS \"updated_by_name?\",\n                saved.updated_at AS \"updated_at!\",\n                EXISTS (\n                    SELECT 1 FROM ai_usage_buckets AS bucket\n                    WHERE bucket.project_key = saved.project_key\n                ) AS \"in_use!\"\n            FROM saved\n            LEFT JOIN users AS creator ON creator.id = saved.created_by\n            LEFT JOIN users AS editor ON editor.id = saved.updated_by\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "project_key!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_company_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "project_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "project_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_by?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_by_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_by?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_by_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "in_use!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "26bb4fb911c8ea13920e2064770804abc466ac68c92e8c024f281c77c440952c"
+}
