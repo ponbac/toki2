@@ -170,7 +170,9 @@ impl From<crate::domain::ApiTokenError> for ApiError {
 impl From<AiUsageError> for ApiError {
     fn from(err: AiUsageError) -> Self {
         match err {
-            AiUsageError::InvalidUpload(message) => Self::bad_request(message),
+            AiUsageError::InvalidUpload(message) | AiUsageError::InvalidQuery(message) => {
+                Self::bad_request(message)
+            }
             AiUsageError::MachineOwnedByAnotherUser => Self::forbidden(err.to_string()),
             AiUsageError::NumericRange => {
                 Self::new(StatusCode::UNPROCESSABLE_ENTITY, err.to_string())

@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
+use super::ai_usage_reads::project_key_usage;
 use crate::{
     db::DbPool,
     domain::{
@@ -88,30 +89,14 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
         scope: AiUsageScope,
         time_zone: &AiUsageTimeZone,
     ) -> Result<Vec<UnmappedAiProjectKey>, AiProjectMappingError> {
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                bucket.project_key,
-                (max(bucket.hour_start) AT TIME ZONE $2)::date AS "last_used_on!"
-            FROM ai_usage_buckets AS bucket
-            WHERE ($1::int4 IS NULL OR bucket.user_id = $1)
-              AND NOT EXISTS (
-                  SELECT 1 FROM ai_project_mappings AS mapping
-                  WHERE mapping.project_key = bucket.project_key
-              )
-            GROUP BY bucket.project_key
-            ORDER BY 2 DESC, bucket.project_key
-            "#,
-            scope_user(scope),
-            time_zone.as_str(),
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(storage_error)?;
+        let keys = project_key_usage(&self.pool, scope, time_zone)
+            .await
+            .map_err(storage_error)?;
 
-        Ok(rows
+        Ok(keys
             .into_iter()
-            .map(|row| UnmappedAiProjectKey::new(row.project_key, row.last_used_on))
+            .filter(|key| !key.mapped)
+            .map(|key| UnmappedAiProjectKey::new(key.project_key, key.last_used_on))
             .collect())
     }
 

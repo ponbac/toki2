@@ -1,0 +1,128 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH selected AS (\n                SELECT\n                    (bucket.hour_start AT TIME ZONE $4) AS local,\n                    bucket.machine_id,\n                    bucket.provider,\n                    bucket.model,\n                    bucket.project_key,\n                    resolved.project_id,\n                    bucket.input_tokens,\n                    bucket.cache_read_tokens,\n                    bucket.cache_write_tokens,\n                    bucket.output_tokens,\n                    bucket.records,\n                    bucket.estimated_cost_usd,\n                    bucket.unpriced_records\n                FROM ai_usage_buckets AS bucket\n                LEFT JOIN UNNEST($10::text[], $11::text[]) AS resolved (project_key, project_id)\n                    ON resolved.project_key = bucket.project_key\n                WHERE bucket.user_id = $1\n                  AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)\n                  AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)\n                  AND ($5::text IS NULL OR bucket.provider = $5)\n                  AND ($6::text IS NULL OR bucket.model = $6)\n                  AND ($7::uuid IS NULL OR bucket.machine_id = $7)\n                  AND ($8::text[] IS NULL OR bucket.project_key = ANY($8))\n                  AND ($9::text[] IS NULL OR bucket.project_key <> ALL($9))\n            )\n            SELECT\n                GROUPING(\n                    parts.date, parts.weekday, parts.hour, selected.machine_id,\n                    selected.provider, selected.model, selected.project_id, selected.project_key\n                ) AS \"grouping!\",\n                parts.date AS \"date?\",\n                parts.weekday AS \"weekday?\",\n                parts.hour AS \"hour?\",\n                selected.machine_id AS \"machine_id?\",\n                selected.provider AS \"provider?\",\n                selected.model AS \"model?\",\n                selected.project_id AS \"project_id?\",\n                selected.project_key AS \"project_key?\",\n                COALESCE(SUM(selected.input_tokens), 0)::int8 AS \"input_tokens!\",\n                COALESCE(SUM(selected.cache_read_tokens), 0)::int8 AS \"cache_read_tokens!\",\n                COALESCE(SUM(selected.cache_write_tokens), 0)::int8 AS \"cache_write_tokens!\",\n                COALESCE(SUM(selected.output_tokens), 0)::int8 AS \"output_tokens!\",\n                COALESCE(SUM(selected.records), 0)::int8 AS \"records!\",\n                COALESCE(SUM(selected.estimated_cost_usd), 0)::float8 AS \"priced_cost_usd!\",\n                COUNT(*) FILTER (WHERE selected.estimated_cost_usd IS NULL) AS \"unpriced_buckets!\",\n                COALESCE(SUM(selected.unpriced_records), 0)::int8 AS \"unpriced_records!\"\n            FROM selected\n            CROSS JOIN LATERAL (\n                SELECT\n                    selected.local::date AS date,\n                    extract(isodow FROM selected.local)::int4 AS weekday,\n                    extract(hour FROM selected.local)::int4 AS hour\n            ) AS parts\n            GROUP BY GROUPING SETS (\n                (),\n                (parts.date, selected.provider, selected.model),\n                (selected.project_id),\n                (selected.project_key),\n                (selected.provider, selected.model),\n                (selected.machine_id),\n                (parts.weekday, parts.hour)\n            )\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "grouping!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "date?",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "weekday?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "hour?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "machine_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "provider?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "model?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "project_id?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "project_key?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "input_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "cache_read_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "cache_write_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "output_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "records!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "priced_cost_usd!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 15,
+        "name": "unpriced_buckets!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 16,
+        "name": "unpriced_records!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      false,
+      false,
+      false,
+      null,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "dc1c1c18f18beaf1c712b33c1ff6a62696323f6acb26a4ada11817c251c26bc5"
+}

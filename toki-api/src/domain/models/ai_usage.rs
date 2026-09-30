@@ -38,6 +38,10 @@ impl AiMachineId {
         Uuid::try_parse(raw).ok().map(Self)
     }
 
+    pub fn from_uuid(id: Uuid) -> Self {
+        Self(id)
+    }
+
     pub fn as_uuid(&self) -> Uuid {
         self.0
     }
@@ -49,8 +53,8 @@ impl fmt::Display for AiMachineId {
     }
 }
 
-/// A tool whose local history token-ledger reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// A tool whose local history token-ledger reads. Ordered as declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AiProvider {
     Codex,
     Claude,
@@ -90,6 +94,16 @@ pub enum AiCoverageStatus {
 }
 
 impl AiCoverageStatus {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "ok" => Some(Self::Ok),
+            "partial" => Some(Self::Partial),
+            "failed" => Some(Self::Failed),
+            "missing" => Some(Self::Missing),
+            _ => None,
+        }
+    }
+
     /// Whether an upload is authoritative for the provider's usage inside its
     /// window. Missing or failed history proves nothing, so stored usage stays.
     pub fn replaces_usage(self) -> bool {
@@ -116,6 +130,16 @@ pub enum AiPricingStatus {
 }
 
 impl AiPricingStatus {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "fresh" => Some(Self::Fresh),
+            "cached" => Some(Self::Cached),
+            "unavailable" => Some(Self::Unavailable),
+            "custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Fresh => "fresh",

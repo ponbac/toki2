@@ -1,6 +1,7 @@
 import * as React from "react";
 import {
   LucideIcon,
+  BrainCircuit,
   FolderGit2,
   GitPullRequest,
   KanbanSquare,
@@ -42,6 +43,12 @@ const MENU_ITEMS = [
     icon: FolderGit2,
     variant: "ghost",
     to: "/repositories",
+  },
+  {
+    title: "AI usage",
+    icon: BrainCircuit,
+    variant: "ghost",
+    to: "/ai-usage",
   },
 ] as const satisfies readonly {
   title: string;

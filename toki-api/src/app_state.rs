@@ -21,8 +21,8 @@ use crate::{
     db::DbPool,
     domain::{
         ports::inbound::{
-            AiProjectMappingService, AiSubscriptionService, AiUsageService, ApiTokenService,
-            AvatarService,
+            AiProjectMappingService, AiSubscriptionService, AiUsageReportService, AiUsageService,
+            ApiTokenService, AvatarService,
         },
         CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
         RepoDifferMessage, RepoKey,
@@ -68,6 +68,7 @@ pub struct AppState {
     pub avatar_service: Arc<dyn AvatarService>,
     pub api_token_service: Arc<dyn ApiTokenService>,
     pub ai_usage_service: Arc<dyn AiUsageService>,
+    pub ai_usage_report_service: Arc<dyn AiUsageReportService>,
     pub ai_project_mapping_service: Arc<dyn AiProjectMappingService>,
     pub ai_subscription_service: Arc<dyn AiSubscriptionService>,
     pub work_item_factory: Arc<dyn WorkItemServiceFactory>,
@@ -87,6 +88,12 @@ impl std::fmt::Debug for AppState {
 impl FromRef<AppState> for Arc<dyn AiUsageService> {
     fn from_ref(state: &AppState) -> Self {
         state.ai_usage_service.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<dyn AiUsageReportService> {
+    fn from_ref(state: &AppState) -> Self {
+        state.ai_usage_report_service.clone()
     }
 }
 
@@ -114,6 +121,7 @@ impl AppState {
         avatar_service: Arc<dyn AvatarService>,
         api_token_service: Arc<dyn ApiTokenService>,
         ai_usage_service: Arc<dyn AiUsageService>,
+        ai_usage_report_service: Arc<dyn AiUsageReportService>,
         ai_project_mapping_service: Arc<dyn AiProjectMappingService>,
         ai_subscription_service: Arc<dyn AiSubscriptionService>,
     ) -> Self {
@@ -196,6 +204,7 @@ impl AppState {
             avatar_service,
             api_token_service,
             ai_usage_service,
+            ai_usage_report_service,
             ai_project_mapping_service,
             ai_subscription_service,
             work_item_factory,

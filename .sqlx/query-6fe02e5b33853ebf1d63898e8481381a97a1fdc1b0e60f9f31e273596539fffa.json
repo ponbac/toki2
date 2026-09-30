@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT project_key, provider, provider_company_id, project_id, project_name\n        FROM ai_project_mappings\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "project_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_company_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "project_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "project_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6fe02e5b33853ebf1d63898e8481381a97a1fdc1b0e60f9f31e273596539fffa"
+}
