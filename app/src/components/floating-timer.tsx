@@ -13,7 +13,10 @@ import {
 import { cn, formatHoursMinutes } from "@/lib/utils";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
+import {
+  timeTrackingMutations,
+  type EditTimerPayload,
+} from "@/lib/api/mutations/time-tracking";
 import { apiErrorToast } from "@/lib/api/errors";
 import dayjs from "dayjs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -39,6 +42,14 @@ import {
 } from "@/lib/time-tracking-default-notes";
 import { Textarea } from "./ui/textarea";
 import { ScrollArea } from "./ui/scroll-area";
+import {
+  confirmTimerNoteDraftSaved,
+  editTimerNoteDraft,
+  EMPTY_TIMER_NOTE_DRAFT,
+  isTimerNoteDraftDirty,
+  syncTimerNoteDraft,
+  type ServerTimerNote,
+} from "@/lib/timer-note-draft";
 
 type PendingSaveConfirmation = {
   note: string;
@@ -94,11 +105,16 @@ export const FloatingTimer = () => {
 
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [isMinimized, setIsMinimized] = React.useState(false);
-  const [userNote, setUserNote] = React.useState("");
+  const [timerNoteDraft, setTimerNoteDraft] = React.useState(
+    EMPTY_TIMER_NOTE_DRAFT,
+  );
+  const userNote = timerNoteDraft.note;
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
+  const [isSaveQueued, setIsSaveQueued] = React.useState(false);
   const [pendingSaveConfirmation, setPendingSaveConfirmation] =
     React.useState<PendingSaveConfirmation | null>(null);
   const noteTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const timerMutationQueueRef = React.useRef<Promise<void>>(Promise.resolve());
   const [noteTextareaViewportHeight, setNoteTextareaViewportHeight] =
     React.useState(NOTE_TEXTAREA_MIN_HEIGHT);
 
@@ -144,11 +160,11 @@ export const FloatingTimer = () => {
         removeSegment("timer");
       },
     });
-  const { mutate: saveTimer, isPending: isSavingTimer } =
+  const { mutateAsync: saveTimer, isPending: isSavingTimer } =
     timeTrackingMutations.useSaveTimer({
       onError: apiErrorToast("Failed to save timer"),
     });
-  const { mutate: editTimer } = timeTrackingMutations.useEditTimer({
+  const { mutateAsync: editTimer } = timeTrackingMutations.useEditTimer({
     onSuccess: () => {
       toast.success("Timer successfully updated");
     },
@@ -159,6 +175,25 @@ export const FloatingTimer = () => {
   const startTimeRef = React.useRef<Date | null>(null);
 
   const { addSegment, removeSegment } = useTitleStore();
+
+  const queueTimerEdit = React.useCallback(
+    (body: EditTimerPayload, savedTimerNote?: ServerTimerNote) => {
+      const editOperation = timerMutationQueueRef.current.then(async () => {
+        await editTimer(body);
+
+        if (savedTimerNote) {
+          setTimerNoteDraft((currentDraft) =>
+            confirmTimerNoteDraftSaved(currentDraft, savedTimerNote),
+          );
+        }
+      });
+      const settledOperation = editOperation.catch(() => undefined);
+      timerMutationQueueRef.current = settledOperation;
+
+      return settledOperation;
+    },
+    [editTimer],
+  );
 
   const clearPendingSaveConfirmation = React.useCallback(
     () => setPendingSaveConfirmation(null),
@@ -189,26 +224,35 @@ export const FloatingTimer = () => {
         return;
       }
 
-      saveTimer(
-        {
-          userNote: note,
-          restartTimer: shouldAutoRestart
-            ? {
-                userNote: CONTINUING_MY_WORK_NOTE,
-                ...restartTimerParams,
-              }
-            : undefined,
-        },
-        {
-          onSuccess: () => {
-            toast.success("Timer successfully saved");
-            if (!shouldAutoRestart) {
-              removeSegment("timer");
-            }
-            rememberCurrentTimerSelection();
-          },
-        },
-      );
+      setIsSaveQueued(true);
+      const saveOperation = timerMutationQueueRef.current.then(async () => {
+        try {
+          await saveTimer(
+            {
+              userNote: note,
+              restartTimer: shouldAutoRestart
+                ? {
+                    userNote: CONTINUING_MY_WORK_NOTE,
+                    ...restartTimerParams,
+                  }
+                : undefined,
+            },
+            {
+              onSuccess: () => {
+                toast.success("Timer successfully saved");
+                if (!shouldAutoRestart) {
+                  removeSegment("timer");
+                }
+                rememberCurrentTimerSelection();
+              },
+            },
+          );
+        } finally {
+          setIsSaveQueued(false);
+        }
+      });
+      const settledOperation = saveOperation.catch(() => undefined);
+      timerMutationQueueRef.current = settledOperation;
     },
     [
       removeSegment,
@@ -221,7 +265,7 @@ export const FloatingTimer = () => {
 
   const handleSaveButtonClick = React.useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
-      const note = userNote ?? "";
+      const note = noteTextareaRef.current?.value ?? userNote;
       const shouldAutoRestart = !(e.ctrlKey || e.metaKey);
 
       if (isDefaultStartTimerNote(note)) {
@@ -249,7 +293,13 @@ export const FloatingTimer = () => {
         state: "running",
         timeSeconds: totalSeconds,
       });
-      setUserNote(timer.note || "");
+      const serverTimerNote: ServerTimerNote = {
+        timerStartTime: timer.startTime,
+        note: timer.note || "",
+      };
+      setTimerNoteDraft((currentDraft) =>
+        syncTimerNoteDraft(currentDraft, serverTimerNote),
+      );
       scheduleTimerNoteTextareaHeightSync(
         noteTextareaRef,
         setNoteTextareaViewportHeight,
@@ -364,7 +414,9 @@ export const FloatingTimer = () => {
                         variant="ghost"
                         size="icon"
                         onClick={handleSaveButtonClick}
-                        disabled={isSavingTimer || isStoppingTimer}
+                        disabled={
+                          isSaveQueued || isSavingTimer || isStoppingTimer
+                        }
                       >
                         <SaveIcon className="h-6 w-6 text-muted-foreground" />
                         <span className="sr-only">Save</span>
@@ -381,7 +433,9 @@ export const FloatingTimer = () => {
                       variant="ghost"
                       size="icon"
                       onClick={() => setIsEditDialogOpen(true)}
-                      disabled={isSavingTimer || isStoppingTimer}
+                      disabled={
+                        isSaveQueued || isSavingTimer || isStoppingTimer
+                      }
                     >
                       <EditIcon className="h-6 w-6 text-muted-foreground" />
                       <span className="sr-only">Edit</span>
@@ -395,7 +449,9 @@ export const FloatingTimer = () => {
                       variant="ghost"
                       size="icon"
                       onClick={() => stopTimer()}
-                      disabled={isSavingTimer || isStoppingTimer}
+                      disabled={
+                        isSaveQueued || isSavingTimer || isStoppingTimer
+                      }
                     >
                       <Trash2Icon className="h-6 w-6 text-muted-foreground" />
                       <span className="sr-only">Delete</span>
@@ -453,18 +509,38 @@ export const FloatingTimer = () => {
                         rows={1}
                         wrap="off"
                         value={userNote}
+                        disabled={isSaveQueued}
                         onChange={(e) => {
+                          const note = e.currentTarget.value;
                           syncTimerNoteTextareaHeight(
                             e.currentTarget,
                             setNoteTextareaViewportHeight,
                           );
-                          setUserNote(e.currentTarget.value);
+                          setTimerNoteDraft((currentDraft) =>
+                            editTimerNoteDraft(currentDraft, note),
+                          );
                         }}
-                        onBlur={() =>
-                          userNote !== timer?.note
-                            ? editTimer({ userNote })
-                            : undefined
-                        }
+                        onBlur={() => {
+                          const nextNote =
+                            noteTextareaRef.current?.value ?? userNote;
+                          const nextDraft = editTimerNoteDraft(
+                            timerNoteDraft,
+                            nextNote,
+                          );
+
+                          if (!timer || !isTimerNoteDraftDirty(nextDraft)) {
+                            return;
+                          }
+
+                          setTimerNoteDraft(nextDraft);
+                          void queueTimerEdit(
+                            { userNote: nextNote },
+                            {
+                              timerStartTime: timer.startTime,
+                              note: nextNote,
+                            },
+                          );
+                        }}
                         style={{
                           minHeight: NOTE_TEXTAREA_MIN_HEIGHT,
                           scrollbarWidth: "none",
@@ -479,6 +555,7 @@ export const FloatingTimer = () => {
                         <PopoverTrigger asChild>
                           <button
                             type="button"
+                            disabled={isSaveQueued}
                             className="absolute right-2 top-2 z-10 grid size-6 place-items-center rounded-md border border-border/70 bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             aria-label="Show recent entries"
                             onMouseEnter={() =>
@@ -510,14 +587,24 @@ export const FloatingTimer = () => {
                         searchInputClassName="focus-visible:ring-0 focus-visible:ring-shadow-none focus-visible:shadow-none focus-visible:ring-offset-0"
                         onHistoryClick={(timeEntry) => {
                           const note = timeEntry.note ?? "";
-                          setUserNote(note);
-                          editTimer({
-                            userNote: note,
-                            projectId: timeEntry.projectId,
-                            activityId: timeEntry.activityId,
-                            projectName: timeEntry.projectName,
-                            activityName: timeEntry.activityName,
-                          });
+                          setTimerNoteDraft((currentDraft) =>
+                            editTimerNoteDraft(currentDraft, note),
+                          );
+                          if (timer) {
+                            void queueTimerEdit(
+                              {
+                                userNote: note,
+                                projectId: timeEntry.projectId,
+                                activityId: timeEntry.activityId,
+                                projectName: timeEntry.projectName,
+                                activityName: timeEntry.activityName,
+                              },
+                              {
+                                timerStartTime: timer.startTime,
+                                note,
+                              },
+                            );
+                          }
                           scheduleTimerNoteTextareaHeightSync(
                             noteTextareaRef,
                             setNoteTextareaViewportHeight,
@@ -565,7 +652,7 @@ export const FloatingTimer = () => {
           );
           clearPendingSaveConfirmation();
         }}
-        isPending={isSavingTimer || isStoppingTimer}
+        isPending={isSaveQueued || isSavingTimer || isStoppingTimer}
       />
     </>
   ) : null;

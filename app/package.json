@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "tsc": "tsc --noEmit",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
+    "test": "bun test",
     "preview": "vite preview"
   },
   "dependencies": {
