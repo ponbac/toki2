@@ -10,13 +10,13 @@ use crate::domain::{
 /// Use cases for mapping AI usage project keys to time-tracking projects.
 ///
 /// Mappings are team-wide, one per key, so changing one re-attributes everyone's
-/// usage of the key. Developers may therefore only create the first mapping of a
-/// key in their own usage. Changing and deleting mappings, and seeing everyone's,
+/// usage of the key. Changing and deleting mappings, and seeing everyone's,
 /// needs an admin in a browser session: an API token never has admin powers.
 ///
 /// An unmapped key may name a private repository, so its name stays with the
 /// developers who use it until one of them maps it. Nobody, admins included, is
-/// shown another developer's unmapped keys.
+/// shown another developer's unmapped keys, and only someone whose own usage
+/// has a key can create its first mapping.
 #[async_trait]
 pub trait AiProjectMappingService: Send + Sync + 'static {
     /// The mappings of project keys in the actor's own usage, or every mapping
@@ -39,7 +39,9 @@ pub trait AiProjectMappingService: Send + Sync + 'static {
     async fn list_projects(&self) -> Result<Vec<Project>, AiProjectMappingError>;
 
     /// Maps a project key to an active time-tracking project, recording the
-    /// project's current name and the actor.
+    /// project's current name and the actor. The first mapping of a key takes
+    /// an actor whose own usage has it; changing a mapping takes an admin
+    /// session.
     async fn set_mapping(
         &self,
         actor: &AiProjectMappingActor,

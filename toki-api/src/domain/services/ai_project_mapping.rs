@@ -120,12 +120,11 @@ where
         let project_key = AiProjectKey::parse(project_key)?;
         let company = self.catalog()?.company();
         let admin = manages_every_mapping(actor);
-        if !admin
-            && !self
-                .repository
-                .appears_in_usage(&actor.user_id, &project_key)
-                .await?
-        {
+        let own = self
+            .repository
+            .appears_in_usage(&actor.user_id, &project_key)
+            .await?;
+        if !admin && !own {
             return Err(AiProjectMappingError::NotInOwnUsage);
         }
 
@@ -140,15 +139,27 @@ where
             name: project.name,
         };
 
-        let mapping = if admin {
-            self.repository
-                .upsert(&project_key, company, &project, &actor.user_id)
+        let mapping = match (admin, own) {
+            (true, true) => {
+                self.repository
+                    .upsert(&project_key, company, &project, &actor.user_id)
+                    .await?
+            }
+            // A key the admin does not use: they may change its mapping, never
+            // create it. Creating it would name the key in billing, and so
+            // confirm a guessed repository that its developers have not
+            // mapped. The refusal is the same whether or not anyone uses the
+            // key, so it confirms nothing either.
+            (true, false) => self
+                .repository
+                .update(&project_key, company, &project, &actor.user_id)
                 .await?
-        } else {
-            self.repository
+                .ok_or(AiProjectMappingError::NotInOwnUsage)?,
+            (false, _) => self
+                .repository
                 .create(&project_key, company, &project, &actor.user_id)
                 .await?
-                .ok_or(AiProjectMappingError::AlreadyMapped)?
+                .ok_or(AiProjectMappingError::AlreadyMapped)?,
         };
 
         Ok(self.entry(mapping))

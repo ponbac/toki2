@@ -57,7 +57,7 @@ An exchange rate that is the average of the days published so far: that of a mon
 _Avoid_: estimated rate, temporary rate
 
 **Unassigned usage**:
-AI usage that counts for no time-tracking project: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. An unmapped key may name a private repository, so only the developers who use it see its name: admins see its usage as Unassigned, unnamed, until a developer maps it. Billing charges it on its own line, and a mapping applies to past months too.
+AI usage that counts for no time-tracking project: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. An unmapped key may name a private repository, so only the developers who use it see its name and only they can map it: admins see its usage as Unassigned, unnamed, until one of them does. Billing charges it on its own line, and a mapping applies to past months too.
 _Avoid_: unmapped usage (it is only one of these cases)
 
 **Stale machine**:

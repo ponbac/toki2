@@ -231,6 +231,61 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
         Ok(row.into())
     }
 
+    async fn update(
+        &self,
+        project_key: &AiProjectKey,
+        company: &TimeTrackingCompany,
+        project: &AiMappedProject,
+        updated_by: &UserId,
+    ) -> Result<Option<AiProjectMapping>, AiProjectMappingError> {
+        let row = sqlx::query_as!(
+            MappingRow,
+            r#"
+            WITH saved AS (
+                UPDATE ai_project_mappings
+                SET provider = $2,
+                    provider_company_id = $3,
+                    project_id = $4,
+                    project_name = $5,
+                    updated_by = $6,
+                    updated_at = now()
+                WHERE project_key = $1
+                RETURNING *
+            )
+            SELECT
+                saved.project_key AS "project_key!",
+                saved.provider AS "provider!",
+                saved.provider_company_id AS "provider_company_id!",
+                saved.project_id AS "project_id!",
+                saved.project_name AS "project_name!",
+                saved.created_by AS "created_by?",
+                creator.full_name AS "created_by_name?",
+                saved.created_at AS "created_at!",
+                saved.updated_by AS "updated_by?",
+                editor.full_name AS "updated_by_name?",
+                saved.updated_at AS "updated_at!",
+                EXISTS (
+                    SELECT 1 FROM ai_usage_buckets AS bucket
+                    WHERE bucket.project_key = saved.project_key
+                ) AS "in_use!"
+            FROM saved
+            LEFT JOIN users AS creator ON creator.id = saved.created_by
+            LEFT JOIN users AS editor ON editor.id = saved.updated_by
+            "#,
+            project_key.as_str(),
+            company.provider,
+            company.company_id,
+            project.id.as_str(),
+            project.name,
+            updated_by.as_i32(),
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage_error)?;
+
+        Ok(row.map(AiProjectMapping::from))
+    }
+
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError> {
         let deleted = sqlx::query!(
             "DELETE FROM ai_project_mappings WHERE project_key = $1",

@@ -55,6 +55,17 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
         updated_by: &UserId,
     ) -> Result<AiProjectMapping, AiProjectMappingError>;
 
+    /// Replaces the mapping of a key that has one, recording who last saved it
+    /// and when; the mapping keeps its creator. Returns `None`, and changes
+    /// nothing, when the key has no mapping.
+    async fn update(
+        &self,
+        project_key: &AiProjectKey,
+        company: &TimeTrackingCompany,
+        project: &AiMappedProject,
+        updated_by: &UserId,
+    ) -> Result<Option<AiProjectMapping>, AiProjectMappingError>;
+
     /// Deletes the key's mapping and reports whether one existed.
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError>;
 }
