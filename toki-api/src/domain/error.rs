@@ -58,3 +58,18 @@ pub enum ApiTokenError {
     #[error("api token storage error: {0}")]
     Storage(String),
 }
+
+/// Errors that can occur while storing or reading AI usage.
+#[derive(Debug, Error)]
+pub enum AiUsageError {
+    #[error("{0}")]
+    InvalidUpload(String),
+    #[error("machine is registered to another user")]
+    MachineOwnedByAnotherUser,
+    /// An aggregate cannot be represented by the report's finite costs and
+    /// JavaScript-safe integer counts. Stored usage is retained unchanged.
+    #[error("ai usage result exceeds the supported numeric range")]
+    NumericRange,
+    #[error("ai usage storage error: {0}")]
+    Storage(String),
+}

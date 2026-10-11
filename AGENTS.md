@@ -123,6 +123,12 @@ just lint       # Frontend - ESLint
 SQLX_OFFLINE=true just check
 ```
 
+Database tests (`#[sqlx::test]`) create and drop a database per test on the server in `DATABASE_URL`. Point it at a disposable local Postgres, never a shared or production one:
+
+```bash
+SQLX_OFFLINE=true DATABASE_URL=postgres://postgres:password@localhost:5433/postgres cargo test -p toki-api
+```
+
 ## Observability
 
 `just dev` starts a standalone Aspire dashboard at `http://127.0.0.1:18888` and exports OTEL over gRPC to `http://127.0.0.1:18889`.

@@ -13,6 +13,8 @@ pub struct Settings {
     pub kleer: KleerSettings,
     #[serde(default)]
     pub observability: ObservabilitySettings,
+    #[serde(default)]
+    pub ai_usage: AiUsageSettings,
 }
 
 #[serde_as]
@@ -75,6 +77,25 @@ impl Default for ObservabilitySettings {
             request_body_max_buffered_bytes: default_request_body_max_buffered_bytes(),
         }
     }
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct AiUsageSettings {
+    /// IANA time zone that defines AI usage days and billing months.
+    #[serde(default = "default_ai_usage_time_zone")]
+    pub time_zone: String,
+}
+
+impl Default for AiUsageSettings {
+    fn default() -> Self {
+        Self {
+            time_zone: default_ai_usage_time_zone(),
+        }
+    }
+}
+
+fn default_ai_usage_time_zone() -> String {
+    "Europe/Stockholm".to_string()
 }
 
 fn default_request_body_max_logged_bytes() -> usize {

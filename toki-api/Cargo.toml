@@ -58,6 +58,7 @@ sqlx = { version = "0.8.0", features = [
     "tls-rustls",
     "time",
     "migrate",
+    "uuid",
 ] }
 sqlx-tracing = { version = "0.2.1", features = ["postgres"] }
 axum-login = "0.18.0"
@@ -79,3 +80,7 @@ webp = "0.3.1"
 moka = { version = "0.12", features = ["future", "sync"] }
 rand = "0.8"
 sha2 = "0.10"
+uuid = "1"
+
+[dev-dependencies]
+time = { workspace = true, features = ["macros"] }

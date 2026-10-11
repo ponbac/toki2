@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_usage_provider_hints (user_id, machine_id, hour_start, provider, plan)\n            SELECT $1, $2, hint.hour_start, hint.provider, hint.plan\n            FROM UNNEST($3::timestamptz[], $4::text[], $5::text[])\n                AS hint (hour_start, provider, plan)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Uuid",
+        "TimestamptzArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f0226bc483ab494cb176a077bb5c94ab5bec4be66919562018939f834f924d3"
+}

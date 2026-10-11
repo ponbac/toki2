@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM ai_usage_buckets\n            WHERE machine_id = $1\n              AND provider = ANY($2::text[])\n              AND hour_start >= $3\n              AND hour_start < $4\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5811d7dfdc4bd414673115c1c74ec6041c6756ab2c12b69f32274270215e9bd0"
+}

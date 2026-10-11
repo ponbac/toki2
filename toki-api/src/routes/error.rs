@@ -8,7 +8,7 @@ use std::fmt;
 use crate::{
     adapters::inbound::http::{ErrorResponse, TimeTrackingServiceError, WorkItemServiceError},
     app_state::AppStateError,
-    domain::{AvatarError, TimeTrackingError, WorkItemError},
+    domain::{AiUsageError, AvatarError, TimeTrackingError, WorkItemError},
     repositories::RepositoryError,
 };
 
@@ -158,6 +158,22 @@ impl From<crate::domain::ApiTokenError> for ApiError {
             crate::domain::ApiTokenError::Storage(message) => {
                 tracing::error!("API token operation failed: {}", message);
                 Self::internal("api token operation failed")
+            }
+        }
+    }
+}
+
+impl From<AiUsageError> for ApiError {
+    fn from(err: AiUsageError) -> Self {
+        match err {
+            AiUsageError::InvalidUpload(message) => Self::bad_request(message),
+            AiUsageError::MachineOwnedByAnotherUser => Self::forbidden(err.to_string()),
+            AiUsageError::NumericRange => {
+                Self::new(StatusCode::UNPROCESSABLE_ENTITY, err.to_string())
+            }
+            AiUsageError::Storage(message) => {
+                tracing::error!("AI usage operation failed: {}", message);
+                Self::internal("ai usage operation failed")
             }
         }
     }
