@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH hint_days AS (\n                SELECT hints.user_id, hints.provider, local.day,\n                    array_agg(DISTINCT hints.plan ORDER BY hints.plan) AS plans\n                FROM ai_usage_provider_hints AS hints\n                CROSS JOIN LATERAL (\n                    SELECT (hints.hour_start AT TIME ZONE $4)::date AS day\n                ) AS local\n                WHERE ($1::int4 IS NULL OR hints.user_id = $1)\n                  AND hints.hour_start >= ($2::date::timestamp AT TIME ZONE $4)\n                  AND hints.hour_start < ($3::date::timestamp AT TIME ZONE $4)\n                  AND lower(btrim(hints.plan)) <> ALL($5::text[])\n                GROUP BY hints.user_id, hints.provider, local.day\n            )\n            SELECT\n                hint_days.user_id AS \"user_id!\",\n                hint_days.provider AS \"provider!\",\n                hint_days.day AS \"day!\",\n                hint_days.plans AS \"plans!\",\n                (\n                    SELECT min(later.valid_from)\n                    FROM ai_subscriptions AS later\n                    WHERE later.user_id = hint_days.user_id\n                      AND later.provider = hint_days.provider\n                      AND later.valid_from > hint_days.day\n                ) AS next_subscription_from\n            FROM hint_days\n            WHERE NOT EXISTS (\n                SELECT 1\n                FROM ai_subscriptions AS covering\n                WHERE covering.user_id = hint_days.user_id\n                  AND covering.provider = hint_days.provider\n                  AND daterange(covering.valid_from, covering.valid_to, '[]') @> hint_days.day\n            )\n            ORDER BY hint_days.user_id, hint_days.provider, hint_days.day\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "day!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 3,
+        "name": "plans!",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 4,
+        "name": "next_subscription_from",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "db035b6eea0f727ed3725036044cd3d5e4a4b93945c2a0bb13a0038c0a040fa5"
+}

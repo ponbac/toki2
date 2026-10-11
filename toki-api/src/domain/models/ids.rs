@@ -9,7 +9,7 @@ use std::fmt;
 pub struct UserId(i32);
 
 impl UserId {
-    pub fn new(id: i32) -> Self {
+    pub const fn new(id: i32) -> Self {
         Self(id)
     }
 
@@ -213,5 +213,19 @@ impl fmt::Display for ApiTokenId {
 impl From<i32> for ApiTokenId {
     fn from(id: i32) -> Self {
         Self(id)
+    }
+}
+
+/// A declared AI subscription identifier (database SERIAL).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AiSubscriptionId(i32);
+
+impl AiSubscriptionId {
+    pub fn new(id: i32) -> Self {
+        Self(id)
+    }
+
+    pub fn as_i32(&self) -> i32 {
+        self.0
     }
 }

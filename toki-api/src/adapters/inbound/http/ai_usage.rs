@@ -133,7 +133,7 @@ pub enum AiUsagePricingStatus {
     Custom,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum AiUsageProvider {
     Codex,
@@ -495,6 +495,17 @@ impl From<AiUsageProvider> for AiProvider {
             AiUsageProvider::Claude => Self::Claude,
             AiUsageProvider::Grok => Self::Grok,
             AiUsageProvider::Copilot => Self::Copilot,
+        }
+    }
+}
+
+impl From<AiProvider> for AiUsageProvider {
+    fn from(provider: AiProvider) -> Self {
+        match provider {
+            AiProvider::Codex => Self::Codex,
+            AiProvider::Claude => Self::Claude,
+            AiProvider::Grok => Self::Grok,
+            AiProvider::Copilot => Self::Copilot,
         }
     }
 }

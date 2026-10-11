@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_subscriptions (\n                user_id, provider, plan, monthly_cost, currency, valid_from, valid_to\n            )\n            VALUES ($1, $2, $3, $4::int8 / 100.0, $5, $6, $7)\n            RETURNING\n                id,\n                user_id,\n                provider,\n                plan,\n                (monthly_cost * 100)::int8 AS \"monthly_cost_hundredths!\",\n                currency,\n                valid_from,\n                valid_to\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "plan",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "monthly_cost_hundredths!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "valid_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "valid_to",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8ba8f68824e1ff739b0da0018293d91ae9b72e0133f342089ad45fe2592d9611"
+}

@@ -14,10 +14,10 @@ serde.workspace = true
 serde_json.workspace = true
 serde_with = "3.4.0"
 tokio.workspace = true
-time.workspace = true
+time = { workspace = true, features = ["macros"] }
 chrono.workspace = true
 axum = { version = "0.8.9", features = ["ws", "macros", "multipart"] }
-axum-extra = { version = "0.12", features = ["typed-header", "cookie"] }
+axum-extra = { version = "0.12", features = ["typed-header", "cookie", "with-rejection"] }
 config.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.18", features = [
@@ -81,6 +81,3 @@ moka = { version = "0.12", features = ["future", "sync"] }
 rand = "0.8"
 sha2 = "0.10"
 uuid = "1"
-
-[dev-dependencies]
-time = { workspace = true, features = ["macros"] }

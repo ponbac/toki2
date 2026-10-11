@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAtom } from "jotai/react";
 import { Save } from "lucide-react";
 import { toast } from "sonner";
+import { AiSubscriptionsSettings } from "./ai-subscriptions-settings";
 import { ApiTokensSettings } from "./api-tokens-settings";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
@@ -172,7 +173,7 @@ export function AccountSettings() {
         <DialogHeader>
           <DialogTitle>Account</DialogTitle>
           <DialogDescription>
-            Avatar, fallback images, and API tokens.
+            Avatar, fallback images, API tokens, and AI subscriptions.
           </DialogDescription>
         </DialogHeader>
 
@@ -256,6 +257,8 @@ export function AccountSettings() {
           </div>
 
           <ApiTokensSettings issuance={tokenIssuance} />
+
+          <AiSubscriptionsSettings />
         </div>
 
         <DialogFooter>

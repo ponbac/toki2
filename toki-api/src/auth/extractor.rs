@@ -3,7 +3,7 @@ use std::ops::Deref;
 use axum::{extract::FromRequestParts, http::request::Parts};
 
 use crate::{
-    domain::{AuthMethod, UserPrincipal},
+    domain::{AuthMethod, Role, UserPrincipal},
     routes::ApiError,
 };
 
@@ -24,6 +24,12 @@ impl AuthUser {
     /// may withhold powers from long-lived tokens that sessions have.
     pub fn method(&self) -> AuthMethod {
         self.method
+    }
+
+    /// Whether the caller may act as an admin: an admin in a browser session
+    /// (`AuthMethod::allows_admin_power`).
+    pub fn has_admin_power(&self) -> bool {
+        self.roles.contains(&Role::Admin) && self.method.allows_admin_power()
     }
 }
 
