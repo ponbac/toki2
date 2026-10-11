@@ -31,6 +31,7 @@ import {
   periodStatus,
   type SubscriptionEditor,
 } from "@/lib/ai-subscriptions";
+import { AiProviderTile } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import { apiErrorToast } from "@/lib/api/errors";
 import { aiAdminMutations } from "@/lib/api/mutations/ai-admin";
@@ -382,9 +383,14 @@ function SubscriptionTable({
                       `User ${subscription.userId}`}
                   </TableCell>
                   <TableCell>
-                    <div>{subscription.plan}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {AI_PROVIDER_LABELS[subscription.provider]}
+                    <div className="flex items-center gap-3">
+                      <AiProviderTile provider={subscription.provider} />
+                      <div>
+                        <div>{subscription.plan}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {AI_PROVIDER_LABELS[subscription.provider]}
+                        </div>
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">

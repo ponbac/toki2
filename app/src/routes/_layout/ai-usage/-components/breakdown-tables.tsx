@@ -11,11 +11,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { AiProviderLabel } from "@/components/ai-provider-icon";
 import { cn } from "@/lib/utils";
 import { ChartCard } from "./chart-card";
 import { knownShare } from "../-lib/aggregate";
-import { PROVIDER_COLORS } from "../-lib/colors";
 import {
   formatCompact,
   formatCost,
@@ -122,15 +121,11 @@ export function ModelTable({ report }: { report: AiUsageReport }) {
                   <p className="truncate font-medium" title={model.model}>
                     {modelLabel(model.model)}
                   </p>
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span
-                      aria-hidden
-                      className="size-2 rounded-sm"
-                      style={{
-                        backgroundColor: PROVIDER_COLORS[model.provider],
-                      }}
+                  <p className="text-xs text-muted-foreground">
+                    <AiProviderLabel
+                      provider={model.provider}
+                      iconClassName="size-3"
                     />
-                    {AI_PROVIDER_LABELS[model.provider]}
                   </p>
                 </TableCell>
                 <TableCell className="text-right align-top tabular-nums">

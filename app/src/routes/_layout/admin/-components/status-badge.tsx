@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, CircleSlash, Info } from "lucide-react";
+import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 const TONES = {
@@ -15,14 +16,17 @@ const TONES = {
 } as const;
 
 /** A state shown as an icon and a label, never by color alone. The label
- * keeps the text color; only the icon carries the status color. */
+ * keeps the text color; only the icon carries the status color. An `icon`
+ * says what the state is about, and sits between the two. */
 export function StatusBadge({
   tone,
   label,
+  icon,
   className,
 }: {
   tone: keyof typeof TONES;
   label: string;
+  icon?: React.ReactNode;
   className?: string;
 }) {
   const { icon: Icon, className: toneClass } = TONES[tone];
@@ -34,6 +38,7 @@ export function StatusBadge({
       )}
     >
       <Icon className={cn("size-3.5 shrink-0", toneClass)} aria-hidden />
+      {icon}
       {label}
     </span>
   );

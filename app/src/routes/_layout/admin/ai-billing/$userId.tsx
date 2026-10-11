@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AiProviderIcon, AiProviderLabel } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import {
   aiAdminQueries,
@@ -277,7 +278,7 @@ function Filters({
         value={filters.provider}
         options={providers.map((provider) => ({
           value: provider,
-          label: AI_PROVIDER_LABELS[provider],
+          label: <AiProviderLabel provider={provider} className="flex" />,
         }))}
         onChange={(value) =>
           onChange({
@@ -336,7 +337,7 @@ function FilterSelect({
 }: {
   label: string;
   value: string | null;
-  options: readonly { value: string; label: string }[];
+  options: readonly { value: string; label: React.ReactNode }[];
   onChange: (value: string | null) => void;
 }) {
   return (
@@ -382,6 +383,7 @@ function Breakdowns({
         (row) => ({
           label: shortDate(row.day),
           detail: `${AI_PROVIDER_LABELS[row.provider]} · ${billing.get(`${row.day}:${row.provider}`) ?? "API"}`,
+          provider: row.provider,
         }),
       ).sort((a, b) => a.key.localeCompare(b.key)),
     },
@@ -392,6 +394,7 @@ function Breakdowns({
         (row) => row.provider,
         (row) => ({
           label: AI_PROVIDER_LABELS[row.provider],
+          provider: row.provider,
         }),
       ),
     },
@@ -403,6 +406,7 @@ function Breakdowns({
         (row) => ({
           label: row.model || "Unknown model",
           detail: AI_PROVIDER_LABELS[row.provider],
+          provider: row.provider,
         }),
       ),
     },
@@ -488,9 +492,20 @@ function BreakdownTable({
         {items.map((item) => (
           <TableRow key={item.key}>
             <TableCell>
-              <div className="font-medium">{item.label}</div>
+              <div className="flex items-center gap-1.5 font-medium">
+                {item.provider && !item.detail && (
+                  <AiProviderIcon provider={item.provider} />
+                )}
+                {item.label}
+              </div>
               {item.detail && (
-                <div className="text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  {item.provider && (
+                    <AiProviderIcon
+                      provider={item.provider}
+                      className="size-3"
+                    />
+                  )}
                   {item.detail}
                 </div>
               )}

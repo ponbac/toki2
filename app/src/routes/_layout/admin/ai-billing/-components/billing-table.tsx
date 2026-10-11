@@ -13,7 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { AiProviderLabel } from "@/components/ai-provider-icon";
 import type {
   AiBillingDeveloper,
   AiBillingLine,
@@ -150,7 +150,9 @@ export function BillingTable({
             return (
               <TableRow key={`${group.key}-${index}`}>
                 <TableCell className="pl-6">{detail}</TableCell>
-                <TableCell>{AI_PROVIDER_LABELS[line.provider]}</TableCell>
+                <TableCell>
+                  <AiProviderLabel provider={line.provider} />
+                </TableCell>
                 <TableCell>
                   <span className="inline-flex items-center gap-1.5">
                     {line.billingMode === "api"

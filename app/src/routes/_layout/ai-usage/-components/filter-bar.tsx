@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { AiProviderLabel } from "@/components/ai-provider-icon";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/api/contracts/ai-usage";
 import type {
   AiUsageReport,
@@ -95,7 +95,7 @@ export function FilterBar({
           { value: ALL, label: "All tools" },
           ...providers.map((provider: AiProvider) => ({
             value: provider,
-            label: AI_PROVIDER_LABELS[provider],
+            label: <AiProviderLabel provider={provider} className="flex" />,
           })),
         ]}
       />
@@ -199,7 +199,7 @@ function FilterSelect({
 }: {
   label: string;
   value: string;
-  items: readonly Readonly<{ value: string; label: string }>[];
+  items: readonly Readonly<{ value: string; label: React.ReactNode }>[];
   onChange: (value: string) => void;
 }) {
   return (

@@ -23,6 +23,8 @@ export type DailySeries = Readonly<{
   key: string;
   label: string;
   color: string;
+  /** Set when the series is one provider's usage. */
+  provider?: AiProvider;
 }>;
 
 /** One day of the daily spend chart: known USD per series, and what is unknown. */
@@ -108,6 +110,7 @@ export function dailySpend(
             key: provider,
             label: AI_PROVIDER_LABELS[provider],
             color: PROVIDER_COLORS[provider],
+            provider,
           }),
         )
       : [...slots.entries()]
