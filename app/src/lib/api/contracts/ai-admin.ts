@@ -189,7 +189,8 @@ const dayUsageSchema = z
     provider: providerSchema,
     model: z.string(),
     machineId: z.string().uuid(),
-    projectKey: z.string().min(1),
+    // Null sums every key no developer has mapped: their names are withheld.
+    projectKey: z.string().min(1).nullable(),
     project: projectSchema.nullable(),
     subscriptionId: id.nullable(),
     usage: usageSchema,

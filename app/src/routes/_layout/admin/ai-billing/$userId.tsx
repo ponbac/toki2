@@ -424,14 +424,17 @@ function Breakdowns({
       heading: "Project key",
       items: breakdown(
         rows,
-        (row) => row.projectKey,
+        // A real key is never empty, so "" groups the withheld ones.
+        (row) => row.projectKey ?? "",
         (row) => ({
-          label: row.projectKey,
+          label: row.projectKey ?? "Unmapped repositories",
           detail: row.project
             ? row.project.projectName
-            : row.projectKey === UNATTRIBUTED_KEY
-              ? `${UNASSIGNED_LABEL}: no project metadata`
-              : `${UNASSIGNED_LABEL}: unmapped or stale key`,
+            : row.projectKey === null
+              ? `${UNASSIGNED_LABEL}: names stay private until the developer maps them`
+              : row.projectKey === UNATTRIBUTED_KEY
+                ? `${UNASSIGNED_LABEL}: no project metadata`
+                : `${UNASSIGNED_LABEL}: stale mapping`,
         }),
       ),
     },

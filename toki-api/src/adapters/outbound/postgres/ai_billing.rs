@@ -12,6 +12,7 @@ use crate::{
             AiCoverageStatus, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay, AiMachineId,
             AiMappingResolver, AiPricingStatus, AiProvider, AiProviderReport, AiTokenCounts,
             AiUsageDateRange, AiUsageTimeZone, AiUsdNanos, TimeTrackingCompany, UserId,
+            UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::AiBillingRepository,
         AiBillingError,
@@ -141,7 +142,10 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                 bucket.provider,
                 bucket.model,
                 bucket.machine_id::text AS "machine_id!",
-                bucket.project_key,
+                CASE
+                    WHEN mapping.project_key IS NOT NULL OR bucket.project_key = $5
+                        THEN bucket.project_key
+                END AS "project_key?",
                 SUM(bucket.input_tokens)::int8 AS "input_tokens!",
                 SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
                 SUM(bucket.cache_write_tokens)::int8 AS "cache_write_tokens!",
@@ -151,16 +155,19 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                     AS "priced_cost_nanos!",
                 SUM(bucket.unpriced_records)::int8 AS "unpriced_records!"
             FROM ai_usage_buckets AS bucket
+            LEFT JOIN ai_project_mappings AS mapping
+                ON mapping.project_key = bucket.project_key
             WHERE bucket.user_id = $1
               AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)
               AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)
-            GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, bucket.project_key
-            ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, bucket.project_key
+            GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, 5
+            ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, 5
             "#,
             user_id.as_i32(),
             dates.start(),
             dates.end(),
             time_zone.as_str(),
+            UNATTRIBUTED_PROJECT_KEY,
         )
         .fetch_all(&self.pool)
         .await
@@ -174,7 +181,11 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                     provider: provider(&row.provider)?,
                     model: row.model,
                     machine_id: machine_id(&row.machine_id)?,
-                    project: resolver.project(&row.project_key).cloned(),
+                    project: row
+                        .project_key
+                        .as_deref()
+                        .and_then(|key| resolver.project(key))
+                        .cloned(),
                     project_key: row.project_key,
                     usage: usage(
                         [
@@ -740,12 +751,12 @@ mod tests {
             )
             .await
             .unwrap();
-        let keys: Vec<(Date, &str, Option<&str>)> = developer_rows
+        let keys: Vec<(Date, Option<&str>, Option<&str>)> = developer_rows
             .iter()
             .map(|row| {
                 (
                     row.day,
-                    row.project_key.as_str(),
+                    row.project_key.as_deref(),
                     row.project.as_ref().map(|project| project.name.as_str()),
                 )
             })
@@ -753,16 +764,110 @@ mod tests {
         assert_eq!(
             keys,
             [
-                (date!(2026 - 03 - 01), MAPPED, Some("Client A")),
-                (date!(2026 - 03 - 28), MAPPED, Some("Client A")),
-                (date!(2026 - 03 - 29), MAPPED, Some("Client A")),
-                (date!(2026 - 03 - 30), STALE, None),
-                (date!(2026 - 03 - 31), UNATTRIBUTED_PROJECT_KEY, None),
+                (date!(2026 - 03 - 01), Some(MAPPED), Some("Client A")),
+                (date!(2026 - 03 - 28), Some(MAPPED), Some("Client A")),
+                (date!(2026 - 03 - 29), Some(MAPPED), Some("Client A")),
+                (date!(2026 - 03 - 30), Some(STALE), None),
+                (date!(2026 - 03 - 31), Some(UNATTRIBUTED_PROJECT_KEY), None),
             ]
         );
         assert!(developer_rows
             .iter()
             .all(|row| row.machine_id.to_string() == MACHINE && row.model == "example-model"));
+    }
+
+    #[sqlx::test]
+    async fn developer_usage_withholds_the_keys_no_one_has_mapped(pool: PgPool) {
+        let private_a = "github.com/dev/side-project";
+        let private_b = "github.com/dev/dotfiles";
+        let user = setup(
+            &pool,
+            (
+                datetime!(2026-09-01 00:00 UTC),
+                datetime!(2026-09-02 00:00 UTC),
+            ),
+            vec![
+                bucket(datetime!(2026-09-01 08:00 UTC), MAPPED, 1, 0.1),
+                bucket(datetime!(2026-09-01 09:00 UTC), private_a, 2, 0.2),
+                bucket(datetime!(2026-09-01 10:00 UTC), private_b, 4, 0.4),
+                bucket(
+                    datetime!(2026-09-01 11:00 UTC),
+                    UNATTRIBUTED_PROJECT_KEY,
+                    8,
+                    0.8,
+                ),
+            ],
+        )
+        .await;
+        let mapping_repository = PostgresAiProjectMappingRepository::new(db(&pool));
+        let configured = company("company-1");
+        let map = |key: &'static str| {
+            let mapping_repository = &mapping_repository;
+            let configured = &configured;
+            async move {
+                mapping_repository
+                    .upsert(
+                        &AiProjectKey::parse(key).unwrap(),
+                        configured,
+                        &AiMappedProject {
+                            id: ProjectId::new("101"),
+                            name: "Client A".to_string(),
+                        },
+                        &user,
+                    )
+                    .await
+                    .unwrap();
+            }
+        };
+        let repository = PostgresAiBillingRepository::new(db(&pool));
+        let rows = || {
+            let repository = &repository;
+            let configured = &configured;
+            async move {
+                repository
+                    .developer_usage(
+                        &user,
+                        AiBillingMonth::parse("2026-09").unwrap().dates(),
+                        &AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
+                        Some(configured),
+                    )
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|row| {
+                        (
+                            row.project_key,
+                            row.project.map(|project| project.name),
+                            row.usage.records,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            }
+        };
+        let key = |key: &str| Some(key.to_string());
+        let client_a = || Some("Client A".to_string());
+
+        map(MAPPED).await;
+        assert_eq!(
+            rows().await,
+            [
+                (key(MAPPED), client_a(), 1),
+                (key(UNATTRIBUTED_PROJECT_KEY), None, 8),
+                // Both private repositories, summed and unnamed.
+                (None, None, 6),
+            ]
+        );
+
+        map(private_a).await;
+        assert_eq!(
+            rows().await,
+            [
+                (key(private_a), client_a(), 2),
+                (key(MAPPED), client_a(), 1),
+                (key(UNATTRIBUTED_PROJECT_KEY), None, 8),
+                (None, None, 4),
+            ]
+        );
     }
 
     #[sqlx::test]

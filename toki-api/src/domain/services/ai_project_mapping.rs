@@ -93,7 +93,7 @@ where
     ) -> Result<Vec<UnmappedAiProjectKey>, AiProjectMappingError> {
         let mut keys = self
             .repository
-            .list_unmapped(scope(actor), &self.time_zone)
+            .list_unmapped(&actor.user_id, &self.time_zone)
             .await?;
         // Without time tracking there is no project to map a key to.
         if self.projects.is_none() {

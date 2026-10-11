@@ -52,6 +52,11 @@ function ProjectMappingsPage() {
         key, in past months&apos; bills too. Usage of an unmapped, stale or
         unattributed key bills as Unassigned.
       </p>
+      <p className="text-sm text-muted-foreground">
+        A repository stays private to the developers who use it until one of
+        them maps it from their AI usage page. Until then its name is not shown
+        here or in billing, only its usage as Unassigned.
+      </p>
 
       {projectsQuery.isError && (
         <QueryError
@@ -66,7 +71,7 @@ function ProjectMappingsPage() {
         className="flex flex-col gap-2"
       >
         <h2 id="unmapped-heading" className="text-lg font-semibold">
-          Unmapped keys in use
+          Your unmapped keys
         </h2>
         <UnmappedKeys query={unmappedQuery} projects={projectsQuery} />
       </section>
@@ -142,7 +147,7 @@ function UnmappedKeys({
   if (query.data.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Every project key in anyone&apos;s usage is mapped.
+        Every project key in your own usage is mapped.
       </p>
     );
   }

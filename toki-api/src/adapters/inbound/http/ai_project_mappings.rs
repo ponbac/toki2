@@ -209,8 +209,8 @@ async fn delete_mapping(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Project keys with usage but no mapping, in the caller's own usage or
-/// everyone's for an admin in a browser session. Unmappable keys such as
+/// Project keys with usage but no mapping, in the caller's own usage only:
+/// admins do not see other developers' unmapped keys. Unmappable keys such as
 /// `unattributed` are listed with `mappable: false`.
 async fn list_unmapped_keys(
     user: AuthUser,
@@ -769,7 +769,7 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn listings_cover_a_developers_own_usage_and_everyones_for_admins(pool: PgPool) {
+    async fn unmapped_keys_stay_with_their_developers_and_admins_list_every_mapping(pool: PgPool) {
         let users = users(&pool).await;
         let h = harness(&pool, users, Some(StaticProjects::of("company-1"))).await;
         let web = "github.com/example/web";
@@ -795,6 +795,14 @@ mod tests {
             ],
         )
         .await;
+        let admin_tool = "github.com/example/admin-tool";
+        record_usage(
+            &pool,
+            users.admin,
+            MACHINE_ADMIN,
+            &[(admin_tool, datetime!(2026-09-23 10:00 UTC))],
+        )
+        .await;
         assert_eq!(put(&h, &h.dev, web, "101").await.0, StatusCode::OK);
         assert_eq!(put(&h, &h.admin, "Client Z", "202").await.0, StatusCode::OK);
 
@@ -804,11 +812,10 @@ mod tests {
             unmapped(&h, &h.colleague).await,
             [key(copilot_api, "2026-09-23"), key(APP, "2026-09-20")]
         );
-        assert_eq!(
-            unmapped(&h, &h.admin).await,
-            [key(copilot_api, "2026-09-23"), key(APP, "2026-09-22")]
-        );
-        assert!(unmapped(&h, &h.admin_token).await.is_empty());
+        // An admin sees their own unmapped keys, never another developer's.
+        for admin in [&h.admin, &h.admin_token] {
+            assert_eq!(unmapped(&h, admin).await, [key(admin_tool, "2026-09-23")]);
+        }
 
         assert_eq!(
             mappings(&h, &h.dev).await,

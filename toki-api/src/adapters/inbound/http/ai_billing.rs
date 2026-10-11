@@ -740,7 +740,9 @@ struct DayUsageResponse {
     provider: AiUsageProvider,
     model: String,
     machine_id: String,
-    project_key: String,
+    /// Null for the summed usage of every project key no developer has mapped:
+    /// those keys may name private repositories, so their names are withheld.
+    project_key: Option<String>,
     /// The project the key maps to now; null is Unassigned.
     project: Option<ProjectResponse>,
     /// The subscription that pays for the day's usage of the provider, or null

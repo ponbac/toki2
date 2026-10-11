@@ -86,10 +86,10 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
 
     async fn list_unmapped(
         &self,
-        scope: AiUsageScope,
+        user_id: &UserId,
         time_zone: &AiUsageTimeZone,
     ) -> Result<Vec<UnmappedAiProjectKey>, AiProjectMappingError> {
-        let keys = project_key_usage(&self.pool, scope, time_zone)
+        let keys = project_key_usage(&self.pool, user_id, time_zone)
             .await
             .map_err(storage_error)?;
 

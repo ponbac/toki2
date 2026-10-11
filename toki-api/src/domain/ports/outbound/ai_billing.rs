@@ -28,6 +28,8 @@ pub trait AiBillingRepository: Send + Sync + 'static {
 
     /// One user's usage in `dates`, summed per local day, provider, model,
     /// machine and project key, with each key's project as for `daily_usage`.
+    /// Keys without a mapping are summed into one group with no key, so their
+    /// names are never read; `unattributed` keeps its own group.
     /// For display only: it sums finer groups than `daily_usage`.
     async fn developer_usage(
         &self,

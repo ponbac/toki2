@@ -17,12 +17,14 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
         scope: AiUsageScope,
     ) -> Result<Vec<AiProjectMapping>, AiProjectMappingError>;
 
-    /// Project keys in the scope's usage that have no mapping, including
+    /// Project keys in the user's usage that have no mapping, including
     /// unmappable ones such as `unattributed`, most recently used first. Each
-    /// reports its latest local date of use in `time_zone`.
+    /// reports its latest local date of use in `time_zone`. Only ever one
+    /// user's: an unmapped key may name a private repository, so nobody is
+    /// shown another user's.
     async fn list_unmapped(
         &self,
-        scope: AiUsageScope,
+        user_id: &UserId,
         time_zone: &AiUsageTimeZone,
     ) -> Result<Vec<UnmappedAiProjectKey>, AiProjectMappingError>;
 

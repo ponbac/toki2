@@ -13,6 +13,10 @@ use crate::domain::{
 /// usage of the key. Developers may therefore only create the first mapping of a
 /// key in their own usage. Changing and deleting mappings, and seeing everyone's,
 /// needs an admin in a browser session: an API token never has admin powers.
+///
+/// An unmapped key may name a private repository, so its name stays with the
+/// developers who use it until one of them maps it. Nobody, admins included, is
+/// shown another developer's unmapped keys.
 #[async_trait]
 pub trait AiProjectMappingService: Send + Sync + 'static {
     /// The mappings of project keys in the actor's own usage, or every mapping
@@ -22,10 +26,10 @@ pub trait AiProjectMappingService: Send + Sync + 'static {
         actor: &AiProjectMappingActor,
     ) -> Result<Vec<AiProjectMappingEntry>, AiProjectMappingError>;
 
-    /// Project keys with usage but no mapping, in the actor's own usage or
-    /// everyone's for an admin session, most recently used first. Unmappable
-    /// keys such as `unattributed` are listed and marked as such, and no key
-    /// is mappable while time tracking is not configured.
+    /// Project keys with usage but no mapping, in the actor's own usage only,
+    /// most recently used first. Unmappable keys such as `unattributed` are
+    /// listed and marked as such, and no key is mappable while time tracking is
+    /// not configured.
     async fn list_unmapped_keys(
         &self,
         actor: &AiProjectMappingActor,
