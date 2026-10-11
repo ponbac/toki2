@@ -3,6 +3,7 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Combobox } from "@/components/combobox";
 import { Button } from "@/components/ui/button";
+import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import { apiErrorMessage } from "@/lib/api/errors";
 import { aiProjectMappingMutations } from "@/lib/api/mutations/ai-project-mappings";
 import {
@@ -18,7 +19,8 @@ type ProjectKey = AiUsageProjectKeyList["projectKeys"][number];
 
 /**
  * Project keys whose usage is unassigned, with a way to map the ones the user
- * may map and an explanation for the others.
+ * may map or to mark them as personal, and an explanation for the others.
+ * The keys the user marked personal follow, with a way to undo that.
  */
 export function UnassignedKeys({
   query,
@@ -31,7 +33,11 @@ export function UnassignedKeys({
 }) {
   const configured = query.data?.timeTrackingConfigured ?? true;
   const keys =
-    query.data?.projectKeys.filter((key) => key.status !== "mapped") ?? [];
+    query.data?.projectKeys.filter(
+      (key) => key.status !== "mapped" && key.status !== "personal",
+    ) ?? [];
+  const personal =
+    query.data?.projectKeys.filter((key) => key.status === "personal") ?? [];
   const mappable = keys.filter((key) => key.mappable);
 
   return (
@@ -39,7 +45,7 @@ export function UnassignedKeys({
       id={id}
       className={className}
       title="Unassigned repositories"
-      description="Usage of these project keys counts for no time-tracking project. A key without a mapping shows its name only to the developers who use it. Mapping it shows the name to admins and applies to everyone's usage of the key, including past usage."
+      description={`Usage of these project keys counts for no time-tracking project. A key without a mapping shows its name only to the developers who use it. Mapping it shows the name to admins and applies to everyone's usage of the key, including past usage. A repository that is not client work can be marked ${PERSONAL_LABEL} instead: your usage of it is left out of the bill, and nothing is mapped, so admins do not see its name.`}
     >
       {query.isPending ? (
         <p className="text-sm text-muted-foreground" role="status">
@@ -51,12 +57,17 @@ export function UnassignedKeys({
           error={query.error}
           onRetry={() => void query.refetch()}
         />
-      ) : keys.length === 0 ? (
+      ) : keys.length === 0 && personal.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           All of your usage counts for a project.
         </p>
       ) : (
         <div className="space-y-3">
+          {keys.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No repository is waiting to be mapped.
+            </p>
+          )}
           {!configured && (
             <p className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs">
               Time tracking is not configured on this Toki server, so no usage
@@ -78,6 +89,28 @@ export function UnassignedKeys({
               </li>
             ))}
           </ul>
+          {personal.length > 0 && (
+            <section
+              aria-labelledby="personal-keys-heading"
+              className="space-y-1.5 border-t border-border/60 pt-3"
+            >
+              <h3 id="personal-keys-heading" className="text-sm font-medium">
+                {PERSONAL_LABEL}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Your usage of these is left out of the bill. Their names are
+                shown only to the developers who use them. If one of them maps a
+                repository to a project, that applies to you too.
+              </p>
+              <ul className="divide-y divide-border/60">
+                {personal.map((key) => (
+                  <li key={key.projectKey} className="py-2 last:pb-0">
+                    <PersonalKeyItem projectKey={key.projectKey} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       )}
     </ChartCard>
@@ -111,6 +144,83 @@ function KeyItem({
           {explanation(projectKey, configured)}
         </p>
       )}
+      {canBePersonal(projectKey) && (
+        <MarkPersonalButton projectKey={projectKey.projectKey} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Whether the user can mark the key as personal: it has no mapping, and it is
+ * a key the server accepts, without surrounding whitespace. Unlike mapping,
+ * this does not need time tracking.
+ */
+function canBePersonal(projectKey: ProjectKey): boolean {
+  return (
+    projectKey.status === "unmapped" &&
+    projectKey.projectKey.trim() === projectKey.projectKey
+  );
+}
+
+function MarkPersonalButton({ projectKey }: { projectKey: string }) {
+  const mark = aiProjectMappingMutations.useMarkAiProjectKeyPersonal({
+    onSuccess: () => {
+      toast.success(`${projectKey} is now ${PERSONAL_LABEL}`, {
+        description: "Your usage of it is left out of the bill.",
+      });
+    },
+    onError: (error) => {
+      void apiErrorMessage(error, "The server did not say why.").then(
+        (reason) => {
+          toast.error(`Could not mark ${projectKey}`, { description: reason });
+        },
+      );
+    },
+  });
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={mark.isPending}
+      onClick={() => mark.mutate({ projectKey })}
+    >
+      {mark.isPending ? "Marking..." : `Mark as ${PERSONAL_LABEL}`}
+    </Button>
+  );
+}
+
+function PersonalKeyItem({ projectKey }: { projectKey: string }) {
+  const unmark = aiProjectMappingMutations.useUnmarkAiProjectKeyPersonal({
+    onSuccess: () => {
+      toast.success(`${projectKey} is unassigned again`);
+    },
+    onError: (error) => {
+      void apiErrorMessage(error, "The server did not say why.").then(
+        (reason) => {
+          toast.error(`Could not undo ${projectKey}`, { description: reason });
+        },
+      );
+    },
+  });
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <p className="min-w-0 truncate font-mono text-sm" title={projectKey}>
+        {projectKey}
+      </p>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={unmark.isPending}
+        aria-label={`Undo ${PERSONAL_LABEL} for ${projectKey}`}
+        onClick={() => unmark.mutate({ projectKey })}
+      >
+        {unmark.isPending ? "Undoing..." : "Undo"}
+      </Button>
     </div>
   );
 }
@@ -129,6 +239,7 @@ function explanation(projectKey: ProjectKey, configured: boolean): string {
         ? "This key starts or ends with whitespace and cannot be mapped. Fix the project name in token-ledger."
         : "It can be mapped once time tracking is configured.";
     case "mapped":
+    case "personal":
       return "";
   }
 }

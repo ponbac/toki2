@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT user_id, project_key\n        FROM ai_personal_project_keys\n        WHERE $1::int4 IS NULL OR user_id = $1\n        ORDER BY user_id, project_key\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "project_key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "61de464997f6c3d0cb39926f2526de21f9dde35548fcdf26455102b068b5cc5a"
+}

@@ -4,7 +4,7 @@ use time::Date;
 use crate::domain::{
     models::{
         AiBillingDeveloper, AiBillingMachine, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay,
-        AiUsageDateRange, AiUsageTimeZone, TimeTrackingCompany, UserId,
+        AiPersonalUsage, AiUsageDateRange, AiUsageTimeZone, TimeTrackingCompany, UserId,
     },
     AiBillingError,
 };
@@ -16,8 +16,9 @@ pub trait AiBillingRepository: Send + Sync + 'static {
     /// Usage in `dates`, local days in `time_zone`, of `user_id` or everyone,
     /// summed per user, provider, day and the project its key resolves to now
     /// (`AiMappingResolver` with `mapping_company` as the configured company);
-    /// otherwise the usage is Unassigned. A bucket belongs to the local date its hour starts on. This
-    /// is what bills, so every page bills from the same sums.
+    /// otherwise the usage is Unassigned. Usage of a key its user marked
+    /// personal is left out. A bucket belongs to the local date its hour starts
+    /// on. This is what bills, so every page bills from the same sums.
     async fn daily_usage(
         &self,
         dates: AiUsageDateRange,
@@ -29,7 +30,8 @@ pub trait AiBillingRepository: Send + Sync + 'static {
     /// One user's usage in `dates`, summed per local day, provider, model,
     /// machine and project key, with each key's project as for `daily_usage`.
     /// Keys without a mapping are summed into one group with no key, so their
-    /// names are never read; `unattributed` keeps its own group.
+    /// names are never read; `unattributed` keeps its own group. Usage of the
+    /// keys the user marked personal is left out, as it is from the bill.
     /// For display only: it sums finer groups than `daily_usage`.
     async fn developer_usage(
         &self,
@@ -38,6 +40,17 @@ pub trait AiBillingRepository: Send + Sync + 'static {
         time_zone: &AiUsageTimeZone,
         mapping_company: Option<&TimeTrackingCompany>,
     ) -> Result<Vec<AiDeveloperDayUsage>, AiBillingError>;
+
+    /// What `daily_usage` leaves out: usage in `dates` of the keys each user
+    /// marked personal, of `user_id` or everyone, summed per user, by user.
+    /// Users without any are absent.
+    async fn personal_usage(
+        &self,
+        dates: AiUsageDateRange,
+        time_zone: &AiUsageTimeZone,
+        mapping_company: Option<&TimeTrackingCompany>,
+        user_id: Option<&UserId>,
+    ) -> Result<Vec<AiPersonalUsage>, AiBillingError>;
 
     /// The local days of `dates` in `time_zone`, with the instants they span.
     async fn local_days(

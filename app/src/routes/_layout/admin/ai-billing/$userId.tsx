@@ -55,6 +55,7 @@ import {
 } from "../-lib/format";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
 import { UNASSIGNED_LABEL } from "../-lib/billing";
+import { PersonalUsage } from "./-components/personal-usage";
 import { BillingTable } from "./-components/billing-table";
 import { MissingRatesAlert } from "./-components/exchange-rates";
 import { DailyCostChart } from "./-components/daily-cost-chart";
@@ -172,15 +173,28 @@ function DeveloperMonthView({
     );
   }
 
+  const personal = (
+    <PersonalUsage
+      usage={
+        data.personalUsage
+          ? [{ userId: data.developer.userId, usage: data.personalUsage }]
+          : []
+      }
+    />
+  );
+
   if (data.lines.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
-        <p className="font-medium">Nothing to bill for {monthLabel(month)}</p>
-        <p className="text-sm text-muted-foreground">
-          {data.developer.fullName} has no synced AI usage and no subscription
-          in this month.
-        </p>
-      </div>
+      <>
+        <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
+          <p className="font-medium">Nothing to bill for {monthLabel(month)}</p>
+          <p className="text-sm text-muted-foreground">
+            {data.developer.fullName} has no synced AI usage that bills and no
+            subscription in this month.
+          </p>
+        </div>
+        {personal}
+      </>
     );
   }
 
@@ -221,6 +235,7 @@ function DeveloperMonthView({
             />
           </div>
         )}
+        {personal}
       </section>
 
       <section

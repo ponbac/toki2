@@ -76,6 +76,7 @@ function searchParams(
     ["model", params.model],
     ["projectId", params.projectId],
     ["unassigned", params.unassigned ? "true" : undefined],
+    ["personal", params.personal ? "true" : undefined],
     ["machineId", params.machineId],
   ];
   for (const [name, value] of entries) {

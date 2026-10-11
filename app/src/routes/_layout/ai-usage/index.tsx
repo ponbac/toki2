@@ -40,6 +40,7 @@ const searchSchema = z.object({
   model: z.string().optional().catch(undefined),
   projectId: z.string().min(1).optional().catch(undefined),
   unassigned: z.literal(true).optional().catch(undefined),
+  personal: z.literal(true).optional().catch(undefined),
   machineId: z.string().uuid().optional().catch(undefined),
   stackBy: z.enum(["provider", "model"]).optional().catch(undefined),
 });
@@ -51,15 +52,20 @@ export const Route = createFileRoute("/_layout/ai-usage/")({
   component: AiUsagePage,
 });
 
-/** The report parameters of the URL state. A project and Unassigned exclude each other. */
+/**
+ * The report parameters of the URL state. A project, Unassigned and Personal
+ * exclude each other; Unassigned wins, then Personal.
+ */
 function reportParams(search: Search): AiUsageReportParams {
   return {
     from: search.from,
     to: search.to,
     provider: search.provider,
     model: search.model,
-    projectId: search.unassigned ? undefined : search.projectId,
+    projectId:
+      search.unassigned || search.personal ? undefined : search.projectId,
     unassigned: search.unassigned,
+    personal: search.unassigned ? undefined : search.personal,
     machineId: search.machineId,
   };
 }
@@ -212,7 +218,7 @@ function Report({
         <p className="text-xs text-muted-foreground">
           Days and hours in {report.timeZone}
           {!report.timeTrackingConfigured &&
-            ". Time tracking is not configured, so all usage is unassigned"}
+            ". Time tracking is not configured, so no usage counts for a project"}
         </p>
       </div>
       {refreshError && (

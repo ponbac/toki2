@@ -54,11 +54,14 @@ impl<R: AiUsageReportRepository> AiUsageReportServiceImpl<R> {
         ))
     }
 
-    async fn resolver(&self) -> Result<AiMappingResolver, AiUsageError> {
+    /// Attributes `user_id`'s usage: through the team's mappings, and through
+    /// the keys they marked personal.
+    async fn resolver(&self, user_id: &UserId) -> Result<AiMappingResolver, AiUsageError> {
         Ok(AiMappingResolver::new(
             self.repository.stored_mappings().await?,
             self.mapping_company.clone(),
-        ))
+        )
+        .for_developer(self.repository.personal_keys(user_id).await?))
     }
 }
 
@@ -70,7 +73,7 @@ impl<R: AiUsageReportRepository> AiUsageReportService for AiUsageReportServiceIm
         query: &AiUsageReportQuery,
     ) -> Result<AiUsageReport, AiUsageError> {
         let (calendar, dates) = self.calendar_and_dates(query).await?;
-        let resolver = self.resolver().await?;
+        let resolver = self.resolver(user_id).await?;
         let selection = AiUsageSelection::new(&query.filter, &resolver);
         let options = self
             .repository
@@ -99,7 +102,7 @@ impl<R: AiUsageReportRepository> AiUsageReportService for AiUsageReportServiceIm
             .map(|cursor| AiSessionCursor::parse(cursor, order))
             .transpose()?;
         let (calendar, dates) = self.calendar_and_dates(query).await?;
-        let resolver = self.resolver().await?;
+        let resolver = self.resolver(user_id).await?;
         let selection = AiUsageSelection::new(&query.filter, &resolver);
         // One row more than the page shows whether another page follows.
         let rows = self
@@ -150,7 +153,7 @@ impl<R: AiUsageReportRepository> AiUsageReportService for AiUsageReportServiceIm
     }
 
     async fn project_keys(&self, user_id: &UserId) -> Result<AiProjectKeyList, AiUsageError> {
-        let resolver = self.resolver().await?;
+        let resolver = self.resolver(user_id).await?;
         let keys = self
             .repository
             .project_keys(user_id, &self.time_zone)

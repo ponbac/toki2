@@ -12,7 +12,9 @@ import {
 /** The headline figures of the range: cost, tokens, requests and unassigned usage. */
 export function SummaryTiles({ report }: { report: AiUsageReport }) {
   const { totals } = report;
-  const unassigned = report.projects.find((group) => group.project === null);
+  const unassigned = report.projects.find(
+    (group) => group.project === null && !group.personal,
+  );
   const unassignedShare = unassigned
     ? knownShare(unassigned.totals.cost, totals.cost)
     : null;

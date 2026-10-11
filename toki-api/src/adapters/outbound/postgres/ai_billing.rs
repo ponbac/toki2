@@ -3,16 +3,16 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use time::Date;
 
-use super::ai_usage_reads::{local_today, stored_mappings};
+use super::ai_usage_reads::{local_today, stored_mappings, stored_personal_keys};
 use crate::{
     db::DbPool,
     domain::{
         models::{
             AiBillingDeveloper, AiBillingMachine, AiBillingUsage, AiCoverageInterval,
             AiCoverageStatus, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay, AiMachineId,
-            AiMappingResolver, AiPricingStatus, AiProvider, AiProviderReport, AiTokenCounts,
-            AiUsageDateRange, AiUsageTimeZone, AiUsdNanos, TimeTrackingCompany, UserId,
-            PI_CHATGPT_SIGN_IN_HINT, UNATTRIBUTED_PROJECT_KEY,
+            AiMappingResolver, AiPersonalUsage, AiPricingStatus, AiProvider, AiProviderReport,
+            AiTokenCounts, AiUsageDateRange, AiUsageTimeZone, AiUsdNanos, TimeTrackingCompany,
+            UserId, PI_CHATGPT_SIGN_IN_HINT, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::AiBillingRepository,
         AiBillingError,
@@ -39,6 +39,22 @@ impl PostgresAiBillingRepository {
         let mappings = stored_mappings(&self.pool).await.map_err(storage_error)?;
         Ok(AiMappingResolver::new(mappings, mapping_company.cloned()))
     }
+
+    /// The personal marks that apply, of `user_id` or of everyone, as the
+    /// parallel user ids and keys a query unnests.
+    async fn personal_marks(
+        &self,
+        resolver: &AiMappingResolver,
+        user_id: Option<&UserId>,
+    ) -> Result<(Vec<i32>, Vec<String>), AiBillingError> {
+        Ok(stored_personal_keys(&self.pool, user_id)
+            .await
+            .map_err(storage_error)?
+            .into_iter()
+            .filter(|(_, key)| resolver.personal_mark_applies(key))
+            .map(|(user_id, key)| (user_id.as_i32(), key))
+            .unzip())
+    }
 }
 
 #[async_trait]
@@ -59,8 +75,10 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         // The range uses `ai_usage_buckets_hour_start_idx`, or
         // the `(user_id, hour_start)` index for one user. A day is one of
         // Pi's ChatGPT sign-in when any of the user's machines hinted it in
-        // an hour that starts on the day, as mismatch days count hints.
+        // an hour that starts on the day, as mismatch days count hints. Usage
+        // of a key its user marked personal is left out: it never bills.
         let resolver = self.resolver(mapping_company).await?;
+        let (personal_users, personal_keys) = self.personal_marks(&resolver, user_id).await?;
         let resolved = resolver.resolved_keys();
         let keys: Vec<&str> = resolved.iter().map(|(key, _)| *key).collect();
         let ids: Vec<&str> = resolved
@@ -72,6 +90,10 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             WITH resolved_projects AS (
                 SELECT project_key, project_id
                 FROM UNNEST($5::text[], $6::text[]) AS mapping(project_key, project_id)
+            ),
+            personal_keys AS (
+                SELECT user_id, project_key
+                FROM UNNEST($9::int4[], $10::text[]) AS mark(user_id, project_key)
             ),
             sign_in_days AS (
                 SELECT DISTINCT
@@ -105,9 +127,13 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                 ON sign_in.user_id = bucket.user_id
                 AND sign_in.provider = bucket.provider
                 AND sign_in.day = (bucket.hour_start AT TIME ZONE $3)::date
+            LEFT JOIN personal_keys AS personal
+                ON personal.user_id = bucket.user_id
+                AND personal.project_key = bucket.project_key
             WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)
               AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
               AND ($4::int4 IS NULL OR bucket.user_id = $4)
+              AND personal.project_key IS NULL
             GROUP BY bucket.user_id, bucket.provider, 3, mapping.project_id
             ORDER BY bucket.user_id, bucket.provider, 3, mapping.project_id NULLS LAST
             "#,
@@ -119,6 +145,8 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             &ids as &[&str],
             AiProvider::Pi.as_str(),
             PI_CHATGPT_SIGN_IN_HINT,
+            &personal_users,
+            &personal_keys,
         )
         .fetch_all(&self.pool)
         .await
@@ -157,6 +185,8 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         time_zone: &AiUsageTimeZone,
         mapping_company: Option<&TimeTrackingCompany>,
     ) -> Result<Vec<AiDeveloperDayUsage>, AiBillingError> {
+        let resolver = self.resolver(mapping_company).await?;
+        let (_, personal_keys) = self.personal_marks(&resolver, Some(user_id)).await?;
         let rows = sqlx::query!(
             r#"
             WITH sign_in_days AS (
@@ -201,6 +231,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             WHERE bucket.user_id = $1
               AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)
               AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)
+              AND bucket.project_key <> ALL($8::text[])
             GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key
             ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key
             "#,
@@ -211,11 +242,11 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             AiProvider::Pi.as_str(),
             PI_CHATGPT_SIGN_IN_HINT,
             UNATTRIBUTED_PROJECT_KEY,
+            &personal_keys,
         )
         .fetch_all(&self.pool)
         .await
         .map_err(storage_error)?;
-        let resolver = self.resolver(mapping_company).await?;
 
         rows.into_iter()
             .map(|row| {
@@ -231,6 +262,68 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                         .and_then(|key| resolver.project(key))
                         .cloned(),
                     project_key: row.project_key,
+                    usage: usage(
+                        [
+                            row.input_tokens,
+                            row.cache_read_tokens,
+                            row.cache_write_tokens,
+                            row.output_tokens,
+                        ],
+                        row.records,
+                        row.priced_cost_nanos,
+                        row.unpriced_records,
+                    )?,
+                })
+            })
+            .collect()
+    }
+
+    async fn personal_usage(
+        &self,
+        dates: AiUsageDateRange,
+        time_zone: &AiUsageTimeZone,
+        mapping_company: Option<&TimeTrackingCompany>,
+        user_id: Option<&UserId>,
+    ) -> Result<Vec<AiPersonalUsage>, AiBillingError> {
+        let resolver = self.resolver(mapping_company).await?;
+        let (personal_users, personal_keys) = self.personal_marks(&resolver, user_id).await?;
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                bucket.user_id,
+                SUM(bucket.input_tokens)::int8 AS "input_tokens!",
+                SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
+                SUM(bucket.cache_write_tokens)::int8 AS "cache_write_tokens!",
+                SUM(bucket.output_tokens)::int8 AS "output_tokens!",
+                SUM(bucket.records)::int8 AS "records!",
+                round(COALESCE(SUM(bucket.estimated_cost_usd), 0) * 1000000000)::int8
+                    AS "priced_cost_nanos!",
+                SUM(bucket.unpriced_records)::int8 AS "unpriced_records!"
+            FROM ai_usage_buckets AS bucket
+            JOIN UNNEST($5::int4[], $6::text[]) AS personal (user_id, project_key)
+                ON personal.user_id = bucket.user_id
+                AND personal.project_key = bucket.project_key
+            WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)
+              AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
+              AND ($4::int4 IS NULL OR bucket.user_id = $4)
+            GROUP BY bucket.user_id
+            ORDER BY bucket.user_id
+            "#,
+            dates.start(),
+            dates.end(),
+            time_zone.as_str(),
+            user_id.map(UserId::as_i32),
+            &personal_users,
+            &personal_keys,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_error)?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(AiPersonalUsage {
+                    user_id: UserId::new(row.user_id),
                     usage: usage(
                         [
                             row.input_tokens,
@@ -926,6 +1019,117 @@ mod tests {
                 (None, None, 4),
             ]
         );
+    }
+
+    #[sqlx::test]
+    async fn personal_usage_is_left_out_of_billing_reads_until_the_key_is_mapped(pool: PgPool) {
+        let side_project = "github.com/dev/side-project";
+        let unmapped = "github.com/example/new";
+        let user = setup(
+            &pool,
+            (
+                datetime!(2026-09-01 00:00 UTC),
+                datetime!(2026-09-02 00:00 UTC),
+            ),
+            vec![
+                bucket(datetime!(2026-09-01 08:00 UTC), MAPPED, 1, 0.1),
+                bucket(datetime!(2026-09-01 09:00 UTC), side_project, 2, 0.2),
+                bucket(datetime!(2026-09-01 10:00 UTC), unmapped, 4, 0.4),
+            ],
+        )
+        .await;
+        let mappings = PostgresAiProjectMappingRepository::new(db(&pool));
+        let configured = company("company-1");
+        let client_a = AiMappedProject {
+            id: ProjectId::new("101"),
+            name: "Client A".to_string(),
+        };
+        let map = |key: &'static str| {
+            let (mappings, configured, client_a) = (&mappings, &configured, &client_a);
+            async move {
+                mappings
+                    .upsert(
+                        &AiProjectKey::parse(key).unwrap(),
+                        configured,
+                        client_a,
+                        &user,
+                    )
+                    .await
+                    .unwrap();
+            }
+        };
+        map(MAPPED).await;
+        mappings
+            .mark_personal(&user, &AiProjectKey::parse(side_project).unwrap())
+            .await
+            .unwrap();
+
+        let repository = PostgresAiBillingRepository::new(db(&pool));
+        let september = AiBillingMonth::parse("2026-09").unwrap().dates();
+        let zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
+        // Records per project the bill reads, and per key the developer's month does.
+        let billed = || {
+            let (repository, zone, configured) = (&repository, &zone, &configured);
+            async move {
+                let daily = repository
+                    .daily_usage(september, zone, Some(configured), None)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|day| (day.project.map(|project| project.name), day.usage.records))
+                    .collect::<Vec<_>>();
+                let rows = repository
+                    .developer_usage(&user, september, zone, Some(configured))
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|row| (row.project_key, row.usage.records))
+                    .collect::<Vec<_>>();
+                (daily, rows)
+            }
+        };
+        let personal = |user_id: Option<UserId>| {
+            let (repository, zone, configured) = (&repository, &zone, &configured);
+            async move {
+                repository
+                    .personal_usage(september, zone, Some(configured), user_id.as_ref())
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|personal| {
+                        (
+                            personal.user_id,
+                            personal.usage.records,
+                            personal.usage.priced_cost.nanos(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            }
+        };
+        let name = |name: &str| Some(name.to_string());
+
+        assert_eq!(
+            billed().await,
+            (
+                vec![(name("Client A"), 1), (None, 4)],
+                vec![(name(MAPPED), 1), (None, 4)],
+            )
+        );
+        assert_eq!(personal(None).await, [(user, 2, 200_000_000)]);
+        assert_eq!(personal(Some(user)).await, [(user, 2, 200_000_000)]);
+        let someone_else = UserId::new(user.as_i32() + 1);
+        assert!(personal(Some(someone_else)).await.is_empty());
+
+        // A mapping of the key overrides the mark: its usage bills again.
+        map(side_project).await;
+        assert_eq!(
+            billed().await,
+            (
+                vec![(name("Client A"), 3), (None, 4)],
+                vec![(name(side_project), 2), (name(MAPPED), 1), (None, 4)],
+            )
+        );
+        assert!(personal(None).await.is_empty());
     }
 
     #[sqlx::test]

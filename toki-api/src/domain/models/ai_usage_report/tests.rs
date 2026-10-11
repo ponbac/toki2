@@ -216,9 +216,15 @@ fn a_report_puts_keys_under_their_projects_and_unassigned_last_on_a_tie() {
         AiUsageSums {
             projects: vec![
                 // Level with Internal on cost and tokens: Unassigned goes last.
-                (None, totals(1, Some(1.0))),
-                (Some(ProjectId::new("101")), totals(3, Some(3.0))),
-                (Some(ProjectId::new("202")), totals(1, Some(1.0))),
+                (AiUsageGroup::Unassigned, totals(1, Some(1.0))),
+                (
+                    AiUsageGroup::Project(ProjectId::new("101")),
+                    totals(3, Some(3.0)),
+                ),
+                (
+                    AiUsageGroup::Project(ProjectId::new("202")),
+                    totals(1, Some(1.0)),
+                ),
             ],
             keys: vec![
                 key("github.com/example/app", 1, Some(1.0)),
@@ -236,7 +242,7 @@ fn a_report_puts_keys_under_their_projects_and_unassigned_last_on_a_tie() {
         .iter()
         .map(|group| {
             (
-                group.project.as_ref().map(|project| project.name.as_str()),
+                group.group.project().map(|project| project.name.as_str()),
                 group.totals.priced_cost_usd,
                 group
                     .keys
@@ -265,6 +271,117 @@ fn a_report_puts_keys_under_their_projects_and_unassigned_last_on_a_tie() {
     assert!(report.time_tracking_configured);
     assert_eq!(report.options.models, ["model-a", "model-b"]);
     assert_eq!(report.options.projects, [project("101", "Client A")]);
+    assert!(report.options.unassigned);
+    assert!(!report.options.personal);
+}
+
+#[test]
+fn a_developers_personal_keys_are_a_group_of_their_own_unless_mapped() {
+    let side_project = "github.com/dev/side-project";
+    // Marked personal and mapped by someone since: the mapping decides.
+    let mapped = "github.com/example/app";
+    let stale = "github.com/example/old";
+    let resolver = resolver(true).for_developer(
+        [side_project, mapped, stale]
+            .into_iter()
+            .map(str::to_string),
+    );
+    let resolution = |key: &str| AiProjectAttribution::of(key.to_string(), &resolver).resolution;
+
+    assert_eq!(resolution(side_project), AiProjectResolution::Personal);
+    assert_eq!(
+        resolution(mapped),
+        AiProjectResolution::Mapped(project("101", "Client A"))
+    );
+    assert_eq!(resolution(stale), AiProjectResolution::Stale);
+    assert_eq!(resolver.personal_keys(), [side_project]);
+    // A personal key is settled: it is not offered for mapping.
+    assert!(!AiProjectAttribution::of(side_project.to_string(), &resolver).mappable());
+
+    let select = |project| {
+        AiUsageSelection::new(
+            &AiUsageFilter {
+                project: Some(project),
+                ..AiUsageFilter::default()
+            },
+            &resolver,
+        )
+    };
+    let keys = |keys: &[&str]| keys.iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert_eq!(
+        select(AiProjectFilter::Personal).keys,
+        AiKeySelection::Only(keys(&[side_project]))
+    );
+    // Unassigned is what is left: neither a project's nor personal.
+    assert_eq!(
+        select(AiProjectFilter::Unassigned).keys,
+        AiKeySelection::Except(keys(&[
+            "Client A",
+            "github.com/example/app",
+            "github.com/example/tools",
+            side_project,
+        ]))
+    );
+    assert_eq!(
+        select(AiProjectFilter::Unassigned).personal,
+        keys(&[side_project])
+    );
+
+    let report = AiUsageReport::assemble(
+        calendar(),
+        september(),
+        &resolver,
+        AiUsageOptionSums {
+            project_keys: keys(&[side_project, "github.com/example/new"]),
+            ..AiUsageOptionSums::default()
+        },
+        AiUsageSums {
+            // All level on cost and tokens: projects, then Personal, then Unassigned.
+            projects: vec![
+                (AiUsageGroup::Unassigned, totals(1, Some(1.0))),
+                (AiUsageGroup::Personal, totals(1, Some(1.0))),
+                (
+                    AiUsageGroup::Project(ProjectId::new("202")),
+                    totals(1, Some(1.0)),
+                ),
+            ],
+            keys: vec![
+                (side_project.to_string(), totals(1, Some(1.0))),
+                ("github.com/example/new".to_string(), totals(1, Some(1.0))),
+                ("github.com/example/tools".to_string(), totals(1, Some(1.0))),
+            ],
+            ..AiUsageSums::default()
+        },
+    );
+    let groups = report
+        .projects
+        .iter()
+        .map(|group| {
+            (
+                group.group.clone(),
+                group
+                    .keys
+                    .iter()
+                    .map(|key| key.project.project_key.as_str())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        groups,
+        [
+            (
+                AiUsageProjectGroup::Project(project("202", "Internal")),
+                vec!["github.com/example/tools"]
+            ),
+            (AiUsageProjectGroup::Personal, vec![side_project]),
+            (
+                AiUsageProjectGroup::Unassigned,
+                vec!["github.com/example/new"]
+            ),
+        ]
+    );
+    assert!(report.options.personal);
     assert!(report.options.unassigned);
 }
 

@@ -195,7 +195,9 @@ impl From<AiProjectMappingError> for ApiError {
             AiProjectMappingError::NotInOwnUsage
             | AiProjectMappingError::AlreadyMapped
             | AiProjectMappingError::AdminOnly => Self::forbidden(err.to_string()),
-            AiProjectMappingError::NotFound => Self::not_found(err.to_string()),
+            AiProjectMappingError::NotFound | AiProjectMappingError::NotPersonal => {
+                Self::not_found(err.to_string())
+            }
             // Reported once at startup; each request only says so.
             AiProjectMappingError::NotConfigured => {
                 Self::new(StatusCode::SERVICE_UNAVAILABLE, err.to_string())

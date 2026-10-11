@@ -180,6 +180,11 @@ const billingOverviewSchema = z
     ...periodShape,
     developers: z.array(developerSchema),
     ...billShape,
+    // What the bill leaves out: each developer's usage of the repositories
+    // they marked personal or internal, as an estimate only.
+    personalUsage: z.array(
+      z.object({ userId: id, usage: usageSchema }).strict(),
+    ),
   })
   .strict();
 
@@ -206,6 +211,8 @@ const developerMonthSchema = z
       z.object({ machineId: z.string().uuid(), label: z.string() }).strict(),
     ),
     dailyUsage: z.array(dayUsageSchema),
+    // The usage `dailyUsage` and the bill leave out; null without any.
+    personalUsage: usageSchema.nullable(),
   })
   .strict();
 

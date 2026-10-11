@@ -22,6 +22,7 @@ import {
 } from "./-components/exchange-rates";
 import { ProjectCostChart } from "./-components/project-cost-chart";
 import { SubscriptionMonths } from "./-components/subscription-months";
+import { PersonalUsage } from "./-components/personal-usage";
 import { TotalsTiles } from "./-components/totals-tiles";
 
 const searchSchema = z.object({
@@ -115,15 +116,21 @@ function AiBillingPage() {
           )}
         >
           {overviewQuery.data.lines.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
-              <p className="font-medium">
-                Nothing to bill for {monthLabel(overviewQuery.data.month)}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                No AI usage was synced for this month and no subscription covers
-                it.
-              </p>
-            </div>
+            <>
+              <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
+                <p className="font-medium">
+                  Nothing to bill for {monthLabel(overviewQuery.data.month)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  No AI usage that bills was synced for this month and no
+                  subscription covers it.
+                </p>
+              </div>
+              <PersonalUsage
+                usage={overviewQuery.data.personalUsage}
+                developers={overviewQuery.data.developers}
+              />
+            </>
           ) : (
             <>
               <MissingRatesAlert
@@ -136,6 +143,10 @@ function AiBillingPage() {
                 totals={overviewQuery.data.totals}
                 missingRates={overviewQuery.data.missingRates}
                 pendingRates={overviewQuery.data.pendingRates}
+              />
+              <PersonalUsage
+                usage={overviewQuery.data.personalUsage}
+                developers={overviewQuery.data.developers}
               />
               <ExchangeRatesPanel
                 key={overviewQuery.data.month}

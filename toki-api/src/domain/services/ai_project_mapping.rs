@@ -181,4 +181,44 @@ where
             Err(AiProjectMappingError::NotFound)
         }
     }
+
+    async fn mark_personal(
+        &self,
+        actor: &AiProjectMappingActor,
+        project_key: &str,
+    ) -> Result<(), AiProjectMappingError> {
+        let project_key = AiProjectKey::parse(project_key)?;
+        if !self
+            .repository
+            .appears_in_usage(&actor.user_id, &project_key)
+            .await?
+        {
+            return Err(AiProjectMappingError::NotInOwnUsage);
+        }
+        // A mapped key is work someone accounted for; a mark would not apply.
+        if self.repository.is_mapped(&project_key).await? {
+            return Err(AiProjectMappingError::AlreadyMapped);
+        }
+
+        self.repository
+            .mark_personal(&actor.user_id, &project_key)
+            .await
+    }
+
+    async fn unmark_personal(
+        &self,
+        actor: &AiProjectMappingActor,
+        project_key: &str,
+    ) -> Result<(), AiProjectMappingError> {
+        let project_key = AiProjectKey::parse(project_key)?;
+        if self
+            .repository
+            .unmark_personal(&actor.user_id, &project_key)
+            .await?
+        {
+            Ok(())
+        } else {
+            Err(AiProjectMappingError::NotPersonal)
+        }
+    }
 }

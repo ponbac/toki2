@@ -95,7 +95,7 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
 
         Ok(keys
             .into_iter()
-            .filter(|key| !key.mapped)
+            .filter(|key| !key.mapped && !key.personal)
             .map(|key| UnmappedAiProjectKey::new(key.project_key, key.last_used_on))
             .collect())
     }
@@ -137,6 +137,10 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
                 VALUES ($1, $2, $3, $4, $5, $6, $6)
                 ON CONFLICT (project_key) DO NOTHING
                 RETURNING *
+            ),
+            cleared AS (
+                DELETE FROM ai_personal_project_keys
+                WHERE project_key IN (SELECT project_key FROM saved)
             )
             SELECT
                 saved.project_key AS "project_key!",
@@ -196,6 +200,10 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
                     updated_by = EXCLUDED.updated_by,
                     updated_at = now()
                 RETURNING *
+            ),
+            cleared AS (
+                DELETE FROM ai_personal_project_keys
+                WHERE project_key IN (SELECT project_key FROM saved)
             )
             SELECT
                 saved.project_key AS "project_key!",
@@ -287,8 +295,74 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
     }
 
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError> {
+        // Mapping a key clears its personal marks, so none should be left. One
+        // made in the same instant as the mapping could be: it goes with the
+        // mapping, so that no mark its developer cannot see comes back into
+        // force. Without a mapping to delete, marks are left alone.
+        sqlx::query_scalar!(
+            r#"
+            WITH deleted AS (
+                DELETE FROM ai_project_mappings WHERE project_key = $1 RETURNING project_key
+            ),
+            cleared AS (
+                DELETE FROM ai_personal_project_keys
+                WHERE project_key IN (SELECT project_key FROM deleted)
+            )
+            SELECT EXISTS (SELECT 1 FROM deleted) AS "deleted!"
+            "#,
+            project_key.as_str(),
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(storage_error)
+    }
+
+    async fn is_mapped(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError> {
+        sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM ai_project_mappings WHERE project_key = $1
+            ) AS "mapped!"
+            "#,
+            project_key.as_str(),
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(storage_error)
+    }
+
+    async fn mark_personal(
+        &self,
+        user_id: &UserId,
+        project_key: &AiProjectKey,
+    ) -> Result<(), AiProjectMappingError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO ai_personal_project_keys (user_id, project_key)
+            SELECT $1, $2
+            WHERE NOT EXISTS (
+                SELECT 1 FROM ai_project_mappings WHERE project_key = $2
+            )
+            ON CONFLICT (user_id, project_key) DO NOTHING
+            "#,
+            user_id.as_i32(),
+            project_key.as_str(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    async fn unmark_personal(
+        &self,
+        user_id: &UserId,
+        project_key: &AiProjectKey,
+    ) -> Result<bool, AiProjectMappingError> {
         let deleted = sqlx::query!(
-            "DELETE FROM ai_project_mappings WHERE project_key = $1",
+            "DELETE FROM ai_personal_project_keys WHERE user_id = $1 AND project_key = $2",
+            user_id.as_i32(),
             project_key.as_str(),
         )
         .execute(&self.pool)

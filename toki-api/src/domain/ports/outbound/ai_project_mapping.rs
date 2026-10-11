@@ -17,8 +17,9 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
         scope: AiUsageScope,
     ) -> Result<Vec<AiProjectMapping>, AiProjectMappingError>;
 
-    /// Project keys in the user's usage that have no mapping, including
-    /// unmappable ones such as `unattributed`, most recently used first. Each
+    /// Project keys in the user's usage that have no mapping and that the user
+    /// has not marked personal, including unmappable ones such as
+    /// `unattributed`, most recently used first. Each
     /// reports its latest local date of use in `time_zone`. Only ever one
     /// user's: an unmapped key may name a private repository, so nobody is
     /// shown another user's.
@@ -36,7 +37,8 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
     ) -> Result<bool, AiProjectMappingError>;
 
     /// Maps a key that has no mapping yet, recording `created_by` as its creator
-    /// and editor. Returns `None`, and changes nothing, when the key is mapped.
+    /// and editor, and clears every developer's personal mark of the key.
+    /// Returns `None`, and changes nothing, when the key is mapped.
     async fn create(
         &self,
         project_key: &AiProjectKey,
@@ -46,7 +48,8 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
     ) -> Result<Option<AiProjectMapping>, AiProjectMappingError>;
 
     /// Creates or replaces the key's mapping, recording who last saved it and
-    /// when. A replaced mapping keeps its creator.
+    /// when, and clears every developer's personal mark of the key. A replaced
+    /// mapping keeps its creator.
     async fn upsert(
         &self,
         project_key: &AiProjectKey,
@@ -66,6 +69,26 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
         updated_by: &UserId,
     ) -> Result<Option<AiProjectMapping>, AiProjectMappingError>;
 
-    /// Deletes the key's mapping and reports whether one existed.
+    /// Deletes the key's mapping and reports whether one existed. The key's
+    /// usage is then unassigned for everyone: no personal mark of it remains.
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError>;
+
+    /// Whether the key has a mapping, resolving or not.
+    async fn is_mapped(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError>;
+
+    /// Marks the key as personal for the user, unless the key is mapped.
+    /// Marking it again changes nothing.
+    async fn mark_personal(
+        &self,
+        user_id: &UserId,
+        project_key: &AiProjectKey,
+    ) -> Result<(), AiProjectMappingError>;
+
+    /// Removes the user's personal mark of the key and reports whether there
+    /// was one.
+    async fn unmark_personal(
+        &self,
+        user_id: &UserId,
+        project_key: &AiProjectKey,
+    ) -> Result<bool, AiProjectMappingError>;
 }

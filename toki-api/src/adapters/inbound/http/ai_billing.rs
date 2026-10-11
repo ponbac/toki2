@@ -116,6 +116,14 @@ async fn month_overview(
         period: PeriodResponse::new(month, service.time_zone().as_str()),
         developers: overview.developers.iter().map(Into::into).collect(),
         bill,
+        personal_usage: overview
+            .personal
+            .iter()
+            .map(|personal| PersonalUsageResponse {
+                user_id: personal.user_id.as_i32(),
+                usage: (&personal.usage).into(),
+            })
+            .collect(),
     }))
 }
 
@@ -131,6 +139,7 @@ async fn developer_month(
         bill,
         converted,
         usage,
+        personal,
         machines,
     } = service.developer_month(month, UserId::new(user_id)).await?;
 
@@ -146,6 +155,7 @@ async fn developer_month(
             })
             .collect(),
         daily_usage: usage.into_iter().map(Into::into).collect(),
+        personal_usage: personal.as_ref().map(Into::into),
     }))
 }
 
@@ -414,6 +424,17 @@ struct MonthOverviewResponse {
     developers: Vec<DeveloperResponse>,
     #[serde(flatten)]
     bill: BillResponse,
+    /// Per developer, their usage of the repositories they marked personal or
+    /// internal. The bill leaves it out; this is its estimate only. Developers
+    /// without any are absent.
+    personal_usage: Vec<PersonalUsageResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PersonalUsageResponse {
+    user_id: i32,
+    usage: UsageResponse,
 }
 
 #[derive(Debug, Serialize)]
@@ -425,8 +446,11 @@ struct DeveloperMonthResponse {
     #[serde(flatten)]
     bill: BillResponse,
     machines: Vec<MachineLabelResponse>,
-    /// Usage per local day, provider, model, machine and project key.
+    /// Usage per local day, provider, model, machine and project key. Usage of
+    /// the repositories the developer marked personal or internal is left out.
     daily_usage: Vec<DayUsageResponse>,
+    /// That left-out usage, as an estimate only; null without any.
+    personal_usage: Option<UsageResponse>,
 }
 
 #[derive(Debug, Serialize)]

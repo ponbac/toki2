@@ -30,8 +30,8 @@ use crate::{
             AiCoverageStatus, AiLocalCalendar, AiMachineCoverage, AiMachineHealth, AiMachineId,
             AiMachineList, AiMappedProject, AiPricingStatus, AiProjectAttribution, AiProjectFilter,
             AiProjectKeyList, AiProjectKeyUsage, AiProjectResolution, AiSessionOrder,
-            AiUsageFilter, AiUsageReport, AiUsageReportQuery, AiUsageSession, AiUsageSessionList,
-            AiUsageTotals, ProjectId, MACHINE_STALE_AFTER,
+            AiUsageFilter, AiUsageProjectGroup, AiUsageReport, AiUsageReportQuery, AiUsageSession,
+            AiUsageSessionList, AiUsageTotals, ProjectId, MACHINE_STALE_AFTER,
         },
         ports::inbound::AiUsageReportService,
     },
@@ -76,9 +76,14 @@ pub struct AiUsageReportParams {
     model: Option<String>,
     /// Only usage attributed to this time-tracking project.
     project_id: Option<String>,
-    /// Only usage attributed to no project. Not combined with `projectId`.
+    /// Only usage attributed to no project. Not combined with `projectId` or
+    /// `personal`.
     #[serde(default)]
     unassigned: bool,
+    /// Only usage of the project keys you marked personal. Not combined with
+    /// `projectId` or `unassigned`.
+    #[serde(default)]
+    personal: bool,
     /// Only this machine's usage.
     #[param(format = "uuid")]
     machine_id: Option<String>,
@@ -91,8 +96,7 @@ impl AiUsageReportParams {
             self.to,
             self.provider,
             self.model,
-            self.project_id,
-            self.unassigned,
+            project_filter(self.project_id, self.unassigned, self.personal)?,
             self.machine_id,
         )
     }
@@ -117,6 +121,8 @@ pub struct AiUsageSessionParams {
     project_id: Option<String>,
     #[serde(default)]
     unassigned: bool,
+    #[serde(default)]
+    personal: bool,
     #[param(format = "uuid")]
     machine_id: Option<String>,
     /// `recent` (default), `cost` or `tokens`, largest first. By cost, a session
@@ -166,25 +172,32 @@ impl From<AiUsageSessionSort> for AiSessionOrder {
     }
 }
 
+/// The project filter of a query string, which names at most one of a
+/// project, unassigned usage and personal usage.
+fn project_filter(
+    project_id: Option<String>,
+    unassigned: bool,
+    personal: bool,
+) -> Result<Option<AiProjectFilter>, ApiError> {
+    match (project_id, unassigned, personal) {
+        (Some(id), false, false) => Ok(Some(AiProjectFilter::Project(ProjectId::new(id)))),
+        (None, true, false) => Ok(Some(AiProjectFilter::Unassigned)),
+        (None, false, true) => Ok(Some(AiProjectFilter::Personal)),
+        (None, false, false) => Ok(None),
+        _ => Err(ApiError::bad_request(
+            "projectId, unassigned and personal cannot be combined",
+        )),
+    }
+}
+
 fn report_query(
     from: Option<Date>,
     to: Option<Date>,
     provider: Option<AiUsageProvider>,
     model: Option<String>,
-    project_id: Option<String>,
-    unassigned: bool,
+    project: Option<AiProjectFilter>,
     machine_id: Option<String>,
 ) -> Result<AiUsageReportQuery, ApiError> {
-    let project = match (project_id, unassigned) {
-        (Some(_), true) => {
-            return Err(ApiError::bad_request(
-                "projectId and unassigned cannot be combined",
-            ))
-        }
-        (Some(id), false) => Some(AiProjectFilter::Project(ProjectId::new(id))),
-        (None, true) => Some(AiProjectFilter::Unassigned),
-        (None, false) => None,
-    };
     let machine = machine_id
         .map(|id| {
             AiMachineId::parse(&id).ok_or_else(|| ApiError::bad_request("machineId must be a UUID"))
@@ -262,13 +275,16 @@ pub enum AiProjectAttributionStatus {
     Unconfigured,
     /// Not mapped yet; see `mappable`.
     Unmapped,
+    /// Not mapped, and marked by you as personal: not client work. Your usage
+    /// of it is left out of the bill and counts for no project.
+    Personal,
     /// Usage without project metadata, which cannot be mapped. token-ledger
     /// attributes usage to a configured project name or a Git remote.
     Unattributed,
 }
 
-/// A project key and how its usage is attributed. Usage that is not `mapped`
-/// is unassigned.
+/// A project key and how its usage is attributed. Usage that is neither
+/// `mapped` nor `personal` is unassigned.
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiProjectAttributionResponse {
@@ -294,6 +310,7 @@ impl From<AiProjectAttribution> for AiProjectAttributionResponse {
             AiProjectResolution::Stale => (AiProjectAttributionStatus::Stale, None),
             AiProjectResolution::Unconfigured => (AiProjectAttributionStatus::Unconfigured, None),
             AiProjectResolution::Unmapped { .. } => (AiProjectAttributionStatus::Unmapped, None),
+            AiProjectResolution::Personal => (AiProjectAttributionStatus::Personal, None),
             AiProjectResolution::Unattributed => (AiProjectAttributionStatus::Unattributed, None),
         };
 
@@ -340,8 +357,8 @@ pub struct AiUsageReportResponse {
     totals: AiUsageTotalsResponse,
     /// Per local day, provider and model, by day. Days without usage are absent.
     days: Vec<AiUsageDayResponse>,
-    /// Per project, costliest first. All unassigned usage is one entry whose
-    /// `project` is null.
+    /// Per project, costliest first. All personal usage is one entry and all
+    /// unassigned usage another; `project` is null for both.
     projects: Vec<AiUsageProjectResponse>,
     /// Per provider and model, costliest first.
     models: Vec<AiUsageModelResponse>,
@@ -364,6 +381,8 @@ pub struct AiUsageFilterOptionsResponse {
     projects: Vec<ProjectResponse>,
     /// Whether any usage in the range is unassigned.
     unassigned: bool,
+    /// Whether any usage in the range is of keys you marked personal.
+    personal: bool,
     #[schema(format = "uuid")]
     machine_ids: Vec<String>,
 }
@@ -383,8 +402,11 @@ pub struct AiUsageDayResponse {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsageProjectResponse {
-    /// Null for all unassigned usage.
+    /// Null for all personal usage and for all unassigned usage.
     project: Option<ProjectResponse>,
+    /// Whether this is the usage of the keys you marked personal, which is
+    /// left out of the bill.
+    personal: bool,
     totals: AiUsageTotalsResponse,
     /// The project keys whose usage counts for it, costliest first.
     keys: Vec<AiUsageProjectKeyTotalsResponse>,
@@ -444,6 +466,7 @@ impl From<AiUsageReport> for AiUsageReportResponse {
                 models: options.models,
                 projects: options.projects.into_iter().map(project_response).collect(),
                 unassigned: options.unassigned,
+                personal: options.personal,
                 machine_ids: options.machines.iter().map(ToString::to_string).collect(),
             },
             totals: report.totals.into(),
@@ -461,7 +484,11 @@ impl From<AiUsageReport> for AiUsageReportResponse {
                 .projects
                 .into_iter()
                 .map(|group| AiUsageProjectResponse {
-                    project: group.project.map(project_response),
+                    personal: group.group == AiUsageProjectGroup::Personal,
+                    project: match group.group {
+                        AiUsageProjectGroup::Project(project) => Some(project_response(project)),
+                        AiUsageProjectGroup::Personal | AiUsageProjectGroup::Unassigned => None,
+                    },
                     totals: group.totals.into(),
                     keys: group
                         .keys
@@ -831,8 +858,7 @@ pub async fn list_sessions(
         params.to,
         params.provider,
         params.model,
-        params.project_id,
-        params.unassigned,
+        project_filter(params.project_id, params.unassigned, params.personal)?,
         params.machine_id,
     )?;
     let sessions = service

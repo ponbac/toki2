@@ -443,7 +443,7 @@ pub(crate) async fn capture_request_body_middleware(
 
     if parts.method == Method::OPTIONS
         || !settings.capture_request_bodies
-        || is_ai_usage_upload(parts.uri.path())
+        || names_private_project_keys(parts.uri.path())
         || !should_capture_body(&parts.headers, &settings)
     {
         return next.run(Request::from_parts(parts, body)).await;
@@ -467,13 +467,17 @@ pub(crate) async fn capture_request_body_middleware(
         .await
 }
 
-/// Whether the request is a `token-ledger sync` upload. Its body names every
-/// repository the developer worked in, and an unmapped one only its developers
-/// may see, so the body is never logged.
-fn is_ai_usage_upload(path: &str) -> bool {
-    path.strip_prefix("/ai-usage/machines/")
+/// Whether the request's body names project keys that only their developers
+/// may see, so that it is never logged: a `token-ledger sync` upload, which
+/// names every repository the developer worked in, and a personal mark, which
+/// names one they keep to themselves.
+fn names_private_project_keys(path: &str) -> bool {
+    let upload = path
+        .strip_prefix("/ai-usage/machines/")
         .and_then(|rest| rest.strip_suffix("/usage"))
-        .is_some_and(|machine_id| !machine_id.contains('/'))
+        .is_some_and(|machine_id| !machine_id.contains('/'));
+
+    upload || path == "/ai-usage/project-mappings/personal"
 }
 
 fn should_capture_body(headers: &HeaderMap, settings: &ObservabilitySettings) -> bool {
@@ -863,17 +867,21 @@ mod tests {
     }
 
     #[test]
-    fn observability_never_captures_ai_usage_uploads() {
-        assert!(is_ai_usage_upload(
-            "/ai-usage/machines/5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a/usage"
-        ));
+    fn observability_never_captures_bodies_that_name_private_project_keys() {
+        for path in [
+            "/ai-usage/machines/5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a/usage",
+            "/ai-usage/project-mappings/personal",
+        ] {
+            assert!(names_private_project_keys(path), "{path}");
+        }
         for path in [
             "/ai-usage/machines",
             "/ai-usage/project-mappings",
+            "/ai-usage/project-mappings/personal/extra",
             "/ai-usage/machines/5f0c5a1e/usage/extra",
             "/time-tracking/timer",
         ] {
-            assert!(!is_ai_usage_upload(path), "{path}");
+            assert!(!names_private_project_keys(path), "{path}");
         }
     }
 

@@ -57,8 +57,12 @@ An exchange rate that is the average of the days published so far: that of a mon
 _Avoid_: estimated rate, temporary rate
 
 **Unassigned usage**:
-AI usage that counts for no time-tracking project: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. An unmapped key may name a private repository, so only the developers who use it see its name and only they can map it: admins see its usage as Unassigned, unnamed, until one of them does. Billing charges it on its own line, and a mapping applies to past months too.
+AI usage that counts for no time-tracking project and is not personal usage: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. An unmapped key may name a private repository, so only the developers who use it see its name and only they can map it: admins see its usage as Unassigned, unnamed, until one of them does. Billing charges it on its own line, and a mapping applies to past months too.
 _Avoid_: unmapped usage (it is only one of these cases)
+
+**Personal usage**:
+A developer's AI usage of a project key they marked as personal or internal: not client work. It is left out of the bill: it bills nothing on API days and takes no share of a subscription's fee, which is split over the developer's other usage. Admins see it only as an API-equivalent estimate per developer, never the key's name. The mark is the developer's own and applies to their usage alone. Mapping the key clears every mark of it: the mapping then decides for everyone, and deleting it leaves the usage unassigned. Shown as "Personal / internal".
+_Avoid_: private usage, excluded usage, non-billable usage
 
 **Stale machine**:
 A machine that has not synced AI usage for more than seven days. Its usage since the last sync is missing, not zero.

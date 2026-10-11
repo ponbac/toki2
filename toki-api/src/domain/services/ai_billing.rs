@@ -122,6 +122,18 @@ where
                 None,
             )
             .await?;
+        // Read right after what bills, before the rates are fetched: a mark
+        // made between the two reads puts its usage on both sides or neither,
+        // until the next read.
+        let personal = self
+            .repository
+            .personal_usage(
+                month.dates(),
+                &self.time_zone,
+                self.mapping_company.as_ref(),
+                None,
+            )
+            .await?;
         let subscriptions = self.subscriptions(AiSubscriptionScope::AllUsers).await?;
         let bill = bill_month(month, &usage, &subscriptions)?;
         let converted = self.convert(&bill).await?;
@@ -135,6 +147,7 @@ where
                     .iter()
                     .map(|month| month.subscription.user_id),
             )
+            .chain(personal.iter().map(|personal| personal.user_id))
             .collect();
         let developers = self
             .repository
@@ -148,6 +161,7 @@ where
             bill,
             developers,
             converted,
+            personal,
         })
     }
 
@@ -183,6 +197,19 @@ where
                 self.mapping_company.as_ref(),
             )
             .await?;
+        // Read right after the usage it complements, as in the overview.
+        let personal = self
+            .repository
+            .personal_usage(
+                month.dates(),
+                &self.time_zone,
+                self.mapping_company.as_ref(),
+                Some(&user_id),
+            )
+            .await?
+            .into_iter()
+            .next()
+            .map(|personal| personal.usage);
         let subscriptions = self
             .subscriptions(AiSubscriptionScope::User(user_id))
             .await?;
@@ -204,6 +231,7 @@ where
             bill,
             converted,
             usage: billed_day_usage(user_id, usage, &subscriptions),
+            personal,
             machines,
         })
     }
