@@ -140,6 +140,7 @@ pub enum AiUsageProvider {
     Claude,
     Grok,
     Copilot,
+    Pi,
 }
 
 /// One session's usage of one model during one UTC hour. The key
@@ -215,7 +216,9 @@ pub enum AiUsageCoverageStatus {
     Missing,
 }
 
-/// A billing plan a provider reported during an hour of the window.
+/// A billing plan a provider reported during an hour of the window. Pi names
+/// no plan: its hint is `openai-codex`, the route of its ChatGPT sign-in, for an
+/// hour in which usage ran through that sign-in.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsageProviderHintPayload {
@@ -496,6 +499,7 @@ impl From<AiUsageProvider> for AiProvider {
             AiUsageProvider::Claude => Self::Claude,
             AiUsageProvider::Grok => Self::Grok,
             AiUsageProvider::Copilot => Self::Copilot,
+            AiUsageProvider::Pi => Self::Pi,
         }
     }
 }
@@ -507,6 +511,7 @@ impl From<AiProvider> for AiUsageProvider {
             AiProvider::Claude => Self::Claude,
             AiProvider::Grok => Self::Grok,
             AiProvider::Copilot => Self::Copilot,
+            AiProvider::Pi => Self::Pi,
         }
     }
 }
@@ -827,5 +832,84 @@ mod tests {
 
         let (status, _) = put(app, MACHINE, None, &payload(2)).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test]
+    async fn pi_usage_is_stored_with_its_coverage_and_sign_in_hint(pool: PgPool) {
+        let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+        let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
+            PostgresApiTokenRepository::new(db.clone()),
+        )));
+        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(Arc::new(
+            PostgresAiUsageRepository::new(db),
+        )));
+        let app = app(service, tokens.clone());
+        let id: i32 = sqlx::query_scalar(
+            "INSERT INTO users (email, full_name, picture, access_token)
+             VALUES ('dev@example.com', 'Test User', '', '')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let issued = tokens
+            .create(&UserId::new(id), "token-ledger")
+            .await
+            .unwrap();
+        let secret = issued.secret.as_str();
+        let coverage = |status: &str| {
+            json!([{
+                "provider": "pi",
+                "status": status,
+                "files": 0,
+                "unreadable": 0,
+                "malformedLines": 0,
+                "skippedRecords": 0,
+                "duplicates": 0
+            }])
+        };
+
+        let mut used = payload(1);
+        used["buckets"][0]["provider"] = json!("pi");
+        used["coverage"] = coverage("ok");
+        used["providerHints"] = json!([
+            { "provider": "pi", "hourStart": "2026-09-22T08:00:00.000Z", "plan": "openai-codex" }
+        ]);
+        let (status, body) = put(app.clone(), MACHINE, Some(secret), &used).await;
+        assert_eq!(
+            (status, body),
+            (StatusCode::OK, json!({ "storedBuckets": 1 }))
+        );
+
+        // A machine that never ran Pi reports it as missing in every sync.
+        let mut unused = payload(0);
+        unused["coverage"] = coverage("missing");
+        unused["providerHints"] = json!([]);
+        let other_machine = "0b7a3c52-9d1e-4f6a-8b2c-3e4d5f6a7b8c";
+        unused["machine"]["id"] = json!(other_machine);
+        let (status, _) = put(app, other_machine, Some(secret), &unused).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let stored: Vec<(String, String)> = sqlx::query_as(
+            "SELECT 'bucket', provider FROM ai_usage_buckets
+             UNION ALL SELECT 'hint ' || plan, provider FROM ai_usage_provider_hints
+             UNION ALL SELECT 'coverage ' || status, provider FROM ai_usage_machine_coverage
+             UNION ALL SELECT 'log', provider FROM ai_usage_coverage_log
+             ORDER BY 1",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored,
+            [
+                "bucket",
+                "coverage missing",
+                "coverage ok",
+                "hint openai-codex",
+                "log"
+            ]
+            .map(|row| (row.to_string(), "pi".to_string()))
+        );
     }
 }

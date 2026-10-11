@@ -6,9 +6,10 @@ use crate::{
     db::DbPool,
     domain::{
         models::{
-            AiCurrency, AiMonthlyCost, AiPlanMismatchDay, AiProvider, AiSubscription,
-            AiSubscriptionId, AiSubscriptionPeriod, AiSubscriptionPlan, AiSubscriptionScope,
-            AiSubscriptionTerms, AiUsageDateRange, AiUsageTimeZone, UserId, UNPAID_PLAN_HINTS,
+            subscription_provider, AiCurrency, AiMonthlyCost, AiPlanMismatchDay, AiProvider,
+            AiSubscription, AiSubscriptionId, AiSubscriptionPeriod, AiSubscriptionPlan,
+            AiSubscriptionScope, AiSubscriptionTerms, AiUsageDateRange, AiUsageTimeZone, UserId,
+            PI_CHATGPT_SIGN_IN_HINT, UNPAID_PLAN_HINTS,
         },
         ports::outbound::AiSubscriptionRepository,
         AiSubscriptionError,
@@ -219,11 +220,16 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
         // Hints are grouped by the local date their hour starts on, converting in
         // the zone so days follow daylight-saving changes. The range bounds stay
         // comparable with the (user_id, hour_start) index, and the covering check
-        // matches the no-overlap constraint's index expression.
+        // matches the no-overlap constraint's index expression. Pi's hints count
+        // only for its ChatGPT sign-in, against the subscriptions that pay for it.
+        // Whose subscriptions pay for Pi usage on its ChatGPT sign-in.
+        let pi_payer = subscription_provider(AiProvider::Pi, true).unwrap_or(AiProvider::Pi);
         let rows = sqlx::query!(
             r#"
             WITH hint_days AS (
                 SELECT hints.user_id, hints.provider, local.day,
+                    CASE WHEN hints.provider = $6 THEN $8 ELSE hints.provider END
+                        AS subscription_provider,
                     array_agg(DISTINCT hints.plan ORDER BY hints.plan) AS plans
                 FROM ai_usage_provider_hints AS hints
                 CROSS JOIN LATERAL (
@@ -233,6 +239,7 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
                   AND hints.hour_start >= ($2::date::timestamp AT TIME ZONE $4)
                   AND hints.hour_start < ($3::date::timestamp AT TIME ZONE $4)
                   AND lower(btrim(hints.plan)) <> ALL($5::text[])
+                  AND (hints.provider <> $6 OR hints.plan = $7)
                 GROUP BY hints.user_id, hints.provider, local.day
             )
             SELECT
@@ -244,7 +251,7 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
                     SELECT min(later.valid_from)
                     FROM ai_subscriptions AS later
                     WHERE later.user_id = hint_days.user_id
-                      AND later.provider = hint_days.provider
+                      AND later.provider = hint_days.subscription_provider
                       AND later.valid_from > hint_days.day
                 ) AS next_subscription_from
             FROM hint_days
@@ -252,7 +259,7 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
                 SELECT 1
                 FROM ai_subscriptions AS covering
                 WHERE covering.user_id = hint_days.user_id
-                  AND covering.provider = hint_days.provider
+                  AND covering.provider = hint_days.subscription_provider
                   AND daterange(covering.valid_from, covering.valid_to, '[]') @> hint_days.day
             )
             ORDER BY hint_days.user_id, hint_days.provider, hint_days.day
@@ -262,6 +269,9 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
             dates.end(),
             time_zone.as_str(),
             UNPAID_PLAN_HINTS as &[&str],
+            AiProvider::Pi.as_str(),
+            PI_CHATGPT_SIGN_IN_HINT,
+            pi_payer.as_str(),
         )
         .fetch_all(&self.pool)
         .await
@@ -662,6 +672,17 @@ mod tests {
         machine_id: &str,
         hints: &[(OffsetDateTime, &str)],
     ) {
+        upload_hints_of(pool, user, machine_id, AiProvider::Codex, hints).await;
+    }
+
+    /// As `upload_hints`, for plan hints of `provider`.
+    async fn upload_hints_of(
+        pool: &PgPool,
+        user: &UserId,
+        machine_id: &str,
+        provider: AiProvider,
+        hints: &[(OffsetDateTime, &str)],
+    ) {
         let first = hints.iter().map(|&(hour, _)| hour).min().unwrap();
         let last = hints.iter().map(|&(hour, _)| hour).max().unwrap();
         let upload = AiUsageUpload::new(
@@ -679,7 +700,7 @@ mod tests {
             },
             Vec::new(),
             vec![AiProviderCoverage {
-                provider: AiProvider::Codex,
+                provider,
                 status: AiCoverageStatus::Ok,
                 files: 1,
                 unreadable: 0,
@@ -690,7 +711,7 @@ mod tests {
             hints
                 .iter()
                 .map(|&(hour_start, plan)| AiProviderHint {
-                    provider: AiProvider::Codex,
+                    provider,
                     hour_start,
                     plan: plan.to_string(),
                 })
@@ -895,7 +916,7 @@ mod tests {
         let expected = days
             .iter()
             .filter(|day| {
-                resolve_billing_mode(&subscriptions, dev, AiProvider::Codex, **day)
+                resolve_billing_mode(&subscriptions, dev, AiProvider::Codex, **day, false)
                     == AiBillingMode::Api
             })
             .map(|day| {
@@ -925,6 +946,80 @@ mod tests {
 
     fn service(pool: &PgPool) -> AiSubscriptionServiceImpl<PostgresAiSubscriptionRepository> {
         AiSubscriptionServiceImpl::new(Arc::new(repository(pool)), stockholm())
+    }
+
+    #[sqlx::test]
+    async fn pi_mismatches_are_chatgpt_sign_in_days_without_a_codex_subscription(pool: PgPool) {
+        let repository = repository(&pool);
+        let dev = insert_user(&pool, "dev@example.com").await;
+        upload_hints_of(
+            &pool,
+            &dev,
+            LAPTOP,
+            AiProvider::Pi,
+            &[
+                // Another route is evidence of no subscription.
+                (datetime!(2026 - 09 - 09 10:00 UTC), "anthropic"),
+                (datetime!(2026 - 09 - 10 10:00 UTC), "openai-codex"),
+                (datetime!(2026 - 09 - 12 10:00 UTC), "openai-codex"),
+            ],
+        )
+        .await;
+        for subscription in [
+            // A subscription to another provider pays for no Pi usage.
+            terms(AiProvider::Claude, date!(2026 - 01 - 01), None),
+            terms(AiProvider::Codex, date!(2026 - 09 - 12), None),
+        ] {
+            repository.insert(&dev, &subscription).await.unwrap();
+        }
+
+        let days = repository
+            .plan_mismatch_days(
+                AiSubscriptionScope::User(dev),
+                AiUsageDateRange::from_inclusive(date!(2026 - 09 - 01), date!(2026 - 09 - 30))
+                    .unwrap(),
+                &stockholm(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            days,
+            [AiPlanMismatchDay {
+                user_id: dev,
+                provider: AiProvider::Pi,
+                day: date!(2026 - 09 - 10),
+                plans: plans(&["openai-codex"]),
+                next_subscription_from: Some(date!(2026 - 09 - 12)),
+            }]
+        );
+    }
+
+    #[sqlx::test]
+    async fn a_subscription_cannot_be_declared_for_pi(pool: PgPool) {
+        let service = service(&pool);
+        let dev = insert_user(&pool, "dev@example.com").await;
+        let chatgpt = service
+            .create(&dev, &terms(AiProvider::Codex, date!(2026 - 01 - 01), None))
+            .await
+            .unwrap();
+        let for_pi = terms(AiProvider::Pi, date!(2027 - 01 - 01), None);
+
+        let created = service.create(&dev, &for_pi).await;
+        let updated = service
+            .update(AiSubscriptionScope::User(dev), chatgpt.id, &for_pi)
+            .await;
+
+        for result in [created, updated] {
+            assert!(
+                matches!(&result, Err(AiSubscriptionError::Invalid(message)) if message.contains("codex")),
+                "{result:?}"
+            );
+        }
+        assert_eq!(
+            service.list(AiSubscriptionScope::User(dev)).await.unwrap(),
+            [chatgpt]
+        );
     }
 
     #[sqlx::test]

@@ -6,4 +6,5 @@ export const AI_PROVIDER_LABELS: Readonly<Record<AiProvider, string>> = {
   claude: "Claude Code",
   grok: "Grok Build",
   copilot: "Copilot",
+  pi: "Pi",
 };

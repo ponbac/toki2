@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * Each tool's mark as one 24×24 path, drawn in `currentColor`. The paths are
- * from `@lobehub/icons-static-svg` (MIT).
+ * from `@lobehub/icons-static-svg` (MIT), except Pi's, which redraws the
+ * four-by-four pixel mark of its terminal logo and is used for a plain icon.
  */
 const PATHS: Readonly<Record<AiProvider, string>> = {
   codex:
@@ -14,26 +15,46 @@ const PATHS: Readonly<Record<AiProvider, string>> = {
   grok: "M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815",
   copilot:
     "M19.245 5.364c1.322 1.36 1.877 3.216 2.11 5.817.622 0 1.2.135 1.592.654l.73.964c.21.278.323.61.323.955v2.62c0 .339-.173.669-.453.868C20.239 19.602 16.157 21.5 12 21.5c-4.6 0-9.205-2.583-11.547-4.258-.28-.2-.452-.53-.453-.868v-2.62c0-.345.113-.679.321-.956l.73-.963c.392-.517.974-.654 1.593-.654l.029-.297c.25-2.446.81-4.213 2.082-5.52 2.461-2.54 5.71-2.851 7.146-2.864h.198c1.436.013 4.685.323 7.146 2.864zm-7.244 4.328c-.284 0-.613.016-.962.05-.123.447-.305.85-.57 1.108-1.05 1.023-2.316 1.18-2.994 1.18-.638 0-1.306-.13-1.851-.464-.516.165-1.012.403-1.044.996a65.882 65.882 0 00-.063 2.884l-.002.48c-.002.563-.005 1.126-.013 1.69.002.326.204.63.51.765 2.482 1.102 4.83 1.657 6.99 1.657 2.156 0 4.504-.555 6.985-1.657a.854.854 0 00.51-.766c.03-1.682.006-3.372-.076-5.053-.031-.596-.528-.83-1.046-.996-.546.333-1.212.464-1.85.464-.677 0-1.942-.157-2.993-1.18-.266-.258-.447-.661-.57-1.108-.32-.032-.64-.049-.96-.05zm-2.525 4.013c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zm5 0c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zM7.635 5.087c-1.05.102-1.935.438-2.385.906-.975 1.037-.765 3.668-.21 4.224.405.394 1.17.657 1.995.657h.09c.649-.013 1.785-.176 2.73-1.11.435-.41.705-1.433.675-2.47-.03-.834-.27-1.52-.63-1.813-.39-.336-1.275-.482-2.265-.394zm6.465.394c-.36.292-.6.98-.63 1.813-.03 1.037.24 2.06.675 2.47.968.957 2.136 1.104 2.776 1.11h.044c.825 0 1.59-.263 1.995-.657.555-.556.765-3.187-.21-4.224-.45-.468-1.335-.804-2.385-.906-.99-.088-1.875.058-2.265.394zM12 7.615c-.24 0-.525.015-.84.044.03.16.045.336.06.526l-.001.159a2.94 2.94 0 01-.014.25c.225-.022.425-.027.612-.028h.366c.187 0 .387.006.612.028-.015-.146-.015-.277-.015-.409.015-.19.03-.365.06-.526a9.29 9.29 0 00-.84-.044z",
+  pi: "M2 2h15v10h-5v5H7v5H2zM7 7v5h5V7zM17 12h5v10h-5z",
 };
 
 /**
- * Each provider's chart colour (`--viz-1` to `--viz-4` in `index.css`), so a
- * mark matches its bars. A text-colour class on the icon overrides it.
+ * The cells of Pi's mark in the three colours of its terminal logo, which are
+ * the same in both themes.
+ */
+const PI_BRAND = [
+  { fill: "#e48a7a", d: "M2 2h15v10h-5V7H2z" },
+  { fill: "#4f8eb3", d: "M2 7h5v5h5v5H7v5H2z" },
+  { fill: "#eab65d", d: "M17 12h5v10h-5z" },
+] as const;
+
+/**
+ * Each provider's chart colour (`--viz-1` to `--viz-5` in `index.css`), so a
+ * mark matches its bars. A text-colour class on the icon overrides it. Pi's
+ * mark has its own colours unless the icon is plain, so its tint shows only
+ * then and as the wash of its tile.
  */
 const TINTS: Readonly<Record<AiProvider, string>> = {
   codex: "text-[color:var(--viz-1)]",
   claude: "text-[color:var(--viz-2)]",
   grok: "text-[color:var(--viz-3)]",
   copilot: "text-[color:var(--viz-4)]",
+  pi: "text-[color:var(--viz-5)]",
 };
 
-/** A provider's mark. Decorative: the provider's name always sits beside it. */
+/**
+ * A provider's mark. Decorative: the provider's name always sits beside it.
+ * A `plain` icon is drawn in the text colour alone, for a place that colours
+ * its marks itself.
+ */
 export function AiProviderIcon({
   provider,
   className,
+  plain = false,
 }: {
   provider: AiProvider;
   className?: string;
+  plain?: boolean;
 }) {
   return (
     <svg
@@ -44,7 +65,13 @@ export function AiProviderIcon({
       clipRule="evenodd"
       className={cn("size-3.5 shrink-0", TINTS[provider], className)}
     >
-      <path d={PATHS[provider]} />
+      {provider === "pi" && !plain ? (
+        PI_BRAND.map((part) => (
+          <path key={part.fill} d={part.d} fill={part.fill} />
+        ))
+      ) : (
+        <path d={PATHS[provider]} />
+      )}
     </svg>
   );
 }

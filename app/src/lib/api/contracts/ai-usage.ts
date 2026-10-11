@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const aiProviderSchema = z.enum(["codex", "claude", "grok", "copilot"]);
+const aiProviderSchema = z.enum(["codex", "claude", "grok", "copilot", "pi"]);
 
 /** A calendar date in the server's AI usage time zone, `YYYY-MM-DD`. */
 const localDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);

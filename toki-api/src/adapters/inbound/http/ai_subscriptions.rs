@@ -84,6 +84,8 @@ where
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiSubscriptionRequest {
+    /// Not `pi`, which has no subscriptions of its own: a ChatGPT subscription,
+    /// declared for `codex`, also pays for Pi usage through its ChatGPT sign-in.
     provider: AiUsageProvider,
     /// Free text, such as `Claude Max 5x`, `ChatGPT Pro` or `Copilot Business`.
     /// At most 64 Unicode code points.
@@ -220,6 +222,9 @@ impl From<AiPlanMismatches> for AiSubscriptionMismatchListResponse {
 /// so their usage bills at its estimated API cost. The days lie between the
 /// same declared subscriptions, so one declaration can cover them all. Hints
 /// are evidence only.
+///
+/// For `pi` the plan is `openai-codex`, its ChatGPT sign-in, and the missing
+/// subscription is one to `codex`.
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiSubscriptionMismatchResponse {
@@ -237,9 +242,9 @@ pub struct AiSubscriptionMismatchResponse {
     days: u32,
     /// The paid plans the provider reported, such as `pro`.
     plans: Vec<String>,
-    /// The last day before the provider's next declared subscription, or null
-    /// when none follows. A subscription from `firstDay` through this day
-    /// overlaps no other.
+    /// The last day before the next declared subscription that pays for the
+    /// provider's usage, or null when none follows. A subscription from
+    /// `firstDay` through this day overlaps no other.
     #[serde(with = "iso_date::option")]
     #[schema(value_type = Option<String>, format = Date)]
     last_uncovered_day: Option<Date>,
@@ -332,6 +337,10 @@ pub async fn list_subscriptions(
 /// from `validFrom` through `validTo`, or on without end when `validTo` is null.
 /// Periods of your subscriptions to one provider must not share a day: end the
 /// current one before its successor starts.
+///
+/// A ChatGPT subscription is declared for `codex`. It also pays for your Pi
+/// usage on each of those days on which Pi reported its ChatGPT sign-in; Pi
+/// usage on other days bills as API usage, and `pi` takes no subscription.
 #[utoipa::path(
     post,
     path = "/ai-usage/subscriptions",
@@ -430,7 +439,8 @@ pub async fn delete_subscription(
 /// bills at its estimated API cost until you declare the subscription. Days
 /// between the same declared subscriptions form one entry. Only Codex reports
 /// plans today, a `free` plan is no evidence of a subscription, and a missing
-/// plan proves nothing.
+/// plan proves nothing. Pi reports its ChatGPT sign-in as the plan
+/// `openai-codex`, which a subscription to Codex pays for.
 #[utoipa::path(
     get,
     path = "/ai-usage/subscription-mismatches",

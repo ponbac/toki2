@@ -64,6 +64,7 @@ fn day_usage(
         user_id,
         provider,
         day,
+        chatgpt_sign_in: false,
         project,
         usage,
     }
@@ -746,6 +747,142 @@ fn subscriptions_apply_only_to_their_own_user_and_provider() {
                 8,
                 AiProvider::Codex,
                 line("Overhead", "overhead", Some("200.00 USD"), 0)
+            ),
+        ]
+    );
+}
+
+/// Pi usage on a day for which Pi did, or did not, report its ChatGPT sign-in.
+fn pi(
+    day: Date,
+    chatgpt_sign_in: bool,
+    project: Option<AiMappedProject>,
+    cents: i64,
+) -> AiDailyUsage {
+    AiDailyUsage {
+        chatgpt_sign_in,
+        ..day_usage(DEV, AiProvider::Pi, day, project, priced(cents, 1))
+    }
+}
+
+fn chatgpt(id: i32, user_id: UserId, valid_from: Date) -> AiSubscription {
+    subscription(
+        id,
+        user_id,
+        AiProvider::Codex,
+        "1000",
+        "SEK",
+        valid_from,
+        None,
+    )
+}
+
+fn provider_lines(bill: &AiMonthBill) -> Vec<(AiProvider, Summary)> {
+    bill.lines
+        .iter()
+        .map(|line| (line.provider, summary(line)))
+        .collect()
+}
+
+#[test]
+fn a_codex_subscription_splits_its_fee_over_codex_and_signed_in_pi_usage() {
+    let bill = bill_month(
+        september(),
+        &[
+            day_usage(
+                DEV,
+                AiProvider::Codex,
+                date!(2026 - 09 - 05),
+                client_a(),
+                priced(60, 1),
+            ),
+            pi(date!(2026 - 09 - 05), true, client_b(), 30),
+            pi(date!(2026 - 09 - 06), true, client_a(), 10),
+            // Pi ran on an API key: no sign-in was reported for the day.
+            pi(date!(2026 - 09 - 07), false, client_a(), 40),
+        ],
+        &[chatgpt(1, DEV, date!(2026 - 01 - 01))],
+    )
+    .unwrap();
+
+    assert_eq!(
+        provider_lines(&bill),
+        [
+            (
+                AiProvider::Codex,
+                line("Client A", "subscription", Some("600.00 SEK"), 60)
+            ),
+            (
+                AiProvider::Pi,
+                line("Client A", "subscription", Some("100.00 SEK"), 10)
+            ),
+            (
+                AiProvider::Pi,
+                line("Client B", "subscription", Some("300.00 SEK"), 30)
+            ),
+            (AiProvider::Pi, line("Client A", "api", None, 40)),
+        ]
+    );
+    assert_eq!(fee_sum(&bill, 1), 100_000);
+    let month = &bill.subscriptions[0];
+    assert_eq!(month.weights.len(), 3);
+    assert_eq!(month.usage.priced_cost.nanos(), 100 * 10_000_000);
+}
+
+#[test]
+fn signed_in_pi_usage_needs_the_developers_own_codex_subscription_on_the_day() {
+    // Pi alone uses the subscription, so its fee is no overhead.
+    let pi_only = bill_month(
+        september(),
+        &[pi(date!(2026 - 09 - 05), true, client_a(), 50)],
+        &[chatgpt(1, DEV, date!(2026 - 01 - 01))],
+    )
+    .unwrap();
+    assert_eq!(
+        provider_lines(&pi_only),
+        [(
+            AiProvider::Pi,
+            line("Client A", "subscription", Some("1000.00 SEK"), 50)
+        )]
+    );
+
+    // A sign-in is evidence only: without a subscription that pays for it on
+    // the day, the usage bills as API usage.
+    let uncovered = bill_month(
+        september(),
+        &[
+            pi(date!(2026 - 09 - 05), true, client_a(), 50),
+            pi(date!(2026 - 09 - 20), true, client_a(), 5),
+        ],
+        &[
+            chatgpt(1, OTHER_DEV, date!(2026 - 01 - 01)),
+            chatgpt(3, DEV, date!(2026 - 09 - 16)),
+            claude_max(2, date!(2026 - 01 - 01), None),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        uncovered
+            .lines
+            .iter()
+            .map(|line| (line.user_id, line.provider, summary(line)))
+            .collect::<Vec<_>>(),
+        [
+            (
+                DEV,
+                AiProvider::Claude,
+                line("Overhead", "overhead", Some("1100.00 SEK"), 0)
+            ),
+            (
+                DEV,
+                AiProvider::Pi,
+                line("Client A", "subscription", Some("500.00 SEK"), 5)
+            ),
+            (DEV, AiProvider::Pi, line("Client A", "api", None, 50)),
+            (
+                OTHER_DEV,
+                AiProvider::Codex,
+                line("Overhead", "overhead", Some("1000.00 SEK"), 0)
             ),
         ]
     );
