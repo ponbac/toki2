@@ -22,6 +22,7 @@ toki-api/       # Main Axum backend
 az-devops/      # Azure DevOps API wrapper crate
 kleer/          # Kleer API client crate
 app/            # React frontend
+videos/         # fframes sources of product videos (standalone crates, outside the Cargo workspace)
 ```
 
 ## Kleer Notes

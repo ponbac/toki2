@@ -1,0 +1,26 @@
+[package]
+name = "toki-ai-usage"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+fframes = { version = "=1.2.0", features = ["compile-time-svgtree", "cli"] }
+
+[lib]
+name = "toki_ai_usage"
+path = "src/lib.rs"
+doctest = false
+
+[[bin]]
+name = "toki-ai-usage"
+path = "src/main.rs"
+
+[workspace]
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
