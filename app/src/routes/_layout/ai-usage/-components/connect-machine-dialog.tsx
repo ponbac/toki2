@@ -139,16 +139,22 @@ export function ConnectMachineDialog({
     setNameDraft(null);
   };
 
+  const finish = () => {
+    reset();
+    onOpenChange(false);
+  };
+
   // The commands stay up after the sync lands: the scheduling one may be left.
-  const finished = arrival !== undefined && step === SYNC_STEP;
+  // A known machine's sync may not be the setup's, so it does not end it either.
+  const finished =
+    arrival !== undefined && !arrival.known && step === SYNC_STEP;
   const { title, icon: StepIcon } = STEPS[step];
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        // A known machine's sync may not be this setup's, so that keeps its token.
-        if (!next && finished && !arrival.known) {
+        if (!next && finished) {
           reset();
         }
         onOpenChange(next);
@@ -213,7 +219,11 @@ export function ConnectMachineDialog({
             />
           )}
           {step === SYNC_STEP && (
-            <SyncStep arrival={arrival} query={machinesQuery} />
+            <SyncStep
+              arrival={arrival}
+              query={machinesQuery}
+              onConfirm={finish}
+            />
           )}
         </div>
 
@@ -223,13 +233,7 @@ export function ConnectMachineDialog({
               <Button type="button" variant="ghost" onClick={reset}>
                 Add another machine
               </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  reset();
-                  onOpenChange(false);
-                }}
-              >
+              <Button type="button" onClick={finish}>
                 Show my usage
               </Button>
             </>
@@ -556,21 +560,28 @@ function CommandLine({ line, token }: { line: string; token: string }) {
 function SyncStep({
   arrival,
   query,
+  onConfirm,
 }: {
   arrival: Arrival | undefined;
   /** The listing the wait polls; its failure would otherwise pass for waiting. */
   query: UseQueryResult<AiUsageMachineList, Error>;
+  /** Ends the setup on the word that a known machine is the one set up. */
+  onConfirm: () => void;
 }) {
-  if (!arrival) {
-    return (
-      <>
-        {query.isError && (
-          <QueryError
-            message="Could not check for the sync."
-            error={query.error}
-            onRetry={() => void query.refetch()}
-          />
-        )}
+  // Until a new machine's sync arrives, the listing is still being polled.
+  const waiting = arrival === undefined || arrival.known;
+  return (
+    <>
+      {waiting && query.isError && (
+        <QueryError
+          message="Could not check for the sync."
+          error={query.error}
+          onRetry={() => void query.refetch()}
+        />
+      )}
+      {arrival ? (
+        <SyncedMachine arrival={arrival} onConfirm={onConfirm} />
+      ) : (
         <div
           role="status"
           className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/40 p-4"
@@ -588,11 +599,18 @@ function SyncStep({
             </p>
           </div>
         </div>
-      </>
-    );
-  }
+      )}
+    </>
+  );
+}
 
-  const { machine, known } = arrival;
+function SyncedMachine({
+  arrival: { machine, known },
+  onConfirm,
+}: {
+  arrival: Arrival;
+  onConfirm: () => void;
+}) {
   const Icon = known ? Check : PartyPopper;
   const read = machine.coverage
     .filter((entry) => entry.status === "ok")
@@ -625,11 +643,25 @@ function SyncStep({
           missing.
         </p>
       )}
-      <p className="text-xs text-muted-foreground">
-        {known
-          ? "It had synced before this setup. If it is the machine you are setting up, you are done. If not, the new machine has not synced yet, and this keeps checking."
-          : "Do the same on every machine where you use a coding agent."}
-      </p>
+      {known ? (
+        <p className="text-xs text-muted-foreground">
+          It had synced before this setup, so this may be its usual sync. If you
+          are setting up another machine, its sync has not arrived yet, and this
+          keeps checking.{" "}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-foreground"
+            onClick={onConfirm}
+          >
+            This is the machine I set up
+          </button>
+          .
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Do the same on every machine where you use a coding agent.
+        </p>
+      )}
     </div>
   );
 }
