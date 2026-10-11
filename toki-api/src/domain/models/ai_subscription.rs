@@ -9,6 +9,14 @@
 //! Plan hints that token-ledger uploads, such as Codex `plan_type`, are evidence
 //! only: declared subscriptions decide the billing mode.
 //!
+//! Pi routes its requests to other vendors, so it has no subscriptions of its
+//! own. A ChatGPT subscription, declared for Codex, also pays for the Pi usage
+//! of each local day it covers on which Pi reported its ChatGPT sign-in
+//! (`PI_CHATGPT_SIGN_IN_HINT`). The declaration still decides that there is a
+//! subscription, its fee and its days; Pi's hint only tells which of its days
+//! ran on that subscription rather than on an API key, which no declaration
+//! records. Pi usage on any other day is API usage.
+//!
 //! Date conventions: a subscription period ends *inclusively* on `valid_to`,
 //! the way people state it, while `AiUsageDateRange` ends *exclusively*, the
 //! way usage is summed. Convert with `AiSubscriptionPeriod::to_date_range` and
@@ -27,6 +35,9 @@ pub const MAX_PLAN_CHARS: usize = 64;
 /// and trimmed. A hint of one of these, in any letter case, is no evidence of a
 /// subscription, so it never flags a mismatch.
 pub const UNPAID_PLAN_HINTS: &[&str] = &["free"];
+/// The plan hint Pi uploads for an hour of usage through its ChatGPT sign-in:
+/// the name of that route, which has no API-key variant. Pi names no plan.
+pub const PI_CHATGPT_SIGN_IN_HINT: &str = "openai-codex";
 /// How many local days, ending today, a mismatch search covers by default.
 pub const DEFAULT_MISMATCH_DAYS: i64 = 90;
 /// The most integer digits a monthly cost may have, as `NUMERIC(12, 2)` allows.
@@ -202,6 +213,21 @@ pub struct AiSubscriptionTerms {
     pub period: AiSubscriptionPeriod,
 }
 
+impl AiSubscriptionTerms {
+    /// Rejects terms for a provider that has no subscriptions of its own.
+    pub fn ensure_declarable(&self) -> Result<(), AiSubscriptionError> {
+        match self.provider {
+            AiProvider::Pi => Err(invalid(
+                "pi has no subscriptions of its own: declare the ChatGPT subscription that \
+                 pays for its usage for codex",
+            )),
+            AiProvider::Codex | AiProvider::Claude | AiProvider::Grok | AiProvider::Copilot => {
+                Ok(())
+            }
+        }
+    }
+}
+
 /// A stored subscription of one user to one provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiSubscription {
@@ -211,8 +237,8 @@ pub struct AiSubscription {
 }
 
 impl AiSubscription {
-    /// Whether this subscription pays for `user_id`'s usage of `provider` on the
-    /// local date `day`.
+    /// Whether this subscription is `user_id`'s to `provider` and its period
+    /// holds the local date `day`.
     pub fn covers(&self, user_id: UserId, provider: AiProvider, day: Date) -> bool {
         self.user_id == user_id
             && self.terms.provider == provider
@@ -248,37 +274,63 @@ pub enum AiBillingMode<'a> {
     Subscription(&'a AiSubscription),
 }
 
+/// The provider whose subscriptions pay for a day of `provider`'s usage, or
+/// `None` when none can and the day is API usage.
+///
+/// Every provider but Pi pays with its own subscriptions. Pi's usage is paid for
+/// by a ChatGPT subscription, declared for Codex, when `chatgpt_sign_in` holds:
+/// Pi reported its ChatGPT sign-in for the user on that day.
+pub fn subscription_provider(provider: AiProvider, chatgpt_sign_in: bool) -> Option<AiProvider> {
+    match provider {
+        AiProvider::Pi => chatgpt_sign_in.then_some(AiProvider::Codex),
+        AiProvider::Codex | AiProvider::Claude | AiProvider::Grok | AiProvider::Copilot => {
+            Some(provider)
+        }
+    }
+}
+
 /// Resolves how `user_id`'s usage of `provider` on the local date `day` is billed.
 ///
 /// `subscriptions` may hold any users and providers; only those of `user_id` for
-/// `provider` count. A subscription covers every day from `valid_from` through
-/// `valid_to` inclusive, or on without end when it is ongoing. Stored subscriptions
-/// of one user to one provider never overlap, so at most one covers a day; should
-/// the slice break that rule, the first covering subscription wins.
+/// the provider that pays for `provider`'s usage count (`subscription_provider`,
+/// which `chatgpt_sign_in` decides for Pi). A subscription covers every day from
+/// `valid_from` through `valid_to` inclusive, or on without end when it is
+/// ongoing. Stored subscriptions of one user to one provider never overlap, so at
+/// most one covers a day; should the slice break that rule, the first covering
+/// subscription wins.
 pub fn resolve_billing_mode(
     subscriptions: &[AiSubscription],
     user_id: UserId,
     provider: AiProvider,
     day: Date,
+    chatgpt_sign_in: bool,
 ) -> AiBillingMode<'_> {
-    subscriptions
-        .iter()
-        .find(|subscription| subscription.covers(user_id, provider, day))
+    subscription_provider(provider, chatgpt_sign_in)
+        .and_then(|payer| {
+            subscriptions
+                .iter()
+                .find(|subscription| subscription.covers(user_id, payer, day))
+        })
         .map_or(AiBillingMode::Api, AiBillingMode::Subscription)
 }
 
 /// A local day on which a provider reported a paid plan for a user, but no
-/// declared subscription to that provider covers the day, so its usage bills as
-/// API usage. Hints are evidence only: the day is flagged for review, and its
-/// billing mode does not change.
+/// declared subscription that pays for the provider's usage covers the day, so
+/// its usage bills as API usage. Hints are evidence only: the day is flagged for
+/// review, and its billing mode does not change.
+///
+/// Pi's only such hint is its ChatGPT sign-in, and the subscription that would
+/// pay is one declared for Codex (`subscription_provider`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiPlanMismatchDay {
     pub user_id: UserId,
+    /// The provider that reported the plans.
     pub provider: AiProvider,
     pub day: Date,
     /// Distinct paid plans reported that day, such as `pro`, in ascending order.
     pub plans: Vec<String>,
-    /// The first day of the user's next subscription to the provider, if any.
+    /// The first day of the user's next subscription that pays for the
+    /// provider's usage, if any.
     pub next_subscription_from: Option<Date>,
 }
 
@@ -298,9 +350,10 @@ pub struct AiPlanMismatchRun {
     pub days: u32,
     /// Distinct paid plans reported during the run, in ascending order.
     pub plans: Vec<String>,
-    /// The last day before the provider's next declared subscription, or `None`
-    /// when none follows. A subscription from `first_day` through this day,
-    /// inclusive, overlaps none of the user's others.
+    /// The last day before the next declared subscription that pays for the
+    /// provider's usage, or `None` when none follows. A subscription from
+    /// `first_day` through this day, inclusive, overlaps none of the user's
+    /// others.
     pub last_uncovered_day: Option<Date>,
 }
 
@@ -394,7 +447,7 @@ mod tests {
 
     /// The id of the subscription that bills the day, or `None` for API billing.
     fn billed_by(subscriptions: &[AiSubscription], provider: AiProvider, day: Date) -> Option<i32> {
-        match resolve_billing_mode(subscriptions, DEV, provider, day) {
+        match resolve_billing_mode(subscriptions, DEV, provider, day, false) {
             AiBillingMode::Api => None,
             AiBillingMode::Subscription(subscription) => Some(subscription.id.as_i32()),
         }

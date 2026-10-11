@@ -27,6 +27,7 @@ import {
   describeDays,
   draftFrom,
   emptyDraft,
+  subscriptionProvider,
   formatPeriod,
   periodStatus,
   type SubscriptionEditor,
@@ -142,7 +143,10 @@ function AdminSubscriptionsPage() {
                 mode: "create",
                 userId: mismatch.userId,
                 initial: {
-                  ...emptyDraft(mismatch.provider, mismatch.firstDay),
+                  ...emptyDraft(
+                    subscriptionProvider(mismatch.provider),
+                    mismatch.firstDay,
+                  ),
                   validTo: mismatch.lastUncoveredDay ?? "",
                 },
               })
@@ -255,10 +259,10 @@ function Mismatches({
               <span className="font-medium">
                 {names.get(mismatch.userId) ?? `User ${mismatch.userId}`}
               </span>
-              : {AI_PROVIDER_LABELS[mismatch.provider]} reported a paid plan (
-              {mismatch.plans.join(", ")}) {describeDays(mismatch)}, but no
-              subscription is declared for those days, so they bill as API
-              usage.
+              :{" "}
+              {mismatch.provider === "pi"
+                ? `Pi ran on a ChatGPT sign-in ${describeDays(mismatch)}, but no ChatGPT subscription is declared for Codex for those days, so their Pi usage bills as API usage.`
+                : `${AI_PROVIDER_LABELS[mismatch.provider]} reported a paid plan (${mismatch.plans.join(", ")}) ${describeDays(mismatch)}, but no subscription is declared for those days, so they bill as API usage.`}
             </p>
             <Button
               type="button"

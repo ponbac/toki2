@@ -1,4 +1,5 @@
 import {
+  AI_PROVIDERS,
   MAX_PLAN_CODE_POINTS,
   codePointLength,
   type AiProvider,
@@ -13,7 +14,23 @@ export const PLAN_SUGGESTIONS: Record<AiProvider, readonly string[]> = {
   claude: ["Claude Pro", "Claude Max 5x", "Claude Max 20x"],
   grok: [],
   copilot: ["Copilot Business"],
+  pi: [],
 };
+
+/**
+ * The provider a subscription is declared for to pay for `provider`'s usage.
+ * Pi has no subscriptions of its own: a ChatGPT subscription, declared for
+ * Codex, pays for Pi usage on the days Pi ran on its ChatGPT sign-in.
+ */
+export function subscriptionProvider(provider: AiProvider): AiProvider {
+  return provider === "pi" ? "codex" : provider;
+}
+
+/** The providers a subscription can be declared for. */
+export const SUBSCRIPTION_PROVIDERS: readonly AiProvider[] =
+  AI_PROVIDERS.filter(
+    (provider) => subscriptionProvider(provider) === provider,
+  );
 
 export const CURRENCIES: readonly string[] = ["SEK", "USD", "EUR"];
 

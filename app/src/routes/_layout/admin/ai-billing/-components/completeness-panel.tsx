@@ -259,6 +259,7 @@ function MachinesTable({
                           <AiProviderIcon
                             provider={provider.provider}
                             className="text-muted-foreground"
+                            plain
                           />
                         }
                         tone={

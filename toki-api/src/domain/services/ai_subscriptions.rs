@@ -42,6 +42,7 @@ impl<R: AiSubscriptionRepository> AiSubscriptionService for AiSubscriptionServic
         user_id: &UserId,
         terms: &AiSubscriptionTerms,
     ) -> Result<AiSubscription, AiSubscriptionError> {
+        terms.ensure_declarable()?;
         self.repository.insert(user_id, terms).await
     }
 
@@ -51,6 +52,7 @@ impl<R: AiSubscriptionRepository> AiSubscriptionService for AiSubscriptionServic
         id: AiSubscriptionId,
         terms: &AiSubscriptionTerms,
     ) -> Result<AiSubscription, AiSubscriptionError> {
+        terms.ensure_declarable()?;
         self.repository.update(scope, id, terms).await
     }
 

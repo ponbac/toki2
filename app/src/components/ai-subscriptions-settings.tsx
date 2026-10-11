@@ -10,6 +10,7 @@ import {
   describeDays,
   draftFrom,
   emptyDraft,
+  subscriptionProvider,
   formatPeriod,
   periodStatus,
   type SubscriptionEditor,
@@ -89,7 +90,10 @@ export function AiSubscriptionsSettings() {
           setEditor({
             mode: "create",
             initial: {
-              ...emptyDraft(mismatch.provider, mismatch.firstDay),
+              ...emptyDraft(
+                subscriptionProvider(mismatch.provider),
+                mismatch.firstDay,
+              ),
               validTo: mismatch.lastUncoveredDay ?? "",
             },
           })
@@ -207,13 +211,22 @@ function MismatchWarning({
             key={`${mismatch.provider}-${mismatch.firstDay}`}
             className="flex items-start justify-between gap-2"
           >
-            <p>
-              {AI_PROVIDER_LABELS[mismatch.provider]} usage indicates a
-              subscription ({mismatch.plans.length === 1 ? "plan" : "plans"}{" "}
-              {mismatch.plans.join(", ")}) {describeDays(mismatch)}, but no
-              subscription is declared for these days, so their usage is billed
-              at its estimated API cost in billing reports.
-            </p>
+            {mismatch.provider === "pi" ? (
+              <p>
+                Pi usage ran on a ChatGPT sign-in {describeDays(mismatch)}, but
+                no ChatGPT subscription is declared for Codex for these days, so
+                their Pi usage is billed at its estimated API cost in billing
+                reports.
+              </p>
+            ) : (
+              <p>
+                {AI_PROVIDER_LABELS[mismatch.provider]} usage indicates a
+                subscription ({mismatch.plans.length === 1 ? "plan" : "plans"}{" "}
+                {mismatch.plans.join(", ")}) {describeDays(mismatch)}, but no
+                subscription is declared for these days, so their usage is
+                billed at its estimated API cost in billing reports.
+              </p>
+            )}
             <Button
               type="button"
               variant="outline"
