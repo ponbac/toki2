@@ -2,8 +2,12 @@
 use crate::*;
 
 const SECONDS: f32 = 6.0;
-/// The settled moment of the scene that stands in as frame 0.
-const POSTER: f32 = 5.0;
+/// The film opens on its poster, the settled opening, so that players show it as the
+/// thumbnail. It dissolves over this long, and then the opening plays from its start.
+const POSTER_DISSOLVE: f32 = 0.3;
+const OPENING_AT: f32 = 0.4;
+/// The moment of the opening that the poster shows.
+const POSTER: f32 = 4.6;
 
 #[derive(Debug)]
 pub struct Intro;
@@ -14,13 +18,24 @@ impl Scene for Intro {
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, _ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
-        // Frame 0 is the poster: players show it as the thumbnail, so it is the settled
-        // opening instead of the first instant of its fade-in.
-        let poster = frame.global_index == 0;
-        let frame = if poster {
-            Frame::new(frame.second_to_frame(POSTER), 0, frame.fps)
+        // Before the opening starts, the frame is the poster on its way out. A lone poster
+        // frame followed by the fade-in would flash.
+        let (frame, visible) = if frame.seconds() < OPENING_AT {
+            let dissolved = progress(frame.seconds(), 0.0, POSTER_DISSOLVE);
+            (
+                Frame::new(frame.second_to_frame(POSTER), frame.global_index, frame.fps),
+                1.0 - dissolved,
+            )
         } else {
-            frame
+            let opening = Frame::new(
+                frame.index - frame.second_to_frame(OPENING_AT),
+                frame.global_index,
+                frame.fps,
+            );
+            let t = opening.seconds();
+            let visible =
+                progress(t, 0.0, 0.3).min(1.0 - progress(t, SECONDS - OPENING_AT - 0.35, 0.35));
+            (opening, visible)
         };
         let t = frame.seconds();
         let count = ease_out(progress(t, 0.9, 2.0));
@@ -34,7 +49,7 @@ impl Scene for Intro {
             .collect();
 
         fframes::svgr!(
-            <g opacity={progress(t, 0.0, 0.3).min(1.0 - progress(t, SECONDS - 0.35, 0.35))} font-family={SANS} text-anchor="middle">
+            <g opacity={visible} font-family={SANS} text-anchor="middle">
                 <g opacity={ramp(&frame, 0.15)} transform={Transform::translate(0, rise(&frame, 0.15, 24.0))}>
                     <text x="960" y="330" font-size="56" font-weight="600" letter-spacing="-1" fill={MUTED}>"Vad kostar din AI-användning?"</text>
                 </g>

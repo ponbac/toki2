@@ -36,7 +36,7 @@ cargo run --release -- audio analyze             # loudness per scene
 | --- | --- |
 | `src/lib.rs` | The video, the theme, and shared pieces: captions, cards, buttons, pointer |
 | `src/data.rs` | The mocked usage, and the marks of tools and systems |
-| `src/intro.rs`, `src/outro.rs` | Opening and close. Frame 0 is the poster |
+| `src/intro.rs`, `src/outro.rs` | Opening and close. The film opens on its poster, which dissolves |
 | `src/connect.rs` | Empty state and the onboarding dialog, steps 1 to 3 |
 | `src/terminal.rs` | `login`, `sync` and `schedule install` with what they print |
 | `src/synced.rs` | The dialog's last step, and the page filling in |
