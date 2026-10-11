@@ -63,6 +63,7 @@ is an addition.
 - The `h264` feature of fframes links the system x264, and its prebuilt FFmpeg expects an
   older x264 than current distributions ship. The feature is off, and `render.sh` encodes
   the H.264 with the system `ffmpeg` instead.
-- Manrope and IBM Plex Mono are under the SIL Open Font License; see `licenses/`. The tool
-  marks are from `@lobehub/icons-static-svg` (MIT), the Apple and Tux marks from Simple
-  Icons (CC0), and the line icons from Lucide (ISC).
+- Third-party material, with its license texts in `licenses/`: the fonts Manrope and IBM
+  Plex Mono (SIL Open Font License), the tool marks from `@lobehub/icons-static-svg` (MIT),
+  and the line icons from Lucide (ISC). The Apple and Tux marks are from Simple Icons, which
+  is CC0 and needs no notice.
