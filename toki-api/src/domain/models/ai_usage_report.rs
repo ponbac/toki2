@@ -49,6 +49,9 @@ pub enum AiProjectResolution {
     /// Not mapped yet. `mappable` when the key can be mapped: it is a valid key
     /// and time tracking is configured.
     Unmapped { mappable: bool },
+    /// Marked personal by the developer, and not mapped: their usage of it is
+    /// left out of the bill.
+    Personal,
     /// Usage without project metadata, which can never be mapped.
     Unattributed,
 }
@@ -72,6 +75,7 @@ impl AiProjectAttribution {
                 }
                 Some((_, AiMappingResolution::Stale)) => AiProjectResolution::Stale,
                 Some((_, AiMappingResolution::Unconfigured)) => AiProjectResolution::Unconfigured,
+                None if resolver.is_personal(&project_key) => AiProjectResolution::Personal,
                 None => AiProjectResolution::Unmapped {
                     mappable: resolver.is_configured() && AiProjectKey::parse(&project_key).is_ok(),
                 },
@@ -84,11 +88,21 @@ impl AiProjectAttribution {
         }
     }
 
-    /// The project the usage counts for, or `None` when it is unassigned.
+    /// The project the usage counts for, or `None` when it is unassigned or
+    /// personal.
     pub fn project(&self) -> Option<&AiMappedProject> {
         match &self.resolution {
             AiProjectResolution::Mapped(project) => Some(project),
             _ => None,
+        }
+    }
+
+    /// What the usage counts for.
+    pub fn group(&self) -> AiUsageGroup {
+        match &self.resolution {
+            AiProjectResolution::Mapped(project) => AiUsageGroup::Project(project.id.clone()),
+            AiProjectResolution::Personal => AiUsageGroup::Personal,
+            _ => AiUsageGroup::Unassigned,
         }
     }
 
@@ -102,11 +116,24 @@ impl AiProjectAttribution {
     }
 }
 
+/// What a developer's usage of a project key counts for.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AiUsageGroup {
+    /// A time-tracking project, through a mapping that resolves.
+    Project(ProjectId),
+    /// Nothing that bills: the developer marked the key personal.
+    Personal,
+    /// No project yet: unmapped, stale, unconfigured and unattributed keys.
+    Unassigned,
+}
+
 /// Which usage a project filter keeps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiProjectFilter {
     /// Usage attributed to the project, through any of its keys.
     Project(ProjectId),
+    /// Usage of the keys the developer marked personal.
+    Personal,
     /// Usage attributed to no project: unmapped, stale, unconfigured and
     /// unattributed keys.
     Unassigned,
@@ -153,6 +180,9 @@ pub struct AiUsageSelection {
     /// Every key whose usage counts for a project, with the project, so the
     /// store can sum per project.
     pub projects: Vec<(String, ProjectId)>,
+    /// The developer's personal keys, so the store can sum them apart from
+    /// unassigned usage.
+    pub personal: Vec<String>,
 }
 
 impl AiUsageSelection {
@@ -161,6 +191,11 @@ impl AiUsageSelection {
             .resolved_keys()
             .into_iter()
             .map(|(key, project)| (key.to_string(), project.id.clone()))
+            .collect::<Vec<_>>();
+        let personal = resolver
+            .personal_keys()
+            .into_iter()
+            .map(str::to_string)
             .collect::<Vec<_>>();
         let keys = match &filter.project {
             None => AiKeySelection::All,
@@ -171,9 +206,14 @@ impl AiUsageSelection {
                     .map(|(key, _)| key.clone())
                     .collect(),
             ),
-            Some(AiProjectFilter::Unassigned) => {
-                AiKeySelection::Except(projects.iter().map(|(key, _)| key.clone()).collect())
-            }
+            Some(AiProjectFilter::Personal) => AiKeySelection::Only(personal.clone()),
+            Some(AiProjectFilter::Unassigned) => AiKeySelection::Except(
+                projects
+                    .iter()
+                    .map(|(key, _)| key.clone())
+                    .chain(personal.iter().cloned())
+                    .collect(),
+            ),
         };
 
         Self {
@@ -182,6 +222,7 @@ impl AiUsageSelection {
             machine: filter.machine,
             keys,
             projects,
+            personal,
         }
     }
 }
@@ -228,9 +269,9 @@ pub fn report_dates(
 pub struct AiUsageSums {
     pub totals: AiUsageTotals,
     pub days: Vec<AiUsageDayTotals>,
-    /// Per project the selection's `projects` resolve to; `None` sums all
-    /// unassigned usage.
-    pub projects: Vec<(Option<ProjectId>, AiUsageTotals)>,
+    /// Per project the selection's `projects` resolve to, with all personal
+    /// usage and all unassigned usage as a group each.
+    pub projects: Vec<(AiUsageGroup, AiUsageTotals)>,
     pub keys: Vec<(String, AiUsageTotals)>,
     pub models: Vec<AiUsageModelTotals>,
     pub machines: Vec<AiUsageMachineTotals>,
@@ -259,7 +300,8 @@ pub struct AiUsageReport {
     pub totals: AiUsageTotals,
     /// Per local day, provider and model, by day.
     pub days: Vec<AiUsageDayTotals>,
-    /// Per project, with all unassigned usage as one group, costliest first.
+    /// Per project, with all personal usage and all unassigned usage as a
+    /// group each, costliest first.
     pub projects: Vec<AiUsageProjectTotals>,
     /// Per provider and model, costliest first.
     pub models: Vec<AiUsageModelTotals>,
@@ -277,10 +319,28 @@ pub struct AiUsageDayTotals {
     pub totals: AiUsageTotals,
 }
 
-/// A project's usage, or all unassigned usage when `project` is `None`.
+/// What a group of a report's usage counts for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AiUsageProjectGroup {
+    Project(AiMappedProject),
+    /// The keys the developer marked personal: left out of the bill.
+    Personal,
+    Unassigned,
+}
+
+impl AiUsageProjectGroup {
+    pub fn project(&self) -> Option<&AiMappedProject> {
+        match self {
+            Self::Project(project) => Some(project),
+            Self::Personal | Self::Unassigned => None,
+        }
+    }
+}
+
+/// The usage of a project, of all personal keys, or of all unassigned keys.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiUsageProjectTotals {
-    pub project: Option<AiMappedProject>,
+    pub group: AiUsageProjectGroup,
     pub totals: AiUsageTotals,
     /// The project keys whose usage counts for it, costliest first.
     pub keys: Vec<AiUsageKeyTotals>,
@@ -323,6 +383,8 @@ pub struct AiUsageFilterOptions {
     pub projects: Vec<AiMappedProject>,
     /// Whether any usage in the range is unassigned.
     pub unassigned: bool,
+    /// Whether any usage in the range is personal.
+    pub personal: bool,
     pub machines: Vec<AiMachineId>,
 }
 
@@ -332,11 +394,13 @@ impl AiUsageFilterOptions {
         models.sort_by(|(a_name, a), (b_name, b)| costliest_first(a, b).then(a_name.cmp(b_name)));
         let mut projects: BTreeMap<&str, &AiMappedProject> = BTreeMap::new();
         let mut unassigned = false;
+        let mut personal = false;
         for key in &sums.project_keys {
             match resolver.project(key) {
                 Some(project) => {
                     projects.entry(project.id.as_str()).or_insert(project);
                 }
+                None if resolver.is_personal(key) => personal = true,
                 None => unassigned = true,
             }
         }
@@ -352,6 +416,7 @@ impl AiUsageFilterOptions {
             models: models.into_iter().map(|(name, _)| name).collect(),
             projects,
             unassigned,
+            personal,
             machines: sums.machines,
         }
     }
@@ -390,51 +455,66 @@ impl AiUsageReport {
     }
 }
 
-/// Puts each key's sums under the project it counts for, next to the store's
-/// exact sum for that project. Groups and keys are costliest first, and
-/// Unassigned comes last on a tie.
+/// Puts each key's sums under what it counts for, next to the store's exact
+/// sum for that group. Groups and keys are costliest first; on a tie projects
+/// come first and Unassigned last.
 fn group_by_project(
-    projects: Vec<(Option<ProjectId>, AiUsageTotals)>,
+    projects: Vec<(AiUsageGroup, AiUsageTotals)>,
     keys: Vec<(String, AiUsageTotals)>,
     resolver: &AiMappingResolver,
 ) -> Vec<AiUsageProjectTotals> {
-    let mut keys_by_project: HashMap<Option<ProjectId>, Vec<AiUsageKeyTotals>> = HashMap::new();
+    let mut keys_by_group: HashMap<AiUsageGroup, Vec<AiUsageKeyTotals>> = HashMap::new();
     for (key, totals) in keys {
         let project = AiProjectAttribution::of(key, resolver);
-        keys_by_project
-            .entry(project.project().map(|project| project.id.clone()))
+        keys_by_group
+            .entry(project.group())
             .or_default()
             .push(AiUsageKeyTotals { project, totals });
     }
 
     let mut groups = projects
         .into_iter()
-        .map(|(id, totals)| {
-            let mut keys = keys_by_project.remove(&id).unwrap_or_default();
+        .map(|(group, totals)| {
+            let mut keys = keys_by_group.remove(&group).unwrap_or_default();
             keys.sort_by(|a, b| {
                 costliest_first(&a.totals, &b.totals)
                     .then_with(|| a.project.project_key.cmp(&b.project.project_key))
             });
-            // Keys mapped to one project were saved separately, so their
-            // recorded names can differ; the first key by name decides.
-            let project = keys
-                .iter()
-                .filter_map(|key| key.project.project())
-                .min_by(|a, b| a.name.cmp(&b.name))
-                .cloned();
+            let group = match group {
+                // Keys mapped to one project were saved separately, so their
+                // recorded names can differ; the first key by name decides. A
+                // project the mappings no longer resolve has no key left to
+                // name it and counts as unassigned.
+                AiUsageGroup::Project(_) => keys
+                    .iter()
+                    .filter_map(|key| key.project.project())
+                    .min_by(|a, b| a.name.cmp(&b.name))
+                    .cloned()
+                    .map_or(
+                        AiUsageProjectGroup::Unassigned,
+                        AiUsageProjectGroup::Project,
+                    ),
+                AiUsageGroup::Personal => AiUsageProjectGroup::Personal,
+                AiUsageGroup::Unassigned => AiUsageProjectGroup::Unassigned,
+            };
             AiUsageProjectTotals {
-                project,
+                group,
                 totals,
                 keys,
             }
         })
         .collect::<Vec<_>>();
     groups.sort_by(|a, b| {
+        let rank = |group: &AiUsageProjectTotals| match group.group {
+            AiUsageProjectGroup::Project(_) => 0,
+            AiUsageProjectGroup::Personal => 1,
+            AiUsageProjectGroup::Unassigned => 2,
+        };
         costliest_first(&a.totals, &b.totals)
-            .then(a.project.is_none().cmp(&b.project.is_none()))
+            .then(rank(a).cmp(&rank(b)))
             .then_with(|| {
                 let name = |group: &AiUsageProjectTotals| {
-                    group.project.as_ref().map(|project| project.name.clone())
+                    group.group.project().map(|project| project.name.clone())
                 };
                 name(a).cmp(&name(b))
             })

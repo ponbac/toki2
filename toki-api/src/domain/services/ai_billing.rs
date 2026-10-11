@@ -126,6 +126,16 @@ where
         let bill = bill_month(month, &usage, &subscriptions)?;
         let converted = self.convert(&bill).await?;
 
+        let personal = self
+            .repository
+            .personal_usage(
+                month.dates(),
+                &self.time_zone,
+                self.mapping_company.as_ref(),
+                None,
+            )
+            .await?;
+
         let billed: HashSet<UserId> = bill
             .lines
             .iter()
@@ -135,6 +145,7 @@ where
                     .iter()
                     .map(|month| month.subscription.user_id),
             )
+            .chain(personal.iter().map(|personal| personal.user_id))
             .collect();
         let developers = self
             .repository
@@ -148,6 +159,7 @@ where
             bill,
             developers,
             converted,
+            personal,
         })
     }
 
@@ -199,11 +211,25 @@ where
             })
             .collect();
 
+        let personal = self
+            .repository
+            .personal_usage(
+                month.dates(),
+                &self.time_zone,
+                self.mapping_company.as_ref(),
+                Some(&user_id),
+            )
+            .await?
+            .into_iter()
+            .next()
+            .map(|personal| personal.usage);
+
         Ok(AiDeveloperMonth {
             developer,
             bill,
             converted,
             usage: billed_day_usage(user_id, usage, &subscriptions),
+            personal,
             machines,
         })
     }

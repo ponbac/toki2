@@ -12,8 +12,8 @@ use crate::{
     domain::{
         models::{
             AiMappedProject, AiProjectFilter, AiProjectKey, AiProjectResolution, AiUsageBucket,
-            AiUsageFilter, AiUsageReportQuery, AiUsageUpload, AiUsageWindow, TimeTrackingCompany,
-            UNATTRIBUTED_PROJECT_KEY,
+            AiUsageFilter, AiUsageProjectGroup, AiUsageReportQuery, AiUsageUpload, AiUsageWindow,
+            TimeTrackingCompany, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::{
             inbound::AiUsageReportService,
@@ -944,5 +944,126 @@ async fn keys_are_attributed_by_their_current_mapping(pool: PgPool) {
         .unwrap();
     assert!(!report.time_tracking_configured);
     assert_eq!(report.projects.len(), 1);
-    assert_eq!(report.projects[0].project, None);
+    assert_eq!(report.projects[0].group, AiUsageProjectGroup::Unassigned);
+}
+
+#[sqlx::test]
+async fn a_developers_personal_keys_are_summed_apart_until_someone_maps_them(pool: PgPool) {
+    let dev = insert_user(&pool, "dev@example.com", "User").await;
+    let colleague = insert_user(&pool, "colleague@example.com", "User").await;
+    let side_project = "github.com/dev/side-project";
+    let unmapped = "github.com/example/new";
+    let hour = datetime!(2026-09-10 08:00 UTC);
+    record(
+        &pool,
+        dev,
+        MACHINE_A,
+        vec![
+            bucket(hour, APP, 1, Some(1.0)),
+            bucket(hour, side_project, 2, Some(2.0)),
+            bucket(hour, unmapped, 4, Some(4.0)),
+        ],
+    )
+    .await;
+    record(
+        &pool,
+        colleague,
+        MACHINE_B,
+        vec![bucket(hour, side_project, 8, Some(8.0))],
+    )
+    .await;
+    map(&pool, dev, APP, "company-1", "101").await;
+    let mappings = PostgresAiProjectMappingRepository::new(db(&pool));
+    mappings
+        .mark_personal(&dev, &AiProjectKey::parse(side_project).unwrap())
+        .await
+        .unwrap();
+
+    let service = service(&pool, true);
+    let groups = |filter| {
+        let service = &service;
+        async move {
+            service
+                .report(&dev, &september(filter))
+                .await
+                .unwrap()
+                .projects
+                .into_iter()
+                .map(|group| {
+                    (
+                        match group.group {
+                            AiUsageProjectGroup::Project(project) => project.name,
+                            AiUsageProjectGroup::Personal => "personal".to_string(),
+                            AiUsageProjectGroup::Unassigned => "unassigned".to_string(),
+                        },
+                        group.totals.records,
+                        group
+                            .keys
+                            .into_iter()
+                            .map(|key| key.project.project_key)
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+    let only = |project| AiUsageFilter {
+        project: Some(project),
+        ..AiUsageFilter::default()
+    };
+    let group = |name: &str, records, key: &str| (name.to_string(), records, vec![key.to_string()]);
+
+    assert_eq!(
+        groups(AiUsageFilter::default()).await,
+        [
+            group("unassigned", 4, unmapped),
+            group("personal", 2, side_project),
+            group("Project 101", 1, APP),
+        ]
+    );
+    assert_eq!(
+        groups(only(AiProjectFilter::Personal)).await,
+        [group("personal", 2, side_project)]
+    );
+    assert_eq!(
+        groups(only(AiProjectFilter::Unassigned)).await,
+        [group("unassigned", 4, unmapped)]
+    );
+    let report = service
+        .report(&dev, &september(AiUsageFilter::default()))
+        .await
+        .unwrap();
+    assert!(report.options.personal && report.options.unassigned);
+
+    // The mark is the developer's alone: the colleague's usage of the key is
+    // unassigned and still theirs to map.
+    let colleagues = service
+        .report(&colleague, &september(AiUsageFilter::default()))
+        .await
+        .unwrap();
+    assert!(!colleagues.options.personal);
+    assert_eq!(
+        colleagues.projects[0].keys[0].project.resolution,
+        AiProjectResolution::Unmapped { mappable: true }
+    );
+
+    // Once anyone maps the key, the mapping decides for everyone.
+    map(&pool, colleague, side_project, "company-1", "202").await;
+    assert_eq!(
+        groups(AiUsageFilter::default()).await,
+        [
+            group("unassigned", 4, unmapped),
+            group("Project 202", 2, side_project),
+            group("Project 101", 1, APP),
+        ]
+    );
+    // The mark is kept and applies again without the mapping.
+    assert!(mappings
+        .delete(&AiProjectKey::parse(side_project).unwrap())
+        .await
+        .unwrap());
+    assert_eq!(
+        groups(only(AiProjectFilter::Personal)).await,
+        [group("personal", 2, side_project)]
+    );
 }

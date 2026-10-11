@@ -6,6 +6,7 @@ import type {
   AiUsageTotals,
 } from "@/lib/api/queries/ai-usage-report";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import {
   MODEL_SLOTS,
   OTHER_COLOR,
@@ -216,7 +217,8 @@ export type ProjectMetric = "cost" | "tokens";
 
 /**
  * The per-project chart's bars, largest first by `metric`: at most `limit`
- * projects, with the rest folded into one bar. Unassigned usage is one bar.
+ * projects, with the rest folded into one bar. Unassigned usage is one bar,
+ * and personal usage another.
  */
 export function projectBars(
   report: AiUsageReport,
@@ -228,8 +230,12 @@ export function projectBars(
   const bars = report.projects
     .map(
       (group): ProjectBar => ({
-        key: group.project?.projectId ?? "unassigned",
-        label: group.project?.projectName ?? "Unassigned",
+        key:
+          group.project?.projectId ??
+          (group.personal ? "personal" : "unassigned"),
+        label:
+          group.project?.projectName ??
+          (group.personal ? PERSONAL_LABEL : "Unassigned"),
         deemphasised: group.project === null,
         totals: group.totals,
       }),

@@ -1,3 +1,4 @@
+import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import {
   Accordion,
   AccordionContent,
@@ -53,6 +54,15 @@ export function BillingRules({ timeZone }: { timeZone: string }) {
               . Usage whose project key is unmapped, stale or unattributed is{" "}
               <span className="font-medium text-foreground">Unassigned</span>;
               map its keys under Project mappings and the bill updates.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">
+                {PERSONAL_LABEL}.
+              </span>{" "}
+              Usage of a repository its developer marked as not client work is
+              left out: it bills nothing and takes no share of a subscription
+              fee, which is split over the rest. It is shown apart as an
+              estimate, without the repository&apos;s name.
             </li>
             <li>
               <span className="font-medium text-foreground">Currencies.</span>{" "}

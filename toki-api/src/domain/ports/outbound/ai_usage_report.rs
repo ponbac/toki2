@@ -14,8 +14,8 @@ use crate::domain::{
 /// machines only. Local dates and hours are in `time_zone`: a bucket belongs to
 /// the local date and hour its start instant falls in. Costs are summed exactly
 /// and each sum converted once, so sums agree with every other report. The store
-/// never decides attribution: selections name the keys to keep and the keys of
-/// each project.
+/// never decides attribution: selections name the keys to keep, the keys of
+/// each project and the personal keys.
 #[async_trait]
 pub trait AiUsageReportRepository: Send + Sync + 'static {
     /// Today's date in `time_zone`, by the store's clock.
@@ -24,9 +24,12 @@ pub trait AiUsageReportRepository: Send + Sync + 'static {
     /// Every stored project mapping, team-wide.
     async fn stored_mappings(&self) -> Result<Vec<AiStoredMapping>, AiUsageError>;
 
+    /// The project keys the user marked personal, mapped since or not.
+    async fn personal_keys(&self, user_id: &UserId) -> Result<Vec<String>, AiUsageError>;
+
     /// The selected usage with local dates in `dates`, summed in total and per
-    /// local day, provider and model; project; project key; provider and model;
-    /// machine; and local weekday and hour.
+    /// local day, provider and model; project, personal or unassigned; project
+    /// key; provider and model; machine; and local weekday and hour.
     async fn usage_sums(
         &self,
         user_id: &UserId,

@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AiProviderLabel } from "@/components/ai-provider-icon";
+import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/api/contracts/ai-usage";
 import type {
   AiUsageReport,
@@ -63,6 +64,7 @@ export function FilterBar({
     params.model !== undefined ||
     params.projectId !== undefined ||
     params.unassigned !== undefined ||
+    params.personal !== undefined ||
     params.machineId !== undefined;
 
   // A selected value stays listed even when the range has no usage of it.
@@ -122,9 +124,11 @@ export function FilterBar({
         value={
           params.unassigned
             ? "unassigned"
-            : params.projectId !== undefined
-              ? `project:${params.projectId}`
-              : ALL
+            : params.personal
+              ? "personal"
+              : params.projectId !== undefined
+                ? `project:${params.projectId}`
+                : ALL
         }
         onChange={(value) =>
           onChange({
@@ -132,6 +136,7 @@ export function FilterBar({
               ? value.slice("project:".length)
               : undefined,
             unassigned: value === "unassigned" ? true : undefined,
+            personal: value === "personal" ? true : undefined,
           })
         }
         items={[
@@ -140,6 +145,9 @@ export function FilterBar({
             value: `project:${project.projectId}`,
             label: project.projectName,
           })),
+          ...(options.personal || params.personal
+            ? [{ value: "personal", label: PERSONAL_LABEL }]
+            : []),
           ...(options.unassigned || params.unassigned
             ? [{ value: "unassigned", label: "Unassigned" }]
             : []),
@@ -170,6 +178,7 @@ export function FilterBar({
               model: undefined,
               projectId: undefined,
               unassigned: undefined,
+              personal: undefined,
               machineId: undefined,
             })
           }

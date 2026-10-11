@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ai_personal_project_keys WHERE user_id = $1 AND project_key = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "63f6203d55e99e11f7c8acf672c6151432914501e6ee4a0c82c14fb34cd2b54c"
+}

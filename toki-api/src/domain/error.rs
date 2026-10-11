@@ -95,6 +95,8 @@ pub enum AiProjectMappingError {
     UnknownProject(String),
     #[error("no mapping exists for the project key")]
     NotFound,
+    #[error("the project key is not marked as personal")]
+    NotPersonal,
     #[error("time tracking is not configured")]
     NotConfigured,
     #[error("time-tracking projects are unavailable: {0}")]

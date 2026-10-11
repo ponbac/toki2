@@ -7,8 +7,12 @@
 //! into usage rows, so a change applies retroactively. Only mappings to the
 //! configured provider company resolve; usage without one, including
 //! `unattributed` usage, is unassigned.
+//!
+//! A developer can instead mark an unmapped key in their own usage as personal:
+//! not client work. The mark is theirs alone and leaves their usage of the key
+//! out of the bill. A mapping of the key overrides every mark of it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use time::{Date, OffsetDateTime};
 
@@ -133,6 +137,9 @@ pub struct AiStoredMapping {
 pub struct AiMappingResolver {
     configured: Option<TimeTrackingCompany>,
     mappings: HashMap<String, AiStoredMapping>,
+    /// The keys whose usage is personal for the developer whose usage is read.
+    /// Empty when the resolver is not for one developer.
+    personal: HashSet<String>,
 }
 
 impl AiMappingResolver {
@@ -145,7 +152,37 @@ impl AiMappingResolver {
                 .into_iter()
                 .map(|mapping| (mapping.project_key.clone(), mapping))
                 .collect(),
+            personal: HashSet::new(),
         }
+    }
+
+    /// This resolver for the usage of one developer, who marked `personal_keys`
+    /// as personal. A mark applies to that developer's usage only.
+    pub fn for_developer(mut self, personal_keys: impl IntoIterator<Item = String>) -> Self {
+        self.personal = personal_keys
+            .into_iter()
+            .filter(|key| self.personal_mark_applies(key))
+            .collect();
+        self
+    }
+
+    /// Whether a developer's personal mark of the key applies. A mapping of
+    /// the key, resolving or not, overrides it: someone mapped it as work.
+    pub fn personal_mark_applies(&self, project_key: &str) -> bool {
+        !self.mappings.contains_key(project_key)
+    }
+
+    /// Whether the developer's usage of the key is personal, and so left out
+    /// of the bill.
+    pub fn is_personal(&self, project_key: &str) -> bool {
+        self.personal.contains(project_key)
+    }
+
+    /// The developer's personal keys, by key.
+    pub fn personal_keys(&self) -> Vec<&str> {
+        let mut keys = self.personal.iter().map(String::as_str).collect::<Vec<_>>();
+        keys.sort_unstable();
+        keys
     }
 
     /// Whether time tracking is configured, so that mappings can resolve and

@@ -1596,6 +1596,185 @@ async fn the_drill_down_shows_a_developers_days_by_provider_model_machine_and_pr
 }
 
 #[sqlx::test]
+async fn personal_usage_is_left_out_of_the_bill_and_reported_apart(pool: PgPool) {
+    let app = app(&pool);
+    let admin = test_user(
+        &app,
+        &pool,
+        "admin@example.com",
+        "Admin Example",
+        &["User", "Admin"],
+    )
+    .await;
+    let dev = test_user(&app, &pool, "dev@example.com", "Dev Example", &["User"]).await;
+    let side_project = "github.com/dev/side-project";
+    map(&pool, APP, "101", "Client A", admin.id).await;
+    use AiProvider::{Claude, Codex};
+    let hour = |day: u8, hour: u8| {
+        datetime!(2026-08-01 00:00 UTC)
+            .replace_day(day)
+            .unwrap()
+            .replace_hour(hour)
+            .unwrap()
+    };
+    upload(
+        &pool,
+        dev.id,
+        LAPTOP,
+        "work-laptop",
+        AUGUST_WINDOW,
+        vec![
+            bucket(hour(10, 8), 0, APP, Claude, 3, Some(3.0)),
+            bucket(hour(10, 9), 0, side_project, Claude, 1, Some(1.0)),
+            bucket(hour(11, 8), 1, APP, Codex, 4, Some(4.0)),
+            bucket(hour(11, 9), 1, side_project, Codex, 2, Some(2.0)),
+        ],
+    )
+    .await;
+    // Claude Max covers the whole month; Codex bills as API usage.
+    subscribe(
+        &pool,
+        dev.id,
+        Claude,
+        "Max",
+        ("1000", "SEK"),
+        (date!(2026 - 08 - 01), None),
+    )
+    .await;
+    let overview = || async {
+        get_json(
+            &app,
+            &Caller::Session(&admin.cookie),
+            "/ai-usage/admin/billing/2026-08",
+        )
+        .await
+    };
+    let lines = |overview: &Value| -> Vec<Value> {
+        overview["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(line_summary)
+            .collect()
+    };
+    let dev_id = dev.id.as_i32();
+
+    // Unmarked, the repository is Unassigned: it takes a quarter of the fee
+    // and bills its Codex usage.
+    let before = overview().await;
+    assert_eq!(
+        lines(&before),
+        [
+            json!([
+                dev_id,
+                "claude",
+                "Client A",
+                "subscription",
+                false,
+                "750.00",
+                "SEK",
+                3.0,
+                0,
+                3
+            ]),
+            json!([
+                dev_id,
+                "claude",
+                null,
+                "subscription",
+                false,
+                "250.00",
+                "SEK",
+                1.0,
+                0,
+                1
+            ]),
+            json!([dev_id, "codex", "Client A", "api", false, "4.00", "USD", 4.0, 0, 4]),
+            json!([dev_id, "codex", null, "api", false, "2.00", "USD", 2.0, 0, 2]),
+        ]
+    );
+    assert_eq!(before["personalUsage"], json!([]));
+
+    PostgresAiProjectMappingRepository::new(db(&pool))
+        .mark_personal(&dev.id, &AiProjectKey::parse(side_project).unwrap())
+        .await
+        .unwrap();
+
+    // Marked personal, it bills nothing and takes no share: the whole fee
+    // falls on the client's usage.
+    let after = overview().await;
+    assert_eq!(
+        lines(&after),
+        [
+            json!([
+                dev_id,
+                "claude",
+                "Client A",
+                "subscription",
+                false,
+                "1000.00",
+                "SEK",
+                3.0,
+                0,
+                3
+            ]),
+            json!([dev_id, "codex", "Client A", "api", false, "4.00", "USD", 4.0, 0, 4]),
+        ]
+    );
+    let personal = &after["personalUsage"];
+    assert_eq!(personal.as_array().unwrap().len(), 1);
+    assert_eq!(personal[0]["userId"], dev_id);
+    assert_eq!(
+        (
+            &personal[0]["usage"]["apiEquivalentUsd"],
+            &personal[0]["usage"]["records"],
+            &personal[0]["usage"]["unpricedRecords"]
+        ),
+        (&json!(3.0), &json!(3), &json!(0))
+    );
+
+    // The developer's month leaves it out of the days too, and no admin
+    // response names the repository.
+    let drill_down = get_json(
+        &app,
+        &Caller::Session(&admin.cookie),
+        &format!("/ai-usage/admin/billing/2026-08/developers/{dev_id}"),
+    )
+    .await;
+    let days: Vec<Value> = drill_down["dailyUsage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            json!([
+                row["day"],
+                row["provider"],
+                row["projectKey"],
+                row["usage"]["records"]
+            ])
+        })
+        .collect();
+    assert_eq!(
+        days,
+        [
+            json!(["2026-08-10", "claude", APP, 3]),
+            json!(["2026-08-11", "codex", APP, 4]),
+        ]
+    );
+    assert_eq!(drill_down["personalUsage"]["apiEquivalentUsd"], json!(3.0));
+    let (status, _, csv) = get(
+        &app,
+        &Caller::Session(&admin.cookie),
+        "/ai-usage/admin/billing/2026-08/export.csv",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    for body in [after.to_string(), drill_down.to_string(), csv] {
+        assert!(!body.contains("side-project"), "{body}");
+    }
+}
+
+#[sqlx::test]
 async fn unsupported_billing_totals_return_a_range_error_instead_of_a_server_failure(pool: PgPool) {
     let app = app(&pool);
     let admin = test_user(

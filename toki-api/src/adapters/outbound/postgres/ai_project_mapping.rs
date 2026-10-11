@@ -95,7 +95,7 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
 
         Ok(keys
             .into_iter()
-            .filter(|key| !key.mapped)
+            .filter(|key| !key.mapped && !key.personal)
             .map(|key| UnmappedAiProjectKey::new(key.project_key, key.last_used_on))
             .collect())
     }
@@ -289,6 +289,58 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError> {
         let deleted = sqlx::query!(
             "DELETE FROM ai_project_mappings WHERE project_key = $1",
+            project_key.as_str(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(storage_error)?;
+
+        Ok(deleted.rows_affected() > 0)
+    }
+
+    async fn is_mapped(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError> {
+        sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM ai_project_mappings WHERE project_key = $1
+            ) AS "mapped!"
+            "#,
+            project_key.as_str(),
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(storage_error)
+    }
+
+    async fn mark_personal(
+        &self,
+        user_id: &UserId,
+        project_key: &AiProjectKey,
+    ) -> Result<(), AiProjectMappingError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO ai_personal_project_keys (user_id, project_key)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id, project_key) DO NOTHING
+            "#,
+            user_id.as_i32(),
+            project_key.as_str(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(storage_error)?;
+
+        Ok(())
+    }
+
+    async fn unmark_personal(
+        &self,
+        user_id: &UserId,
+        project_key: &AiProjectKey,
+    ) -> Result<bool, AiProjectMappingError> {
+        let deleted = sqlx::query!(
+            "DELETE FROM ai_personal_project_keys WHERE user_id = $1 AND project_key = $2",
+            user_id.as_i32(),
             project_key.as_str(),
         )
         .execute(&self.pool)

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use super::{
     ai_usage::numeric_read_error,
-    ai_usage_reads::{local_today, project_key_usage, stored_mappings},
+    ai_usage_reads::{local_today, project_key_usage, stored_mappings, stored_personal_keys},
 };
 use crate::{
     db::DbPool,
@@ -15,9 +15,10 @@ use crate::{
             AiCoverageStatus, AiKeySelection, AiMachine, AiMachineCoverage, AiMachineId,
             AiMachineStatus, AiPricing, AiPricingStatus, AiProvider, AiProviderCoverage,
             AiSessionCursor, AiSessionOrder, AiStoredMapping, AiTokenCounts, AiUsageDateRange,
-            AiUsageDayTotals, AiUsageHourOfWeekTotals, AiUsageMachineTotals, AiUsageModelTotals,
-            AiUsageOptionSums, AiUsageSelection, AiUsageSessionRow, AiUsageSessionRows,
-            AiUsageSums, AiUsageTimeZone, AiUsageTotals, ProjectId, UserId, MAX_SAFE_COUNT,
+            AiUsageDayTotals, AiUsageGroup, AiUsageHourOfWeekTotals, AiUsageMachineTotals,
+            AiUsageModelTotals, AiUsageOptionSums, AiUsageSelection, AiUsageSessionRow,
+            AiUsageSessionRows, AiUsageSums, AiUsageTimeZone, AiUsageTotals, ProjectId, UserId,
+            MAX_SAFE_COUNT,
         },
         ports::outbound::AiUsageReportRepository,
         AiUsageError,
@@ -40,8 +41,8 @@ impl PostgresAiUsageReportRepository {
 // with `hour_start`, so the (user_id, hour_start) index applies and days
 // follow daylight-saving changes. Costs are summed as NUMERIC and converted to
 // float8 once per figure, so no figure is a float sum of float sums. The store
-// never decides attribution: selections pass the keys to keep and each
-// resolving key's project.
+// never decides attribution: selections pass the keys to keep, each resolving
+// key's project and the personal keys.
 
 /// Usage totals from a row whose sums have the usual column names.
 macro_rules! totals {
@@ -83,6 +84,23 @@ const BY_PROJECT: i32 = 1 << 1;
 const BY_KEY: i32 = 1;
 const ALL_COLUMNS: i32 = (1 << 8) - 1;
 
+// The ids `usage_sums` groups keys under. Usage of a key in neither group is
+// unassigned.
+const PROJECT_GROUP_PREFIX: &str = "project:";
+const PERSONAL_GROUP: &str = "personal";
+
+/// The group a `usage_sums` row sums, from its group id.
+fn usage_group(id: Option<String>) -> Result<AiUsageGroup, AiUsageError> {
+    match id.as_deref() {
+        None => Ok(AiUsageGroup::Unassigned),
+        Some(PERSONAL_GROUP) => Ok(AiUsageGroup::Personal),
+        Some(id) => id
+            .strip_prefix(PROJECT_GROUP_PREFIX)
+            .map(|project| AiUsageGroup::Project(ProjectId::new(project)))
+            .ok_or_else(|| corrupt("a project row has an unknown group")),
+    }
+}
+
 /// The GROUPING() value of a row grouped by exactly `columns`.
 const fn grouped_by(columns: i32) -> i32 {
     ALL_COLUMNS & !columns
@@ -102,6 +120,15 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
             .map_err(numeric_read_error)
     }
 
+    async fn personal_keys(&self, user_id: &UserId) -> Result<Vec<String>, AiUsageError> {
+        Ok(stored_personal_keys(&self.pool, Some(user_id))
+            .await
+            .map_err(numeric_read_error)?
+            .into_iter()
+            .map(|(_, key)| key)
+            .collect())
+    }
+
     async fn usage_sums(
         &self,
         user_id: &UserId,
@@ -110,10 +137,23 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
         selection: &AiUsageSelection,
     ) -> Result<AiUsageSums, AiUsageError> {
         let (only, except) = key_parameters(&selection.keys);
-        let (resolved_keys, resolved_projects): (Vec<&str>, Vec<&str>) = selection
+        // What each key counts for, as an id of this query's own: a project's
+        // is prefixed, so no project id can pass for the personal group.
+        let (grouped_keys, group_ids): (Vec<&str>, Vec<String>) = selection
             .projects
             .iter()
-            .map(|(key, project)| (key.as_str(), project.as_str()))
+            .map(|(key, project)| {
+                (
+                    key.as_str(),
+                    format!("{PROJECT_GROUP_PREFIX}{}", project.as_str()),
+                )
+            })
+            .chain(
+                selection
+                    .personal
+                    .iter()
+                    .map(|key| (key.as_str(), PERSONAL_GROUP.to_string())),
+            )
             .unzip();
 
         // One pass sums every breakdown with GROUPING SETS. When clocks go back,
@@ -128,7 +168,7 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
                     bucket.provider,
                     bucket.model,
                     bucket.project_key,
-                    resolved.project_id,
+                    grouped.group_id,
                     bucket.input_tokens,
                     bucket.cache_read_tokens,
                     bucket.cache_write_tokens,
@@ -137,8 +177,8 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
                     bucket.estimated_cost_usd,
                     bucket.unpriced_records
                 FROM ai_usage_buckets AS bucket
-                LEFT JOIN UNNEST($10::text[], $11::text[]) AS resolved (project_key, project_id)
-                    ON resolved.project_key = bucket.project_key
+                LEFT JOIN UNNEST($10::text[], $11::text[]) AS grouped (project_key, group_id)
+                    ON grouped.project_key = bucket.project_key
                 WHERE bucket.user_id = $1
                   AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)
                   AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)
@@ -151,7 +191,7 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
             SELECT
                 GROUPING(
                     parts.date, parts.weekday, parts.hour, selected.machine_id,
-                    selected.provider, selected.model, selected.project_id, selected.project_key
+                    selected.provider, selected.model, selected.group_id, selected.project_key
                 ) AS "grouping!",
                 parts.date AS "date?",
                 parts.weekday AS "weekday?",
@@ -159,7 +199,7 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
                 selected.machine_id AS "machine_id?",
                 selected.provider AS "provider?",
                 selected.model AS "model?",
-                selected.project_id AS "project_id?",
+                selected.group_id AS "group_id?",
                 selected.project_key AS "project_key?",
                 COALESCE(SUM(selected.input_tokens), 0)::int8 AS "input_tokens!",
                 COALESCE(SUM(selected.cache_read_tokens), 0)::int8 AS "cache_read_tokens!",
@@ -179,7 +219,7 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
             GROUP BY GROUPING SETS (
                 (),
                 (parts.date, selected.provider, selected.model),
-                (selected.project_id),
+                (selected.group_id),
                 (selected.project_key),
                 (selected.provider, selected.model),
                 (selected.machine_id),
@@ -195,8 +235,8 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
             selection.machine.map(|machine| machine.as_uuid()),
             only.as_deref(),
             except.as_deref(),
-            &resolved_keys as &[&str],
-            &resolved_projects as &[&str],
+            &grouped_keys as &[&str],
+            &group_ids as &[String],
         )
         .fetch_all(&self.pool)
         .await
@@ -216,8 +256,7 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
                     totals,
                 });
             } else if grouping == grouped_by(BY_PROJECT) {
-                sums.projects
-                    .push((row.project_id.map(ProjectId::new), totals));
+                sums.projects.push((usage_group(row.group_id)?, totals));
             } else if grouping == grouped_by(BY_KEY) {
                 sums.keys.push((
                     row.project_key

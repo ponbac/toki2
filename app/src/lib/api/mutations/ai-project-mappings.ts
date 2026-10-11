@@ -11,9 +11,14 @@ export type MapAiProjectKeyVars = Readonly<{
   projectId: string;
 }>;
 
+/** Input for marking a project key as personal, or removing that mark. */
+export type PersonalAiProjectKeyVars = Readonly<{ projectKey: string }>;
+
 /** Mutation hooks for project mappings made from the personal usage view. */
 export const aiProjectMappingMutations = {
   useMapAiProjectKey,
+  useMarkAiProjectKeyPersonal,
+  useUnmarkAiProjectKeyPersonal,
 };
 
 /**
@@ -36,6 +41,46 @@ export function useMapAiProjectKey(
           .put("ai-usage/project-mappings", { json: vars })
           .json<unknown>(),
       ),
+    ...options,
+    onSettled: async (data, error, vars, ctx) => {
+      await invalidateAiQueries(queryClient);
+      await options?.onSettled?.(data, error, vars, ctx);
+    },
+  });
+}
+
+/**
+ * Marks an unmapped key in the user's usage as personal: not client work. The
+ * user's usage of it is then left out of the bill, in past months too, so
+ * every personal usage query refreshes once the request settles.
+ */
+export function useMarkAiProjectKeyPersonal(
+  options?: DefaultMutationOptions<PersonalAiProjectKeyVars>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-usage", "project-mappings", "personal", "mark"],
+    mutationFn: async (vars: PersonalAiProjectKeyVars) =>
+      api.put("ai-usage/project-mappings/personal", { json: vars }),
+    ...options,
+    onSettled: async (data, error, vars, ctx) => {
+      await invalidateAiQueries(queryClient);
+      await options?.onSettled?.(data, error, vars, ctx);
+    },
+  });
+}
+
+/** Removes the user's personal mark of a key, leaving its usage unassigned. */
+export function useUnmarkAiProjectKeyPersonal(
+  options?: DefaultMutationOptions<PersonalAiProjectKeyVars>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-usage", "project-mappings", "personal", "unmark"],
+    mutationFn: async (vars: PersonalAiProjectKeyVars) =>
+      api.delete("ai-usage/project-mappings/personal", { json: vars }),
     ...options,
     onSettled: async (data, error, vars, ctx) => {
       await invalidateAiQueries(queryClient);

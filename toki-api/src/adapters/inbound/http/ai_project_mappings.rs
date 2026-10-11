@@ -9,7 +9,7 @@ use std::sync::Arc;
 use axum::{
     extract::{FromRef, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,7 @@ where
             "/",
             get(list_mappings).put(set_mapping).delete(delete_mapping),
         )
+        .route("/personal", put(mark_personal).delete(unmark_personal))
         .route("/unmapped-keys", get(list_unmapped_keys))
         .route("/projects", get(list_projects))
 }
@@ -53,6 +54,12 @@ struct SetMappingRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DeleteMappingRequest {
+    project_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersonalKeyRequest {
     project_key: String,
 }
 
@@ -209,9 +216,39 @@ async fn delete_mapping(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Marks an unmapped project key in the caller's own usage as personal: not
+/// client work. Their usage of it is then left out of the bill, and its name
+/// stays with them.
+async fn mark_personal(
+    user: AuthUser,
+    State(service): State<Arc<dyn AiProjectMappingService>>,
+    Json(request): Json<PersonalKeyRequest>,
+) -> Result<StatusCode, ApiError> {
+    service
+        .mark_personal(&actor(&user), &request.project_key)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Removes the caller's personal mark of a project key, leaving their usage
+/// of it unassigned.
+async fn unmark_personal(
+    user: AuthUser,
+    State(service): State<Arc<dyn AiProjectMappingService>>,
+    Json(request): Json<PersonalKeyRequest>,
+) -> Result<StatusCode, ApiError> {
+    service
+        .unmark_personal(&actor(&user), &request.project_key)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Project keys with usage but no mapping, in the caller's own usage only:
-/// admins do not see other developers' unmapped keys. Unmappable keys such as
-/// `unattributed` are listed with `mappable: false`.
+/// admins do not see other developers' unmapped keys. Keys the caller marked
+/// personal are left out. Unmappable keys such as `unattributed` are listed
+/// with `mappable: false`.
 async fn list_unmapped_keys(
     user: AuthUser,
     State(service): State<Arc<dyn AiProjectMappingService>>,
@@ -749,6 +786,73 @@ mod tests {
             StatusCode::OK
         );
         assert_eq!(put(&h, &h.admin, private, "202").await.0, StatusCode::OK);
+    }
+
+    #[sqlx::test]
+    async fn developers_mark_unmapped_keys_of_their_own_as_personal(pool: PgPool) {
+        let users = users(&pool).await;
+        let h = harness(&pool, users, Some(StaticProjects::of("company-1"))).await;
+        let side_project = "github.com/dev/side-project";
+        record_usage(
+            &pool,
+            users.dev,
+            MACHINE_DEV,
+            &[(side_project, HOUR), (APP, HOUR)],
+        )
+        .await;
+        record_usage(&pool, users.colleague, MACHINE_COLLEAGUE, &[(APP, HOUR)]).await;
+        let personal = |method: Method, credential, key: &'static str| {
+            let h = &h;
+            async move {
+                let body = Some(json!({ "projectKey": key }));
+                send(h, method, "/personal", credential, body).await.0
+            }
+        };
+        let listed = |credential| {
+            let h = &h;
+            async move {
+                unmapped(h, credential)
+                    .await
+                    .into_iter()
+                    .map(|(key, _, _)| key)
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        // Only a key in one's own usage, and only while nobody has mapped it.
+        assert_eq!(
+            personal(Method::PUT, &h.colleague, side_project).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(put(&h, &h.colleague, APP, "101").await.0, StatusCode::OK);
+        assert_eq!(
+            personal(Method::PUT, &h.dev, APP).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            personal(Method::PUT, &h.dev, "unattributed").await,
+            StatusCode::BAD_REQUEST
+        );
+
+        assert_eq!(listed(&h.dev).await, [side_project]);
+        for _ in 0..2 {
+            assert_eq!(
+                personal(Method::PUT, &h.dev, side_project).await,
+                StatusCode::NO_CONTENT
+            );
+        }
+        // A personal key is settled: it is no longer waiting to be mapped.
+        assert!(listed(&h.dev).await.is_empty());
+
+        assert_eq!(
+            personal(Method::DELETE, &h.dev, side_project).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            personal(Method::DELETE, &h.dev, side_project).await,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(listed(&h.dev).await, [side_project]);
     }
 
     #[sqlx::test]

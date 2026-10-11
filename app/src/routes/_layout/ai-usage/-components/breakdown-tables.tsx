@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AiProviderLabel } from "@/components/ai-provider-icon";
+import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import { cn } from "@/lib/utils";
 import { ChartCard } from "./chart-card";
 import { knownShare } from "../-lib/aggregate";
@@ -29,7 +30,7 @@ export function ProjectTable({ report }: { report: AiUsageReport }) {
   return (
     <ChartCard
       title="By project"
-      description="API-equivalent cost estimates in USD. Unassigned usage has no mapped project."
+      description={`API-equivalent cost estimates in USD. Unassigned usage has no mapped project. ${PERSONAL_LABEL} usage is yours to keep out of the bill.`}
     >
       {report.projects.length === 0 ? (
         <p className="text-sm text-muted-foreground">No usage in this range.</p>
@@ -47,7 +48,12 @@ export function ProjectTable({ report }: { report: AiUsageReport }) {
           </TableHeader>
           <TableBody>
             {report.projects.map((group) => (
-              <TableRow key={group.project?.projectId ?? "unassigned"}>
+              <TableRow
+                key={
+                  group.project?.projectId ??
+                  (group.personal ? "personal" : "unassigned")
+                }
+              >
                 <TableCell className="max-w-64">
                   <p
                     className={cn(
@@ -55,7 +61,8 @@ export function ProjectTable({ report }: { report: AiUsageReport }) {
                       group.project === null && "text-muted-foreground",
                     )}
                   >
-                    {group.project?.projectName ?? "Unassigned"}
+                    {group.project?.projectName ??
+                      (group.personal ? PERSONAL_LABEL : "Unassigned")}
                   </p>
                   <ul className="mt-0.5 space-y-0.5">
                     {group.keys.map((key) => (
@@ -149,7 +156,7 @@ export function ModelTable({ report }: { report: AiUsageReport }) {
   );
 }
 
-/** Why a project key's usage is unassigned, in a few words. */
+/** Why a project key's usage counts for no project, in a few words. */
 function statusLabel(attribution: AiProjectAttribution): string {
   switch (attribution.status) {
     case "mapped":
@@ -160,6 +167,8 @@ function statusLabel(attribution: AiProjectAttribution): string {
       return "time tracking not configured";
     case "unmapped":
       return attribution.mappable ? "not mapped yet" : "cannot be mapped";
+    case "personal":
+      return "left out of the bill";
     case "unattributed":
       return "no project metadata";
   }

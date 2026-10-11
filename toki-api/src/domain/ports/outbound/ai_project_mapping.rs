@@ -17,8 +17,9 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
         scope: AiUsageScope,
     ) -> Result<Vec<AiProjectMapping>, AiProjectMappingError>;
 
-    /// Project keys in the user's usage that have no mapping, including
-    /// unmappable ones such as `unattributed`, most recently used first. Each
+    /// Project keys in the user's usage that have no mapping and that the user
+    /// has not marked personal, including unmappable ones such as
+    /// `unattributed`, most recently used first. Each
     /// reports its latest local date of use in `time_zone`. Only ever one
     /// user's: an unmapped key may name a private repository, so nobody is
     /// shown another user's.
@@ -68,4 +69,22 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
 
     /// Deletes the key's mapping and reports whether one existed.
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError>;
+
+    /// Whether the key has a mapping, resolving or not.
+    async fn is_mapped(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError>;
+
+    /// Marks the key as personal for the user. Marking it again changes nothing.
+    async fn mark_personal(
+        &self,
+        user_id: &UserId,
+        project_key: &AiProjectKey,
+    ) -> Result<(), AiProjectMappingError>;
+
+    /// Removes the user's personal mark of the key and reports whether there
+    /// was one.
+    async fn unmark_personal(
+        &self,
+        user_id: &UserId,
+        project_key: &AiProjectKey,
+    ) -> Result<bool, AiProjectMappingError>;
 }

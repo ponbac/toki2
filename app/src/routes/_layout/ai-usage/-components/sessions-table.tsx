@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AiProviderLabel } from "@/components/ai-provider-icon";
+import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import {
   aiUsageReportQueries,
   type AiSessionSort,
@@ -137,7 +138,9 @@ export function SessionsTable({
                         </p>
                         {project.status !== "mapped" && (
                           <p className="text-xs text-muted-foreground">
-                            Unassigned
+                            {project.status === "personal"
+                              ? PERSONAL_LABEL
+                              : "Unassigned"}
                           </p>
                         )}
                       </div>

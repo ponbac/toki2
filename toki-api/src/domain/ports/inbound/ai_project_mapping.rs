@@ -17,6 +17,9 @@ use crate::domain::{
 /// developers who use it until one of them maps it. Nobody, admins included, is
 /// shown another developer's unmapped keys, and only someone whose own usage
 /// has a key can create its first mapping.
+///
+/// A developer can instead mark such a key as personal, which keeps its name
+/// with them and leaves their usage of it out of the bill.
 #[async_trait]
 pub trait AiProjectMappingService: Send + Sync + 'static {
     /// The mappings of project keys in the actor's own usage, or every mapping
@@ -51,6 +54,23 @@ pub trait AiProjectMappingService: Send + Sync + 'static {
 
     /// Removes a project key's mapping, leaving its usage unassigned.
     async fn delete_mapping(
+        &self,
+        actor: &AiProjectMappingActor,
+        project_key: &str,
+    ) -> Result<(), AiProjectMappingError>;
+
+    /// Marks an unmapped project key in the actor's own usage as personal: not
+    /// client work. The actor's usage of the key is then left out of the bill;
+    /// nobody else's is. Marking a key again changes nothing.
+    async fn mark_personal(
+        &self,
+        actor: &AiProjectMappingActor,
+        project_key: &str,
+    ) -> Result<(), AiProjectMappingError>;
+
+    /// Removes the actor's personal mark of a project key, leaving their usage
+    /// of it unassigned.
+    async fn unmark_personal(
         &self,
         actor: &AiProjectMappingActor,
         project_key: &str,

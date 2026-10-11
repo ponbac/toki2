@@ -49,6 +49,13 @@
 //!   billing currency is a separate step at the month's exchange rates
 //!   (`convert_bill` in `ai_exchange_rate`), which keeps these amounts.
 //!
+//! - **Personal usage.** Usage of a project key its developer marked personal
+//!   is left out before any of the above: it bills nothing on API days and
+//!   takes no share of a subscription's fee, which is split over the remaining
+//!   usage alone. A subscription whose covered usage is all personal bills as
+//!   one without usage. It is reported apart, as an estimate only
+//!   (`AiPersonalUsage`).
+//!
 //! Usage that no project mapping resolves, including `unattributed` usage,
 //! belongs to the Unassigned project (`None`).
 
@@ -801,14 +808,25 @@ pub struct AiDeveloperDayUsage {
     pub usage: AiBillingUsage,
 }
 
+/// A developer's usage in a month of the project keys they marked personal.
+/// It is left out of the bill; this is what it would have cost at API prices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiPersonalUsage {
+    pub user_id: UserId,
+    pub usage: AiBillingUsage,
+}
+
 /// Everyone's bill for a month, with the people it names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiMonthOverview {
     pub bill: AiMonthBill,
-    /// The users the bill's lines and subscriptions belong to, by name.
+    /// The users the bill's lines, subscriptions and personal usage belong
+    /// to, by name.
     pub developers: Vec<AiBillingDeveloper>,
     /// The bill in the billing currency, with the month's exchange rates.
     pub converted: AiConvertedBill,
+    /// The usage the bill leaves out, by user.
+    pub personal: Vec<AiPersonalUsage>,
 }
 
 /// A developer's day usage with the subscription that pays for it, if any.
@@ -835,6 +853,9 @@ pub struct AiDeveloperMonth {
     /// The bill in the billing currency, with the month's exchange rates.
     pub converted: AiConvertedBill,
     pub usage: Vec<AiBilledDayUsage>,
+    /// The developer's usage of the keys they marked personal, which the bill
+    /// and `usage` leave out; `None` without any.
+    pub personal: Option<AiBillingUsage>,
     /// The developer's machines, including ones without usage in the month.
     pub machines: Vec<AiMachineLabel>,
 }

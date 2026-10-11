@@ -81,7 +81,8 @@ const projectKeySchema = z.string().min(1);
 /**
  * How a project key's usage is attributed, as a union over `status` with the
  * fields of `extra` on every variant. Only `mapped` usage counts for a
- * project; the rest is unassigned. Only an `unmapped` key can be `mappable`.
+ * project; `personal` usage is left out of the bill, and the rest is
+ * unassigned. Only an `unmapped` key can be `mappable`.
  */
 function attributionSchema<Extra extends z.ZodRawShape>(extra: Extra) {
   // A plain union: a discriminated union cannot see `status` through a generic
@@ -126,6 +127,15 @@ function attributionSchema<Extra extends z.ZodRawShape>(extra: Extra) {
     z
       .object({
         projectKey: projectKeySchema,
+        status: z.literal("personal"),
+        project: z.null(),
+        mappable: z.literal(false),
+      })
+      .extend(extra)
+      .strict(),
+    z
+      .object({
+        projectKey: projectKeySchema,
         status: z.literal("unattributed"),
         project: z.null(),
         mappable: z.literal(false),
@@ -141,8 +151,9 @@ const plainAttributionSchema = attributionSchema({});
  * A project key and how its usage is attributed: `mapped` to a project,
  * `stale` (mapped outside the configured company, so only an admin can fix
  * it), `unconfigured` (mapped, but time tracking is not configured on the
- * server, which no mapping fixes), `unmapped`, or `unattributed` (no project
- * metadata; never mappable).
+ * server, which no mapping fixes), `unmapped`, `personal` (unmapped and
+ * marked by the user as not client work, so left out of the bill), or
+ * `unattributed` (no project metadata; never mappable).
  */
 export type AiProjectAttribution = Readonly<
   z.infer<typeof plainAttributionSchema>
@@ -161,6 +172,7 @@ const reportSchema = z
         models: z.array(z.string()),
         projects: z.array(projectSchema),
         unassigned: z.boolean(),
+        personal: z.boolean(),
         machineIds: z.array(z.string().uuid()),
       })
       .strict(),
@@ -179,6 +191,7 @@ const reportSchema = z
       z
         .object({
           project: projectSchema.nullable(),
+          personal: z.boolean(),
           totals: aiUsageTotalsSchema,
           keys: z.array(attributionSchema({ totals: aiUsageTotalsSchema })),
         })
@@ -214,7 +227,8 @@ const reportSchema = z
  * The current user's usage in a range of local days in `timeZone`, narrowed
  * by the filters. `options` lists what the filters can select, whichever are
  * applied. Days and hours without usage are absent. A project entry with a
- * null `project` holds all unassigned usage.
+ * null `project` holds all personal usage when `personal` is set, and all
+ * unassigned usage otherwise.
  */
 export type AiUsageReport = Readonly<z.infer<typeof reportSchema>>;
 
@@ -358,8 +372,9 @@ export type AiSessionSort = "recent" | "cost" | "tokens";
 /**
  * The range and filters of a report or session listing. An absent bound
  * defaults on the server: `to` to the end of the current month in its time
- * zone, `from` to the start of `to`'s month. `projectId` and `unassigned` are
- * exclusive; an empty `model` selects usage whose model is unknown.
+ * zone, `from` to the start of `to`'s month. `projectId`, `unassigned` and
+ * `personal` are exclusive; an empty `model` selects usage whose model is
+ * unknown.
  */
 export type AiUsageReportParams = Readonly<{
   from?: string;
@@ -368,6 +383,7 @@ export type AiUsageReportParams = Readonly<{
   model?: string;
   projectId?: string;
   unassigned?: true;
+  personal?: true;
   machineId?: string;
 }>;
 
