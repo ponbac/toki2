@@ -209,7 +209,7 @@ export function ConnectMachineDialog({
             <CommandsStep
               os={os}
               token={issued.token}
-              synced={arrival?.machine}
+              synced={arrival?.known ? undefined : arrival?.machine}
             />
           )}
           {step === SYNC_STEP && (
@@ -439,7 +439,7 @@ function CommandsStep({
 }: {
   os: MachineOs;
   token: string;
-  /** The machine whose sync landed while the commands are up, if any. */
+  /** The new machine, once its sync has landed while the commands are up. */
   synced: AiUsageMachine | undefined;
 }) {
   const guide = OS_GUIDES[os];
