@@ -25,16 +25,20 @@ The single in-progress time-tracking interval for a user, if any.
 _Avoid_: running entry, current registration
 
 **AI subscription**:
-A fixed-fee plan a developer declares for one AI provider, such as Claude Max 5x, with a monthly cost in its own currency and an inclusive period of local dates. One user's subscriptions to one provider never overlap.
+A fixed-fee plan a developer declares for one AI provider, such as Claude Max 5x, with a monthly cost in its own currency and an inclusive period of local dates. One user's subscriptions to one provider never overlap. Pi, which routes its requests to other vendors, has none of its own: a ChatGPT subscription, declared for Codex, also pays for Pi usage on ChatGPT sign-in days.
 _Avoid_: seat, license
 
 **Billing mode**:
-How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost.
+How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost. Pi usage is billed by the developer's Codex subscription that covers the day when the day is a ChatGPT sign-in day, and otherwise as API usage.
 _Avoid_: plan type, tier
 
 **Plan hint**:
-A billing plan a provider reported during an hour of uploaded usage, such as Codex `plan_type`. Evidence only: a hint of a paid plan (not `free`) on a day that bills as API usage is a mismatch to review, and declared AI subscriptions stay authoritative.
+A billing plan a provider reported during an hour of uploaded usage, such as Codex `plan_type`. Evidence only: a hint of a paid plan (not `free`) on a day that bills as API usage is a mismatch to review, and declared AI subscriptions stay authoritative. Pi names no plan; its one hint, `openai-codex`, is the route of its ChatGPT sign-in and makes the day a ChatGPT sign-in day, the only way a hint bears on a billing mode.
 _Avoid_: detected subscription
+
+**ChatGPT sign-in day**:
+A local day on which Pi hinted, in any hour and from any of a developer's machines, that usage ran through its ChatGPT sign-in, a route without an API-key variant. All of the developer's Pi usage that day counts as paid for by a ChatGPT subscription, since a hint names an hour and no single request; whether there is one, and its fee, remain what the developer declared for Codex. Without a covering Codex subscription the day bills as API usage and is a mismatch.
+_Avoid_: OAuth day, subscription day
 
 **API-equivalent cost**:
 What AI usage would cost at the provider's API prices, estimated in USD by token-ledger. Usage on days without an AI subscription bills at it, and on subscription days it weighs how the fee is split across projects. Unpriced usage has an unknown cost, never zero.

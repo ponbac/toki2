@@ -78,6 +78,7 @@ fn usage(
         user_id: DEV,
         provider,
         day,
+        chatgpt_sign_in: false,
         project,
         usage: AiBillingUsage {
             tokens: AiTokenCounts {

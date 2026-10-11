@@ -59,6 +59,7 @@ pub enum AiProvider {
     Claude,
     Grok,
     Copilot,
+    Pi,
 }
 
 impl AiProvider {
@@ -68,6 +69,7 @@ impl AiProvider {
             "claude" => Some(Self::Claude),
             "grok" => Some(Self::Grok),
             "copilot" => Some(Self::Copilot),
+            "pi" => Some(Self::Pi),
             _ => None,
         }
     }
@@ -78,6 +80,7 @@ impl AiProvider {
             Self::Claude => "claude",
             Self::Grok => "grok",
             Self::Copilot => "copilot",
+            Self::Pi => "pi",
         }
     }
 }
@@ -209,7 +212,8 @@ pub struct AiProviderCoverage {
 }
 
 /// A billing plan a provider reported during an hour, such as Codex `plan_type`.
-/// Evidence only: declared subscriptions remain authoritative.
+/// Evidence only: declared subscriptions remain authoritative. Pi's hint names
+/// its ChatGPT sign-in instead, which a declared subscription to Codex pays for.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AiProviderHint {
     pub provider: AiProvider,

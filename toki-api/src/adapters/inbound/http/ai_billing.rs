@@ -499,6 +499,8 @@ enum BillingModeResponse {
 #[serde(rename_all = "camelCase")]
 struct BillingLineResponse {
     user_id: i32,
+    /// The provider used. A share of a Codex subscription's fee can be for Pi
+    /// usage, which that subscription pays for on Pi's ChatGPT sign-in days.
     provider: AiUsageProvider,
     /// Null for Unassigned usage and for unallocated overhead.
     project: Option<ProjectResponse>,

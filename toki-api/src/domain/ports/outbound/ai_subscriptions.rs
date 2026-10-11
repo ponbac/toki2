@@ -48,9 +48,11 @@ pub trait AiSubscriptionRepository: Send + Sync + 'static {
 
     /// The mismatch days of users in `scope` within `dates`, local days in
     /// `time_zone`: days on which a provider reported a plan other than those in
-    /// `UNPAID_PLAN_HINTS`, but none of the user's subscriptions to that provider
-    /// covers the day. An hourly hint belongs to the local date its hour starts
-    /// on. Ordered by user, provider and day.
+    /// `UNPAID_PLAN_HINTS`, but none of the user's subscriptions that pay for
+    /// that provider's usage covers the day. Of Pi's hints only its ChatGPT
+    /// sign-in counts, against the user's subscriptions to Codex. An hourly hint
+    /// belongs to the local date its hour starts on. Ordered by user, provider
+    /// and day.
     async fn plan_mismatch_days(
         &self,
         scope: AiSubscriptionScope,

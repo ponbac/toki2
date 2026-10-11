@@ -12,7 +12,7 @@ use crate::{
             AiCoverageStatus, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay, AiMachineId,
             AiMappingResolver, AiPricingStatus, AiProvider, AiProviderReport, AiTokenCounts,
             AiUsageDateRange, AiUsageTimeZone, AiUsdNanos, TimeTrackingCompany, UserId,
-            UNATTRIBUTED_PROJECT_KEY,
+            PI_CHATGPT_SIGN_IN_HINT, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::AiBillingRepository,
         AiBillingError,
@@ -57,7 +57,9 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         // mappings resolve; SQL groups its explicit key-to-project projection
         // before rounding, so splitting usage across keys cannot change a bill.
         // The range uses `ai_usage_buckets_hour_start_idx`, or
-        // the `(user_id, hour_start)` index for one user.
+        // the `(user_id, hour_start)` index for one user. A day is one of
+        // Pi's ChatGPT sign-in when any of the user's machines hinted it in
+        // an hour that starts on the day, as mismatch days count hints.
         let resolver = self.resolver(mapping_company).await?;
         let resolved = resolver.resolved_keys();
         let keys: Vec<&str> = resolved.iter().map(|(key, _)| *key).collect();
@@ -70,11 +72,24 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             WITH resolved_projects AS (
                 SELECT project_key, project_id
                 FROM UNNEST($5::text[], $6::text[]) AS mapping(project_key, project_id)
+            ),
+            sign_in_days AS (
+                SELECT DISTINCT
+                    hint.user_id,
+                    hint.provider,
+                    (hint.hour_start AT TIME ZONE $3)::date AS day
+                FROM ai_usage_provider_hints AS hint
+                WHERE hint.hour_start >= ($1::date::timestamp AT TIME ZONE $3)
+                  AND hint.hour_start < ($2::date::timestamp AT TIME ZONE $3)
+                  AND ($4::int4 IS NULL OR hint.user_id = $4)
+                  AND hint.provider = $7
+                  AND hint.plan = $8
             )
             SELECT
                 bucket.user_id,
                 bucket.provider,
                 (bucket.hour_start AT TIME ZONE $3)::date AS "day!",
+                bool_or(sign_in.day IS NOT NULL) AS "chatgpt_sign_in!",
                 MIN(bucket.project_key) AS "project_key!",
                 SUM(bucket.input_tokens)::int8 AS "input_tokens!",
                 SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
@@ -86,6 +101,10 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                 SUM(bucket.unpriced_records)::int8 AS "unpriced_records!"
             FROM ai_usage_buckets AS bucket
             LEFT JOIN resolved_projects AS mapping ON mapping.project_key = bucket.project_key
+            LEFT JOIN sign_in_days AS sign_in
+                ON sign_in.user_id = bucket.user_id
+                AND sign_in.provider = bucket.provider
+                AND sign_in.day = (bucket.hour_start AT TIME ZONE $3)::date
             WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)
               AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
               AND ($4::int4 IS NULL OR bucket.user_id = $4)
@@ -98,6 +117,8 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             user_id.map(UserId::as_i32),
             &keys as &[&str],
             &ids as &[&str],
+            AiProvider::Pi.as_str(),
+            PI_CHATGPT_SIGN_IN_HINT,
         )
         .fetch_all(&self.pool)
         .await
@@ -108,6 +129,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                     user_id: UserId::new(row.user_id),
                     provider: provider(&row.provider)?,
                     day: row.day,
+                    chatgpt_sign_in: row.chatgpt_sign_in,
                     // Mappings may hold different names for a renamed project.
                     // Preserve the first used key's name, as before grouping
                     // in SQL; every key in the group resolves to the same id.
@@ -137,15 +159,24 @@ impl AiBillingRepository for PostgresAiBillingRepository {
     ) -> Result<Vec<AiDeveloperDayUsage>, AiBillingError> {
         let rows = sqlx::query!(
             r#"
+            WITH sign_in_days AS (
+                SELECT DISTINCT
+                    hint.provider,
+                    (hint.hour_start AT TIME ZONE $4)::date AS day
+                FROM ai_usage_provider_hints AS hint
+                WHERE hint.user_id = $1
+                  AND hint.hour_start >= ($2::date::timestamp AT TIME ZONE $4)
+                  AND hint.hour_start < ($3::date::timestamp AT TIME ZONE $4)
+                  AND hint.provider = $5
+                  AND hint.plan = $6
+            )
             SELECT
                 (bucket.hour_start AT TIME ZONE $4)::date AS "day!",
                 bucket.provider,
+                bool_or(sign_in.day IS NOT NULL) AS "chatgpt_sign_in!",
                 bucket.model,
                 bucket.machine_id::text AS "machine_id!",
-                CASE
-                    WHEN mapping.project_key IS NOT NULL OR bucket.project_key = $5
-                        THEN bucket.project_key
-                END AS "project_key?",
+                shown.project_key AS "project_key?",
                 SUM(bucket.input_tokens)::int8 AS "input_tokens!",
                 SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
                 SUM(bucket.cache_write_tokens)::int8 AS "cache_write_tokens!",
@@ -155,18 +186,30 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                     AS "priced_cost_nanos!",
                 SUM(bucket.unpriced_records)::int8 AS "unpriced_records!"
             FROM ai_usage_buckets AS bucket
+            LEFT JOIN sign_in_days AS sign_in
+                ON sign_in.provider = bucket.provider
+                AND sign_in.day = (bucket.hour_start AT TIME ZONE $4)::date
             LEFT JOIN ai_project_mappings AS mapping
                 ON mapping.project_key = bucket.project_key
+            -- The key as an admin may see it: NULL unless it is mapped or names nothing.
+            CROSS JOIN LATERAL (
+                SELECT CASE
+                    WHEN mapping.project_key IS NOT NULL OR bucket.project_key = $7
+                        THEN bucket.project_key
+                END AS project_key
+            ) AS shown
             WHERE bucket.user_id = $1
               AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)
               AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)
-            GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, 5
-            ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, 5
+            GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key
+            ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key
             "#,
             user_id.as_i32(),
             dates.start(),
             dates.end(),
             time_zone.as_str(),
+            AiProvider::Pi.as_str(),
+            PI_CHATGPT_SIGN_IN_HINT,
             UNATTRIBUTED_PROJECT_KEY,
         )
         .fetch_all(&self.pool)
@@ -179,6 +222,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                 Ok(AiDeveloperDayUsage {
                     day: row.day,
                     provider: provider(&row.provider)?,
+                    chatgpt_sign_in: row.chatgpt_sign_in,
                     model: row.model,
                     machine_id: machine_id(&row.machine_id)?,
                     project: row
@@ -467,8 +511,8 @@ mod tests {
         domain::{
             models::{
                 AiBillingMonth, AiMachine, AiMappedProject, AiPricing, AiProjectKey,
-                AiProviderCoverage, AiUsageBucket, AiUsageUpload, AiUsageWindow, ProjectId,
-                UNATTRIBUTED_PROJECT_KEY,
+                AiProviderCoverage, AiProviderHint, AiUsageBucket, AiUsageUpload, AiUsageWindow,
+                ProjectId, UNATTRIBUTED_PROJECT_KEY,
             },
             ports::outbound::{AiProjectMappingRepository, AiUsageRepository},
         },
@@ -518,6 +562,17 @@ mod tests {
         window: (OffsetDateTime, OffsetDateTime),
         buckets: Vec<AiUsageBucket>,
     ) -> UserId {
+        setup_with(pool, window, buckets, &[AiProvider::Claude], Vec::new()).await
+    }
+
+    /// Stores an upload from a new user's machine that replaces `providers`.
+    async fn setup_with(
+        pool: &PgPool,
+        window: (OffsetDateTime, OffsetDateTime),
+        buckets: Vec<AiUsageBucket>,
+        providers: &[AiProvider],
+        hints: Vec<AiProviderHint>,
+    ) -> UserId {
         let user = UserId::new(
             sqlx::query_scalar(
                 "INSERT INTO users (email, full_name, picture, access_token)
@@ -542,16 +597,19 @@ mod tests {
                 source: "https://example.com/prices.json".to_string(),
             },
             buckets,
-            vec![AiProviderCoverage {
-                provider: AiProvider::Claude,
-                status: AiCoverageStatus::Partial,
-                files: 1,
-                unreadable: 0,
-                malformed_lines: 2,
-                skipped_records: 0,
-                duplicates: 0,
-            }],
-            Vec::new(),
+            providers
+                .iter()
+                .map(|&provider| AiProviderCoverage {
+                    provider,
+                    status: AiCoverageStatus::Partial,
+                    files: 1,
+                    unreadable: 0,
+                    malformed_lines: 2,
+                    skipped_records: 0,
+                    duplicates: 0,
+                })
+                .collect(),
+            hints,
         )
         .unwrap();
         PostgresAiUsageRepository::new(db(pool))
@@ -901,6 +959,81 @@ mod tests {
         assert_eq!(records(None).await, 1);
         assert_eq!(records(Some(&user)).await, 1);
         assert_eq!(records(Some(&UserId::new(user.as_i32() + 1))).await, 0);
+    }
+
+    #[sqlx::test]
+    async fn a_day_is_one_of_pis_chatgpt_sign_in_when_pi_hinted_it_in_any_hour(pool: PgPool) {
+        let of = |provider, hour_start| AiUsageBucket {
+            provider,
+            ..bucket(hour_start, MAPPED, 1, 0.1)
+        };
+        let hint = |provider, hour_start, plan: &str| AiProviderHint {
+            provider,
+            hour_start,
+            plan: plan.to_string(),
+        };
+        let user = setup_with(
+            &pool,
+            (
+                datetime!(2026-09-09 22:00 UTC),
+                datetime!(2026-09-13 22:00 UTC),
+            ),
+            vec![
+                of(AiProvider::Pi, datetime!(2026-09-10 08:00 UTC)),
+                of(AiProvider::Codex, datetime!(2026-09-10 08:00 UTC)),
+                // Midnight on 11 September in Stockholm.
+                of(AiProvider::Pi, datetime!(2026-09-10 22:00 UTC)),
+                of(AiProvider::Pi, datetime!(2026-09-12 08:00 UTC)),
+                of(AiProvider::Pi, datetime!(2026-09-13 08:00 UTC)),
+            ],
+            &[AiProvider::Pi, AiProvider::Codex],
+            vec![
+                // The last hour of 10 September, another than the day's usage.
+                hint(
+                    AiProvider::Pi,
+                    datetime!(2026-09-10 21:00 UTC),
+                    "openai-codex",
+                ),
+                hint(
+                    AiProvider::Pi,
+                    datetime!(2026-09-10 22:00 UTC),
+                    "openai-codex",
+                ),
+                // Neither another route nor Codex's own plan is Pi's sign-in.
+                hint(AiProvider::Pi, datetime!(2026-09-12 08:00 UTC), "anthropic"),
+                hint(AiProvider::Codex, datetime!(2026-09-13 08:00 UTC), "pro"),
+            ],
+        )
+        .await;
+        let repository = PostgresAiBillingRepository::new(db(&pool));
+        let stockholm = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
+        let september = AiBillingMonth::parse("2026-09").unwrap().dates();
+        let expected = [
+            (date!(2026 - 09 - 10), AiProvider::Codex, false),
+            (date!(2026 - 09 - 10), AiProvider::Pi, true),
+            (date!(2026 - 09 - 11), AiProvider::Pi, true),
+            (date!(2026 - 09 - 12), AiProvider::Pi, false),
+            (date!(2026 - 09 - 13), AiProvider::Pi, false),
+        ];
+
+        let mut daily: Vec<_> = repository
+            .daily_usage(september, &stockholm, None, None)
+            .await
+            .unwrap()
+            .iter()
+            .map(|row| (row.day, row.provider, row.chatgpt_sign_in))
+            .collect();
+        daily.sort();
+        assert_eq!(daily, expected);
+
+        let developer: Vec<_> = repository
+            .developer_usage(&user, september, &stockholm, None)
+            .await
+            .unwrap()
+            .iter()
+            .map(|row| (row.day, row.provider, row.chatgpt_sign_in))
+            .collect();
+        assert_eq!(developer, expected);
     }
 
     #[sqlx::test]

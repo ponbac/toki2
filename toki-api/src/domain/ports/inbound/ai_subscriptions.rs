@@ -22,7 +22,8 @@ pub trait AiSubscriptionService: Send + Sync + 'static {
 
     /// Declares a subscription for `user_id`. Fails with `Overlap` when the
     /// period shares a day with another of the user's subscriptions to the same
-    /// provider, and with `UserNotFound` for an unknown user.
+    /// provider, with `UserNotFound` for an unknown user, and with `Invalid` for
+    /// a provider without subscriptions of its own (Pi).
     async fn create(
         &self,
         user_id: &UserId,
@@ -30,7 +31,8 @@ pub trait AiSubscriptionService: Send + Sync + 'static {
     ) -> Result<AiSubscription, AiSubscriptionError>;
 
     /// Replaces the terms of a subscription in `scope`; `NotFound` when there is
-    /// none, including when it belongs to a user outside the scope.
+    /// none, including when it belongs to a user outside the scope. Terms are
+    /// rejected as for `create`.
     async fn update(
         &self,
         scope: AiSubscriptionScope,
@@ -51,8 +53,8 @@ pub trait AiSubscriptionService: Send + Sync + 'static {
 
     /// Mismatch runs in `scope` between the local days `from` and `to`, both
     /// inclusive: days on which a provider reported a paid plan, but no declared
-    /// subscription to that provider covers the day, so the day bills as API
-    /// usage. `to` defaults to today and `from` to `DEFAULT_MISMATCH_DAYS` days
+    /// subscription that pays for that provider's usage covers the day, so the
+    /// day bills as API usage. `to` defaults to today and `from` to `DEFAULT_MISMATCH_DAYS` days
     /// ending with `to`. Fails with `Invalid` when `from` is after `to`.
     async fn plan_mismatches(
         &self,

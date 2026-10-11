@@ -31,6 +31,7 @@ export const PROVIDER_COLORS: Readonly<Record<AiProvider, string>> = {
   claude: SLOTS[1],
   grok: SLOTS[2],
   copilot: SLOTS[3],
+  pi: SLOTS[4],
 };
 
 /** How many models get their own colour; the rest fold into "Other". */
@@ -47,7 +48,10 @@ export function modelColor(index: number): string {
     : OTHER_COLOR;
 }
 
-/** Token categories, in slots 5 to 8 so they never echo a provider's colour. */
+/**
+ * Token categories, in slots 5 to 8. Slot 5 is also Pi's: a fifth provider
+ * leaves no slot free, and the two never share a chart.
+ */
 export const TOKEN_COLORS = {
   input: SLOTS[4],
   cacheRead: SLOTS[5],

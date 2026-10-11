@@ -9,8 +9,8 @@
 //!
 //! Per developer, provider and month:
 //!
-//! - **API days.** A local day that none of the developer's subscriptions to the
-//!   provider covers (`resolve_billing_mode` is `Api`) bills that day's usage at
+//! - **API days.** A local day that none of the developer's subscriptions that
+//!   pay for the provider covers (`resolve_billing_mode` is `Api`) bills that day's usage at
 //!   its estimated API-equivalent cost, in USD, to the project the usage is
 //!   attributed to. Each billing line's amount is rounded half up to whole
 //!   cents, and totals add up those rounded amounts, so an invoice built from
@@ -25,6 +25,13 @@
 //!   hundredths by the largest-remainder method, so the shares sum to the
 //!   pro-rated fee exactly (`allocate_largest_remainder`). Each share is shown
 //!   next to the API-equivalent cost it was weighted by.
+//! - **Pi.** Pi has no subscriptions of its own. On a local day for which it
+//!   reported its ChatGPT sign-in, its usage is paid for by the developer's
+//!   subscription to Codex that covers the day, if any, and is API usage on any
+//!   other day (`subscription_provider`). Such a subscription's fee is split
+//!   over the Codex and the Pi usage it pays for alike: each project's usage of
+//!   each of the two gets a line and a share by the same weights, and the
+//!   subscription is overhead only without usage of either.
 //! - **Unpriced usage.** Records without a known price have no cost, which is
 //!   unknown rather than zero. A split weighs the *priced* cost only, so a
 //!   project whose covered usage is all unpriced gets no share; the line keeps
@@ -272,6 +279,9 @@ pub struct AiDailyUsage {
     pub user_id: UserId,
     pub provider: AiProvider,
     pub day: Date,
+    /// Whether the provider reported its ChatGPT sign-in for the developer on
+    /// this day (`PI_CHATGPT_SIGN_IN_HINT`). Only Pi does.
+    pub chatgpt_sign_in: bool,
     pub project: Option<AiMappedProject>,
     pub usage: AiBillingUsage,
 }
@@ -300,6 +310,9 @@ pub enum AiBillingCharge {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiBillingLine {
     pub user_id: UserId,
+    /// The provider whose usage the line charges for. A subscription line's
+    /// can be Pi, on a subscription to Codex; overhead names the
+    /// subscription's provider.
     pub provider: AiProvider,
     /// The time-tracking project, or `None` for Unassigned usage and for
     /// unallocated overhead.
@@ -357,7 +370,8 @@ pub struct AiSubscriptionMonth {
     /// in the order of those lines; empty for overhead. Any other split of this
     /// fee, such as in another currency, uses these same weights.
     pub weights: Vec<u128>,
-    /// Usage on the covered days, over all projects.
+    /// The usage the subscription pays for on the covered days, over all
+    /// projects and, for a subscription that also pays for Pi usage, providers.
     pub usage: AiBillingUsage,
 }
 
@@ -371,8 +385,9 @@ impl AiSubscriptionMonth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiMonthBill {
     pub month: AiBillingMonth,
-    /// Ordered by user id and provider; within them, subscription lines by
-    /// subscription start, then API lines, each by project name with
+    /// Ordered by user id and provider, a subscription line counting under its
+    /// subscription's provider; within them, subscription lines by subscription
+    /// start and the provider used, then API lines, each by project name with
     /// Unassigned last.
     pub lines: Vec<AiBillingLine>,
     /// Subscriptions that cover days of the month, by user id, provider and start.
@@ -606,7 +621,8 @@ fn allocation_weights(projects: &[ProjectUsage]) -> (AiAllocationBasis, Vec<u128
 ///
 /// `usage` holds any users' daily usage; days outside `month` are ignored.
 /// `subscriptions` may hold any users' subscriptions to any provider; each
-/// day's billing mode comes from `resolve_billing_mode` over all of them.
+/// day's billing mode comes from `resolve_billing_mode` over all of them and
+/// the day's `chatgpt_sign_in`.
 /// A month whose counts or amounts cannot be represented safely returns a
 /// range error; its estimates are never silently saturated.
 pub fn bill_month(
@@ -614,31 +630,33 @@ pub fn bill_month(
     usage: &[AiDailyUsage],
     subscriptions: &[AiSubscription],
 ) -> Result<AiMonthBill, AiBillingError> {
-    /// Usage of one user and provider, by how its days are billed.
-    #[derive(Default)]
-    struct Group {
-        api: Projects,
-        by_subscription: BTreeMap<i32, Projects>,
-    }
-    type Groups = BTreeMap<(i32, &'static str), (UserId, AiProvider, Group)>;
-    fn group(groups: &mut Groups, user_id: UserId, provider: AiProvider) -> &mut Group {
-        &mut groups
+    /// Usage per user and provider, in the order of the bill's lines.
+    type Usage = BTreeMap<(i32, &'static str), (UserId, AiProvider, Projects)>;
+    fn projects(usage: &mut Usage, user_id: UserId, provider: AiProvider) -> &mut Projects {
+        &mut usage
             .entry((user_id.as_i32(), provider.as_str()))
-            .or_insert_with(|| (user_id, provider, Group::default()))
+            .or_insert_with(|| (user_id, provider, Projects::default()))
             .2
     }
 
-    let mut groups = Groups::new();
+    // Usage on API days, and the usage each subscription pays for, which for a
+    // subscription to Codex can be Pi usage too.
+    let mut api = Usage::new();
+    let mut subscribed: BTreeMap<i32, Usage> = BTreeMap::new();
     for row in usage.iter().filter(|row| month.contains(row.day)) {
-        let group = group(&mut groups, row.user_id, row.provider);
-        match resolve_billing_mode(subscriptions, row.user_id, row.provider, row.day) {
-            AiBillingMode::Api => group.api.add(&row.project, &row.usage)?,
-            AiBillingMode::Subscription(subscription) => group
-                .by_subscription
-                .entry(subscription.id.as_i32())
-                .or_default()
-                .add(&row.project, &row.usage)?,
-        }
+        let billed = match resolve_billing_mode(
+            subscriptions,
+            row.user_id,
+            row.provider,
+            row.day,
+            row.chatgpt_sign_in,
+        ) {
+            AiBillingMode::Api => &mut api,
+            AiBillingMode::Subscription(subscription) => {
+                subscribed.entry(subscription.id.as_i32()).or_default()
+            }
+        };
+        projects(billed, row.user_id, row.provider).add(&row.project, &row.usage)?;
     }
 
     // Subscriptions that cover days of the month, earliest first.
@@ -658,17 +676,13 @@ pub fn bill_month(
         )
     });
     for (subscription, _) in &covering {
-        group(
-            &mut groups,
-            subscription.user_id,
-            subscription.terms.provider,
-        );
+        projects(&mut api, subscription.user_id, subscription.terms.provider);
     }
 
     let days_in_month = month.days();
     let mut lines = Vec::new();
     let mut subscription_months = Vec::new();
-    for (user_id, provider, mut group) in groups.into_values() {
+    for (user_id, provider, api_projects) in api.into_values() {
         for (subscription, covered) in covering.iter().filter(|(subscription, _)| {
             subscription.user_id == user_id && subscription.terms.provider == provider
         }) {
@@ -681,21 +695,32 @@ pub fn bill_month(
                 )?,
                 currency: subscription.terms.currency.clone(),
             };
-            let projects = group
-                .by_subscription
+            // One line per provider used and project, in that order.
+            let mut covered_usage = AiBillingUsage::default();
+            let mut used_providers = Vec::new();
+            let mut used_projects = Vec::new();
+            for (_, used_provider, projects) in subscribed
                 .remove(&subscription.id.as_i32())
-                .unwrap_or_default();
-            let covered_usage = projects.total()?;
-            let projects = projects.into_sorted();
+                .unwrap_or_default()
+                .into_values()
+            {
+                covered_usage.add(&projects.total()?)?;
+                for project in projects.into_sorted() {
+                    used_providers.push(used_provider);
+                    used_projects.push(project);
+                }
+            }
 
-            let (basis, weights) = allocation_weights(&projects);
+            let (basis, weights) = allocation_weights(&used_projects);
             let shares = allocate_largest_remainder(prorated_fee.hundredths, &weights)?;
             let (basis, weights) = match shares {
                 Some(shares) => {
-                    for (project, share) in projects.into_iter().zip(shares) {
+                    for ((used_provider, project), share) in
+                        used_providers.into_iter().zip(used_projects).zip(shares)
+                    {
                         lines.push(AiBillingLine {
                             user_id,
-                            provider,
+                            provider: used_provider,
                             project: project.project,
                             charge: AiBillingCharge::Subscription {
                                 subscription_id: subscription.id,
@@ -735,7 +760,7 @@ pub fn bill_month(
             });
         }
 
-        for project in group.api.into_sorted() {
+        for project in api_projects.into_sorted() {
             lines.push(AiBillingLine {
                 user_id,
                 provider,
@@ -762,6 +787,8 @@ pub fn bill_month(
 pub struct AiDeveloperDayUsage {
     pub day: Date,
     pub provider: AiProvider,
+    /// As in `AiDailyUsage`.
+    pub chatgpt_sign_in: bool,
     pub model: String,
     pub machine_id: AiMachineId,
     /// The project key, or `None` for the summed usage of every key without a
@@ -822,11 +849,16 @@ pub fn billed_day_usage(
     usage
         .into_iter()
         .map(|usage| {
-            let subscription_id =
-                match resolve_billing_mode(subscriptions, user_id, usage.provider, usage.day) {
-                    AiBillingMode::Api => None,
-                    AiBillingMode::Subscription(subscription) => Some(subscription.id),
-                };
+            let subscription_id = match resolve_billing_mode(
+                subscriptions,
+                user_id,
+                usage.provider,
+                usage.day,
+                usage.chatgpt_sign_in,
+            ) {
+                AiBillingMode::Api => None,
+                AiBillingMode::Subscription(subscription) => Some(subscription.id),
+            };
             AiBilledDayUsage {
                 usage,
                 subscription_id,

@@ -12,15 +12,13 @@ import {
 import {
   CURRENCIES,
   PLAN_SUGGESTIONS,
+  SUBSCRIPTION_PROVIDERS,
   parseDraft,
   type Draft,
   type SubscriptionEditor,
 } from "@/lib/ai-subscriptions";
 import { AiProviderLabel } from "@/components/ai-provider-icon";
-import {
-  AI_PROVIDERS,
-  type AiSubscriptionTerms,
-} from "@/lib/api/queries/ai-usage";
+import { type AiSubscriptionTerms } from "@/lib/api/queries/ai-usage";
 
 /** The add/edit form for one AI subscription's terms. */
 export function SubscriptionForm({
@@ -66,7 +64,9 @@ export function SubscriptionForm({
           <Select
             value={draft.provider}
             onValueChange={(value) => {
-              const provider = AI_PROVIDERS.find((known) => known === value);
+              const provider = SUBSCRIPTION_PROVIDERS.find(
+                (known) => known === value,
+              );
               if (provider) {
                 update({ provider });
               }
@@ -76,7 +76,7 @@ export function SubscriptionForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {AI_PROVIDERS.map((provider) => (
+              {SUBSCRIPTION_PROVIDERS.map((provider) => (
                 <SelectItem key={provider} value={provider}>
                   <AiProviderLabel provider={provider} className="flex" />
                 </SelectItem>
