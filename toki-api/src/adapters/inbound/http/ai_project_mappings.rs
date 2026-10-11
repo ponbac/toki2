@@ -843,6 +843,13 @@ mod tests {
         }
         // A personal key is settled: it is no longer waiting to be mapped.
         assert!(listed(&h.dev).await.is_empty());
+        // It has no mapping, so an admin deleting one finds nothing and
+        // changes nothing: the mark is not theirs to remove.
+        assert_eq!(
+            delete(&h, &h.admin, side_project).await,
+            StatusCode::NOT_FOUND
+        );
+        assert!(listed(&h.dev).await.is_empty());
 
         assert_eq!(
             personal(Method::DELETE, &h.dev, side_project).await,

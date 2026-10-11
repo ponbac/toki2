@@ -296,15 +296,17 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
 
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError> {
         // Mapping a key clears its personal marks, so none should be left. One
-        // made in the same instant as the mapping could be: it goes here, so
-        // that no mark its developer cannot see comes back into force.
+        // made in the same instant as the mapping could be: it goes with the
+        // mapping, so that no mark its developer cannot see comes back into
+        // force. Without a mapping to delete, marks are left alone.
         sqlx::query_scalar!(
             r#"
             WITH deleted AS (
                 DELETE FROM ai_project_mappings WHERE project_key = $1 RETURNING project_key
             ),
             cleared AS (
-                DELETE FROM ai_personal_project_keys WHERE project_key = $1
+                DELETE FROM ai_personal_project_keys
+                WHERE project_key IN (SELECT project_key FROM deleted)
             )
             SELECT EXISTS (SELECT 1 FROM deleted) AS "deleted!"
             "#,
