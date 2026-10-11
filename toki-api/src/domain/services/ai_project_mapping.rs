@@ -63,7 +63,7 @@ impl<R, P: TimeTrackingProjectCatalog> AiProjectMappingServiceImpl<R, P> {
 
     fn entry(&self, mapping: AiProjectMapping) -> AiProjectMappingEntry {
         AiProjectMappingEntry {
-            stale: !mapping.resolves_for(self.configured_company()),
+            resolution: mapping.resolution(self.configured_company()),
             mapping,
         }
     }
@@ -91,9 +91,17 @@ where
         &self,
         actor: &AiProjectMappingActor,
     ) -> Result<Vec<UnmappedAiProjectKey>, AiProjectMappingError> {
-        self.repository
+        let mut keys = self
+            .repository
             .list_unmapped(scope(actor), &self.time_zone)
-            .await
+            .await?;
+        // Without time tracking there is no project to map a key to.
+        if self.projects.is_none() {
+            for key in &mut keys {
+                key.mappable = false;
+            }
+        }
+        Ok(keys)
     }
 
     async fn list_projects(&self) -> Result<Vec<Project>, AiProjectMappingError> {

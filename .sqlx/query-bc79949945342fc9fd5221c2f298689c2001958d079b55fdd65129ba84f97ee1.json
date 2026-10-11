@@ -1,0 +1,97 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                GROUPING(bucket.provider, bucket.model, bucket.project_key, bucket.machine_id)\n                    AS \"grouping!\",\n                bucket.provider AS \"provider?\",\n                bucket.model AS \"model?\",\n                bucket.project_key AS \"project_key?\",\n                bucket.machine_id AS \"machine_id?\",\n                SUM(bucket.input_tokens)::int8 AS \"input_tokens!\",\n                SUM(bucket.cache_read_tokens)::int8 AS \"cache_read_tokens!\",\n                SUM(bucket.cache_write_tokens)::int8 AS \"cache_write_tokens!\",\n                SUM(bucket.output_tokens)::int8 AS \"output_tokens!\",\n                SUM(bucket.records)::int8 AS \"records!\",\n                COALESCE(SUM(bucket.estimated_cost_usd), 0)::float8 AS \"priced_cost_usd!\",\n                COUNT(*) FILTER (WHERE bucket.estimated_cost_usd IS NULL) AS \"unpriced_buckets!\",\n                SUM(bucket.unpriced_records)::int8 AS \"unpriced_records!\"\n            FROM ai_usage_buckets AS bucket\n            WHERE bucket.user_id = $1\n              AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)\n              AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)\n            GROUP BY GROUPING SETS (\n                (bucket.provider), (bucket.model), (bucket.project_key), (bucket.machine_id)\n            )\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "grouping!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "model?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "project_key?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "machine_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "input_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "cache_read_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "cache_write_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "output_tokens!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "records!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "priced_cost_usd!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 11,
+        "name": "unpriced_buckets!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "unpriced_records!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "bc79949945342fc9fd5221c2f298689c2001958d079b55fdd65129ba84f97ee1"
+}

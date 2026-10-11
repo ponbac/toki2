@@ -1,11 +1,12 @@
 use async_trait::async_trait;
 
+use super::ai_usage_reads::stored_mappings;
 use crate::{
     db::DbPool,
     domain::{
         models::{
-            AiMappedProject, AiTokenCounts, AiUsageDateRange, AiUsagePeriod, AiUsagePeriodTotals,
-            AiUsageTimeZone, AiUsageTotals, AiUsageUpload, ProjectId, TimeTrackingCompany, UserId,
+            AiMappingResolver, AiTokenCounts, AiUsageDateRange, AiUsagePeriod, AiUsagePeriodTotals,
+            AiUsageTimeZone, AiUsageTotals, AiUsageUpload, TimeTrackingCompany, UserId,
         },
         ports::outbound::AiUsageRepository,
         AiUsageError,
@@ -273,18 +274,14 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         // months correct across daylight-saving changes. A bucket belongs to the
         // local date of its start instant. Periods are clipped to the range, and
         // the range bounds stay comparable with the (user_id, hour_start) index.
-        // Mappings are joined here, never stored with usage, so they apply
-        // retroactively. Only mappings to the configured company resolve, so
-        // without one nothing does. Grouping by the mapping's key keeps one row
-        // per project key.
+        // Costs are summed as NUMERIC and converted once. Mappings are resolved
+        // when read, never stored with usage, so they apply retroactively.
         let rows = sqlx::query!(
             r#"
             SELECT
                 greatest(period.start, $2::date) AS "start!",
                 least((period.start + ('1 ' || $4)::interval)::date, $3::date) AS "end!",
                 bucket.project_key,
-                mapping.project_id AS "mapped_project_id?",
-                mapping.project_name AS "mapped_project_name?",
                 SUM(bucket.input_tokens)::int8 AS "input_tokens!",
                 SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
                 SUM(bucket.cache_write_tokens)::int8 AS "cache_write_tokens!",
@@ -297,14 +294,10 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             CROSS JOIN LATERAL (
                 SELECT date_trunc($4, bucket.hour_start AT TIME ZONE $5)::date AS start
             ) AS period
-            LEFT JOIN ai_project_mappings AS mapping
-                ON mapping.project_key = bucket.project_key
-                AND mapping.provider = $6
-                AND mapping.provider_company_id = $7
             WHERE bucket.user_id = $1
               AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $5)
               AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $5)
-            GROUP BY period.start, bucket.project_key, mapping.project_key
+            GROUP BY period.start, bucket.project_key
             ORDER BY period.start, bucket.project_key
             "#,
             user_id.as_i32(),
@@ -312,12 +305,14 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             dates.end(),
             unit,
             time_zone.as_str(),
-            mapping_company.map(|company| company.provider.as_str()),
-            mapping_company.map(|company| company.company_id.as_str()),
         )
         .fetch_all(&self.pool)
         .await
         .map_err(numeric_read_error)?;
+        let resolver = AiMappingResolver::new(
+            stored_mappings(&self.pool).await.map_err(storage_error)?,
+            mapping_company.cloned(),
+        );
 
         rows.into_iter()
             .map(|row| {
@@ -325,23 +320,10 @@ impl AiUsageRepository for PostgresAiUsageRepository {
                     AiUsageError::Storage("a usage period ends before it starts".to_string())
                 })?;
 
-                let project = match (row.mapped_project_id, row.mapped_project_name) {
-                    (Some(id), Some(name)) => Some(AiMappedProject {
-                        id: ProjectId::new(id),
-                        name,
-                    }),
-                    (None, None) => None,
-                    _ => {
-                        return Err(AiUsageError::Storage(
-                            "a project mapping has only one of its project id and name".to_string(),
-                        ))
-                    }
-                };
-
                 Ok(AiUsagePeriodTotals {
                     dates,
+                    project: resolver.project(&row.project_key).cloned(),
                     project_key: row.project_key,
-                    project,
                     totals: AiUsageTotals {
                         tokens: AiTokenCounts {
                             input: row.input_tokens,

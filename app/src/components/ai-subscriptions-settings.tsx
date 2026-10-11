@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Separator } from "./ui/separator";
+import { AI_PROVIDER_LABELS as PROVIDER_LABELS } from "@/lib/ai-providers";
 import { apiErrorToast } from "@/lib/api/errors";
 import { aiUsageMutations } from "@/lib/api/mutations/ai-usage";
 import {
@@ -28,13 +29,6 @@ import {
   type AiSubscriptionMismatchList,
   type AiSubscriptionTerms,
 } from "@/lib/api/queries/ai-usage";
-
-const PROVIDER_LABELS: Record<AiProvider, string> = {
-  codex: "Codex",
-  claude: "Claude Code",
-  grok: "Grok Build",
-  copilot: "Copilot",
-};
 
 /** Suggested plan names. Plans are free text, so any name is accepted. */
 const PLAN_SUGGESTIONS: Record<AiProvider, readonly string[]> = {

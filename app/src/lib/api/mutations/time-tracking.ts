@@ -500,11 +500,7 @@ function applyAbsenceEntriesTimeInfoDelta(
   direction: 1 | -1,
 ) {
   for (const entry of entries) {
-    applyAbsenceTimeInfoDelta(
-      queryClient,
-      entry.date,
-      entry.hours * direction,
-    );
+    applyAbsenceTimeInfoDelta(queryClient, entry.date, entry.hours * direction);
   }
 }
 

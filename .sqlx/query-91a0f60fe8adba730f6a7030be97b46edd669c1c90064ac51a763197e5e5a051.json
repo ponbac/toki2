@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT count(DISTINCT (bucket.machine_id, bucket.provider, bucket.session_key))\n                AS \"count!\"\n            FROM ai_usage_buckets AS bucket\n            WHERE bucket.user_id = $1\n              AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)\n              AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)\n              AND ($5::text IS NULL OR bucket.provider = $5)\n              AND ($6::text IS NULL OR bucket.model = $6)\n              AND ($7::uuid IS NULL OR bucket.machine_id = $7)\n              AND ($8::text[] IS NULL OR bucket.project_key = ANY($8))\n              AND ($9::text[] IS NULL OR bucket.project_key <> ALL($9))\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "91a0f60fe8adba730f6a7030be97b46edd669c1c90064ac51a763197e5e5a051"
+}

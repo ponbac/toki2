@@ -70,6 +70,10 @@ pub enum AiUsageError {
     /// JavaScript-safe integer counts. Stored usage is retained unchanged.
     #[error("ai usage result exceeds the supported numeric range")]
     NumericRange,
+    /// A read of usage asked for something it cannot answer, such as a range
+    /// that ends before it starts.
+    #[error("{0}")]
+    InvalidQuery(String),
     #[error("ai usage storage error: {0}")]
     Storage(String),
 }

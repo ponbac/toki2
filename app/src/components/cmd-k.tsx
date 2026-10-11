@@ -12,6 +12,7 @@ import { queries } from "@/lib/api/queries/queries";
 import { useNavigate } from "@tanstack/react-router";
 import { AzureAvatar } from "./azure-avatar";
 import {
+  BrainCircuit,
   DrumIcon,
   FolderGit2,
   GitPullRequestIcon,
@@ -181,6 +182,7 @@ const PAGES = [
   { title: "Board", to: "/board", icon: KanbanSquare },
   { title: "Time Tracking", to: "/time-tracking", icon: TimerIcon },
   { title: "Repositories", to: "/repositories", icon: FolderGit2 },
+  { title: "AI usage", to: "/ai-usage", icon: BrainCircuit },
 ] as const;
 
 function PagesCommandGroup(props: { close: () => void }) {

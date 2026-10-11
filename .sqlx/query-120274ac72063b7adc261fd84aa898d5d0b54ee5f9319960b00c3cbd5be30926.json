@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                WITH RECURSIVE keys (project_key) AS (\n                    SELECT min(project_key) FROM ai_usage_buckets WHERE user_id = $1\n                    UNION ALL\n                    SELECT (\n                        SELECT min(bucket.project_key)\n                        FROM ai_usage_buckets AS bucket\n                        WHERE bucket.user_id = $1 AND bucket.project_key > keys.project_key\n                    )\n                    FROM keys\n                    WHERE keys.project_key IS NOT NULL\n                )\n                SELECT\n                    keys.project_key AS \"project_key!\",\n                    ((\n                        SELECT max(bucket.hour_start)\n                        FROM ai_usage_buckets AS bucket\n                        WHERE bucket.user_id = $1 AND bucket.project_key = keys.project_key\n                    ) AT TIME ZONE $2)::date AS \"last_used_on!\",\n                    EXISTS (\n                        SELECT 1 FROM ai_project_mappings AS mapping\n                        WHERE mapping.project_key = keys.project_key\n                    ) AS \"mapped!\"\n                FROM keys\n                WHERE keys.project_key IS NOT NULL\n                ORDER BY 2 DESC, 1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "project_key!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_used_on!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "mapped!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "120274ac72063b7adc261fd84aa898d5d0b54ee5f9319960b00c3cbd5be30926"
+}

@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                coverage.machine_id,\n                coverage.provider,\n                coverage.status,\n                coverage.files,\n                coverage.unreadable,\n                coverage.malformed_lines,\n                coverage.skipped_records,\n                coverage.duplicates,\n                coverage.window_start,\n                coverage.window_end,\n                coverage.reported_at,\n                coverage.pricing_status,\n                coverage.pricing_fetched_at,\n                coverage.pricing_source,\n                EXISTS (\n                    SELECT 1 FROM ai_usage_buckets AS bucket\n                    WHERE bucket.machine_id = coverage.machine_id\n                      AND bucket.provider = coverage.provider\n                ) AS \"has_usage!\"\n            FROM ai_usage_machine_coverage AS coverage\n            JOIN ai_usage_machines AS machine ON machine.id = coverage.machine_id\n            WHERE machine.user_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "machine_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "files",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "unreadable",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "malformed_lines",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "skipped_records",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "duplicates",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "window_start",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "window_end",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "reported_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "pricing_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "pricing_fetched_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "pricing_source",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "has_usage!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "221be822042b09bd75de7e59eef10c1e3c21f02c626367d4103654ebd4215319"
+}

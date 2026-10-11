@@ -67,7 +67,10 @@ function sortItemsByColumnAndPriority(
   );
   const knownColumnIds = new Set(orderedColumns.map((column) => column.id));
   const columnIdsByName = new Map(
-    orderedColumns.map((column) => [normalizeColumnName(column.name), column.id]),
+    orderedColumns.map((column) => [
+      normalizeColumnName(column.name),
+      column.id,
+    ]),
   );
   const columnRank = new Map(
     orderedColumns.map((column, index) => [column.id, index]),
@@ -76,8 +79,12 @@ function sortItemsByColumnAndPriority(
   return [...items].sort((a, b) => {
     const rankA = resolveColumnIdForItem(a, knownColumnIds, columnIdsByName);
     const rankB = resolveColumnIdForItem(b, knownColumnIds, columnIdsByName);
-    const rankValueA = rankA ? (columnRank.get(rankA) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-    const rankValueB = rankB ? (columnRank.get(rankB) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+    const rankValueA = rankA
+      ? (columnRank.get(rankA) ?? Number.MAX_SAFE_INTEGER)
+      : Number.MAX_SAFE_INTEGER;
+    const rankValueB = rankB
+      ? (columnRank.get(rankB) ?? Number.MAX_SAFE_INTEGER)
+      : Number.MAX_SAFE_INTEGER;
 
     if (rankValueA !== rankValueB) {
       return rankValueA - rankValueB;
@@ -117,17 +124,16 @@ function useMoveBoardItem(
       }),
     ...options,
     onMutate: async (vars) => {
-      const boardQueryKey = workItemsQueries
-        .board({
-          organization: vars.organization,
-          project: vars.project,
-          iterationPath: vars.iterationPath,
-          team: vars.team,
-        })
-        .queryKey;
+      const boardQueryKey = workItemsQueries.board({
+        organization: vars.organization,
+        project: vars.project,
+        iterationPath: vars.iterationPath,
+        team: vars.team,
+      }).queryKey;
 
       await queryClient.cancelQueries({ queryKey: boardQueryKey });
-      const previousBoard = queryClient.getQueryData<BoardResponse>(boardQueryKey);
+      const previousBoard =
+        queryClient.getQueryData<BoardResponse>(boardQueryKey);
 
       if (previousBoard) {
         const targetColumn = previousBoard.columns.find(
@@ -178,14 +184,14 @@ function useMoveBoardItem(
     },
     onSettled: (data, err, vars, ctx) => {
       queryClient.invalidateQueries({
-        queryKey: ctx?.boardQueryKey ?? workItemsQueries
-          .board({
+        queryKey:
+          ctx?.boardQueryKey ??
+          workItemsQueries.board({
             organization: vars.organization,
             project: vars.project,
             iterationPath: vars.iterationPath,
             team: vars.team,
-          })
-          .queryKey,
+          }).queryKey,
       });
       options?.onSettled?.(data, err, vars, ctx);
     },

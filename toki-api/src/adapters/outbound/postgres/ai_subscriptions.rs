@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use time::Date;
 
+use super::ai_usage_reads::local_today;
 use crate::{
     db::DbPool,
     domain::{
@@ -204,13 +205,9 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
     }
 
     async fn today(&self, time_zone: &AiUsageTimeZone) -> Result<Date, AiSubscriptionError> {
-        sqlx::query_scalar!(
-            r#"SELECT (now() AT TIME ZONE $1)::date AS "today!""#,
-            time_zone.as_str(),
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(storage_error)
+        local_today(&self.pool, time_zone)
+            .await
+            .map_err(storage_error)
     }
 
     async fn plan_mismatch_days(

@@ -50,6 +50,28 @@
     --text-secondary: 31 10% 33%;
     --text-tertiary: 30 8% 44%;
 
+    /* Data visualisation. Categorical slots are assigned in this fixed order,
+       never cycled; the order is validated for colour-vision deficiencies
+       against the card surface (#f5f4ef). The sequential ramp is one hue,
+       light (little) to dark (much). */
+    --viz-1: #2a78d6;
+    --viz-2: #eb6834;
+    --viz-3: #1baf7a;
+    --viz-4: #eda100;
+    --viz-5: #e87ba4;
+    --viz-6: #008300;
+    --viz-7: #4a3aa7;
+    --viz-8: #e34948;
+    --viz-other: #a3a19a;
+    --viz-seq-1: #cde2fb;
+    --viz-seq-2: #9ec5f4;
+    --viz-seq-3: #6da7ec;
+    --viz-seq-4: #3987e5;
+    --viz-seq-5: #256abf;
+    --viz-seq-6: #184f95;
+    --viz-seq-7: #0d366b;
+    --viz-grid: #dedbd2;
+
     /* Gradient tokens */
     --gradient-warm: linear-gradient(135deg, hsl(27 63% 45% / 0.12) 0%, hsl(18 50% 40% / 0.06) 100%);
     --gradient-card: linear-gradient(180deg, hsl(44 26% 96%) 0%, hsl(43 20% 90%) 100%);
@@ -92,6 +114,26 @@
     --text-primary: 40 20% 92%;
     --text-secondary: 40 10% 60%;
     --text-tertiary: 40 8% 45%;
+
+    /* Data visualisation, stepped for the dark card surface (#161a22). The
+       sequential ramp flips: little recedes into the surface, much is bright. */
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-3: #199e70;
+    --viz-4: #c98500;
+    --viz-5: #d55181;
+    --viz-6: #008300;
+    --viz-7: #9085e9;
+    --viz-8: #e66767;
+    --viz-other: #5b606b;
+    --viz-seq-1: #0d366b;
+    --viz-seq-2: #184f95;
+    --viz-seq-3: #256abf;
+    --viz-seq-4: #3987e5;
+    --viz-seq-5: #6da7ec;
+    --viz-seq-6: #9ec5f4;
+    --viz-seq-7: #cde2fb;
+    --viz-grid: #262b36;
 
     /* Gradient tokens dark */
     --gradient-warm: linear-gradient(135deg, hsl(38 95% 55% / 0.08) 0%, hsl(24 90% 50% / 0.03) 100%);

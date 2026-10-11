@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    bucket.project_key AS \"project_key!\",\n                    (max(bucket.hour_start) AT TIME ZONE $1)::date AS \"last_used_on!\",\n                    EXISTS (\n                        SELECT 1 FROM ai_project_mappings AS mapping\n                        WHERE mapping.project_key = bucket.project_key\n                    ) AS \"mapped!\"\n                FROM ai_usage_buckets AS bucket\n                GROUP BY bucket.project_key\n                ORDER BY 2 DESC, 1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "project_key!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_used_on!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "mapped!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "41831724129fa5a8e6ee9b639a9d97f6dc3b2a0e154c7052ebf6c0f85ad34c56"
+}

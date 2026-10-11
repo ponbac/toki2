@@ -20,8 +20,8 @@ use crate::{
     auth::AuthUser,
     domain::{
         models::{
-            AiProjectMappingActor, AiProjectMappingEditor, AiProjectMappingEntry, ProjectId,
-            UnmappedAiProjectKey,
+            AiMappingResolution, AiProjectMappingActor, AiProjectMappingEditor,
+            AiProjectMappingEntry, ProjectId, UnmappedAiProjectKey,
         },
         ports::inbound::AiProjectMappingService,
         Role,
@@ -61,8 +61,13 @@ struct DeleteMappingRequest {
 struct AiProjectMappingResponse {
     project_key: String,
     project: ProjectResponse,
-    /// The project belongs to another provider or company than the configured
-    /// one, so usage of the key is unassigned until an admin maps it again.
+    /// How the mapping resolves: `resolves` (usage counts for the project),
+    /// `stale` (the project belongs to another provider or company than the
+    /// configured one, so usage is unassigned until an admin maps the key
+    /// again) or `unconfigured` (time tracking is not configured, so no mapping
+    /// resolves and all usage is unassigned).
+    status: AiMappingStatusResponse,
+    /// Whether `status` is `stale`.
     stale: bool,
     /// Whether anyone's stored usage has the key.
     in_use: bool,
@@ -74,6 +79,24 @@ struct AiProjectMappingResponse {
     updated_by: Option<AiProjectMappingEditorResponse>,
     #[serde(with = "time::serde::rfc3339")]
     updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum AiMappingStatusResponse {
+    Resolves,
+    Stale,
+    Unconfigured,
+}
+
+impl From<AiMappingResolution> for AiMappingStatusResponse {
+    fn from(resolution: AiMappingResolution) -> Self {
+        match resolution {
+            AiMappingResolution::Resolves => Self::Resolves,
+            AiMappingResolution::Stale => Self::Stale,
+            AiMappingResolution::Unconfigured => Self::Unconfigured,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -90,7 +113,8 @@ struct UnmappedAiProjectKeyResponse {
     /// `YYYY-MM-DD` in the configured AI usage time zone.
     last_used_on: String,
     /// False for `unattributed` usage and keys with surrounding whitespace, which
-    /// token-ledger must attribute to a configured project or Git remote first.
+    /// token-ledger must attribute to a configured project or Git remote first,
+    /// and for every key while time tracking is not configured.
     mappable: bool,
 }
 
@@ -103,7 +127,8 @@ impl From<AiProjectMappingEntry> for AiProjectMappingResponse {
                 project_id: mapping.project.id.to_string(),
                 project_name: mapping.project.name,
             },
-            stale: entry.stale,
+            status: entry.resolution.into(),
+            stale: entry.resolution == AiMappingResolution::Stale,
             in_use: mapping.in_use,
             created_by: mapping.created_by.map(Into::into),
             created_at: mapping.created_at,
@@ -814,6 +839,8 @@ mod tests {
             mappings(&after, &after.admin).await,
             [mapping(APP, "101", true, true)]
         );
+        let (_, listed) = send(&after, Method::GET, "", &after.admin, None).await;
+        assert_eq!(listed[0]["status"], "stale");
         assert!(
             unmapped(&after, &after.dev).await.is_empty(),
             "a stale mapping is listed as a mapping"
@@ -826,6 +853,34 @@ mod tests {
         assert_eq!(
             mappings(&after, &after.admin).await,
             [mapping(APP, "202", false, true)]
+        );
+    }
+
+    #[sqlx::test]
+    async fn without_time_tracking_mappings_are_unconfigured_not_stale(pool: PgPool) {
+        let users = users(&pool).await;
+        record_usage(&pool, users.dev, MACHINE_DEV, &[(APP, HOUR), (API, HOUR)]).await;
+        let configured = harness(&pool, users, Some(StaticProjects::of("company-1"))).await;
+        assert_eq!(
+            put(&configured, &configured.dev, APP, "101").await.0,
+            StatusCode::OK
+        );
+
+        let unconfigured = harness(&pool, users, None).await;
+        // No admin can fix a missing configuration by mapping again, so the
+        // mapping is not stale.
+        assert_eq!(
+            mappings(&unconfigured, &unconfigured.admin).await,
+            [mapping(APP, "101", false, true)]
+        );
+        let (_, listed) = send(&unconfigured, Method::GET, "", &unconfigured.admin, None).await;
+        assert_eq!(listed[0]["status"], "unconfigured");
+        let (_, listed) = send(&configured, Method::GET, "", &configured.admin, None).await;
+        assert_eq!(listed[0]["status"], "resolves");
+        // Nothing can be mapped until time tracking is configured.
+        assert_eq!(
+            unmapped(&unconfigured, &unconfigured.dev).await,
+            [(API.to_string(), "2026-09-22".to_string(), false)]
         );
     }
 
