@@ -50,8 +50,8 @@ export function PersonalUsage({
       <p className="mt-1 text-xs text-muted-foreground">
         Usage of repositories a developer marked as not client work. It bills
         nothing and takes no share of a subscription fee; this is what it would
-        have cost at API prices. The repositories&apos; names stay with the
-        developer.
+        have cost at API prices. The repositories are not mapped, so their names
+        are not shown here.
       </p>
       {developers && (
         <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">

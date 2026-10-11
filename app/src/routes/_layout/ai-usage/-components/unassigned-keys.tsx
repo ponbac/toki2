@@ -45,7 +45,7 @@ export function UnassignedKeys({
       id={id}
       className={className}
       title="Unassigned repositories"
-      description={`Usage of these project keys counts for no time-tracking project. A key without a mapping shows its name only to the developers who use it. Mapping it shows the name to admins and applies to everyone's usage of the key, including past usage. A repository that is not client work can be marked ${PERSONAL_LABEL} instead: your usage of it is left out of the bill, and its name stays with you.`}
+      description={`Usage of these project keys counts for no time-tracking project. A key without a mapping shows its name only to the developers who use it. Mapping it shows the name to admins and applies to everyone's usage of the key, including past usage. A repository that is not client work can be marked ${PERSONAL_LABEL} instead: your usage of it is left out of the bill, and nothing is mapped, so admins do not see its name.`}
     >
       {query.isPending ? (
         <p className="text-sm text-muted-foreground" role="status">
@@ -98,8 +98,9 @@ export function UnassignedKeys({
                 {PERSONAL_LABEL}
               </h3>
               <p className="text-xs text-muted-foreground">
-                Your usage of these is left out of the bill. Only you see their
-                names.
+                Your usage of these is left out of the bill. Their names are
+                shown only to the developers who use them. If one of them maps a
+                repository to a project, that applies to you too.
               </p>
               <ul className="divide-y divide-border/60">
                 {personal.map((key) => (

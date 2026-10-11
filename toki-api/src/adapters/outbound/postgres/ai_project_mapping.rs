@@ -137,6 +137,10 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
                 VALUES ($1, $2, $3, $4, $5, $6, $6)
                 ON CONFLICT (project_key) DO NOTHING
                 RETURNING *
+            ),
+            cleared AS (
+                DELETE FROM ai_personal_project_keys
+                WHERE project_key IN (SELECT project_key FROM saved)
             )
             SELECT
                 saved.project_key AS "project_key!",
@@ -196,6 +200,10 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
                     updated_by = EXCLUDED.updated_by,
                     updated_at = now()
                 RETURNING *
+            ),
+            cleared AS (
+                DELETE FROM ai_personal_project_keys
+                WHERE project_key IN (SELECT project_key FROM saved)
             )
             SELECT
                 saved.project_key AS "project_key!",
@@ -287,15 +295,24 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
     }
 
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError> {
-        let deleted = sqlx::query!(
-            "DELETE FROM ai_project_mappings WHERE project_key = $1",
+        // Mapping a key clears its personal marks, so none should be left. One
+        // made in the same instant as the mapping could be: it goes here, so
+        // that no mark its developer cannot see comes back into force.
+        sqlx::query_scalar!(
+            r#"
+            WITH deleted AS (
+                DELETE FROM ai_project_mappings WHERE project_key = $1 RETURNING project_key
+            ),
+            cleared AS (
+                DELETE FROM ai_personal_project_keys WHERE project_key = $1
+            )
+            SELECT EXISTS (SELECT 1 FROM deleted) AS "deleted!"
+            "#,
             project_key.as_str(),
         )
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .map_err(storage_error)?;
-
-        Ok(deleted.rows_affected() > 0)
+        .map_err(storage_error)
     }
 
     async fn is_mapped(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError> {
@@ -320,7 +337,10 @@ impl AiProjectMappingRepository for PostgresAiProjectMappingRepository {
         sqlx::query!(
             r#"
             INSERT INTO ai_personal_project_keys (user_id, project_key)
-            VALUES ($1, $2)
+            SELECT $1, $2
+            WHERE NOT EXISTS (
+                SELECT 1 FROM ai_project_mappings WHERE project_key = $2
+            )
             ON CONFLICT (user_id, project_key) DO NOTHING
             "#,
             user_id.as_i32(),

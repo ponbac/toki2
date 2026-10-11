@@ -1,8 +1,8 @@
 -- Project keys a developer marked as personal or internal: not client work. Their
 -- own usage of the key is left out of the bill and counts for no time-tracking
 -- project. A mark belongs to one developer and applies to their usage only.
--- A team-wide mapping of the key overrides it: the usage then counts as the
--- mapping says, and the mark applies again once the mapping is deleted. Marks are
+-- Mapping the key team-wide deletes every mark of it: the usage then counts as
+-- the mapping says, and is unassigned again if the mapping is deleted. Marks are
 -- resolved when usage is read and never written into usage rows, so marking or
 -- unmarking a key applies to past usage too.
 

@@ -17,6 +17,7 @@ import {
 } from "@/lib/ai-subscriptions";
 import { AiProviderTile } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import { apiErrorToast } from "@/lib/api/errors";
 import { aiUsageMutations } from "@/lib/api/mutations/ai-usage";
 import {
@@ -216,7 +217,7 @@ function MismatchWarning({
                 Pi usage ran on a ChatGPT sign-in {describeDays(mismatch)}, but
                 no ChatGPT subscription is declared for Codex for these days, so
                 their Pi usage is billed at its estimated API cost in billing
-                reports.
+                reports, unless it is {PERSONAL_LABEL}.
               </p>
             ) : (
               <p>
@@ -224,7 +225,8 @@ function MismatchWarning({
                 subscription ({mismatch.plans.length === 1 ? "plan" : "plans"}{" "}
                 {mismatch.plans.join(", ")}) {describeDays(mismatch)}, but no
                 subscription is declared for these days, so their usage is
-                billed at its estimated API cost in billing reports.
+                billed at its estimated API cost in billing reports, unless it
+                is {PERSONAL_LABEL}.
               </p>
             )}
             <Button

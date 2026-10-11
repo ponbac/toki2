@@ -61,7 +61,7 @@ AI usage that counts for no time-tracking project and is not personal usage: its
 _Avoid_: unmapped usage (it is only one of these cases)
 
 **Personal usage**:
-A developer's AI usage of a project key they marked as personal or internal: not client work. It is left out of the bill: it bills nothing on API days and takes no share of a subscription's fee, which is split over the developer's other usage. Admins see it only as an API-equivalent estimate per developer, never the key's name. The mark is the developer's own and applies to their usage alone; a mapping of the key overrides it for everyone, and the mark applies again once the mapping is deleted. Shown as "Personal / internal".
+A developer's AI usage of a project key they marked as personal or internal: not client work. It is left out of the bill: it bills nothing on API days and takes no share of a subscription's fee, which is split over the developer's other usage. Admins see it only as an API-equivalent estimate per developer, never the key's name. The mark is the developer's own and applies to their usage alone. Mapping the key clears every mark of it: the mapping then decides for everyone, and deleting it leaves the usage unassigned. Shown as "Personal / internal".
 _Avoid_: private usage, excluded usage, non-billable usage
 
 **Stale machine**:

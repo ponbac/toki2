@@ -34,6 +34,7 @@ import {
 } from "@/lib/ai-subscriptions";
 import { AiProviderTile } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import { apiErrorToast } from "@/lib/api/errors";
 import { aiAdminMutations } from "@/lib/api/mutations/ai-admin";
 import {
@@ -261,8 +262,8 @@ function Mismatches({
               </span>
               :{" "}
               {mismatch.provider === "pi"
-                ? `Pi ran on a ChatGPT sign-in ${describeDays(mismatch)}, but no ChatGPT subscription is declared for Codex for those days, so their Pi usage bills as API usage.`
-                : `${AI_PROVIDER_LABELS[mismatch.provider]} reported a paid plan (${mismatch.plans.join(", ")}) ${describeDays(mismatch)}, but no subscription is declared for those days, so they bill as API usage.`}
+                ? `Pi ran on a ChatGPT sign-in ${describeDays(mismatch)}, but no ChatGPT subscription is declared for Codex for those days, so their Pi usage bills as API usage, unless it is ${PERSONAL_LABEL}.`
+                : `${AI_PROVIDER_LABELS[mismatch.provider]} reported a paid plan (${mismatch.plans.join(", ")}) ${describeDays(mismatch)}, but no subscription is declared for those days, so their usage bills as API usage, unless it is ${PERSONAL_LABEL}.`}
             </p>
             <Button
               type="button"

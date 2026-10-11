@@ -218,7 +218,7 @@ function Report({
         <p className="text-xs text-muted-foreground">
           Days and hours in {report.timeZone}
           {!report.timeTrackingConfigured &&
-            ". Time tracking is not configured, so all usage is unassigned"}
+            ". Time tracking is not configured, so no usage counts for a project"}
         </p>
       </div>
       {refreshError && (

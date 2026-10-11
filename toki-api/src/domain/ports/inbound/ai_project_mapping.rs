@@ -18,8 +18,9 @@ use crate::domain::{
 /// shown another developer's unmapped keys, and only someone whose own usage
 /// has a key can create its first mapping.
 ///
-/// A developer can instead mark such a key as personal, which keeps its name
-/// with them and leaves their usage of it out of the bill.
+/// A developer can instead mark such a key as personal, which leaves their
+/// usage of it out of the bill and maps nothing, so its name stays with the
+/// developers who use it. Mapping the key later clears the mark.
 #[async_trait]
 pub trait AiProjectMappingService: Send + Sync + 'static {
     /// The mappings of project keys in the actor's own usage, or every mapping

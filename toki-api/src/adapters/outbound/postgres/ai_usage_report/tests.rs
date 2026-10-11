@@ -1057,13 +1057,19 @@ async fn a_developers_personal_keys_are_summed_apart_until_someone_maps_them(poo
             group("Project 101", 1, APP),
         ]
     );
-    // The mark is kept and applies again without the mapping.
+    // Mapping cleared the mark, so it cannot come back unseen: without the
+    // mapping the key is unassigned again, and the developer's to mark anew.
     assert!(mappings
         .delete(&AiProjectKey::parse(side_project).unwrap())
         .await
         .unwrap());
+    assert!(groups(only(AiProjectFilter::Personal)).await.is_empty());
     assert_eq!(
-        groups(only(AiProjectFilter::Personal)).await,
-        [group("personal", 2, side_project)]
+        groups(only(AiProjectFilter::Unassigned)).await,
+        [(
+            "unassigned".to_string(),
+            6,
+            vec![unmapped.to_string(), side_project.to_string()]
+        )]
     );
 }

@@ -10,7 +10,8 @@
 //!
 //! A developer can instead mark an unmapped key in their own usage as personal:
 //! not client work. The mark is theirs alone and leaves their usage of the key
-//! out of the bill. A mapping of the key overrides every mark of it.
+//! out of the bill. Mapping the key clears every mark of it: it is then work
+//! someone accounted for.
 
 use std::collections::{HashMap, HashSet};
 
@@ -166,8 +167,9 @@ impl AiMappingResolver {
         self
     }
 
-    /// Whether a developer's personal mark of the key applies. A mapping of
-    /// the key, resolving or not, overrides it: someone mapped it as work.
+    /// Whether a developer's personal mark of the key applies. Mapping a key
+    /// clears its marks, so a mark and a mapping only meet when both were made
+    /// in the same instant; the mapping, resolving or not, then decides.
     pub fn personal_mark_applies(&self, project_key: &str) -> bool {
         !self.mappings.contains_key(project_key)
     }

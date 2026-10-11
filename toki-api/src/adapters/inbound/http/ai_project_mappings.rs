@@ -853,6 +853,23 @@ mod tests {
             StatusCode::NOT_FOUND
         );
         assert_eq!(listed(&h.dev).await, [side_project]);
+
+        // Mapping a key clears its mark: nothing is left to undo, or to come
+        // back into force if the mapping is deleted.
+        assert_eq!(
+            personal(Method::PUT, &h.dev, side_project).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(put(&h, &h.dev, side_project, "101").await.0, StatusCode::OK);
+        assert_eq!(
+            personal(Method::DELETE, &h.dev, side_project).await,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            delete(&h, &h.admin, side_project).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(listed(&h.dev).await, [side_project]);
     }
 
     #[sqlx::test]
