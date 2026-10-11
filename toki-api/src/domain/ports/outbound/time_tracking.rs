@@ -5,7 +5,7 @@ use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity,
         CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimerId, WeeklyStats,
+        TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -99,4 +99,15 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
 
     /// Delete a managed absence entry.
     async fn delete_absence(&self, absence_id: &str, date: Date) -> Result<(), TimeTrackingError>;
+}
+
+/// Outbound port for the configured company's project list, independent of any
+/// user's bookable projects.
+#[async_trait]
+pub trait TimeTrackingProjectCatalog: Send + Sync + 'static {
+    /// The provider company whose projects are listed.
+    fn company(&self) -> &TimeTrackingCompany;
+
+    /// Every active project in the company.
+    async fn active_projects(&self) -> Result<Vec<Project>, TimeTrackingError>;
 }

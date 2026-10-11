@@ -1,3 +1,4 @@
+mod ai_project_mapping;
 mod ai_usage;
 mod api_tokens;
 mod avatar;
@@ -8,6 +9,7 @@ mod time_tracking_user_links;
 mod timer_history;
 mod work_item_provider;
 
+pub use ai_project_mapping::*;
 pub use ai_usage::*;
 pub use api_tokens::*;
 pub use avatar::*;

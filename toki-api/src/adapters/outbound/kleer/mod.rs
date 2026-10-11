@@ -19,9 +19,10 @@ use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity, ActivityId,
         CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimerId, WeeklyStats,
+        TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId, WeeklyStats,
+        KLEER_TIME_TRACKING_PROVIDER,
     },
-    ports::outbound::TimeTrackingClient,
+    ports::outbound::{TimeTrackingClient, TimeTrackingProjectCatalog},
     TimeTrackingError,
 };
 
@@ -91,6 +92,23 @@ impl KleerMetadataCache {
             activities: metadata_cache(),
         }
     }
+
+    async fn active_client_projects(
+        &self,
+        client: &KleerClient,
+        key: &KleerMetadataCacheKey,
+    ) -> Result<KleerClientProjectList, TimeTrackingError> {
+        let client = client.clone();
+        self.active_client_projects
+            .try_get_with(key.clone(), async move {
+                client
+                    .list_active_client_projects()
+                    .await
+                    .map_err(map_kleer_error)
+            })
+            .await
+            .map_err(cached_load_error)
+    }
 }
 
 impl Default for KleerMetadataCache {
@@ -106,6 +124,15 @@ impl KleerMetadataCacheKey {
             company_id: credentials.company_id.clone(),
         }
     }
+}
+
+/// A client for the credentials' company, and the key its metadata is cached under.
+fn company_client(
+    credentials: KleerCredentials,
+) -> Result<(KleerClient, KleerMetadataCacheKey), TimeTrackingError> {
+    let key = KleerMetadataCacheKey::from_credentials(&credentials);
+    let client = KleerClient::new(credentials).map_err(map_kleer_error)?;
+    Ok((client, key))
 }
 
 fn metadata_cache<V>() -> Cache<KleerMetadataCacheKey, V>
@@ -130,8 +157,7 @@ impl KleerAdapter {
         target_user_id: i64,
         metadata_cache: Arc<KleerMetadataCache>,
     ) -> Result<Self, TimeTrackingError> {
-        let metadata_cache_key = KleerMetadataCacheKey::from_credentials(&credentials);
-        let client = KleerClient::new(credentials).map_err(map_kleer_error)?;
+        let (client, metadata_cache_key) = company_client(credentials)?;
         Ok(Self {
             client,
             target_user_id,
@@ -154,17 +180,9 @@ impl KleerAdapter {
     async fn cached_active_client_projects(
         &self,
     ) -> Result<KleerClientProjectList, TimeTrackingError> {
-        let client = self.client.clone();
         self.metadata_cache
-            .active_client_projects
-            .try_get_with(self.metadata_cache_key.clone(), async move {
-                client
-                    .list_active_client_projects()
-                    .await
-                    .map_err(map_kleer_error)
-            })
+            .active_client_projects(&self.client, &self.metadata_cache_key)
             .await
-            .map_err(cached_load_error)
     }
 
     async fn cached_activities(&self) -> Result<KleerActivityList, TimeTrackingError> {
@@ -542,6 +560,56 @@ impl KleerAdapter {
             date += Duration::days(1);
         }
         dates
+    }
+}
+
+/// The company's active Kleer projects, read with the service account and
+/// independent of any user's project assignments. Shares the adapters' cache.
+pub struct KleerProjectCatalog {
+    client: KleerClient,
+    metadata_cache_key: KleerMetadataCacheKey,
+    metadata_cache: Arc<KleerMetadataCache>,
+    company: TimeTrackingCompany,
+}
+
+impl KleerProjectCatalog {
+    pub fn new(
+        credentials: KleerCredentials,
+        metadata_cache: Arc<KleerMetadataCache>,
+    ) -> Result<Self, TimeTrackingError> {
+        let company = TimeTrackingCompany {
+            provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
+            company_id: credentials.company_id.clone(),
+        };
+        let (client, metadata_cache_key) = company_client(credentials)?;
+
+        Ok(Self {
+            client,
+            metadata_cache_key,
+            metadata_cache,
+            company,
+        })
+    }
+}
+
+#[async_trait]
+impl TimeTrackingProjectCatalog for KleerProjectCatalog {
+    fn company(&self) -> &TimeTrackingCompany {
+        &self.company
+    }
+
+    async fn active_projects(&self) -> Result<Vec<Project>, TimeTrackingError> {
+        let projects = self
+            .metadata_cache
+            .active_client_projects(&self.client, &self.metadata_cache_key)
+            .await?;
+
+        Ok(projects
+            .client_project_readables
+            .iter()
+            .filter(|project| project.active)
+            .map(to_domain_project)
+            .collect())
     }
 }
 

@@ -798,6 +798,7 @@ mod tests {
         let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(
             Arc::new(PostgresAiUsageRepository::new(db)),
             AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
+            None,
         ));
         let app = app(service, tokens.clone());
 

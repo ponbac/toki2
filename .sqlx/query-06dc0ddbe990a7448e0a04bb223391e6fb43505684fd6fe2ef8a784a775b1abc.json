@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                bucket.project_key,\n                (max(bucket.hour_start) AT TIME ZONE $2)::date AS \"last_used_on!\"\n            FROM ai_usage_buckets AS bucket\n            WHERE ($1::int4 IS NULL OR bucket.user_id = $1)\n              AND NOT EXISTS (\n                  SELECT 1 FROM ai_project_mappings AS mapping\n                  WHERE mapping.project_key = bucket.project_key\n              )\n            GROUP BY bucket.project_key\n            ORDER BY 2 DESC, bucket.project_key\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "project_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_used_on!",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "06dc0ddbe990a7448e0a04bb223391e6fb43505684fd6fe2ef8a784a775b1abc"
+}

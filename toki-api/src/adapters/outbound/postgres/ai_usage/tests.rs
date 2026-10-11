@@ -4,9 +4,16 @@ use time::{
     OffsetDateTime,
 };
 
-use crate::domain::models::{
-    AiCoverageStatus, AiMachine, AiMachineId, AiPricing, AiPricingStatus, AiProvider,
-    AiProviderCoverage, AiProviderHint, AiUsageBucket, AiUsageWindow,
+use crate::{
+    adapters::outbound::postgres::PostgresAiProjectMappingRepository,
+    domain::{
+        models::{
+            AiCoverageStatus, AiMachine, AiMachineId, AiPricing, AiPricingStatus, AiProjectKey,
+            AiProvider, AiProviderCoverage, AiProviderHint, AiUsageBucket, AiUsageWindow,
+            UNATTRIBUTED_PROJECT_KEY,
+        },
+        ports::outbound::AiProjectMappingRepository,
+    },
 };
 
 use super::*;
@@ -600,6 +607,7 @@ async fn totals_sum_machines_and_keep_unknown_costs_visible(pool: PgPool) {
             AiUsageDateRange::new(date!(2026 - 09 - 22), date!(2026 - 09 - 23)).unwrap(),
             AiUsagePeriod::Day,
             &AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -610,6 +618,7 @@ async fn totals_sum_machines_and_keep_unknown_costs_visible(pool: PgPool) {
             AiUsagePeriodTotals {
                 dates: AiUsageDateRange::new(date!(2026 - 09 - 22), date!(2026 - 09 - 23)).unwrap(),
                 project_key: "Client A".to_string(),
+                project: None,
                 totals: AiUsageTotals {
                     tokens: bucket(hour, 4, None).tokens,
                     records: 4,
@@ -621,6 +630,7 @@ async fn totals_sum_machines_and_keep_unknown_costs_visible(pool: PgPool) {
             AiUsagePeriodTotals {
                 dates: AiUsageDateRange::new(date!(2026 - 09 - 22), date!(2026 - 09 - 23)).unwrap(),
                 project_key: PROJECT.to_string(),
+                project: None,
                 totals: AiUsageTotals {
                     tokens: bucket(hour, 3, None).tokens,
                     records: 3,
@@ -633,6 +643,94 @@ async fn totals_sum_machines_and_keep_unknown_costs_visible(pool: PgPool) {
     );
     assert_eq!(totals[0].totals.estimated_cost_usd(), Some(0.0));
     assert_eq!(totals[1].totals.estimated_cost_usd(), None);
+}
+
+#[sqlx::test]
+async fn totals_report_each_keys_current_mapping_when_they_are_read(pool: PgPool) {
+    let repository = repository(&pool);
+    let mappings = PostgresAiProjectMappingRepository::new(
+        sqlx_tracing::PoolBuilder::from(pool.clone()).build(),
+    );
+    let user = insert_user(&pool, "dev@example.com").await;
+    let hour = datetime!(2026-09-22 08:00 UTC);
+    let mut unattributed = bucket(hour, 2, Some(0.2));
+    unattributed.project_key = UNATTRIBUTED_PROJECT_KEY.to_string();
+    repository
+        .replace_window(
+            &user,
+            &upload(
+                MACHINE_A,
+                "laptop",
+                WINDOW,
+                vec![bucket(hour, 1, Some(0.1)), unattributed],
+                Vec::new(),
+            ),
+        )
+        .await
+        .unwrap();
+    let company = |company_id: &str| TimeTrackingCompany {
+        provider: "kleer".to_string(),
+        company_id: company_id.to_string(),
+    };
+    let configured = company("company-1");
+    let key = AiProjectKey::parse(PROJECT).unwrap();
+    let project = |id: &str, name: &str| AiMappedProject {
+        id: ProjectId::new(id),
+        name: name.to_string(),
+    };
+    let mapped_projects = || async {
+        repository
+            .period_totals(
+                &user,
+                AiUsageDateRange::new(date!(2026 - 09 - 01), date!(2026 - 10 - 01)).unwrap(),
+                AiUsagePeriod::Month,
+                &AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
+                Some(&configured),
+            )
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.project_key, row.project, row.totals.records))
+            .collect::<Vec<_>>()
+    };
+    let unassigned = (UNATTRIBUTED_PROJECT_KEY.to_string(), None, 2);
+
+    assert_eq!(
+        mapped_projects().await,
+        [(PROJECT.to_string(), None, 1), unassigned.clone()]
+    );
+
+    // Mapping, remapping and unmapping apply to usage stored before them. A
+    // mapping to another company's project is stale and resolves to nothing.
+    for (saved, resolved) in [
+        (
+            Some((configured.clone(), project("101", "Client A delivery"))),
+            Some(project("101", "Client A delivery")),
+        ),
+        (
+            Some((configured.clone(), project("202", "Internal tools"))),
+            Some(project("202", "Internal tools")),
+        ),
+        (
+            Some((company("company-2"), project("303", "Elsewhere"))),
+            None,
+        ),
+        (None, None),
+    ] {
+        match saved {
+            Some((company, project)) => {
+                mappings
+                    .upsert(&key, &company, &project, &user)
+                    .await
+                    .unwrap();
+            }
+            None => assert!(mappings.delete(&key).await.unwrap()),
+        }
+        assert_eq!(
+            mapped_projects().await,
+            [(PROJECT.to_string(), resolved, 1), unassigned.clone()]
+        );
+    }
 }
 
 #[sqlx::test]
@@ -675,6 +773,7 @@ async fn stockholm_months_follow_daylight_saving_time(pool: PgPool) {
                     AiUsageDateRange::new(start, end).unwrap(),
                     AiUsagePeriod::Month,
                     stockholm,
+                    None,
                 )
                 .await
                 .unwrap()
@@ -752,7 +851,7 @@ async fn period_totals_rejects_integer_precision_loss(pool: PgPool) {
         .await
         .unwrap();
     let totals = repository
-        .period_totals(&user, dates, AiUsagePeriod::Day, &zone)
+        .period_totals(&user, dates, AiUsagePeriod::Day, &zone, None)
         .await
         .unwrap();
     assert_eq!(
@@ -773,7 +872,7 @@ async fn period_totals_rejects_integer_precision_loss(pool: PgPool) {
         .await
         .unwrap();
     let error = repository
-        .period_totals(&user, dates, AiUsagePeriod::Day, &zone)
+        .period_totals(&user, dates, AiUsagePeriod::Day, &zone, None)
         .await
         .unwrap_err();
     assert!(matches!(error, AiUsageError::NumericRange));
@@ -822,6 +921,7 @@ async fn period_totals_rejects_database_integer_overflow(pool: PgPool) {
                 AiUsageDateRange::new(date!(2026 - 09 - 22), date!(2026 - 09 - 23)).unwrap(),
                 AiUsagePeriod::Day,
                 &AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
+                None,
             )
             .await
             .unwrap_err()
@@ -855,7 +955,7 @@ async fn period_totals_rejects_database_cost_overflow(pool: PgPool) {
         .unwrap();
     assert_eq!(
         repository
-            .period_totals(&user, dates, AiUsagePeriod::Day, &zone)
+            .period_totals(&user, dates, AiUsagePeriod::Day, &zone, None)
             .await
             .unwrap()[0]
             .totals
@@ -877,7 +977,7 @@ async fn period_totals_rejects_database_cost_overflow(pool: PgPool) {
         .unwrap();
     assert_eq!(
         repository
-            .period_totals(&user, dates, AiUsagePeriod::Day, &zone)
+            .period_totals(&user, dates, AiUsagePeriod::Day, &zone, None)
             .await
             .unwrap_err()
             .to_string(),

@@ -42,6 +42,15 @@ pub struct User {
     pub session_auth_hash: String,
 }
 
+/// How a request proved its user's identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthMethod {
+    /// An interactive browser session from the OAuth sign-in.
+    Session,
+    /// A personal API token presented as a bearer credential.
+    ApiToken,
+}
+
 /// The identity data that request authorization may expose to application code.
 ///
 /// Provider credentials and session internals deliberately do not belong to the

@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                mapping.project_key,\n                mapping.provider,\n                mapping.provider_company_id,\n                mapping.project_id,\n                mapping.project_name,\n                mapping.created_by,\n                creator.full_name AS \"created_by_name?\",\n                mapping.created_at,\n                mapping.updated_by,\n                editor.full_name AS \"updated_by_name?\",\n                mapping.updated_at,\n                EXISTS (\n                    SELECT 1 FROM ai_usage_buckets AS bucket\n                    WHERE bucket.project_key = mapping.project_key\n                ) AS \"in_use!\"\n            FROM ai_project_mappings AS mapping\n            LEFT JOIN users AS creator ON creator.id = mapping.created_by\n            LEFT JOIN users AS editor ON editor.id = mapping.updated_by\n            WHERE $1::int4 IS NULL\n               OR EXISTS (\n                   SELECT 1 FROM ai_usage_buckets AS bucket\n                   WHERE bucket.project_key = mapping.project_key AND bucket.user_id = $1\n               )\n            ORDER BY mapping.project_key\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "project_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_company_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "project_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "project_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_by",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_by_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_by",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_by_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "in_use!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "033bf3369db4e8da2092a66811ae3b83a28387d48d2e4fab120b948562055e98"
+}
