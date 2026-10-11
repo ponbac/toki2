@@ -26,7 +26,7 @@ export function ChartCard({
         className,
       )}
     >
-      <header className="flex flex-wrap items-start justify-between gap-3">
+      <header className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap">
         <div className="min-w-0 space-y-1">
           <h2 className="text-sm font-semibold">{title}</h2>
           {description && (

@@ -14,6 +14,8 @@ import {
 } from "@/lib/api/queries/ai-usage-report";
 import { cn } from "@/lib/utils";
 import { ModelTable, ProjectTable } from "./-components/breakdown-tables";
+import { ConnectMachineDialog } from "./-components/connect-machine-dialog";
+import { ConnectMachinePrompt } from "./-components/connect-machine-prompt";
 import { DailySpendChart } from "./-components/daily-spend-chart";
 import { FilterBar, type FilterPatch } from "./-components/filter-bar";
 import { HourHeatmap } from "./-components/hour-heatmap";
@@ -68,18 +70,20 @@ function AiUsagePage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const params = reportParams(search);
+  const [connecting, setConnecting] = React.useState(false);
+  const headingRef = React.useRef<HTMLHeadingElement>(null);
   const reportQuery = useQuery({
     ...aiUsageReportQueries.aiUsageReport(params),
     placeholderData: keepPreviousData,
   });
   // Machines follow the date range only: their usage ignores the filters.
+  const machineRange = { from: search.from, to: search.to };
   const machinesQuery = useQuery({
-    ...aiUsageReportQueries.aiUsageMachines({
-      from: search.from,
-      to: search.to,
-    }),
+    ...aiUsageReportQueries.aiUsageMachines(machineRange),
     placeholderData: keepPreviousData,
   });
+  // The listing holds every machine whatever the range, so none means none ever.
+  const neverSynced = machinesQuery.data?.machines.length === 0;
   const keysQuery = useQuery(aiUsageReportQueries.aiUsageProjectKeys());
   const machineLabels = React.useMemo(
     () =>
@@ -99,7 +103,11 @@ function AiUsagePage() {
   return (
     <main className="mx-auto w-full max-w-7xl space-y-5 p-4 md:p-8">
       <header className="space-y-1">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="font-display text-2xl font-semibold tracking-tight outline-none"
+        >
           AI usage
         </h1>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -128,51 +136,67 @@ function AiUsagePage() {
         </Alert>
       )}
 
-      {reportQuery.isPending ? (
-        <ReportSkeleton />
-      ) : reportQuery.isError && !reportQuery.data ? (
-        <div className="space-y-3">
-          <QueryError
-            message="Could not load your AI usage."
-            error={reportQuery.error}
-            onRetry={() => void reportQuery.refetch()}
-          />
-          {(search.from !== undefined || search.to !== undefined) && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setFilters({ from: undefined, to: undefined })}
-            >
-              Show this month instead
-            </Button>
-          )}
-        </div>
+      {neverSynced ? (
+        <ConnectMachinePrompt onConnect={() => setConnecting(true)} />
       ) : (
-        <Report
-          report={reportQuery.data}
-          params={params}
-          stale={reportQuery.isPlaceholderData}
-          refreshError={reportQuery.isError ? reportQuery.error : null}
-          onRetry={() => void reportQuery.refetch()}
-          machineLabels={machineLabels}
-          stackBy={search.stackBy ?? "provider"}
-          onStackByChange={(stackBy) =>
-            void navigate({
-              search: (previous) => ({ ...previous, stackBy }),
-              replace: true,
-            })
-          }
-          onFiltersChange={setFilters}
-        />
+        <>
+          {reportQuery.isPending || machinesQuery.isPending ? (
+            <ReportSkeleton />
+          ) : reportQuery.isError && !reportQuery.data ? (
+            <div className="space-y-3">
+              <QueryError
+                message="Could not load your AI usage."
+                error={reportQuery.error}
+                onRetry={() => void reportQuery.refetch()}
+              />
+              {(search.from !== undefined || search.to !== undefined) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFilters({ from: undefined, to: undefined })}
+                >
+                  Show this month instead
+                </Button>
+              )}
+            </div>
+          ) : (
+            <Report
+              report={reportQuery.data}
+              params={params}
+              stale={reportQuery.isPlaceholderData}
+              refreshError={reportQuery.isError ? reportQuery.error : null}
+              onRetry={() => void reportQuery.refetch()}
+              machineLabels={machineLabels}
+              stackBy={search.stackBy ?? "provider"}
+              onStackByChange={(stackBy) =>
+                void navigate({
+                  search: (previous) => ({ ...previous, stackBy }),
+                  replace: true,
+                })
+              }
+              onFiltersChange={setFilters}
+            />
+          )}
+
+          <SessionsTable params={params} machineLabels={machineLabels} />
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <MachinesPanel
+              query={machinesQuery}
+              onAddMachine={() => setConnecting(true)}
+            />
+            <UnassignedKeys id="unassigned" query={keysQuery} />
+          </div>
+        </>
       )}
 
-      <SessionsTable params={params} machineLabels={machineLabels} />
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <MachinesPanel query={machinesQuery} />
-        <UnassignedKeys id="unassigned" query={keysQuery} />
-      </div>
+      <ConnectMachineDialog
+        open={connecting}
+        onOpenChange={setConnecting}
+        range={machineRange}
+        fallbackFocusRef={headingRef}
+      />
     </main>
   );
 }
