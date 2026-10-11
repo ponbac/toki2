@@ -791,7 +791,11 @@ pub struct AiDeveloperDayUsage {
     pub chatgpt_sign_in: bool,
     pub model: String,
     pub machine_id: AiMachineId,
-    pub project_key: String,
+    /// The project key, or `None` for the summed usage of every key without a
+    /// mapping. Such a key may name a private repository, so admins learn its
+    /// name only once a developer maps it. `unattributed` names nothing and is
+    /// kept.
+    pub project_key: Option<String>,
     /// The project the key maps to now, or `None` for Unassigned.
     pub project: Option<AiMappedProject>,
     pub usage: AiBillingUsage,

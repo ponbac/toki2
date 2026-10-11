@@ -39,7 +39,7 @@ export function UnassignedKeys({
       id={id}
       className={className}
       title="Unassigned repositories"
-      description="Usage of these project keys counts for no time-tracking project. A mapping applies to everyone's usage of the key, including past usage."
+      description="Usage of these project keys counts for no time-tracking project. A key without a mapping shows its name only to the developers who use it. Mapping it shows the name to admins and applies to everyone's usage of the key, including past usage."
     >
       {query.isPending ? (
         <p className="text-sm text-muted-foreground" role="status">

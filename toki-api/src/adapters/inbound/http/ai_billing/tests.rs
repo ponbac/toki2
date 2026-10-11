@@ -1533,7 +1533,8 @@ async fn the_drill_down_shows_a_developers_days_by_provider_model_machine_and_pr
                 "codex",
                 "codex-model",
                 LAPTOP,
-                TOOLS,
+                // Nobody has mapped TOOLS, so its name is withheld.
+                null,
                 null,
                 null,
                 5
@@ -1580,6 +1581,7 @@ async fn the_drill_down_shows_a_developers_days_by_provider_model_machine_and_pr
             ]),
         ]
     );
+    assert!(!drill_down.to_string().contains(TOOLS));
     // The developer's own lines, as in the overview.
     assert_eq!(drill_down["lines"].as_array().unwrap().len(), 4);
     assert_eq!(drill_down["subscriptions"][0]["proratedFee"], "567.74");

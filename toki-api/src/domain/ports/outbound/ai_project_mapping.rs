@@ -17,12 +17,14 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
         scope: AiUsageScope,
     ) -> Result<Vec<AiProjectMapping>, AiProjectMappingError>;
 
-    /// Project keys in the scope's usage that have no mapping, including
+    /// Project keys in the user's usage that have no mapping, including
     /// unmappable ones such as `unattributed`, most recently used first. Each
-    /// reports its latest local date of use in `time_zone`.
+    /// reports its latest local date of use in `time_zone`. Only ever one
+    /// user's: an unmapped key may name a private repository, so nobody is
+    /// shown another user's.
     async fn list_unmapped(
         &self,
-        scope: AiUsageScope,
+        user_id: &UserId,
         time_zone: &AiUsageTimeZone,
     ) -> Result<Vec<UnmappedAiProjectKey>, AiProjectMappingError>;
 
@@ -52,6 +54,17 @@ pub trait AiProjectMappingRepository: Send + Sync + 'static {
         project: &AiMappedProject,
         updated_by: &UserId,
     ) -> Result<AiProjectMapping, AiProjectMappingError>;
+
+    /// Replaces the mapping of a key that has one, recording who last saved it
+    /// and when; the mapping keeps its creator. Returns `None`, and changes
+    /// nothing, when the key has no mapping.
+    async fn update(
+        &self,
+        project_key: &AiProjectKey,
+        company: &TimeTrackingCompany,
+        project: &AiMappedProject,
+        updated_by: &UserId,
+    ) -> Result<Option<AiProjectMapping>, AiProjectMappingError>;
 
     /// Deletes the key's mapping and reports whether one existed.
     async fn delete(&self, project_key: &AiProjectKey) -> Result<bool, AiProjectMappingError>;

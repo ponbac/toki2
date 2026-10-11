@@ -1,14 +1,13 @@
 //! Reads that several AI usage repositories share, written once so they cannot
 //! drift apart: the local date, the stored project mappings, and the project
-//! keys in some usage with their latest local date of use.
+//! keys in a user's usage with their latest local date of use.
 
 use time::Date;
 
 use crate::{
     db::DbPool,
     domain::models::{
-        AiMappedProject, AiStoredMapping, AiUsageScope, AiUsageTimeZone, ProjectId,
-        TimeTrackingCompany,
+        AiMappedProject, AiStoredMapping, AiUsageTimeZone, ProjectId, TimeTrackingCompany, UserId,
     },
 };
 
@@ -62,73 +61,50 @@ pub(super) struct ProjectKeyUse {
     pub mapped: bool,
 }
 
-/// The project keys in the scope's usage, most recently used first, each with
+/// The project keys in the user's usage, most recently used first, each with
 /// its latest local date of use in `time_zone`.
+///
+/// Skips from one of the user's keys to the next through the
+/// (user_id, project_key, hour_start) index, then reads each key's latest hour
+/// from the same index: the work grows with the number of keys, not with the
+/// user's whole history.
 pub(super) async fn project_key_usage(
     pool: &DbPool,
-    scope: AiUsageScope,
+    user_id: &UserId,
     time_zone: &AiUsageTimeZone,
 ) -> Result<Vec<ProjectKeyUse>, sqlx::Error> {
-    match scope {
-        // Skips from one of the user's keys to the next through the
-        // (user_id, project_key, hour_start) index, then reads each key's
-        // latest hour from the same index: the work grows with the number of
-        // keys, not with the user's whole history.
-        AiUsageScope::User(user_id) => {
-            sqlx::query_as!(
-                ProjectKeyUse,
-                r#"
-                WITH RECURSIVE keys (project_key) AS (
-                    SELECT min(project_key) FROM ai_usage_buckets WHERE user_id = $1
-                    UNION ALL
-                    SELECT (
-                        SELECT min(bucket.project_key)
-                        FROM ai_usage_buckets AS bucket
-                        WHERE bucket.user_id = $1 AND bucket.project_key > keys.project_key
-                    )
-                    FROM keys
-                    WHERE keys.project_key IS NOT NULL
-                )
-                SELECT
-                    keys.project_key AS "project_key!",
-                    ((
-                        SELECT max(bucket.hour_start)
-                        FROM ai_usage_buckets AS bucket
-                        WHERE bucket.user_id = $1 AND bucket.project_key = keys.project_key
-                    ) AT TIME ZONE $2)::date AS "last_used_on!",
-                    EXISTS (
-                        SELECT 1 FROM ai_project_mappings AS mapping
-                        WHERE mapping.project_key = keys.project_key
-                    ) AS "mapped!"
-                FROM keys
-                WHERE keys.project_key IS NOT NULL
-                ORDER BY 2 DESC, 1
-                "#,
-                user_id.as_i32(),
-                time_zone.as_str(),
-            )
-            .fetch_all(pool)
-            .await
-        }
-        AiUsageScope::Everyone => {
-            sqlx::query_as!(
-                ProjectKeyUse,
-                r#"
-                SELECT
-                    bucket.project_key AS "project_key!",
-                    (max(bucket.hour_start) AT TIME ZONE $1)::date AS "last_used_on!",
-                    EXISTS (
-                        SELECT 1 FROM ai_project_mappings AS mapping
-                        WHERE mapping.project_key = bucket.project_key
-                    ) AS "mapped!"
+    sqlx::query_as!(
+        ProjectKeyUse,
+        r#"
+        WITH RECURSIVE keys (project_key) AS (
+            SELECT min(project_key) FROM ai_usage_buckets WHERE user_id = $1
+            UNION ALL
+            SELECT (
+                SELECT min(bucket.project_key)
                 FROM ai_usage_buckets AS bucket
-                GROUP BY bucket.project_key
-                ORDER BY 2 DESC, 1
-                "#,
-                time_zone.as_str(),
+                WHERE bucket.user_id = $1 AND bucket.project_key > keys.project_key
             )
-            .fetch_all(pool)
-            .await
-        }
-    }
+            FROM keys
+            WHERE keys.project_key IS NOT NULL
+        )
+        SELECT
+            keys.project_key AS "project_key!",
+            ((
+                SELECT max(bucket.hour_start)
+                FROM ai_usage_buckets AS bucket
+                WHERE bucket.user_id = $1 AND bucket.project_key = keys.project_key
+            ) AT TIME ZONE $2)::date AS "last_used_on!",
+            EXISTS (
+                SELECT 1 FROM ai_project_mappings AS mapping
+                WHERE mapping.project_key = keys.project_key
+            ) AS "mapped!"
+        FROM keys
+        WHERE keys.project_key IS NOT NULL
+        ORDER BY 2 DESC, 1
+        "#,
+        user_id.as_i32(),
+        time_zone.as_str(),
+    )
+    .fetch_all(pool)
+    .await
 }

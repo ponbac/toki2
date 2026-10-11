@@ -16,9 +16,8 @@ use crate::{
             AiMachineStatus, AiPricing, AiPricingStatus, AiProvider, AiProviderCoverage,
             AiSessionCursor, AiSessionOrder, AiStoredMapping, AiTokenCounts, AiUsageDateRange,
             AiUsageDayTotals, AiUsageHourOfWeekTotals, AiUsageMachineTotals, AiUsageModelTotals,
-            AiUsageOptionSums, AiUsageScope, AiUsageSelection, AiUsageSessionRow,
-            AiUsageSessionRows, AiUsageSums, AiUsageTimeZone, AiUsageTotals, ProjectId, UserId,
-            MAX_SAFE_COUNT,
+            AiUsageOptionSums, AiUsageSelection, AiUsageSessionRow, AiUsageSessionRows,
+            AiUsageSums, AiUsageTimeZone, AiUsageTotals, ProjectId, UserId, MAX_SAFE_COUNT,
         },
         ports::outbound::AiUsageReportRepository,
         AiUsageError,
@@ -616,7 +615,7 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
         user_id: &UserId,
         time_zone: &AiUsageTimeZone,
     ) -> Result<Vec<(String, Date)>, AiUsageError> {
-        let keys = project_key_usage(&self.pool, AiUsageScope::User(*user_id), time_zone)
+        let keys = project_key_usage(&self.pool, user_id, time_zone)
             .await
             .map_err(numeric_read_error)?;
 

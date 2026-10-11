@@ -1,12 +1,11 @@
 import * as React from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Combobox } from "@/components/combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -52,6 +51,12 @@ function ProjectMappingsPage() {
         key, in past months&apos; bills too. Usage of an unmapped, stale or
         unattributed key bills as Unassigned.
       </p>
+      <p className="text-sm text-muted-foreground">
+        A repository stays private to the developers who use it until one of
+        them maps it from their AI usage page. Until then its name is not shown
+        here or in billing, only its usage as Unassigned, and nobody else can
+        map it. You can change or delete any mapping below.
+      </p>
 
       {projectsQuery.isError && (
         <QueryError
@@ -66,7 +71,7 @@ function ProjectMappingsPage() {
         className="flex flex-col gap-2"
       >
         <h2 id="unmapped-heading" className="text-lg font-semibold">
-          Unmapped keys in use
+          Your unmapped keys
         </h2>
         <UnmappedKeys query={unmappedQuery} projects={projectsQuery} />
       </section>
@@ -80,7 +85,6 @@ function ProjectMappingsPage() {
             Mappings
           </h2>
         </div>
-        <NewMapping projects={projectsQuery} />
         <Mappings query={mappingsQuery} projects={projectsQuery} />
       </section>
     </div>
@@ -142,7 +146,7 @@ function UnmappedKeys({
   if (query.data.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Every project key in anyone&apos;s usage is mapped.
+        Every project key in your own usage is mapped.
       </p>
     );
   }
@@ -237,82 +241,6 @@ function unmappableReason(projectKey: string): string {
     return "A key with surrounding spaces cannot be mapped. Fix the project name in token-ledger.";
   }
   return "Nothing can be mapped until time tracking is configured; the usage stays Unassigned.";
-}
-
-/** Maps a key before anyone's usage has it. */
-function NewMapping({ projects }: { projects: ProjectsQuery }) {
-  const [open, setOpen] = React.useState(false);
-  const [projectKey, setProjectKey] = React.useState("");
-  const [projectId, setProjectId] = React.useState("");
-  const id = React.useId();
-  const setMapping = aiAdminMutations.useSetProjectMapping({
-    onSuccess: (mapping) => {
-      toast.success(
-        `${mapping.projectKey} mapped to ${mapping.project.projectName}`,
-      );
-      setOpen(false);
-      setProjectKey("");
-      setProjectId("");
-    },
-    onError: apiErrorToast("Failed to save the mapping"),
-  });
-
-  if (!open) {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="w-fit"
-        onClick={() => setOpen(true)}
-      >
-        <Plus className="size-4" />
-        Map a key
-      </Button>
-    );
-  }
-
-  return (
-    <form
-      className="flex flex-wrap items-end gap-2 rounded-xl border border-border/60 bg-card/60 p-3"
-      aria-label="Map a key"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (projectKey.trim() && projectId) {
-          setMapping.mutate({ projectKey: projectKey.trim(), projectId });
-        }
-      }}
-    >
-      <div className="flex min-w-64 flex-1 flex-col gap-1">
-        <Label htmlFor={`${id}-key`} className="text-xs">
-          Project key
-        </Label>
-        <Input
-          id={`${id}-key`}
-          value={projectKey}
-          placeholder="github.com/org/repo"
-          onChange={(event) => setProjectKey(event.target.value)}
-        />
-      </div>
-      <div className="flex w-72 flex-col gap-1">
-        <span className="text-xs font-medium">Project</span>
-        <ProjectPicker
-          projects={projects}
-          value={projectId}
-          onChange={setProjectId}
-        />
-      </div>
-      <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-        Cancel
-      </Button>
-      <Button
-        type="submit"
-        disabled={!projectKey.trim() || !projectId || setMapping.isPending}
-      >
-        Save
-      </Button>
-    </form>
-  );
 }
 
 function Mappings({

@@ -176,9 +176,9 @@ async fn list_mappings(
     Ok(Json(mappings.into_iter().map(Into::into).collect()))
 }
 
-/// Maps a project key to an active time-tracking project. Developers may only
-/// map an unmapped key in their own usage; admins in a browser session may map
-/// or remap any key.
+/// Maps a project key to an active time-tracking project. Anyone may map an
+/// unmapped key in their own usage; admins in a browser session may also remap
+/// any mapped key. Nobody creates the first mapping of a key they do not use.
 async fn set_mapping(
     user: AuthUser,
     State(service): State<Arc<dyn AiProjectMappingService>>,
@@ -209,8 +209,8 @@ async fn delete_mapping(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Project keys with usage but no mapping, in the caller's own usage or
-/// everyone's for an admin in a browser session. Unmappable keys such as
+/// Project keys with usage but no mapping, in the caller's own usage only:
+/// admins do not see other developers' unmapped keys. Unmappable keys such as
 /// `unattributed` are listed with `mappable: false`.
 async fn list_unmapped_keys(
     user: AuthUser,
@@ -702,15 +702,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(saved["createdBy"]["userId"], users.dev.as_i32());
         assert_eq!(saved["updatedBy"]["userId"], users.admin.as_i32());
-        // Admins may map keys that no one has used yet.
-        assert_eq!(put(&h, &h.admin, "Client Z", "202").await.0, StatusCode::OK);
 
         assert_eq!(
             mappings(&h, &h.admin).await,
-            [
-                mapping("Client Z", "202", false, false),
-                mapping(APP, "202", false, true),
-            ]
+            [mapping(APP, "202", false, true)]
         );
         assert_eq!(
             mappings(&h, &h.admin_token).await,
@@ -720,10 +715,40 @@ mod tests {
 
         assert_eq!(delete(&h, &h.admin, APP).await, StatusCode::NO_CONTENT);
         assert_eq!(delete(&h, &h.admin, APP).await, StatusCode::NOT_FOUND);
+        assert!(mappings(&h, &h.admin).await.is_empty());
+    }
+
+    #[sqlx::test]
+    async fn nobody_creates_the_first_mapping_of_a_key_they_do_not_use(pool: PgPool) {
+        let users = users(&pool).await;
+        let h = harness(&pool, users, Some(StaticProjects::of("company-1"))).await;
+        let private = "github.com/colleague/side-project";
+        let admin_tool = "github.com/example/admin-tool";
+        record_usage(
+            &pool,
+            users.colleague,
+            MACHINE_COLLEAGUE,
+            &[(private, HOUR)],
+        )
+        .await;
+        record_usage(&pool, users.admin, MACHINE_ADMIN, &[(admin_tool, HOUR)]).await;
+
+        // An admin guessing a colleague's repository is answered exactly as for
+        // a key nobody uses, so the refusal confirms nothing.
+        let guessed = put(&h, &h.admin, private, "101").await;
+        let unused = put(&h, &h.admin, "github.com/nobody/nothing", "101").await;
+        assert_eq!(guessed.0, StatusCode::FORBIDDEN);
+        assert_eq!(guessed, unused);
+        assert!(mappings(&h, &h.admin).await.is_empty());
+
+        // Their own key, an admin maps as any developer does.
+        assert_eq!(put(&h, &h.admin, admin_tool, "101").await.0, StatusCode::OK);
+        // Once the colleague maps theirs, the admin may change it.
         assert_eq!(
-            mappings(&h, &h.admin).await,
-            [mapping("Client Z", "202", false, false)]
+            put(&h, &h.colleague, private, "101").await.0,
+            StatusCode::OK
         );
+        assert_eq!(put(&h, &h.admin, private, "202").await.0, StatusCode::OK);
     }
 
     #[sqlx::test]
@@ -769,7 +794,7 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn listings_cover_a_developers_own_usage_and_everyones_for_admins(pool: PgPool) {
+    async fn unmapped_keys_stay_with_their_developers_and_admins_list_every_mapping(pool: PgPool) {
         let users = users(&pool).await;
         let h = harness(&pool, users, Some(StaticProjects::of("company-1"))).await;
         let web = "github.com/example/web";
@@ -795,8 +820,15 @@ mod tests {
             ],
         )
         .await;
+        let admin_tool = "github.com/example/admin-tool";
+        record_usage(
+            &pool,
+            users.admin,
+            MACHINE_ADMIN,
+            &[(admin_tool, datetime!(2026-09-23 10:00 UTC))],
+        )
+        .await;
         assert_eq!(put(&h, &h.dev, web, "101").await.0, StatusCode::OK);
-        assert_eq!(put(&h, &h.admin, "Client Z", "202").await.0, StatusCode::OK);
 
         let key = |key: &str, date: &str| (key.to_string(), date.to_string(), true);
         assert_eq!(unmapped(&h, &h.dev).await, [key(APP, "2026-09-22")]);
@@ -804,23 +836,20 @@ mod tests {
             unmapped(&h, &h.colleague).await,
             [key(copilot_api, "2026-09-23"), key(APP, "2026-09-20")]
         );
-        assert_eq!(
-            unmapped(&h, &h.admin).await,
-            [key(copilot_api, "2026-09-23"), key(APP, "2026-09-22")]
-        );
-        assert!(unmapped(&h, &h.admin_token).await.is_empty());
+        // An admin sees their own unmapped keys, never another developer's.
+        for admin in [&h.admin, &h.admin_token] {
+            assert_eq!(unmapped(&h, admin).await, [key(admin_tool, "2026-09-23")]);
+        }
 
         assert_eq!(
             mappings(&h, &h.dev).await,
             [mapping(web, "101", false, true)]
         );
         assert!(mappings(&h, &h.colleague).await.is_empty());
+        // Every mapping, the developer's included.
         assert_eq!(
             mappings(&h, &h.admin).await,
-            [
-                mapping("Client Z", "202", false, false),
-                mapping(web, "101", false, true),
-            ]
+            [mapping(web, "101", false, true)]
         );
     }
 
