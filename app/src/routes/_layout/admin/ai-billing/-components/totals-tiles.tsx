@@ -1,6 +1,7 @@
 import type { AiBillingTotals } from "@/lib/api/queries/ai-admin";
 import { allPending, PENDING_RATE_LABEL } from "../../-lib/billing";
-import { formatEstimate, formatFee, formatTokens } from "../../-lib/format";
+import { formatFee } from "@/lib/ai-subscriptions";
+import { formatEstimate, formatTokens } from "../../-lib/format";
 
 /** A converted total, or why it is unknown: a line it includes has no rate,
  * or its rate is still being fetched. */

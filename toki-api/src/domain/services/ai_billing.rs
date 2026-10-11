@@ -3,7 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
-use super::{AiExchangeRateSettings, AiExchangeRates};
+use super::AiExchangeRates;
 use crate::domain::{
     models::{
         assess_completeness, bill_month, billed_day_usage, convert_bill, currencies_to_convert,
@@ -14,10 +14,7 @@ use crate::domain::{
     },
     ports::{
         inbound::AiBillingService,
-        outbound::{
-            AiBillingRepository, AiExchangeRateRepository, AiSubscriptionRepository,
-            ExchangeRateProvider,
-        },
+        outbound::{AiBillingRepository, AiExchangeRateRepository, AiSubscriptionRepository},
     },
     AiBillingError, AiSubscriptionError,
 };
@@ -33,41 +30,19 @@ pub struct AiBillingServiceImpl<R, S, X> {
 impl<R, S, X: AiExchangeRateRepository> AiBillingServiceImpl<R, S, X> {
     /// `time_zone` defines usage days and billing months. Only project mappings
     /// to `mapping_company`, the configured time-tracking company, resolve; with
-    /// `None`, all usage is Unassigned. Exchange rates are stored in `rates`
-    /// and fetched from `rate_provider` when missing or due, as
-    /// `AiExchangeRates` bounds it.
+    /// `None`, all usage is Unassigned. Exchange rates are stored and fetched
+    /// through `rates`, which bounds the fetches.
     pub fn new(
         repository: Arc<R>,
         subscriptions: Arc<S>,
-        rates: Arc<X>,
-        rate_provider: Arc<dyn ExchangeRateProvider>,
+        rates: AiExchangeRates<X>,
         time_zone: AiUsageTimeZone,
         mapping_company: Option<TimeTrackingCompany>,
-    ) -> Self {
-        Self::with_rate_settings(
-            repository,
-            subscriptions,
-            rates,
-            rate_provider,
-            time_zone,
-            mapping_company,
-            AiExchangeRateSettings::default(),
-        )
-    }
-
-    pub fn with_rate_settings(
-        repository: Arc<R>,
-        subscriptions: Arc<S>,
-        rates: Arc<X>,
-        rate_provider: Arc<dyn ExchangeRateProvider>,
-        time_zone: AiUsageTimeZone,
-        mapping_company: Option<TimeTrackingCompany>,
-        settings: AiExchangeRateSettings,
     ) -> Self {
         Self {
             repository,
             subscriptions,
-            rates: AiExchangeRates::new(rates, rate_provider, time_zone.clone(), settings),
+            rates,
             time_zone,
             mapping_company,
         }

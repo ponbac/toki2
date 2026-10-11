@@ -4,12 +4,6 @@ import type {
   AiTokenCounts,
 } from "@/lib/api/queries/ai-usage-report";
 
-const usd = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
 const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
@@ -19,31 +13,6 @@ const percent = new Intl.NumberFormat("en-US", {
   style: "percent",
   maximumFractionDigits: 1,
 });
-
-/** A USD amount with cents; a positive amount below one cent reads `<$0.01`. */
-export function formatUsd(amount: number): string {
-  return amount > 0 && amount < 0.005 ? "<$0.01" : usd.format(amount);
-}
-
-/**
- * An estimated cost. A partial cost reads as its known subtotal plus
- * "unknown", or only "unknown" when nothing was priced: unpriced usage is never
- * shown as $0. `short` uses "?" for charts.
- */
-export function formatCost(cost: AiCost, short = false): string {
-  switch (cost.kind) {
-    case "estimated":
-      return formatUsd(cost.usd);
-    case "partial": {
-      const unknown = short ? "?" : "unknown";
-      return cost.knownUsd > 0
-        ? `${formatUsd(cost.knownUsd)} + ${unknown}`
-        : short
-          ? "?"
-          : "Unknown";
-    }
-  }
-}
 
 /** The known part of a cost: the whole estimate, or the priced subtotal. */
 export function knownUsd(cost: AiCost): number {

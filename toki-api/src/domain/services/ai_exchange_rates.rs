@@ -26,6 +26,7 @@ use std::{
 };
 
 use futures::future::{join_all, BoxFuture, FutureExt, Shared};
+use time::Date;
 use tokio::sync::Semaphore;
 
 use crate::domain::{
@@ -306,6 +307,11 @@ impl<X: AiExchangeRateRepository> AiExchangeRates<X> {
             .shared();
         flights.fetching.insert(key, fetching.clone());
         fetching
+    }
+
+    /// Today in the billing time zone, by the store's clock.
+    pub async fn today(&self) -> Result<Date, AiBillingError> {
+        Ok(self.repository.clock(&self.time_zone).await?.today)
     }
 
     /// The month's stored rates, after fetching those of `currencies` that are

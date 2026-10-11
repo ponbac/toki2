@@ -23,11 +23,11 @@ import {
 import { AXIS_TICK, OTHER_COLOR } from "../-lib/colors";
 import {
   formatCompact,
-  formatCost,
   formatCount,
   knownUsd,
   totalTokens,
 } from "../-lib/format";
+import { formatCost, useMoney } from "../-lib/money";
 
 const PROJECT_COLOR = "var(--viz-1)";
 
@@ -44,6 +44,7 @@ export function ProjectChart({
   className?: string;
 }) {
   const [metric, setMetric] = React.useState<ProjectMetric>("cost");
+  const money = useMoney();
   const bars = React.useMemo(
     () => projectBars(report, metric),
     [report, metric],
@@ -57,7 +58,7 @@ export function ProjectChart({
       title={metric === "cost" ? "Spend per project" : "Tokens per project"}
       description={
         metric === "cost"
-          ? "API-equivalent estimate in USD. ? marks usage without a known price."
+          ? `API-equivalent estimate in ${money.currency}. ? marks usage without a known price.`
           : "All token categories. Unassigned usage is not mapped to a project."
       }
       actions={
@@ -113,7 +114,7 @@ export function ProjectChart({
                         return "";
                       }
                       return metric === "cost"
-                        ? formatCost(bar.totals.cost, true)
+                        ? formatCost(money, bar.totals.cost, true)
                         : formatCompact(totalTokens(bar.totals.tokens));
                     }}
                   />
@@ -161,6 +162,7 @@ function BarTip({
 }
 
 function ProjectTooltip({ active, payload }: TooltipProps<number, string>) {
+  const money = useMoney();
   const bar = payload?.[0]?.payload;
   if (!active || !isProjectBar(bar)) {
     return null;
@@ -173,7 +175,7 @@ function ProjectTooltip({ active, payload }: TooltipProps<number, string>) {
         {
           key: "cost",
           color: bar.deemphasised ? OTHER_COLOR : PROJECT_COLOR,
-          value: formatCost(cost),
+          value: formatCost(money, cost),
           label: "est. cost",
         },
         {

@@ -43,7 +43,9 @@ use crate::{
                 ExchangeRateProvider,
             },
         },
-        services::{AiBillingServiceImpl, AiExchangeRateSettings, ApiTokenServiceImpl},
+        services::{
+            AiBillingServiceImpl, AiExchangeRateSettings, AiExchangeRates, ApiTokenServiceImpl,
+        },
         ExchangeRateError,
     },
 };
@@ -206,14 +208,18 @@ fn app_with_rate_settings(
     settings: AiExchangeRateSettings,
 ) -> Router {
     let db = db(pool);
-    let service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::with_rate_settings(
+    let time_zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
+    let service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::new(
         Arc::new(PostgresAiBillingRepository::new(db.clone())),
         Arc::new(PostgresAiSubscriptionRepository::new(db.clone())),
-        Arc::new(PostgresAiExchangeRateRepository::new(db.clone())),
-        rates,
-        AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
+        AiExchangeRates::new(
+            Arc::new(PostgresAiExchangeRateRepository::new(db.clone())),
+            rates,
+            time_zone.clone(),
+            settings,
+        ),
+        time_zone,
         Some(company()),
-        settings,
     ));
     let tokens: Arc<dyn ApiTokenAuthenticator> = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db.clone()),

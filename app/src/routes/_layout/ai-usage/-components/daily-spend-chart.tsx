@@ -33,8 +33,8 @@ import {
   formatCount,
   formatLongDate,
   formatShortDate,
-  formatUsd,
 } from "../-lib/format";
+import { formatAmount, formatAxisAmount, useMoney } from "../-lib/money";
 
 type View = "chart" | "table";
 
@@ -54,9 +54,10 @@ export function DailySpendChart({
   className?: string;
 }) {
   const [view, setView] = React.useState<View>("chart");
+  const money = useMoney();
   const { series, rows } = React.useMemo(
-    () => dailySpend(report, stackBy),
-    [report, stackBy],
+    () => dailySpend(report, stackBy, money.perUsd),
+    [report, stackBy, money.perUsd],
   );
   const unknownDays = rows.filter((row) => row.unpricedRecords > 0);
   const labels = new Map(series.map((entry) => [entry.key, entry]));
@@ -65,7 +66,7 @@ export function DailySpendChart({
     <ChartCard
       className={className}
       title="Estimated spend per day"
-      description={`API-equivalent estimate in USD, by local day in ${report.timeZone}. Not a bill.`}
+      description={`API-equivalent estimate in ${money.currency}, by local day in ${report.timeZone}. Not a bill.`}
       actions={
         <>
           <Segmented
@@ -108,11 +109,13 @@ export function DailySpendChart({
                   minTickGap={16}
                 />
                 <YAxis
-                  tickFormatter={(value: number) => formatAxisUsd(value)}
+                  tickFormatter={(value: number) =>
+                    formatAxisAmount(money, value)
+                  }
                   tick={AXIS_TICK}
                   tickLine={false}
                   axisLine={false}
-                  width={52}
+                  width={money.currency === "SEK" ? 64 : 52}
                   allowDecimals
                 />
                 <Tooltip
@@ -137,7 +140,7 @@ export function DailySpendChart({
                   <ReferenceDot
                     key={row.date}
                     x={row.date}
-                    y={row.knownUsd}
+                    y={row.known}
                     r={4}
                     fill={SURFACE_COLOR}
                     stroke="hsl(var(--foreground))"
@@ -173,13 +176,6 @@ export function DailySpendChart({
       )}
     </ChartCard>
   );
-}
-
-function formatAxisUsd(value: number): string {
-  if (value === 0) {
-    return "$0";
-  }
-  return value >= 100 ? `$${Math.round(value)}` : formatUsd(value);
 }
 
 /** A bar segment with a surface gap above it, rounded only at the stack's top. */
@@ -260,6 +256,7 @@ function DailyTooltip({
 }: TooltipProps<number, string> & {
   labels: ReadonlyMap<string, { label: string; color: string }>;
 }) {
+  const money = useMoney();
   const row = payload?.[0]?.payload;
   if (!active || !isDailyRow(row)) {
     return null;
@@ -275,7 +272,7 @@ function DailyTooltip({
       rows={entries.map((entry) => ({
         key: entry.key,
         color: entry.color,
-        value: formatUsd(entry.value),
+        value: formatAmount(money, entry.value),
         label: entry.label,
       }))}
       footer={
@@ -283,7 +280,7 @@ function DailyTooltip({
           <p>
             {row.unpricedRecords > 0 ? "Known subtotal " : "Total "}
             <span className="font-semibold text-foreground">
-              {formatUsd(row.knownUsd)}
+              {formatAmount(money, row.known)}
             </span>
             {" · "}
             {formatCompact(row.tokens)} tokens
@@ -306,11 +303,12 @@ function isDailyRow(value: unknown): value is DailyRow {
     value !== null &&
     "date" in value &&
     "values" in value &&
-    "knownUsd" in value
+    "known" in value
   );
 }
 
 function DailyTable({ rows }: { rows: readonly DailyRow[] }) {
+  const money = useMoney();
   const used = rows.filter((row) => row.records > 0);
   if (used.length === 0) {
     return (
@@ -325,7 +323,9 @@ function DailyTable({ rows }: { rows: readonly DailyRow[] }) {
           <TableRow>
             <TableHead>Day</TableHead>
             <TableHead className="text-right">Tokens</TableHead>
-            <TableHead className="text-right">Est. cost (USD)</TableHead>
+            <TableHead className="text-right">
+              Est. cost ({money.currency})
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -337,10 +337,10 @@ function DailyTable({ rows }: { rows: readonly DailyRow[] }) {
               </TableCell>
               <TableCell className="text-right tabular-nums">
                 {row.unpricedRecords > 0
-                  ? row.knownUsd > 0
-                    ? `${formatUsd(row.knownUsd)} + unknown`
+                  ? row.known > 0
+                    ? `${formatAmount(money, row.known)} + unknown`
                     : "Unknown"
-                  : formatUsd(row.knownUsd)}
+                  : formatAmount(money, row.known)}
               </TableCell>
             </TableRow>
           ))}

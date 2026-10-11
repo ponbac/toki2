@@ -14,7 +14,8 @@ import type {
 } from "@/lib/api/queries/ai-admin";
 import { StatusBadge } from "../../-components/status-badge";
 import { allocationLabel } from "../../-lib/billing";
-import { formatEstimate, formatFee, shortDate } from "../../-lib/format";
+import { formatFee } from "@/lib/ai-subscriptions";
+import { formatEstimate, shortDate } from "../../-lib/format";
 
 /** How each subscription's fee was pro-rated and split this month. */
 export function SubscriptionMonths({

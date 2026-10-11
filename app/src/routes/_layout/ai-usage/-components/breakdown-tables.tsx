@@ -18,19 +18,20 @@ import { ChartCard } from "./chart-card";
 import { knownShare } from "../-lib/aggregate";
 import {
   formatCompact,
-  formatCost,
   formatCount,
   formatPercent,
   modelLabel,
   totalTokens,
 } from "../-lib/format";
+import { formatCost, useMoney } from "../-lib/money";
 
 /** Usage per project, with the project keys behind each and unassigned usage. */
 export function ProjectTable({ report }: { report: AiUsageReport }) {
+  const { currency } = useMoney();
   return (
     <ChartCard
       title="By project"
-      description={`API-equivalent cost estimates in USD. Unassigned usage has no mapped project. ${PERSONAL_LABEL} usage is yours to keep out of the bill.`}
+      description={`API-equivalent cost estimates in ${currency}. Unassigned usage has no mapped project. ${PERSONAL_LABEL} usage is yours to keep out of the bill.`}
     >
       {report.projects.length === 0 ? (
         <p className="text-sm text-muted-foreground">No usage in this range.</p>
@@ -101,10 +102,11 @@ export function ProjectTable({ report }: { report: AiUsageReport }) {
 
 /** Usage per provider and model. */
 export function ModelTable({ report }: { report: AiUsageReport }) {
+  const { currency } = useMoney();
   return (
     <ChartCard
       title="By model"
-      description="API-equivalent cost estimates in USD, per tool and model."
+      description={`API-equivalent cost estimates in ${currency}, per tool and model.`}
     >
       {report.models.length === 0 ? (
         <p className="text-sm text-muted-foreground">No usage in this range.</p>
@@ -175,9 +177,10 @@ function statusLabel(attribution: AiProjectAttribution): string {
 }
 
 function CostCell({ cost }: { cost: AiCost }) {
+  const money = useMoney();
   return (
     <TableCell className="whitespace-nowrap text-right align-top tabular-nums">
-      {formatCost(cost)}
+      {formatCost(money, cost)}
       {cost.kind === "partial" && (
         <p className="text-xs text-muted-foreground">
           {formatCount(cost.unpricedRecords)} unpriced

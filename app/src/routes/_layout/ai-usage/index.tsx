@@ -1,6 +1,7 @@
 import * as React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { useSetAtom } from "jotai/react";
 import { AlertTriangle } from "lucide-react";
 import { z } from "zod";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { ModelTable, ProjectTable } from "./-components/breakdown-tables";
 import { ConnectMachineDialog } from "./-components/connect-machine-dialog";
 import { ConnectMachinePrompt } from "./-components/connect-machine-prompt";
+import { CurrencySwitch } from "./-components/currency-switch";
 import { DailySpendChart } from "./-components/daily-spend-chart";
 import { FilterBar, type FilterPatch } from "./-components/filter-bar";
 import { HourHeatmap } from "./-components/hour-heatmap";
@@ -27,6 +29,8 @@ import { SummaryTiles } from "./-components/summary-tiles";
 import { TokenMixChart } from "./-components/token-mix-chart";
 import { UnassignedKeys } from "./-components/unassigned-keys";
 import { formatLongDate } from "./-lib/format";
+import { MoneyContext, displayCurrencyAtom, formatZero } from "./-lib/money";
+import { useDisplayMoney } from "./-lib/use-display-money";
 
 const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -91,6 +95,18 @@ function AiUsagePage() {
   // The listing holds every machine whatever the range, so none means none ever.
   const neverSynced = machinesQuery.data?.machines.length === 0;
   const keysQuery = useQuery(aiUsageReportQueries.aiUsageProjectKeys());
+  const setCurrency = useSetAtom(displayCurrencyAtom);
+  // The header follows the report on screen, like the report's own figures.
+  const { currency, money, rates, fetching, failed } = useDisplayMoney(
+    reportQuery.data?.to ?? search.to,
+  );
+  const shown = money?.currency ?? currency;
+  // Warms the rates of the dates asked for while their report loads; the
+  // figures on screen keep the rates of their own dates until it arrives.
+  useQuery({
+    ...aiUsageReportQueries.aiDisplayRates(search.to),
+    enabled: currency !== "USD",
+  });
   const machineLabels = React.useMemo(
     () =>
       new Map(
@@ -108,20 +124,33 @@ function AiUsagePage() {
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-5 p-4 md:p-8">
-      <header className="space-y-1">
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          className="font-display text-2xl font-semibold tracking-tight outline-none"
-        >
-          AI usage
-        </h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Your own AI usage, as <code>token-ledger sync</code> uploads it from
-          your machines. Only you see these hours and sessions. Every cost is an
-          API-equivalent estimate in USD, not a subscription bill, and usage
-          without a known price shows as unknown, never as $0.
-        </p>
+      <header className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-8">
+        <div className="space-y-1">
+          <h1
+            ref={headingRef}
+            tabIndex={-1}
+            className="font-display text-2xl font-semibold tracking-tight outline-none"
+          >
+            AI usage
+          </h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">
+            Your own AI usage, as <code>token-ledger sync</code> uploads it from
+            your machines. Only you see these hours and sessions. Every cost is
+            an API-equivalent estimate{" "}
+            {shown === "USD" ? "in USD" : `priced in USD and shown in ${shown}`}
+            , not a subscription bill, and usage without a known price shows as
+            unknown, never as {formatZero(shown)}.
+          </p>
+        </div>
+        <CurrencySwitch
+          className="justify-items-start sm:justify-items-end sm:pt-0.5"
+          currency={currency}
+          onChange={setCurrency}
+          money={money}
+          rates={rates}
+          loading={fetching}
+          failed={failed}
+        />
       </header>
 
       {mappable > 0 && (
@@ -238,6 +267,7 @@ function Report({
   onFiltersChange: (patch: FilterPatch) => void;
 }) {
   const empty = report.totals.records === 0;
+  const { money } = useDisplayMoney(report.to);
 
   return (
     <div className="space-y-5">
@@ -268,7 +298,9 @@ function Report({
         )}
         aria-busy={stale}
       >
-        {empty ? (
+        {money === null ? (
+          <FiguresSkeleton />
+        ) : empty ? (
           <div className="rounded-2xl border border-dashed border-border/80 bg-card/60 p-8 text-center">
             <p className="font-medium">
               No usage from {formatLongDate(report.from)} to{" "}
@@ -282,7 +314,7 @@ function Report({
             </p>
           </div>
         ) : (
-          <>
+          <MoneyContext.Provider value={money}>
             <SummaryTiles report={report} />
             <div className="grid gap-5 lg:grid-cols-2">
               <DailySpendChart
@@ -297,7 +329,7 @@ function Report({
               <ProjectTable report={report} />
               <ModelTable report={report} />
             </div>
-          </>
+          </MoneyContext.Provider>
         )}
       </div>
     </div>
@@ -308,6 +340,15 @@ function ReportSkeleton() {
   return (
     <div className="space-y-5" role="status" aria-label="Loading your AI usage">
       <Skeleton className="h-9 w-full max-w-2xl" />
+      <FiguresSkeleton />
+    </div>
+  );
+}
+
+/** Stands in for the report's figures, as while their exchange rate loads. */
+function FiguresSkeleton() {
+  return (
+    <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {Array.from({ length: 4 }, (_, index) => (
           <Skeleton key={index} className="h-24 rounded-2xl" />

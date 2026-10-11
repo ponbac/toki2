@@ -23,12 +23,13 @@ import { QueryError } from "./query-state";
 import {
   attributionLabel,
   formatCompact,
-  formatCost,
   formatCount,
   formatHourSpan,
   modelLabel,
   totalTokens,
 } from "../-lib/format";
+import { formatCost } from "../-lib/money";
+import { useDisplayMoney } from "../-lib/use-display-money";
 
 const PAGE_SIZE = 25;
 
@@ -52,13 +53,15 @@ export function SessionsTable({
   });
   const firstPage = query.data?.pages[0];
   const sessions = query.data?.pages.flatMap((page) => page.sessions) ?? [];
+  // The rate of the sessions on screen, also while another range loads.
+  const { currency, money } = useDisplayMoney(firstPage?.to);
 
   return (
     <ChartCard
       title="Sessions"
       description={
         firstPage
-          ? `${formatCount(firstPage.total)} ${firstPage.total === 1 ? "session" : "sessions"} in the range. Active hours in ${firstPage.timeZone}; costs are API-equivalent estimates in USD.`
+          ? `${formatCount(firstPage.total)} ${firstPage.total === 1 ? "session" : "sessions"} in the range. Active hours in ${firstPage.timeZone}; costs are API-equivalent estimates in ${money?.currency ?? currency}.`
           : "Your sessions in the range."
       }
     >
@@ -75,6 +78,10 @@ export function SessionsTable({
       ) : firstPage === undefined || sessions.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No sessions in this range.
+        </p>
+      ) : money === null ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Loading sessions…
         </p>
       ) : (
         <div
@@ -164,7 +171,7 @@ export function SessionsTable({
                     {formatCompact(totalTokens(session.totals.tokens))}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right align-top tabular-nums">
-                    {formatCost(session.totals.cost)}
+                    {formatCost(money, session.totals.cost)}
                   </TableCell>
                 </TableRow>
               ))}

@@ -4,7 +4,8 @@ import type {
   AiBillingUsage,
   AiSubscriptionMonth,
 } from "@/lib/api/queries/ai-admin";
-import { formatEstimate, formatFee } from "./format";
+import { formatFee } from "@/lib/ai-subscriptions";
+import { formatEstimate } from "./format";
 
 /*
  * Grouping and wording for billing lines. The server has already decided every
@@ -158,7 +159,7 @@ export function lineConverted(
     : amount;
 }
 
-/** Billable amounts side by side per currency, such as `454.19 SEK + 0.75
+/** Billable amounts side by side per currency, such as `454,19 SEK + 0.75
  * USD`; never summed across currencies. */
 export function formatBillable(totals: BillableTotals): string {
   const parts = [...totals.amounts.entries()]

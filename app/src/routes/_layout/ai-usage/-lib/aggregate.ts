@@ -28,11 +28,14 @@ export type DailySeries = Readonly<{
   provider?: AiProvider;
 }>;
 
-/** One day of the daily spend chart: known USD per series, and what is unknown. */
+/**
+ * One day of the daily spend chart: the known cost per series, in the display
+ * currency, and what is unknown.
+ */
 export type DailyRow = Readonly<{
   date: string;
   values: Readonly<Record<string, number>>;
-  knownUsd: number;
+  known: number;
   unpricedRecords: number;
   records: number;
   tokens: number;
@@ -86,11 +89,14 @@ export function modelSlots(
 /**
  * The daily spend chart's series and one row per date of the range, days
  * without usage included. Providers keep fixed colours; models take slots
- * from `modelSlots`, and the rest fold into "Other".
+ * from `modelSlots`, and the rest fold into "Other". Amounts are in the display
+ * currency, `perUsd` to the dollar, so that the chart's axis has round steps
+ * in it.
  */
 export function dailySpend(
   report: AiUsageReport,
   stackBy: StackBy,
+  perUsd: number,
 ): Readonly<{ series: readonly DailySeries[]; rows: readonly DailyRow[] }> {
   const slots = modelSlots(
     report.days.map((day) => day.model),
@@ -142,7 +148,8 @@ export function dailySpend(
       tokens: 0,
     };
     const key = seriesKey(day);
-    entry.values[key] = (entry.values[key] ?? 0) + knownUsd(day.totals.cost);
+    entry.values[key] =
+      (entry.values[key] ?? 0) + knownUsd(day.totals.cost) * perUsd;
     entry.unpriced +=
       day.totals.cost.kind === "partial" ? day.totals.cost.unpricedRecords : 0;
     entry.records += day.totals.records;
@@ -159,7 +166,7 @@ export function dailySpend(
     return {
       date,
       values,
-      knownUsd: Object.values(values).reduce((sum, value) => sum + value, 0),
+      known: Object.values(values).reduce((sum, value) => sum + value, 0),
       unpricedRecords: entry?.unpriced ?? 0,
       records: entry?.records ?? 0,
       tokens: entry?.tokens ?? 0,

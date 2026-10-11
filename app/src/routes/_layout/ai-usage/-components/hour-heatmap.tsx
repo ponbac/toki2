@@ -14,12 +14,11 @@ import { SEQUENTIAL, sequentialColor } from "../-lib/colors";
 import {
   WEEKDAYS,
   formatCompact,
-  formatCost,
   formatHour,
-  formatUsd,
   knownUsd,
   totalTokens,
 } from "../-lib/format";
+import { formatCost, formatMoney, useMoney } from "../-lib/money";
 
 type Metric = "cost" | "tokens";
 
@@ -36,6 +35,7 @@ export function HourHeatmap({
   className?: string;
 }) {
   const [metric, setMetric] = React.useState<Metric>("cost");
+  const money = useMoney();
   const grid = React.useMemo(() => hourGrid(report), [report]);
   const measure = (totals: AiUsageTotals | null) =>
     totals === null
@@ -45,7 +45,7 @@ export function HourHeatmap({
         : totalTokens(totals.tokens);
   const max = Math.max(0, ...grid.flat().map((cell) => measure(cell.totals)));
   const format = (value: number) =>
-    metric === "cost" ? formatUsd(value) : formatCompact(value);
+    metric === "cost" ? formatMoney(money, value) : formatCompact(value);
 
   return (
     <ChartCard
@@ -110,7 +110,7 @@ export function HourHeatmap({
                       {cell.totals ? (
                         <p className="text-muted-foreground">
                           <span className="font-semibold text-foreground">
-                            {formatCost(cell.totals.cost)}
+                            {formatCost(money, cell.totals.cost)}
                           </span>{" "}
                           est. ·{" "}
                           {formatCompact(totalTokens(cell.totals.tokens))}{" "}
@@ -156,6 +156,7 @@ export function HourHeatmap({
 
 /** The heatmap's hours with usage as a table, for screen readers. */
 function HeatmapTable({ report }: { report: AiUsageReport }) {
+  const money = useMoney();
   return (
     <table className="sr-only">
       <caption>Usage per local weekday and hour</caption>
@@ -172,7 +173,7 @@ function HeatmapTable({ report }: { report: AiUsageReport }) {
           <tr key={`${hour.weekday}-${hour.hour}`}>
             <td>{WEEKDAYS[hour.weekday - 1]}</td>
             <td>{formatHour(hour.hour)}</td>
-            <td>{formatCost(hour.totals.cost)}</td>
+            <td>{formatCost(money, hour.totals.cost)}</td>
             <td>{formatCompact(totalTokens(hour.totals.tokens))}</td>
           </tr>
         ))}

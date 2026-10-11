@@ -104,6 +104,19 @@ impl AiBillingMonth {
         Self::new(year, month)
     }
 
+    /// The month `day` is in, from year 1.
+    pub fn containing(day: Date) -> Option<Self> {
+        // Postgres dates have no year 0.
+        (day.year() >= 1)
+            .then(|| Self::new(day.year(), day.month()))
+            .flatten()
+    }
+
+    /// The month before this one, from year 1.
+    pub fn previous(&self) -> Option<Self> {
+        self.first_day().previous_day().and_then(Self::containing)
+    }
+
     /// The month's local dates, half-open: `end` is the first day of the next month.
     pub fn dates(&self) -> AiUsageDateRange {
         self.dates

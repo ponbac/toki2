@@ -13,7 +13,9 @@ import type {
 import { cn } from "@/lib/utils";
 import { ChartCard } from "./chart-card";
 import { QueryError } from "./query-state";
-import { formatCost, formatCount, formatShortDate } from "../-lib/format";
+import { formatCount, formatShortDate } from "../-lib/format";
+import { formatCost, type Money } from "../-lib/money";
+import { useDisplayMoney } from "../-lib/use-display-money";
 
 dayjs.extend(relativeTime);
 
@@ -36,6 +38,8 @@ export function MachinesPanel({
   onAddMachine: () => void;
   className?: string;
 }) {
+  // The rate of the dates on screen, also while another range loads.
+  const { money } = useDisplayMoney(query.data?.to);
   return (
     <ChartCard
       className={className}
@@ -74,6 +78,7 @@ export function MachinesPanel({
               key={machine.machineId}
               machine={machine}
               staleAfterDays={query.data.staleAfterDays}
+              money={money}
             />
           ))}
         </ul>
@@ -85,9 +90,12 @@ export function MachinesPanel({
 function MachineItem({
   machine,
   staleAfterDays,
+  money,
 }: {
   machine: AiUsageMachine;
   staleAfterDays: number;
+  /** Null while the exchange rate loads: the cost is left out until then. */
+  money: Money | null;
 }) {
   const { usage } = machine;
   const findings = machineFindings(machine, staleAfterDays);
@@ -127,10 +135,10 @@ function MachineItem({
             · token-ledger {machine.clientVersion} · {machine.timeZone}
           </p>
         </div>
-        {usage && (
+        {usage && money && (
           <p className="text-right text-xs text-muted-foreground">
             <span className="font-semibold tabular-nums text-foreground">
-              {formatCost(usage.cost)}
+              {formatCost(money, usage.cost)}
             </span>{" "}
             est. in these dates
           </p>

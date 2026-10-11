@@ -39,14 +39,15 @@ use crate::{
         models::AiUsageTimeZone,
         ports::{
             inbound::{
-                AiBillingService, AiProjectMappingService, AiSubscriptionService,
-                AiUsageReportService, AiUsageService, ApiTokenAuthenticator, ApiTokenService,
-                AvatarService,
+                AiBillingService, AiDisplayRateService, AiProjectMappingService,
+                AiSubscriptionService, AiUsageReportService, AiUsageService, ApiTokenAuthenticator,
+                ApiTokenService, AvatarService,
             },
             outbound::TimeTrackingProjectCatalog,
         },
         services::{
-            AiBillingServiceImpl, AiProjectMappingServiceImpl, AiSubscriptionServiceImpl,
+            AiBillingServiceImpl, AiDisplayRateServiceImpl, AiExchangeRateSettings,
+            AiExchangeRates, AiProjectMappingServiceImpl, AiSubscriptionServiceImpl,
             AiUsageReportServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
         },
         RepoConfig,
@@ -74,6 +75,7 @@ pub async fn create(
             "/ai-usage",
             http::ai_usage::router()
                 .merge(http::ai_usage_reports::router())
+                .merge(http::ai_display_rates::router())
                 .merge(http::ai_subscriptions::router()),
         )
         .nest(
@@ -164,11 +166,20 @@ pub async fn create(
         )
         .expect("Failed to build the exchange rate client"),
     );
+    // Billing and display rates share one fetcher: its stored rates, single
+    // flights and provider backoff.
+    let ai_exchange_rates = AiExchangeRates::new(
+        Arc::new(PostgresAiExchangeRateRepository::new(db_pool.clone())),
+        exchange_rate_provider,
+        ai_usage_time_zone.clone(),
+        AiExchangeRateSettings::default(),
+    );
+    let ai_display_rate_service: Arc<dyn AiDisplayRateService> =
+        Arc::new(AiDisplayRateServiceImpl::new(ai_exchange_rates.clone()));
     let ai_billing_service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::new(
         Arc::new(PostgresAiBillingRepository::new(db_pool.clone())),
         ai_subscription_repository.clone(),
-        Arc::new(PostgresAiExchangeRateRepository::new(db_pool.clone())),
-        exchange_rate_provider,
+        ai_exchange_rates,
         ai_usage_time_zone.clone(),
         mapping_company.clone(),
     ));
@@ -198,6 +209,7 @@ pub async fn create(
         ai_project_mapping_service,
         ai_subscription_service,
         ai_billing_service,
+        ai_display_rate_service,
     )
     .await;
 
