@@ -1,10 +1,7 @@
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::{
-        AiUsageDateRange, AiUsagePeriod, AiUsagePeriodTotals, AiUsageTimeZone, AiUsageUpload,
-        TimeTrackingCompany, UserId,
-    },
+    models::{AiUsageUpload, UserId},
     AiUsageError,
 };
 
@@ -26,19 +23,4 @@ pub trait AiUsageRepository: Send + Sync + 'static {
         user_id: &UserId,
         upload: &AiUsageUpload,
     ) -> Result<u64, AiUsageError>;
-
-    /// Sums the user's buckets across machines per project and local day or
-    /// month in `time_zone`, for local dates in `dates`. A bucket belongs to the
-    /// local date of its start instant. Each row reports the dates it covers,
-    /// clipped to `dates`, so a partly covered month is visibly partial, and the
-    /// project its key is mapped to now, if the mapping names a project of
-    /// `mapping_company`. Unknown costs stay visible as unpriced counts.
-    async fn period_totals(
-        &self,
-        user_id: &UserId,
-        dates: AiUsageDateRange,
-        period: AiUsagePeriod,
-        time_zone: &AiUsageTimeZone,
-        mapping_company: Option<&TimeTrackingCompany>,
-    ) -> Result<Vec<AiUsagePeriodTotals>, AiUsageError>;
 }

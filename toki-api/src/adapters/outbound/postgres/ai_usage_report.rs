@@ -40,9 +40,9 @@ impl PostgresAiUsageReportRepository {
 // Every range query converts local midnights in the zone and compares them
 // with `hour_start`, so the (user_id, hour_start) index applies and days
 // follow daylight-saving changes. Costs are summed as NUMERIC and converted to
-// float8 once per figure, as in `period_totals`, so no figure is a float sum of
-// float sums. The store never decides attribution: selections pass the keys to
-// keep and each resolving key's project.
+// float8 once per figure, so no figure is a float sum of float sums. The store
+// never decides attribution: selections pass the keys to keep and each
+// resolving key's project.
 
 /// Usage totals from a row whose sums have the usual column names.
 macro_rules! totals {

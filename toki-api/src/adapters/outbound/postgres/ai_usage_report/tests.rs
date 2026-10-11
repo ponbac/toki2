@@ -12,8 +12,8 @@ use crate::{
     domain::{
         models::{
             AiMappedProject, AiProjectFilter, AiProjectKey, AiProjectResolution, AiUsageBucket,
-            AiUsageFilter, AiUsagePeriod, AiUsageReportQuery, AiUsageUpload, AiUsageWindow,
-            TimeTrackingCompany, UNATTRIBUTED_PROJECT_KEY,
+            AiUsageFilter, AiUsageReportQuery, AiUsageUpload, AiUsageWindow, TimeTrackingCompany,
+            UNATTRIBUTED_PROJECT_KEY,
         },
         ports::{
             inbound::AiUsageReportService,
@@ -92,12 +92,19 @@ async fn personal_reads_reject_integer_precision_loss(pool: PgPool) {
     value.tokens.output = 1;
     record(&pool, user, MACHINE_A, vec![value]).await;
     let error = "ai usage result exceeds the supported numeric range";
+    let rejected = report_service.report(&user, &query).await.unwrap_err();
+    assert!(matches!(rejected, AiUsageError::NumericRange));
+    let response =
+        axum::response::IntoResponse::into_response(crate::routes::ApiError::from(rejected));
     assert_eq!(
-        report_service
-            .report(&user, &query)
-            .await
-            .unwrap_err()
-            .to_string(),
+        response.status(),
+        axum::http::StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let body = axum::body::to_bytes(response.into_body(), 1_024)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap()["error"],
         error
     );
     assert_eq!(
@@ -373,7 +380,7 @@ async fn local_days_and_hours_follow_daylight_saving_and_month_ends(pool: PgPool
 }
 
 #[sqlx::test]
-async fn costs_are_summed_exactly_like_the_period_totals(pool: PgPool) {
+async fn costs_are_summed_exactly(pool: PgPool) {
     let user = insert_user(&pool, "dev@example.com", "User").await;
     let other = "github.com/example/other";
     // Ten hours of 0.1 on one key and 0.2 on another. Neither is a binary
@@ -412,29 +419,12 @@ async fn costs_are_summed_exactly_like_the_period_totals(pool: PgPool) {
         .all(|hour| hour.totals.priced_cost_usd == 0.3));
     assert_eq!(report.machines[0].totals.priced_cost_usd, 3.0);
 
-    // Per key, the figures are the team's period totals exactly.
-    let period_totals = PostgresAiUsageRepository::new(db(&pool))
-        .period_totals(
-            &user,
-            AiUsageDateRange::from_inclusive(date!(2026 - 09 - 01), date!(2026 - 09 - 30)).unwrap(),
-            AiUsagePeriod::Month,
-            &stockholm(),
-            Some(&company("company-1")),
-        )
-        .await
-        .unwrap();
-    let mut team = period_totals
-        .iter()
-        .map(|row| (row.project_key.as_str(), row.totals.priced_cost_usd))
-        .collect::<Vec<_>>();
-    team.sort_by(|a, b| a.0.cmp(b.0));
     let mut personal = report.projects[0]
         .keys
         .iter()
         .map(|key| (key.project.project_key.as_str(), key.totals.priced_cost_usd))
         .collect::<Vec<_>>();
     personal.sort_by(|a, b| a.0.cmp(b.0));
-    assert_eq!(personal, team);
     assert_eq!(personal, [(APP, 1.0), (other, 2.0)]);
 
     let sessions = service(&pool, true)

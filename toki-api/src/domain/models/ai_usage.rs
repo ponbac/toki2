@@ -12,7 +12,6 @@ use std::{collections::HashSet, fmt};
 use time::{Date, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
-use super::AiMappedProject;
 use crate::domain::AiUsageError;
 
 const SECONDS_PER_HOUR: i64 = 3_600;
@@ -433,17 +432,6 @@ impl AiUsageTimeZone {
     }
 }
 
-/// The calendar unit usage totals are grouped by, in the configured time zone.
-///
-/// An hourly bucket belongs to the local day of the instant it starts. In zones
-/// whose offset is not a whole number of hours, a bucket can straddle local
-/// midnight; it is not split.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AiUsagePeriod {
-    Day,
-    Month,
-}
-
 /// A half-open `[start, end)` range of local calendar dates: `end` is the first
 /// day *after* the range. Subscription periods and API date parameters end
 /// inclusively instead; convert with `from_inclusive`, `last_day` and
@@ -498,20 +486,6 @@ impl AiUsageTotals {
     pub fn estimated_cost_usd(&self) -> Option<f64> {
         (self.unpriced_buckets == 0 && self.unpriced_records == 0).then_some(self.priced_cost_usd)
     }
-}
-
-/// A user's usage of one project during one local day or month.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AiUsagePeriodTotals {
-    /// The local dates these totals cover: the day or month, clipped to the
-    /// requested range. A month the range covers only partly is therefore visible
-    /// as partial rather than labelled as the whole month.
-    pub dates: AiUsageDateRange,
-    pub project_key: String,
-    /// The project the key is mapped to when the totals are read, so a mapping
-    /// applies retroactively. `None` is unassigned, as `unattributed` usage always is.
-    pub project: Option<AiMappedProject>,
-    pub totals: AiUsageTotals,
 }
 
 fn validate_bucket(

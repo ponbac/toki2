@@ -1,13 +1,9 @@
 use async_trait::async_trait;
 
-use super::ai_usage_reads::stored_mappings;
 use crate::{
     db::DbPool,
     domain::{
-        models::{
-            AiMappingResolver, AiTokenCounts, AiUsageDateRange, AiUsagePeriod, AiUsagePeriodTotals,
-            AiUsageTimeZone, AiUsageTotals, AiUsageUpload, TimeTrackingCompany, UserId,
-        },
+        models::{AiUsageTimeZone, AiUsageUpload, UserId},
         ports::outbound::AiUsageRepository,
         AiUsageError,
     },
@@ -263,91 +259,6 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         transaction.commit().await.map_err(storage_error)?;
 
         Ok(inserted.rows_affected())
-    }
-
-    async fn period_totals(
-        &self,
-        user_id: &UserId,
-        dates: AiUsageDateRange,
-        period: AiUsagePeriod,
-        time_zone: &AiUsageTimeZone,
-        mapping_company: Option<&TimeTrackingCompany>,
-    ) -> Result<Vec<AiUsagePeriodTotals>, AiUsageError> {
-        let unit = match period {
-            AiUsagePeriod::Day => "day",
-            AiUsagePeriod::Month => "month",
-        };
-
-        // Converting local midnights and hour starts in the zone keeps days and
-        // months correct across daylight-saving changes. A bucket belongs to the
-        // local date of its start instant. Periods are clipped to the range, and
-        // the range bounds stay comparable with the (user_id, hour_start) index.
-        // Costs are summed as NUMERIC and converted once. Mappings are resolved
-        // when read, never stored with usage, so they apply retroactively.
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                greatest(period.start, $2::date) AS "start!",
-                least((period.start + ('1 ' || $4)::interval)::date, $3::date) AS "end!",
-                bucket.project_key,
-                SUM(bucket.input_tokens)::int8 AS "input_tokens!",
-                SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
-                SUM(bucket.cache_write_tokens)::int8 AS "cache_write_tokens!",
-                SUM(bucket.output_tokens)::int8 AS "output_tokens!",
-                SUM(bucket.records)::int8 AS "records!",
-                COALESCE(SUM(bucket.estimated_cost_usd), 0)::float8 AS "priced_cost_usd!",
-                COUNT(*) FILTER (WHERE bucket.estimated_cost_usd IS NULL) AS "unpriced_buckets!",
-                SUM(bucket.unpriced_records)::int8 AS "unpriced_records!"
-            FROM ai_usage_buckets AS bucket
-            CROSS JOIN LATERAL (
-                SELECT date_trunc($4, bucket.hour_start AT TIME ZONE $5)::date AS start
-            ) AS period
-            WHERE bucket.user_id = $1
-              AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $5)
-              AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $5)
-            GROUP BY period.start, bucket.project_key
-            ORDER BY period.start, bucket.project_key
-            "#,
-            user_id.as_i32(),
-            dates.start(),
-            dates.end(),
-            unit,
-            time_zone.as_str(),
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(numeric_read_error)?;
-        let resolver = AiMappingResolver::new(
-            stored_mappings(&self.pool).await.map_err(storage_error)?,
-            mapping_company.cloned(),
-        );
-
-        rows.into_iter()
-            .map(|row| {
-                let dates = AiUsageDateRange::new(row.start, row.end).ok_or_else(|| {
-                    AiUsageError::Storage("a usage period ends before it starts".to_string())
-                })?;
-
-                Ok(AiUsagePeriodTotals {
-                    dates,
-                    project: resolver.project(&row.project_key).cloned(),
-                    project_key: row.project_key,
-                    totals: AiUsageTotals {
-                        tokens: AiTokenCounts {
-                            input: row.input_tokens,
-                            cache_read: row.cache_read_tokens,
-                            cache_write: row.cache_write_tokens,
-                            output: row.output_tokens,
-                        },
-                        records: row.records,
-                        priced_cost_usd: row.priced_cost_usd,
-                        unpriced_buckets: row.unpriced_buckets,
-                        unpriced_records: row.unpriced_records,
-                    }
-                    .checked_for_report()?,
-                })
-            })
-            .collect()
     }
 }
 

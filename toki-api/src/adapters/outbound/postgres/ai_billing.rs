@@ -49,7 +49,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         mapping_company: Option<&TimeTrackingCompany>,
         user_id: Option<&UserId>,
     ) -> Result<Vec<AiDailyUsage>, AiBillingError> {
-        // As in `period_totals`: local days by the zone's rules, so daylight
+        // Usage is grouped into local days by the zone's rules, so daylight
         // saving changes and month edges fall where they should. Costs are
         // summed exactly as NUMERIC per resolved project, then rounded to
         // billionths of a dollar. The shared resolver alone decides which
