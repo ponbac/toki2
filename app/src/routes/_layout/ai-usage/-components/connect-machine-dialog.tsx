@@ -95,31 +95,43 @@ export function ConnectMachineDialog({
   const [os, setOs] = React.useState<MachineOs>(detected ?? "linux");
   const [step, setStep] = React.useState(0);
   const [nameDraft, setNameDraft] = React.useState<string | null>(null);
+  // The machines that had synced before the token was created.
+  const [knownIds, setKnownIds] = React.useState<readonly string[]>([]);
   const issuance = useApiTokenIssuance();
   const { issued } = issuance;
 
+  // A known machine's sync does not end the wait: the new one may still come.
   const machinesQuery = useQuery({
     ...aiUsageReportQueries.aiUsageMachines(range),
     refetchInterval: (query) =>
       open &&
       issued !== null &&
-      !syncedSince(query.state.data?.machines, issued.createdAt)
+      (findArrival(query.state.data?.machines, issued.createdAt, knownIds)
+        ?.known ??
+        true)
         ? POLL_INTERVAL_MS
         : false,
   });
-  const connected = issued
-    ? syncedSince(machinesQuery.data?.machines, issued.createdAt)
+  const arrival = issued
+    ? findArrival(machinesQuery.data?.machines, issued.createdAt, knownIds)
     : undefined;
-  const connectedId = connected?.machineId;
+  const arrivedId = arrival?.machine.machineId;
 
   // The sync brought usage that the page's other queries have not seen.
   React.useEffect(() => {
-    if (connectedId !== undefined) {
+    if (arrivedId !== undefined) {
       void queryClient.invalidateQueries({
         queryKey: aiUsageReportQueryKeys.all,
       });
     }
-  }, [connectedId, queryClient]);
+  }, [arrivedId, queryClient]);
+
+  const issueToken = (name: string) => {
+    setKnownIds(
+      machinesQuery.data?.machines.map((machine) => machine.machineId) ?? [],
+    );
+    issuance.issue(name);
+  };
 
   const reset = () => {
     issuance.dismiss();
@@ -128,14 +140,15 @@ export function ConnectMachineDialog({
   };
 
   // The commands stay up after the sync lands: the scheduling one may be left.
-  const finished = connected !== undefined && step === SYNC_STEP;
+  const finished = arrival !== undefined && step === SYNC_STEP;
   const { title, icon: StepIcon } = STEPS[step];
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && finished) {
+        // A known machine's sync may not be this setup's, so that keeps its token.
+        if (!next && finished && !arrival.known) {
           reset();
         }
         onOpenChange(next);
@@ -188,15 +201,19 @@ export function ConnectMachineDialog({
             <TokenStep
               name={nameDraft ?? `token-ledger ${OS_GUIDES[os].label}`}
               onNameChange={setNameDraft}
-              issuance={issuance}
+              issuance={{ ...issuance, issue: issueToken }}
               onReplace={issuance.dismiss}
             />
           )}
           {step === COMMANDS_STEP && issued && (
-            <CommandsStep os={os} token={issued.token} connected={connected} />
+            <CommandsStep
+              os={os}
+              token={issued.token}
+              synced={arrival?.machine}
+            />
           )}
           {step === SYNC_STEP && (
-            <SyncStep connected={connected} query={machinesQuery} />
+            <SyncStep arrival={arrival} query={machinesQuery} />
           )}
         </div>
 
@@ -253,17 +270,27 @@ export function ConnectMachineDialog({
   );
 }
 
+/** A sync that landed during the setup, and whether its machine had synced before it. */
+type Arrival = Readonly<{ machine: AiUsageMachine; known: boolean }>;
+
 /**
- * The machine that synced after the token was created, if any; the listing
- * leads with the latest sync. Another machine's scheduled sync landing in the
- * meantime would pass for it, which its label then shows.
+ * The sync that landed after the token was created, if any. One from a machine
+ * unseen before the setup is surely the setup's. One from a known machine may
+ * be that machine set up again, or just its scheduled sync, so a new machine's
+ * takes precedence. The listing leads with the latest sync.
  */
-function syncedSince(
+function findArrival(
   machines: readonly AiUsageMachine[] | undefined,
   since: string,
-): AiUsageMachine | undefined {
+  knownIds: readonly string[],
+): Arrival | undefined {
   const start = Date.parse(since);
-  return machines?.find((machine) => Date.parse(machine.lastSyncedAt) >= start);
+  const synced =
+    machines?.filter((machine) => Date.parse(machine.lastSyncedAt) >= start) ??
+    [];
+  const added = synced.find((machine) => !knownIds.includes(machine.machineId));
+  const machine = added ?? synced[0];
+  return machine && { machine, known: added === undefined };
 }
 
 function SystemStep({
@@ -408,11 +435,12 @@ function TokenStep({
 function CommandsStep({
   os,
   token,
-  connected,
+  synced,
 }: {
   os: MachineOs;
   token: string;
-  connected: AiUsageMachine | undefined;
+  /** The machine whose sync landed while the commands are up, if any. */
+  synced: AiUsageMachine | undefined;
 }) {
   const guide = OS_GUIDES[os];
   const commands = setupCommands(os, token);
@@ -460,12 +488,12 @@ function CommandsStep({
           ))}
         </ol>
       </div>
-      {connected && (
+      {synced && (
         <p role="status" className="flex items-start gap-2 text-xs">
           <Check aria-hidden className="mt-px size-3.5 shrink-0 text-primary" />
           <span>
-            {connected.label} has synced. Run the last command as well, so that
-            it keeps syncing.
+            {synced.label} has synced. Run the last command as well, so that it
+            keeps syncing.
           </span>
         </p>
       )}
@@ -526,14 +554,14 @@ function CommandLine({ line, token }: { line: string; token: string }) {
 }
 
 function SyncStep({
-  connected,
+  arrival,
   query,
 }: {
-  connected: AiUsageMachine | undefined;
+  arrival: Arrival | undefined;
   /** The listing the wait polls; its failure would otherwise pass for waiting. */
   query: UseQueryResult<AiUsageMachineList, Error>;
 }) {
-  if (!connected) {
+  if (!arrival) {
     return (
       <>
         {query.isError && (
@@ -564,7 +592,9 @@ function SyncStep({
     );
   }
 
-  const read = connected.coverage
+  const { machine, known } = arrival;
+  const Icon = known ? Check : PartyPopper;
+  const read = machine.coverage
     .filter((entry) => entry.status === "ok")
     .map((entry) => entry.provider);
   return (
@@ -573,8 +603,10 @@ function SyncStep({
       className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-4"
     >
       <p className="flex items-center gap-2 text-sm font-medium">
-        <PartyPopper aria-hidden className="size-4 shrink-0 text-primary" />
-        <span className="min-w-0 truncate">{connected.label} is connected</span>
+        <Icon aria-hidden className="size-4 shrink-0 text-primary" />
+        <span className="min-w-0 truncate">
+          {machine.label} {known ? "synced just now" : "is connected"}
+        </span>
       </p>
       {read.length > 0 ? (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -594,7 +626,9 @@ function SyncStep({
         </p>
       )}
       <p className="text-xs text-muted-foreground">
-        Do the same on every machine where you use a coding agent.
+        {known
+          ? "It had synced before this setup. If it is the machine you are setting up, you are done. If not, the new machine has not synced yet, and this keeps checking."
+          : "Do the same on every machine where you use a coding agent."}
       </p>
     </div>
   );
