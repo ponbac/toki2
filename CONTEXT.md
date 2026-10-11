@@ -36,10 +36,22 @@ _Avoid_: plan type, tier
 A billing plan a provider reported during an hour of uploaded usage, such as Codex `plan_type`. Evidence only: a hint of a paid plan (not `free`) on a day that bills as API usage is a mismatch to review, and declared AI subscriptions stay authoritative.
 _Avoid_: detected subscription
 
+**API-equivalent cost**:
+What AI usage would cost at the provider's API prices, estimated in USD by token-ledger. Usage on days without an AI subscription bills at it, and on subscription days it weighs how the fee is split across projects. Unpriced usage has an unknown cost, never zero.
+_Avoid_: actual cost, spend, bill
+
 **Unassigned usage**:
-AI usage that counts for no time-tracking project: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping.
+AI usage that counts for no time-tracking project: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. Billing charges it on its own line, and a mapping applies to past months too.
 _Avoid_: unmapped usage (it is only one of these cases)
 
 **Stale machine**:
 A machine that has not synced AI usage for more than seven days. Its usage since the last sync is missing, not zero.
 _Avoid_: inactive machine, offline machine
+
+**Unallocated overhead**:
+The pro-rated fee of an AI subscription without usage on any day it covers in a month. It bills without a project rather than as zero.
+_Avoid_: unused subscription
+
+**Uploaded day**:
+A local day for which a machine's syncs prove its stored usage of a provider is complete: the union of its logged sync intervals, each from the window start to the window end or the report time, whichever is earlier, spans the whole day. Billing a month waits until every machine active in it has uploaded every day for each provider it uses.
+_Avoid_: synced day (a sync can end mid-day)

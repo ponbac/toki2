@@ -535,6 +535,77 @@ async fn pricing_is_recorded_only_for_the_providers_it_prices(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn uploads_log_what_they_cover_until_they_were_reported(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let every_status = [
+        (AiProvider::Claude, AiCoverageStatus::Ok),
+        (AiProvider::Codex, AiCoverageStatus::Partial),
+        (AiProvider::Grok, AiCoverageStatus::Failed),
+        (AiProvider::Copilot, AiCoverageStatus::Missing),
+    ];
+    let claude_ok = [(AiProvider::Claude, AiCoverageStatus::Ok)];
+    // A window in the past, one that ends after the upload, and one that
+    // starts after it.
+    for (window, coverage) in [
+        (WINDOW, &every_status[..]),
+        (
+            (
+                datetime!(2026-09-22 06:00 UTC),
+                datetime!(2099-01-01 00:00 UTC),
+            ),
+            &claude_ok[..],
+        ),
+        (
+            (
+                datetime!(2099-01-01 00:00 UTC),
+                datetime!(2099-01-02 00:00 UTC),
+            ),
+            &claude_ok[..],
+        ),
+    ] {
+        let upload = upload_covering(
+            MACHINE_A,
+            "laptop",
+            window,
+            coverage,
+            Vec::new(),
+            Vec::new(),
+        );
+        repository.replace_window(&user, &upload).await.unwrap();
+    }
+
+    type LogRow = (String, OffsetDateTime, OffsetDateTime, OffsetDateTime);
+    let log: Vec<LogRow> = sqlx::query_as(
+        "SELECT provider, window_start, covered_until, reported_at
+         FROM ai_usage_coverage_log
+         ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    // Only replaced providers are logged; failed and missing prove nothing.
+    let logged: Vec<(&str, OffsetDateTime)> = log
+        .iter()
+        .map(|(provider, start, _, _)| (provider.as_str(), *start))
+        .collect();
+    assert_eq!(
+        logged,
+        [
+            ("claude", WINDOW.0),
+            ("codex", WINDOW.0),
+            ("claude", datetime!(2026-09-22 06:00 UTC)),
+        ]
+    );
+    assert_eq!((log[0].2, log[1].2), (WINDOW.1, WINDOW.1));
+    // An upload cannot hold usage recorded after it.
+    let (_, _, covered_until, reported_at) = log[2];
+    assert_eq!(covered_until, reported_at);
+    assert!(reported_at < datetime!(2099-01-01 00:00 UTC));
+}
+
+#[sqlx::test]
 async fn the_longest_allowed_text_is_stored(pool: PgPool) {
     let repository = repository(&pool);
     let user = insert_user(&pool, "dev@example.com").await;

@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
+import { AI_USAGE_QUERY_KEY } from "../ai-cache";
 import {
   parseAiSubscriptionList,
   parseAiSubscriptionMismatchList,
@@ -18,8 +19,11 @@ export {
 } from "../contracts/ai-usage";
 
 const aiUsageQueryKeys = {
-  subscriptions: ["ai-usage", "subscriptions"] as const,
-  subscriptionMismatches: ["ai-usage", "subscription-mismatches"] as const,
+  subscriptions: [...AI_USAGE_QUERY_KEY, "subscriptions"] as const,
+  subscriptionMismatches: [
+    ...AI_USAGE_QUERY_KEY,
+    "subscription-mismatches",
+  ] as const,
 };
 
 /** Query definitions for the current user's AI subscriptions. */

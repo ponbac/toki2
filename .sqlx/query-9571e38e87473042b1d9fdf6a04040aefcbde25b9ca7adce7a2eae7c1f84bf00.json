@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                coverage.machine_id::text AS \"machine_id!\",\n                coverage.provider,\n                coverage.status,\n                coverage.pricing_status\n            FROM ai_usage_machine_coverage AS coverage\n            JOIN ai_usage_machines AS machine ON machine.id = coverage.machine_id\n            WHERE $1::int4 IS NULL OR machine.user_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "machine_id!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "pricing_status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "9571e38e87473042b1d9fdf6a04040aefcbde25b9ca7adce7a2eae7c1f84bf00"
+}

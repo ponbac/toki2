@@ -14,8 +14,10 @@ pub trait AiUsageRepository: Send + Sync + 'static {
     /// coverage of every provider the upload reports. For each replaced provider
     /// (`AiUsageUpload::replaced_providers`), records the upload's pricing,
     /// deletes the machine's buckets and hints inside the upload window, and
-    /// inserts the upload's. Other providers' stored usage and pricing are
-    /// untouched. Returns the number of buckets stored.
+    /// inserts the upload's. It also logs, per replaced provider, the interval
+    /// the upload proves complete: the window, ending no later than now. Other
+    /// providers' stored usage and pricing are untouched. Returns the number of
+    /// buckets stored.
     ///
     /// Fails with `MachineOwnedByAnotherUser`, and changes nothing, when another
     /// user registered the machine.

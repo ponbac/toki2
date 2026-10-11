@@ -1,10 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { invalidateAiQueries } from "../ai-cache";
 import { parseAiProjectMapping } from "../contracts/ai-usage-report";
-import {
-  aiUsageReportQueryKeys,
-  type AiProjectMapping,
-} from "../queries/ai-usage-report";
+import type { AiProjectMapping } from "../queries/ai-usage-report";
 import type { DefaultMutationOptions } from "./mutations";
 
 /** Input for mapping an unmapped project key in the user's own usage. */
@@ -40,9 +38,7 @@ export function useMapAiProjectKey(
       ),
     ...options,
     onSettled: async (data, error, vars, ctx) => {
-      await queryClient.invalidateQueries({
-        queryKey: aiUsageReportQueryKeys.all,
-      });
+      await invalidateAiQueries(queryClient);
       await options?.onSettled?.(data, error, vars, ctx);
     },
   });
