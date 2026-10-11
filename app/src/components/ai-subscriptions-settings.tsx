@@ -10,10 +10,11 @@ import {
   describeDays,
   draftFrom,
   emptyDraft,
-  subscriptionProvider,
+  formatFee,
   formatPeriod,
   periodStatus,
   type SubscriptionEditor,
+  subscriptionProvider,
 } from "@/lib/ai-subscriptions";
 import { AiProviderTile } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
@@ -310,8 +311,9 @@ function SubscriptionList({
               </span>
             </p>
             <p className="text-xs text-muted-foreground">
-              {subscription.monthlyCost} {subscription.currency}/month ·{" "}
-              {formatPeriod(subscription)} · {periodStatus(subscription, today)}
+              {formatFee(subscription.monthlyCost, subscription.currency)}
+              /month · {formatPeriod(subscription)} ·{" "}
+              {periodStatus(subscription, today)}
             </p>
           </div>
           <div className="flex shrink-0 gap-1">

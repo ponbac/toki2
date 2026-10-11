@@ -118,6 +118,15 @@ impl AiExchangeRateValue {
         i64::try_from(converted).ok()
     }
 
+    /// How many units of `other`'s currency one unit of this rate's currency
+    /// is worth, rounded half up to a millionth: with SEK per USD and SEK per
+    /// EUR, EUR per USD. `None` when the result is not a rate.
+    pub fn per(self, other: Self) -> Option<Self> {
+        let scaled = i128::from(self.0) * i128::from(MILLIONTHS);
+        let other = i128::from(other.0);
+        Self::from_millionths(i64::try_from((2 * scaled + other) / (2 * other)).ok()?)
+    }
+
     /// The mean of daily rates, rounded half up to a millionth. `None` without
     /// any.
     pub fn mean(values: &[Self]) -> Option<Self> {

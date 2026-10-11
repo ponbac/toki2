@@ -387,9 +387,47 @@ export type AiUsageReportParams = Readonly<{
   machineId?: string;
 }>;
 
+const displayRatesSchema = z
+  .object({
+    /** The month whose rates these are, `YYYY-MM`. */
+    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+    /** One per currency with a rate; none when nothing can be converted. */
+    rates: z.array(
+      z
+        .object({
+          currency: z.string().regex(/^[A-Z]{3}$/),
+          /** Units of `currency` per US dollar. */
+          perUsd: z
+            .string()
+            .regex(/^\d+\.\d{2,6}$/)
+            .transform(Number)
+            .pipe(z.number().positive().finite()),
+          /** An average of the days published so far, which later days change. */
+          provisional: z.boolean(),
+          /** Built on a rate an admin set for the month's bill. */
+          overridden: z.boolean(),
+        })
+        .strict(),
+    ),
+    /** The server is still fetching the rates; they may change shortly. */
+    pending: z.boolean(),
+  })
+  .strict();
+
+/**
+ * What a US dollar of an estimate is shown as in other currencies: the rates
+ * a month bills at. For reading estimates, not for billing.
+ */
+export type AiDisplayRates = Readonly<z.infer<typeof displayRatesSchema>>;
+
 /** Parses a usage report at the HTTP boundary. */
 export function parseAiUsageReport(input: unknown): AiUsageReport {
   return reportSchema.parse(input);
+}
+
+/** Parses display rates at the HTTP boundary. */
+export function parseAiDisplayRates(input: unknown): AiDisplayRates {
+  return displayRatesSchema.parse(input);
 }
 
 /** Parses a session listing at the HTTP boundary. */

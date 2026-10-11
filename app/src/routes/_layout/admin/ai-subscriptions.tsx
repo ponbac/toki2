@@ -27,10 +27,11 @@ import {
   describeDays,
   draftFrom,
   emptyDraft,
-  subscriptionProvider,
+  formatFee,
   formatPeriod,
   periodStatus,
   type SubscriptionEditor,
+  subscriptionProvider,
 } from "@/lib/ai-subscriptions";
 import { AiProviderTile } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
@@ -47,7 +48,6 @@ import type {
 } from "@/lib/api/queries/ai-usage";
 import { QueryError } from "./-components/query-error";
 import { StatusBadge } from "./-components/status-badge";
-import { formatFee } from "./-lib/format";
 
 export const Route = createFileRoute("/_layout/admin/ai-subscriptions")({
   component: AdminSubscriptionsPage,

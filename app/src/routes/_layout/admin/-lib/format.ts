@@ -39,12 +39,6 @@ export function formatEstimate(usage: AiBillingUsage): string {
   return usage.unpricedRecords > 0 ? `${priced} + unknown` : priced;
 }
 
-/** An exact fee such as `1100.00` in its currency: `1,100.00 SEK`. */
-export function formatFee(amount: string, currency: string): string {
-  const [units, cents] = amount.split(".");
-  return `${whole.format(Number(units))}.${cents} ${currency}`;
-}
-
 export function formatTokens(tokens: number): string {
   return compact.format(tokens);
 }

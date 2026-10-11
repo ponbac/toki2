@@ -1,7 +1,12 @@
-import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
+import {
+  infiniteQueryOptions,
+  queryOptions,
+  skipToken,
+} from "@tanstack/react-query";
 import { api } from "../api";
 import { AI_USAGE_QUERY_KEY } from "../ai-cache";
 import {
+  parseAiDisplayRates,
   parseAiMappingProjectList,
   parseAiUsageMachineList,
   parseAiUsageProjectKeyList,
@@ -14,6 +19,7 @@ import {
 export type {
   AiCost,
   AiCoverageStatus,
+  AiDisplayRates,
   AiProjectAttribution,
   AiProjectMapping,
   AiSessionSort,
@@ -50,6 +56,8 @@ export const aiUsageReportQueryKeys = {
   machines: (range: AiUsageRange) =>
     [...AI_USAGE_QUERY_KEY, "personal", "machines", range] as const,
   projectKeys: [...AI_USAGE_QUERY_KEY, "personal", "project-keys"] as const,
+  displayRates: (month: string | null) =>
+    [...AI_USAGE_QUERY_KEY, "display-rates", month] as const,
   mappingProjects: [
     ...AI_USAGE_QUERY_KEY,
     "project-mappings",
@@ -143,6 +151,30 @@ export const aiUsageReportQueries = {
             })
             .json<unknown>(),
         ),
+    }),
+  /**
+   * What a US dollar of an estimate is shown as in other currencies, for
+   * usage whose last local day is `to`. One month's rates serve every day in
+   * it. Without `to` nothing is fetched: which month "now" is changes, so the
+   * caller names the day. A rate still being fetched is asked for again
+   * shortly.
+   */
+  aiDisplayRates: (to: string | undefined) =>
+    queryOptions({
+      queryKey: aiUsageReportQueryKeys.displayRates(to?.slice(0, 7) ?? null),
+      queryFn:
+        to === undefined
+          ? skipToken
+          : async () =>
+              parseAiDisplayRates(
+                await api
+                  .get("ai-usage/display-rates", {
+                    searchParams: searchParams({ to }),
+                  })
+                  .json<unknown>(),
+              ),
+      staleTime: 5 * 60 * 1000,
+      refetchInterval: (query) => (query.state.data?.pending ? 4000 : false),
     }),
   aiUsageProjectKeys: () =>
     queryOptions({

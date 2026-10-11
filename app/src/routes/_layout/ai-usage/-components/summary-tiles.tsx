@@ -3,14 +3,15 @@ import { cn } from "@/lib/utils";
 import { knownShare } from "../-lib/aggregate";
 import {
   formatCompact,
-  formatCost,
   formatCount,
   formatPercent,
   totalTokens,
 } from "../-lib/format";
+import { formatCost, useMoney } from "../-lib/money";
 
 /** The headline figures of the range: cost, tokens, requests and unassigned usage. */
 export function SummaryTiles({ report }: { report: AiUsageReport }) {
+  const money = useMoney();
   const { totals } = report;
   const unassigned = report.projects.find(
     (group) => group.project === null && !group.personal,
@@ -24,11 +25,11 @@ export function SummaryTiles({ report }: { report: AiUsageReport }) {
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Tile
         label="Estimated cost"
-        value={formatCost(totals.cost)}
+        value={formatCost(money, totals.cost)}
         detail={
           totals.cost.kind === "partial"
             ? `${formatCount(totals.cost.unpricedRecords)} requests have no known price, so the total is unknown; the figure is the known subtotal.`
-            : "API-equivalent, in USD. Not a subscription bill."
+            : `API-equivalent, in ${money.currency}. Not a subscription bill.`
         }
         warning={totals.cost.kind === "partial"}
       />
@@ -44,7 +45,7 @@ export function SummaryTiles({ report }: { report: AiUsageReport }) {
       />
       <Tile
         label="Unassigned"
-        value={unassigned ? formatCost(unassigned.totals.cost) : "None"}
+        value={unassigned ? formatCost(money, unassigned.totals.cost) : "None"}
         detail={
           unassigned
             ? unassignedShare === null

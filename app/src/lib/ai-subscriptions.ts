@@ -34,6 +34,20 @@ export const SUBSCRIPTION_PROVIDERS: readonly AiProvider[] =
 
 export const CURRENCIES: readonly string[] = ["SEK", "USD", "EUR"];
 
+const wholeUnits = new Intl.NumberFormat("en-US");
+const wholeKronor = new Intl.NumberFormat("sv-SE");
+
+/**
+ * An exact amount such as `1100.00` in its currency: `1,100.00 USD`. Kronor
+ * read the Swedish way, `1 100,00 SEK`.
+ */
+export function formatFee(amount: string, currency: string): string {
+  const [units, cents] = amount.split(".");
+  return currency === "SEK"
+    ? `${wholeKronor.format(Number(units))},${cents} ${currency}`
+    : `${wholeUnits.format(Number(units))}.${cents} ${currency}`;
+}
+
 /** Form state as typed; the cost may use a decimal comma. */
 export type Draft = Readonly<{
   provider: AiProvider;
