@@ -273,9 +273,9 @@ impl AiUsageUpload {
         machine: AiMachine,
         window: AiUsageWindow,
         pricing: AiPricing,
-        buckets: Vec<AiUsageBucket>,
+        mut buckets: Vec<AiUsageBucket>,
         coverage: Vec<AiProviderCoverage>,
-        provider_hints: Vec<AiProviderHint>,
+        mut provider_hints: Vec<AiProviderHint>,
     ) -> Result<Self, AiUsageError> {
         for (field, value, required) in [
             ("machine.label", &machine.label, true),
@@ -322,14 +322,10 @@ impl AiUsageUpload {
             .map(|entry| entry.provider)
             .collect::<HashSet<_>>();
 
-        let buckets = buckets
-            .into_iter()
-            .enumerate()
-            .map(|(index, bucket)| {
-                validate_bucket(bucket, &window, &replaced)
-                    .map_err(|problem| invalid(format!("buckets[{index}]: {problem}")))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        for (index, bucket) in buckets.iter_mut().enumerate() {
+            validate_bucket(bucket, &window, &replaced)
+                .map_err(|problem| invalid(format!("buckets[{index}]: {problem}")))?;
+        }
 
         let mut keys = HashSet::with_capacity(buckets.len());
         for (index, bucket) in buckets.iter().enumerate() {
@@ -348,8 +344,7 @@ impl AiUsageUpload {
         }
 
         let mut seen = HashSet::with_capacity(provider_hints.len());
-        let mut hints = Vec::with_capacity(provider_hints.len());
-        for (index, mut hint) in provider_hints.into_iter().enumerate() {
+        for (index, hint) in provider_hints.iter_mut().enumerate() {
             let problem = |problem: &str| invalid(format!("providerHints[{index}]: {problem}"));
             hint.hour_start = whole_utc_hour(hint.hour_start)
                 .ok_or_else(|| problem("hourStart must be a whole UTC hour"))?;
@@ -362,10 +357,9 @@ impl AiUsageUpload {
             if let Some(text) = text_problem("plan", &hint.plan, true) {
                 return Err(problem(&text));
             }
-            if !seen.insert(hint.clone()) {
+            if !seen.insert((hint.provider, hint.hour_start, hint.plan.as_str())) {
                 return Err(problem("duplicate hint (provider, hourStart, plan)"));
             }
-            hints.push(hint);
         }
 
         Ok(Self {
@@ -374,7 +368,7 @@ impl AiUsageUpload {
             pricing,
             buckets,
             coverage,
-            provider_hints: hints,
+            provider_hints,
         })
     }
 
@@ -521,10 +515,10 @@ pub struct AiUsagePeriodTotals {
 }
 
 fn validate_bucket(
-    mut bucket: AiUsageBucket,
+    bucket: &mut AiUsageBucket,
     window: &AiUsageWindow,
     replaced: &HashSet<AiProvider>,
-) -> Result<AiUsageBucket, String> {
+) -> Result<(), String> {
     bucket.hour_start =
         whole_utc_hour(bucket.hour_start).ok_or("hourStart must be a whole UTC hour")?;
     if !window.contains(bucket.hour_start) {
@@ -578,7 +572,7 @@ fn validate_bucket(
         );
     }
 
-    Ok(bucket)
+    Ok(())
 }
 
 fn whole_utc_hour(instant: OffsetDateTime) -> Option<OffsetDateTime> {

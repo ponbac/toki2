@@ -184,19 +184,6 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         .map_err(storage_error)?;
 
         let buckets = upload.buckets();
-        let hour_starts = column(buckets, |b| b.hour_start);
-        let session_keys = column(buckets, |b| b.session_key.as_str());
-        let project_keys = column(buckets, |b| b.project_key.as_str());
-        let providers = column(buckets, |b| b.provider.as_str());
-        let models = column(buckets, |b| b.model.as_str());
-        let input_tokens = column(buckets, |b| b.tokens.input);
-        let cache_read_tokens = column(buckets, |b| b.tokens.cache_read);
-        let cache_write_tokens = column(buckets, |b| b.tokens.cache_write);
-        let output_tokens = column(buckets, |b| b.tokens.output);
-        let records = column(buckets, |b| b.records);
-        let costs = column(buckets, |b| b.estimated_cost_usd);
-        let unpriced_records = column(buckets, |b| b.unpriced_records);
-
         let inserted = sqlx::query!(
             r#"
             INSERT INTO ai_usage_buckets (
@@ -221,18 +208,18 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             "#,
             user_id.as_i32(),
             machine.id.as_uuid(),
-            &hour_starts,
-            &session_keys as &[&str],
-            &project_keys as &[&str],
-            &providers as &[&str],
-            &models as &[&str],
-            &input_tokens,
-            &cache_read_tokens,
-            &cache_write_tokens,
-            &output_tokens,
-            &records,
-            &costs as &[Option<f64>],
-            &unpriced_records,
+            &column(buckets, |b| b.hour_start),
+            &column(buckets, |b| b.session_key.as_str()) as &[&str],
+            &column(buckets, |b| b.project_key.as_str()) as &[&str],
+            &column(buckets, |b| b.provider.as_str()) as &[&str],
+            &column(buckets, |b| b.model.as_str()) as &[&str],
+            &column(buckets, |b| b.tokens.input),
+            &column(buckets, |b| b.tokens.cache_read),
+            &column(buckets, |b| b.tokens.cache_write),
+            &column(buckets, |b| b.tokens.output),
+            &column(buckets, |b| b.records),
+            &column(buckets, |b| b.estimated_cost_usd) as &[Option<f64>],
+            &column(buckets, |b| b.unpriced_records),
         )
         .execute(&mut transaction.executor())
         .await

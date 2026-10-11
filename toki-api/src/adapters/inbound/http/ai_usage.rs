@@ -230,7 +230,8 @@ pub struct AiUsageProviderHintPayload {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsageUploadResponse {
-    /// Buckets now stored for the window.
+    /// Buckets this upload stored. Buckets kept for providers it did not replace
+    /// are not counted.
     stored_buckets: u64,
 }
 
