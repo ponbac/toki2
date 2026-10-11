@@ -3,6 +3,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { AlertTriangle, Info, Laptop, XCircle } from "lucide-react";
 import type * as React from "react";
+import { AiProviderLabel } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import type {
   AiUsageMachine,
@@ -89,7 +90,7 @@ function MachineItem({
   }
   const reading = machine.coverage
     .filter((entry) => entry.status === "ok")
-    .map((entry) => AI_PROVIDER_LABELS[entry.provider]);
+    .map((entry) => entry.provider);
 
   return (
     <li className="rounded-xl border border-border/60 bg-muted/20 p-3">
@@ -133,8 +134,15 @@ function MachineItem({
         </ul>
       )}
       {reading.length > 0 && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Reads {reading.join(", ")} history in full.
+        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          History read in full:
+          {reading.map((provider) => (
+            <AiProviderLabel
+              key={provider}
+              provider={provider}
+              iconClassName="size-3"
+            />
+          ))}
         </p>
       )}
     </li>

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { AiProviderIcon } from "@/components/ai-provider-icon";
 import {
   Bar,
   BarChart,
@@ -153,6 +154,9 @@ export function DailySpendChart({
                 key={entry.key}
                 color={entry.color}
                 label={entry.label}
+                icon={
+                  entry.provider && <AiProviderIcon provider={entry.provider} />
+                }
               />
             ))}
             {unknownDays.length > 0 && (

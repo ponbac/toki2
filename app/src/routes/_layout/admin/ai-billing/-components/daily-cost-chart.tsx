@@ -10,6 +10,7 @@ import {
   type TooltipProps,
 } from "recharts";
 import { z } from "zod";
+import { AiProviderIcon } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/api/queries/ai-usage";
 import type { DayPoint } from "../../-lib/daily";
@@ -88,11 +89,7 @@ export function DailyCostChart({
       >
         {providers.map((provider) => (
           <li key={provider} className="flex items-center gap-1.5">
-            <span
-              className="inline-block size-2.5 rounded-sm"
-              style={{ background: PROVIDER_COLOR_VARS[provider] }}
-              aria-hidden
-            />
+            <AiProviderIcon provider={provider} />
             {AI_PROVIDER_LABELS[provider]}
           </li>
         ))}

@@ -14,6 +14,7 @@ import {
   periodStatus,
   type SubscriptionEditor,
 } from "@/lib/ai-subscriptions";
+import { AiProviderTile } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import { apiErrorToast } from "@/lib/api/errors";
 import { aiUsageMutations } from "@/lib/api/mutations/ai-usage";
@@ -285,7 +286,8 @@ function SubscriptionList({
           key={subscription.id}
           className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
         >
-          <div className="min-w-0">
+          <AiProviderTile provider={subscription.provider} />
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">
               {subscription.plan}{" "}
               <span className="font-normal text-muted-foreground">

@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AiProviderIcon } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import type {
   AiBillingCompleteness,
@@ -254,6 +255,12 @@ function MachinesTable({
                     {machine.providers.map((provider) => (
                       <StatusBadge
                         key={provider.provider}
+                        icon={
+                          <AiProviderIcon
+                            provider={provider.provider}
+                            className="text-muted-foreground"
+                          />
+                        }
                         tone={
                           provider.gaps.length > 0 ||
                           provider.status === "failed"

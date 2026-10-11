@@ -126,19 +126,26 @@ export function ChartTooltipFrame({
   );
 }
 
-/** A legend entry: a swatch shaped like the mark, and a text-coloured label. */
+/**
+ * A legend entry: a swatch shaped like the mark, and a text-coloured label.
+ * An `icon` in the series colour stands in for the swatch.
+ */
 export function LegendItem({
   color,
   label,
   shape = "rect",
+  icon,
 }: {
   color: string;
   label: React.ReactNode;
   shape?: "rect" | "ring";
+  icon?: React.ReactNode;
 }) {
   return (
     <li className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      {shape === "rect" ? (
+      {icon ? (
+        icon
+      ) : shape === "rect" ? (
         <span
           aria-hidden
           className="size-2.5 shrink-0 rounded-sm"

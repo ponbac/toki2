@@ -16,7 +16,7 @@ import {
   type Draft,
   type SubscriptionEditor,
 } from "@/lib/ai-subscriptions";
-import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { AiProviderLabel } from "@/components/ai-provider-icon";
 import {
   AI_PROVIDERS,
   type AiSubscriptionTerms,
@@ -78,7 +78,7 @@ export function SubscriptionForm({
             <SelectContent>
               {AI_PROVIDERS.map((provider) => (
                 <SelectItem key={provider} value={provider}>
-                  {AI_PROVIDER_LABELS[provider]}
+                  <AiProviderLabel provider={provider} className="flex" />
                 </SelectItem>
               ))}
             </SelectContent>

@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { AiProviderLabel } from "@/components/ai-provider-icon";
 import {
   aiUsageReportQueries,
   type AiSessionSort,
@@ -19,7 +19,6 @@ import {
 import { cn } from "@/lib/utils";
 import { ChartCard } from "./chart-card";
 import { QueryError } from "./query-state";
-import { PROVIDER_COLORS } from "../-lib/colors";
 import {
   attributionLabel,
   formatCompact,
@@ -145,15 +144,8 @@ export function SessionsTable({
                     ))}
                   </TableCell>
                   <TableCell className="max-w-56 align-top">
-                    <p className="flex items-center gap-1.5 text-sm">
-                      <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-sm"
-                        style={{
-                          backgroundColor: PROVIDER_COLORS[session.provider],
-                        }}
-                      />
-                      {AI_PROVIDER_LABELS[session.provider]}
+                    <p className="text-sm">
+                      <AiProviderLabel provider={session.provider} />
                     </p>
                     <p
                       className="truncate text-xs text-muted-foreground"

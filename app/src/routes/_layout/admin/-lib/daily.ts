@@ -68,6 +68,8 @@ export type Breakdown = {
   key: string;
   label: string;
   detail?: string;
+  /** Set when the group is one provider's usage. */
+  provider?: AiProvider;
   usage: AiBillingUsage;
 };
 
@@ -75,7 +77,7 @@ export type Breakdown = {
 export function breakdown(
   rows: readonly AiDayUsage[],
   key: (row: AiDayUsage) => string,
-  describe: (row: AiDayUsage) => { label: string; detail?: string },
+  describe: (row: AiDayUsage) => Omit<Breakdown, "key" | "usage">,
 ): Breakdown[] {
   const groups = new Map<string, Breakdown>();
   for (const row of rows) {
