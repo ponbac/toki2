@@ -126,10 +126,13 @@ export function ConnectMachineDialog({
     }
   }, [arrivedId, queryClient]);
 
+  // Without the listing, every machine would later pass for a new one.
+  const machines = machinesQuery.data?.machines;
   const issueToken = (name: string) => {
-    setKnownIds(
-      machinesQuery.data?.machines.map((machine) => machine.machineId) ?? [],
-    );
+    if (machines === undefined) {
+      return;
+    }
+    setKnownIds(machines.map((machine) => machine.machineId));
     issuance.issue(name);
   };
 
@@ -204,12 +207,28 @@ export function ConnectMachineDialog({
             <SystemStep os={os} detected={detected} onChange={setOs} />
           )}
           {step === TOKEN_STEP && (
-            <TokenStep
-              name={nameDraft ?? `token-ledger ${OS_GUIDES[os].label}`}
-              onNameChange={setNameDraft}
-              issuance={{ ...issuance, issue: issueToken }}
-              onReplace={issuance.dismiss}
-            />
+            <>
+              {machines === undefined &&
+                issued === null &&
+                (machinesQuery.isError ? (
+                  <QueryError
+                    message="Could not load your machines, which the setup needs first."
+                    error={machinesQuery.error}
+                    onRetry={() => void machinesQuery.refetch()}
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground" role="status">
+                    Loading your machines…
+                  </p>
+                ))}
+              <TokenStep
+                name={nameDraft ?? `token-ledger ${OS_GUIDES[os].label}`}
+                onNameChange={setNameDraft}
+                issuance={{ ...issuance, issue: issueToken }}
+                ready={machines !== undefined}
+                onReplace={issuance.dismiss}
+              />
+            </>
           )}
           {step === COMMANDS_STEP && issued && (
             <CommandsStep
@@ -357,11 +376,14 @@ function TokenStep({
   name,
   onNameChange,
   issuance,
+  ready,
   onReplace,
 }: {
   name: string;
   onNameChange: (name: string) => void;
   issuance: ApiTokenIssuance;
+  /** Whether the machines are loaded, which creating a token waits for. */
+  ready: boolean;
   /** Drops the token from the setup, for one that was revoked meanwhile. */
   onReplace: () => void;
 }) {
@@ -399,7 +421,7 @@ function TokenStep({
   }
 
   const trimmed = name.trim();
-  const disabled = !trimmed || issuance.isPending;
+  const disabled = !ready || !trimmed || issuance.isPending;
   return (
     <form
       className="space-y-3"
