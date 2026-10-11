@@ -63,7 +63,7 @@ fn command<'a>(t: f32, line: usize, start: f32, parts: &[(&'a str, &'a str)]) ->
 }
 
 /// A result line with a check, fading in at `start`.
-fn result<'a>(frame: &Frame, line: usize, start: f32, text: &'a str) -> Svgr<'a> {
+fn result<'a>(frame: &Frame, line: usize, start: f32, text: String) -> Svgr<'a> {
     fframes::svgr!(
         <g opacity={ramp(frame, start)} transform={Transform::translate(0, rise(frame, start, 8.0))}>
             {check(line)}
@@ -153,13 +153,13 @@ impl Scene for Terminal {
                     <text x="960" y="289" text-anchor="middle" font-family={MONO} font-size="22" font-weight="500" fill={MUTED}>{format!("{}: ~", data::MACHINE)}</text>
                     <g font-family={MONO} font-size="24" font-weight="500">
                         {login}
-                        {result(&frame, 1, 2.9, "Saved the server and API token to ~/.config/token-ledger/sync.json")}
+                        {result(&frame, 1, 2.9, "Saved the server and API token to ~/.config/token-ledger/sync.json".to_owned())}
                         {sync}
                         {tools}
-                        {result(&frame, 5, SYNCED_AT, "Synced jobbdator · 2026-09-28 through 2026-10-11 (Europe/Stockholm)")}
-                        <text x={LEFT + CHARACTER * 2.0} y={line_y(6)} fill={MUTED} opacity={ramp(&frame, SYNCED_AT + 0.3)}>"812 hourly buckets · 418 sessions · $3,296.40 API estimate · server stored 812"</text>
+                        {result(&frame, 5, SYNCED_AT, format!("Synced {} · 2026-08-14 through 2026-08-27 (Europe/Stockholm)", data::MACHINE))}
+                        <text x={LEFT + CHARACTER * 2.0} y={line_y(6)} fill={MUTED} opacity={ramp(&frame, SYNCED_AT + 0.3)}>{format!("812 hourly buckets · 418 sessions · {} API estimate · server stored 812", usd(data::first_sync_cost()))}</text>
                         {schedule}
-                        {result(&frame, 9, SCHEDULED_AT, "Scheduled a daily sync at 12:30 as a systemd user timer.")}
+                        {result(&frame, 9, SCHEDULED_AT, "Scheduled a daily sync at 12:30 as a systemd user timer.".to_owned())}
                         <text x={LEFT} y={line_y(10)} fill={AMBER} opacity={progress(t, SCHEDULED_AT + 0.5, 0.1)}>"$"</text>
                         <rect x={caret_x} y={line_y(caret_line) - 22.0} width="13" height="29" fill={FG} opacity={caret} />
                     </g>

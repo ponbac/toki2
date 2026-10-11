@@ -58,12 +58,12 @@ impl Scene for Synced {
             <g opacity={scene_fade(t, SECONDS)}>
                 <g transform={page_transform()}>
                     <g opacity={1.0 - progress(t, SHOW_AT + 0.1, 0.4)}>{connect::preview()}</g>
-                    <g opacity={progress(t, SHOW_AT + 0.1, 0.4)}>{usage::dashboard(filling, 0.0)}</g>
+                    <g opacity={progress(t, SHOW_AT + 0.1, 0.4)}>{usage::dashboard(filling, 0.0, data::FIRST_SYNC_DAYS)}</g>
                 </g>
                 <rect width="1920" height="1080" fill="#000000" opacity={(1.0 - closed) * 0.8} />
                 {caption_sequence(&frame, "2", "Klart: datorn är kopplad", &[
                     ("Guiden märker den första synken av sig själv.", 0.0),
-                    ("Och sidan fylls med din användning.", SHOW_AT + 0.3),
+                    ("Och sidan fylls med de 14 dagar som laddades upp.", SHOW_AT + 0.3),
                 ])}
                 <g opacity={1.0 - closed} transform={dialog} font-family={SANS}>
                     {connect::dialog_shell(SHORT, 3, "First sync", icons::REFRESH)}

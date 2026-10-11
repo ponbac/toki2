@@ -6,11 +6,14 @@ use crate::*;
 
 const SECONDS: f32 = 12.0;
 
-const DAYS: [&str; 7] = ["Tors", "Fre", "Lör", "Sön", "Mån", "Tis", "Ons"];
-/// What each day's sync adds to the machine's estimate; nothing while it is off.
-const ADDED: [f32; 7] = [286.10, 342.60, 0.0, 0.0, 455.30, 318.90, 301.70];
-const FIRST_UPLOAD: f32 = 3_296.40;
-const CATCH_UP: usize = 4;
+/// The week after the first sync on Thursday 27 Aug.
+const DAYS: [&str; 7] = ["Fre", "Lör", "Sön", "Mån", "Tis", "Ons", "Tors"];
+/// What each day's sync adds to the machine's estimate; nothing while it is off. Monday's
+/// catches up on the weekend.
+const ADDED: [f32; 7] = [286.10, 0.0, 0.0, 455.30, 342.60, 318.90, 301.70];
+/// The first day the machine is off, and the day it catches up.
+const WEEKEND: usize = 1;
+const CATCH_UP: usize = 3;
 
 const TRACK_LEFT: f32 = 100.0;
 const TRACK_RIGHT: f32 = 1006.0;
@@ -75,7 +78,8 @@ impl Scene for Schedule {
         let landed = |day: usize| !off(day) && t >= day_at(day) + FLIGHT;
         let last = (0..DAYS.len()).rev().find(|day| landed(*day));
         let last_x = last.map_or(TRACK_LEFT, day_x);
-        let estimate: f32 = FIRST_UPLOAD
+        // The card starts from what the first sync uploaded; its dates cover every day shown.
+        let estimate: f32 = data::first_sync_cost()
             + (0..DAYS.len())
                 .filter(|day| !off(*day))
                 .map(|day| ADDED[day] * ease_out(progress(t, day_at(day) + FLIGHT, 0.5)))
@@ -140,7 +144,7 @@ impl Scene for Schedule {
             ("$ npx @ponbac/token-ledger@latest schedule status", FG),
             ("  token-ledger-sync.timer - Daily AI usage sync", FG),
             ("  Active: active (waiting)", MUTED),
-            ("  Trigger: Thu 2026-10-22 12:30:54 CEST; 23h left", MUTED),
+            ("  Trigger: Fri 2026-09-04 12:30:54 CEST; 23h left", MUTED),
         ];
         let status_lines: Vec<Svgr> = status
             .iter()
@@ -158,9 +162,9 @@ impl Scene for Schedule {
                     {icon(icons::LAPTOP, 86.0, 276.0, 34.0, FG)}
                     <text x="136" y="304" font-size="34" font-weight="600" letter-spacing="-0.6" fill={FG}>{data::MACHINE}</text>
                     <text x="1018" y="302" text-anchor="end" font-family={MONO} font-size="20" font-weight="500" fill={MUTED}>"systemd user timer · varje dag 12:30"</text>
-                    <rect x={day_x(2) - 67.0} y="398" width="269" height="262" rx="18" fill="#000000" opacity="0.28" />
-                    {icon(icons::POWER, day_x(2) + 3.0, 420.0, 22.0, MUTED)}
-                    <text x={day_x(2) + 36.0} y="439" font-size="22" font-weight="500" fill={MUTED}>"avstängd"</text>
+                    <rect x={day_x(WEEKEND) - 67.0} y="398" width="269" height="262" rx="18" fill="#000000" opacity="0.28" />
+                    {icon(icons::POWER, day_x(WEEKEND) + 3.0, 420.0, 22.0, MUTED)}
+                    <text x={day_x(WEEKEND) + 36.0} y="439" font-size="22" font-weight="500" fill={MUTED}>"avstängd"</text>
                     <path d={format!("M{TRACK_LEFT} {TRACK_Y} H{TRACK_RIGHT}")} stroke={BORDER} stroke-width="3" stroke-linecap="round" />
                     <path d={format!("M{TRACK_LEFT} {TRACK_Y} H{playhead}")} stroke={AMBER} stroke-width="3" stroke-linecap="round" opacity="0.7" />
                     {days}
@@ -173,9 +177,9 @@ impl Scene for Schedule {
                 </g>
                 <g opacity={ramp(&frame, 0.35)} transform={Transform::translate(0, rise(&frame, 0.35, 24.0))}>
                     <g transform={format!("translate({MACHINES_X} {PAGE_Y}) scale({ZOOM})")} font-family={SANS}>
-                        {card(0.0, 0.0, 520.0, 250.0, "Machines", "Machines that sync your usage, with all their usage from")}
+                        {card(0.0, 0.0, 520.0, 250.0, "Machines", "Machines that sync your usage, with all their usage from 14")}
                         <g font-size="12" font-weight="500" fill={MUTED}>
-                            <text x="20" y="72">"1 Oct to 31 Oct, whatever the other filters. One without a"</text>
+                            <text x="20" y="72">"Aug to 11 Oct, whatever the other filters. One without a"</text>
                             <text x="20" y="89">"sync for more than 7 days is stale: its recent usage is"</text>
                             <text x="20" y="106">"missing, not zero."</text>
                         </g>

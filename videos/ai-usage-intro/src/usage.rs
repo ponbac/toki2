@@ -82,10 +82,12 @@ fn bar<'a>(x: f32, parts: [f32; 4], colors: &[&'a str; 4], scale: f32, grow: f32
 
 /// The tiles and the daily chart in page pixels, `t` seconds into filling in: the figures
 /// count up and the bars grow from the left. `by_model` runs from 0, stacked by tool, to 1,
-/// stacked by model.
-pub(crate) fn dashboard<'a>(t: f32, by_model: f32) -> Svgr<'a> {
+/// stacked by model. Only the first `synced` days have usage yet, and the figures are theirs.
+pub(crate) fn dashboard<'a>(t: f32, by_model: f32, synced: usize) -> Svgr<'a> {
     let days = &*data::DAYS_OF_USAGE;
-    let count = ease_out(progress(t, 0.3, 1.6));
+    let share = days[..synced].iter().map(data::Day::total).sum::<f32>() / data::TOTAL_COST;
+    let filled = ease_out(progress(t, 0.3, 1.6));
+    let count = filled * share;
     let unassigned_share = data::UNASSIGNED_COST / data::TOTAL_COST * 100.0;
     let scale = (PLOT_BOTTOM - PLOT_TOP) / AXIS_MAX;
     let band = (PLOT_RIGHT - PLOT_LEFT) / days.len() as f32;
@@ -105,7 +107,7 @@ pub(crate) fn dashboard<'a>(t: f32, by_model: f32) -> Svgr<'a> {
         .iter()
         .enumerate()
         .map(|(i, day)| {
-            let grow = ease_out(progress(t, 0.5 + i as f32 * 0.028, 0.75));
+            let grow = if i < synced { ease_out(progress(t, 0.5 + i as f32 * 0.028, 0.75)) } else { 0.0 };
             let x = PLOT_LEFT + i as f32 * band + (band - BAR_WIDTH) / 2.0;
             let tick = if day.weekday == 0 {
                 fframes::svgr!(<text x={x + BAR_WIDTH / 2.0} y={PLOT_BOTTOM + 20.0} text-anchor="middle" font-size="11" font-weight="500" fill={MUTED}>{day.label.as_str()}</text>)
@@ -143,7 +145,7 @@ pub(crate) fn dashboard<'a>(t: f32, by_model: f32) -> Svgr<'a> {
         <g font-family={SANS}>
             {tile(0, "Estimated cost", usd(data::TOTAL_COST * count), "API-equivalent, in USD. Not a subscription bill.".to_owned())}
             {tile(1, "Tokens", format!("{:.1}B", data::TOTAL_TOKENS_B * count), format!("{:.1}B of them cache reads", data::CACHE_READ_TOKENS_B * count))}
-            {tile(2, "Requests", thousands((data::REQUESTS * count) as i64), format!("{} active days", (data::DAYS as f32 * count) as usize))}
+            {tile(2, "Requests", thousands((data::REQUESTS * count) as i64), format!("{} active days", (synced as f32 * filled).round() as usize))}
             {tile(3, "Unassigned", usd(data::UNASSIGNED_COST * count), format!("{unassigned_share:.1}% of the known cost has no mapped\nproject"))}
             {card(0.0, CHART_Y, 1216.0, CHART_HEIGHT, "Estimated spend per day", "API-equivalent estimate in USD, by local day in Europe/Stockholm. Not a bill.")}
             {segmented(1196.0, CHART_Y + 20.0, "Chart", "Table", 50.0, 50.0, 0.0)}
@@ -183,7 +185,7 @@ impl Scene for Usage {
                 ])}
                 <g transform={page_transform()}>
                     <g opacity={ramp(&frame, 0.2)} transform={Transform::translate(0, rise(&frame, 0.2, 18.0))}>
-                        {dashboard(FILLED, by_model)}
+                        {dashboard(FILLED, by_model, data::DAYS)}
                     </g>
                     {pointer(t, pointer_x, pointer_y, &[MODEL_AT], progress(t, 3.0, 0.3).min(1.0 - progress(t, MODEL_AT + 1.4, 0.4)))}
                 </g>

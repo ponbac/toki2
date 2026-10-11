@@ -83,6 +83,18 @@ pub const PERSONAL: &str = "Personal / internal";
 /// The mocked days, made once.
 pub static DAYS_OF_USAGE: std::sync::LazyLock<Vec<Day>> = std::sync::LazyLock::new(days);
 
+/// The first `sync` uploads the last 14 days. In the story that is 27 Aug, so it uploads the
+/// first 14 days of the range; the daily job adds the rest before the page is read on 11 Oct.
+pub const FIRST_SYNC_DAYS: usize = 14;
+
+/// The estimate of the first sync, which the terminal prints and the page then shows.
+pub fn first_sync_cost() -> f32 {
+    DAYS_OF_USAGE[..FIRST_SYNC_DAYS]
+        .iter()
+        .map(Day::total)
+        .sum()
+}
+
 /// A small deterministic generator, so every render shows the same mocked data.
 pub struct Random(u64);
 
