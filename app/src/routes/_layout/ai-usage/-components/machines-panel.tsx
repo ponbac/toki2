@@ -1,9 +1,10 @@
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { AlertTriangle, Info, Laptop, XCircle } from "lucide-react";
+import { AlertTriangle, Info, Laptop, Plus, XCircle } from "lucide-react";
 import type * as React from "react";
 import { AiProviderLabel } from "@/components/ai-provider-icon";
+import { Button } from "@/components/ui/button";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import type {
   AiUsageMachine,
@@ -23,13 +24,16 @@ type Finding = Readonly<{ key: string; severity: Severity; text: string }>;
 /**
  * The machines that sync the user's usage: when each last synced, its
  * token-ledger version, what may be missing from its figures, and all its
- * usage in the selected dates, which the other filters never narrow.
+ * usage in the selected dates, which the other filters never narrow. The page
+ * shows it once a machine has synced.
  */
 export function MachinesPanel({
   query,
+  onAddMachine,
   className,
 }: {
   query: UseQueryResult<AiUsageMachineList, Error>;
+  onAddMachine: () => void;
   className?: string;
 }) {
   return (
@@ -40,6 +44,17 @@ export function MachinesPanel({
         query.data
           ? `Machines that sync your usage, with all their usage from ${formatShortDate(query.data.from)} to ${formatShortDate(query.data.to)}, whatever the other filters. One without a sync for more than ${query.data.staleAfterDays} days is stale: its recent usage is missing, not zero.`
           : "Machines that sync your usage."
+      }
+      actions={
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onAddMachine}
+        >
+          <Plus />
+          Add machine
+        </Button>
       }
     >
       {query.isPending ? (
@@ -52,11 +67,6 @@ export function MachinesPanel({
           error={query.error}
           onRetry={() => void query.refetch()}
         />
-      ) : query.data.machines.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No machine has synced yet. Run <code>token-ledger sync</code> with a
-          Toki API token from Account settings to upload your usage.
-        </p>
       ) : (
         <ul className="space-y-3">
           {query.data.machines.map((machine) => (
