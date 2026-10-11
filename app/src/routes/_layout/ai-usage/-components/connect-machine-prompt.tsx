@@ -49,7 +49,7 @@ export function ConnectMachinePrompt({ onConnect }: { onConnect: () => void }) {
         </Button>
         <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
           <ShieldCheck aria-hidden className="size-3.5 shrink-0" />
-          Only token totals leave the machine.
+          Uploads usage totals and repository names, never prompts or code.
         </p>
       </div>
     </section>

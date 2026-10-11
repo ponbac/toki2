@@ -1,5 +1,9 @@
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
@@ -34,10 +38,12 @@ import {
   aiUsageReportQueries,
   aiUsageReportQueryKeys,
   type AiUsageMachine,
+  type AiUsageMachineList,
   type AiUsageRange,
 } from "@/lib/api/queries/ai-usage-report";
 import { cn } from "@/lib/utils";
 import { OsIcon } from "./os-icon";
+import { QueryError } from "./query-state";
 import {
   MACHINE_OSES,
   OS_GUIDES,
@@ -62,6 +68,8 @@ const SYNC_STEP = 3;
 const POLL_INTERVAL_MS = 3_000;
 
 const SETUP_DOCS = "https://github.com/ponbac/token-ledger#sync-to-toki2";
+const UPLOAD_DOCS =
+  "https://github.com/ponbac/token-ledger#what-leaves-the-machine";
 
 /**
  * Walks through connecting a machine: its system, an API token created here,
@@ -187,7 +195,9 @@ export function ConnectMachineDialog({
           {step === COMMANDS_STEP && issued && (
             <CommandsStep os={os} token={issued.token} connected={connected} />
           )}
-          {step === SYNC_STEP && <SyncStep connected={connected} />}
+          {step === SYNC_STEP && (
+            <SyncStep connected={connected} query={machinesQuery} />
+          )}
         </div>
 
         <DialogFooter className="gap-2 sm:justify-between sm:space-x-0">
@@ -466,8 +476,19 @@ function CommandsStep({
         />
         <span>
           Only totals leave the machine: tokens and estimated cost per hour,
-          session, project, tool and model. Never prompts, responses, code or
-          file paths.
+          session, project, tool and model, with the machine's name and time
+          zone. A project is its configured name or its repository, as{" "}
+          <code>host/owner/repo</code>. Never prompts, responses, code or file
+          paths.{" "}
+          <a
+            href={UPLOAD_DOCS}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            Everything that is uploaded
+          </a>
+          .
         </span>
       </p>
       <p className="text-xs text-muted-foreground">
@@ -504,25 +525,42 @@ function CommandLine({ line, token }: { line: string; token: string }) {
   );
 }
 
-function SyncStep({ connected }: { connected: AiUsageMachine | undefined }) {
+function SyncStep({
+  connected,
+  query,
+}: {
+  connected: AiUsageMachine | undefined;
+  /** The listing the wait polls; its failure would otherwise pass for waiting. */
+  query: UseQueryResult<AiUsageMachineList, Error>;
+}) {
   if (!connected) {
     return (
-      <div
-        role="status"
-        className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/40 p-4"
-      >
-        <Loader2
-          aria-hidden
-          className="mt-0.5 size-4 shrink-0 animate-spin text-primary"
-        />
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Waiting for its first sync…</p>
-          <p className="text-xs text-muted-foreground">
-            This updates by itself once <code>sync</code> has uploaded. Nothing
-            after a minute? Check the command's output in your terminal.
-          </p>
+      <>
+        {query.isError && (
+          <QueryError
+            message="Could not check for the sync."
+            error={query.error}
+            onRetry={() => void query.refetch()}
+          />
+        )}
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/40 p-4"
+        >
+          <Loader2
+            aria-hidden
+            className="mt-0.5 size-4 shrink-0 animate-spin text-primary"
+          />
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Waiting for its first sync…</p>
+            <p className="text-xs text-muted-foreground">
+              This updates by itself once <code>sync</code> has uploaded.
+              Nothing after a minute? Check the command's output in your
+              terminal.
+            </p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 

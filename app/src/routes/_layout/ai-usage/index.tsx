@@ -137,7 +137,16 @@ function AiUsagePage() {
       )}
 
       {neverSynced ? (
-        <ConnectMachinePrompt onConnect={() => setConnecting(true)} />
+        <>
+          {machinesQuery.isError && (
+            <QueryError
+              message="Could not check your machines; showing none, as last known."
+              error={machinesQuery.error}
+              onRetry={() => void machinesQuery.refetch()}
+            />
+          )}
+          <ConnectMachinePrompt onConnect={() => setConnecting(true)} />
+        </>
       ) : (
         <>
           {reportQuery.isPending || machinesQuery.isPending ? (
