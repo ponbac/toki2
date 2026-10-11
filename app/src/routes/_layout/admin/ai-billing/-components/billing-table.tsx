@@ -22,8 +22,10 @@ import type {
 import { cn } from "@/lib/utils";
 import {
   formatBillable,
+  formatConverted,
   groupLines,
   lineBillable,
+  lineConverted,
   lineProject,
   lineWarnings,
 } from "../../-lib/billing";
@@ -31,11 +33,14 @@ import { formatEstimate, formatTokens } from "../../-lib/format";
 
 /**
  * Month × developer × project: every billing line, grouped by project (for
- * invoicing) or by developer. "Billable" is the fee share for subscription
- * lines and the API-equivalent estimate for API lines.
+ * invoicing) or by developer. "Billed" is in the billing currency (SEK), and
+ * "Original" the fee share for subscription lines or the API-equivalent
+ * estimate in whole cents for API lines, in its own currency.
  */
 export function BillingTable({
   month,
+  billingCurrency,
+  pendingRates = [],
   lines,
   developers,
   subscriptions,
@@ -43,6 +48,9 @@ export function BillingTable({
   linkDevelopers = true,
 }: {
   month: string;
+  billingCurrency: string;
+  /** Currencies whose rate is still being fetched. */
+  pendingRates?: readonly string[];
   lines: readonly AiBillingLine[];
   developers: readonly AiBillingDeveloper[];
   subscriptions: readonly AiSubscriptionMonth[];
@@ -67,7 +75,10 @@ export function BillingTable({
           </TableHead>
           <TableHead>Provider</TableHead>
           <TableHead>Billing</TableHead>
-          <TableHead className="text-right">Billable</TableHead>
+          <TableHead className="text-right">
+            Billed ({billingCurrency})
+          </TableHead>
+          <TableHead className="text-right">Original</TableHead>
           <TableHead className="text-right">API-equivalent</TableHead>
           <TableHead className="text-right">Tokens</TableHead>
         </TableRow>
@@ -94,7 +105,16 @@ export function BillingTable({
             </TableCell>
             <TableCell />
             <TableCell />
-            <TableCell className="text-right font-semibold tabular-nums">
+            <TableCell
+              className={cn(
+                "text-right font-semibold tabular-nums",
+                group.totals.converted === null &&
+                  "text-[#c98500] dark:text-[#fab219]",
+              )}
+            >
+              {formatConverted(group.totals, billingCurrency, pendingRates)}
+            </TableCell>
+            <TableCell className="text-right tabular-nums text-muted-foreground">
               {formatBillable(group.totals)}
             </TableCell>
             <TableCell className="text-right tabular-nums">
@@ -113,7 +133,12 @@ export function BillingTable({
               line.subscriptionId !== null
                 ? plans.get(line.subscriptionId)
                 : undefined;
-            const warnings = lineWarnings(line, subscription);
+            const warnings = lineWarnings(
+              line,
+              subscription,
+              billingCurrency,
+              pendingRates,
+            );
             const detail =
               groupBy === "developer" ? (
                 lineProject(line).label
@@ -134,8 +159,21 @@ export function BillingTable({
                     {warnings.length > 0 && <Warnings warnings={warnings} />}
                   </span>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">
+                <TableCell
+                  className={cn(
+                    "text-right tabular-nums",
+                    line.missingRate && "text-[#c98500] dark:text-[#fab219]",
+                  )}
+                >
+                  {lineConverted(line, billingCurrency, pendingRates)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">
                   {lineBillable(line)}
+                  {line.exchangeRate !== null && (
+                    <span className="block text-xs">
+                      at {line.exchangeRate}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">
                   {line.unallocatedOverhead ? "—" : formatEstimate(line.usage)}

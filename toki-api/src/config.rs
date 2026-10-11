@@ -84,14 +84,42 @@ pub struct AiUsageSettings {
     /// IANA time zone that defines AI usage days and billing months.
     #[serde(default = "default_ai_usage_time_zone")]
     pub time_zone: String,
+    #[serde(default)]
+    pub exchange_rates: ExchangeRateSettings,
 }
 
 impl Default for AiUsageSettings {
     fn default() -> Self {
         Self {
             time_zone: default_ai_usage_time_zone(),
+            exchange_rates: ExchangeRateSettings::default(),
         }
     }
+}
+
+/// Where billing fetches exchange rates to the billing currency: the
+/// Riksbank's SWEA API.
+#[derive(Deserialize, Clone, Debug)]
+pub struct ExchangeRateSettings {
+    #[serde(default = "default_exchange_rate_base_url")]
+    pub base_url: String,
+    /// An optional SWEA API subscription key, for higher rate limits. Provide
+    /// it through `TOKI_AI_USAGE__EXCHANGE_RATES__SUBSCRIPTION_KEY`.
+    #[serde(default)]
+    pub subscription_key: Option<String>,
+}
+
+impl Default for ExchangeRateSettings {
+    fn default() -> Self {
+        Self {
+            base_url: default_exchange_rate_base_url(),
+            subscription_key: None,
+        }
+    }
+}
+
+fn default_exchange_rate_base_url() -> String {
+    crate::adapters::outbound::riksbank::DEFAULT_BASE_URL.to_string()
 }
 
 fn default_ai_usage_time_zone() -> String {

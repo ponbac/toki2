@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                rate.currency,\n                round(rate.fetched_rate * 1000000)::int8 AS \"fetched_millionths?\",\n                rate.fetched_source,\n                rate.fetched_provisional,\n                rate.fetched_through,\n                rate.fetched_at,\n                (rate.fetched_at AT TIME ZONE $2)::date AS \"fetched_on?\",\n                round(rate.override_rate * 1000000)::int8 AS \"override_millionths?\",\n                (rate.overridden_at AT TIME ZONE $2)::date AS \"overridden_on?\",\n                editor.full_name AS \"overridden_by?\"\n            FROM ai_billing_exchange_rates AS rate\n            LEFT JOIN users AS editor ON editor.id = rate.overridden_by\n            WHERE rate.month = $1\n            ORDER BY rate.currency\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "currency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "fetched_millionths?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "fetched_source",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "fetched_provisional",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "fetched_through",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "fetched_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "fetched_on?",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "override_millionths?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "overridden_on?",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "overridden_by?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "1904cf43570adbcb3b84089a088d600a3bb000a546c46875f07063e40a7b696d"
+}

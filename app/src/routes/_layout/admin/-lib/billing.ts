@@ -8,8 +8,11 @@ import { formatEstimate, formatFee } from "./format";
 
 /*
  * Grouping and wording for billing lines. The server has already decided every
- * amount; this only arranges and describes them. Fees in different currencies
- * are summed apart and never added to USD.
+ * amount, in its own currency and converted to the billing currency (SEK);
+ * this only arranges and describes them. Original amounts in different
+ * currencies are summed apart and never added together; converted amounts are
+ * summed as the server sums them, and a sum with a line without a rate is
+ * unknown, never partial.
  */
 
 export const UNASSIGNED_LABEL = "Unassigned";
@@ -54,6 +57,11 @@ export type BillableTotals = {
   amounts: ReadonlyMap<string, number>;
   /** Unpriced API records whose cost is unknown and not in `amounts`. */
   unknownRecords: number;
+  /** The converted amounts in exact hundredths of the billing currency, or
+   * null when a line has no exchange rate. */
+  converted: number | null;
+  /** The currencies of lines without an exchange rate. */
+  missingCurrencies: ReadonlySet<string>;
   /** All the lines' usage, with its unrounded estimate. */
   usage: AiBillingUsage;
 };
@@ -63,6 +71,8 @@ export function billableTotals(
 ): BillableTotals {
   const amounts = new Map<string, number>();
   let unknownRecords = 0;
+  let converted: number | null = 0;
+  const missingCurrencies = new Set<string>();
   const usage = {
     apiEquivalentUsd: 0,
     unpricedRecords: 0,
@@ -80,6 +90,12 @@ export function billableTotals(
     if (line.billingMode === "api") {
       unknownRecords += line.usage.unpricedRecords;
     }
+    if (line.missingRate) {
+      converted = null;
+      missingCurrencies.add(line.billableCurrency);
+    } else if (converted !== null && line.convertedAmount !== null) {
+      converted += hundredths(line.convertedAmount);
+    }
     usage.apiEquivalentUsd += line.usage.apiEquivalentUsd;
     usage.unpricedRecords += line.usage.unpricedRecords;
     usage.records += line.usage.records;
@@ -89,7 +105,57 @@ export function billableTotals(
     usage.tokens.output += line.usage.tokens.output;
     usage.tokens.total += line.usage.tokens.total;
   }
-  return { amounts, unknownRecords, usage };
+  return { amounts, unknownRecords, converted, missingCurrencies, usage };
+}
+
+/** Shown where a rate is still being fetched, rather than missing. */
+export const PENDING_RATE_LABEL = "Fetching rate…";
+
+/** Whether every one of `currencies` is still being fetched. */
+export function allPending(
+  currencies: Iterable<string>,
+  pendingRates: readonly string[],
+): boolean {
+  return [...currencies].every((currency) => pendingRates.includes(currency));
+}
+
+/** What a set of lines bills in the billing currency; "No rate" when a line
+ * could not be converted. */
+export function formatConverted(
+  totals: BillableTotals,
+  billingCurrency: string,
+  pendingRates: readonly string[] = [],
+): string {
+  if (totals.converted === null) {
+    return allPending(totals.missingCurrencies, pendingRates)
+      ? PENDING_RATE_LABEL
+      : "No rate";
+  }
+  if (totals.converted === 0 && totals.amounts.size === 0) {
+    return totals.unknownRecords > 0 ? "Unknown" : "—";
+  }
+  const amount = formatFee(decimal(totals.converted), billingCurrency);
+  return totals.unknownRecords > 0 ? `${amount} + unknown` : amount;
+}
+
+/** What one line bills in the billing currency. */
+export function lineConverted(
+  line: AiBillingLine,
+  billingCurrency: string,
+  pendingRates: readonly string[] = [],
+): string {
+  if (line.missingRate) {
+    return pendingRates.includes(line.billableCurrency)
+      ? PENDING_RATE_LABEL
+      : "No rate";
+  }
+  if (line.convertedAmount === null) {
+    return "Unknown";
+  }
+  const amount = formatFee(line.convertedAmount, billingCurrency);
+  return line.billingMode === "api" && line.usage.unpricedRecords > 0
+    ? `${amount} + unknown`
+    : amount;
 }
 
 /** Billable amounts side by side per currency, such as `454.19 SEK + 0.75
@@ -119,8 +185,19 @@ export function lineBillable(line: AiBillingLine): string {
 export function lineWarnings(
   line: AiBillingLine,
   subscription: AiSubscriptionMonth | undefined,
+  billingCurrency = "SEK",
+  pendingRates: readonly string[] = [],
 ): string[] {
   const warnings: string[] = [];
+  if (line.missingRate && pendingRates.includes(line.billableCurrency)) {
+    warnings.push(
+      `The ${line.billableCurrency} exchange rate is still being fetched: not converted to ${billingCurrency} yet.`,
+    );
+  } else if (line.missingRate) {
+    warnings.push(
+      `No ${line.billableCurrency} exchange rate for the month: not converted to ${billingCurrency}.`,
+    );
+  }
   const unpriced = line.usage.unpricedRecords;
   if (line.unallocatedOverhead) {
     warnings.push("No usage on the days the subscription covers.");

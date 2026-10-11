@@ -12,7 +12,6 @@ use std::{collections::HashSet, fmt};
 use time::{Date, OffsetDateTime, UtcOffset};
 use uuid::Uuid;
 
-use super::AiMappedProject;
 use crate::domain::AiUsageError;
 
 const SECONDS_PER_HOUR: i64 = 3_600;
@@ -273,9 +272,9 @@ impl AiUsageUpload {
         machine: AiMachine,
         window: AiUsageWindow,
         pricing: AiPricing,
-        buckets: Vec<AiUsageBucket>,
+        mut buckets: Vec<AiUsageBucket>,
         coverage: Vec<AiProviderCoverage>,
-        provider_hints: Vec<AiProviderHint>,
+        mut provider_hints: Vec<AiProviderHint>,
     ) -> Result<Self, AiUsageError> {
         for (field, value, required) in [
             ("machine.label", &machine.label, true),
@@ -322,14 +321,10 @@ impl AiUsageUpload {
             .map(|entry| entry.provider)
             .collect::<HashSet<_>>();
 
-        let buckets = buckets
-            .into_iter()
-            .enumerate()
-            .map(|(index, bucket)| {
-                validate_bucket(bucket, &window, &replaced)
-                    .map_err(|problem| invalid(format!("buckets[{index}]: {problem}")))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        for (index, bucket) in buckets.iter_mut().enumerate() {
+            validate_bucket(bucket, &window, &replaced)
+                .map_err(|problem| invalid(format!("buckets[{index}]: {problem}")))?;
+        }
 
         let mut keys = HashSet::with_capacity(buckets.len());
         for (index, bucket) in buckets.iter().enumerate() {
@@ -348,8 +343,7 @@ impl AiUsageUpload {
         }
 
         let mut seen = HashSet::with_capacity(provider_hints.len());
-        let mut hints = Vec::with_capacity(provider_hints.len());
-        for (index, mut hint) in provider_hints.into_iter().enumerate() {
+        for (index, hint) in provider_hints.iter_mut().enumerate() {
             let problem = |problem: &str| invalid(format!("providerHints[{index}]: {problem}"));
             hint.hour_start = whole_utc_hour(hint.hour_start)
                 .ok_or_else(|| problem("hourStart must be a whole UTC hour"))?;
@@ -362,10 +356,9 @@ impl AiUsageUpload {
             if let Some(text) = text_problem("plan", &hint.plan, true) {
                 return Err(problem(&text));
             }
-            if !seen.insert(hint.clone()) {
+            if !seen.insert((hint.provider, hint.hour_start, hint.plan.as_str())) {
                 return Err(problem("duplicate hint (provider, hourStart, plan)"));
             }
-            hints.push(hint);
         }
 
         Ok(Self {
@@ -374,7 +367,7 @@ impl AiUsageUpload {
             pricing,
             buckets,
             coverage,
-            provider_hints: hints,
+            provider_hints,
         })
     }
 
@@ -439,17 +432,6 @@ impl AiUsageTimeZone {
     }
 }
 
-/// The calendar unit usage totals are grouped by, in the configured time zone.
-///
-/// An hourly bucket belongs to the local day of the instant it starts. In zones
-/// whose offset is not a whole number of hours, a bucket can straddle local
-/// midnight; it is not split.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AiUsagePeriod {
-    Day,
-    Month,
-}
-
 /// A half-open `[start, end)` range of local calendar dates: `end` is the first
 /// day *after* the range. Subscription periods and API date parameters end
 /// inclusively instead; convert with `from_inclusive`, `last_day` and
@@ -506,25 +488,11 @@ impl AiUsageTotals {
     }
 }
 
-/// A user's usage of one project during one local day or month.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AiUsagePeriodTotals {
-    /// The local dates these totals cover: the day or month, clipped to the
-    /// requested range. A month the range covers only partly is therefore visible
-    /// as partial rather than labelled as the whole month.
-    pub dates: AiUsageDateRange,
-    pub project_key: String,
-    /// The project the key is mapped to when the totals are read, so a mapping
-    /// applies retroactively. `None` is unassigned, as `unattributed` usage always is.
-    pub project: Option<AiMappedProject>,
-    pub totals: AiUsageTotals,
-}
-
 fn validate_bucket(
-    mut bucket: AiUsageBucket,
+    bucket: &mut AiUsageBucket,
     window: &AiUsageWindow,
     replaced: &HashSet<AiProvider>,
-) -> Result<AiUsageBucket, String> {
+) -> Result<(), String> {
     bucket.hour_start =
         whole_utc_hour(bucket.hour_start).ok_or("hourStart must be a whole UTC hour")?;
     if !window.contains(bucket.hour_start) {
@@ -578,7 +546,7 @@ fn validate_bucket(
         );
     }
 
-    Ok(bucket)
+    Ok(())
 }
 
 fn whole_utc_hour(instant: OffsetDateTime) -> Option<OffsetDateTime> {

@@ -1,5 +1,6 @@
 mod absence;
 mod ai_billing;
+mod ai_exchange_rate;
 mod ai_project_mapping;
 mod ai_subscription;
 mod ai_usage;
@@ -16,6 +17,7 @@ mod work_item;
 
 pub use absence::*;
 pub use ai_billing::*;
+pub use ai_exchange_rate::*;
 pub use ai_project_mapping::*;
 pub use ai_subscription::*;
 pub use ai_usage::*;

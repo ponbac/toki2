@@ -125,6 +125,43 @@ pub enum AiBillingError {
     UserNotFound,
     #[error("ai billing totals exceed the supported numeric range")]
     NumericRange,
+    #[error("{0}")]
+    Invalid(String),
     #[error("ai billing storage error: {0}")]
     Storage(String),
+}
+
+/// Errors from an exchange-rate provider. Billing treats them as a missing
+/// rate: it never guesses one.
+#[derive(Debug, Clone, Error)]
+pub enum ExchangeRateError {
+    /// The provider refused because of its rate limit, possibly saying for how
+    /// long.
+    #[error("the exchange rate provider is rate limiting requests")]
+    RateLimited {
+        retry_after: Option<std::time::Duration>,
+    },
+    /// The provider cannot be reached or failed: a timeout, a connection
+    /// error, a server error, or an endpoint that does not exist.
+    #[error("the exchange rate provider is unavailable: {0}")]
+    Unavailable(String),
+    /// A response for this rate that could not be read.
+    #[error("unexpected exchange rate response: {0}")]
+    Response(String),
+}
+
+impl ExchangeRateError {
+    /// Whether the error concerns the provider as a whole, so no other rate
+    /// should be asked for until it has had time to recover.
+    pub fn is_provider_wide(&self) -> bool {
+        matches!(self, Self::RateLimited { .. } | Self::Unavailable(_))
+    }
+
+    /// How long the provider asked to wait, if it did.
+    pub fn retry_after(&self) -> Option<std::time::Duration> {
+        match self {
+            Self::RateLimited { retry_after } => *retry_after,
+            _ => None,
+        }
+    }
 }

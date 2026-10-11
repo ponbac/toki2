@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_billing_exchange_rates\n                (month, currency, override_rate, overridden_at, overridden_by)\n            VALUES ($1, $2, $3::int8::numeric / 1000000, now(), $4)\n            ON CONFLICT (month, currency) DO UPDATE\n            SET override_rate = EXCLUDED.override_rate,\n                overridden_at = EXCLUDED.overridden_at,\n                overridden_by = EXCLUDED.overridden_by\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Text",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6f5f2546bf799ac888a7e8ec62a04a2985ef9f15751b8ef617b28f091bd509a5"
+}

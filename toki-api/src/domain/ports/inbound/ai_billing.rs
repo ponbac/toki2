@@ -2,8 +2,8 @@ use async_trait::async_trait;
 
 use crate::domain::{
     models::{
-        AiBillingDeveloper, AiBillingMonth, AiDeveloperMonth, AiMonthCompleteness, AiMonthOverview,
-        AiUsageTimeZone, UserId,
+        AiBillingDeveloper, AiBillingMonth, AiCurrency, AiDeveloperMonth, AiExchangeRate,
+        AiExchangeRateValue, AiMonthCompleteness, AiMonthOverview, AiUsageTimeZone, UserId,
     },
     AiBillingError,
 };
@@ -15,7 +15,9 @@ pub trait AiBillingService: Send + Sync + 'static {
     /// The time zone whose calendar days and months billing uses.
     fn time_zone(&self) -> &AiUsageTimeZone;
 
-    /// Everyone's bill for a month in the configured time zone.
+    /// Everyone's bill for a month in the configured time zone, also in the
+    /// billing currency at the month's exchange rates. Rates that are missing
+    /// or due are fetched, waited for only briefly, and reported as pending.
     async fn month_overview(
         &self,
         month: AiBillingMonth,
@@ -37,4 +39,24 @@ pub trait AiBillingService: Send + Sync + 'static {
 
     /// Every user, by name, such as to declare a subscription for.
     async fn users(&self) -> Result<Vec<AiBillingDeveloper>, AiBillingError>;
+
+    /// Overrides a month's exchange rate for `currency`, keeping the fetched
+    /// rate beneath it. A fetch never replaces it. `Invalid` for the billing
+    /// currency.
+    async fn override_exchange_rate(
+        &self,
+        month: AiBillingMonth,
+        currency: &AiCurrency,
+        rate: AiExchangeRateValue,
+        by: &UserId,
+    ) -> Result<AiExchangeRate, AiBillingError>;
+
+    /// Removes an override, so the stored fetched rate applies again, fetched
+    /// only if missing or due: the rate the month now bills at, or `None`
+    /// without one. `Invalid` for the billing currency.
+    async fn reset_exchange_rate(
+        &self,
+        month: AiBillingMonth,
+        currency: &AiCurrency,
+    ) -> Result<Option<AiExchangeRate>, AiBillingError>;
 }

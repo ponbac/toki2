@@ -230,7 +230,8 @@ pub struct AiUsageProviderHintPayload {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsageUploadResponse {
-    /// Buckets now stored for the window.
+    /// Buckets this upload stored. Buckets kept for providers it did not replace
+    /// are not counted.
     stored_buckets: u64,
 }
 
@@ -528,10 +529,7 @@ mod tests {
         adapters::outbound::postgres::{PostgresAiUsageRepository, PostgresApiTokenRepository},
         auth::{authenticate_bearer, require_authenticated},
         domain::{
-            models::{
-                AiUsageDateRange, AiUsageIngestReceipt, AiUsagePeriod, AiUsagePeriodTotals,
-                AiUsageTimeZone, UserId,
-            },
+            models::{AiUsageIngestReceipt, UserId},
             ports::inbound::{ApiTokenAuthenticator, ApiTokenService},
             services::{AiUsageServiceImpl, ApiTokenServiceImpl},
             AiUsageError, ApiTokenError, Role, UserPrincipal,
@@ -558,15 +556,6 @@ mod tests {
             Ok(AiUsageIngestReceipt {
                 stored_buckets: upload.buckets().len() as u64,
             })
-        }
-
-        async fn period_totals(
-            &self,
-            _user_id: &UserId,
-            _dates: AiUsageDateRange,
-            _period: AiUsagePeriod,
-        ) -> Result<Vec<AiUsagePeriodTotals>, AiUsageError> {
-            unreachable!("uploads do not read totals")
         }
     }
 
@@ -806,11 +795,9 @@ mod tests {
         let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
             PostgresApiTokenRepository::new(db.clone()),
         )));
-        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(
-            Arc::new(PostgresAiUsageRepository::new(db)),
-            AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
-            None,
-        ));
+        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(Arc::new(
+            PostgresAiUsageRepository::new(db),
+        )));
         let app = app(service, tokens.clone());
 
         let mut secrets = Vec::new();

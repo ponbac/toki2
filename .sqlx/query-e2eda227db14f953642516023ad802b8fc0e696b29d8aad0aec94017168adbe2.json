@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_billing_exchange_rates\n                (month, currency, fetched_rate, fetched_source, fetched_provisional,\n                 fetched_through, fetched_at)\n            VALUES ($1, $2, $3::int8::numeric / 1000000, $4, $5, $6, now())\n            ON CONFLICT (month, currency) DO UPDATE\n            SET fetched_rate = EXCLUDED.fetched_rate,\n                fetched_source = EXCLUDED.fetched_source,\n                fetched_provisional = EXCLUDED.fetched_provisional,\n                fetched_through = EXCLUDED.fetched_through,\n                fetched_at = EXCLUDED.fetched_at\n            WHERE ai_billing_exchange_rates.fetched_rate IS NULL\n               OR ai_billing_exchange_rates.fetched_provisional\n               OR NOT EXCLUDED.fetched_provisional\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Text",
+        "Int8",
+        "Text",
+        "Bool",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e2eda227db14f953642516023ad802b8fc0e696b29d8aad0aec94017168adbe2"
+}

@@ -2,8 +2,8 @@ import type { AiBillingUsage } from "@/lib/api/queries/ai-admin";
 
 /*
  * Formatting for the admin AI usage pages. USD figures are API-equivalent
- * estimates; fees are exact decimals in their own currency. Nothing converts
- * between currencies.
+ * estimates; fees and converted amounts are exact decimals from the server.
+ * Nothing here converts between currencies.
  */
 
 const usd = new Intl.NumberFormat("en-US", {
