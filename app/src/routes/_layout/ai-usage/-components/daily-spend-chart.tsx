@@ -1,16 +1,14 @@
 import * as React from "react";
 import { AiProviderIcon } from "@/components/ai-provider-icon";
+import { barY, crosshair, defineChart, dot, stack } from "@tanstack/charts";
+import { Chart } from "@tanstack/charts/react/tooltip";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ReferenceDot,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  type TooltipProps,
-} from "recharts";
+  USAGE_CHART_AXIS,
+  USAGE_CHART_THEME,
+  USAGE_CHART_TOOLTIP,
+} from "@/lib/chart-theme";
 import type { AiUsageReport } from "@/lib/api/queries/ai-usage-report";
 import {
   Table,
@@ -27,7 +25,7 @@ import {
   Segmented,
 } from "./chart-card";
 import { dailySpend, type DailyRow, type StackBy } from "../-lib/aggregate";
-import { AXIS_TICK, GRID_COLOR, SURFACE_COLOR } from "../-lib/colors";
+import { SURFACE_COLOR } from "../-lib/colors";
 import {
   formatCompact,
   formatCount,
@@ -37,6 +35,13 @@ import {
 import { formatAmount, formatAxisAmount, useMoney } from "../-lib/money";
 
 type View = "chart" | "table";
+
+type SpendPoint = Readonly<{
+  key: string;
+  row: DailyRow;
+  seriesKey: string;
+  amount: number;
+}>;
 
 /**
  * Estimated spend per local day, stacked by provider or model. Bars show the
@@ -61,6 +66,114 @@ export function DailySpendChart({
   );
   const unknownDays = rows.filter((row) => row.unpricedRecords > 0);
   const labels = new Map(series.map((entry) => [entry.key, entry]));
+  const definition = React.useMemo(() => {
+    const points: SpendPoint[] = rows.flatMap((row) =>
+      series.map((entry) => ({
+        key: `${row.date}:${entry.key}`,
+        row,
+        seriesKey: entry.key,
+        amount: row.values[entry.key] ?? 0,
+      })),
+    );
+    const unknown: SpendPoint[] = rows
+      .filter((row) => row.unpricedRecords > 0)
+      .map((row) => ({
+        key: `${row.date}:unpriced`,
+        row,
+        seriesKey: "unpriced",
+        amount: row.known,
+      }));
+    return defineChart({
+      marks: [
+        crosshair({
+          x: { band: { fill: "hsl(var(--muted) / 0.45)", fillOpacity: 1 } },
+          y: false,
+        }),
+        barY(points, {
+          x: (point) => point.row.date,
+          y: "amount",
+          color: "seriesKey",
+          key: "key",
+          layout: stack({ order: series.map((entry) => entry.key) }),
+          maxThickness: 24,
+          radius: { end: 4 },
+          stroke: (point) => (point.amount > 0 ? SURFACE_COLOR : "none"),
+          strokeWidth: 1,
+        }),
+        dot(unknown, {
+          x: (point) => point.row.date,
+          y: "amount",
+          key: "key",
+          r: 4,
+          fill: SURFACE_COLOR,
+          stroke: "hsl(var(--foreground))",
+          strokeWidth: 1.5,
+        }),
+      ],
+      scales: {
+        x: {
+          scale: scaleBand<string>()
+            .domain(rows.map((row) => row.date))
+            .padding(0.2),
+          axis: {
+            ...USAGE_CHART_AXIS,
+            line: { stroke: "var(--viz-grid)", strokeOpacity: 1 },
+            ticks: { size: 0, line: false, format: formatShortDate },
+            tickLabels: {
+              fontSize: 11,
+              opacity: 1,
+              dy: 3,
+              thin: { minGap: 16, priority: "ends" },
+            },
+          },
+        },
+        y: {
+          scale: scaleLinear,
+          nice: true,
+          grid: { strokeOpacity: 1 },
+          axis: {
+            ...USAGE_CHART_AXIS,
+            ticks: {
+              size: 0,
+              line: false,
+              count: 5,
+              format: (value) => formatAxisAmount(money, value),
+            },
+          },
+        },
+      },
+      color: {
+        domain: series.map((entry) => entry.key),
+        range: series.map((entry) => entry.color),
+      },
+      theme: USAGE_CHART_THEME,
+      focus: "group-x",
+      focusRing: false,
+      tooltip: {
+        ...USAGE_CHART_TOOLTIP,
+        formatGroup: (points) => {
+          const row = points[0]?.datum.row;
+          if (!row) return "";
+          return [
+            formatLongDate(row.date),
+            ...[...series].reverse().flatMap((entry) => {
+              const amount = row.values[entry.key] ?? 0;
+              return amount > 0
+                ? [`${entry.label}: ${formatAmount(money, amount)}`]
+                : [];
+            }),
+            `${row.unpricedRecords > 0 ? "Known subtotal" : "Total"}: ${formatAmount(money, row.known)}`,
+            `${formatCompact(row.tokens)} tokens`,
+            ...(row.unpricedRecords > 0
+              ? [
+                  `Plus unknown: ${formatCount(row.unpricedRecords)} unpriced requests`,
+                ]
+              : []),
+          ].join("\n");
+        },
+      },
+    });
+  }, [rows, series, money]);
 
   return (
     <ChartCard
@@ -92,65 +205,23 @@ export function DailySpendChart({
     >
       {view === "chart" ? (
         <>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={[...rows]}
-                margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-                barCategoryGap="20%"
-              >
-                <CartesianGrid vertical={false} stroke={GRID_COLOR} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={formatShortDate}
-                  tick={AXIS_TICK}
-                  tickLine={false}
-                  axisLine={{ stroke: GRID_COLOR }}
-                  minTickGap={16}
-                />
-                <YAxis
-                  tickFormatter={(value: number) =>
-                    formatAxisAmount(money, value)
-                  }
-                  tick={AXIS_TICK}
-                  tickLine={false}
-                  axisLine={false}
-                  width={money.currency === "SEK" ? 64 : 52}
-                  allowDecimals
-                />
-                <Tooltip
-                  cursor={{ fill: "hsl(var(--muted) / 0.45)" }}
-                  content={<DailyTooltip labels={labels} />}
-                />
-                {series.map((entry) => (
-                  <Bar
-                    key={entry.key}
-                    dataKey={(row: DailyRow) => row.values[entry.key] ?? 0}
-                    name={entry.label}
-                    stackId="spend"
-                    fill={entry.color}
-                    maxBarSize={24}
-                    isAnimationActive={false}
-                    shape={(props: unknown) => (
-                      <StackSegment props={props} seriesKey={entry.key} />
-                    )}
-                  />
-                ))}
-                {unknownDays.map((row) => (
-                  <ReferenceDot
-                    key={row.date}
-                    x={row.date}
-                    y={row.known}
-                    r={4}
-                    fill={SURFACE_COLOR}
-                    stroke="hsl(var(--foreground))"
-                    strokeWidth={1.5}
-                    ifOverflow="extendDomain"
-                  />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {rows.some((row) => row.records > 0) ? (
+            <Chart
+              definition={definition}
+              height={256}
+              className="w-full tabular-nums"
+              ariaLabel="Estimated spend per local day"
+              ariaDescription="Bars show known estimated cost. Rings mark unpriced usage whose cost is unknown. Use arrow keys to inspect days and Enter to pin details."
+              renderTooltipBody={({ points }) => {
+                const row = points[0]?.datum.row;
+                return row ? <DailyTooltip row={row} labels={labels} /> : null;
+              }}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No usage in this range.
+            </p>
+          )}
           <ul className="flex flex-wrap gap-x-4 gap-y-1">
             {series.map((entry) => (
               <LegendItem
@@ -178,89 +249,14 @@ export function DailySpendChart({
   );
 }
 
-/** A bar segment with a surface gap above it, rounded only at the stack's top. */
-function StackSegment({
-  props,
-  seriesKey,
-}: {
-  props: unknown;
-  seriesKey: string;
-}) {
-  const segment = parseSegment(props);
-  if (!segment || segment.height <= 0) {
-    return null;
-  }
-  const { x, y, width, height, fill, top } = segment;
-  const rounded = top === seriesKey;
-  const gap = rounded ? 0 : Math.min(2, height / 2);
-  const radius = rounded ? Math.min(4, height, width / 2) : 0;
-  const top_ = y + gap;
-  const bottom = y + height;
-
-  return (
-    <path
-      fill={fill}
-      d={
-        radius > 0
-          ? `M${x},${bottom} V${top_ + radius} Q${x},${top_} ${x + radius},${top_} H${x + width - radius} Q${x + width},${top_} ${x + width},${top_ + radius} V${bottom} Z`
-          : `M${x},${bottom} V${top_} H${x + width} V${bottom} Z`
-      }
-    />
-  );
-}
-
-/**
- * Reads the geometry recharts passes to a custom bar shape. Recharts types
- * these props loosely, so they are parsed rather than trusted.
- */
-function parseSegment(props: unknown): {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  fill: string;
-  top: string | null;
-} | null {
-  if (typeof props !== "object" || props === null) {
-    return null;
-  }
-  const record: Record<string, unknown> = { ...props };
-  const payload = record.payload;
-  const { x, y, width, height, fill } = record;
-  if (
-    typeof x !== "number" ||
-    typeof y !== "number" ||
-    typeof width !== "number" ||
-    typeof height !== "number" ||
-    typeof fill !== "string" ||
-    typeof payload !== "object" ||
-    payload === null
-  ) {
-    return null;
-  }
-  const top = "top" in payload ? payload.top : null;
-  return {
-    x,
-    y,
-    width,
-    height,
-    fill,
-    top: typeof top === "string" ? top : null,
-  };
-}
-
 function DailyTooltip({
-  active,
-  payload,
+  row,
   labels,
-}: TooltipProps<number, string> & {
+}: {
+  row: DailyRow;
   labels: ReadonlyMap<string, { label: string; color: string }>;
 }) {
   const money = useMoney();
-  const row = payload?.[0]?.payload;
-  if (!active || !isDailyRow(row)) {
-    return null;
-  }
   const entries = [...labels.entries()]
     .map(([key, entry]) => ({ key, ...entry, value: row.values[key] ?? 0 }))
     .filter((entry) => entry.value > 0)
@@ -294,16 +290,6 @@ function DailyTooltip({
         </>
       }
     />
-  );
-}
-
-function isDailyRow(value: unknown): value is DailyRow {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "date" in value &&
-    "values" in value &&
-    "known" in value
   );
 }
 

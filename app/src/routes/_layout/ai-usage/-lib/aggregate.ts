@@ -39,8 +39,6 @@ export type DailyRow = Readonly<{
   unpricedRecords: number;
   records: number;
   tokens: number;
-  /** The topmost series with spend, whose segment gets the rounded end. */
-  top: string | null;
 }>;
 
 const OTHER_KEY = "other";
@@ -160,9 +158,6 @@ export function dailySpend(
   const rows = eachDate(report).map((date): DailyRow => {
     const entry = byDate.get(date);
     const values = entry?.values ?? {};
-    const top =
-      [...series].reverse().find((entry) => (values[entry.key] ?? 0) > 0)
-        ?.key ?? null;
     return {
       date,
       values,
@@ -170,7 +165,6 @@ export function dailySpend(
       unpricedRecords: entry?.unpriced ?? 0,
       records: entry?.records ?? 0,
       tokens: entry?.tokens ?? 0,
-      top,
     };
   });
 

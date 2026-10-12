@@ -1,20 +1,20 @@
 import * as React from "react";
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  type TooltipProps,
-} from "recharts";
+import { barX, crosshair, defineChart, stack } from "@tanstack/charts";
+import { Chart } from "@tanstack/charts/react/tooltip";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
 import type {
   AiTokenCounts,
   AiUsageReport,
 } from "@/lib/api/queries/ai-usage-report";
+import {
+  USAGE_CHART_AXIS,
+  USAGE_CHART_THEME,
+  USAGE_CHART_TOOLTIP,
+} from "@/lib/chart-theme";
 import { ChartCard, ChartTooltipFrame, LegendItem } from "./chart-card";
 import { tokenMix } from "../-lib/aggregate";
-import { AXIS_TICK, SURFACE_COLOR, TOKEN_COLORS } from "../-lib/colors";
+import { SURFACE_COLOR, TOKEN_COLORS } from "../-lib/colors";
 import { formatCompact, formatPercent, totalTokens } from "../-lib/format";
 
 const CATEGORIES = [
@@ -24,7 +24,7 @@ const CATEGORIES = [
   { key: "output", label: "Output" },
 ] as const satisfies readonly { key: keyof AiTokenCounts; label: string }[];
 
-type MixRow = Readonly<{ label: string; tokens: AiTokenCounts }>;
+type MixRow = Readonly<{ key: string; label: string; tokens: AiTokenCounts }>;
 
 /**
  * The share of input, cache read, cache write and output tokens, overall and
@@ -40,6 +40,80 @@ export function TokenMixChart({
   const rows = React.useMemo(() => tokenMix(report), [report]);
   const overall = report.totals.tokens;
   const total = totalTokens(overall);
+  const definition = React.useMemo(() => {
+    const segments = rows.flatMap((row) =>
+      CATEGORIES.map((category) => ({
+        key: `${row.key}:${category.key}`,
+        row,
+        category: category.key,
+        value: row.tokens[category.key],
+      })),
+    );
+    const labels = new Map(rows.map((row) => [row.key, row.label]));
+
+    return defineChart({
+      marks: [
+        crosshair({
+          x: false,
+          y: { band: { fill: "hsl(var(--muted) / 0.45)", fillOpacity: 1 } },
+        }),
+        barX(segments, {
+          key: "key",
+          x: "value",
+          y: (segment) => segment.row.key,
+          z: "category",
+          color: "category",
+          layout: stack({
+            order: CATEGORIES.map((category) => category.key),
+            offset: "normalize",
+          }),
+          maxThickness: 20,
+          stroke: SURFACE_COLOR,
+          strokeWidth: 1,
+        }),
+      ],
+      scales: {
+        x: { scale: scaleLinear().domain([0, 1]), axis: false },
+        y: {
+          scale: () =>
+            scaleBand<string>()
+              .domain(rows.map((row) => row.key))
+              .paddingInner(0.12)
+              .paddingOuter(0.12),
+          axis: {
+            ...USAGE_CHART_AXIS,
+            ticks: {
+              ...USAGE_CHART_AXIS.ticks,
+              format: (key) => labels.get(key) ?? key,
+            },
+          },
+        },
+      },
+      color: {
+        domain: CATEGORIES.map((category) => category.key),
+        range: CATEGORIES.map((category) => TOKEN_COLORS[category.key]),
+      },
+      theme: USAGE_CHART_THEME,
+      focus: "group-y",
+      focusRing: false,
+      tooltip: {
+        ...USAGE_CHART_TOOLTIP,
+        formatGroup: (points) => {
+          const row = points[0]?.datum.row;
+          if (!row) return "";
+          const total = totalTokens(row.tokens);
+          return [
+            row.label,
+            ...CATEGORIES.map(
+              (category) =>
+                `${category.label}: ${formatCompact(row.tokens[category.key])} (${formatPercent(total > 0 ? row.tokens[category.key] / total : 0)})`,
+            ),
+            `${formatCompact(total)} tokens`,
+          ].join("\n");
+        },
+      },
+    });
+  }, [rows]);
 
   return (
     <ChartCard
@@ -53,44 +127,17 @@ export function TokenMixChart({
         </p>
       ) : (
         <>
-          <div style={{ height: rows.length * 34 + 8 }} className="w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={rows.map((row) => ({ ...row }))}
-                layout="vertical"
-                stackOffset="expand"
-                margin={{ top: 0, right: 8, bottom: 0, left: 0 }}
-                barCategoryGap={6}
-              >
-                <XAxis type="number" hide />
-                <YAxis
-                  type="category"
-                  dataKey="label"
-                  width={96}
-                  tick={AXIS_TICK}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip
-                  cursor={{ fill: "hsl(var(--muted) / 0.45)" }}
-                  content={<MixTooltip />}
-                />
-                {CATEGORIES.map((category) => (
-                  <Bar
-                    key={category.key}
-                    dataKey={(row: MixRow) => row.tokens[category.key]}
-                    name={category.label}
-                    stackId="mix"
-                    fill={TOKEN_COLORS[category.key]}
-                    stroke={SURFACE_COLOR}
-                    strokeWidth={1}
-                    maxBarSize={20}
-                    isAnimationActive={false}
-                  />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <Chart
+            definition={definition}
+            height={rows.length * 34 + 8}
+            ariaLabel="Token mix by tool"
+            ariaDescription="Each bar shows input, cache read, cache write, and output as a share of its tool's tokens."
+            className="w-full"
+            renderTooltipBody={({ points }) => {
+              const row = points[0]?.datum.row;
+              return row ? <MixTooltip row={row} /> : null;
+            }}
+          />
           <ul className="flex flex-wrap gap-x-4 gap-y-1">
             {CATEGORIES.map((category) => (
               <LegendItem
@@ -114,11 +161,7 @@ export function TokenMixChart({
   );
 }
 
-function MixTooltip({ active, payload }: TooltipProps<number, string>) {
-  const row = payload?.[0]?.payload;
-  if (!active || !isMixRow(row)) {
-    return null;
-  }
+function MixTooltip({ row }: { row: MixRow }) {
   const total = totalTokens(row.tokens);
   return (
     <ChartTooltipFrame
@@ -131,14 +174,5 @@ function MixTooltip({ active, payload }: TooltipProps<number, string>) {
       }))}
       footer={`${formatCompact(total)} tokens`}
     />
-  );
-}
-
-function isMixRow(value: unknown): value is MixRow {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "label" in value &&
-    "tokens" in value
   );
 }

@@ -1,4 +1,4 @@
-import { AI_PROVIDERS, type AiProvider } from "@/lib/api/queries/ai-usage";
+import type { AiProvider } from "@/lib/api/queries/ai-usage";
 import type { AiBillingUsage, AiDayUsage } from "@/lib/api/queries/ai-admin";
 
 /*
@@ -97,13 +97,10 @@ export function breakdown(
   );
 }
 
-/** One day of the chart: API-equivalent USD per provider, and which
- * providers sit at the top and bottom of its stack. */
+/** One day of the chart: API-equivalent USD per provider. */
 export type DayPoint = Record<AiProvider, number> & {
   day: string;
   label: string;
-  top: AiProvider | null;
-  bottom: AiProvider | null;
 };
 
 /** Every local day from `firstDay` through `lastDay`, `YYYY-MM-DD`. */
@@ -131,8 +128,6 @@ export function dailySeries(
     const point: DayPoint = {
       day,
       label: String(Number(day.slice(8))),
-      top: null,
-      bottom: null,
       codex: 0,
       claude: 0,
       grok: 0,
@@ -144,9 +139,6 @@ export function dailySeries(
         point[row.provider] += row.usage.apiEquivalentUsd;
       }
     }
-    const stacked = AI_PROVIDERS.filter((provider) => point[provider] > 0);
-    point.bottom = stacked[0] ?? null;
-    point.top = stacked[stacked.length - 1] ?? null;
     return point;
   });
 }

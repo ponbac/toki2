@@ -1,61 +1,19 @@
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Rectangle,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  type TooltipProps,
-} from "recharts";
-import { z } from "zod";
+import { barY, crosshair, defineChart, stack } from "@tanstack/charts";
+import { Chart } from "@tanstack/charts/react/tooltip";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
+import { useMemo } from "react";
 import { AiProviderIcon } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/api/queries/ai-usage";
+import {
+  USAGE_CHART_AXIS,
+  USAGE_CHART_THEME,
+  USAGE_CHART_TOOLTIP,
+} from "@/lib/chart-theme";
 import type { DayPoint } from "../../-lib/daily";
 import { formatUsd, shortDate } from "../../-lib/format";
 import { PROVIDER_COLOR_VARS } from "../../-lib/providers";
-
-const AXIS_TICK = { fill: "hsl(var(--muted-foreground))", fontSize: 11 };
-const GAP = 2;
-const RADIUS = 4;
-
-/** The geometry recharts hands a bar shape; anything else draws nothing. */
-const segmentSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  width: z.number(),
-  height: z.number(),
-  fill: z.string(),
-  payload: z.object({
-    top: z.string().nullable(),
-    bottom: z.string().nullable(),
-  }),
-});
-
-/** A stacked segment: rounded only at the top of its day's stack, and
- * separated from the segment below it by a gap of surface. */
-function segment(provider: AiProvider) {
-  return (props: unknown) => {
-    const parsed = segmentSchema.safeParse(props);
-    if (!parsed.success || parsed.data.height <= 0) {
-      return <g />;
-    }
-    const { x, y, width, height, fill, payload } = parsed.data;
-    const gap = payload.bottom === provider ? 0 : Math.min(GAP, height / 2);
-    return (
-      <Rectangle
-        x={x}
-        y={y}
-        width={width}
-        height={height - gap}
-        fill={fill}
-        radius={payload.top === provider ? [RADIUS, RADIUS, 0, 0] : 0}
-      />
-    );
-  };
-}
 
 /**
  * API-equivalent cost per local day, stacked by provider. Colors follow the
@@ -69,9 +27,88 @@ export function DailyCostChart({
   /** How each provider's usage bills on each day, `${day}:${provider}`. */
   billing: ReadonlyMap<string, string>;
 }) {
-  const providers = AI_PROVIDERS.filter((provider) =>
-    points.some((point) => point[provider] > 0),
-  );
+  const { providers, definition } = useMemo(() => {
+    const providers = AI_PROVIDERS.filter((provider) =>
+      points.some((point) => point[provider] > 0),
+    );
+    const rows = points.flatMap((point) =>
+      providers.map((provider) => ({
+        point,
+        provider,
+        usd: point[provider],
+      })),
+    );
+    const labels = new Map(points.map((point) => [point.day, point.label]));
+    const definition = defineChart({
+      marks: [
+        crosshair({
+          x: { band: { fill: "hsl(var(--muted) / 0.4)", fillOpacity: 1 } },
+          y: false,
+        }),
+        barY(rows, {
+          x: (row) => row.point.day,
+          y: "usd",
+          color: "provider",
+          key: (row) => `${row.point.day}:${row.provider}`,
+          layout: stack({ order: AI_PROVIDERS }),
+          maxThickness: 24,
+          radius: { end: 4 },
+          stroke: (row) => (row.usd > 0 ? "hsl(var(--card))" : "none"),
+          strokeWidth: 2,
+        }),
+      ],
+      scales: {
+        x: {
+          scale: () =>
+            scaleBand<string>()
+              .domain(points.map((point) => point.day))
+              .padding(0.2),
+          axis: {
+            ...USAGE_CHART_AXIS,
+            line: { stroke: "hsl(var(--border))", strokeOpacity: 1 },
+            ticks: {
+              ...USAGE_CHART_AXIS.ticks,
+              format: (day) => labels.get(day) ?? day,
+            },
+          },
+        },
+        y: {
+          scale: scaleLinear,
+          nice: true,
+          grid: { stroke: "hsl(var(--border) / 0.6)", strokeOpacity: 1 },
+          axis: {
+            ...USAGE_CHART_AXIS,
+            ticks: { ...USAGE_CHART_AXIS.ticks, format: formatUsd },
+          },
+        },
+      },
+      color: {
+        domain: providers,
+        range: providers.map((provider) => PROVIDER_COLOR_VARS[provider]),
+      },
+      theme: USAGE_CHART_THEME,
+      focus: "group-x",
+      focusRing: false,
+      tooltip: {
+        ...USAGE_CHART_TOOLTIP,
+        formatGroup: (focused) => {
+          const point = focused[0]?.datum.point;
+          if (!point) return "";
+          const used = providers.filter((provider) => point[provider] > 0);
+          return [
+            shortDate(point.day),
+            ...(used.length === 0
+              ? ["No priced usage"]
+              : used.map(
+                  (provider) =>
+                    `${AI_PROVIDER_LABELS[provider]}: ${formatUsd(point[provider])} · ${billing.get(`${point.day}:${provider}`) ?? "API"}`,
+                )),
+          ].join("\n");
+        },
+      },
+    });
+    return { providers, definition };
+  }, [points, billing]);
   if (providers.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border/80 p-6 text-center text-sm text-muted-foreground">
@@ -94,71 +131,35 @@ export function DailyCostChart({
           </li>
         ))}
       </ul>
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={[...points]}
-            margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-            accessibilityLayer
-          >
-            <CartesianGrid vertical={false} stroke="hsl(var(--border) / 0.6)" />
-            <XAxis
-              dataKey="label"
-              tick={AXIS_TICK}
-              tickLine={false}
-              axisLine={{ stroke: "hsl(var(--border))" }}
-              interval="preserveStartEnd"
+      <Chart
+        definition={definition}
+        height={256}
+        className="min-w-0"
+        ariaLabel="Daily API-equivalent cost by AI provider"
+        ariaDescription="Each day's bar stacks the providers' priced usage in USD. Exact values and unpriced usage are listed in the tables below."
+        renderTooltipBody={({ primaryPoint }) =>
+          primaryPoint ? (
+            <DayTooltip
+              point={primaryPoint.datum.point}
+              providers={providers}
+              billing={billing}
             />
-            <YAxis
-              tick={AXIS_TICK}
-              tickLine={false}
-              axisLine={false}
-              width={56}
-              tickFormatter={(value: number) => formatUsd(value)}
-            />
-            <Tooltip
-              cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
-              content={
-                <DayTooltip
-                  points={points}
-                  providers={providers}
-                  billing={billing}
-                />
-              }
-            />
-            {providers.map((provider) => (
-              <Bar
-                key={provider}
-                dataKey={provider}
-                stackId="cost"
-                fill={PROVIDER_COLOR_VARS[provider]}
-                maxBarSize={24}
-                shape={segment(provider)}
-                isAnimationActive={false}
-              />
-            ))}
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+          ) : null
+        }
+      />
     </div>
   );
 }
 
 function DayTooltip({
-  active,
-  label,
-  points,
+  point,
   providers,
   billing,
-}: TooltipProps<number, string> & {
-  points: readonly DayPoint[];
+}: {
+  point: DayPoint;
   providers: readonly AiProvider[];
   billing: ReadonlyMap<string, string>;
 }) {
-  const point = points.find((candidate) => candidate.label === label);
-  if (!active || !point) {
-    return null;
-  }
   const used = providers.filter((provider) => point[provider] > 0);
   return (
     <div className="min-w-44 rounded-lg border border-border/60 bg-card px-3 py-2 text-sm shadow-elevated">
