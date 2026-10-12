@@ -823,7 +823,9 @@ function CopilotStep({
                   VS Code: adds the <code>{COPILOT_VSCODE_SETTINGS}</code>{" "}
                   settings to <code>{guide.vscodeSettings}</code>, with this
                   machine's path filled in, and tells Settings Sync not to copy
-                  that path to your other machines.
+                  that path to your other machines. The settings are shared by
+                  all VS Code profiles, and VS Code Insiders gets them too if it
+                  is installed.
                 </span>
               </li>
             )}
@@ -897,7 +899,13 @@ function CopilotStep({
                   , and paste {guide.copiesSettings ? "" : "the settings "}
                   on a new line right after the opening brace. The last line
                   keeps Settings Sync from copying this machine's path to your
-                  other machines.
+                  other machines. In a VS Code profile other than the default,
+                  run{" "}
+                  <span className="font-medium">
+                    Preferences: Open Application Settings (JSON)
+                  </span>{" "}
+                  instead: these settings are shared by all profiles and kept
+                  there.
                 </li>
                 <li>
                   If the file already has one of these settings further down,

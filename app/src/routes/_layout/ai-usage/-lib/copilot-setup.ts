@@ -38,7 +38,10 @@ type CopilotGuide = Readonly<{
   exportDir: string;
   /** Where the variable is set to last for new terminals, to end a sentence. */
   persistence: string;
-  /** VS Code's user settings, for the stable build's default profile. */
+  /**
+   * VS Code's user settings, for the stable build's default profile, which is
+   * where the export's settings are read from whatever profile is in use.
+   */
   vscodeSettings: string;
   /** VS Code's default shortcut for the command palette. */
   paletteShortcut: readonly ShortcutKey[];
