@@ -115,7 +115,8 @@ export function copilotEnableCommand(
 /**
  * The commands that turn on Copilot CLI's export by hand: the folder, then
  * the variable for every new terminal. The macOS and Linux line is for the
- * shell the system's commands are written for.
+ * shell the system's commands are written for, and starts on a line of its
+ * own even after a startup file that does not end with one.
  */
 export function copilotCliCommands(os: MachineOs): readonly SetupCommand[] {
   const folder = "Create the folder the export is written to";
@@ -140,7 +141,7 @@ export function copilotCliCommands(os: MachineOs): readonly SetupCommand[] {
     {
       label: variable,
       lines: [
-        `echo 'export ${COPILOT_CLI_VARIABLE}="$HOME/.copilot/otel/usage.jsonl"' >> ${startupFile}`,
+        `printf '\\n%s\\n' 'export ${COPILOT_CLI_VARIABLE}="$HOME/.copilot/otel/usage.jsonl"' >> ${startupFile}`,
       ],
     },
   ];

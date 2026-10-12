@@ -105,6 +105,7 @@ const UPLOAD_DOCS =
   "https://github.com/ponbac/token-ledger#what-leaves-the-machine";
 const VSCODE_EXPORT_BUG_DOCS =
   "https://github.com/ponbac/token-ledger#workaround-for-vs-codes-file-exporter-bug";
+const VSCODE_CONTENT_BUG = "https://github.com/microsoft/vscode/issues/326254";
 
 /**
  * Walks through connecting a machine: its system and where Copilot runs on it,
@@ -765,7 +766,8 @@ function CopilotStep({
     <>
       <p className="text-xs text-muted-foreground">
         Copilot keeps no usage log until you turn one on, and sessions before
-        that cannot be recovered. Prompts and responses are not captured.
+        that cannot be recovered. The log is a file on this machine, and only
+        token counts from it are uploaded.
       </p>
       <div>
         <Segmented
@@ -893,6 +895,20 @@ function CopilotStep({
             </section>
           )}
         </>
+      )}
+      {vscode && (
+        <p className="text-xs text-muted-foreground">
+          VS Code is told to leave prompts and responses out of its log, but{" "}
+          <a
+            href={VSCODE_CONTENT_BUG}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            an open VS Code bug
+          </a>{" "}
+          can write them to that local file anyway. They are never uploaded.
+        </p>
       )}
       {vscode && (
         <p className="text-xs text-muted-foreground">
