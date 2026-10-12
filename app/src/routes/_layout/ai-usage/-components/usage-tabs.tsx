@@ -27,15 +27,16 @@ const TABS = [
 /**
  * The page's tabs, each a link that keeps the dates and filters. A tab says
  * what waits behind it: how many sessions and machines there are, and, in
- * the attention colour, how many repositories are still to map and whether a
- * machine has a problem.
+ * the attention colour, how many repositories are still to map and any
+ * warning from `warnings`. What a tab holds is out of sight from the others,
+ * so a tab whose data failed to load says so here too.
  */
 export function UsageTabs({
   tab,
   sessions,
   mappable,
   machines,
-  machineProblem,
+  warnings,
 }: {
   tab: UsageTab;
   /** Sessions in the range and filters, once known. */
@@ -43,26 +44,16 @@ export function UsageTabs({
   /** Repositories the user can map to a project. */
   mappable: number;
   machines: number | undefined;
-  /** A machine has a finding worse than a note, or they failed to load. */
-  machineProblem: boolean;
+  /** What is wrong behind a tab, in a few words for a screen reader. */
+  warnings: Readonly<Partial<Record<UsageTab, string>>>;
 }) {
-  const marks: Readonly<Record<UsageTab, React.ReactNode>> = {
+  const counts: Readonly<Record<UsageTab, React.ReactNode>> = {
     overview: null,
     sessions: sessions !== undefined && <Count>{formatCount(sessions)}</Count>,
     repositories: mappable > 0 && (
       <Count attention>{formatCount(mappable)} to map</Count>
     ),
-    machines: (
-      <>
-        {machines !== undefined && <Count>{formatCount(machines)}</Count>}
-        {machineProblem && (
-          <>
-            <AlertTriangle aria-hidden className="size-3.5 text-primary" />
-            <span className="sr-only">needs attention</span>
-          </>
-        )}
-      </>
-    ),
+    machines: machines !== undefined && <Count>{formatCount(machines)}</Count>,
   };
 
   return (
@@ -91,7 +82,13 @@ export function UsageTabs({
           >
             <Icon aria-hidden className="size-4" />
             {label}
-            {marks[value]}
+            {counts[value]}
+            {warnings[value] !== undefined && (
+              <>
+                <AlertTriangle aria-hidden className="size-3.5 text-primary" />
+                <span className="sr-only">{warnings[value]}</span>
+              </>
+            )}
             {active && (
               <motion.span
                 layoutId="ai-usage-tab"

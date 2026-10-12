@@ -145,16 +145,24 @@ function AiUsagePage() {
   );
   const mappable =
     keysQuery.data?.projectKeys.filter((key) => key.mappable).length ?? 0;
-  // The same findings the Machines tab lists, so none waits there unseen;
-  // a failed check of the machines is one too.
+  // What is wrong behind each tab. A tab's content is out of sight from the
+  // others, so its failed load is marked here, and the Machines tab is
+  // marked by the same findings it lists.
   const staleAfterDays = machinesQuery.data?.staleAfterDays;
-  const machineProblem =
-    machinesQuery.isError ||
-    (staleAfterDays !== undefined &&
-      (machinesQuery.data?.machines.some((machine) =>
-        needsAttention(machine, staleAfterDays),
-      ) ??
-        false));
+  const machineFinding =
+    staleAfterDays !== undefined &&
+    machinesQuery.data?.machines.some((machine) =>
+      needsAttention(machine, staleAfterDays),
+    );
+  const warnings = {
+    sessions: sessionsQuery.isError ? "could not be loaded" : undefined,
+    repositories: keysQuery.isError ? "could not be loaded" : undefined,
+    machines: machinesQuery.isError
+      ? "could not be checked"
+      : machineFinding
+        ? "needs attention"
+        : undefined,
+  };
 
   const setFilters = (patch: FilterPatch) =>
     void navigate({ search: (previous) => ({ ...previous, ...patch }) });
@@ -265,7 +273,7 @@ function AiUsagePage() {
               sessions={sessions}
               mappable={mappable}
               machines={machinesQuery.data?.machines.length}
-              machineProblem={machineProblem}
+              warnings={warnings}
             />
             {tab === "overview" &&
               (reportQuery.isPending || machinesQuery.isPending ? (
