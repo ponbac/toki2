@@ -92,7 +92,7 @@ export function setupCommands(
           ? [`$env:TOKI_API_TOKEN = '${token}'`, login]
           : [`TOKI_API_TOKEN=${token} ${login}`],
     },
-    { label: "Upload the last 14 days", lines: [`${run} sync`] },
+    { label: "Upload this machine's history", lines: [`${run} sync`] },
     {
       label: `Sync every day at 12:30 with a ${OS_GUIDES[os].scheduler}`,
       lines: [`${run} schedule install`],
