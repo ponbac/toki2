@@ -5,14 +5,33 @@ import { type BuddySpeciesId, parseBuddySpeciesId } from "./species";
 /** How long the buddy rests between idle behaviours. */
 export type BuddyEnergy = "calm" | "lively";
 
+/**
+ * Read from localStorage on first use rather than after mount. Otherwise the
+ * first render sees the defaults: a switched-off buddy would still load and
+ * flash, and a picked Pokemon would briefly be the default one.
+ */
+const READ_ON_INIT = { getOnInit: true };
+
 /** Whether the timer buddy is shown at all. */
 export const timerBuddyEnabledAtom = atomWithStorage(
   "timer-buddy-enabled",
   true,
+  undefined,
+  READ_ON_INIT,
 );
 
-const storedSpeciesAtom = atomWithStorage<unknown>("timer-buddy-species", null);
-const storedEnergyAtom = atomWithStorage<unknown>("timer-buddy-energy", "calm");
+const storedSpeciesAtom = atomWithStorage<unknown>(
+  "timer-buddy-species",
+  null,
+  undefined,
+  READ_ON_INIT,
+);
+const storedEnergyAtom = atomWithStorage<unknown>(
+  "timer-buddy-energy",
+  "calm",
+  undefined,
+  READ_ON_INIT,
+);
 
 /**
  * The Pokemon the user picked, or `null` to follow their fallback avatar.
