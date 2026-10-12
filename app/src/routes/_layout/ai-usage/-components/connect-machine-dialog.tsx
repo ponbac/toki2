@@ -893,7 +893,9 @@ function CopilotStep({
                     Preferences: Open User Settings (JSON)
                   </span>
                   , and paste {guide.copiesSettings ? "" : "the settings "}
-                  on a new line right after the opening brace.
+                  on a new line right after the opening brace. If the file
+                  already has one of these settings further down, delete that
+                  older line, or it wins.
                 </li>
                 <li>
                   Press <PaletteShortcut os={os} /> again, run{" "}
