@@ -43,7 +43,7 @@ export function UsageTabs({
   /** Repositories the user can map to a project. */
   mappable: number;
   machines: number | undefined;
-  /** A machine has a finding worse than a note: its figures may be off. */
+  /** A machine has a finding worse than a note, or they failed to load. */
   machineProblem: boolean;
 }) {
   const marks: Readonly<Record<UsageTab, React.ReactNode>> = {

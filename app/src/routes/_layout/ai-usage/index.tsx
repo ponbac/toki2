@@ -145,14 +145,16 @@ function AiUsagePage() {
   );
   const mappable =
     keysQuery.data?.projectKeys.filter((key) => key.mappable).length ?? 0;
-  // The same findings the Machines tab lists, so none waits there unseen.
+  // The same findings the Machines tab lists, so none waits there unseen;
+  // a failed check of the machines is one too.
   const staleAfterDays = machinesQuery.data?.staleAfterDays;
   const machineProblem =
-    staleAfterDays !== undefined &&
-    (machinesQuery.data?.machines.some((machine) =>
-      needsAttention(machine, staleAfterDays),
-    ) ??
-      false);
+    machinesQuery.isError ||
+    (staleAfterDays !== undefined &&
+      (machinesQuery.data?.machines.some((machine) =>
+        needsAttention(machine, staleAfterDays),
+      ) ??
+        false));
 
   const setFilters = (patch: FilterPatch) =>
     void navigate({ search: (previous) => ({ ...previous, ...patch }) });

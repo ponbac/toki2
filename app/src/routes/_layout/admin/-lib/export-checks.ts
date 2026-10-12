@@ -79,17 +79,20 @@ function rateLabel(rate: AiExchangeRate): string {
 /**
  * Whether everything on the bill converts to the billing currency at a rate
  * that will not change. A missing rate and a provisional one need attention;
- * a rate being fetched is pending.
+ * a rate being fetched is pending. Only the rates the bill's lines use count:
+ * a month keeps a stored rate after the last amount in its currency is gone.
  */
 export function ratesCheck({
   month,
   billingCurrency,
+  lines,
   exchangeRates,
   missingRates,
   pendingRates,
 }: {
   month: string;
   billingCurrency: string;
+  lines: readonly AiBillingLine[];
   exchangeRates: readonly AiExchangeRate[];
   missingRates: readonly string[];
   pendingRates: readonly string[];
@@ -107,15 +110,16 @@ export function ratesCheck({
       summary: `Fetching the ${listOf(pendingRates, "conjunction")} exchange rate${pendingRates.length > 1 ? "s" : ""} for ${monthLabel(month)}`,
     };
   }
-  if (exchangeRates.length === 0) {
+  const billed = new Set(lines.map((line) => line.billableCurrency));
+  const rates = exchangeRates
+    .filter((rate) => billed.has(rate.currency))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+  if (rates.length === 0) {
     return {
       status: "passed",
       summary: `Everything is billed in ${billingCurrency}; no rate is needed`,
     };
   }
-  const rates = [...exchangeRates].sort((a, b) =>
-    a.currency.localeCompare(b.currency),
-  );
   const summary = listOf(rates.map(rateLabel), "conjunction");
   if (rates.some((rate) => rate.provisional)) {
     return { status: "attention", summary };
