@@ -13,7 +13,6 @@ import {
 import type * as React from "react";
 import { AiProviderLabel } from "@/components/ai-provider-icon";
 import { Button } from "@/components/ui/button";
-import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import type {
   AiCoverageStatus,
   AiUsageMachine,
@@ -22,15 +21,16 @@ import type {
 import { cn } from "@/lib/utils";
 import { Cost } from "./cost";
 import { QueryError } from "./query-state";
-import { formatCount, formatShortDate } from "../-lib/format";
+import { formatShortDate } from "../-lib/format";
+import {
+  machineFindings,
+  type Finding,
+  type Severity,
+} from "../-lib/machine-findings";
 import { MoneyContext, type Money } from "../-lib/money";
 import { useDisplayMoney } from "../-lib/use-display-money";
 
 dayjs.extend(relativeTime);
-
-type Severity = "critical" | "warning" | "note";
-
-type Finding = Readonly<{ key: string; severity: Severity; text: string }>;
 
 /**
  * The machines that sync the user's usage, one card each: when it last
@@ -231,77 +231,6 @@ const COVERAGE: Readonly<
     className: "text-destructive",
   },
 };
-
-/**
- * What may be missing or unknown in a machine's figures. A provider without
- * history is only worth a note when the machine uploaded its usage before;
- * otherwise the tool is simply not used there.
- */
-function machineFindings(
-  machine: AiUsageMachine,
-  staleAfterDays: number,
-): Finding[] {
-  const findings: Finding[] = [];
-  if (machine.stale) {
-    findings.push({
-      key: "stale",
-      severity: "warning",
-      text: `Stale: no sync for more than ${staleAfterDays} days. Usage since then is missing, not zero.`,
-    });
-  }
-  for (const entry of machine.coverage) {
-    const tool = AI_PROVIDER_LABELS[entry.provider];
-    switch (entry.status) {
-      case "failed":
-        findings.push({
-          key: `${entry.provider}-failed`,
-          severity: "critical",
-          text: `${tool} history could not be read on the last sync; its stored usage was kept.`,
-        });
-        break;
-      case "partial":
-        findings.push({
-          key: `${entry.provider}-partial`,
-          severity: "warning",
-          text: `${tool} history was only partly readable on the last sync.`,
-        });
-        break;
-      case "missing":
-        if (entry.hasUsage) {
-          findings.push({
-            key: `${entry.provider}-missing`,
-            severity: "warning",
-            text: `No ${tool} history was found on the last sync, though earlier usage is stored.`,
-          });
-        }
-        break;
-      case "ok":
-        break;
-    }
-    if (entry.unreadable > 0) {
-      findings.push({
-        key: `${entry.provider}-unreadable`,
-        severity: "warning",
-        text: `${formatCount(entry.unreadable)} ${tool} history ${entry.unreadable === 1 ? "file" : "files"} could not be read.`,
-      });
-    }
-    if (entry.malformedLines > 0 || entry.skippedRecords > 0) {
-      findings.push({
-        key: `${entry.provider}-skipped`,
-        severity: "note",
-        text: `${tool}: ${formatCount(entry.malformedLines)} malformed lines and ${formatCount(entry.skippedRecords)} records skipped.`,
-      });
-    }
-    if (entry.pricing?.status === "unavailable") {
-      findings.push({
-        key: `${entry.provider}-pricing`,
-        severity: "warning",
-        text: `Prices were unavailable for ${tool}, so its costs from this machine are unknown.`,
-      });
-    }
-  }
-  return findings;
-}
 
 const SEVERITY: Readonly<
   Record<

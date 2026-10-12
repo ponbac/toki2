@@ -41,6 +41,7 @@ import {
 import { SummaryTiles } from "./-components/summary-tiles";
 import { UsageTabs } from "./-components/usage-tabs";
 import { formatLongDate } from "./-lib/format";
+import { needsAttention } from "./-lib/machine-findings";
 import { MoneyContext, displayCurrencyAtom, formatZero } from "./-lib/money";
 import { DEFAULT_TAB, USAGE_TABS } from "./-lib/tabs";
 import { useDisplayMoney } from "./-lib/use-display-money";
@@ -144,12 +145,14 @@ function AiUsagePage() {
   );
   const mappable =
     keysQuery.data?.projectKeys.filter((key) => key.mappable).length ?? 0;
+  // The same findings the Machines tab lists, so none waits there unseen.
+  const staleAfterDays = machinesQuery.data?.staleAfterDays;
   const machineProblem =
-    machinesQuery.data?.machines.some(
-      (machine) =>
-        machine.stale ||
-        machine.coverage.some((entry) => entry.status === "failed"),
-    ) ?? false;
+    staleAfterDays !== undefined &&
+    (machinesQuery.data?.machines.some((machine) =>
+      needsAttention(machine, staleAfterDays),
+    ) ??
+      false);
 
   const setFilters = (patch: FilterPatch) =>
     void navigate({ search: (previous) => ({ ...previous, ...patch }) });

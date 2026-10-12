@@ -43,7 +43,7 @@ export function UsageTabs({
   /** Repositories the user can map to a project. */
   mappable: number;
   machines: number | undefined;
-  /** A machine is stale, or could not read a tool's history. */
+  /** A machine has a finding worse than a note: its figures may be off. */
   machineProblem: boolean;
 }) {
   const marks: Readonly<Record<UsageTab, React.ReactNode>> = {
