@@ -105,12 +105,6 @@ export function ratesCheck({
       summary: `No ${listOf(missing, "disjunction")} rate for ${monthLabel(month)}: amounts in ${listOf(missing, "conjunction")} are not converted to ${billingCurrency}`,
     };
   }
-  if (pendingRates.length > 0) {
-    return {
-      status: "pending",
-      summary: `Fetching the ${listOf(pendingRates, "conjunction")} exchange rate${pendingRates.length > 1 ? "s" : ""} for ${monthLabel(month)}`,
-    };
-  }
   // A line of unknown or no cost has nothing to convert, whatever its
   // currency.
   const billed = new Set(
@@ -124,15 +118,33 @@ export function ratesCheck({
   const rates = exchangeRates
     .filter((rate) => billed.has(rate.currency))
     .sort((a, b) => a.currency.localeCompare(b.currency));
+  const summary = listOf(rates.map(rateLabel), "conjunction");
+  // A provisional rate still converts the bill while its replacement is
+  // fetched, so it stays open through the fetch.
+  const provisional = rates.filter((rate) => rate.provisional);
+  if (provisional.length > 0) {
+    const refreshing = provisional
+      .map((rate) => rate.currency)
+      .filter((code) => pendingRates.includes(code));
+    return {
+      status: "attention",
+      summary:
+        refreshing.length > 0
+          ? `${summary}; fetching ${listOf(refreshing, "conjunction")} again`
+          : summary,
+    };
+  }
+  if (pendingRates.length > 0) {
+    return {
+      status: "pending",
+      summary: `Fetching the ${listOf(pendingRates, "conjunction")} exchange rate${pendingRates.length > 1 ? "s" : ""} for ${monthLabel(month)}`,
+    };
+  }
   if (rates.length === 0) {
     return {
       status: "passed",
       summary: `Everything is billed in ${billingCurrency}; no rate is needed`,
     };
-  }
-  const summary = listOf(rates.map(rateLabel), "conjunction");
-  if (rates.some((rate) => rate.provisional)) {
-    return { status: "attention", summary };
   }
   return {
     status: "passed",
