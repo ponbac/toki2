@@ -31,7 +31,14 @@ export function RollingAmount({
         ? current.current.amount
         : amount * SETTLE_FROM;
     if (reduceMotion || from === amount) {
+      // Nothing to roll, but what is shown must still follow: a later roll,
+      // or motion turned back on, starts from here.
       current.current = { amount, unit };
+      setShown((shown) =>
+        shown.amount === amount && shown.unit === unit
+          ? shown
+          : { amount, unit },
+      );
       return;
     }
     const controls = animate(from, amount, {

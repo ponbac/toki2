@@ -18,8 +18,6 @@ export type ExportCheck = Readonly<{
   summary: string;
   /** What the row opens to; a check without it cannot be opened. */
   detail?: React.ReactNode;
-  /** The check is the previous month's, held while the next loads. */
-  stale?: boolean;
 }>;
 
 const STATUS = {
@@ -79,10 +77,7 @@ export function ExportChecks({ checks }: { checks: readonly ExportCheck[] }) {
               key={check.id}
               value={check.id}
               disabled={!check.detail}
-              className={cn(
-                "border-none transition-opacity motion-reduce:transition-none",
-                check.stale && "opacity-60",
-              )}
+              className="border-none"
             >
               <AccordionTrigger className="min-w-0 gap-2.5 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted/50 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:hover:bg-transparent motion-reduce:transition-none [&:disabled>svg]:invisible [&>svg]:text-muted-foreground motion-reduce:[&>svg]:transition-none">
                 {/* Wrapped: the trigger turns its own icons over when open. */}

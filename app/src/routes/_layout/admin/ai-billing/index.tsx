@@ -298,24 +298,28 @@ function exportChecks(
   completenessQuery: UseQueryResult<AiBillingCompleteness, Error>,
   overviewQuery: UseQueryResult<AiBillingOverview, Error>,
 ): ExportCheck[] {
-  const uploads: CheckResult = completenessQuery.isPending
-    ? { status: "pending", summary: "Checking what every machine uploaded" }
-    : completenessQuery.isError
-      ? {
-          status: "attention",
-          summary: "Could not check what every machine uploaded",
-        }
-      : uploadsCheck(completenessQuery.data);
+  // Another month's answer, held while this month's loads, is no answer for
+  // this month: until its own arrives a check is pending, not passed.
+  const uploads: CheckResult =
+    completenessQuery.isPending || completenessQuery.isPlaceholderData
+      ? { status: "pending", summary: "Checking what every machine uploaded" }
+      : completenessQuery.isError
+        ? {
+            status: "attention",
+            summary: "Could not check what every machine uploaded",
+          }
+        : uploadsCheck(completenessQuery.data);
   const checks: ExportCheck[] = [
     {
       id: "uploads",
       label: "Uploads",
       ...uploads,
-      detail: <CompletenessPanel query={completenessQuery} />,
-      stale: completenessQuery.isPlaceholderData,
+      detail: completenessQuery.isPlaceholderData ? undefined : (
+        <CompletenessPanel query={completenessQuery} />
+      ),
     },
   ];
-  if (overviewQuery.isPending) {
+  if (overviewQuery.isPending || overviewQuery.isPlaceholderData) {
     checks.push(
       {
         id: "rates",
@@ -332,7 +336,6 @@ function exportChecks(
     );
   } else if (overviewQuery.isSuccess) {
     const overview = overviewQuery.data;
-    const stale = overviewQuery.isPlaceholderData;
     checks.push(
       {
         id: "rates",
@@ -342,14 +345,12 @@ function exportChecks(
           <ExchangeRatesPanel
             key={overview.month}
             month={overview.month}
-            disabled={stale}
             billingCurrency={overview.billingCurrency}
             rates={overview.exchangeRates}
             missingRates={overview.missingRates}
             pendingRates={overview.pendingRates}
           />
         ),
-        stale,
       },
       {
         id: "mappings",
@@ -364,7 +365,6 @@ function exportChecks(
             developers={overview.developers}
           />
         ),
-        stale,
       },
     );
   }
