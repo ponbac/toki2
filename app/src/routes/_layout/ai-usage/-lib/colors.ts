@@ -81,10 +81,3 @@ export function sequentialColor(value: number, max: number): string | null {
   );
   return SEQUENTIAL[step] ?? null;
 }
-
-/** Axis tick text, in muted ink with aligned figures. */
-export const AXIS_TICK = {
-  fill: "hsl(var(--muted-foreground))",
-  fontSize: 11,
-  fontVariantNumeric: "tabular-nums",
-} as const;

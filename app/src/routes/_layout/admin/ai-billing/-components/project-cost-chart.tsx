@@ -1,24 +1,21 @@
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  LabelList,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  type TooltipProps,
-} from "recharts";
-import { z } from "zod";
+import { barX, crosshair, defineChart, text } from "@tanstack/charts";
+import { decorative } from "@tanstack/charts/mark/decorative";
+import { Chart } from "@tanstack/charts/react/tooltip";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
+import { useMemo } from "react";
 import type { AiBillingLine } from "@/lib/api/queries/ai-admin";
+import {
+  USAGE_CHART_AXIS,
+  USAGE_CHART_THEME,
+  USAGE_CHART_TOOLTIP,
+} from "@/lib/chart-theme";
 import { costByProject } from "../../-lib/billing";
 import { formatUsd } from "../../-lib/format";
 
 const BAR_SIZE = 16;
 const ROW_HEIGHT = 36;
-const AXIS_TICK = { fill: "hsl(var(--muted-foreground))", fontSize: 11 };
-
-type Row = { label: string; usd: number; display: string };
+type Row = Readonly<{ label: string; usd: number; display: string }>;
 
 /**
  * API-equivalent cost per project in the month, one series in one color. The
@@ -29,7 +26,77 @@ export function ProjectCostChart({
 }: {
   lines: readonly AiBillingLine[];
 }) {
-  const rows = costByProject(lines);
+  const { rows, definition } = useMemo(() => {
+    const rows = costByProject(lines).map((row, rank) => ({ ...row, rank }));
+    const definition = defineChart(
+      ({ width }) => ({
+        marks: [
+          crosshair({
+            x: false,
+            y: { band: { fill: "hsl(var(--muted) / 0.4)", fillOpacity: 1 } },
+          }),
+          barX(rows, {
+            x: "usd",
+            y: "rank",
+            fill: "var(--ai-series-1)",
+            maxThickness: BAR_SIZE,
+            radius: { end: 4 },
+          }),
+          decorative(
+            text(rows, {
+              x: "usd",
+              y: "rank",
+              text: "display",
+              anchor: "start",
+              dx: 6,
+              fontSize: 12,
+            }),
+          ),
+        ],
+        scales: {
+          x: {
+            scale: scaleLinear,
+            nice: true,
+            grid: { stroke: "hsl(var(--border) / 0.6)", strokeOpacity: 1 },
+            axis: {
+              ...USAGE_CHART_AXIS,
+              line: { stroke: "hsl(var(--border))", strokeOpacity: 1 },
+              ticks: { ...USAGE_CHART_AXIS.ticks, format: formatUsd },
+            },
+          },
+          y: {
+            scale: () =>
+              scaleBand<number>()
+                .domain(rows.map((row) => row.rank))
+                .padding(0.25),
+            axis: {
+              ...USAGE_CHART_AXIS,
+              ticks: {
+                ...USAGE_CHART_AXIS.ticks,
+                format: (rank: number) => {
+                  const label = rows[rank]?.label ?? "";
+                  const limit = width < 480 ? 16 : 32;
+                  return label.length > limit
+                    ? `${label.slice(0, limit - 1)}…`
+                    : label;
+                },
+              },
+            },
+          },
+        },
+        theme: USAGE_CHART_THEME,
+      }),
+      {
+        focus: "group-y",
+        focusRing: false,
+        tooltip: {
+          ...USAGE_CHART_TOOLTIP,
+          format: ({ datum: row }) => `${row.label}\n${row.display}`,
+        },
+      },
+    );
+    return { rows, definition };
+  }, [lines]);
   if (rows.length === 0) {
     return null;
   }
@@ -46,92 +113,21 @@ export function ProjectCostChart({
         What each project&apos;s usage would cost at API prices, whether a
         subscription or API billing pays for it.
       </p>
-      <div style={{ height: rows.length * ROW_HEIGHT + 32 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={rows}
-            layout="vertical"
-            margin={{ top: 0, right: 96, bottom: 0, left: 0 }}
-            accessibilityLayer
-          >
-            <CartesianGrid
-              horizontal={false}
-              stroke="hsl(var(--border) / 0.6)"
-              strokeWidth={1}
-            />
-            <XAxis
-              type="number"
-              tick={AXIS_TICK}
-              tickFormatter={(value: number) => formatUsd(value)}
-              axisLine={{ stroke: "hsl(var(--border))" }}
-              tickLine={false}
-            />
-            <YAxis
-              type="category"
-              dataKey="label"
-              width={180}
-              tick={{ ...AXIS_TICK, fill: "hsl(var(--foreground))" }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip
-              cursor={{ fill: "hsl(var(--muted) / 0.4)" }}
-              content={<ProjectTooltip rows={rows} />}
-            />
-            <Bar
-              dataKey="usd"
-              fill="var(--ai-series-1)"
-              barSize={BAR_SIZE}
-              radius={[0, 4, 4, 0]}
-              isAnimationActive={false}
-            >
-              <LabelList dataKey="display" content={valueLabel} />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      <Chart
+        definition={definition}
+        height={rows.length * ROW_HEIGHT + 32}
+        className="min-w-0"
+        ariaLabel="API-equivalent cost by project, largest first"
+        ariaDescription="Bar length shows priced usage in USD. Labels include unknown costs where usage could not be priced. The billing table below lists every value."
+        renderTooltipBody={({ primaryPoint }) =>
+          primaryPoint ? <ProjectTooltip row={primaryPoint.datum} /> : null
+        }
+      />
     </section>
   );
 }
 
-/** The geometry recharts hands a label; anything else draws nothing. */
-const labelSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-  width: z.number(),
-  height: z.number(),
-  value: z.string(),
-});
-
-/** The value at the bar's tip, on one line whatever the bar's length. */
-function valueLabel(props: unknown) {
-  const parsed = labelSchema.safeParse(props);
-  if (!parsed.success) {
-    return null;
-  }
-  const { x, y, width, height, value } = parsed.data;
-  return (
-    <text
-      x={x + width + 6}
-      y={y + height / 2}
-      dominantBaseline="central"
-      fill="hsl(var(--foreground))"
-      fontSize={12}
-    >
-      {value}
-    </text>
-  );
-}
-
-function ProjectTooltip({
-  active,
-  label,
-  rows,
-}: TooltipProps<number, string> & { rows: readonly Row[] }) {
-  const row = rows.find((candidate) => candidate.label === label);
-  if (!active || !row) {
-    return null;
-  }
+function ProjectTooltip({ row }: { row: Row }) {
   return (
     <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-sm shadow-elevated">
       <div className="font-semibold">{row.display}</div>

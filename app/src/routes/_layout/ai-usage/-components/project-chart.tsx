@@ -1,26 +1,22 @@
 import * as React from "react";
+import { barX, crosshair, defineChart, text } from "@tanstack/charts";
+import { decorative } from "@tanstack/charts/mark/decorative";
+import { Chart } from "@tanstack/charts/react/tooltip";
+import { scaleBand } from "@tanstack/charts/scales/band";
+import { scaleLinear } from "@tanstack/charts/scales/linear";
+import type { AiUsageReport } from "@/lib/api/queries/ai-usage-report";
 import {
-  Bar,
-  BarChart,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  type TooltipProps,
-} from "recharts";
-import type {
-  AiUsageReport,
-  AiUsageTotals,
-} from "@/lib/api/queries/ai-usage-report";
+  USAGE_CHART_AXIS,
+  USAGE_CHART_THEME,
+  USAGE_CHART_TOOLTIP,
+} from "@/lib/chart-theme";
 import { ChartCard, ChartTooltipFrame, Segmented } from "./chart-card";
-import { parseMarkGeometry } from "./chart-props";
 import {
   projectBars,
   type ProjectBar,
   type ProjectMetric,
 } from "../-lib/aggregate";
-import { AXIS_TICK, OTHER_COLOR } from "../-lib/colors";
+import { OTHER_COLOR } from "../-lib/colors";
 import {
   formatCompact,
   formatCount,
@@ -49,8 +45,85 @@ export function ProjectChart({
     () => projectBars(report, metric),
     [report, metric],
   );
-  const measure = (totals: AiUsageTotals) =>
-    metric === "cost" ? knownUsd(totals.cost) : totalTokens(totals.tokens);
+  const definition = React.useMemo(() => {
+    const measure = (bar: ProjectBar) =>
+      metric === "cost"
+        ? knownUsd(bar.totals.cost) * money.perUsd
+        : totalTokens(bar.totals.tokens);
+    const labels = new Map(bars.map((bar) => [bar.key, bar.label]));
+
+    return defineChart(({ width }) => ({
+      marks: [
+        crosshair({
+          x: false,
+          y: { band: { fill: "hsl(var(--muted) / 0.45)", fillOpacity: 1 } },
+        }),
+        barX(bars, {
+          key: "key",
+          x: measure,
+          y: "key",
+          fill: (bar) => (bar.deemphasised ? OTHER_COLOR : PROJECT_COLOR),
+          maxThickness: 20,
+          radius: { end: 4 },
+        }),
+        decorative(
+          text(bars, {
+            key: "key",
+            x: measure,
+            y: "key",
+            text: (bar) =>
+              metric === "cost"
+                ? formatCost(money, bar.totals.cost, true)
+                : formatCompact(totalTokens(bar.totals.tokens)),
+            anchor: "start",
+            dx: 6,
+            fontSize: 11,
+            fill: "hsl(var(--foreground))",
+          }),
+        ),
+      ],
+      scales: {
+        x: { scale: scaleLinear, axis: false },
+        y: {
+          scale: () =>
+            scaleBand<string>()
+              .domain(bars.map((bar) => bar.key))
+              .paddingInner(0.12)
+              .paddingOuter(0.12),
+          axis: {
+            ...USAGE_CHART_AXIS,
+            ticks: {
+              ...USAGE_CHART_AXIS.ticks,
+              format: (key: string) => {
+                const label = labels.get(key) ?? key;
+                const limit = width < 480 ? 14 : 22;
+                return label.length > limit
+                  ? `${label.slice(0, limit - 1)}…`
+                  : label;
+              },
+            },
+          },
+        },
+      },
+      theme: USAGE_CHART_THEME,
+      focus: "group-y",
+      focusRing: false,
+      tooltip: {
+        ...USAGE_CHART_TOOLTIP,
+        format: ({ datum: bar }: { datum: ProjectBar }) =>
+          [
+            bar.label,
+            `Estimated cost: ${formatCost(money, bar.totals.cost)}`,
+            `${formatCompact(totalTokens(bar.totals.tokens))} tokens`,
+            ...(bar.totals.cost.kind === "partial"
+              ? [
+                  `${formatCount(bar.totals.cost.unpricedRecords)} unpriced requests: cost unknown`,
+                ]
+              : []),
+          ].join("\n"),
+      },
+    }));
+  }, [bars, metric, money]);
 
   return (
     <ChartCard
@@ -76,97 +149,26 @@ export function ProjectChart({
       {bars.length === 0 ? (
         <p className="text-sm text-muted-foreground">No usage in this range.</p>
       ) : (
-        <div style={{ height: bars.length * 34 + 8 }} className="w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={[...bars]}
-              layout="vertical"
-              margin={{ top: 0, right: 96, bottom: 0, left: 0 }}
-              barCategoryGap={6}
-            >
-              <XAxis type="number" hide domain={[0, "dataMax"]} />
-              <YAxis
-                type="category"
-                dataKey="label"
-                width={148}
-                tick={AXIS_TICK}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(label: string) =>
-                  label.length > 22 ? `${label.slice(0, 21)}…` : label
-                }
-              />
-              <Tooltip
-                cursor={{ fill: "hsl(var(--muted) / 0.45)" }}
-                content={<ProjectTooltip />}
-              />
-              <Bar
-                dataKey={(bar: ProjectBar) => measure(bar.totals)}
-                maxBarSize={20}
-                radius={[0, 4, 4, 0]}
-                isAnimationActive={false}
-                label={(props: unknown) => (
-                  <BarTip
-                    props={props}
-                    text={(index) => {
-                      const bar = bars[index];
-                      if (!bar) {
-                        return "";
-                      }
-                      return metric === "cost"
-                        ? formatCost(money, bar.totals.cost, true)
-                        : formatCompact(totalTokens(bar.totals.tokens));
-                    }}
-                  />
-                )}
-              >
-                {bars.map((bar) => (
-                  <Cell
-                    key={bar.key}
-                    fill={bar.deemphasised ? OTHER_COLOR : PROJECT_COLOR}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <Chart
+          definition={definition}
+          height={bars.length * 34 + 8}
+          ariaLabel={
+            metric === "cost" ? "Spend per project" : "Tokens per project"
+          }
+          ariaDescription="Projects ranked from largest to smallest, including unassigned usage."
+          className="w-full tabular-nums"
+          renderTooltipBody={({ points }) => {
+            const bar = points[0]?.datum;
+            return bar ? <ProjectTooltip bar={bar} /> : null;
+          }}
+        />
       )}
     </ChartCard>
   );
 }
 
-/** A value label just past the end of a horizontal bar. */
-function BarTip({
-  props,
-  text,
-}: {
-  props: unknown;
-  text: (index: number) => string;
-}) {
-  const geometry = parseMarkGeometry(props);
-  if (!geometry) {
-    return null;
-  }
-  return (
-    <text
-      x={geometry.x + geometry.width + 6}
-      y={geometry.y + geometry.height / 2}
-      dominantBaseline="central"
-      fontSize={11}
-      fill="hsl(var(--foreground))"
-      style={{ fontVariantNumeric: "tabular-nums" }}
-    >
-      {text(geometry.index)}
-    </text>
-  );
-}
-
-function ProjectTooltip({ active, payload }: TooltipProps<number, string>) {
+function ProjectTooltip({ bar }: { bar: ProjectBar }) {
   const money = useMoney();
-  const bar = payload?.[0]?.payload;
-  if (!active || !isProjectBar(bar)) {
-    return null;
-  }
   const { cost } = bar.totals;
   return (
     <ChartTooltipFrame
@@ -191,15 +193,5 @@ function ProjectTooltip({ active, payload }: TooltipProps<number, string>) {
           : undefined
       }
     />
-  );
-}
-
-function isProjectBar(value: unknown): value is ProjectBar {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "label" in value &&
-    "totals" in value &&
-    "deemphasised" in value
   );
 }
