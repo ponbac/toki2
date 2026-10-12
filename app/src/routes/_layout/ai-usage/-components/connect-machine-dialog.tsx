@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Check,
   ClipboardCopy,
+  Info,
   KeyRound,
   Laptop,
   Loader2,
@@ -18,7 +19,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { toast } from "sonner";
-import { AiProviderLabel } from "@/components/ai-provider-icon";
+import { AiProviderIcon, AiProviderLabel } from "@/components/ai-provider-icon";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,8 +43,24 @@ import {
   type AiUsageRange,
 } from "@/lib/api/queries/ai-usage-report";
 import { cn } from "@/lib/utils";
+import { Segmented } from "./chart-card";
+import { CopilotSurfaceIcon } from "./copilot-surface-icon";
 import { OsIcon } from "./os-icon";
 import { QueryError } from "./query-state";
+import {
+  COPILOT_CLI_VARIABLE,
+  COPILOT_GUIDES,
+  COPILOT_SURFACES,
+  COPILOT_SURFACE_LABELS,
+  COPILOT_VSCODE_SETTINGS,
+  VSCODE_SYNC_IGNORED,
+  copilotCliCommands,
+  copilotEnableCommand,
+  copilotSettingsCommand,
+  isTracked,
+  type CopilotSurface,
+  type TrackedCopilotSurface,
+} from "../-lib/copilot-setup";
 import {
   MACHINE_OSES,
   OS_GUIDES,
@@ -51,18 +68,35 @@ import {
   setupCommands,
   setupScript,
   type MachineOs,
+  type SetupCommand,
 } from "../-lib/machine-setup";
 
-const STEPS = [
-  { title: "Pick the machine's system", icon: Laptop },
-  { title: "Create an API token", icon: KeyRound },
-  { title: "Run this in a terminal", icon: Terminal },
-  { title: "First sync", icon: RefreshCw },
-] as const;
+type StepId = "system" | "token" | "commands" | "copilot" | "sync";
 
-const TOKEN_STEP = 1;
-const COMMANDS_STEP = 2;
-const SYNC_STEP = 3;
+const STEPS: Readonly<
+  Record<StepId, { title: string; icon: React.ElementType }>
+> = {
+  system: { title: "Pick the machine's system", icon: Laptop },
+  token: { title: "Create an API token", icon: KeyRound },
+  commands: { title: "Run this in a terminal", icon: Terminal },
+  copilot: { title: "Turn on Copilot's usage export", icon: CopilotStepIcon },
+  sync: { title: "First sync", icon: RefreshCw },
+};
+
+/**
+ * The steps in order. Copilot's comes before the wait for the sync, and only
+ * for someone who uses Copilot where its usage can be read.
+ */
+function stepsFor(copilot: boolean): readonly StepId[] {
+  return copilot
+    ? ["system", "token", "commands", "copilot", "sync"]
+    : ["system", "token", "commands", "sync"];
+}
+
+/** Copilot's mark as a step's icon, in the colour the step gives it. */
+function CopilotStepIcon({ className }: { className?: string }) {
+  return <AiProviderIcon provider="copilot" plain className={className} />;
+}
 
 /** How often to look for the sync while the dialog waits for it. */
 const POLL_INTERVAL_MS = 3_000;
@@ -70,10 +104,14 @@ const POLL_INTERVAL_MS = 3_000;
 const SETUP_DOCS = "https://github.com/ponbac/token-ledger#sync-to-toki2";
 const UPLOAD_DOCS =
   "https://github.com/ponbac/token-ledger#what-leaves-the-machine";
+const VSCODE_EXPORT_BUG_DOCS =
+  "https://github.com/ponbac/token-ledger#workaround-for-vs-codes-file-exporter-bug";
+const VSCODE_CONTENT_BUG = "https://github.com/microsoft/vscode/issues/326254";
 
 /**
- * Walks through connecting a machine: its system, an API token created here,
- * the commands with both filled in, and the wait for its first sync. The steps
+ * Walks through connecting a machine: its system and where Copilot runs on it,
+ * an API token created here, the commands with both filled in, Copilot's
+ * export for someone who uses it, and the wait for the first sync. The steps
  * outlive closing the dialog, since the token's secret cannot be shown again.
  */
 export function ConnectMachineDialog({
@@ -93,6 +131,7 @@ export function ConnectMachineDialog({
   const openerRef = React.useRef<HTMLElement | null>(null);
   const detected = detectMachineOs();
   const [os, setOs] = React.useState<MachineOs>(detected ?? "linux");
+  const [copilot, setCopilot] = React.useState<readonly CopilotSurface[]>([]);
   const [step, setStep] = React.useState(0);
   const [nameDraft, setNameDraft] = React.useState<string | null>(null);
   // The machines that had synced before the token was created.
@@ -149,9 +188,15 @@ export function ConnectMachineDialog({
 
   // The commands stay up after the sync lands: the scheduling one may be left.
   // A known machine's sync may not be the setup's, so it does not end it either.
+  const copilotSurfaces = COPILOT_SURFACES.filter(isTracked).filter((surface) =>
+    copilot.includes(surface),
+  );
+  // The surfaces can only change on the first step, so `step` stays in range.
+  const steps = stepsFor(copilotSurfaces.length > 0);
+  const current = steps[step];
   const finished =
-    arrival !== undefined && !arrival.known && step === SYNC_STEP;
-  const { title, icon: StepIcon } = STEPS[step];
+    arrival !== undefined && !arrival.known && current === "sync";
+  const { title, icon: StepIcon } = STEPS[current];
 
   return (
     <Dialog
@@ -187,13 +232,13 @@ export function ConnectMachineDialog({
           <DialogTitle>Connect a machine</DialogTitle>
           <DialogDescription className="flex items-center justify-center gap-2 sm:justify-start">
             <StepIcon aria-hidden className="size-4 text-primary" />
-            Step {step + 1} of {STEPS.length} · {title}
+            Step {step + 1} of {steps.length} · {title}
           </DialogDescription>
         </DialogHeader>
-        <div aria-hidden className="grid grid-cols-4 gap-1.5">
-          {STEPS.map((entry, index) => (
+        <div aria-hidden className="grid auto-cols-fr grid-flow-col gap-1.5">
+          {steps.map((entry, index) => (
             <span
-              key={entry.title}
+              key={entry}
               className={cn(
                 "h-1 rounded-full transition-colors",
                 index <= step ? "bg-primary" : "bg-muted",
@@ -203,10 +248,16 @@ export function ConnectMachineDialog({
         </div>
 
         <div className="min-h-44 space-y-3">
-          {step === 0 && (
-            <SystemStep os={os} detected={detected} onChange={setOs} />
+          {current === "system" && (
+            <SystemStep
+              os={os}
+              detected={detected}
+              onChange={setOs}
+              copilot={copilot}
+              onCopilotChange={setCopilot}
+            />
           )}
-          {step === TOKEN_STEP && (
+          {current === "token" && (
             <>
               {machines === undefined &&
                 issued === null &&
@@ -230,14 +281,18 @@ export function ConnectMachineDialog({
               />
             </>
           )}
-          {step === COMMANDS_STEP && issued && (
+          {current === "commands" && issued && (
             <CommandsStep
               os={os}
               token={issued.token}
               synced={arrival?.known ? undefined : arrival?.machine}
+              copilotNext={copilotSurfaces.length > 0}
             />
           )}
-          {step === SYNC_STEP && (
+          {current === "copilot" && (
+            <CopilotStep os={os} surfaces={copilotSurfaces} />
+          )}
+          {current === "sync" && (
             <SyncStep
               arrival={arrival}
               query={machinesQuery}
@@ -267,7 +322,7 @@ export function ConnectMachineDialog({
                 <ArrowLeft />
                 Back
               </Button>
-              {step === SYNC_STEP ? (
+              {current === "sync" ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -278,10 +333,10 @@ export function ConnectMachineDialog({
               ) : (
                 <Button
                   type="button"
-                  disabled={step === TOKEN_STEP && issued === null}
+                  disabled={current === "token" && issued === null}
                   onClick={() => setStep(step + 1)}
                 >
-                  {step === COMMANDS_STEP ? "I ran them" : "Next"}
+                  {current === "commands" ? "I ran them" : "Next"}
                   <ArrowRight />
                 </Button>
               )}
@@ -320,10 +375,15 @@ function SystemStep({
   os,
   detected,
   onChange,
+  copilot,
+  onCopilotChange,
 }: {
   os: MachineOs;
   detected: MachineOs | null;
   onChange: (os: MachineOs) => void;
+  /** Where Copilot is used on the machine, which nothing is by default. */
+  copilot: readonly CopilotSurface[];
+  onCopilotChange: (copilot: readonly CopilotSurface[]) => void;
 }) {
   const { nodeInstallCommand } = OS_GUIDES[os];
   return (
@@ -368,6 +428,76 @@ function SystemStep({
         )}
         .
       </p>
+      <fieldset>
+        <legend className="mb-2 text-sm">
+          <span className="font-medium">
+            Do you use Copilot on this machine?
+          </span>{" "}
+          <span className="text-muted-foreground">
+            Tick where. The other tools need nothing extra.
+          </span>
+        </legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {COPILOT_SURFACES.map((surface) => {
+            const checked = copilot.includes(surface);
+            return (
+              <label
+                key={surface}
+                className={cn(
+                  "relative flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+                  checked
+                    ? "border-primary bg-primary/10"
+                    : "border-border/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                  !isTracked(surface) && "border-dashed",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={checked}
+                  onChange={(event) =>
+                    onCopilotChange(
+                      event.target.checked
+                        ? [...copilot, surface]
+                        : copilot.filter((other) => other !== surface),
+                    )
+                  }
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute right-2.5 top-2.5 flex size-4 items-center justify-center rounded-[4px] border border-primary",
+                    checked && "bg-primary text-primary-foreground",
+                  )}
+                >
+                  {checked && <Check className="size-3" />}
+                </span>
+                <CopilotSurfaceIcon
+                  surface={surface}
+                  className="mb-1.5 size-5"
+                />
+                <span className="font-medium">
+                  {COPILOT_SURFACE_LABELS[surface]}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {isTracked(surface) ? "Adds a step" : "Not tracked"}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      {copilot.includes("visualStudio") && (
+        <p role="status" className="flex items-start gap-2 text-xs">
+          <Info aria-hidden className="mt-px size-3.5 shrink-0 text-primary" />
+          <span>
+            Copilot in Visual Studio is not tracked. token-ledger reads Copilot
+            CLI and VS Code Copilot Chat only, so usage from Visual Studio, from
+            other IDEs and from inline completions will be missing here, not
+            shown as zero.
+          </span>
+        </p>
+      )}
     </>
   );
 }
@@ -462,58 +592,19 @@ function CommandsStep({
   os,
   token,
   synced,
+  copilotNext,
 }: {
   os: MachineOs;
   token: string;
   /** The new machine, once its sync has landed while the commands are up. */
   synced: AiUsageMachine | undefined;
+  /** Whether Copilot's export has the next step, and so needs no word here. */
+  copilotNext: boolean;
 }) {
   const guide = OS_GUIDES[os];
-  const commands = setupCommands(os, token);
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-muted/40">
-        <div className="flex items-center justify-between gap-2 border-b border-border/60 py-1.5 pl-3 pr-1.5">
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            <OsIcon os={os} className="size-3.5" />
-            {guide.label} · {guide.shell}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(setupScript(commands));
-                toast.success("Commands copied");
-              } catch {
-                toast.error("Failed to copy the commands");
-              }
-            }}
-          >
-            <ClipboardCopy />
-            Copy all
-          </Button>
-        </div>
-        <ol className="space-y-2.5 p-3">
-          {commands.map((command, index) => (
-            <li key={command.label} className="space-y-1">
-              <p className="text-xs text-muted-foreground">
-                {index + 1}. {command.label}
-              </p>
-              <pre className="whitespace-pre-wrap font-mono text-xs leading-5 [overflow-wrap:anywhere]">
-                {command.lines.map((line, lineIndex) => (
-                  <React.Fragment key={line}>
-                    {lineIndex > 0 && "\n"}
-                    <CommandLine line={line} token={token} />
-                  </React.Fragment>
-                ))}
-              </pre>
-            </li>
-          ))}
-        </ol>
-      </div>
+      <CommandBlock os={os} commands={setupCommands(os, token)} token={token} />
       {synced && (
         <p role="status" className="flex items-start gap-2 text-xs">
           <Check aria-hidden className="mt-px size-3.5 shrink-0 text-primary" />
@@ -549,7 +640,8 @@ function CommandsStep({
         A missed daily run {guide.missedRun}.
         {os === "linux" &&
           " Without systemd, as in WSL, schedule it with cron instead."}{" "}
-        Copilot is read only once its file export is on. See the{" "}
+        {!copilotNext && "Copilot is read only once its file export is on. "}
+        See the{" "}
         <a
           href={SETUP_DOCS}
           target="_blank"
@@ -564,9 +656,76 @@ function CommandsStep({
   );
 }
 
+/**
+ * Commands for one system's shell, with a way to copy them as one paste. A
+ * lone command goes unnumbered.
+ */
+function CommandBlock({
+  os,
+  commands,
+  token,
+}: {
+  os: MachineOs;
+  commands: readonly SetupCommand[];
+  /** The secret among the commands, to set apart. */
+  token?: string;
+}) {
+  const guide = OS_GUIDES[os];
+  const lone = commands.length === 1;
+  return (
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-muted/40">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 py-1.5 pl-3 pr-1.5">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <OsIcon os={os} className="size-3.5" />
+          {guide.label} · {guide.shell}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(setupScript(commands));
+              toast.success(lone ? "Command copied" : "Commands copied");
+            } catch {
+              toast.error(
+                lone
+                  ? "Failed to copy the command"
+                  : "Failed to copy the commands",
+              );
+            }
+          }}
+        >
+          <ClipboardCopy />
+          {lone ? "Copy" : "Copy all"}
+        </Button>
+      </div>
+      <ol className="space-y-2.5 p-3">
+        {commands.map((command, index) => (
+          <li key={command.label} className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              {!lone && `${index + 1}. `}
+              {command.label}
+            </p>
+            <pre className="whitespace-pre-wrap font-mono text-xs leading-5 [overflow-wrap:anywhere]">
+              {command.lines.map((line, lineIndex) => (
+                <React.Fragment key={line}>
+                  {lineIndex > 0 && "\n"}
+                  <CommandLine line={line} token={token} />
+                </React.Fragment>
+              ))}
+            </pre>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 /** A command line with the token set apart, as the part that is secret. */
-function CommandLine({ line, token }: { line: string; token: string }) {
-  const [before, after] = line.split(token);
+function CommandLine({ line, token }: { line: string; token?: string }) {
+  const [before, after] = token === undefined ? [line] : line.split(token);
   if (after === undefined) {
     return line;
   }
@@ -576,6 +735,247 @@ function CommandLine({ line, token }: { line: string; token: string }) {
       <span className="text-primary">{token}</span>
       {after}
     </>
+  );
+}
+
+type CopilotSetupMode = "automatic" | "manual";
+
+const COPILOT_SETUP_MODES: readonly Readonly<{
+  value: CopilotSetupMode;
+  label: string;
+}>[] = [
+  { value: "automatic", label: "Automatic" },
+  { value: "manual", label: "By hand" },
+];
+
+/**
+ * Turns on Copilot's usage export where it is used on the machine: by one
+ * command that asks before it changes anything, or by hand.
+ */
+function CopilotStep({
+  os,
+  surfaces,
+}: {
+  os: MachineOs;
+  surfaces: readonly TrackedCopilotSurface[];
+}) {
+  const [mode, setMode] = React.useState<CopilotSetupMode>("automatic");
+  const guide = COPILOT_GUIDES[os];
+  const cli = surfaces.includes("cli");
+  const vscode = surfaces.includes("vscode");
+  return (
+    <>
+      <p className="text-xs text-muted-foreground">
+        Copilot keeps no usage log until you turn one on, and sessions before
+        that cannot be recovered. The log is a file on this machine. What is
+        uploaded from it is{" "}
+        <a
+          href={UPLOAD_DOCS}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2"
+        >
+          the same totals as for the other tools
+        </a>
+        , never prompts or responses.
+      </p>
+      <div>
+        <Segmented
+          label="How to turn the export on"
+          value={mode}
+          options={COPILOT_SETUP_MODES}
+          onChange={setMode}
+        />
+      </div>
+      {mode === "automatic" ? (
+        <>
+          <CommandBlock
+            os={os}
+            commands={[copilotEnableCommand(os, surfaces)]}
+          />
+          <p className="text-xs text-muted-foreground">
+            It lists these changes and asks before making them:
+          </p>
+          <ul className="space-y-1.5 text-xs text-muted-foreground">
+            <li className="flex items-start gap-2">
+              <Check
+                aria-hidden
+                className="mt-px size-3.5 shrink-0 text-primary"
+              />
+              <span>
+                Creates <code>{guide.exportDir}</code>, the folder token-ledger
+                already reads.
+              </span>
+            </li>
+            {cli && (
+              <li className="flex items-start gap-2">
+                <CopilotSurfaceIcon surface="cli" className="mt-px" />
+                <span>
+                  Copilot CLI: sets <code>{COPILOT_CLI_VARIABLE}</code>{" "}
+                  {guide.persistence}.
+                </span>
+              </li>
+            )}
+            {vscode && (
+              <li className="flex items-start gap-2">
+                <CopilotSurfaceIcon surface="vscode" className="mt-px" />
+                <span>
+                  VS Code: adds the <code>{COPILOT_VSCODE_SETTINGS}</code>{" "}
+                  settings to <code>{guide.vscodeSettings}</code>, with this
+                  machine's path filled in, and tells Settings Sync not to copy
+                  that path to your other machines. The settings are shared by
+                  all VS Code profiles, and VS Code Insiders gets them too if it
+                  is installed.
+                </span>
+              </li>
+            )}
+          </ul>
+          <p className="flex items-start gap-2 text-xs">
+            <ShieldCheck
+              aria-hidden
+              className="mt-px size-3.5 shrink-0 text-primary"
+            />
+            <span>
+              <span className="font-medium">No admin rights needed.</span>{" "}
+              {guide.ownRights}
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Then{" "}
+            {cli && (
+              <>
+                open a new terminal before your next <code>copilot</code>{" "}
+                session
+              </>
+            )}
+            {cli && vscode && ", and "}
+            {vscode && (
+              <>
+                in VS Code press <PaletteShortcut os={os} />, run{" "}
+                <span className="font-medium">Developer: Reload Window</span>{" "}
+                and start a new chat
+              </>
+            )}
+            .
+          </p>
+        </>
+      ) : (
+        <>
+          {cli && (
+            <section className="space-y-2">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <CopilotSurfaceIcon surface="cli" className="size-4" />
+                {COPILOT_SURFACE_LABELS.cli}
+              </h3>
+              <CommandBlock os={os} commands={copilotCliCommands(os)} />
+              <p className="text-xs text-muted-foreground">
+                Open a new terminal before your next <code>copilot</code>{" "}
+                session.
+                {os !== "windows" &&
+                  " In another shell, add the export line to its startup file instead."}
+              </p>
+            </section>
+          )}
+          {vscode && (
+            <section className="space-y-2">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <CopilotSurfaceIcon surface="vscode" className="size-4" />
+                {COPILOT_SURFACE_LABELS.vscode}
+              </h3>
+              <ol className="list-decimal space-y-2 pl-5 text-sm">
+                <li className="space-y-1.5">
+                  <p>Run this in a terminal.</p>
+                  <CommandBlock
+                    os={os}
+                    commands={[copilotSettingsCommand(os)]}
+                  />
+                </li>
+                <li>
+                  In VS Code, press <PaletteShortcut os={os} /> to open the
+                  command palette, run{" "}
+                  <span className="font-medium">
+                    Preferences: Open User Settings (JSON)
+                  </span>
+                  , and paste {guide.copiesSettings ? "" : "the settings "}
+                  on a new line right after the opening brace. The last line
+                  keeps Settings Sync from copying this machine's path to your
+                  other machines. In a VS Code profile other than the default,
+                  run{" "}
+                  <span className="font-medium">
+                    Preferences: Open Application Settings (JSON)
+                  </span>{" "}
+                  instead: these settings are shared by all profiles and kept
+                  there.
+                </li>
+                <li>
+                  If the file already has one of these settings further down,
+                  the older line wins, so delete it. For the{" "}
+                  <code>{VSCODE_SYNC_IGNORED}</code> list, add the new item to
+                  the older list and delete the pasted line instead.
+                </li>
+                <li>
+                  Press <PaletteShortcut os={os} /> again, run{" "}
+                  <span className="font-medium">Developer: Reload Window</span>,
+                  and start a new chat.
+                </li>
+              </ol>
+            </section>
+          )}
+        </>
+      )}
+      {vscode && (
+        <p className="text-xs text-muted-foreground">
+          VS Code is told to leave prompts and responses out of its log, but{" "}
+          <a
+            href={VSCODE_CONTENT_BUG}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            an open VS Code bug
+          </a>{" "}
+          can write them to that local file anyway. They are never uploaded.
+        </p>
+      )}
+      {vscode && (
+        <p className="text-xs text-muted-foreground">
+          VS Code 1.139.1 leaves the repository out of this export, so its usage
+          arrives as unassigned until you update.{" "}
+          <a
+            href={VSCODE_EXPORT_BUG_DOCS}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            Workaround
+          </a>
+          .
+        </p>
+      )}
+    </>
+  );
+}
+
+/** VS Code's default shortcut for the command palette on a system. */
+function PaletteShortcut({ os }: { os: MachineOs }) {
+  return (
+    <span className="whitespace-nowrap">
+      {COPILOT_GUIDES[os].paletteShortcut.map((key) => (
+        <kbd
+          key={key.cap}
+          className="mx-px rounded-[5px] border border-b-2 border-input bg-background px-1.5 py-px font-mono text-[11px] text-foreground"
+        >
+          {key.name ? (
+            <>
+              <span aria-hidden>{key.cap}</span>
+              <span className="sr-only">{key.name}</span>
+            </>
+          ) : (
+            key.cap
+          )}
+        </kbd>
+      ))}
+    </span>
   );
 }
 

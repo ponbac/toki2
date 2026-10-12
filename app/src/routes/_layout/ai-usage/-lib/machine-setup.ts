@@ -68,7 +68,7 @@ export type SetupCommand = Readonly<{
  * swallow pasted lines. PowerShell would pick `npx.ps1`, which its default
  * execution policy blocks, so Windows names `npx.cmd`.
  */
-function cli(os: MachineOs): string {
+export function tokenLedger(os: MachineOs): string {
   const npx = os === "windows" ? "npx.cmd" : "npx";
   return `${npx} --yes @ponbac/token-ledger@latest`;
 }
@@ -82,7 +82,7 @@ export function setupCommands(
   os: MachineOs,
   token: string,
 ): readonly SetupCommand[] {
-  const run = cli(os);
+  const run = tokenLedger(os);
   const login = `${run} login --server ${API_URL}`;
   return [
     {
