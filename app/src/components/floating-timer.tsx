@@ -37,6 +37,8 @@ import {
   CONTINUING_MY_WORK_NOTE,
   isDefaultStartTimerNote,
 } from "@/lib/time-tracking-default-notes";
+import { emitBuddyEvent } from "@/lib/buddy/events";
+import { timerBuddyEnabledAtom } from "@/lib/buddy/preferences";
 import { Textarea } from "./ui/textarea";
 import { ScrollArea } from "./ui/scroll-area";
 
@@ -105,6 +107,7 @@ export const FloatingTimer = () => {
   const setLastProject = useSetAtom(lastProjectAtom);
   const setLastActivity = useSetAtom(lastActivityAtom);
   const rememberLastProject = useAtomValue(rememberLastProjectAtom);
+  const timerBuddyEnabled = useAtomValue(timerBuddyEnabledAtom);
 
   const { data: timerResponse, error: timerFetchError } = useQuery({
     ...timeTrackingQueries.getTimer(),
@@ -334,6 +337,7 @@ export const FloatingTimer = () => {
         <button
           type="button"
           onClick={() => setIsMinimized(false)}
+          data-buddy-perch="pill"
           className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 cursor-pointer items-center gap-2.5 rounded-full border border-border/50 bg-card/75 px-4 py-2 shadow-elevated-lg backdrop-blur-xl transition-all hover:scale-[1.02] hover:shadow-elevated-xl active:scale-[0.98] md:left-auto md:right-4 md:translate-x-0"
         >
           <span className="relative flex size-2">
@@ -350,7 +354,10 @@ export const FloatingTimer = () => {
           )}
         </button>
       ) : (
-        <div className="fixed bottom-4 left-1/2 z-40 w-[90%] -translate-x-1/2 rounded-lg border border-border/50 bg-card/75 p-4 shadow-elevated-lg backdrop-blur-xl sm:w-[400px] md:left-auto md:right-4 md:translate-x-0">
+        <div
+          data-buddy-perch="card"
+          className="fixed bottom-4 left-1/2 z-40 w-[90%] -translate-x-1/2 rounded-lg border border-border/50 bg-card/75 p-4 shadow-elevated-lg backdrop-blur-xl sm:w-[400px] md:left-auto md:right-4 md:translate-x-0"
+        >
           <div className="flex flex-col items-center justify-between space-y-1">
             <div className="flex w-full items-center justify-between gap-2">
               <div className="text-4xl font-bold tracking-tighter text-foreground">
@@ -364,13 +371,24 @@ export const FloatingTimer = () => {
                         variant="ghost"
                         size="icon"
                         onClick={handleSaveButtonClick}
+                        onPointerEnter={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          emitBuddyEvent({
+                            type: "saveHover",
+                            x: rect.left + rect.width / 2,
+                          });
+                        }}
+                        onPointerLeave={() =>
+                          emitBuddyEvent({ type: "saveHover", x: null })
+                        }
                         disabled={isSavingTimer || isStoppingTimer}
                       >
                         <SaveIcon className="h-6 w-6 text-muted-foreground" />
                         <span className="sr-only">Save</span>
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>
+                    {/* The buddy runs to the spot above this button, so the tooltip opens below. */}
+                    <TooltipContent side={timerBuddyEnabled ? "bottom" : "top"}>
                       Save (Ctrl/Cmd+Click to save without creating a new timer)
                     </TooltipContent>
                   </Tooltip>
@@ -395,6 +413,12 @@ export const FloatingTimer = () => {
                       variant="ghost"
                       size="icon"
                       onClick={() => stopTimer()}
+                      onPointerEnter={() =>
+                        emitBuddyEvent({ type: "deleteHover", active: true })
+                      }
+                      onPointerLeave={() =>
+                        emitBuddyEvent({ type: "deleteHover", active: false })
+                      }
                       disabled={isSavingTimer || isStoppingTimer}
                     >
                       <Trash2Icon className="h-6 w-6 text-muted-foreground" />
@@ -460,11 +484,14 @@ export const FloatingTimer = () => {
                           );
                           setUserNote(e.currentTarget.value);
                         }}
-                        onBlur={() =>
-                          userNote !== timer?.note
-                            ? editTimer({ userNote })
-                            : undefined
-                        }
+                        onFocus={() => emitBuddyEvent({ type: "noteFocus" })}
+                        onBlur={() => {
+                          const changed = userNote !== timer?.note;
+                          emitBuddyEvent({ type: "noteBlur", changed });
+                          if (changed) {
+                            editTimer({ userNote });
+                          }
+                        }}
                         style={{
                           minHeight: NOTE_TEXTAREA_MIN_HEIGHT,
                           scrollbarWidth: "none",

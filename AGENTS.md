@@ -164,6 +164,7 @@ aspire otel spans \
 4. **Coordinated changes** - Backend API changes typically require frontend updates
 5. **Route generation** - Don't edit `routeTree.gen.ts` manually
 6. **shadcn/ui** - Components in `app/src/components/ui/` are from shadcn/ui
+7. **Timer buddy sprites are generated** - `app/public/buddy/` and `app/src/lib/buddy/species.generated.ts` come from `app/scripts/build_buddy_sprites.py` (PMD SpriteCollab, CC BY-NC 4.0). Regenerate them with the script instead of editing by hand, and keep `CREDITS.md` with them
 
 ## Configuration
 

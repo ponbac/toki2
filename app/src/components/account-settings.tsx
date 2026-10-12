@@ -25,6 +25,7 @@ import { userMutations } from "@/lib/api/mutations/user";
 import { userQueries } from "@/lib/api/queries/user";
 import { buildAvatarSources } from "@/lib/avatar";
 import { enablePokemonAvatarFallbackAtom } from "@/lib/avatar-preferences";
+import { TimerBuddySettings } from "./timer-buddy/buddy-settings";
 
 /** Navigation avatar trigger and cohesive account-settings dialog. */
 export function AccountSettings() {
@@ -173,7 +174,7 @@ export function AccountSettings() {
         <DialogHeader>
           <DialogTitle>Account</DialogTitle>
           <DialogDescription>
-            Avatar, fallback images, API tokens, and AI subscriptions.
+            Avatar, timer buddy, API tokens, and AI subscriptions.
           </DialogDescription>
         </DialogHeader>
 
@@ -255,6 +256,8 @@ export function AccountSettings() {
               />
             </div>
           </div>
+
+          <TimerBuddySettings avatarSeed={me?.email} />
 
           <ApiTokensSettings issuance={tokenIssuance} />
 
