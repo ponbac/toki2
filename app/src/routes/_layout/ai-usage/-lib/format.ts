@@ -99,17 +99,26 @@ const HOUR_MS = 60 * 60 * 1000;
 /**
  * The local hours a session was active in `timeZone` (the server's AI usage
  * zone, not the browser's): from the start of its first hour to the end of
- * its last, such as `28 Sept, 12:00–15:00`. If the clock changes inside the
- * span, UTC offsets disambiguate its endpoints. Both arguments are UTC
- * instants of hour starts.
+ * its last. `day` is the local day it was last active, such as `Mon 28 Sept`,
+ * to group sessions under; `hours` is the span read under that day,
+ * `12:00–15:00`, which names both days only when the session crosses
+ * midnight; `span` always names its day, `28 Sept, 12:00–15:00`. If the clock
+ * changes inside the span, UTC offsets disambiguate its endpoints. Both
+ * arguments are UTC instants of hour starts.
  */
-export function formatHourSpan(
+export function sessionHours(
   firstHour: string,
   lastHour: string,
   timeZone: string,
-): string {
+): Readonly<{ day: string; hours: string; span: string }> {
   const day = new Intl.DateTimeFormat("en-GB", {
     timeZone,
+    day: "numeric",
+    month: "short",
+  });
+  const weekday = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    weekday: "short",
     day: "numeric",
     month: "short",
   });
@@ -133,13 +142,23 @@ export function formatHourSpan(
   const clockChanges = startOffset !== endOffset;
   const startDay = day.format(start);
   // An hour that ends at midnight still belongs to the day it started on.
-  const endDay = day.format(new Date(end.getTime() - 1));
+  const lastInstant = new Date(end.getTime() - 1);
+  const endDay = day.format(lastInstant);
   const endTime = time.format(end);
   const startLabel = `${time.format(start)}${clockChanges ? ` ${startOffset}` : ""}`;
   const endLabel = `${startDay === endDay && endTime === "00:00" ? "24:00" : endTime}${clockChanges ? ` ${endOffset}` : ""}`;
-  return startDay === endDay
-    ? `${startDay}, ${startLabel}–${endLabel}`
-    : `${startDay}, ${startLabel} – ${day.format(end)}, ${endLabel}`;
+  const hours = `${startLabel}–${endLabel}`;
+  const span =
+    startDay === endDay
+      ? `${startDay}, ${hours}`
+      : `${startDay}, ${startLabel} – ${day.format(end)}, ${endLabel}`;
+  return {
+    // The day the last hour starts on, as the server buckets it; in a zone
+    // with a half-hour offset that hour can end on the next day.
+    day: weekday.format(new Date(lastHour)),
+    hours: startDay === endDay ? hours : span,
+    span,
+  };
 }
 
 /** ISO weekday names, 1 (Monday) to 7 (Sunday). */

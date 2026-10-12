@@ -47,6 +47,19 @@ export function formatCount(count: number): string {
   return whole.format(count);
 }
 
+/** A count with its noun: `1 machine`, `1,204 machines`. */
+export function plural(count: number, noun: string): string {
+  return `${formatCount(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** Words as a sentence: `EUR, GBP and USD` or `EUR, GBP or USD`. */
+export function listOf(
+  items: readonly string[],
+  type: "conjunction" | "disjunction",
+): string {
+  return new Intl.ListFormat("en", { style: "long", type }).format(items);
+}
+
 /** `2026-08` as `August 2026`. */
 export function monthLabel(month: string): string {
   const [year, monthNumber] = month.split("-").map(Number);

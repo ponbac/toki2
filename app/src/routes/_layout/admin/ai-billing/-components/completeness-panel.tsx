@@ -18,12 +18,13 @@ import {
   isMonday,
   machineCells,
   monthDays,
+  needsAttention,
   providerCells,
   providersWithOwnGaps,
   type CoverageTotals,
   type ProviderCoverage,
 } from "../../-lib/coverage";
-import { formatCount, monthLabel, shortDate } from "../../-lib/format";
+import { formatCount, monthLabel, plural, shortDate } from "../../-lib/format";
 import {
   COVERAGE_COLOR_SCOPE,
   CoverageStrip,
@@ -50,14 +51,7 @@ const SCOPES = [
 
 /** A label column and a strip column; one column on a narrow screen. */
 const ROW_GRID =
-  "grid gap-x-3 gap-y-1 sm:grid-cols-[15rem_minmax(0,1fr)] sm:items-center";
-
-/** Readiness that holds billing back. */
-function needsAttention(developer: AiDeveloperCompleteness): boolean {
-  return (
-    developer.readiness === "noSync" || developer.readiness === "incomplete"
-  );
-}
+  "grid gap-x-3 gap-y-1 sm:grid-cols-[13rem_minmax(0,1fr)] sm:items-center";
 
 /** `Aug 5–19`, or `Aug 31` for one day. */
 function formatGap(gap: AiUploadGap): string {
@@ -70,11 +64,10 @@ function formatGaps(gaps: readonly AiUploadGap[]): string {
   return gaps.map(formatGap).join(", ");
 }
 
-function plural(count: number, noun: string): string {
-  return `${formatCount(count)} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-/** Whether billing a month can rely on everyone's uploads, day by day. */
+/**
+ * Whether billing a month can rely on everyone's uploads, day by day: what
+ * the Uploads check opens to. The check's row carries the verdict.
+ */
 export function CompletenessPanel({
   query,
 }: {
@@ -96,18 +89,13 @@ export function CompletenessPanel({
       />
     );
   }
-  return (
-    <Completeness completeness={query.data} stale={query.isPlaceholderData} />
-  );
+  return <Completeness completeness={query.data} />;
 }
 
 function Completeness({
   completeness,
-  stale,
 }: {
   completeness: AiBillingCompleteness;
-  /** The figures are the previous month's, held while the next loads. */
-  stale: boolean;
 }) {
   const [scope, setScope] = React.useState<Scope>("attention");
   const days = React.useMemo(
@@ -125,33 +113,9 @@ function Completeness({
   const shown = scope === "attention" ? attention : developers;
 
   return (
-    <section
-      aria-labelledby="completeness-heading"
-      className={cn(
-        "flex flex-col gap-3 rounded-xl border bg-card/60 p-4",
-        COVERAGE_COLOR_SCOPE,
-        allReady ? "border-border/60" : "border-[#c98500]/50",
-        stale && "opacity-60",
-      )}
-    >
+    <div className={cn("flex flex-col gap-3", COVERAGE_COLOR_SCOPE)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 basis-80 space-y-1">
-          <h2
-            id="completeness-heading"
-            className="flex flex-wrap items-center gap-2 text-sm font-semibold"
-          >
-            Data completeness
-            {developers.length === 0 ? (
-              <StatusBadge tone="neutral" label="No developers" />
-            ) : allReady ? (
-              <StatusBadge tone="good" label="Complete" />
-            ) : (
-              <StatusBadge
-                tone="warning"
-                label={`${attention.length} of ${developers.length} need attention`}
-              />
-            )}
-          </h2>
+        <div className="min-w-0 flex-1 basis-64">
           <p className="text-sm text-muted-foreground">
             {completeness.inProgress
               ? `${monthLabel(completeness.month)} is still in progress; its figures will change. `
@@ -224,7 +188,7 @@ function Completeness({
           machines neither uploaded usage nor synced after the month began.
         </p>
       )}
-    </section>
+    </div>
   );
 }
 

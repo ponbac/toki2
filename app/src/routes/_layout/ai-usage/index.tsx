@@ -1,12 +1,21 @@
 import * as React from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { MotionConfig } from "framer-motion";
 import { useSetAtom } from "jotai/react";
-import { AlertTriangle } from "lucide-react";
+import { Globe, Info } from "lucide-react";
 import { z } from "zod";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { AI_PROVIDERS } from "@/lib/api/contracts/ai-usage";
 import {
   aiUsageReportQueries,
@@ -14,7 +23,7 @@ import {
   type AiUsageReportParams,
 } from "@/lib/api/queries/ai-usage-report";
 import { cn } from "@/lib/utils";
-import { ModelTable, ProjectTable } from "./-components/breakdown-tables";
+import { Breakdown } from "./-components/breakdown";
 import { ConnectMachineDialog } from "./-components/connect-machine-dialog";
 import { ConnectMachinePrompt } from "./-components/connect-machine-prompt";
 import { CurrencySwitch } from "./-components/currency-switch";
@@ -22,14 +31,18 @@ import { DailySpendChart } from "./-components/daily-spend-chart";
 import { FilterBar, type FilterPatch } from "./-components/filter-bar";
 import { HourHeatmap } from "./-components/hour-heatmap";
 import { MachinesPanel } from "./-components/machines-panel";
-import { ProjectChart } from "./-components/project-chart";
 import { QueryError } from "./-components/query-state";
-import { SessionsTable } from "./-components/sessions-table";
+import { RepositoriesPanel } from "./-components/repositories-panel";
+import {
+  DEFAULT_SESSION_SORT,
+  SESSIONS_PAGE_SIZE,
+  SessionsTable,
+} from "./-components/sessions-table";
 import { SummaryTiles } from "./-components/summary-tiles";
-import { TokenMixChart } from "./-components/token-mix-chart";
-import { UnassignedKeys } from "./-components/unassigned-keys";
+import { UsageTabs } from "./-components/usage-tabs";
 import { formatLongDate } from "./-lib/format";
 import { MoneyContext, displayCurrencyAtom, formatZero } from "./-lib/money";
+import { DEFAULT_TAB, USAGE_TABS } from "./-lib/tabs";
 import { useDisplayMoney } from "./-lib/use-display-money";
 
 const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -40,6 +53,7 @@ const localDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
  * reports on the current month in its AI usage time zone.
  */
 const searchSchema = z.object({
+  tab: z.enum(USAGE_TABS).optional().catch(undefined),
   from: localDate.optional().catch(undefined),
   to: localDate.optional().catch(undefined),
   provider: z.enum(AI_PROVIDERS).optional().catch(undefined),
@@ -80,6 +94,7 @@ function AiUsagePage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const params = reportParams(search);
+  const tab = search.tab ?? DEFAULT_TAB;
   const [connecting, setConnecting] = React.useState(false);
   const headingRef = React.useRef<HTMLHeadingElement>(null);
   const reportQuery = useQuery({
@@ -95,6 +110,17 @@ function AiUsagePage() {
   // The listing holds every machine whatever the range, so none means none ever.
   const neverSynced = machinesQuery.data?.machines.length === 0;
   const keysQuery = useQuery(aiUsageReportQueries.aiUsageProjectKeys());
+  // The first page of the Sessions tab, which also says how many there are.
+  const sessionsQuery = useInfiniteQuery({
+    ...aiUsageReportQueries.aiUsageSessions(
+      params,
+      DEFAULT_SESSION_SORT,
+      SESSIONS_PAGE_SIZE,
+    ),
+    placeholderData: keepPreviousData,
+    enabled: !neverSynced,
+  });
+  const sessions = sessionsQuery.data?.pages[0]?.total;
   const setCurrency = useSetAtom(displayCurrencyAtom);
   // The header follows the report on screen, like the report's own figures.
   const { currency, money, rates, fetching, failed } = useDisplayMoney(
@@ -118,130 +144,183 @@ function AiUsagePage() {
   );
   const mappable =
     keysQuery.data?.projectKeys.filter((key) => key.mappable).length ?? 0;
+  const machineProblem =
+    machinesQuery.data?.machines.some(
+      (machine) =>
+        machine.stale ||
+        machine.coverage.some((entry) => entry.status === "failed"),
+    ) ?? false;
 
   const setFilters = (patch: FilterPatch) =>
     void navigate({ search: (previous) => ({ ...previous, ...patch }) });
 
-  return (
-    <main className="mx-auto w-full max-w-7xl space-y-5 p-4 md:p-8">
-      <header className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-8">
-        <div className="space-y-1">
-          <h1
-            ref={headingRef}
-            tabIndex={-1}
-            className="font-display text-2xl font-semibold tracking-tight outline-none"
-          >
-            AI usage
-          </h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Your own AI usage, as <code>token-ledger sync</code> uploads it from
-            your machines. Only you see these hours and sessions. Every cost is
-            an API-equivalent estimate{" "}
-            {shown === "USD" ? "in USD" : `priced in USD and shown in ${shown}`}
-            , not a subscription bill, and usage without a known price shows as
-            unknown, never as {formatZero(shown)}.
-          </p>
-        </div>
-        <CurrencySwitch
-          className="justify-items-start sm:justify-items-end sm:pt-0.5"
-          currency={currency}
-          onChange={setCurrency}
-          money={money}
-          rates={rates}
-          loading={fetching}
-          failed={failed}
-        />
-      </header>
-
-      {mappable > 0 && (
-        <Alert variant="warning" className="p-3 [&>svg]:left-3 [&>svg]:top-3">
-          <AlertTriangle className="size-4" />
-          <AlertTitle className="text-sm">
-            {mappable === 1
-              ? "1 repository is not mapped to a project"
-              : `${mappable} repositories are not mapped to a project`}
-          </AlertTitle>
-          <AlertDescription className="text-xs text-foreground">
-            Their usage counts as unassigned.{" "}
-            <a href="#unassigned" className="underline underline-offset-2">
-              Map them to time-tracking projects
-            </a>
-            .
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {neverSynced ? (
-        <>
-          {machinesQuery.isError && (
-            <QueryError
-              message="Could not check your machines; showing none, as last known."
-              error={machinesQuery.error}
-              onRetry={() => void machinesQuery.refetch()}
-            />
-          )}
-          <ConnectMachinePrompt onConnect={() => setConnecting(true)} />
-        </>
-      ) : (
-        <>
-          {reportQuery.isPending || machinesQuery.isPending ? (
-            <ReportSkeleton />
-          ) : reportQuery.isError && !reportQuery.data ? (
-            <div className="space-y-3">
-              <QueryError
-                message="Could not load your AI usage."
-                error={reportQuery.error}
-                onRetry={() => void reportQuery.refetch()}
-              />
-              {(search.from !== undefined || search.to !== undefined) && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setFilters({ from: undefined, to: undefined })}
-                >
-                  Show this month instead
-                </Button>
-              )}
-            </div>
-          ) : (
-            <Report
-              report={reportQuery.data}
-              params={params}
-              stale={reportQuery.isPlaceholderData}
-              refreshError={reportQuery.isError ? reportQuery.error : null}
-              onRetry={() => void reportQuery.refetch()}
-              machineLabels={machineLabels}
-              stackBy={search.stackBy ?? "provider"}
-              onStackByChange={(stackBy) =>
-                void navigate({
-                  search: (previous) => ({ ...previous, stackBy }),
-                  replace: true,
-                })
-              }
-              onFiltersChange={setFilters}
-            />
-          )}
-
-          <SessionsTable params={params} machineLabels={machineLabels} />
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            <MachinesPanel
-              query={machinesQuery}
-              onAddMachine={() => setConnecting(true)}
-            />
-            <UnassignedKeys id="unassigned" query={keysQuery} />
-          </div>
-        </>
-      )}
-
-      <ConnectMachineDialog
-        open={connecting}
-        onOpenChange={setConnecting}
-        range={machineRange}
-        fallbackFocusRef={headingRef}
+  const report = reportQuery.data;
+  // The dates and filters, above the report and above the sessions alike.
+  const filters = report && (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <FilterBar
+        params={params}
+        report={report}
+        machineLabels={machineLabels}
+        onChange={setFilters}
       />
-    </main>
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Globe aria-hidden className="size-3.5 shrink-0" />
+        <span>
+          <span className="sr-only">Days and hours in </span>
+          {report.timeZone}
+          {!report.timeTrackingConfigured &&
+            ". Time tracking is not configured, so no usage counts for a project"}
+        </span>
+      </p>
+    </div>
+  );
+  const reportError = reportQuery.isError && !report && (
+    <div className="space-y-3">
+      <QueryError
+        message="Could not load your AI usage."
+        error={reportQuery.error}
+        onRetry={() => void reportQuery.refetch()}
+      />
+      {(search.from !== undefined || search.to !== undefined) && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setFilters({ from: undefined, to: undefined })}
+        >
+          Show this month instead
+        </Button>
+      )}
+    </div>
+  );
+
+  return (
+    <MotionConfig reducedMotion="user">
+      <main className="mx-auto w-full max-w-7xl space-y-5 p-4 md:p-8">
+        <header className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-8">
+          <div className="space-y-1">
+            <h1
+              ref={headingRef}
+              tabIndex={-1}
+              className="font-display text-2xl font-semibold tracking-tight outline-none"
+            >
+              AI usage
+            </h1>
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              Your own AI usage, as <code>token-ledger sync</code> uploads it
+              from your machines. Only you see these hours and sessions. Costs
+              are API-equivalent estimates, not a subscription bill.{" "}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="How costs are estimated"
+                    className="inline-flex rounded-full align-[-2px] outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Info aria-hidden className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72 text-xs font-medium">
+                  Every cost is what the usage would have cost at API prices,
+                  priced in USD
+                  {shown === "USD" ? "" : ` and shown in ${shown}`}. Usage
+                  without a known price shows as unknown, never as{" "}
+                  {formatZero(shown)}.
+                </TooltipContent>
+              </Tooltip>
+            </p>
+          </div>
+          <CurrencySwitch
+            className="justify-items-start sm:justify-items-end sm:pt-0.5"
+            currency={currency}
+            onChange={setCurrency}
+            money={money}
+            rates={rates}
+            loading={fetching}
+            failed={failed}
+          />
+        </header>
+
+        {neverSynced ? (
+          <>
+            {machinesQuery.isError && (
+              <QueryError
+                message="Could not check your machines; showing none, as last known."
+                error={machinesQuery.error}
+                onRetry={() => void machinesQuery.refetch()}
+              />
+            )}
+            <ConnectMachinePrompt onConnect={() => setConnecting(true)} />
+          </>
+        ) : (
+          <>
+            <UsageTabs
+              tab={tab}
+              sessions={sessions}
+              mappable={mappable}
+              machines={machinesQuery.data?.machines.length}
+              machineProblem={machineProblem}
+            />
+            {tab === "overview" &&
+              (reportQuery.isPending || machinesQuery.isPending ? (
+                <ReportSkeleton />
+              ) : (
+                reportError ||
+                (report && (
+                  <>
+                    {filters}
+                    <Report
+                      report={report}
+                      params={params}
+                      stale={reportQuery.isPlaceholderData}
+                      refreshError={
+                        reportQuery.isError ? reportQuery.error : null
+                      }
+                      onRetry={() => void reportQuery.refetch()}
+                      machineLabels={machineLabels}
+                      sessions={sessions}
+                      mappable={mappable}
+                      stackBy={search.stackBy ?? "provider"}
+                      onStackByChange={(stackBy) =>
+                        void navigate({
+                          search: (previous) => ({ ...previous, stackBy }),
+                          replace: true,
+                        })
+                      }
+                      onFiltersChange={setFilters}
+                    />
+                  </>
+                ))
+              ))}
+            {tab === "sessions" && (
+              <>
+                {reportQuery.isPending ? (
+                  <Skeleton className="h-9 w-full max-w-2xl" />
+                ) : (
+                  reportError || filters
+                )}
+                <SessionsTable params={params} machineLabels={machineLabels} />
+              </>
+            )}
+            {tab === "repositories" && <RepositoriesPanel query={keysQuery} />}
+            {tab === "machines" && (
+              <MachinesPanel
+                query={machinesQuery}
+                onAddMachine={() => setConnecting(true)}
+              />
+            )}
+          </>
+        )}
+
+        <ConnectMachineDialog
+          open={connecting}
+          onOpenChange={setConnecting}
+          range={machineRange}
+          fallbackFocusRef={headingRef}
+        />
+      </main>
+    </MotionConfig>
   );
 }
 
@@ -252,6 +331,8 @@ function Report({
   refreshError,
   onRetry,
   machineLabels,
+  sessions,
+  mappable,
   stackBy,
   onStackByChange,
   onFiltersChange,
@@ -262,6 +343,8 @@ function Report({
   refreshError: Error | null;
   onRetry: () => void;
   machineLabels: ReadonlyMap<string, string>;
+  sessions: number | undefined;
+  mappable: number;
   stackBy: "provider" | "model";
   onStackByChange: (stackBy: "provider" | "model") => void;
   onFiltersChange: (patch: FilterPatch) => void;
@@ -271,19 +354,6 @@ function Report({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <FilterBar
-          params={params}
-          report={report}
-          machineLabels={machineLabels}
-          onChange={onFiltersChange}
-        />
-        <p className="text-xs text-muted-foreground">
-          Days and hours in {report.timeZone}
-          {!report.timeTrackingConfigured &&
-            ". Time tracking is not configured, so no usage counts for a project"}
-        </p>
-      </div>
       {refreshError && (
         <QueryError
           message="Could not update your AI usage; showing the previous figures."
@@ -310,24 +380,29 @@ function Report({
             <p className="mt-1 text-sm text-muted-foreground">
               Usage appears here after <code>token-ledger sync</code> uploads
               it. A machine that has not synced lately may be missing usage; see
-              Machines below.
+              the Machines tab.
             </p>
           </div>
         ) : (
           <MoneyContext.Provider value={money}>
-            <SummaryTiles report={report} />
-            <div className="grid gap-5 lg:grid-cols-2">
-              <DailySpendChart
-                className="lg:col-span-2"
+            <SummaryTiles
+              report={report}
+              sessions={sessions}
+              mappable={mappable}
+            />
+            <DailySpendChart
+              report={report}
+              stackBy={stackBy}
+              onStackByChange={onStackByChange}
+            />
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1fr)]">
+              <Breakdown
                 report={report}
-                stackBy={stackBy}
-                onStackByChange={onStackByChange}
+                params={params}
+                machineLabels={machineLabels}
+                onFiltersChange={onFiltersChange}
               />
-              <ProjectChart report={report} />
-              <TokenMixChart report={report} />
-              <HourHeatmap className="lg:col-span-2" report={report} />
-              <ProjectTable report={report} />
-              <ModelTable report={report} />
+              <HourHeatmap report={report} />
             </div>
           </MoneyContext.Provider>
         )}

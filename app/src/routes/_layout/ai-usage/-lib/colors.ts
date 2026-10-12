@@ -34,29 +34,40 @@ export const PROVIDER_COLORS: Readonly<Record<AiProvider, string>> = {
   pi: SLOTS[4],
 };
 
-/** How many models get their own colour; the rest fold into "Other". */
-export const MODEL_SLOTS = 7;
+/** How many models of one tool get their own tint; the rest fold into "Other". */
+export const MODEL_TINTS = 3;
 
-/**
- * The colour of the model at `index` in the report's model options, which
- * are ordered by cost over the whole range and ignore filters, so a model
- * keeps its colour when filters change.
- */
-export function modelColor(index: number): string {
-  return index >= 0 && index < MODEL_SLOTS
-    ? (SLOTS[index] ?? OTHER_COLOR)
-    : OTHER_COLOR;
+/** How much of the tool's colour each tint keeps; the rest is the surface. */
+const TINT_STRENGTH = [100, 66, 42] as const;
+
+/** `color` at `strength` percent, receding into the card surface. */
+function tint(color: string, strength: number): string {
+  return strength >= 100
+    ? color
+    : `color-mix(in srgb, ${color} ${strength}%, ${SURFACE_COLOR})`;
 }
 
 /**
- * Token categories, in slots 5 to 8. Slot 5 is also Pi's: a fifth provider
- * leaves no slot free, and the two never share a chart.
+ * The colour of a tool's model at `rank` among that tool's models: a tint of
+ * the tool's own colour, so a model reads as its tool in every chart, and the
+ * costliest model is the strongest.
+ */
+export function modelColor(provider: AiProvider, rank: number): string {
+  const strength = TINT_STRENGTH[rank];
+  return strength === undefined
+    ? OTHER_COLOR
+    : tint(PROVIDER_COLORS[provider], strength);
+}
+
+/**
+ * Token categories that are paid for in full, on one hue, strongest for the
+ * dearest per token. Cache reads are most of the tokens and little of the
+ * cost, so they are a figure beside the strip, not a segment of it.
  */
 export const TOKEN_COLORS = {
-  input: SLOTS[4],
-  cacheRead: SLOTS[5],
-  cacheWrite: SLOTS[6],
-  output: SLOTS[7],
+  output: SLOTS[6],
+  cacheWrite: tint(SLOTS[6], TINT_STRENGTH[1]),
+  input: tint(SLOTS[6], TINT_STRENGTH[2]),
 } as const;
 
 /** The single-hue sequential ramp, from little to much. */

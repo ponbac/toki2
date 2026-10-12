@@ -4,28 +4,12 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { apiErrorToast } from "@/lib/api/errors";
 import { aiAdminMutations } from "@/lib/api/mutations/ai-admin";
 import type { AiExchangeRate } from "@/lib/api/queries/ai-admin";
 import { StatusBadge } from "../../-components/status-badge";
-import { monthLabel, shortDate } from "../../-lib/format";
+import { listOf, monthLabel, shortDate } from "../../-lib/format";
 import { parseRateInput } from "../../-lib/rates";
-
-/** Currency codes as a sentence: `EUR, GBP and USD` or `EUR, GBP or USD`. */
-function listOf(
-  codes: readonly string[],
-  type: "conjunction" | "disjunction",
-): string {
-  return new Intl.ListFormat("en", { style: "long", type }).format(codes);
-}
 
 function providerLabel(source: string): string {
   return source === "riksbank" ? "Riksbank" : source;
@@ -90,7 +74,8 @@ export function MissingRatesAlert({
 /**
  * The month's exchange rates to the billing currency, each with its source,
  * whether it is provisional, the fetched rate kept beneath an override, and
- * an admin override.
+ * an admin override: what the Exchange rates check opens to. It says first
+ * what a missing or pending rate leaves unconverted.
  */
 export function ExchangeRatesPanel({
   month,
@@ -111,58 +96,54 @@ export function ExchangeRatesPanel({
   const currencies = [
     ...new Set([...byCurrency.keys(), ...missingRates]),
   ].sort();
+  const missing = missingRates.filter((code) => !pendingRates.includes(code));
 
   return (
-    <section
-      aria-labelledby="exchange-rates-heading"
-      className="flex flex-col gap-2"
-    >
-      <div>
-        <h2 id="exchange-rates-heading" className="text-lg font-semibold">
-          Exchange rates
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {billingCurrency} per unit, the Riksbank&apos;s average for{" "}
-          {monthLabel(month)}. A month in progress uses the average of the days
-          published so far, which is provisional and refreshed after each
-          publication. An override applies instead of the fetched rate, which is
-          kept and applies again on reset.
+    <div className="flex flex-col gap-3">
+      {missing.length > 0 && (
+        <p className="text-sm">
+          Amounts in {listOf(missing, "conjunction")} are not converted to{" "}
+          {billingCurrency}: their {billingCurrency} figures and the totals that
+          include them show &ldquo;No rate&rdquo;, never zero. Set a rate below,
+          or bill from the CSV per currency.
         </p>
-      </div>
-      <div className="rounded-xl border border-border/60 bg-card/60">
+      )}
+      {pendingRates.length > 0 && (
+        <p className="text-sm" role="status">
+          The {billingCurrency} figures update when the fetch finishes; this
+          page checks again every few seconds.
+        </p>
+      )}
+      <p className="text-sm text-muted-foreground">
+        {billingCurrency} per unit, the Riksbank&apos;s average for{" "}
+        {monthLabel(month)}. A month in progress uses the average of the days
+        published so far, which is provisional and refreshed after each
+        publication. An override applies instead of the fetched rate, which is
+        kept and applies again on reset.
+      </p>
+      <div className="rounded-lg border border-border/60">
         {currencies.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">
             Everything this month is billed in {billingCurrency}; no rate is
             needed.
           </p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Currency</TableHead>
-                <TableHead className="text-right">Rate</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead className="text-right">Override</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {currencies.map((currency) => (
-                <RateRow
-                  key={`${month}-${currency}`}
-                  month={month}
-                  currency={currency}
-                  billingCurrency={billingCurrency}
-                  rate={byCurrency.get(currency)}
-                  pending={pendingRates.includes(currency)}
-                  disabled={disabled}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          <ul className="divide-y divide-border/60">
+            {currencies.map((currency) => (
+              <RateRow
+                key={`${month}-${currency}`}
+                month={month}
+                currency={currency}
+                billingCurrency={billingCurrency}
+                rate={byCurrency.get(currency)}
+                pending={pendingRates.includes(currency)}
+                disabled={disabled}
+              />
+            ))}
+          </ul>
         )}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -210,63 +191,55 @@ function RateRow({
   const overridden = rate?.override ?? null;
 
   return (
-    <TableRow>
-      <TableCell className="font-medium">{currency}</TableCell>
-      <TableCell className="text-right tabular-nums">
-        {rate ? (
-          <>
-            <span className="font-semibold">{rate.rate}</span>{" "}
-            <span className="text-xs text-muted-foreground">
-              {billingCurrency} per {currency}
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-3">
+      <div className="min-w-0 flex-1 basis-56">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 tabular-nums">
+          <span className="font-medium">{currency}</span>
+          {rate ? (
+            <span>
+              <span className="font-semibold">{rate.rate}</span>{" "}
+              <span className="text-xs text-muted-foreground">
+                {billingCurrency} per {currency}
+              </span>
             </span>
-          </>
-        ) : pending ? (
-          <StatusBadge tone="neutral" label="Fetching…" />
-        ) : (
-          <StatusBadge tone="warning" label="Missing" />
-        )}
-      </TableCell>
-      <TableCell>
-        {overridden ? (
-          <>
-            <div className="text-sm">Admin override</div>
-            <div className="text-xs text-muted-foreground">
-              Set {shortDate(overridden.overriddenOn)}
+          ) : (
+            !pending && <StatusBadge tone="warning" label="Missing" />
+          )}
+          {pending ? (
+            <StatusBadge
+              tone="neutral"
+              label={rate ? "Refreshing…" : "Fetching…"}
+            />
+          ) : rate === undefined ? null : rate.provisional ? (
+            <StatusBadge tone="warning" label="Provisional" />
+          ) : (
+            <StatusBadge tone="good" label="Final" />
+          )}
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {overridden ? (
+            <>
+              <span className="text-foreground">Admin override.</span> Set{" "}
+              {shortDate(overridden.overriddenOn)}
               {overridden.overriddenBy ? ` by ${overridden.overriddenBy}` : ""}
               {fetched
                 ? ` · ${providerLabel(fetched.source)}: ${fetched.rate}`
                 : ""}
-            </div>
-          </>
-        ) : fetched ? (
-          <>
-            <div className="text-sm">{fetchedLabel(fetched)}</div>
-            <div className="text-xs text-muted-foreground">
+            </>
+          ) : fetched ? (
+            <>
+              <span className="text-foreground">{fetchedLabel(fetched)}.</span>{" "}
               Through {shortDate(fetched.observedThrough)} · fetched{" "}
               {shortDate(fetched.fetchedOn)}
-            </div>
-          </>
-        ) : (
-          <span className="text-sm text-muted-foreground">
-            {pending
-              ? "Asking the Riksbank"
-              : "Not published, or the Riksbank could not be reached"}
-          </span>
-        )}
-      </TableCell>
-      <TableCell>
-        {pending ? (
-          <StatusBadge
-            tone="neutral"
-            label={rate ? "Refreshing…" : "Fetching…"}
-          />
-        ) : rate === undefined ? null : rate.provisional ? (
-          <StatusBadge tone="warning" label="Provisional" />
-        ) : (
-          <StatusBadge tone="good" label="Final" />
-        )}
-      </TableCell>
-      <TableCell className="text-right">
+            </>
+          ) : pending ? (
+            "Asking the Riksbank"
+          ) : (
+            "Not published, or the Riksbank could not be reached"
+          )}
+        </p>
+      </div>
+      <div className="ml-auto">
         {editing ? (
           <form
             className="flex flex-col items-end gap-1"
@@ -277,7 +250,7 @@ function RateRow({
               }
             }}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <label htmlFor={inputId} className="sr-only">
                 {billingCurrency} per {currency}
               </label>
@@ -318,7 +291,7 @@ function RateRow({
             )}
           </form>
         ) : (
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               type="button"
               size="sm"
@@ -344,7 +317,7 @@ function RateRow({
             )}
           </div>
         )}
-      </TableCell>
-    </TableRow>
+      </div>
+    </li>
   );
 }

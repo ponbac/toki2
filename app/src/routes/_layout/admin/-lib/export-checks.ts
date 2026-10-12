@@ -1,0 +1,157 @@
+import type {
+  AiBillingCompleteness,
+  AiBillingLine,
+  AiExchangeRate,
+} from "@/lib/api/queries/ai-admin";
+import {
+  billableTotals,
+  formatBillable,
+  formatConverted,
+  unassignedLines,
+} from "./billing";
+import { coverageTotals, monthDays, needsAttention } from "./coverage";
+import { listOf, monthLabel, plural } from "./format";
+
+/*
+ * What holds a month's bill back before it is exported: uploads, exchange
+ * rates and project mappings. The server has already decided every fact; this
+ * only says each in one line and whether it needs attention.
+ */
+
+/** Whether a check lets the month be exported. */
+export type CheckStatus = "passed" | "attention" | "pending";
+
+/** A check's state and its one-line summary. */
+export type CheckResult = Readonly<{ status: CheckStatus; summary: string }>;
+
+/** Whether every developer's machines uploaded all the month requires. */
+export function uploadsCheck(completeness: AiBillingCompleteness): CheckResult {
+  const developers = completeness.developers;
+  if (developers.length === 0) {
+    return {
+      status: "passed",
+      summary:
+        "Nobody has a machine that syncs AI usage or a subscription in this month",
+    };
+  }
+  const attention = developers.filter(needsAttention);
+  if (attention.length === 0) {
+    return {
+      status: "passed",
+      summary:
+        completeness.requiredThrough === null
+          ? "No day of this month has passed yet"
+          : completeness.inProgress
+            ? "Every required day so far is uploaded; the month is still in progress"
+            : "Every active machine has uploaded every required day",
+    };
+  }
+
+  const totals = coverageTotals(completeness, monthDays(completeness.month));
+  const notSynced = attention.filter(
+    (developer) => developer.readiness === "noSync",
+  ).length;
+  const parts = [
+    `${developers.length - attention.length} of ${plural(developers.length, "developer")} complete`,
+  ];
+  if (totals.missing > 0) {
+    parts.push(`${plural(totals.missing, "machine-day")} missing`);
+  } else if (totals.providerOnly > 0) {
+    parts.push(
+      `a tool is missing on ${plural(totals.providerOnly, "machine-day")}`,
+    );
+  } else if (notSynced > 0) {
+    parts.push(`${plural(notSynced, "developer")} not synced`);
+  }
+  return { status: "attention", summary: parts.join(", ") };
+}
+
+/** One rate as the summary names it, such as `USD 10.0169 (provisional)`. */
+function rateLabel(rate: AiExchangeRate): string {
+  const label = `${rate.currency} ${rate.rate}`;
+  return rate.override
+    ? `${label} (override)`
+    : rate.provisional
+      ? `${label} (provisional)`
+      : label;
+}
+
+/**
+ * Whether everything on the bill converts to the billing currency at a rate
+ * that will not change. A missing rate and a provisional one need attention;
+ * a rate being fetched is pending.
+ */
+export function ratesCheck({
+  month,
+  billingCurrency,
+  exchangeRates,
+  missingRates,
+  pendingRates,
+}: {
+  month: string;
+  billingCurrency: string;
+  exchangeRates: readonly AiExchangeRate[];
+  missingRates: readonly string[];
+  pendingRates: readonly string[];
+}): CheckResult {
+  const missing = missingRates.filter((code) => !pendingRates.includes(code));
+  if (missing.length > 0) {
+    return {
+      status: "attention",
+      summary: `No ${listOf(missing, "disjunction")} rate for ${monthLabel(month)}: amounts in ${listOf(missing, "conjunction")} are not converted to ${billingCurrency}`,
+    };
+  }
+  if (pendingRates.length > 0) {
+    return {
+      status: "pending",
+      summary: `Fetching the ${listOf(pendingRates, "conjunction")} exchange rate${pendingRates.length > 1 ? "s" : ""} for ${monthLabel(month)}`,
+    };
+  }
+  if (exchangeRates.length === 0) {
+    return {
+      status: "passed",
+      summary: `Everything is billed in ${billingCurrency}; no rate is needed`,
+    };
+  }
+  const rates = [...exchangeRates].sort((a, b) =>
+    a.currency.localeCompare(b.currency),
+  );
+  const summary = listOf(rates.map(rateLabel), "conjunction");
+  if (rates.some((rate) => rate.provisional)) {
+    return { status: "attention", summary };
+  }
+  return {
+    status: "passed",
+    summary: rates.some((rate) => rate.override)
+      ? summary
+      : `${summary}, ${rates.length > 1 ? "monthly averages" : "the monthly average"}`,
+  };
+}
+
+/** Whether every billed line is charged to a project. */
+export function mappingsCheck(
+  lines: readonly AiBillingLine[],
+  billingCurrency: string,
+): CheckResult {
+  const unassigned = unassignedLines(lines);
+  if (unassigned.length === 0) {
+    return {
+      status: "passed",
+      summary:
+        lines.length === 0
+          ? "Nothing is billed, so nothing needs a project"
+          : "Every billed line has a project",
+    };
+  }
+  const totals = billableTotals(unassigned);
+  const count = `${plural(unassigned.length, "line")} unassigned`;
+  if (totals.amounts.size === 0) {
+    return { status: "attention", summary: count };
+  }
+  // Without a rate there is no converted sum: name the original amounts.
+  const worth =
+    totals.converted === null
+      ? formatBillable(totals)
+      : formatConverted(totals, billingCurrency);
+  return { status: "attention", summary: `${count}, worth ${worth}` };
+}
