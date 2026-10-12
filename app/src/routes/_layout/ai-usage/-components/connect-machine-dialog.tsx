@@ -766,8 +766,17 @@ function CopilotStep({
     <>
       <p className="text-xs text-muted-foreground">
         Copilot keeps no usage log until you turn one on, and sessions before
-        that cannot be recovered. The log is a file on this machine, and only
-        token counts from it are uploaded.
+        that cannot be recovered. The log is a file on this machine. What is
+        uploaded from it is{" "}
+        <a
+          href={UPLOAD_DOCS}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2"
+        >
+          the same totals as for the other tools
+        </a>
+        , never prompts or responses.
       </p>
       <div>
         <Segmented
