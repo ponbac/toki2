@@ -1,3 +1,4 @@
+import { isValid, parseISO } from "date-fns";
 import {
   AI_PROVIDERS,
   MAX_PLAN_CODE_POINTS,
@@ -89,6 +90,15 @@ export function draftFrom(subscription: AiSubscription): Draft {
   };
 }
 
+/** Parses a real calendar day entered as `YYYY-MM-DD`, without a time zone shift. */
+export function parseSubscriptionDate(value: string): Date | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) {
+    return undefined;
+  }
+  const date = parseISO(value);
+  return isValid(date) ? date : undefined;
+}
+
 export function parseDraft(draft: Draft): ParsedDraft {
   const plan = draft.plan.trim();
   if (!plan) {
@@ -112,6 +122,15 @@ export function parseDraft(draft: Draft): ParsedDraft {
 
   if (!draft.validFrom) {
     return { ok: false, problem: "Enter the first day it covers." };
+  }
+  if (!parseSubscriptionDate(draft.validFrom)) {
+    return { ok: false, problem: "Enter the first day as YYYY-MM-DD." };
+  }
+  if (draft.validTo && !parseSubscriptionDate(draft.validTo)) {
+    return {
+      ok: false,
+      problem: "Enter the end day as YYYY-MM-DD, or leave it empty.",
+    };
   }
   if (draft.validTo && draft.validTo < draft.validFrom) {
     return { ok: false, problem: "The end must not be before the start." };

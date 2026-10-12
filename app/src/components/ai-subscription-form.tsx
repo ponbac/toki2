@@ -1,7 +1,12 @@
 import * as React from "react";
+import { format } from "date-fns";
+import { sv } from "date-fns/locale";
+import { CalendarIcon } from "lucide-react";
 import { Button } from "./ui/button";
+import { Calendar } from "./ui/calendar";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import {
   Select,
   SelectContent,
@@ -14,6 +19,7 @@ import {
   PLAN_SUGGESTIONS,
   SUBSCRIPTION_PROVIDERS,
   parseDraft,
+  parseSubscriptionDate,
   type Draft,
   type SubscriptionEditor,
 } from "@/lib/ai-subscriptions";
@@ -137,29 +143,29 @@ export function SubscriptionForm({
           <Label htmlFor={`${id}-from`} className="text-xs">
             From
           </Label>
-          <Input
+          <SubscriptionDateInput
             id={`${id}-from`}
-            type="date"
+            label="From"
             value={draft.validFrom}
-            onChange={(event) => update({ validFrom: event.target.value })}
+            onChange={(validFrom) => update({ validFrom })}
           />
         </div>
         <div className="space-y-1">
           <Label htmlFor={`${id}-to`} className="text-xs">
             To (optional)
           </Label>
-          <Input
+          <SubscriptionDateInput
             id={`${id}-to`}
-            type="date"
+            label="To"
             value={draft.validTo}
-            min={draft.validFrom || undefined}
-            onChange={(event) => update({ validTo: event.target.value })}
+            min={draft.validFrom}
+            onChange={(validTo) => update({ validTo })}
           />
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        Both dates are included. Leave the end empty while the subscription is
-        ongoing.
+        Enter dates as YYYY-MM-DD. Both dates are included. Leave the end empty
+        while the subscription is ongoing.
       </p>
       {submitAttempted && !parsed.ok && (
         <p className="text-xs text-destructive" role="alert">
@@ -181,5 +187,63 @@ export function SubscriptionForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function SubscriptionDateInput({
+  id,
+  label,
+  value,
+  min,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  min?: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const selected = parseSubscriptionDate(value);
+  const earliest = min ? parseSubscriptionDate(min) : undefined;
+
+  return (
+    <div className="flex gap-1">
+      <Input
+        id={id}
+        value={value}
+        placeholder="YYYY-MM-DD"
+        maxLength={10}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="shrink-0"
+            aria-label={`Choose ${label.toLowerCase()} date`}
+          >
+            <CalendarIcon className="h-4 w-4" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="end">
+          <Calendar
+            initialFocus
+            mode="single"
+            locale={sv}
+            weekStartsOn={1}
+            defaultMonth={selected ?? earliest}
+            selected={selected}
+            disabled={earliest ? { before: earliest } : undefined}
+            onSelect={(date) => {
+              onChange(date ? format(date, "yyyy-MM-dd") : "");
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }
