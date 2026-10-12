@@ -79,8 +79,9 @@ function rateLabel(rate: AiExchangeRate): string {
 /**
  * Whether everything on the bill converts to the billing currency at a rate
  * that will not change. A missing rate and a provisional one need attention;
- * a rate being fetched is pending. Only the rates the bill's lines use count:
- * a month keeps a stored rate after the last amount in its currency is gone.
+ * a rate being fetched is pending. Only the rates that convert an amount on
+ * the bill count: a month keeps a stored rate after the last amount in its
+ * currency is gone.
  */
 export function ratesCheck({
   month,
@@ -110,7 +111,16 @@ export function ratesCheck({
       summary: `Fetching the ${listOf(pendingRates, "conjunction")} exchange rate${pendingRates.length > 1 ? "s" : ""} for ${monthLabel(month)}`,
     };
   }
-  const billed = new Set(lines.map((line) => line.billableCurrency));
+  // A line of unknown or no cost has nothing to convert, whatever its
+  // currency.
+  const billed = new Set(
+    lines
+      .filter(
+        (line) =>
+          line.billableAmount !== null && Number(line.billableAmount) !== 0,
+      )
+      .map((line) => line.billableCurrency),
+  );
   const rates = exchangeRates
     .filter((rate) => billed.has(rate.currency))
     .sort((a, b) => a.currency.localeCompare(b.currency));

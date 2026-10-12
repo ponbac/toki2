@@ -11,7 +11,8 @@ export type Finding = Readonly<{
 }>;
 
 /**
- * What may be missing or unknown in a machine's figures. A provider without
+ * What may be missing or unknown in a machine's figures, last of all its
+ * usage in the selected dates that has no known price. A provider without
  * history is only worth a note when the machine uploaded its usage before;
  * otherwise the tool is simply not used there.
  */
@@ -77,6 +78,14 @@ export function machineFindings(
         text: `Prices were unavailable for ${tool}, so its costs from this machine are unknown.`,
       });
     }
+  }
+  if (machine.usage?.cost.kind === "partial") {
+    const unpriced = machine.usage.cost.unpricedRecords;
+    findings.push({
+      key: "unpriced",
+      severity: "warning",
+      text: `${formatCount(unpriced)} of its requests in these dates ${unpriced === 1 ? "has" : "have"} no known price, so ${unpriced === 1 ? "its" : "their"} cost is unknown.`,
+    });
   }
   return findings;
 }
