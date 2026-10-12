@@ -460,7 +460,9 @@ export class BuddyEngine {
       return;
     }
     if (!this.atHome && this.ground.kind === "floor") {
+      // Away from home on the open floor: follow the viewport as it resizes.
       this.ground = this.openFloor();
+      this.sprite.x = clamp(this.sprite.x, this.ground.x1, this.ground.x2);
       this.sprite.y = this.ground.y;
     }
     if (!this.busy) {
