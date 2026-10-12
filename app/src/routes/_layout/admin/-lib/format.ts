@@ -82,6 +82,16 @@ export function shortDate(day: string): string {
   });
 }
 
+/** `2026-08-16` as `Sun, Aug 16`. */
+export function weekdayDate(day: string): string {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year, month - 1, date).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /** An instant's date in the browser's time zone, such as `Aug 21`. */
 export function formatDateOf(instant: string): string {
   return new Date(instant).toLocaleDateString("en-US", {

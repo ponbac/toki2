@@ -22,6 +22,7 @@ import {
 } from "./-components/exchange-rates";
 import { ProjectCostChart } from "./-components/project-cost-chart";
 import { SubscriptionMonths } from "./-components/subscription-months";
+import { SubscriptionValueChart } from "./-components/subscription-value";
 import { PersonalUsage } from "./-components/personal-usage";
 import { TotalsTiles } from "./-components/totals-tiles";
 
@@ -190,6 +191,7 @@ function AiBillingPage() {
                 >
                   Subscriptions this month
                 </h2>
+                <SubscriptionValueChart overview={overviewQuery.data} />
                 <div className="rounded-xl border border-border/60 bg-card/60">
                   <SubscriptionMonths
                     billingCurrency={overviewQuery.data.billingCurrency}
