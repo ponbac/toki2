@@ -93,6 +93,9 @@ export const COPILOT_GUIDES: Readonly<Record<MachineOs, CopilotGuide>> = {
 /** The variable whose path is the whole switch for Copilot CLI's export. */
 export const COPILOT_CLI_VARIABLE = "COPILOT_OTEL_FILE_EXPORTER_PATH";
 
+/** VS Code's list of the settings that Settings Sync leaves on one machine. */
+export const VSCODE_SYNC_IGNORED = "settingsSync.ignoredSettings";
+
 /** The prefix of the settings that turn on VS Code Copilot Chat's export. */
 export const COPILOT_VSCODE_SETTINGS = "github.copilot.chat.otel.*";
 
@@ -149,7 +152,9 @@ export function copilotCliCommands(os: MachineOs): readonly SetupCommand[] {
 
 /**
  * VS Code's export settings, as lines of its settings file, writing to `home`.
- * Each ends in a comma, so that they can go first in a file that has other
+ * The last keeps Settings Sync from copying the path, which is this machine's
+ * alone, to the person's other machines, where it would name no folder. Each
+ * line ends in a comma, so that they can go first in a file that has other
  * settings; VS Code accepts the trailing one in a file that has none.
  */
 function vscodeSettingLines(home: string): readonly string[] {
@@ -158,6 +163,7 @@ function vscodeSettingLines(home: string): readonly string[] {
     '"github.copilot.chat.otel.exporterType": "file",',
     `"github.copilot.chat.otel.outfile": "${home}/.copilot/otel/vscode-chat.jsonl",`,
     '"github.copilot.chat.otel.captureContent": false,',
+    `"${VSCODE_SYNC_IGNORED}": ["github.copilot.chat.otel.outfile"],`,
   ];
 }
 

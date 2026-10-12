@@ -53,6 +53,7 @@ import {
   COPILOT_SURFACES,
   COPILOT_SURFACE_LABELS,
   COPILOT_VSCODE_SETTINGS,
+  VSCODE_SYNC_IGNORED,
   copilotCliCommands,
   copilotEnableCommand,
   copilotSettingsCommand,
@@ -821,7 +822,8 @@ function CopilotStep({
                 <span>
                   VS Code: adds the <code>{COPILOT_VSCODE_SETTINGS}</code>{" "}
                   settings to <code>{guide.vscodeSettings}</code>, with this
-                  machine's path filled in.
+                  machine's path filled in, and tells Settings Sync not to copy
+                  that path to your other machines.
                 </span>
               </li>
             )}
@@ -893,9 +895,15 @@ function CopilotStep({
                     Preferences: Open User Settings (JSON)
                   </span>
                   , and paste {guide.copiesSettings ? "" : "the settings "}
-                  on a new line right after the opening brace. If the file
-                  already has one of these settings further down, delete that
-                  older line, or it wins.
+                  on a new line right after the opening brace. The last line
+                  keeps Settings Sync from copying this machine's path to your
+                  other machines.
+                </li>
+                <li>
+                  If the file already has one of these settings further down,
+                  the older line wins, so delete it. For the{" "}
+                  <code>{VSCODE_SYNC_IGNORED}</code> list, add the new item to
+                  the older list and delete the pasted line instead.
                 </li>
                 <li>
                   Press <PaletteShortcut os={os} /> again, run{" "}
