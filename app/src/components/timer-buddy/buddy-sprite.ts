@@ -103,6 +103,11 @@ export class BuddySprite {
       return;
     }
 
+    if (this.restTicks <= 0) {
+      // Cut off during an idle gesture: count that as the gesture, or it would
+      // start over as soon as the buddy idles again.
+      this.restTicks = idleRestTicks();
+    }
     this.anim = anim;
     this.frame = 0;
     this.ticks = 0;
