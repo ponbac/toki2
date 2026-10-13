@@ -1,0 +1,646 @@
+# Timer buddy sprite credits
+
+Sprites come from [PMD SpriteCollab](https://github.com/PMDCollab/SpriteCollab)
+(revision `69c78294c1cbcf3eaa27256747d6818206773973`), licensed under
+[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). They were
+cropped and repacked into one atlas per Pokemon by
+`app/scripts/build_buddy_sprites.py`.
+
+Pokemon and all related characters are trademarks of Nintendo, Game Freak and
+The Pokemon Company. This is a non-commercial fan use and is not affiliated
+with or endorsed by them. Sprites credited to CHUNSOFT are original game
+assets.
+
+- #0001 Bulbasaur: CHUNSOFT
+- #0002 Ivysaur: CHUNSOFT
+- #0003 Venusaur: CHUNSOFT
+- #0004 Charmander: CHUNSOFT
+- #0005 Charmeleon: CHUNSOFT, <@!199989579682414592>
+- #0006 Charizard: CHUNSOFT, Emboarger
+- #0007 Squirtle: CHUNSOFT
+- #0008 Wartortle: CHUNSOFT
+- #0009 Blastoise: CHUNSOFT
+- #0010 Caterpie: CHUNSOFT
+- #0011 Metapod: CHUNSOFT
+- #0012 Butterfree: CHUNSOFT
+- #0013 Weedle: CHUNSOFT
+- #0014 Kakuna: CHUNSOFT
+- #0015 Beedrill: CHUNSOFT
+- #0016 Pidgey: CHUNSOFT
+- #0017 Pidgeotto: CHUNSOFT
+- #0018 Pidgeot: CHUNSOFT
+- #0019 Rattata: CHUNSOFT
+- #0020 Raticate: CHUNSOFT
+- #0021 Spearow: CHUNSOFT
+- #0022 Fearow: CHUNSOFT
+- #0023 Ekans: CHUNSOFT
+- #0024 Arbok: CHUNSOFT
+- #0025 Pikachu: CHUNSOFT
+- #0026 Raichu: CHUNSOFT
+- #0027 Sandshrew: CHUNSOFT
+- #0028 Sandslash: CHUNSOFT, Emmuffin
+- #0029 Nidoran_F: CHUNSOFT
+- #0030 Nidorina: CHUNSOFT
+- #0031 Nidoqueen: CHUNSOFT
+- #0032 Nidoran_M: CHUNSOFT
+- #0033 Nidorino: CHUNSOFT
+- #0034 Nidoking: CHUNSOFT
+- #0035 Clefairy: CHUNSOFT
+- #0036 Clefable: CHUNSOFT
+- #0037 Vulpix: CHUNSOFT
+- #0038 Ninetales: CHUNSOFT, baronessfaron
+- #0039 Jigglypuff: CHUNSOFT
+- #0040 Wigglytuff: CHUNSOFT
+- #0041 Zubat: CHUNSOFT
+- #0042 Golbat: CHUNSOFT
+- #0043 Oddish: CHUNSOFT
+- #0044 Gloom: CHUNSOFT
+- #0045 Vileplume: CHUNSOFT
+- #0046 Paras: CHUNSOFT
+- #0047 Parasect: CHUNSOFT
+- #0048 Venonat: CHUNSOFT
+- #0049 Venomoth: CHUNSOFT
+- #0050 Diglett: CHUNSOFT
+- #0051 Dugtrio: CHUNSOFT
+- #0052 Meowth: CHUNSOFT
+- #0053 Persian: CHUNSOFT
+- #0054 Psyduck: CHUNSOFT
+- #0055 Golduck: CHUNSOFT
+- #0056 Mankey: CHUNSOFT
+- #0057 Primeape: CHUNSOFT
+- #0058 Growlithe: CHUNSOFT
+- #0059 Arcanine: CHUNSOFT
+- #0060 Poliwag: CHUNSOFT
+- #0061 Poliwhirl: CHUNSOFT
+- #0062 Poliwrath: CHUNSOFT
+- #0063 Abra: CHUNSOFT
+- #0064 Kadabra: CHUNSOFT
+- #0065 Alakazam: CHUNSOFT
+- #0066 Machop: CHUNSOFT
+- #0067 Machoke: CHUNSOFT
+- #0068 Machamp: CHUNSOFT
+- #0069 Bellsprout: CHUNSOFT
+- #0070 Weepinbell: CHUNSOFT
+- #0071 Victreebel: CHUNSOFT
+- #0072 Tentacool: CHUNSOFT
+- #0073 Tentacruel: CHUNSOFT
+- #0074 Geodude: CHUNSOFT
+- #0075 Graveler: CHUNSOFT
+- #0076 Golem: CHUNSOFT
+- #0077 Ponyta: CHUNSOFT
+- #0078 Rapidash: CHUNSOFT
+- #0079 Slowpoke: CHUNSOFT
+- #0080 Slowbro: CHUNSOFT
+- #0081 Magnemite: CHUNSOFT
+- #0082 Magneton: CHUNSOFT
+- #0083 Farfetch_d: CHUNSOFT
+- #0084 Doduo: CHUNSOFT
+- #0085 Dodrio: CHUNSOFT
+- #0086 Seel: CHUNSOFT
+- #0087 Dewgong: CHUNSOFT
+- #0088 Grimer: CHUNSOFT
+- #0089 Muk: CHUNSOFT
+- #0090 Shellder: CHUNSOFT
+- #0091 Cloyster: CHUNSOFT
+- #0092 Gastly: CHUNSOFT
+- #0093 Haunter: CHUNSOFT
+- #0094 Gengar: CHUNSOFT
+- #0095 Onix: CHUNSOFT
+- #0096 Drowzee: CHUNSOFT
+- #0097 Hypno: CHUNSOFT
+- #0098 Krabby: CHUNSOFT
+- #0099 Kingler: CHUNSOFT
+- #0100 Voltorb: CHUNSOFT
+- #0101 Electrode: CHUNSOFT
+- #0102 Exeggcute: CHUNSOFT
+- #0103 Exeggutor: CHUNSOFT
+- #0104 Cubone: CHUNSOFT
+- #0105 Marowak: CHUNSOFT
+- #0106 Hitmonlee: CHUNSOFT
+- #0107 Hitmonchan: CHUNSOFT
+- #0108 Lickitung: CHUNSOFT
+- #0109 Koffing: CHUNSOFT
+- #0110 Weezing: CHUNSOFT
+- #0111 Rhyhorn: CHUNSOFT
+- #0112 Rhydon: CHUNSOFT
+- #0113 Chansey: CHUNSOFT
+- #0114 Tangela: CHUNSOFT
+- #0115 Kangaskhan: CHUNSOFT
+- #0116 Horsea: CHUNSOFT
+- #0117 Seadra: CHUNSOFT
+- #0118 Goldeen: CHUNSOFT
+- #0119 Seaking: CHUNSOFT
+- #0120 Staryu: CHUNSOFT
+- #0121 Starmie: CHUNSOFT
+- #0122 Mr_Mime: CHUNSOFT
+- #0123 Scyther: CHUNSOFT
+- #0124 Jynx: CHUNSOFT
+- #0125 Electabuzz: CHUNSOFT
+- #0126 Magmar: CHUNSOFT
+- #0127 Pinsir: CHUNSOFT
+- #0128 Tauros: CHUNSOFT
+- #0129 Magikarp: CHUNSOFT
+- #0130 Gyarados: CHUNSOFT
+- #0131 Lapras: CHUNSOFT
+- #0132 Ditto: CHUNSOFT
+- #0133 Eevee: CHUNSOFT
+- #0134 Vaporeon: CHUNSOFT
+- #0135 Jolteon: CHUNSOFT, dmDash
+- #0136 Flareon: CHUNSOFT
+- #0137 Porygon: CHUNSOFT
+- #0138 Omanyte: CHUNSOFT
+- #0139 Omastar: CHUNSOFT
+- #0140 Kabuto: CHUNSOFT
+- #0141 Kabutops: CHUNSOFT
+- #0142 Aerodactyl: CHUNSOFT
+- #0143 Snorlax: CHUNSOFT
+- #0144 Articuno: CHUNSOFT
+- #0145 Zapdos: CHUNSOFT
+- #0146 Moltres: CHUNSOFT
+- #0147 Dratini: CHUNSOFT
+- #0148 Dragonair: CHUNSOFT
+- #0149 Dragonite: CHUNSOFT
+- #0150 Mewtwo: CHUNSOFT, JFain
+- #0151 Mew: CHUNSOFT
+- #0152 Chikorita: CHUNSOFT
+- #0153 Bayleef: CHUNSOFT
+- #0154 Meganium: CHUNSOFT
+- #0155 Cyndaquil: CHUNSOFT
+- #0156 Quilava: CHUNSOFT, JFain
+- #0157 Typhlosion: CHUNSOFT
+- #0158 Totodile: CHUNSOFT
+- #0159 Croconaw: CHUNSOFT
+- #0160 Feraligatr: CHUNSOFT
+- #0161 Sentret: CHUNSOFT
+- #0162 Furret: CHUNSOFT
+- #0163 Hoothoot: CHUNSOFT
+- #0164 Noctowl: CHUNSOFT
+- #0165 Ledyba: CHUNSOFT
+- #0166 Ledian: CHUNSOFT
+- #0167 Spinarak: CHUNSOFT
+- #0168 Ariados: CHUNSOFT
+- #0169 Crobat: CHUNSOFT
+- #0170 Chinchou: CHUNSOFT
+- #0171 Lanturn: CHUNSOFT
+- #0172 Pichu: CHUNSOFT
+- #0173 Cleffa: CHUNSOFT
+- #0174 Igglybuff: CHUNSOFT
+- #0175 Togepi: CHUNSOFT
+- #0176 Togetic: CHUNSOFT, Emmuffin
+- #0177 Natu: CHUNSOFT
+- #0178 Xatu: CHUNSOFT
+- #0179 Mareep: CHUNSOFT, Emmuffin
+- #0180 Flaaffy: CHUNSOFT
+- #0181 Ampharos: CHUNSOFT
+- #0182 Bellossom: CHUNSOFT
+- #0183 Marill: CHUNSOFT
+- #0184 Azumarill: CHUNSOFT
+- #0185 Sudowoodo: CHUNSOFT
+- #0186 Politoed: CHUNSOFT
+- #0187 Hoppip: CHUNSOFT
+- #0188 Skiploom: CHUNSOFT
+- #0189 Jumpluff: CHUNSOFT
+- #0190 Aipom: CHUNSOFT
+- #0191 Sunkern: CHUNSOFT
+- #0192 Sunflora: CHUNSOFT
+- #0193 Yanma: CHUNSOFT
+- #0194 Wooper: CHUNSOFT
+- #0195 Quagsire: CHUNSOFT
+- #0196 Espeon: CHUNSOFT
+- #0197 Umbreon: CHUNSOFT, JFain, Emmuffin
+- #0198 Murkrow: CHUNSOFT
+- #0199 Slowking: CHUNSOFT
+- #0200 Misdreavus: CHUNSOFT
+- #0201 Unown: CHUNSOFT
+- #0202 Wobbuffet: CHUNSOFT
+- #0203 Girafarig: CHUNSOFT
+- #0204 Pineco: CHUNSOFT
+- #0205 Forretress: CHUNSOFT
+- #0206 Dunsparce: CHUNSOFT
+- #0207 Gligar: CHUNSOFT
+- #0208 Steelix: CHUNSOFT
+- #0209 Snubbull: CHUNSOFT
+- #0210 Granbull: CHUNSOFT
+- #0211 Qwilfish: CHUNSOFT
+- #0212 Scizor: CHUNSOFT
+- #0213 Shuckle: CHUNSOFT
+- #0214 Heracross: CHUNSOFT
+- #0215 Sneasel: CHUNSOFT
+- #0216 Teddiursa: CHUNSOFT
+- #0217 Ursaring: CHUNSOFT
+- #0218 Slugma: CHUNSOFT
+- #0219 Magcargo: CHUNSOFT
+- #0220 Swinub: CHUNSOFT
+- #0221 Piloswine: CHUNSOFT
+- #0222 Corsola: CHUNSOFT
+- #0223 Remoraid: CHUNSOFT
+- #0224 Octillery: CHUNSOFT
+- #0225 Delibird: CHUNSOFT
+- #0226 Mantine: CHUNSOFT
+- #0227 Skarmory: CHUNSOFT
+- #0228 Houndour: CHUNSOFT, JFain
+- #0229 Houndoom: CHUNSOFT
+- #0230 Kingdra: CHUNSOFT
+- #0231 Phanpy: CHUNSOFT
+- #0232 Donphan: CHUNSOFT
+- #0233 Porygon2: CHUNSOFT
+- #0234 Stantler: CHUNSOFT
+- #0235 Smeargle: CHUNSOFT
+- #0236 Tyrogue: CHUNSOFT
+- #0237 Hitmontop: CHUNSOFT
+- #0238 Smoochum: CHUNSOFT
+- #0239 Elekid: CHUNSOFT
+- #0240 Magby: CHUNSOFT
+- #0241 Miltank: CHUNSOFT
+- #0242 Blissey: CHUNSOFT
+- #0243 Raikou: CHUNSOFT
+- #0244 Entei: CHUNSOFT
+- #0245 Suicune: CHUNSOFT
+- #0246 Larvitar: CHUNSOFT, JFain
+- #0247 Pupitar: CHUNSOFT
+- #0248 Tyranitar: CHUNSOFT
+- #0249 Lugia: CHUNSOFT
+- #0250 Ho_Oh: CHUNSOFT
+- #0251 Celebi: CHUNSOFT
+- #0252 Treecko: CHUNSOFT
+- #0253 Grovyle: CHUNSOFT, Deeshura
+- #0254 Sceptile: CHUNSOFT
+- #0255 Torchic: CHUNSOFT
+- #0256 Combusken: CHUNSOFT
+- #0257 Blaziken: CHUNSOFT
+- #0258 Mudkip: CHUNSOFT
+- #0259 Marshtomp: CHUNSOFT
+- #0260 Swampert: CHUNSOFT, Emmuffin
+- #0261 Poochyena: CHUNSOFT, Smalusion
+- #0262 Mightyena: CHUNSOFT, KCN015
+- #0263 Zigzagoon: CHUNSOFT
+- #0264 Linoone: CHUNSOFT
+- #0265 Wurmple: CHUNSOFT
+- #0266 Silcoon: CHUNSOFT
+- #0267 Beautifly: CHUNSOFT
+- #0268 Cascoon: CHUNSOFT
+- #0269 Dustox: CHUNSOFT
+- #0270 Lotad: CHUNSOFT
+- #0271 Lombre: CHUNSOFT
+- #0272 Ludicolo: CHUNSOFT
+- #0273 Seedot: CHUNSOFT
+- #0274 Nuzleaf: CHUNSOFT
+- #0275 Shiftry: CHUNSOFT
+- #0276 Taillow: CHUNSOFT
+- #0277 Swellow: CHUNSOFT
+- #0278 Wingull: CHUNSOFT
+- #0279 Pelipper: CHUNSOFT
+- #0280 Ralts: CHUNSOFT, JFain
+- #0281 Kirlia: CHUNSOFT
+- #0282 Gardevoir: CHUNSOFT
+- #0283 Surskit: CHUNSOFT
+- #0284 Masquerain: CHUNSOFT
+- #0285 Shroomish: CHUNSOFT
+- #0286 Breloom: CHUNSOFT
+- #0287 Slakoth: CHUNSOFT
+- #0288 Vigoroth: CHUNSOFT
+- #0289 Slaking: CHUNSOFT
+- #0290 Nincada: CHUNSOFT
+- #0291 Ninjask: CHUNSOFT
+- #0292 Shedinja: CHUNSOFT
+- #0293 Whismur: CHUNSOFT
+- #0294 Loudred: CHUNSOFT
+- #0295 Exploud: CHUNSOFT
+- #0296 Makuhita: CHUNSOFT
+- #0297 Hariyama: CHUNSOFT
+- #0298 Azurill: CHUNSOFT
+- #0299 Nosepass: CHUNSOFT
+- #0300 Skitty: CHUNSOFT
+- #0301 Delcatty: CHUNSOFT
+- #0302 Sableye: CHUNSOFT
+- #0303 Mawile: CHUNSOFT
+- #0304 Aron: CHUNSOFT
+- #0305 Lairon: CHUNSOFT
+- #0306 Aggron: CHUNSOFT
+- #0307 Meditite: CHUNSOFT
+- #0308 Medicham: CHUNSOFT
+- #0309 Electrike: CHUNSOFT
+- #0310 Manectric: CHUNSOFT
+- #0311 Plusle: CHUNSOFT
+- #0312 Minun: CHUNSOFT
+- #0313 Volbeat: CHUNSOFT
+- #0314 Illumise: CHUNSOFT
+- #0315 Roselia: CHUNSOFT
+- #0316 Gulpin: CHUNSOFT
+- #0317 Swalot: CHUNSOFT
+- #0318 Carvanha: CHUNSOFT
+- #0319 Sharpedo: CHUNSOFT
+- #0320 Wailmer: CHUNSOFT
+- #0321 Wailord: CHUNSOFT
+- #0322 Numel: CHUNSOFT
+- #0323 Camerupt: CHUNSOFT
+- #0324 Torkoal: CHUNSOFT
+- #0325 Spoink: CHUNSOFT
+- #0326 Grumpig: CHUNSOFT
+- #0327 Spinda: CHUNSOFT
+- #0328 Trapinch: CHUNSOFT
+- #0329 Vibrava: CHUNSOFT
+- #0330 Flygon: CHUNSOFT
+- #0331 Cacnea: CHUNSOFT
+- #0332 Cacturne: CHUNSOFT
+- #0333 Swablu: CHUNSOFT
+- #0334 Altaria: CHUNSOFT
+- #0335 Zangoose: CHUNSOFT, KCN015
+- #0336 Seviper: CHUNSOFT
+- #0337 Lunatone: CHUNSOFT
+- #0338 Solrock: CHUNSOFT
+- #0339 Barboach: CHUNSOFT
+- #0340 Whiscash: CHUNSOFT
+- #0341 Corphish: CHUNSOFT
+- #0342 Crawdaunt: CHUNSOFT
+- #0343 Baltoy: CHUNSOFT
+- #0344 Claydol: CHUNSOFT
+- #0345 Lileep: CHUNSOFT
+- #0346 Cradily: CHUNSOFT
+- #0347 Anorith: CHUNSOFT
+- #0348 Armaldo: CHUNSOFT
+- #0349 Feebas: CHUNSOFT
+- #0350 Milotic: CHUNSOFT
+- #0351 Castform: CHUNSOFT
+- #0352 Kecleon: CHUNSOFT
+- #0353 Shuppet: CHUNSOFT
+- #0354 Banette: CHUNSOFT
+- #0355 Duskull: CHUNSOFT
+- #0356 Dusclops: CHUNSOFT
+- #0357 Tropius: CHUNSOFT
+- #0358 Chimecho: CHUNSOFT
+- #0359 Absol: CHUNSOFT
+- #0360 Wynaut: CHUNSOFT
+- #0361 Snorunt: CHUNSOFT
+- #0362 Glalie: CHUNSOFT
+- #0363 Spheal: CHUNSOFT
+- #0364 Sealeo: CHUNSOFT
+- #0365 Walrein: CHUNSOFT
+- #0366 Clamperl: CHUNSOFT
+- #0367 Huntail: CHUNSOFT
+- #0368 Gorebyss: CHUNSOFT
+- #0369 Relicanth: CHUNSOFT
+- #0370 Luvdisc: CHUNSOFT
+- #0371 Bagon: CHUNSOFT
+- #0372 Shelgon: CHUNSOFT
+- #0373 Salamence: CHUNSOFT
+- #0374 Beldum: CHUNSOFT
+- #0375 Metang: CHUNSOFT
+- #0376 Metagross: CHUNSOFT
+- #0377 Regirock: CHUNSOFT
+- #0378 Regice: CHUNSOFT
+- #0379 Registeel: CHUNSOFT
+- #0380 Latias: CHUNSOFT
+- #0381 Latios: CHUNSOFT
+- #0382 Kyogre: CHUNSOFT
+- #0383 Groudon: CHUNSOFT
+- #0384 Rayquaza: CHUNSOFT
+- #0385 Jirachi: CHUNSOFT
+- #0386 Deoxys: CHUNSOFT
+- #0387 Turtwig: CHUNSOFT
+- #0388 Grotle: CHUNSOFT
+- #0389 Torterra: CHUNSOFT
+- #0390 Chimchar: CHUNSOFT
+- #0391 Monferno: CHUNSOFT
+- #0392 Infernape: CHUNSOFT
+- #0393 Piplup: CHUNSOFT
+- #0394 Prinplup: CHUNSOFT
+- #0395 Empoleon: CHUNSOFT
+- #0396 Starly: CHUNSOFT
+- #0397 Staravia: CHUNSOFT
+- #0398 Staraptor: CHUNSOFT, Audino
+- #0399 Bidoof: CHUNSOFT
+- #0400 Bibarel: CHUNSOFT
+- #0401 Kricketot: CHUNSOFT
+- #0402 Kricketune: CHUNSOFT
+- #0403 Shinx: CHUNSOFT
+- #0404 Luxio: CHUNSOFT
+- #0405 Luxray: CHUNSOFT
+- #0406 Budew: CHUNSOFT
+- #0407 Roserade: CHUNSOFT
+- #0408 Cranidos: CHUNSOFT
+- #0409 Rampardos: CHUNSOFT
+- #0410 Shieldon: CHUNSOFT
+- #0411 Bastiodon: CHUNSOFT
+- #0412 Burmy: CHUNSOFT
+- #0413 Wormadam: CHUNSOFT
+- #0414 Mothim: CHUNSOFT
+- #0415 Combee: CHUNSOFT
+- #0416 Vespiquen: CHUNSOFT
+- #0417 Pachirisu: CHUNSOFT
+- #0418 Buizel: CHUNSOFT, Reimu\_needs\_$$$
+- #0419 Floatzel: CHUNSOFT
+- #0420 Cherubi: CHUNSOFT
+- #0421 Cherrim: CHUNSOFT
+- #0422 Shellos: CHUNSOFT
+- #0423 Gastrodon: CHUNSOFT
+- #0424 Ambipom: CHUNSOFT
+- #0425 Drifloon: CHUNSOFT
+- #0426 Drifblim: CHUNSOFT
+- #0427 Buneary: CHUNSOFT
+- #0428 Lopunny: CHUNSOFT
+- #0429 Mismagius: CHUNSOFT
+- #0430 Honchkrow: CHUNSOFT
+- #0431 Glameow: CHUNSOFT, baronessfaron
+- #0432 Purugly: CHUNSOFT
+- #0433 Chingling: CHUNSOFT
+- #0434 Stunky: CHUNSOFT
+- #0435 Skuntank: CHUNSOFT
+- #0436 Bronzor: CHUNSOFT
+- #0437 Bronzong: CHUNSOFT
+- #0438 Bonsly: CHUNSOFT
+- #0439 Mime_Jr_: CHUNSOFT
+- #0440 Happiny: CHUNSOFT
+- #0441 Chatot: CHUNSOFT
+- #0442 Spiritomb: CHUNSOFT
+- #0443 Gible: CHUNSOFT
+- #0444 Gabite: CHUNSOFT
+- #0445 Garchomp: CHUNSOFT
+- #0446 Munchlax: CHUNSOFT
+- #0447 Riolu: CHUNSOFT
+- #0448 Lucario: CHUNSOFT
+- #0449 Hippopotas: CHUNSOFT
+- #0450 Hippowdon: CHUNSOFT
+- #0451 Skorupi: CHUNSOFT
+- #0452 Drapion: CHUNSOFT
+- #0453 Croagunk: CHUNSOFT
+- #0454 Toxicroak: CHUNSOFT
+- #0455 Carnivine: CHUNSOFT
+- #0456 Finneon: CHUNSOFT
+- #0457 Lumineon: CHUNSOFT
+- #0458 Mantyke: CHUNSOFT
+- #0459 Snover: CHUNSOFT
+- #0460 Abomasnow: CHUNSOFT
+- #0461 Weavile: CHUNSOFT
+- #0462 Magnezone: CHUNSOFT
+- #0463 Lickilicky: CHUNSOFT
+- #0464 Rhyperior: CHUNSOFT
+- #0465 Tangrowth: CHUNSOFT
+- #0466 Electivire: CHUNSOFT
+- #0467 Magmortar: CHUNSOFT
+- #0468 Togekiss: CHUNSOFT
+- #0469 Yanmega: CHUNSOFT
+- #0470 Leafeon: CHUNSOFT, baronessfaron
+- #0471 Glaceon: CHUNSOFT, JFain
+- #0472 Gliscor: CHUNSOFT
+- #0473 Mamoswine: CHUNSOFT
+- #0474 Porygon_Z: CHUNSOFT
+- #0475 Gallade: CHUNSOFT
+- #0476 Probopass: CHUNSOFT
+- #0477 Dusknoir: CHUNSOFT
+- #0478 Froslass: CHUNSOFT
+- #0479 Rotom: CHUNSOFT
+- #0480 Uxie: CHUNSOFT
+- #0481 Mesprit: CHUNSOFT
+- #0482 Azelf: CHUNSOFT
+- #0483 Dialga: CHUNSOFT
+- #0484 Palkia: CHUNSOFT
+- #0485 Heatran: CHUNSOFT
+- #0486 Regigigas: CHUNSOFT
+- #0487 Giratina: CHUNSOFT
+- #0488 Cresselia: CHUNSOFT
+- #0489 Phione: CHUNSOFT, Emmuffin
+- #0490 Manaphy: CHUNSOFT
+- #0491 Darkrai: CHUNSOFT
+- #0492 Shaymin: CHUNSOFT
+- #0493 Arceus: JFain, baronessfaron, Emboarger
+- #0494 Victini: baronessfaron
+- #0495 Snivy: NeroIntruder, G〜
+- #0496 Servine: NeroIntruder
+- #0497 Serperior: NeroIntruder
+- #0498 Tepig: NeroIntruder, Emboarger, NikolaP
+- #0499 Pignite: NeroIntruder, Emboarger
+- #0500 Emboar: NeroIntruder, Emboarger
+- #0501 Oshawott: Emmuffin, ◥θ┴θ◤
+- #0502 Dewott: JFain
+- #0503 Samurott: Top_Kec
+- #0504 Patrat: Pink_no_tori, baronessfaron
+- #0505 Watchog: baronessfaron
+- #0506 Lillipup: baronessfaron
+- #0507 Herdier: LightBlueBlaze
+- #0508 Stoutland: Wyvernagon
+- #0509 Purrloin: baronessfaron
+- #0510 Liepard: LightBlueBlaze
+- #0511 Pansage: Pokejavi.
+- #0512 Simisage: baronessfaron
+- #0513 Pansear: AllPatchedUp
+- #0515 Panpour: Pokejavi.
+- #0517 Munna: baronessfaron, ShyStarryRain
+- #0518 Musharna: baronessfaron
+- #0519 Pidove: powercristal, Caitemis
+- #0521 Unfezant: Top_Kec
+- #0524 Roggenrola: powercristal
+- #0525 Boldore: Soulja
+- #0526 Gigalith: Soulja
+- #0527 Woobat: NeroIntruder, ShyStarryRain
+- #0528 Swoobat: NeroIntruder
+- #0529 Drilbur: baronessfaron
+- #0530 Excadrill: Soulja
+- #0531 Audino: JFain, baronessfaron
+- #0532 Timburr: Katach314
+- #0533 Gurdurr: Soulja, Inv3rse
+- #0534 Conkeldurr: Inv3rse, Soulja
+- #0536 Palpitoad: JFain
+- #0537 Seismitoad: Soulja
+- #0539 Sawk: Emmuffin
+- #0540 Sewaddle: Emboarger
+- #0541 Swadloon: baronessfaron
+- #0542 Leavanny: baronessfaron, G〜
+- #0543 Venipede: baronessfaron, JFain
+- #0544 Whirlipede: G〜, Soulja
+- #0545 Scolipede: baronessfaron
+- #0546 Cottonee: Emmuffin
+- #0547 Whimsicott: JFain
+- #0548 Petilil: Emmuffin
+- #0549 Lilligant: metalbear, baronessfaron, G〜
+- #0550 Basculin: Pink_no_tori
+- #0551 Sandile: Noivern, baronessfaron
+- #0552 Krokorok: Soulja
+- #0553 Krookodile: Soulja
+- #0554 Darumaka: Pink_no_tori, baronessfaron
+- #0555 Darmanitan: Soulja, Michael12
+- #0556 Maractus: JFain
+- #0557 Dwebble: Pink_no_tori, Leif
+- #0559 Scraggy: JFain, Soulja
+- #0560 Scrafty: baronessfaron
+- #0561 Sigilyph: Soulja
+- #0562 Yamask: Michael12, baronessfaron
+- #0563 Cofagrigus: Pink_no_tori, baronessfaron
+- #0566 Archen: Soulja
+- #0567 Archeops: Top_Kec
+- #0568 Trubbish: powercristal, cyboy_bit
+- #0569 Garbodor: baronessfaron
+- #0570 Zorua: Emmuffin, baronessfaron
+- #0571 Zoroark: baronessfaron
+- #0572 Minccino: baronessfaron
+- #0573 Cinccino: baronessfaron
+- #0574 Gothita: baronessfaron
+- #0575 Gothorita: JFain, baronessfaron
+- #0576 Gothitelle: baronessfaron
+- #0577 Solosis: ◥θ┴θ◤, Uni
+- #0578 Duosion: powercristal, Caitemis, baronessfaron, Emmuffin
+- #0579 Reuniclus: Emmuffin
+- #0580 Ducklett: baronessfaron
+- #0581 Swanna: Katach314
+- #0582 Vanillite: JFain, baronessfaron
+- #0583 Vanillish: JFain
+- #0584 Vanilluxe: baronessfaron
+- #0585 Deerling: baronessfaron
+- #0586 Sawsbuck: baronessfaron
+- #0587 Emolga: JFain, baronessfaron
+- #0588 Karrablast: Pink_no_tori, Pokejavi.
+- #0589 Escavalier: JFain
+- #0590 Foongus: JFain
+- #0594 Alomomola: baronessfaron, Inv3rse
+- #0595 Joltik: JFain, baronessfaron
+- #0596 Galvantula: JFain
+- #0597 Ferroseed: G〜
+- #0598 Ferrothorn: Top_Kec
+- #0599 Klink: baronessfaron, stressparticles
+- #0600 Klang: baronessfaron
+- #0601 Klinklang: baronessfaron
+- #0602 Tynamo: mosscoated
+- #0603 Eelektrik: powercristal, Soulja, Emmuffin
+- #0604 Eelektross: Soulja
+- #0605 Elgyem: Limomon
+- #0606 Beheeyem: Soulja
+- #0607 Litwick: Emmuffin
+- #0608 Lampent: baronessfaron
+- #0609 Chandelure: baronessfaron
+- #0610 Axew: JFain, baronessfaron
+- #0611 Fraxure: Top_Kec
+- #0612 Haxorus: Pink_no_tori, baronessfaron, Deeshura
+- #0613 Cubchoo: Emboarger
+- #0614 Beartic: baronessfaron
+- #0615 Cryogonal: baronessfaron
+- #0617 Accelgor: Johanne2
+- #0619 Mienfoo: JFain
+- #0620 Mienshao: baronessfaron
+- #0621 Druddigon: baronessfaron
+- #0622 Golett: Soulja
+- #0623 Golurk: JFain, Soulja
+- #0624 Pawniard: AikoMaiko, baronessfaron
+- #0625 Bisharp: Emmuffin
+- #0627 Rufflet: baronessfaron
+- #0628 Braviary: Caitemis
+- #0629 Vullaby: baronessfaron
+- #0630 Mandibuzz: powercristal
+- #0631 Heatmor: baronessfaron
+- #0632 Durant: baronessfaron
+- #0633 Deino: Jhony-Rex, Emboarger, Uni
+- #0634 Zweilous: Pink_no_tori, baronessfaron
+- #0635 Hydreigon: Top_Kec
+- #0636 Larvesta: baronessfaron
+- #0637 Volcarona: powercristal, Emmuffin, pi3.14, Soulja
+- #0638 Cobalion: powercristal, Noo, Deeshura
+- #0639 Terrakion: Emmuffin
+- #0640 Virizion: baronessfaron
+- #0641 Tornadus: JFain, Top_Kec
+- #0642 Thundurus: Top_Kec
+- #0643 Reshiram: Top_Kec
+- #0644 Zekrom: Top_Kec
+- #0645 Landorus: Top_Kec
+- #0646 Kyurem: Emmuffin
+- #0647 Keldeo: baronessfaron
+- #0648 Meloetta: baronessfaron, Ariakyu
+- #0649 Genesect: Emboarger

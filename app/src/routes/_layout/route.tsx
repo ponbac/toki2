@@ -1,15 +1,20 @@
 import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { FloatingTimer } from "@/components/floating-timer";
+import { TimerBuddyIntro } from "@/components/timer-buddy/buddy-intro";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
-import { Suspense } from "react";
+import { lazy, Suspense } from "react";
+import { useAtomValue } from "jotai/react";
 import { TimerEditDialog } from "@/components/timer-edit-dialog";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery } from "@tanstack/react-query";
 import { useTimeTrackingEditTimerDialogOpen, useTimeTrackingActions } from "@/hooks/useTimeTrackingStore";
+import { timerBuddyEnabledAtom } from "@/lib/buddy/preferences";
+
+const TimerBuddy = lazy(() => import("@/components/timer-buddy/timer-buddy"));
 
 export const Route = createFileRoute("/_layout")({
   component: LayoutComponent,
@@ -42,6 +47,7 @@ function LayoutComponent() {
 function TimerProvider() {
   const editTimerDialogOpen = useTimeTrackingEditTimerDialogOpen();
   const { setEditTimerDialogOpen } = useTimeTrackingActions();
+  const timerBuddyEnabled = useAtomValue(timerBuddyEnabledAtom);
 
   const { data: connectionStatus } = useQuery(
     timeTrackingQueries.connectionStatus(),
@@ -61,6 +67,12 @@ function TimerProvider() {
   return (
     <>
       <FloatingTimer />
+      {timerBuddyEnabled && (
+        <Suspense fallback={null}>
+          <TimerBuddy />
+        </Suspense>
+      )}
+      <TimerBuddyIntro />
       {!!timer && (
         <TimerEditDialog
           open={editTimerDialogOpen}

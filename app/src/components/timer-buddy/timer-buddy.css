@@ -1,0 +1,252 @@
+/* Timer buddy overlay and its retro effect text. Everything moves in hard
+   steps and blinks out instead of fading, like the Game Boy games. */
+
+.tb-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tb-hit {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.tb-hit[data-held] {
+  cursor: grabbing;
+}
+
+.tb-effect {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.tb-px8,
+.tb-px16 {
+  font-family: "Press Start 2P", ui-monospace, monospace;
+  font-weight: 400;
+  letter-spacing: 0;
+  -webkit-font-smoothing: none;
+}
+
+.tb-px8 {
+  font-size: 8px;
+  line-height: 13px;
+}
+
+.tb-px16 {
+  font-size: 16px;
+  line-height: 18px;
+}
+
+/* A hard 2px outline that follows the shape, tail and notched corners included. */
+.tb-outline {
+  filter: drop-shadow(2px 0 0 #202020) drop-shadow(-2px 0 0 #202020)
+    drop-shadow(0 2px 0 #202020) drop-shadow(0 -2px 0 #202020);
+}
+
+.tb-float {
+  display: inline-block;
+  white-space: nowrap;
+  animation: tb-float 1.8s steps(1, end) forwards;
+}
+
+.tb-gain {
+  color: #f8b020;
+}
+
+.tb-loss {
+  color: #f05850;
+}
+
+.tb-ink {
+  color: #f8f8f0;
+}
+
+@keyframes tb-float {
+  0% {
+    transform: translateY(12px);
+  }
+  5% {
+    transform: translateY(8px);
+  }
+  10% {
+    transform: translateY(4px);
+  }
+  15%,
+  78% {
+    transform: translateY(0);
+    visibility: visible;
+  }
+  82% {
+    visibility: hidden;
+  }
+  86% {
+    visibility: visible;
+  }
+  90% {
+    visibility: hidden;
+  }
+  94% {
+    visibility: visible;
+  }
+  100% {
+    transform: translateY(0);
+    visibility: hidden;
+  }
+}
+
+.tb-box {
+  position: relative;
+  padding: 10px 12px;
+  background: #f8f8f0;
+  color: #202020;
+  clip-path: polygon(
+    2px 0,
+    calc(100% - 2px) 0,
+    calc(100% - 2px) 2px,
+    100% 2px,
+    100% calc(100% - 2px),
+    calc(100% - 2px) calc(100% - 2px),
+    calc(100% - 2px) 100%,
+    2px 100%,
+    2px calc(100% - 2px),
+    0 calc(100% - 2px),
+    0 2px,
+    2px 2px
+  );
+}
+
+.tb-box .tb-gain {
+  color: #b4540a;
+}
+
+.tb-box .tb-loss {
+  color: #c03028;
+}
+
+.tb-box .tb-ink {
+  color: #202020;
+}
+
+.tb-frame {
+  box-shadow:
+    inset 0 0 0 2px #f8f8f0,
+    inset 0 0 0 4px #202020;
+}
+
+/* Status plate: name, EXP bar toward today's scheduled hours, and the totals. */
+.tb-plate {
+  width: 180px;
+}
+
+.tb-plate-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.tb-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 5px 0 4px;
+}
+
+.tb-bar-label {
+  color: #b4540a;
+}
+
+.tb-bar-track {
+  width: 126px;
+  height: 8px;
+  padding: 2px;
+  background: #202020;
+}
+
+.tb-bar-fill {
+  width: 0;
+  height: 4px;
+  background: #3890f8;
+}
+
+.tb-plate[data-full] .tb-bar-fill {
+  background: #f8b020;
+  animation: tb-blink 0.3s steps(1, end) 5;
+}
+
+.tb-plate-total {
+  text-align: right;
+  white-space: nowrap;
+}
+
+@keyframes tb-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Emote bubble with a stepped tail pointing down at the buddy. */
+.tb-bubble {
+  position: relative;
+  display: inline-block;
+  transform-origin: 0 100%;
+  animation: tb-bubble 1.6s steps(1, end) forwards;
+}
+
+.tb-bubble .tb-box {
+  display: flex;
+  min-width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.tb-bubble .tb-px16 {
+  margin-right: -2px;
+  line-height: 16px;
+}
+
+.tb-bubble-tail {
+  position: absolute;
+  left: 6px;
+  height: 2px;
+  background: #f8f8f0;
+}
+
+.tb-bubble-tail[data-step="1"] {
+  bottom: -2px;
+  width: 6px;
+}
+
+.tb-bubble-tail[data-step="2"] {
+  bottom: -4px;
+  width: 2px;
+}
+
+@keyframes tb-bubble {
+  0% {
+    transform: scale(0.5);
+  }
+  7% {
+    transform: scale(1.15);
+  }
+  14%,
+  99% {
+    transform: scale(1);
+    visibility: visible;
+  }
+  100% {
+    visibility: hidden;
+  }
+}

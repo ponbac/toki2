@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import dayjs from "dayjs";
 import { api } from "../api";
+import { emitBuddyEvent } from "@/lib/buddy/events";
 import { DefaultMutationOptions, MutationFnAsync } from "./mutations";
 import {
   AbsenceEntry,
@@ -90,6 +92,8 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
     mutationFn: () => api.delete("time-tracking/timer"),
     ...options,
     onSuccess: (data, v, c) => {
+      const deletedSeconds =
+        useTimeTrackingStore.getState().timer.timeSeconds ?? 0;
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timerBaseKey,
       });
@@ -98,6 +102,7 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
         state: "stopped",
         timeSeconds: null,
       });
+      emitBuddyEvent({ type: "deleted", seconds: deletedSeconds });
 
       options?.onSuccess?.(data, v, c);
     },
@@ -121,6 +126,8 @@ function useSaveTimer(
         .json<SaveTimerResponse>(),
     ...options,
     onMutate: async (vars) => {
+      // Before the optimistic update below, so the buddy sees today's total without this entry.
+      emitBuddyEvent({ type: "saveStarted" });
       await queryClient.cancelQueries({ queryKey: timerQuery.queryKey });
       await cancelTimeTrackingRangeQueries(queryClient);
 
@@ -187,6 +194,11 @@ function useSaveTimer(
           : { visible: false, state: "stopped", timeSeconds: null },
       );
       markTimeTrackingListsStale(queryClient);
+      emitBuddyEvent({
+        type: "saved",
+        seconds: Math.round(data.entry.hours * 3600),
+        countsTowardToday: data.entry.date === dayjs().format("YYYY-MM-DD"),
+      });
       options?.onSuccess?.(data, v, c?.optionsContext);
     },
     onError: (error, v, c) => {
