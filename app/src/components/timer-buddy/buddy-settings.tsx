@@ -20,9 +20,13 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { BuddyPreview } from "./buddy-preview";
 
+const NAME_PUNCTUATION = /[^\p{L}\p{N}]+/gu;
+
 const SPECIES_ITEMS = BUDDY_SPECIES_LIST.map((species) => ({
   value: String(species.id),
   label: `${species.name} #${species.id}`,
+  // Spellings without the punctuation, so "mr mime" and "farfetchd" still match.
+  keywords: `${species.name.replace(NAME_PUNCTUATION, " ")} ${species.name.replace(NAME_PUNCTUATION, "")}`,
 }));
 
 const ENERGY_OPTIONS: ReadonlyArray<{ value: BuddyEnergy; label: string }> = [

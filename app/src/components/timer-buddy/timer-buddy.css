@@ -155,6 +155,16 @@
   white-space: nowrap;
 }
 
+.tb-plate-name {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.tb-plate-name svg {
+  translate: 0 -1px;
+}
+
 .tb-bar {
   display: flex;
   align-items: center;

@@ -57,6 +57,14 @@ const NOTE_PIXELS = [
   "XXXXXX",
   ".X..X.",
 ];
+// Press Start 2P has no gender signs, which Nidoran's name needs.
+const NAME_GLYPHS: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
+  ["♀", [".XXX.", "X...X", "X...X", ".XXX.", "..X..", ".XXX.", "..X.."]],
+  [
+    "♂",
+    ["...XXX", "....XX", "...X.X", ".XX...", "X..X..", "X..X..", ".XX..."],
+  ],
+]);
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
@@ -69,11 +77,11 @@ function element(className: string, text?: string): HTMLElement {
   return node;
 }
 
-function pixelGlyph(rows: ReadonlyArray<string>): SVGSVGElement {
+function pixelGlyph(rows: ReadonlyArray<string>, pixelSize = 2): SVGSVGElement {
   const width = rows[0]?.length ?? 0;
   const svg = document.createElementNS(SVG_NAMESPACE, "svg");
-  svg.setAttribute("width", String(width * 2));
-  svg.setAttribute("height", String(rows.length * 2));
+  svg.setAttribute("width", String(width * pixelSize));
+  svg.setAttribute("height", String(rows.length * pixelSize));
   svg.setAttribute("viewBox", `0 0 ${width} ${rows.length}`);
   svg.setAttribute("fill", "currentColor");
   svg.setAttribute("shape-rendering", "crispEdges");
@@ -94,6 +102,16 @@ function pixelGlyph(rows: ReadonlyArray<string>): SVGSVGElement {
   });
 
   return svg;
+}
+
+/** The plate's name, drawing the signs the pixel font lacks at its size. */
+function plateName(name: string): HTMLElement {
+  const node = element("tb-plate-name");
+  for (const part of name.split(/([♀♂])/)) {
+    const glyph = NAME_GLYPHS.get(part);
+    node.append(glyph ? pixelGlyph(glyph, 1) : part);
+  }
+  return node;
 }
 
 function bubbleContent(kind: BuddyBubble): Node {
@@ -160,7 +178,7 @@ export class BuddyEffects {
 
     const box = element("tb-box tb-frame tb-plate");
     const head = element("tb-px8 tb-plate-head");
-    head.append(element("", plate.name), element("tb-gain", plate.tag));
+    head.append(plateName(plate.name), element("tb-gain", plate.tag));
     const bar = element("tb-bar");
     const track = element("tb-bar-track");
     const fill = element("tb-bar-fill");

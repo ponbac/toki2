@@ -20,6 +20,8 @@ import {
 type ComboboxItem = {
   value: string;
   label: string;
+  /** Extra text the search matches besides the label, such as other spellings. */
+  keywords?: string;
 };
 
 type ComboboxProps = {
@@ -44,8 +46,11 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
 
     const filteredItems = React.useMemo(() => {
       if (!search) return props.items;
-      return props.items.filter((item) =>
-        item.label.toLowerCase().includes(search.toLowerCase()),
+      const query = search.toLowerCase();
+      return props.items.filter(
+        (item) =>
+          item.label.toLowerCase().includes(query) ||
+          item.keywords?.toLowerCase().includes(query),
       );
     }, [props.items, search]);
 
