@@ -109,11 +109,10 @@ export const FloatingTimer = () => {
   const rememberLastProject = useAtomValue(rememberLastProjectAtom);
   const timerBuddyEnabled = useAtomValue(timerBuddyEnabledAtom);
 
-  const { data: timerResponse, error: timerFetchError } = useQuery({
+  const { data: timerResponse } = useQuery({
     ...timeTrackingQueries.getTimer(),
-    enabled: timerState === "running" || timerState === undefined,
-    refetchInterval: 60 * 1000,
-    retry: 1,
+    // The layout owns polling; this observer only reads its shared cache.
+    enabled: false,
   });
   const timer = timerResponse?.timer;
   const timerForEditDialog = React.useMemo(
@@ -239,6 +238,14 @@ export const FloatingTimer = () => {
 
   // Sync local timer with fetched timer
   React.useEffect(() => {
+    if (timer === null) {
+      startTimeRef.current = null;
+      setTimer({
+        visible: false,
+        state: "stopped",
+        timeSeconds: null,
+      });
+    }
     if (timer) {
       // All timer types now have hours/minutes/seconds directly
       const totalSeconds =
@@ -252,13 +259,17 @@ export const FloatingTimer = () => {
         state: "running",
         timeSeconds: totalSeconds,
       });
-      setUserNote(timer.note || "");
-      scheduleTimerNoteTextareaHeightSync(
-        noteTextareaRef,
-        setNoteTextareaViewportHeight,
-      );
     }
   }, [timer, setTimer]);
+
+  // Elapsed-time refreshes must not overwrite a note being typed.
+  React.useEffect(() => {
+    setUserNote(timer?.note ?? "");
+    scheduleTimerNoteTextareaHeightSync(
+      noteTextareaRef,
+      setNoteTextareaViewportHeight,
+    );
+  }, [timer?.note, timer?.startTime]);
 
   React.useLayoutEffect(() => {
     if (isMinimized) {
@@ -319,17 +330,6 @@ export const FloatingTimer = () => {
     addSegment,
     removeSegment,
   ]);
-
-  // If the timer could not be fetched or response indicates no active timer, reset state
-  React.useEffect(() => {
-    if (timerFetchError || (timerResponse && timerResponse.timer === null)) {
-      setTimer({
-        visible: false,
-        state: "stopped",
-        timeSeconds: null,
-      });
-    }
-  }, [timerFetchError, timerResponse, setTimer]);
 
   return visible ? (
     <>

@@ -71,6 +71,9 @@ export const aiUsageReportQueryKeys = {
  */
 export type AiUsageRange = Readonly<{ from?: string; to?: string }>;
 
+// Usage is uploaded outside this browser, so cache invalidation cannot keep it current.
+const USAGE_REFRESH_INTERVAL_MS = 30_000;
+
 /** The query string of a report or session listing, without absent values. */
 function searchParams(
   params: AiUsageReportParams,
@@ -103,6 +106,7 @@ export const aiUsageReportQueries = {
   aiUsageReport: (params: AiUsageReportParams) =>
     queryOptions({
       queryKey: aiUsageReportQueryKeys.report(params),
+      refetchInterval: USAGE_REFRESH_INTERVAL_MS,
       queryFn: async () =>
         parseAiUsageReport(
           await api
@@ -122,6 +126,7 @@ export const aiUsageReportQueries = {
   ) =>
     infiniteQueryOptions({
       queryKey: aiUsageReportQueryKeys.sessions(params, sort, pageSize),
+      refetchInterval: USAGE_REFRESH_INTERVAL_MS,
       // The first page has no cursor to continue after: "".
       queryFn: async ({ pageParam }) =>
         parseAiUsageSessionList(
@@ -143,6 +148,7 @@ export const aiUsageReportQueries = {
   aiUsageMachines: (range: AiUsageRange) =>
     queryOptions({
       queryKey: aiUsageReportQueryKeys.machines(range),
+      refetchInterval: USAGE_REFRESH_INTERVAL_MS,
       queryFn: async () =>
         parseAiUsageMachineList(
           await api
@@ -179,6 +185,7 @@ export const aiUsageReportQueries = {
   aiUsageProjectKeys: () =>
     queryOptions({
       queryKey: aiUsageReportQueryKeys.projectKeys,
+      refetchInterval: USAGE_REFRESH_INTERVAL_MS,
       queryFn: async () =>
         parseAiUsageProjectKeyList(
           await api.get("ai-usage/project-keys").json<unknown>(),

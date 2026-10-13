@@ -56,7 +56,9 @@ function TimerProvider() {
 
   const { data: timerResponse } = useQuery({
     ...timeTrackingQueries.getTimer(),
-    enabled: false,
+    // Keep checking even while stopped: another client can start a timer.
+    enabled: isAuthenticated,
+    refetchInterval: 30_000,
   });
   const timer = timerResponse?.timer;
 

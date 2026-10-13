@@ -161,9 +161,12 @@ export const timeTrackingQueries = {
       gcTime: 24 * 60 * 60 * 1000,
     }),
   timerBaseKey: timeTrackingQueryKeys.timerBase,
+  /** Read the current timer again on mount, tab return, and reconnect. */
   getTimer: () =>
     queryOptions({
       queryKey: timeTrackingQueryKeys.timer(),
+      staleTime: 0,
+      retry: 1,
       queryFn: async () =>
         api.get("time-tracking/timer").json<GetTimerResponse>(),
     }),
