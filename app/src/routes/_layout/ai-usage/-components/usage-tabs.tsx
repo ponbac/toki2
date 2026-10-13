@@ -59,7 +59,7 @@ export function UsageTabs({
   return (
     <nav
       aria-label="AI usage sections"
-      className="flex gap-1 overflow-x-auto border-b border-border/60"
+      className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-border/60"
     >
       {TABS.map(({ value, label, icon: Icon }) => {
         const active = value === tab;
@@ -92,7 +92,7 @@ export function UsageTabs({
             {active && (
               <motion.span
                 layoutId="ai-usage-tab"
-                className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary"
+                className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary"
                 transition={{ duration: 0.25, ease: [0.3, 0.7, 0.2, 1] }}
               />
             )}
