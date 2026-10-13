@@ -24,6 +24,18 @@ const ANIM_SPEED: Partial<Record<BuddyAnimName, number>> = {
 };
 
 /**
+ * Seconds the idle pose is held before each idle gesture. Looped back to back,
+ * as the sheets are timed, a yawn or a stuck-out tongue repeats every second.
+ */
+const IDLE_REST_S = { min: 4, max: 9 };
+
+function idleRestTicks(): number {
+  const seconds =
+    IDLE_REST_S.min + Math.random() * (IDLE_REST_S.max - IDLE_REST_S.min);
+  return seconds * 60;
+}
+
+/**
  * Draws one Pokemon from its atlas into an absolutely positioned element.
  * `x`/`y` are where the feet stand, relative to the element's offset parent.
  */
@@ -40,6 +52,8 @@ export class BuddySprite {
   private facing: BuddyFacing = "D";
   private frame = 0;
   private ticks = 0;
+  /** Ticks left to hold the idle pose before its gesture plays. */
+  private restTicks = idleRestTicks();
   private looping = true;
   private onEnd: (() => void) | null = null;
   private drawnTransform = "";
@@ -89,6 +103,7 @@ export class BuddySprite {
     this.anim = anim;
     this.frame = 0;
     this.ticks = 0;
+    this.restTicks = anim === "Idle" && loop ? idleRestTicks() : 0;
     this.looping = loop;
     this.onEnd = options.onEnd ?? null;
     this.applyFrameSize();
@@ -102,7 +117,10 @@ export class BuddySprite {
   /** Advances the animation by `dt` seconds and redraws. */
   tick(dt: number): void {
     const durations = this.sheet.anims[this.anim].durations;
-    this.ticks += dt * 60 * (ANIM_SPEED[this.anim] ?? 1);
+    const elapsed = dt * 60 * (ANIM_SPEED[this.anim] ?? 1);
+    const rested = Math.min(this.restTicks, elapsed);
+    this.restTicks -= rested;
+    this.ticks += elapsed - rested;
 
     let duration = durations[this.frame] ?? 1;
     while (this.ticks >= duration) {
@@ -111,6 +129,11 @@ export class BuddySprite {
       if (this.frame >= durations.length) {
         if (this.looping) {
           this.frame = 0;
+          if (this.anim === "Idle") {
+            this.ticks = 0;
+            this.restTicks = idleRestTicks();
+            break;
+          }
         } else {
           this.frame = durations.length - 1;
           this.ticks = 0;
