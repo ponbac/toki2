@@ -52,7 +52,7 @@ fn app(pool: &PgPool) -> Router {
 /// The routes with `company` as the configured time-tracking company, or
 /// without time tracking for `None`.
 fn app_with(pool: &PgPool, company: Option<TimeTrackingCompany>) -> Router {
-    let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+    let db = crate::db::DbPool::from(pool.clone());
     let service: Arc<dyn AiUsageReportService> = Arc::new(AiUsageReportServiceImpl::new(
         Arc::new(PostgresAiUsageReportRepository::new(db.clone())),
         AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
@@ -81,7 +81,7 @@ fn app_with(pool: &PgPool, company: Option<TimeTrackingCompany>) -> Router {
 struct Credential(&'static str, String);
 
 async fn token(pool: &PgPool, user: UserId) -> Credential {
-    let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+    let db = crate::db::DbPool::from(pool.clone());
     let issued = ApiTokenServiceImpl::new(Arc::new(PostgresApiTokenRepository::new(db)))
         .create(&user, "token-ledger")
         .await

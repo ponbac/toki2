@@ -35,7 +35,7 @@ async fn sign_in(mut session: AuthSession, Path(user_id): Path<i64>) -> StatusCo
 /// The routes composed as in production: bearer tokens and browser sessions
 /// both authenticate, and a bearer token takes precedence over a cookie.
 fn app(pool: &PgPool) -> Router {
-    let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+    let db = crate::db::DbPool::from(pool.clone());
     let service: Arc<dyn AiSubscriptionService> = Arc::new(AiSubscriptionServiceImpl::new(
         Arc::new(PostgresAiSubscriptionRepository::new(db.clone())),
         AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
@@ -144,7 +144,7 @@ async fn test_user(app: &Router, pool: &PgPool, email: &str, roles: &[&str]) -> 
     .fetch_one(pool)
     .await
     .unwrap();
-    let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+    let db = crate::db::DbPool::from(pool.clone());
     let token = ApiTokenServiceImpl::new(Arc::new(PostgresApiTokenRepository::new(db)))
         .create(&UserId::new(id), "token-ledger")
         .await

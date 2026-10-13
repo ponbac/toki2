@@ -1,7 +1,7 @@
 use serde::Serialize;
 use web_push::{
     ContentEncoding, SubscriptionInfo, VapidSignatureBuilder, WebPushError, WebPushMessage,
-    WebPushMessageBuilder, URL_SAFE,
+    WebPushMessageBuilder,
 };
 
 #[derive(Debug, Serialize, Default)]
@@ -37,7 +37,6 @@ impl PushNotification {
     ) -> Result<WebPushMessage, WebPushError> {
         let sig_builder = VapidSignatureBuilder::from_base64(
             "KaRfTAcDs9ztATKecCL_mBJYdO57X3NvzgWnBNTBQ4c",
-            URL_SAFE,
             sub_info,
         )?
         .build()?;

@@ -121,7 +121,7 @@ export function AbsencesPanel({ dateRange }: { dateRange: DateRangeQuery }) {
                               {entry.absenceTypeLabel}
                             </span>
                             {!entry.managed && (
-                              <span className="rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                              <span className="rounded-[0.25rem] border border-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
                                 Read-only
                               </span>
                             )}

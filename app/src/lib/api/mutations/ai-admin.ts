@@ -64,9 +64,9 @@ export function useOverrideExchangeRate(
           .json<unknown>(),
       ),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -89,9 +89,9 @@ export function useResetExchangeRate(
           .json<unknown>(),
       ),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -110,9 +110,9 @@ export function useSetProjectMapping(
           .json<unknown>(),
       ),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -127,9 +127,9 @@ export function useDeleteProjectMapping(
     mutationFn: async (body: DeleteProjectMappingVars) =>
       api.delete("ai-usage/project-mappings", { json: body }),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -148,9 +148,9 @@ export function useAdminCreateSubscription(
           .json<unknown>(),
       ),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -174,9 +174,9 @@ export function useAdminUpdateSubscription(
           .json<unknown>(),
       ),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -191,9 +191,9 @@ export function useAdminDeleteSubscription(
     mutationFn: async ({ subscriptionId }: AdminDeleteSubscriptionVars) =>
       api.delete(`ai-usage/admin/subscriptions/${subscriptionId}`),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }

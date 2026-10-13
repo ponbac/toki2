@@ -29,7 +29,7 @@ export function UnpricedChip({
         <span
           tabIndex={0}
           className={cn(
-            "inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 align-middle text-[11px] font-semibold leading-none tracking-normal text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 align-middle text-[11px] font-semibold leading-none tracking-normal text-primary outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
             className,
           )}
         >

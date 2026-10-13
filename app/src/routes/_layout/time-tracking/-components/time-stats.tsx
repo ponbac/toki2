@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 
 const PROGRESS_GLOW_STYLE = {
-  filter: "drop-shadow(0 0 6px hsl(var(--primary) / 0.4))",
+  filter: "drop-shadow-sm(0 0 6px hsl(var(--primary) / 0.4))",
 } as const;
 
 export const TimeStats = () => {
@@ -46,7 +46,7 @@ export const TimeStats = () => {
   return (
     <div className="card-elevated overflow-hidden rounded-2xl">
       {/* Header */}
-      <div className="relative overflow-hidden border-b border-border/50 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent px-5 py-4">
+      <div className="relative overflow-hidden border-b border-border/50 bg-linear-to-br from-primary/10 via-primary/5 to-transparent px-5 py-4">
         <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
         <div className="relative flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20">

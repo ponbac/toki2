@@ -230,7 +230,7 @@ function SubscriptionDateInput({
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="end">
           <Calendar
-            initialFocus
+            autoFocus
             mode="single"
             locale={sv}
             weekStartsOn={1}

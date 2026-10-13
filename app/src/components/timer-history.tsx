@@ -101,7 +101,7 @@ export function TimerHistory(props: {
                   type="button"
                   className={cn(
                     "group flex w-full cursor-pointer flex-col rounded-md py-1",
-                    "transition-colors focus:bg-accent/50 focus:text-primary focus:outline-none",
+                    "transition-colors focus:bg-accent/50 focus:text-primary focus:outline-hidden",
                   )}
                   key={index}
                   onClick={() =>
@@ -131,7 +131,7 @@ export function TimerHistory(props: {
                         {notePreview.previewText}
                       </span>
                       {notePreview.isMultiline && (
-                        <span className="mt-0.5 shrink-0 rounded border border-border/60 px-1 py-0.5 text-[9px] font-medium uppercase leading-none">
+                        <span className="mt-0.5 shrink-0 rounded-[0.25rem] border border-border/60 px-1 py-0.5 text-[9px] font-medium uppercase leading-none">
                           {notePreview.lineLabel}
                         </span>
                       )}

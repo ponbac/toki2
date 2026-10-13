@@ -17,7 +17,7 @@ defaults:
 
 jobs:
   validate:
-    name: TypeScript & Lint
+    name: TypeScript, Lint & Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -36,6 +36,9 @@ jobs:
 
       - name: Run linter
         run: bun run lint
+
+      - name: Run tests
+        run: bun run test
 
   build:
     name: Build Check

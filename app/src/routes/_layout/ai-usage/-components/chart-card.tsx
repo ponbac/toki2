@@ -22,7 +22,7 @@ export function ChartCard({
       id={id}
       aria-label={title}
       className={cn(
-        "flex min-w-0 flex-col gap-4 rounded-2xl border border-border/70 bg-card p-5 text-card-foreground shadow-sm",
+        "flex min-w-0 flex-col gap-4 rounded-2xl border border-border/70 bg-card p-5 text-card-foreground shadow-xs",
         className,
       )}
     >
@@ -86,7 +86,7 @@ export function Segmented<Value extends string>({
           className={cn(
             "rounded-md px-2.5 py-1 text-xs transition-colors",
             option.value === value
-              ? "bg-background text-foreground shadow-sm"
+              ? "bg-background text-foreground shadow-xs"
               : "text-muted-foreground hover:text-foreground",
           )}
         >

@@ -109,7 +109,7 @@ function MachineItem({
   );
 
   return (
-    <li className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
+    <li className="rounded-2xl border border-border/70 bg-card p-5 shadow-xs">
       <div className="flex items-start justify-between gap-3">
         <p className="flex min-w-0 items-center gap-2 font-semibold">
           <Laptop aria-hidden className="size-4 text-muted-foreground" />

@@ -8,7 +8,7 @@ import {
 import { ConditionalTooltip } from "@/components/ui/tooltip";
 import { WorkItemLink } from "@/components/work-item-link";
 import type { ListPullRequest } from "@/lib/api/contracts/pull-request";
-import { ColumnDef } from "@tanstack/react-table";
+import { createColumnHelper } from "@tanstack/react-table";
 import dayjs from "dayjs";
 import {
   CopySlashIcon,
@@ -18,20 +18,21 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusIcon } from "./status-icon";
+import type { DataTableFeatures } from "./data-table";
 
-export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
-  return [
-    {
-      accessorKey: "id",
+const columnHelper = createColumnHelper<DataTableFeatures, ListPullRequest>();
+
+/** Builds the pull request columns while preserving each accessor's value type. */
+export function pullRequestColumns() {
+  return columnHelper.columns([
+    columnHelper.accessor("id", {
       header: "ID",
       cell: ({ row }) => <PRLink data={row.original} />,
-    },
-    {
-      accessorKey: "repoName",
+    }),
+    columnHelper.accessor("repoName", {
       header: "Repository",
-    },
-    {
-      accessorKey: "title",
+    }),
+    columnHelper.accessor("title", {
       header: "Title",
       cell: ({ row }) => {
         const title = row.original.title;
@@ -83,9 +84,8 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
           </div>
         );
       },
-    },
-    {
-      accessorKey: "createdBy.displayName",
+    }),
+    columnHelper.accessor("createdBy.displayName", {
       header: "Author",
       cell: ({ row }) => {
         const LIMIT = 25;
@@ -109,9 +109,8 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
           </div>
         );
       },
-    },
-    {
-      accessorKey: "workItems",
+    }),
+    columnHelper.accessor("workItems", {
       header: "Work Items",
       cell: ({ row }) => {
         const nWorkItemsToShow = 2;
@@ -125,21 +124,13 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
             )}
             {row.original.workItems.length < 3 ? (
               row.original.workItems.map((wi) => (
-                <WorkItemLink
-                  key={wi.id}
-                  tooltip={wi.title}
-                  data={wi}
-                />
+                <WorkItemLink key={wi.id} tooltip={wi.title} data={wi} />
               ))
             ) : (
               // map the first two work items, then ... with tooltip showing the rest
               <>
                 {row.original.workItems.slice(0, nWorkItemsToShow).map((wi) => (
-                  <WorkItemLink
-                    key={wi.id}
-                    tooltip={wi.title}
-                    data={wi}
-                  />
+                  <WorkItemLink key={wi.id} tooltip={wi.title} data={wi} />
                 ))}
                 <Tooltip>
                   <TooltipTrigger>
@@ -152,11 +143,7 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
                       {row.original.workItems
                         .slice(nWorkItemsToShow)
                         .map((wi) => (
-                          <WorkItemLink
-                            key={wi.id}
-                            text={wi.title}
-                            data={wi}
-                          />
+                          <WorkItemLink key={wi.id} text={wi.title} data={wi} />
                         ))}
                     </div>
                   </TooltipContent>
@@ -166,9 +153,8 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
           </div>
         );
       },
-    },
-    {
-      accessorKey: "blockedBy",
+    }),
+    columnHelper.accessor("blockedBy", {
       header: "Votes",
       cell: ({ row }) => {
         const blockedBy = row.original.blockedBy;
@@ -219,12 +205,11 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
           </div>
         );
       },
-    },
-    {
+    }),
+    columnHelper.accessor((row) => dayjs(row.createdAt), {
       header: "Created At",
-      accessorFn: (row) => dayjs(row.createdAt),
-      cell: ({ getValue }) => {
-        const date = getValue() as dayjs.Dayjs;
+      cell: (info) => {
+        const date = info.getValue();
         return (
           <span className="text-nowrap">
             <span className="hidden 2xl:inline">
@@ -234,6 +219,6 @@ export function pullRequestColumns(): ColumnDef<ListPullRequest>[] {
           </span>
         );
       },
-    },
-  ];
+    }),
+  ]);
 }

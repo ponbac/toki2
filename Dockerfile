@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM lukemathwalker/cargo-chef:latest-rust-1.88.0 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.99.0 AS chef
 WORKDIR /app
 RUN apt update && apt install lld clang -y
 
@@ -10,6 +10,8 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
+ARG CARGO_BUILD_JOBS
+ENV SQLX_OFFLINE=true
 COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,id=toki-api-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=toki-api-cargo-git,target=/usr/local/cargo/git \
@@ -24,7 +26,7 @@ RUN --mount=type=cache,id=toki-api-cargo-registry,target=/usr/local/cargo/regist
     cargo build --profile deploy --bin toki-api \
     && cp /app/target/deploy/toki-api /app/toki-api-bin
 
-FROM ubuntu:22.04 AS runtime
+FROM debian:trixie-slim AS runtime
 WORKDIR /app
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends openssl ca-certificates \

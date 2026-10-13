@@ -340,7 +340,7 @@ mod tests {
     use super::*;
 
     fn db(pool: &PgPool) -> DbPool {
-        sqlx_tracing::PoolBuilder::from(pool.clone()).build()
+        crate::db::DbPool::from(pool.clone())
     }
 
     fn repository(pool: &PgPool) -> PostgresAiSubscriptionRepository {

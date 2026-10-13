@@ -1,8 +1,9 @@
 import {
-  ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
+  type ColumnDef,
+  columnVisibilityFeature,
+  rowSelectionFeature,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 
 import {
@@ -17,25 +18,30 @@ import { Link } from "@tanstack/react-router";
 
 type DataWithId = { id: string | number };
 
-interface DataTableProps<TData extends DataWithId, TValue> {
-  columns: ColumnDef<TData, TValue>[];
+const dataTableFeatures = tableFeatures({
+  columnVisibilityFeature,
+  rowSelectionFeature,
+});
+
+/** Features supported by the pull request data table and its column definitions. */
+export type DataTableFeatures = typeof dataTableFeatures;
+
+type DataTableProps<TData extends DataWithId> = {
+  columns: ColumnDef<DataTableFeatures, TData>[];
   data: TData[];
   onRowClick?: (row: TData) => void;
-}
+};
 
-export function DataTable<TData extends DataWithId, TValue>({
+/** Renders typed rows with column visibility, selection styling, and optional navigation. */
+export function DataTable<TData extends DataWithId>({
   columns,
   data,
   onRowClick,
-}: DataTableProps<TData, TValue>) {
-  // eslint-disable-next-line react-compiler/react-compiler
-  "use no memo";
-
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({
+}: DataTableProps<TData>) {
+  const table = useTable({
+    features: dataTableFeatures,
     data,
     columns,
-    getCoreRowModel: getCoreRowModel(),
   });
 
   return (
@@ -47,12 +53,9 @@ export function DataTable<TData extends DataWithId, TValue>({
               {headerGroup.headers.map((header) => {
                 return (
                   <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
+                    {header.isPlaceholder ? null : (
+                      <table.FlexRender header={header} />
+                    )}
                   </TableHead>
                 );
               })}
@@ -70,7 +73,7 @@ export function DataTable<TData extends DataWithId, TValue>({
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    <table.FlexRender cell={cell} />
                   </TableCell>
                 ))}
               </TableRow>
@@ -82,7 +85,7 @@ export function DataTable<TData extends DataWithId, TValue>({
                 <br />
                 <Link
                   to="/repositories"
-                  className="text-muted-foreground underline transition-colors hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground underline transition-colors"
                 >
                   Are you sure you are following any repositories?
                 </Link>

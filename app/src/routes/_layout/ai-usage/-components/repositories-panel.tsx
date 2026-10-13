@@ -175,7 +175,7 @@ function KeyGroup({
     <section
       aria-label={title}
       className={cn(
-        "rounded-2xl border bg-card p-5 shadow-sm",
+        "rounded-2xl border bg-card p-5 shadow-xs",
         attention ? "border-primary/50" : "border-border/70",
       )}
     >

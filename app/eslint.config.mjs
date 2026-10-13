@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import js from "@eslint/js";
 import { FlatCompat } from "@eslint/eslintrc";
 import pluginRouter from "@tanstack/eslint-plugin-router";
-import reactCompiler from "eslint-plugin-react-compiler";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,14 +30,6 @@ export default [
   ),
   {
     plugins: {
-      "react-compiler": reactCompiler,
-    },
-    rules: {
-      "react-compiler/react-compiler": "error",
-    },
-  },
-  {
-    plugins: {
       "react-refresh": reactRefresh,
     },
 
@@ -58,6 +49,19 @@ export default [
         },
       ],
       "@typescript-eslint/no-empty-object-type": "off",
+    },
+  },
+  {
+    files: ["src/routes/**/*.{ts,tsx}"],
+    rules: {
+      // TanStack's Vite plugin owns HMR for the generated route export.
+      "react-refresh/only-export-components": [
+        "warn",
+        {
+          allowConstantExport: true,
+          extraHOCs: ["createFileRoute", "createRootRouteWithContext"],
+        },
+      ],
     },
   },
 ];

@@ -123,7 +123,7 @@ function useMoveBoardItem(
         json: body,
       }),
     ...options,
-    onMutate: async (vars) => {
+    onMutate: async (vars, mutationContext) => {
       const boardQueryKey = workItemsQueries.board({
         organization: vars.organization,
         project: vars.project,
@@ -167,22 +167,22 @@ function useMoveBoardItem(
         boardQueryKey,
         previousBoard,
       };
-      await options?.onMutate?.(vars);
+      await options?.onMutate?.(vars, mutationContext);
       return context;
     },
-    onError: (err, vars, ctx) => {
+    onError: (err, vars, ctx, mutationContext) => {
       if (ctx?.previousBoard) {
         queryClient.setQueryData<BoardResponse>(
           ctx.boardQueryKey,
           ctx.previousBoard,
         );
       }
-      options?.onError?.(err, vars, ctx);
+      return options?.onError?.(err, vars, ctx, mutationContext);
     },
-    onSuccess: (data, vars, ctx) => {
-      options?.onSuccess?.(data, vars, ctx);
+    onSuccess: (data, vars, ctx, mutationContext) => {
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
-    onSettled: (data, err, vars, ctx) => {
+    onSettled: (data, err, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey:
           ctx?.boardQueryKey ??
@@ -193,7 +193,7 @@ function useMoveBoardItem(
             team: vars.team,
           }).queryKey,
       });
-      options?.onSettled?.(data, err, vars, ctx);
+      return options?.onSettled?.(data, err, vars, ctx, mutationContext);
     },
   });
 }

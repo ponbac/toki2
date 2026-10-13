@@ -156,7 +156,7 @@ impl ApiClient {
             return Ok(dev.time_info());
         }
 
-        let format = time::format_description::parse("[year]-[month]-[day]")?;
+        let format = time::format_description::parse_borrowed::<1>("[year]-[month]-[day]")?;
         let from_str = from.format(&format).context("Failed to format from date")?;
         let to_str = to.format(&format).context("Failed to format to date")?;
 
@@ -190,7 +190,7 @@ impl ApiClient {
                 .collect());
         }
 
-        let format = time::format_description::parse("[year]-[month]-[day]")?;
+        let format = time::format_description::parse_borrowed::<1>("[year]-[month]-[day]")?;
         let from_str = from.format(&format).context("Failed to format from date")?;
         let to_str = to.format(&format).context("Failed to format to date")?;
 

@@ -7,17 +7,21 @@ use std::{
 
 use azure_devops_rust_api::{
     core,
-    git::{self, models::GitCommitRef},
+    git::{
+        self,
+        models::{GitCommitRef, GitPullRequestList},
+    },
     graph::{self, models::GraphUser},
     wit::{
         self,
         models::{
-            work_item_batch_get_request::Expand, ArtifactUriQuery, Wiql, WorkItemBatchGetRequest,
-            WorkItemClassificationNode,
+            work_item_batch_get_request::Expand, ArtifactUriQuery, TreeStructureGroup, Wiql,
+            WorkItemBatchGetRequest, WorkItemClassificationNode,
         },
     },
     work, Credential,
 };
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::sync::Semaphore;
@@ -26,14 +30,12 @@ use tracing::{debug, field, Instrument, Span};
 use crate::{Identity, Iteration, PullRequest, Thread, WorkItem, WorkItemComment};
 
 const WIQL_QUERY_TIMEOUT: Duration = Duration::from_secs(8);
-const WIQL_API_VERSION: &str = "7.1-preview";
+const AZURE_DEVOPS_API_VERSION: &str = "7.1-preview";
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoClientError {
     #[error("Azure DevOps API error: {0}")]
-    AzureDevOpsError(#[from] typespec::error::Error),
-    #[error("Azure Core API error: {0}")]
-    AzureCoreError(#[from] azure_core::Error),
+    AzureDevOpsError(#[from] azure_core::Error),
     #[error("Azure DevOps HTTP error (status {status}): {body}")]
     HttpStatus { status: u16, body: String },
     #[error("Repository not found: {0}")]
@@ -61,6 +63,11 @@ struct ProjectScopeWiqlWorkItemRef {
     id: Option<i32>,
 }
 
+#[derive(Deserialize)]
+struct WorkItemCommentsResponse {
+    comments: Vec<wit::models::Comment>,
+}
+
 #[derive(Clone)]
 pub struct RepoClient {
     core_client: core::Client,
@@ -69,6 +76,8 @@ pub struct RepoClient {
     work_client: work::Client,
     graph_client: graph::Client,
     http_client: reqwest::Client,
+    http_pipeline: azure_core::http::Pipeline,
+    http_endpoint: reqwest::Url,
     organization: String,
     project: String,
     project_id: String,
@@ -92,6 +101,16 @@ impl RepoClient {
         let work_client = work::ClientBuilder::new(credential.clone()).build();
         let graph_client = graph::ClientBuilder::new(credential).build();
         let http_client = reqwest::Client::new();
+        let http_pipeline = azure_core::http::Pipeline::new(
+            option_env!("CARGO_PKG_NAME"),
+            option_env!("CARGO_PKG_VERSION"),
+            azure_core::http::ClientOptions::default(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        );
+        let http_endpoint = reqwest::Url::parse("https://dev.azure.com")
+            .expect("Azure DevOps endpoint is a valid URL");
 
         let repo = git_client
             .repositories_client()
@@ -115,6 +134,8 @@ impl RepoClient {
             work_client,
             graph_client,
             http_client,
+            http_pipeline,
+            http_endpoint,
             organization: organization.to_owned(),
             project: project.to_owned(),
             project_id,
@@ -138,6 +159,30 @@ impl RepoClient {
 
     pub fn repo_id(&self) -> &str {
         &self.repo_id
+    }
+
+    fn http_url(&self, path: &[&str]) -> Result<reqwest::Url, RepoClientError> {
+        let mut url = self.http_endpoint.clone();
+        url.path_segments_mut()
+            .map_err(|_| internal_http_error("Failed to build Azure DevOps URL path"))?
+            .extend([self.organization.as_str(), self.project.as_str(), "_apis"])
+            .extend(path.iter().copied());
+        url.query_pairs_mut()
+            .append_pair("api-version", AZURE_DEVOPS_API_VERSION);
+        Ok(url)
+    }
+
+    fn http_get_request(&self, url: reqwest::Url) -> azure_core::http::Request {
+        let mut request = azure_core::http::Request::new(url, azure_core::http::Method::Get);
+        request.insert_header(
+            azure_core::http::headers::AUTHORIZATION,
+            format!(
+                "Basic {}",
+                azure_core::base64::encode(format!(":{}", self.pat))
+            ),
+        );
+        request.set_body(azure_core::Bytes::new());
+        request
     }
 
     // `tracing` span fields are fixed at the callsite, so keep provider-wide
@@ -244,16 +289,25 @@ impl RepoClient {
                 let mut pull_requests = Vec::new();
                 let mut skip = 0;
 
+                // The SDK's typed PullRequestStatus omits the REST API's `all`
+                // search value. Use HTTP for this endpoint to retain closed PRs.
+                let url = self.http_url(&["git", "repositories", &self.repo_id, "pullrequests"])?;
+
                 loop {
-                    let page = self
-                        .git_client
-                        .pull_requests_client()
-                        .get_pull_requests(&self.organization, &self.repo_id, &self.project)
-                        .search_criteria_status("all")
-                        .skip(skip)
-                        .top(PAGE_SIZE)
-                        .await?
-                        .value;
+                    let mut request = self.http_get_request(url.clone());
+                    request
+                        .url_mut()
+                        .query_pairs_mut()
+                        .append_pair("searchCriteria.status", "all")
+                        .append_pair("$skip", &skip.to_string())
+                        .append_pair("$top", &PAGE_SIZE.to_string());
+                    let response = self
+                        .http_pipeline
+                        .send(&azure_core::http::Context::default(), &mut request, None)
+                        .await?;
+                    Span::current()
+                        .record("http.response.status_code", u16::from(response.status()));
+                    let page = response.into_body().json::<GitPullRequestList>()?.value;
 
                     if page.is_empty() {
                         break;
@@ -372,9 +426,8 @@ impl RepoClient {
 
     /// Fetch comments on a work item.
     ///
-    /// The SDK's `CommentList` deserialization can fail on empty responses because
-    /// `WorkItemTrackingResourceReference::url` is required but the API omits it.
-    /// We catch deserialization errors and return an empty vec as a fallback.
+    /// Azure omits the top-level `url` required by the SDK's `CommentList`.
+    /// Decode the list envelope ourselves while retaining SDK comment models.
     pub async fn get_work_item_comments(
         &self,
         work_item_id: i32,
@@ -385,31 +438,19 @@ impl RepoClient {
                 span.record("work_item_id", work_item_id);
             },
             async move {
-                let result = self
+                let response = self
                     .work_item_client
                     .comments_client()
                     .get_comments(&self.organization, &self.project, work_item_id)
-                    .await;
-
-                match result {
-                    Ok(comment_list) => Ok(comment_list
-                        .comments
-                        .into_iter()
-                        .map(WorkItemComment::from)
-                        .collect()),
-                    Err(e) => {
-                        let msg = e.to_string();
-                        if msg.contains("deserialize") {
-                            tracing::debug!(
-                            work_item_id,
-                            "Comments deserialization failed (likely empty), returning empty vec"
-                        );
-                            Ok(vec![])
-                        } else {
-                            Err(e.into())
-                        }
-                    }
-                }
+                    .send()
+                    .await?
+                    .into_raw_response();
+                let comment_list = response.into_body().json::<WorkItemCommentsResponse>()?;
+                Ok(comment_list
+                    .comments
+                    .into_iter()
+                    .map(WorkItemComment::from)
+                    .collect())
             },
         )
         .await
@@ -543,30 +584,30 @@ impl RepoClient {
                 span.record("attachment.id", attachment_id);
             },
             async move {
-                let mut request = self
-                    .work_item_client
-                    .attachments_client()
-                    .get(&self.organization, attachment_id, &self.project)
-                    .download(true);
+                // The SDK buffers the full response before returning headers.
+                // Download directly so oversized attachments can be stopped early.
+                let mut url = self.http_url(&["wit", "attachments", attachment_id])?;
+                url.query_pairs_mut().append_pair("download", "true");
 
                 if let Some(file_name) = file_name {
-                    request = request.file_name(file_name);
+                    url.query_pairs_mut().append_pair("fileName", file_name);
                 }
 
-                let raw_response = request.send().await?.into_raw_response();
-                let mut content_type = None;
-                let mut content_length = None;
-                for (name, value) in raw_response.headers().iter() {
-                    if name.as_str().eq_ignore_ascii_case("content-type") {
-                        content_type = Some(value.as_str().to_string());
-                        continue;
-                    }
+                let mut request = self.http_get_request(url);
+                let response = self
+                    .http_pipeline
+                    .stream(&azure_core::http::Context::default(), &mut request, None)
+                    .await?;
+                Span::current().record("http.response.status_code", u16::from(response.status()));
 
-                    if name.as_str().eq_ignore_ascii_case("content-length") {
-                        content_length = value.as_str().parse::<u64>().ok();
-                    }
-                }
-
+                let content_type = response
+                    .headers()
+                    .get_optional_str(&azure_core::http::headers::CONTENT_TYPE)
+                    .map(str::to_owned);
+                let content_length = response
+                    .headers()
+                    .get_optional_str(&azure_core::http::headers::CONTENT_LENGTH)
+                    .and_then(|value| value.parse::<u64>().ok());
                 if let (Some(max_bytes), Some(actual_bytes)) = (max_download_bytes, content_length)
                 {
                     if actual_bytes > max_bytes as u64 {
@@ -577,17 +618,23 @@ impl RepoClient {
                     }
                 }
 
-                let bytes: azure_core::Bytes = raw_response.into_raw_body().collect().await?;
-                if let Some(max_bytes) = max_download_bytes {
-                    if bytes.len() > max_bytes {
-                        return Err(RepoClientError::PayloadTooLarge {
-                            actual_bytes: bytes.len() as u64,
-                            max_bytes,
-                        });
+                let mut body = response.into_body();
+                let mut bytes = Vec::new();
+                while let Some(chunk) = body.next().await {
+                    let chunk = chunk?;
+                    let actual_bytes = bytes.len().saturating_add(chunk.len());
+                    if let Some(max_bytes) = max_download_bytes {
+                        if actual_bytes > max_bytes {
+                            return Err(RepoClientError::PayloadTooLarge {
+                                actual_bytes: actual_bytes as u64,
+                                max_bytes,
+                            });
+                        }
                     }
+                    bytes.extend_from_slice(&chunk);
                 }
 
-                Ok((bytes.to_vec(), content_type))
+                Ok((bytes, content_type))
             },
         )
         .await
@@ -648,20 +695,7 @@ impl RepoClient {
         query: &str,
     ) -> Result<Vec<i32>, RepoClientError> {
         self.trace_azure_devops("query_work_item_ids_wiql_project_scope", async move {
-            let mut url = reqwest::Url::parse("https://dev.azure.com").map_err(|error| {
-                internal_http_error(format!("Failed to build WIQL URL: {error}"))
-            })?;
-            url.path_segments_mut()
-                .map_err(|_| internal_http_error("Failed to build WIQL URL path"))?
-                .extend([
-                    self.organization.as_str(),
-                    self.project.as_str(),
-                    "_apis",
-                    "wit",
-                    "wiql",
-                ]);
-            url.query_pairs_mut()
-                .append_pair("api-version", WIQL_API_VERSION);
+            let url = self.http_url(&["wit", "wiql"])?;
 
             let started_at = std::time::Instant::now();
             let response = self
@@ -734,7 +768,12 @@ impl RepoClient {
                 let root_node = self
                     .work_item_client
                     .classification_nodes_client()
-                    .get(&self.organization, &self.project, "iterations", "")
+                    .get(
+                        &self.organization,
+                        &self.project,
+                        TreeStructureGroup::Iterations,
+                        "",
+                    )
                     .depth(depth.unwrap_or(10))
                     .await?;
 
@@ -1060,7 +1099,6 @@ impl RepoClient {
 fn repo_client_error_type(error: &RepoClientError) -> &'static str {
     match error {
         RepoClientError::AzureDevOpsError(_) => "azure_devops.api",
-        RepoClientError::AzureCoreError(_) => "azure_core",
         RepoClientError::HttpStatus { .. } => "http_status",
         RepoClientError::RepoNotFound(_) => "repo_not_found",
         RepoClientError::MissingProjectId(_) => "missing_project_id",
@@ -1186,6 +1224,9 @@ fn parse_artifact_uri_query_work_item_ids(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod http_tests;
 
 #[cfg(test)]
 mod tests {

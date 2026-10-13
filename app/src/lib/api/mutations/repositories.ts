@@ -21,9 +21,9 @@ function useAddRepository(options?: DefaultMutationOptions<AddRepositoryBody>) {
         json: body,
       }),
     ...options,
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries(queries.differs());
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -42,7 +42,7 @@ function useFollowRepository(
         json: body,
       }),
     ...options,
-    onMutate: (vars) => {
+    onMutate: (vars, mutationContext) => {
       queryClient.setQueryData(queries.differs().queryKey, (old) => {
         if (!old) return old;
 
@@ -59,15 +59,15 @@ function useFollowRepository(
           ...old.slice(idx + 1),
         ];
       });
-      options?.onMutate?.(vars);
+      return options?.onMutate?.(vars, mutationContext);
     },
-    onSettled: (data, err, vars, ctx) => {
+    onSettled: (data, err, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries(queries.differs());
       queryClient.invalidateQueries({
         queryKey: pullRequestsQueries.baseKey,
       });
       queryClient.invalidateQueries(queries.projects());
-      options?.onSettled?.(data, err, vars, ctx);
+      return options?.onSettled?.(data, err, vars, ctx, mutationContext);
     },
   });
 }
@@ -84,12 +84,12 @@ function useDeleteRepository(
         json: body,
       }),
     ...options,
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries(queries.differs());
       queryClient.invalidateQueries({
         queryKey: pullRequestsQueries.baseKey,
       });
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }

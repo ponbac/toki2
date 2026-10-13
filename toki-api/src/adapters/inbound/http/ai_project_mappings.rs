@@ -441,7 +441,7 @@ mod tests {
             ),
         ])));
 
-        let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+        let db = crate::db::DbPool::from(pool.clone());
         let service: Arc<dyn AiProjectMappingService> = Arc::new(AiProjectMappingServiceImpl::new(
             Arc::new(PostgresAiProjectMappingRepository::new(db.clone())),
             projects.map(Arc::new),
@@ -567,7 +567,7 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+        let db = crate::db::DbPool::from(pool.clone());
         PostgresAiUsageRepository::new(db)
             .replace_window(&user, &upload)
             .await

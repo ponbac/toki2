@@ -1089,12 +1089,20 @@ mod tests {
     async fn handle_confirm_delete_removes_entry_and_returns_to_origin_view() {
         let mut app = test_app();
         let mut client = ApiClient::dev().expect("dev client");
+        // Dev history uses UTC+1; include both dates around UTC midnight.
         let today = time::OffsetDateTime::now_utc().date();
+        let from = today - time::Duration::days(1);
+        let to = today + time::Duration::days(1);
         let entries = client
-            .get_time_entries(today, today)
+            .get_time_entries(from, to)
             .await
             .expect("history should load");
         let entry = entries.first().expect("seeded history entry").clone();
+        let surviving_ids: Vec<_> = entries
+            .iter()
+            .skip(1)
+            .map(|item| item.registration_id.clone())
+            .collect();
 
         app.update_history(entries);
         app.rebuild_history_list();
@@ -1116,5 +1124,15 @@ mod tests {
             .iter()
             .all(|item| item.registration_id != entry.registration_id));
         assert!(app.delete_context.is_none());
+
+        let remaining_entries = client
+            .get_time_entries(from, to)
+            .await
+            .expect("history should reload after deletion");
+        let remaining_ids: Vec<_> = remaining_entries
+            .iter()
+            .map(|item| item.registration_id.clone())
+            .collect();
+        assert_eq!(remaining_ids, surviving_ids);
     }
 }

@@ -1,6 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
+
+  @media (width >= 96rem) {
+    max-width: 1400px;
+  }
+}
 
 @property --active-shine-angle {
   syntax: "<angle>";
@@ -142,8 +152,22 @@
 }
 
 @layer base {
-  * {
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
     @apply border-border;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
   }
 
   html {

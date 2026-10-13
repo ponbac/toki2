@@ -422,9 +422,8 @@ mod tests {
 
     #[sqlx::test]
     async fn the_longest_project_key_can_be_mapped(pool: PgPool) {
-        let repository = PostgresAiProjectMappingRepository::new(
-            sqlx_tracing::PoolBuilder::from(pool.clone()).build(),
-        );
+        let repository =
+            PostgresAiProjectMappingRepository::new(crate::db::DbPool::from(pool.clone()));
         let user: i32 = sqlx::query_scalar(
             "INSERT INTO users (email, full_name, picture, access_token)
              VALUES ('admin@example.com', 'Test User', '', '')

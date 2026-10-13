@@ -29,7 +29,7 @@ pub struct DateFilterQuery {
 }
 
 fn parse_date(s: &str) -> Result<time::Date, ApiError> {
-    let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+    let format = time::format_description::parse_borrowed::<1>("[year]-[month]-[day]").unwrap();
     time::Date::parse(s, &format)
         .map_err(|_| ApiError::bad_request(format!("could not parse date: {}", s)))
 }

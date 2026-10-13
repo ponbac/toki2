@@ -29,7 +29,7 @@ pub(crate) const APP: &str = "github.com/example/app";
 const SESSION: &str = "9b1f0c6e2d4a8b7c3e5f1a2b4c6d8e0f";
 
 fn db(pool: &PgPool) -> DbPool {
-    sqlx_tracing::PoolBuilder::from(pool.clone()).build()
+    crate::db::DbPool::from(pool.clone())
 }
 
 fn stockholm() -> AiUsageTimeZone {

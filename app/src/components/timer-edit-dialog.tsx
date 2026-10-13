@@ -24,6 +24,7 @@ import dayjs from "dayjs";
 import { Label } from "./ui/label";
 import { useQueryClient } from "@tanstack/react-query";
 
+/** Edits a timer draft initialized on opening; provider refetches keep in-progress edits. */
 export const TimerEditDialog = (props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -99,18 +100,20 @@ export const TimerEditDialog = (props: {
     });
   };
 
-  const hydrateDraftFromCurrentTimer = React.useEffectEvent(() => {
+  const [wasOpen, setWasOpen] = React.useState(props.open);
+  if (wasOpen !== props.open) {
+    setWasOpen(props.open);
+  }
+  if (props.open && !wasOpen) {
     setProjectId(props.timer.projectId ?? undefined);
     setActivityName(props.timer.activityName ?? undefined);
     setNote(props.timer.note);
     setStartTimeISO(props.timer.startTime);
-  });
+  }
 
   React.useEffect(() => {
-    // Initialize draft state only when dialog opens.
-    // While open, keep local edits as source of truth even if timer query refetches.
+    // Warm provider choices while the dialog is open.
     if (props.open) {
-      hydrateDraftFromCurrentTimer();
       void queryClient.prefetchQuery(timeTrackingQueries.listProjects());
       prefetchActivities(props.timer.projectId ?? undefined);
     }

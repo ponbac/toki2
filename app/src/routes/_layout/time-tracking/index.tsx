@@ -207,7 +207,7 @@ function TimeTrackingPage() {
       ) : (
         <div className="animate-fade-in">
           {/* Hero Header */}
-          <header className="relative overflow-hidden border-b border-border/50 bg-gradient-to-b from-card/80 to-background px-6 pb-6 pt-8">
+          <header className="relative overflow-hidden border-b border-border/50 bg-linear-to-b from-card/80 to-background px-6 pb-6 pt-8">
             {/* Background decoration */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
               <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/5 blur-3xl" />
@@ -250,7 +250,7 @@ function TimeTrackingPage() {
                           }),
                         })
                       }
-                      className="group h-11 gap-2 rounded-xl border-border/50 bg-card/50 px-5 shadow-sm backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-card hover:shadow-glow-sm"
+                      className="group h-11 gap-2 rounded-xl border-border/50 bg-card/50 px-5 shadow-xs backdrop-blur-xs transition-all hover:border-primary/30 hover:bg-card hover:shadow-glow-sm"
                     >
                       <TimerIcon className="h-4 w-4 transition-transform group-hover:scale-110" />
                       <span>Start Timer</span>
@@ -260,7 +260,7 @@ function TimeTrackingPage() {
                     type="button"
                     variant="outline"
                     onClick={() => setIsReportAbsenceOpen(true)}
-                    className="group h-11 gap-2 rounded-xl border-border/50 bg-card/50 px-5 shadow-sm backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-card hover:shadow-glow-sm"
+                    className="group h-11 gap-2 rounded-xl border-border/50 bg-card/50 px-5 shadow-xs backdrop-blur-xs transition-all hover:border-primary/30 hover:bg-card hover:shadow-glow-sm"
                   >
                     <CalendarX className="h-4 w-4 transition-transform group-hover:scale-110" />
                     <span>Report Absence</span>
@@ -289,7 +289,7 @@ function TimeTrackingPage() {
                 dateRange={dateRange}
                 setDateRange={setDateRange}
               />
-              <div className="flex items-center gap-1 rounded-xl border border-border/50 bg-card/40 p-1 backdrop-blur-sm">
+              <div className="flex items-center gap-1 rounded-xl border border-border/50 bg-card/40 p-1 backdrop-blur-xs">
                 {/* View Toggle — hidden on mobile (always list) */}
                 <div className="hidden md:flex">
                   <button
@@ -298,7 +298,7 @@ function TimeTrackingPage() {
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
                       viewMode === "list"
-                        ? "bg-primary text-primary-foreground shadow-sm"
+                        ? "bg-primary text-primary-foreground shadow-xs"
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                     )}
                   >
@@ -311,7 +311,7 @@ function TimeTrackingPage() {
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
                       viewMode === "timeline"
-                        ? "bg-primary text-primary-foreground shadow-sm"
+                        ? "bg-primary text-primary-foreground shadow-xs"
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                     )}
                   >
@@ -477,7 +477,7 @@ function NotConnectedState({
         </p>
 
         {isAdmin && (
-          <div className="mt-6 inline-flex items-center gap-2 rounded-xl border border-border/60 bg-card/70 p-2 shadow-sm">
+          <div className="mt-6 inline-flex items-center gap-2 rounded-xl border border-border/60 bg-card/70 p-2 shadow-xs">
             <span className="pl-2 text-xs text-muted-foreground">
               Admin mapping
             </span>

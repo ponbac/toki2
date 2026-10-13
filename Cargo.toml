@@ -3,18 +3,18 @@ resolver = "2"
 members = ["toki-api", "az-devops", "kleer", "toki-tui"]
 
 [workspace.dependencies]
-anyhow = "1.0"
-base64 = "0.22.1"
-chrono = { version = "0.4.38", features = ["serde"] }
-config = "0.14.0"
+anyhow = "1.0.104"
+base64 = "0.23.1"
+chrono = { version = "0.4.45", features = ["serde"] }
+config = "0.15.27"
 dotenvy = "0.15.7"
-reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
-serde = { version = "1.0.193", features = ["derive"] }
-serde_json = "1.0.108"
-time = { version = "0.3.47", features = ["serde", "parsing", "formatting"] }
-tokio = { version = "1.49.0", features = ["full"] }
-tracing = { version = "0.1.40", features = ["attributes"] }
-thiserror = "2.0.18"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "query"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+time = { version = "0.3.55", features = ["serde", "parsing", "formatting"] }
+tokio = { version = "1.53.2", features = ["full"] }
+tracing = { version = "0.1.44", features = ["attributes"] }
+thiserror = "2.0.21"
 
 [profile.release]
 opt-level = 3

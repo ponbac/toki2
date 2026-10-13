@@ -59,7 +59,7 @@ export function SummaryTiles({
     totals.tokens.output + totals.tokens.input + totals.tokens.cacheWrite;
 
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/70 bg-border/70 shadow-sm lg:grid-cols-[1.2fr_1.4fr_1fr_1fr]">
+    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/70 bg-border/70 shadow-xs lg:grid-cols-[1.2fr_1.4fr_1fr_1fr]">
       <Tile icon={Coins} label="Estimated cost">
         <Value>
           {totals.cost.kind === "partial" && known === 0 ? (

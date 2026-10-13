@@ -290,7 +290,7 @@ function BreakdownRow({
             onClick={() =>
               onFiltersChange(row.selected ? row.clear : row.filter)
             }
-            className="block max-w-full truncate rounded-sm text-left font-medium underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            className="block max-w-full truncate rounded-sm text-left font-medium underline-offset-2 outline-hidden hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           >
             {row.label}
           </button>
@@ -459,7 +459,7 @@ function Expander({
       aria-expanded={open}
       onClick={onToggle}
       className={cn(
-        "-ml-0.5 flex max-w-full items-center gap-0.5 rounded-sm text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        "-ml-0.5 flex max-w-full items-center gap-0.5 rounded-sm text-left text-xs text-muted-foreground outline-hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
     >

@@ -34,11 +34,13 @@ export function ApiTokensSettings({
     onError: apiErrorToast("Failed to revoke token"),
   });
 
-  React.useEffect(() => {
-    if (issuance.issued) {
-      setName("");
-    }
-  }, [issuance.issued]);
+  const [previousIssuedToken, setPreviousIssuedToken] = React.useState(
+    issuance.issued,
+  );
+  if (previousIssuedToken !== issuance.issued) {
+    setPreviousIssuedToken(issuance.issued);
+    if (issuance.issued) setName("");
+  }
 
   const creationDisabled =
     !name.trim() || issuance.isPending || issuance.issued !== null;
@@ -224,7 +226,7 @@ function IssuedTokenCard({
         </span>{" "}
         with mode 600. It will not be shown again after dismissal.
       </p>
-      <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-background/80 p-2 font-mono text-[11px] leading-5">
+      <pre className="overflow-x-auto rounded-md bg-background/80 p-2 font-mono text-[11px] leading-5 break-all whitespace-pre-wrap">
         {credentials}
       </pre>
       <div className="flex gap-2">

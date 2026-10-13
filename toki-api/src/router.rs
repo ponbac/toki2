@@ -7,7 +7,7 @@ use axum_login::{
     AuthManagerLayer, AuthManagerLayerBuilder,
 };
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
-use sqlx::PgPool;
+use sqlx::{ConnectOptions, PgPool};
 use time::Duration;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_sessions_moka_store::MokaStore;
@@ -287,8 +287,26 @@ async fn new_auth_layer(
             RedirectUrl::new(config.auth.redirect_url).expect("Invalid redirect URL"),
         );
 
-    // Use PostgresStore for DB-backed sessions that persist across restarts
-    let db_store = PostgresStore::new(connection_pool.clone());
+    // The published session adapter uses SQLx 0.8. Give it a private pool with
+    // the same connection settings while application repositories use SQLx 0.9.
+    let connection_options = connection_pool.connect_options();
+    let mut session_url = connection_options.to_url_lossy();
+    // SQLx's URL conversion omits these two optional connection settings.
+    if let Some(application_name) = connection_options.get_application_name() {
+        session_url
+            .query_pairs_mut()
+            .append_pair("application_name", application_name);
+    }
+    if let Some(options) = connection_options.get_options() {
+        session_url
+            .query_pairs_mut()
+            .append_pair("options", options);
+    }
+    let session_pool = sqlx_session::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect_lazy(session_url.as_str())
+        .expect("Invalid session database connection settings");
+    let db_store = PostgresStore::new(session_pool);
     db_store
         .migrate()
         .instrument(crate::observability::db_operation_span(

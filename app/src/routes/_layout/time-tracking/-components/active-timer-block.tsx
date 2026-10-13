@@ -88,7 +88,7 @@ export function ActiveTimerBlock({
       </TooltipTrigger>
       <TooltipContent
         side="right"
-        className="max-w-xs rounded-lg border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-sm"
+        className="max-w-xs rounded-lg border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-xs"
       >
         <ActiveTimelineCardTooltipBody
           text={text}

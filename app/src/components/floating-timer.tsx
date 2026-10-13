@@ -85,6 +85,7 @@ function scheduleTimerNoteTextareaHeightSync(
   });
 }
 
+/** Shows the active provider timer, synchronizing fetched values while retaining local note edits. */
 export const FloatingTimer = () => {
   const queryClient = useQueryClient();
 
@@ -96,7 +97,6 @@ export const FloatingTimer = () => {
 
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [isMinimized, setIsMinimized] = React.useState(false);
-  const [userNote, setUserNote] = React.useState("");
   const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [pendingSaveConfirmation, setPendingSaveConfirmation] =
     React.useState<PendingSaveConfirmation | null>(null);
@@ -115,6 +115,16 @@ export const FloatingTimer = () => {
     enabled: false,
   });
   const timer = timerResponse?.timer;
+  const [userNote, setUserNote] = React.useState(() => timer?.note || "");
+  const [previousTimer, setPreviousTimer] = React.useState(timer);
+  // Elapsed-time refreshes must not overwrite a note being typed.
+  if (
+    previousTimer?.note !== timer?.note ||
+    previousTimer?.startTime !== timer?.startTime
+  ) {
+    setPreviousTimer(timer);
+    setUserNote(timer?.note ?? "");
+  }
   const timerForEditDialog = React.useMemo(
     () => (timer ? { ...timer, note: userNote } : null),
     [timer, userNote],
@@ -262,9 +272,7 @@ export const FloatingTimer = () => {
     }
   }, [timer, setTimer]);
 
-  // Elapsed-time refreshes must not overwrite a note being typed.
   React.useEffect(() => {
-    setUserNote(timer?.note ?? "");
     scheduleTimerNoteTextareaHeightSync(
       noteTextareaRef,
       setNoteTextareaViewportHeight,
@@ -338,13 +346,13 @@ export const FloatingTimer = () => {
           type="button"
           onClick={() => setIsMinimized(false)}
           data-buddy-perch="pill"
-          className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 cursor-pointer items-center gap-2.5 rounded-full border border-border/50 bg-card/75 px-4 py-2 shadow-elevated-lg backdrop-blur-xl transition-all hover:scale-[1.02] hover:shadow-elevated-xl active:scale-[0.98] md:left-auto md:right-4 md:translate-x-0"
+          className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 cursor-pointer items-center gap-2.5 rounded-full border border-border/50 bg-card/75 px-4 py-2 shadow-elevated-lg backdrop-blur-xl transition-all hover:scale-[1.02] hover:shadow-elevated-xl active:scale-[0.98] md:right-4 md:left-auto md:translate-x-0"
         >
           <span className="relative flex size-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
           </span>
-          <span className="text-sm font-semibold tabular-nums tracking-tight text-foreground">
+          <span className="text-sm font-semibold tracking-tight text-foreground tabular-nums">
             {hours}:{minutes}:{seconds}
           </span>
           {(timer?.projectName || timer?.note) && (
@@ -356,7 +364,7 @@ export const FloatingTimer = () => {
       ) : (
         <div
           data-buddy-perch="card"
-          className="fixed bottom-4 left-1/2 z-40 w-[90%] -translate-x-1/2 rounded-lg border border-border/50 bg-card/75 p-4 shadow-elevated-lg backdrop-blur-xl sm:w-[400px] md:left-auto md:right-4 md:translate-x-0"
+          className="fixed bottom-4 left-1/2 z-40 w-[90%] -translate-x-1/2 rounded-lg border border-border/50 bg-card/75 p-4 shadow-elevated-lg backdrop-blur-xl sm:w-[400px] md:right-4 md:left-auto md:translate-x-0"
         >
           <div className="flex flex-col items-center justify-between space-y-1">
             <div className="flex w-full items-center justify-between gap-2">
@@ -496,7 +504,7 @@ export const FloatingTimer = () => {
                           minHeight: NOTE_TEXTAREA_MIN_HEIGHT,
                           scrollbarWidth: "none",
                         }}
-                        className="block min-h-10 resize-none overflow-x-auto overflow-y-hidden whitespace-pre rounded-none border-0 bg-transparent py-2 pl-0 pr-1 text-foreground shadow-none outline-none ring-offset-transparent focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden"
+                        className="block min-h-10 resize-none overflow-x-auto overflow-y-hidden rounded-none border-0 bg-transparent py-2 pr-1 pl-0 whitespace-pre text-foreground shadow-none ring-offset-transparent outline-hidden focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden"
                       />
                     </div>
                   </ScrollArea>
@@ -506,7 +514,7 @@ export const FloatingTimer = () => {
                         <PopoverTrigger asChild>
                           <button
                             type="button"
-                            className="absolute right-2 top-2 z-10 grid size-6 place-items-center rounded-md border border-border/70 bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            className="absolute top-2 right-2 z-10 grid size-6 place-items-center rounded-md border border-border/70 bg-background/95 text-muted-foreground shadow-xs backdrop-blur-sm transition-colors hover:bg-accent hover:text-primary focus:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             aria-label="Show recent entries"
                             onMouseEnter={() =>
                               queryClient.prefetchQuery({

@@ -60,7 +60,7 @@ mod date_format {
     where
         S: Serializer,
     {
-        let format = time::format_description::parse("[year]-[month]-[day]")
+        let format = time::format_description::parse_borrowed::<1>("[year]-[month]-[day]")
             .expect("valid Kleer date format");
         serializer.serialize_str(&date.format(&format).map_err(serde::ser::Error::custom)?)
     }
@@ -69,7 +69,7 @@ mod date_format {
     where
         D: Deserializer<'de>,
     {
-        let format = time::format_description::parse("[year]-[month]-[day]")
+        let format = time::format_description::parse_borrowed::<1>("[year]-[month]-[day]")
             .expect("valid Kleer date format");
         let value = String::deserialize(deserializer)?;
         Date::parse(&value, &format).map_err(serde::de::Error::custom)
@@ -97,7 +97,7 @@ mod option_date_format {
         let value = Option::<String>::deserialize(deserializer)?;
         value
             .map(|value| {
-                let format = time::format_description::parse("[year]-[month]-[day]")
+                let format = time::format_description::parse_borrowed::<1>("[year]-[month]-[day]")
                     .expect("valid Kleer date format");
                 Date::parse(&value, &format).map_err(serde::de::Error::custom)
             })

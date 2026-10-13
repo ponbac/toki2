@@ -860,8 +860,9 @@ fn build_llm_markdown(
     }
 
     if !comments.is_empty() {
-        let format = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]")
-            .expect("valid format");
+        let format =
+            time::format_description::parse_borrowed::<1>("[year]-[month]-[day] [hour]:[minute]")
+                .expect("valid format");
         writeln!(md).unwrap();
         writeln!(md, "### Comments").unwrap();
         for comment in comments {

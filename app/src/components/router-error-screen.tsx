@@ -1,7 +1,12 @@
-import { useQueryErrorResetBoundary } from "@tanstack/react-query"
-import { Link, useRouter } from "@tanstack/react-router"
-import { Home, RefreshCw, SearchX, TriangleAlert } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { useQueryErrorResetBoundary } from "@tanstack/react-query";
+import {
+  Link,
+  useRouter,
+  type ErrorComponentProps,
+  type NotFoundRouteProps,
+} from "@tanstack/react-router";
+import { Home, RefreshCw, SearchX, TriangleAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -9,30 +14,30 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
+} from "@/components/ui/card";
 
 function formatError(error: unknown) {
   if (error instanceof Error) {
-    return error.stack ?? error.message
+    return error.stack ?? error.message;
   }
 
   if (typeof error === "string") {
-    return error
+    return error;
   }
 
   try {
-    return JSON.stringify(error, null, 2)
+    return JSON.stringify(error, null, 2);
   } catch {
-    return "Unknown error"
+    return "Unknown error";
   }
 }
 
 function ScreenShell(props: {
-  icon: React.ReactNode
-  title: string
-  description: string
-  children?: React.ReactNode
-  actions: React.ReactNode
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  children?: React.ReactNode;
+  actions: React.ReactNode;
 }) {
   return (
     <main className="flex min-h-[75vh] w-full items-center justify-center p-6 md:p-10">
@@ -56,19 +61,20 @@ function ScreenShell(props: {
         </CardFooter>
       </Card>
     </main>
-  )
+  );
 }
 
-export function RouterErrorScreen(props: { error: Error; reset: () => void }) {
-  const router = useRouter()
-  const { reset } = useQueryErrorResetBoundary()
-  const errorDetails = formatError(props.error)
+/** Displays a router failure and resets both query and route error boundaries. */
+export function RouterErrorScreen(props: ErrorComponentProps) {
+  const router = useRouter();
+  const { reset } = useQueryErrorResetBoundary();
+  const errorDetails = formatError(props.error);
 
   const handleRetry = () => {
-    reset()
-    props.reset()
-    void router.invalidate()
-  }
+    reset();
+    props.reset();
+    void router.invalidate();
+  };
 
   return (
     <ScreenShell
@@ -91,7 +97,7 @@ export function RouterErrorScreen(props: { error: Error; reset: () => void }) {
       }
     >
       <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Error details
         </p>
         <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 text-xs leading-relaxed text-destructive">
@@ -99,11 +105,12 @@ export function RouterErrorScreen(props: { error: Error; reset: () => void }) {
         </pre>
       </div>
     </ScreenShell>
-  )
+  );
 }
 
-export function RouterNotFoundScreen(props: { data: unknown }) {
-  void props.data
+/** Displays the fallback for a route that could not be found. */
+export function RouterNotFoundScreen(props: NotFoundRouteProps) {
+  void props.data;
 
   return (
     <ScreenShell
@@ -119,5 +126,5 @@ export function RouterNotFoundScreen(props: { data: unknown }) {
         </Button>
       }
     />
-  )
+  );
 }
