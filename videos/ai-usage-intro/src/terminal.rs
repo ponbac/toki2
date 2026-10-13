@@ -1,5 +1,5 @@
 //! The three commands of the dialog, pasted into a terminal. The lines they print are what
-//! token-ledger 0.3.0 prints, set a little nicer: a check before each result, the token in
+//! token-ledger 0.5.1 prints, set a little nicer: a check before each result, the token in
 //! amber and shortened, and the tools shown as marks while their history is read.
 use crate::*;
 
@@ -126,10 +126,13 @@ impl Scene for Terminal {
             0.9
         };
 
-        let tools: Vec<Svgr> = (0..4)
-            .map(|i| {
-                let start = 4.8 + i as f32 * 0.25;
-                let x = LEFT + CHARACTER * 2.0 + [0.0, 172.0, 428.0, 628.0][i];
+        // Copilot keeps no log before the next step of the dialog turns its export on.
+        let tools: Vec<Svgr> = [0, 1, 3]
+            .into_iter()
+            .enumerate()
+            .map(|(place, i)| {
+                let start = 4.8 + place as f32 * 0.25;
+                let x = LEFT + CHARACTER * 2.0 + [0.0, 172.0, 428.0][place];
                 let width = PROVIDER_NAMES[i].len() as f32 * CHARACTER;
                 fframes::svgr!(
                     <g opacity={ramp(&frame, start)}>
@@ -143,7 +146,7 @@ impl Scene for Terminal {
 
         fframes::svgr!(
             <g opacity={scene_fade(t, SECONDS)}>
-                {caption(&frame, "2", "Klistra in i terminalen", "Tre kommandon: spara server och token, ladda upp 14 dagar, schemalägg en daglig synk.")}
+                {caption(&frame, "2", "Klistra in i terminalen", "Tre kommandon: spara server och token, ladda upp datorns historik, schemalägg en daglig synk.")}
                 <g opacity={ramp(&frame, 0.1)} transform={Transform::translate(0, rise(&frame, 0.1, 36.0))}>
                     <rect x="96" y="250" width="1728" height="690" rx="22" fill="#0b0d13" stroke={BORDER} stroke-width="1.5" />
                     <path d="M96 312 H1824" stroke={BORDER} stroke-width="1.5" />
@@ -157,7 +160,7 @@ impl Scene for Terminal {
                         {sync}
                         {tools}
                         {result(&frame, 5, SYNCED_AT, format!("Synced {} · 2026-08-14 through 2026-08-27 (Europe/Stockholm)", data::MACHINE))}
-                        <text x={LEFT + CHARACTER * 2.0} y={line_y(6)} fill={MUTED} opacity={ramp(&frame, SYNCED_AT + 0.3)}>{format!("812 hourly buckets · 418 sessions · {} API estimate · server stored 812", usd(data::first_sync_cost()))}</text>
+                        <text x={LEFT + CHARACTER * 2.0} y={line_y(6)} fill={MUTED} opacity={ramp(&frame, SYNCED_AT + 0.3)}>{format!("812 hourly buckets · {} sessions · {} API estimate · server stored 812", (data::SESSIONS * data::first_sync_cost() / data::TOTAL_COST).round(), usd(data::first_sync_cost()))}</text>
                         {schedule}
                         {result(&frame, 9, SCHEDULED_AT, "Scheduled a daily sync at 12:30 as a systemd user timer.".to_owned())}
                         <text x={LEFT} y={line_y(10)} fill={AMBER} opacity={progress(t, SCHEDULED_AT + 0.5, 0.1)}>"$"</text>

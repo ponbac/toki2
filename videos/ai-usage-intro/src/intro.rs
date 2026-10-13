@@ -54,7 +54,7 @@ impl Scene for Intro {
                     <text x="960" y="330" font-size="56" font-weight="600" letter-spacing="-1" fill={MUTED}>"Vad kostar din AI-användning?"</text>
                 </g>
                 <g opacity={ramp(&frame, 0.8)} transform={Transform::translate(0, rise(&frame, 0.8, 30.0))}>
-                    <text x="960" y="540" font-size="210" font-weight="800" letter-spacing="-8" fill={FG}>{usd(data::TOTAL_COST * count)}</text>
+                    <text x="960" y="540" font-size="210" font-weight="800" letter-spacing="-8" fill={FG}>{money::shown(Currency::Sek, data::TOTAL_COST * count)}</text>
                 </g>
                 <g opacity={ramp(&frame, 2.3)} transform={Transform::translate(0, rise(&frame, 2.3, 18.0))}>
                     <rect x="700" y="610" width="230" height="56" rx="28" fill={AMBER} />

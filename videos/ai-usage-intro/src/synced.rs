@@ -1,11 +1,15 @@
 //! The last step of the dialog, back from the terminal: the machine's first sync has landed,
-//! so the dialog says it is connected, and Show my usage closes it over a page that fills in.
+//! so the dialog says it is connected, and Show my usage closes it over an Overview that
+//! fills in with the machine's history.
 use crate::connect::{CONTENT_TOP, DIALOG_CENTER_Y, DIALOG_WIDTH, DIALOG_ZOOM, SHORT};
+use crate::page::{self, Figures, Waiting};
 use crate::*;
 
-const SECONDS: f32 = 9.5;
+const SECONDS: f32 = 11.0;
 const CONNECTED_AT: f32 = 0.7;
 const SHOW_AT: f32 = 3.8;
+/// When the view moves from the top of the page down to the chart.
+const SCROLL_AT: f32 = 5.6;
 
 #[derive(Debug)]
 pub struct Synced;
@@ -54,19 +58,57 @@ impl Scene for Synced {
         );
         let connected = ramp(&frame, CONNECTED_AT);
 
+        // The page holds the days the first sync uploaded: its figures count up to theirs,
+        // and their bars grow from the left.
+        let synced = data::FIRST_SYNC_DAYS;
+        let share = data::first_sync_cost() / data::TOTAL_COST;
+        let counted = ease_out(progress(filling, 0.3, 1.6));
+        let figures = Figures::all().part(share * counted, (synced as f32 * counted).round());
+        let days = data::DAYS_OF_USAGE
+            .iter()
+            .enumerate()
+            .map(|(i, day)| {
+                let grow = if i < synced {
+                    ease_out(progress(filling, 0.9 + i as f32 * 0.07, 0.8))
+                } else {
+                    0.0
+                };
+                day.cost.map(|cost| cost * grow)
+            })
+            .collect();
+        let chart = page::Daily {
+            days,
+            ..page::Daily::all()
+        };
+        let waiting = Waiting {
+            sessions: data::SESSIONS * share * counted,
+            ..Waiting::all()
+        };
+        let scroll = lerp(
+            page::AT_TOP,
+            page::AT_CHART,
+            ease_in_out(progress(t, SCROLL_AT, 1.2)),
+        );
+
         fframes::svgr!(
             <g opacity={scene_fade(t, SECONDS)}>
-                <g transform={page_transform()}>
-                    <g opacity={1.0 - progress(t, SHOW_AT + 0.1, 0.4)}>{connect::preview()}</g>
-                    <g opacity={progress(t, SHOW_AT + 0.1, 0.4)}>{usage::dashboard(filling, 0.0, data::FIRST_SYNC_DAYS)}</g>
+                <g transform={page_transform()} opacity={1.0 - progress(t, SHOW_AT + 0.1, 0.4)}>{connect::preview()}</g>
+                <g opacity={progress(t, SHOW_AT + 0.1, 0.4)}>
+                    {page::view(scroll, fframes::svgr!(<g>
+                        {page::header(Currency::Sek)}
+                        {page::tabs(0.0, &waiting)}
+                        {page::filters()}
+                        {page::summary(&figures, Currency::Sek)}
+                        {page::daily(&chart)}
+                    </g>))}
                 </g>
                 <rect width="1920" height="1080" fill="#000000" opacity={(1.0 - closed) * 0.8} />
                 {caption_sequence(&frame, "2", "Klart: datorn är kopplad", &[
                     ("Guiden märker den första synken av sig själv.", 0.0),
-                    ("Och sidan fylls med de 14 dagar som laddades upp.", SHOW_AT + 0.3),
+                    ("Och sidan fylls med historiken som fanns på datorn.", SHOW_AT + 0.3),
                 ])}
                 <g opacity={1.0 - closed} transform={dialog} font-family={SANS}>
-                    {connect::dialog_shell(SHORT, 3, "First sync", icons::REFRESH)}
+                    {connect::dialog_shell(SHORT, 4, 5, "First sync", icons::REFRESH)}
                     <g opacity={connected} transform={Transform::translate(0, (1.0 - connected) * 8.0)}>
                         <rect x="24" y={CONTENT_TOP} width="528" height="98" rx="12" fill={AMBER} opacity="0.05" />
                         <rect x="24" y={CONTENT_TOP} width="528" height="98" rx="12" fill="none" stroke={AMBER} stroke-width="1" opacity="0.3" />

@@ -1,3 +1,4 @@
+use fframes::cpu::CpuRenderingBackend;
 use fframes::{EncoderOptions, RenderOptions, StaticMediaProvider, cli};
 use std::process::ExitCode;
 use toki_ai_usage::{TokiAiUsageMedia, TokiAiUsageVideo};
@@ -22,5 +23,13 @@ fn main() -> ExitCode {
             ..Default::default()
         },
     )
+    // The renderer keeps rendered layers between frames, keyed by their content without the
+    // opacity of the groups inside. A layer whose only change is such an opacity, like a
+    // tooltip fading in over a still page, would be reused as it was. Without the cache
+    // every frame is drawn as it is described.
+    .backend(CpuRenderingBackend {
+        cache_capacity: 0,
+        ..Default::default()
+    })
     .run()
 }

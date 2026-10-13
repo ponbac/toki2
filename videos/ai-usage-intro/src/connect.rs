@@ -1,16 +1,17 @@
 //! The onboarding of the page (`connect-machine-prompt.tsx`, `connect-machine-dialog.tsx`):
 //! the empty state with its outline of the dashboard, then the dialog through its first
-//! three steps, ending on the copied commands.
+//! three steps: the system and where Copilot runs, the API token, and the copied commands.
 use crate::*;
 
-const SECONDS: f32 = 19.5;
+const SECONDS: f32 = 22.5;
 
 const OPEN_AT: f32 = 3.6;
-const SYSTEM_NEXT_AT: f32 = 6.6;
-const CREATE_AT: f32 = 8.3;
-const READY_AT: f32 = 8.8;
-const TOKEN_NEXT_AT: f32 = 10.4;
-const COPY_AT: f32 = 15.0;
+const TICK_AT: f32 = 6.9;
+const SYSTEM_NEXT_AT: f32 = 9.3;
+const CREATE_AT: f32 = 11.0;
+const READY_AT: f32 = 11.5;
+const TOKEN_NEXT_AT: f32 = 13.1;
+const COPY_AT: f32 = 17.8;
 
 /// The prompt card of the empty state, in page pixels.
 const CARD_X: f32 = 384.0;
@@ -26,7 +27,11 @@ pub(crate) const DIALOG_CENTER_Y: f32 = 640.0;
 pub(crate) const CONTENT_TOP: f32 = 110.0;
 /// The dialog as deployed is 362 px tall on its short steps.
 pub(crate) const SHORT: f32 = 362.0;
-const TALL: f32 = 558.0;
+/// The first step, with the cards that ask about Copilot, and the step of the commands.
+const SYSTEM: f32 = 515.0;
+const TALL: f32 = 542.0;
+/// Where the Copilot cards start.
+const SURFACES_TOP: f32 = CONTENT_TOP + 234.0;
 /// IBM Plex Mono at 12 px.
 const CHARACTER: f32 = 7.2;
 
@@ -39,7 +44,11 @@ const PREVIEW_BARS: [f32; 14] = [
 pub struct Connect;
 
 fn dialog_height(t: f32) -> f32 {
-    lerp(SHORT, TALL, ease_in_out(progress(t, TOKEN_NEXT_AT, 0.45)))
+    lerp(
+        lerp(SYSTEM, SHORT, ease_in_out(progress(t, SYSTEM_NEXT_AT, 0.4))),
+        TALL,
+        ease_in_out(progress(t, TOKEN_NEXT_AT, 0.45)),
+    )
 }
 
 /// A point of the dialog in video pixels.
@@ -56,19 +65,21 @@ fn pointer_at(t: f32) -> (f32, f32) {
     let stops = [
         (1480.0, 930.0),
         (PAGE_X + CENTER * ZOOM, PAGE_Y + (CARD_Y + 206.0) * ZOOM),
+        on_dialog(t, 170.0, SURFACES_TOP + 18.0),
         on_dialog(t, next.0, next.1),
         on_dialog(t, 477.0, CONTENT_TOP + 40.0),
         on_dialog(t, next.0, next.1),
         on_dialog(t, 498.0, CONTENT_TOP + 22.0),
         on_dialog(t, 420.0, 330.0),
     ];
-    const MOVES: [(f32, f32); 6] = [
+    const MOVES: [(f32, f32); 7] = [
         (2.3, 1.0),
-        (5.5, 0.8),
-        (7.3, 0.8),
-        (9.3, 0.8),
-        (13.8, 0.9),
-        (15.7, 1.0),
+        (5.8, 0.9),
+        (8.2, 0.9),
+        (10.0, 0.8),
+        (12.0, 0.8),
+        (16.6, 0.9),
+        (18.5, 1.0),
     ];
     let mut position = stops[0];
     for (i, (start, duration)) in MOVES.iter().enumerate() {
@@ -170,8 +181,37 @@ fn prompt<'a>(pressed: f32) -> Svgr<'a> {
     )
 }
 
-/// Step 1: the machine's system, with the browser's own preselected.
-fn system_step<'a>() -> Svgr<'a> {
+/// Step 1: the machine's system, with the browser's own preselected, and where Copilot is
+/// used on it; `ticked` says that Copilot CLI is.
+fn system_step<'a>(ticked: bool) -> Svgr<'a> {
+    let surfaces = [
+        ("Copilot CLI", "Adds a step"),
+        ("VS Code Copilot Chat", "Adds a step"),
+        ("Visual Studio", "Not tracked"),
+    ];
+    let cards: Vec<Svgr> = surfaces
+        .iter()
+        .enumerate()
+        .map(|(i, (name, note))| {
+            let width = (528.0 - 16.0) / 3.0;
+            let x = 24.0 + i as f32 * (width + 8.0);
+            let checked = ticked && i == 0;
+            let logo = match i {
+                0 => provider_icon(2, x + 12.0, SURFACES_TOP + 11.0, 20.0),
+                1 => fframes::svgr!(<path transform={format!("translate({} {}) scale({})", x + 12.0, SURFACES_TOP + 11.0, 20.0 / 128.0)} d={data::VSCODE_PATH} fill="#1f9cf0" fill-rule="evenodd" />),
+                _ => fframes::svgr!(<path transform={format!("translate({} {}) scale({})", x + 12.0, SURFACES_TOP + 11.0, 20.0 / 128.0)} d={data::VISUAL_STUDIO_PATH} fill="#854cc7" fill-rule="evenodd" />),
+            };
+            fframes::svgr!(<g>
+                <rect x={x} y={SURFACES_TOP} width={width} height="90" rx="12" fill={AMBER} opacity={if checked { 0.1 } else { 0.0 }} />
+                <rect x={x} y={SURFACES_TOP} width={width} height="90" rx="12" fill="none" stroke={if checked { AMBER } else { BORDER }} stroke-width="1" stroke-dasharray={if i == 2 { "4 3" } else { "none" }} />
+                {logo}
+                <rect x={x + width - 26.0} y={SURFACES_TOP + 10.0} width="16" height="16" rx="4" fill={if checked { AMBER } else { BG }} stroke={AMBER} stroke-width="1" />
+                {if checked { icon(icons::CHECK, x + width - 24.0, SURFACES_TOP + 12.0, 12.0, BG) } else { Svgr::empty() }}
+                <text x={x + 12.0} y={SURFACES_TOP + 52.0} font-size="14" font-weight="500" fill={if checked { FG } else { MUTED }}>{*name}</text>
+                <text x={x + 12.0} y={SURFACES_TOP + 74.0} font-size="11" font-weight="500" fill={MUTED}>{*note}</text>
+            </g>)
+        })
+        .collect();
     let systems = [
         ("macOS", data::APPLE_PATH),
         ("Linux", data::TUX_PATH),
@@ -202,6 +242,12 @@ fn system_step<'a>() -> Svgr<'a> {
                 <text x="24" y={CONTENT_TOP + 152.0}>"Node.js 24 or newer: check with node --version, and install it with your package manager,"</text>
                 <text x="24" y={CONTENT_TOP + 168.0}>"mise or nvm."</text>
             </g>
+            <text x="24" y={CONTENT_TOP + 199.0} font-size="14" font-weight="500">
+                <tspan font-weight="600" fill={FG}>"Do you use Copilot on this machine?"</tspan>
+                <tspan fill={MUTED}>" Tick where. The other tools need nothing"</tspan>
+            </text>
+            <text x="24" y={CONTENT_TOP + 219.0} font-size="14" font-weight="500" fill={MUTED}>"extra."</text>
+            {cards}
         </g>
     )
 }
@@ -272,7 +318,7 @@ fn commands_step<'a>(copied: f32) -> Svgr<'a> {
                 <text x={after_token} y={top + 90.0}>" npx --yes"</text>
                 <text x="36" y={top + 110.0}>{format!("@ponbac/token-ledger@latest login --server {}", data::SERVER)}</text>
             </g>))}
-            {command(top + 126.0, "2. Upload the last 14 days", fframes::svgr!(
+            {command(top + 126.0, "2. Upload this machine’s history", fframes::svgr!(
                 <text x="36" y={top + 160.0}>"npx --yes @ponbac/token-ledger@latest sync"</text>
             ))}
             {command(top + 176.0, "3. Sync every day at 12:30 with a systemd user timer", fframes::svgr!(
@@ -285,23 +331,24 @@ fn commands_step<'a>(copied: f32) -> Svgr<'a> {
                 <text x="46" y={top + 283.0}>"its repository, as host/owner/repo. Never prompts, responses, code or file paths."</text>
                 <text x="46" y={top + 299.0}>"Everything that is uploaded."</text>
                 <text x="24" y={top + 325.0}>"A missed daily run runs within ten minutes of your next login. Without systemd, as in WSL,"</text>
-                <text x="24" y={top + 341.0}>"schedule it with cron instead. Copilot is read only once its file export is on. See the"</text>
-                <text x="24" y={top + 357.0}>"setup details."</text>
+                <text x="24" y={top + 341.0}>"schedule it with cron instead. See the setup details."</text>
             </g>
         </g>
     )
 }
 
-/// The dialog's surface, title, step line and progress, `height` px tall on step `step`.
+/// The dialog's surface, title, step line and progress, `height` px tall on step `step` of
+/// `steps`.
 pub(crate) fn dialog_shell<'a>(
     height: f32,
     step: usize,
+    steps: usize,
     title: &'a str,
     step_icon: &'static str,
 ) -> Svgr<'a> {
-    let segments: Vec<Svgr> = (0..4)
+    let segments: Vec<Svgr> = (0..steps)
         .map(|i| {
-            let width = (528.0 - 18.0) / 4.0;
+            let width = (528.0 - 6.0 * (steps - 1) as f32) / steps as f32;
             fframes::svgr!(<rect x={24.0 + i as f32 * (width + 6.0)} y="90" width={width} height="4" rx="2" fill={if i <= step { AMBER } else { MUTED_SURFACE }} />)
         })
         .collect();
@@ -312,7 +359,7 @@ pub(crate) fn dialog_shell<'a>(
             <text x="24" y="42" font-size="18" font-weight="600" letter-spacing="-0.4" fill={FG}>"Connect a machine"</text>
             {icon(icons::CLOSE, 544.0, 16.0, 16.0, MUTED)}
             {icon(step_icon, 24.0, 55.0, 16.0, AMBER)}
-            <text x="48" y="68" font-size="14" font-weight="500" fill={MUTED}>{format!("Step {} of 4 · {}", step + 1, title)}</text>
+            <text x="48" y="68" font-size="14" font-weight="500" fill={MUTED}>{format!("Step {} of {steps} · {}", step + 1, title)}</text>
             {segments}
         </g>
     )
@@ -326,6 +373,7 @@ impl Scene for Connect {
     fn audio(&self) -> AudioMap<'_> {
         AudioMap::from([
             AudioTrack::new("click.wav", Second(OPEN_AT)..Eof).gain_db(-7.0),
+            AudioTrack::new("click.wav", Second(TICK_AT)..Eof).gain_db(-7.0),
             AudioTrack::new("click.wav", Second(SYSTEM_NEXT_AT)..Eof).gain_db(-7.0),
             AudioTrack::new("click.wav", Second(CREATE_AT)..Eof).gain_db(-7.0),
             AudioTrack::new("click.wav", Second(TOKEN_NEXT_AT)..Eof).gain_db(-7.0),
@@ -360,8 +408,11 @@ impl Scene for Connect {
             -height / 2.0
         );
 
+        // Ticking Copilot adds a fifth step to the dialog.
+        let ticked = t >= TICK_AT;
+        let steps = if ticked { 5 } else { 4 };
         let content = match step {
-            0 => system_step(),
+            0 => system_step(ticked),
             1 => token_step(t),
             _ => commands_step(progress(t, COPY_AT, 0.1) * (1.0 - progress(t, COPY_AT + 0.1, 0.3))),
         };
@@ -384,10 +435,11 @@ impl Scene for Connect {
                 <rect width="1920" height="1080" fill="#000000" opacity={opened * 0.8} />
                 {caption_sequence(&frame, "1", "Koppla din dator", &[
                     ("Första gången visar sidan AI usage en guide. Det tar ungefär två minuter.", 0.0),
-                    ("Välj system och skapa en API-token. Guiden fyller i server och token i kommandona.", OPEN_AT + 0.3),
+                    ("Välj system, och kryssa i Copilot om du använder det. Då får guiden ett extra steg som slår på dess logg.", OPEN_AT + 0.3),
+                    ("Skapa en API-token. Guiden fyller i server och token i kommandona.", SYSTEM_NEXT_AT + 0.3),
                 ])}
                 <g opacity={opened} transform={dialog} font-family={SANS}>
-                    {dialog_shell(height, step, titles[step], step_icons[step])}
+                    {dialog_shell(height, step, steps, titles[step], step_icons[step])}
                     // The commands wait for the dialog to grow around them.
                     <g opacity={progress(t, step_start + if step == 2 { 0.35 } else { 0.0 }, 0.2)}>{content}</g>
                     <g opacity={if step == 0 { 0.5 } else { 1.0 }}>
@@ -404,7 +456,7 @@ impl Scene for Connect {
                     <text x="1524" y="1006" font-size="22" font-weight="600" fill={FG}>"Commands copied"</text>
                 </g>
                 <g transform={format!("translate({pointer_x} {pointer_y}) scale({ZOOM})")}>
-                    {pointer(t, 0.0, 0.0, &[OPEN_AT, SYSTEM_NEXT_AT, CREATE_AT, TOKEN_NEXT_AT, COPY_AT], progress(t, 1.9, 0.3).min(1.0 - progress(t, 17.0, 0.4)))}
+                    {pointer(t, 0.0, 0.0, &[OPEN_AT, TICK_AT, SYSTEM_NEXT_AT, CREATE_AT, TOKEN_NEXT_AT, COPY_AT], progress(t, 1.9, 0.3).min(1.0 - progress(t, COPY_AT + 2.0, 0.4)))}
                 </g>
             </g>
         )
