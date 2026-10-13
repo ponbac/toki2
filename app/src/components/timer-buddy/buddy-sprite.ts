@@ -24,10 +24,10 @@ const ANIM_SPEED: Partial<Record<BuddyAnimName, number>> = {
 };
 
 /**
- * Seconds the idle pose is held before each idle gesture. Looped back to back,
- * as the sheets are timed, a yawn or a stuck-out tongue repeats every second.
+ * Seconds of standing idle before each idle gesture. Looped back to back, as
+ * the sheets are timed, a yawn or a stuck-out tongue repeats every second.
  */
-const IDLE_REST_S = { min: 4, max: 9 };
+const IDLE_REST_S = { min: 5, max: 20 };
 
 function idleRestTicks(): number {
   const seconds =
@@ -52,7 +52,10 @@ export class BuddySprite {
   private facing: BuddyFacing = "D";
   private frame = 0;
   private ticks = 0;
-  /** Ticks left to hold the idle pose before its gesture plays. */
+  /**
+   * Idle ticks left before the idle gesture plays. It only runs down while
+   * idling and survives other animations, so short idles still add up to one.
+   */
   private restTicks = idleRestTicks();
   private looping = true;
   private onEnd: (() => void) | null = null;
@@ -103,7 +106,6 @@ export class BuddySprite {
     this.anim = anim;
     this.frame = 0;
     this.ticks = 0;
-    this.restTicks = anim === "Idle" && loop ? idleRestTicks() : 0;
     this.looping = loop;
     this.onEnd = options.onEnd ?? null;
     this.applyFrameSize();
@@ -118,7 +120,8 @@ export class BuddySprite {
   tick(dt: number): void {
     const durations = this.sheet.anims[this.anim].durations;
     const elapsed = dt * 60 * (ANIM_SPEED[this.anim] ?? 1);
-    const rested = Math.min(this.restTicks, elapsed);
+    const resting = this.anim === "Idle" && this.looping;
+    const rested = resting ? Math.min(this.restTicks, elapsed) : 0;
     this.restTicks -= rested;
     this.ticks += elapsed - rested;
 
