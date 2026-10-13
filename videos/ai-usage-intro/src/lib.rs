@@ -1,9 +1,10 @@
-//! Draft cut of the Toki "AI usage" intro video, on mocked data: connect a machine with the
-//! onboarding dialog, paste its commands, let the daily job sync, read the page, map
-//! repositories to projects.
+//! The Toki "AI usage" intro video, on mocked data: connect a machine with the onboarding
+//! dialog, paste its commands, let the daily job sync, declare a subscription, read the page
+//! tab by tab, map repositories to projects.
 //!
 //! The UI is drawn in the app's own CSS pixels (the page is 1216 px wide inside `max-w-7xl`)
-//! and scaled 1.5x, so 1 UI px is 1.5 video px and the page fills a 1920 px frame.
+//! and scaled 1.5x, so 1 UI px is 1.5 video px and the page fills a 1920 px frame. The page
+//! is taller than the frame, so `page::view` shows a part of it at a time.
 use fframes::{
     AnimateRuntimeInput, AudioMap,
     AudioTimestamp::*,
@@ -11,19 +12,24 @@ use fframes::{
     animation::{AnimationRuntime, Easing},
     include_media_dir,
 };
+use money::Currency;
 use std::sync::LazyLock;
 
-mod breakdown;
 mod connect;
+mod daily;
 mod data;
-mod heatmap;
 mod intro;
-mod mapping;
+mod money;
 mod outro;
+mod overview;
+mod page;
+mod purpose;
+mod repositories;
 mod schedule;
+mod subscription;
 mod synced;
 mod terminal;
-mod usage;
+mod whereabouts;
 
 include_media_dir!(pub struct TokiAiUsageMedia, "media");
 
@@ -44,6 +50,8 @@ pub(crate) const AMBER: &str = "#f9a91f";
 pub(crate) const GRID: &str = "#262b36";
 pub(crate) const OTHER: &str = "#5b606b";
 pub(crate) const OK: &str = "#199e70";
+/// The green of a fresh sync and of history read in full.
+pub(crate) const FRESH: &str = "#0ca30c";
 /// `--viz-1..5`: Codex, Claude Code, Copilot, Pi.
 pub(crate) const PROVIDER_COLORS: [&str; 4] = ["#3987e5", "#d95926", "#c98500", "#d55181"];
 pub(crate) const PROVIDER_NAMES: [&str; 4] = ["Codex", "Claude Code", "Copilot", "Pi"];
@@ -57,7 +65,7 @@ pub(crate) const MONO: &str = "IBM Plex Mono";
 
 /// Where the 1216 px wide page sits in the frame, and its zoom.
 pub(crate) const PAGE_X: f32 = 48.0;
-pub(crate) const PAGE_Y: f32 = 236.0;
+pub(crate) const PAGE_Y: f32 = 226.0;
 pub(crate) const ZOOM: f32 = 1.5;
 
 static EASE: LazyLock<AnimationRuntime> =
@@ -76,14 +84,16 @@ static SPRING: LazyLock<AnimationRuntime> = LazyLock::new(|| {
 pub struct TokiAiUsageVideo<'a> {
     pub media: &'a TokiAiUsageMedia,
     intro: intro::Intro,
+    purpose: purpose::Purpose,
     connect: connect::Connect,
     terminal: terminal::Terminal,
     synced: synced::Synced,
     schedule: schedule::Schedule,
-    usage: usage::Usage,
-    breakdown: breakdown::Breakdown,
-    heatmap: heatmap::Heatmap,
-    mapping: mapping::Mapping,
+    overview: overview::Overview,
+    daily: daily::Daily,
+    whereabouts: whereabouts::Whereabouts,
+    repositories: repositories::Repositories,
+    subscription: subscription::Subscription,
     outro: outro::Outro,
 }
 
@@ -92,14 +102,16 @@ impl<'a> TokiAiUsageVideo<'a> {
         Self {
             media,
             intro: intro::Intro,
+            purpose: purpose::Purpose,
             connect: connect::Connect,
             terminal: terminal::Terminal,
             synced: synced::Synced,
             schedule: schedule::Schedule,
-            usage: usage::Usage,
-            breakdown: breakdown::Breakdown,
-            heatmap: heatmap::Heatmap::new(),
-            mapping: mapping::Mapping,
+            overview: overview::Overview,
+            daily: daily::Daily,
+            whereabouts: whereabouts::Whereabouts::new(),
+            repositories: repositories::Repositories,
+            subscription: subscription::Subscription,
             outro: outro::Outro,
         }
     }
@@ -129,14 +141,16 @@ impl Video for TokiAiUsageVideo<'_> {
     fn define_scenes(&self) -> Scenes<'_> {
         Scenes::from(vec![
             &self.intro as &dyn Scene,
+            &self.purpose,
             &self.connect,
             &self.terminal,
             &self.synced,
             &self.schedule,
-            &self.usage,
-            &self.breakdown,
-            &self.heatmap,
-            &self.mapping,
+            &self.subscription,
+            &self.overview,
+            &self.daily,
+            &self.whereabouts,
+            &self.repositories,
             &self.outro,
         ])
     }
@@ -231,6 +245,24 @@ pub(crate) fn thousands(value: i64) -> String {
     out
 }
 
+/// A count as the page shortens it: `24.8B`, `946.7M`, `5M`.
+pub(crate) fn compact(count: f32) -> String {
+    let (value, unit) = match count {
+        c if c >= 1e9 => (c / 1e9, "B"),
+        c if c >= 1e6 => (c / 1e6, "M"),
+        c if c >= 1e3 => (c / 1e3, "K"),
+        c => (c, ""),
+    };
+    let text = format!("{value:.1}");
+    format!("{}{unit}", text.strip_suffix(".0").unwrap_or(&text))
+}
+
+/// A share as the page writes it: `38.6%`, `10%`.
+pub(crate) fn percent(share: f32) -> String {
+    let text = format!("{:.1}", share * 100.0);
+    format!("{}%", text.strip_suffix(".0").unwrap_or(&text))
+}
+
 // --- shared pieces --------------------------------------------------------------------------
 
 /// The Swedish caption above the UI: a step chip, a headline and one line of explanation.
@@ -278,40 +310,55 @@ pub(crate) fn card<'a>(
     width: f32,
     height: f32,
     title: &'a str,
-    description: &'a str,
+    description: &str,
 ) -> Svgr<'a> {
     fframes::svgr!(
         <g font-family={SANS}>
             <rect x={x} y={y} width={width} height={height} rx="16" fill={CARD} stroke={BORDER} stroke-width="1" />
             <text x={x + 20.0} y={y + 34.0} font-size="14" font-weight="600" fill={FG}>{title}</text>
-            <text x={x + 20.0} y={y + 55.0} font-size="12" font-weight="500" fill={MUTED}>{description}</text>
+            <text x={x + 20.0} y={y + 55.0} font-size="12" font-weight="500" fill={MUTED}>{description.to_owned()}</text>
         </g>
     )
 }
 
-/// A two-option segmented control, right-aligned at `right`; `second` says which option is
-/// selected, from 0 (the first) to 1 (the second), so the selection can slide.
-pub(crate) fn segmented<'a>(
+/// A segmented control of the app (`Segmented` in `chart-card.tsx`), right-aligned at
+/// `right`: each option with its width. `selected` is the chosen option, and may be between
+/// two options while the choice slides from one to the other.
+pub(crate) fn segments<'a>(
     right: f32,
     y: f32,
-    first: &'a str,
-    second_label: &'a str,
-    first_width: f32,
-    second_width: f32,
-    second: f32,
+    options: &[(&'a str, f32)],
+    selected: f32,
 ) -> Svgr<'a> {
-    let x = right - first_width - second_width - 4.0;
-    let (ink_first, ink_second) = if second < 0.5 {
-        (FG, MUTED)
-    } else {
-        (MUTED, FG)
-    };
+    let total: f32 = options.iter().map(|(_, width)| width).sum();
+    let x = right - total - 4.0;
+    let starts: Vec<f32> = options
+        .iter()
+        .scan(x + 2.0, |at, (_, width)| {
+            let start = *at;
+            *at += width;
+            Some(start)
+        })
+        .collect();
+    let last = options.len() - 1;
+    let (from, to) = (
+        (selected.floor() as usize).min(last),
+        (selected.ceil() as usize).min(last),
+    );
+    let slide = selected.fract();
+    let labels: Vec<Svgr> = options
+        .iter()
+        .enumerate()
+        .map(|(i, (label, width))| {
+            let ink = if selected.round() as usize == i { FG } else { MUTED };
+            fframes::svgr!(<text x={starts[i] + width / 2.0} y={y + 18.5} text-anchor="middle" fill={ink}>{*label}</text>)
+        })
+        .collect();
     fframes::svgr!(
         <g font-family={SANS} font-size="12" font-weight="500">
-            <rect x={x} y={y} width={first_width + second_width + 4.0} height="28" rx="8" fill="#1b1f28" stroke={BORDER} stroke-width="1" />
-            <rect x={x + 2.0 + first_width * second} y={y + 2.0} width={lerp(first_width, second_width, second)} height="24" rx="6" fill={BG} />
-            <text x={x + 2.0 + first_width / 2.0} y={y + 18.5} text-anchor="middle" fill={ink_first}>{first}</text>
-            <text x={x + 2.0 + first_width + second_width / 2.0} y={y + 18.5} text-anchor="middle" fill={ink_second}>{second_label}</text>
+            <rect x={x} y={y} width={total + 4.0} height="28" rx="8" fill="#1b1f28" stroke={BORDER} stroke-width="1" />
+            <rect x={lerp(starts[from], starts[to], slide)} y={y + 2.0} width={lerp(options[from].1, options[to].1, slide)} height="24" rx="6" fill={BG} />
+            {labels}
         </g>
     )
 }
@@ -348,7 +395,27 @@ pub(crate) mod icons {
     pub const CLOSE: &str = "M18 6 6 18M6 6l12 12";
     pub const PARTY: &str = "M5.8 11.3 2 22l10.7-3.79M4 3h.01M22 8h.01M15 2h.01M22 20h.01M22 2l-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10M22 13l-.82-.33c-.86-.34-1.82.2-1.98 1.11c-.11.7-.72 1.22-1.43 1.22H17M11 2l.33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z";
     pub const REFRESH: &str = "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5";
+    pub const CREDIT_CARD: &str =
+        "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM2 10h20";
+    pub const WARNING: &str = "M21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01";
+    pub const CHEVRON_DOWN: &str = "M6 9l6 6 6-6";
+    pub const PENCIL: &str = "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4";
+    pub const TRASH: &str = "M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6";
     pub const POWER: &str = "M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04";
+    pub const CHART_COLUMN: &str = "M3 3v16a2 2 0 0 0 2 2h16M18 17V9M13 17V5M8 17v-3";
+    pub const LIST: &str = "M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13";
+    pub const FOLDER_GIT: &str = "M9 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v5M11 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M18 19c-2.8 0-5-2.2-5-5v8M18 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0";
+    pub const CALENDAR: &str = "M8 2v4M16 2v4M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM3 10h18";
+    pub const GLOBE: &str = "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20";
+    pub const COINS: &str = "M2 8a6 6 0 1 0 12 0a6 6 0 1 0-12 0M18.09 10.37A6 6 0 1 1 10.34 18M7 6h1v4M16.71 13.88l.7.71-2.82 2.82";
+    pub const LAYERS: &str = "M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83zM2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17";
+    pub const ACTIVITY: &str = "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2";
+    pub const CIRCLE_DASHED: &str = "M10.1 2.182a10 10 0 0 1 3.8 0M13.9 21.818a10 10 0 0 1-3.8 0M17.609 3.721a10 10 0 0 1 2.69 2.7M2.182 13.9a10 10 0 0 1 0-3.8M20.279 17.609a10 10 0 0 1-2.7 2.69M21.818 10.1a10 10 0 0 1 0 3.8M3.721 6.391a10 10 0 0 1 2.7-2.69M6.391 20.279a10 10 0 0 1-2.69-2.7";
+    pub const CHEVRON_RIGHT: &str = "M9 18l6-6-6-6";
+    pub const BRIEFCASE: &str = "M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16M4 6h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z";
+    pub const INFO: &str = "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M12 16v-4M12 8h.01";
+    pub const CHEVRONS_UP_DOWN: &str = "M7 15l5 5 5-5M7 9l5-5 5 5";
+    pub const SEARCH: &str = "M3 11a8 8 0 1 0 16 0a8 8 0 1 0-16 0M21 21l-4.3-4.3";
 }
 
 /// A Lucide icon, `size` px wide with its corner at `x`, `y`.

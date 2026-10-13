@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-seconds="${1:-112}"
+seconds="${1:-151}"
 fade_at=$((seconds - 4))
 
 ffmpeg -y -v error -f lavfi -i "aevalsrc='0.10*sin(2*PI*110*t)*(0.75+0.25*sin(2*PI*0.11*t))+0.07*sin(2*PI*164.81*t)*(0.7+0.3*sin(2*PI*0.07*t+1))+0.05*sin(2*PI*220.4*t)+0.04*sin(2*PI*261.63*t)*(0.6+0.4*sin(2*PI*0.05*t+2))+0.025*sin(2*PI*329.63*t)*(0.5+0.5*sin(2*PI*0.09*t+3))':s=48000:d=${seconds}" \

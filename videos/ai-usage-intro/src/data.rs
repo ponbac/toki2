@@ -18,6 +18,15 @@ pub const WINDOWS_PATH: &str =
     "M0 0h11.4v11.4H0zM12.6 0H24v11.4H12.6zM0 12.6h11.4V24H0zM12.6 12.6H24V24H12.6z";
 pub const TUX_PATH: &str = include_str!("tux.path");
 
+/// The marks of the hosts a repository can be on (`repo-key.tsx`), from Simple Icons (CC0).
+pub const GITHUB_PATH: &str = "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12";
+pub const AZURE_PATH: &str = "M0 8.877L2.247 5.91l8.405-3.416V.022l7.37 5.393L2.966 8.338v8.225L0 15.707zm24-4.45v14.651l-5.753 4.9-9.303-3.057v3.056l-5.978-7.416 15.057 1.798V5.415z";
+
+/// The logos of the editors Copilot runs in, as one 128x128 path each: VS Code and Visual
+/// Studio, from Devicon (MIT).
+pub const VSCODE_PATH: &str = "M90.767 127.126a7.968 7.968 0 0 0 6.35-.244l26.353-12.681a8 8 0 0 0 4.53-7.209V21.009a8 8 0 0 0-4.53-7.21L97.117 1.12a7.97 7.97 0 0 0-9.093 1.548l-50.45 46.026L15.6 32.013a5.328 5.328 0 0 0-6.807.302l-7.048 6.411a5.335 5.335 0 0 0-.006 7.888L20.796 64 1.74 81.387a5.336 5.336 0 0 0 .006 7.887l7.048 6.411a5.327 5.327 0 0 0 6.807.303l21.974-16.68 50.45 46.025a7.96 7.96 0 0 0 2.743 1.793Zm5.252-92.183L57.74 64l38.28 29.058V34.943Z";
+pub const VISUAL_STUDIO_PATH: &str = "M94.145.348a8 8 0 0 0-3.026.386A8 8 0 0 0 88 2.668L45.494 49.682 20.666 29.334l-2.172-1.865a5.333 5.333 0 0 0-4.814-1.108 3.4 3.4 0 0 0-.707.24l-9.694 4.067A5.333 5.333 0 0 0 0 35.162v57.679a5.333 5.333 0 0 0 3.28 4.493l9.693 4a3.4 3.4 0 0 0 .707.24 5.333 5.333 0 0 0 4.814-1.105l2.172-1.801 24.828-20.346L88 125.334a8 8 0 0 0 3.854 2.135 8 8 0 0 0 5.24-.588l26.373-12.68a8 8 0 0 0 4.533-7.213V21.016a8 8 0 0 0-4.533-7.215L97.094 1.12a8 8 0 0 0-2.95-.773ZM96 36.908v54.186L62.947 64.002Zm-80 8.787 16.547 18.307L16 82.309Z";
+
 /// The machine of the story, its API token as the dialog shows it, and the server.
 pub const MACHINE: &str = "jobbdator";
 pub const TOKEN: &str = "toki_3f9a1c7e5b2d4086a1f3c9e7b5d20486";
@@ -27,7 +36,12 @@ pub const SERVER: &str = "https://toki-api.spinit.se";
 pub const TOTAL_COST: f32 = 13_842.6;
 pub const TOTAL_TOKENS_B: f32 = 24.8;
 pub const CACHE_READ_TOKENS_B: f32 = 23.9;
+/// The tokens that are not cache reads, in millions: output, cache write, input.
+pub const PAID_TOKENS_M: [f32; 3] = [96.4, 268.2, 535.4];
 pub const REQUESTS: f32 = 176_204.0;
+pub const SESSIONS: f32 = 2_486.0;
+/// The token-ledger release the machine runs.
+pub const CLIENT_VERSION: &str = "0.5.1";
 /// 14 Aug to 11 Oct 2026.
 pub const DAYS: usize = 59;
 
@@ -39,6 +53,15 @@ pub const PROJECTS: [(&str, f32); 5] = [
     ("Hamnkontoret – Bokningssystem", 2_480.10),
     ("Lindholm & Söner – Intranät", 1_720.30),
     ("Skogsbruket – Fältapp", 973.30),
+];
+/// What stands under each project's name in "Where it went": its one repository, or how
+/// many it has.
+pub const PROJECT_REPOSITORIES: [&str; 5] = [
+    "github.com/spinit-ab/nordvik-portal-web",
+    "github.com/spinit-ab/fjallbo-planering",
+    "dev.azure.com/hamnkontoret/Bokning/_git/api",
+    "2 repositories",
+    "github.com/spinit-ab/skogsbruket-faltapp",
 ];
 pub const UNASSIGNED_COST: f32 = 2_150.70;
 
@@ -83,8 +106,54 @@ pub const PERSONAL: &str = "Personal / internal";
 /// The mocked days, made once.
 pub static DAYS_OF_USAGE: std::sync::LazyLock<Vec<Day>> = std::sync::LazyLock::new(days);
 
-/// The first `sync` uploads the last 14 days. In the story that is 27 Aug, so it uploads the
-/// first 14 days of the range; the daily job adds the rest before the page is read on 11 Oct.
+/// The subscription the developer declares: a plan for Codex with its monthly fee, 200 USD,
+/// in cents. That is the price of the larger ChatGPT Pro tier in October 2026. The app bills
+/// it in kronor at the month's rate.
+pub const PLAN: &str = "ChatGPT Pro";
+pub const PLAN_FEE_CENTS: i64 = 20_000;
+pub const PLAN_FROM: &str = "2026-08-14";
+
+/// The API-equivalent cost of Codex per project in September, a month the plan covers in
+/// full: Codex's cost that month, spread over the projects as their cost is once every
+/// repository is mapped. Personal usage is left out, as it takes no share of a fee.
+pub fn codex_in_september() -> [f32; 5] {
+    // 1 Sept is 18 days into the range, and September has 30 days.
+    let codex: f32 = DAYS_OF_USAGE[18..48].iter().map(|day| day.cost[0]).sum();
+    let mut costs = PROJECTS.map(|(_, cost)| cost);
+    for (_, _, cost, project) in UNMAPPED {
+        if let Some(project) = project {
+            costs[project] += cost;
+        }
+    }
+    let total: f32 = costs.iter().sum();
+    costs.map(|cost| codex * cost / total)
+}
+
+/// Splits `fee` across `weights` in whole units that sum to it: each share is rounded down
+/// and the units left go to the largest remainders, ties to the first. This is how the app
+/// splits a subscription's fee across projects.
+pub fn split_fee(fee: i64, weights: &[f32]) -> Vec<i64> {
+    let total: f64 = weights.iter().map(|weight| f64::from(*weight)).sum();
+    let exact: Vec<f64> = weights
+        .iter()
+        .map(|weight| fee as f64 * f64::from(*weight) / total)
+        .collect();
+    let mut shares: Vec<i64> = exact.iter().map(|share| share.floor() as i64).collect();
+    let mut order: Vec<usize> = (0..weights.len()).collect();
+    order.sort_by(|a, b| {
+        (exact[*b] - exact[*b].floor()).total_cmp(&(exact[*a] - exact[*a].floor()))
+    });
+    let left = fee - shares.iter().sum::<i64>();
+    for index in order.into_iter().take(left as usize) {
+        shares[index] += 1;
+    }
+    shares
+}
+
+/// A machine's first `sync` uploads all the history found on it. In the story that is 27 Aug
+/// and the history starts on 14 Aug, so it uploads the first 14 days of the range; the daily
+/// job adds the rest before the page is read on 11 Oct. Copilot keeps no log before its
+/// export is turned on, which the same setup does, so it has no usage in those 14 days.
 pub const FIRST_SYNC_DAYS: usize = 14;
 
 /// The estimate of the first sync, which the terminal prints and the page then shows.
@@ -116,8 +185,6 @@ impl Random {
 #[derive(Debug)]
 pub struct Day {
     pub label: String,
-    /// 0 is Monday.
-    pub weekday: usize,
     pub cost: [f32; 4],
 }
 
@@ -126,26 +193,85 @@ impl Day {
         self.cost.iter().sum()
     }
 
-    /// The day's cost per model, in the order of `MODELS`: the tools' costs regrouped.
-    pub fn by_model(&self) -> [f32; 4] {
-        let [codex, claude, copilot, pi] = self.cost;
-        [
-            0.62 * codex + 0.6 * pi,
-            claude,
-            0.38 * codex + 0.4 * pi,
-            copilot,
-        ]
+    /// The day's cost per model, in the order of `MODELS`: the tools' costs regrouped. Pi
+    /// runs a model that Codex runs too, and a model is one series whatever tool ran it.
+    pub fn by_model(&self) -> [f32; 6] {
+        by_model(self.cost)
     }
 }
 
-/// The models of the mocked usage by cost, with the first four categorical colours.
-pub const MODELS: [&str; 4] = [
+/// A cost per tool as a cost per model, in the order of `MODELS`.
+pub fn by_model([codex, claude, copilot, pi]: [f32; 4]) -> [f32; 6] {
+    [
+        CODEX_MODELS[0] * codex + pi,
+        CODEX_MODELS[1] * codex,
+        CODEX_MODELS[2] * codex,
+        CLAUDE_MODELS[0] * claude,
+        CLAUDE_MODELS[1] * claude,
+        copilot,
+    ]
+}
+
+/// The models of the mocked usage, tool by tool and costliest first within a tool. Each is
+/// a tint of its tool's colour (`modelColor` in `colors.ts`): all of it, then 66% and 42%
+/// of it over the card surface.
+pub const MODELS: [&str; 6] = [
     "gpt-5.6-sol",
-    "claude-opus-5-5",
     "gpt-6-astra",
     "gpt-6.1-sol",
+    "claude-opus-5-5",
+    "claude-opus-4-8",
+    "claude-sonnet-5-5",
 ];
-pub const MODEL_COLORS: [&str; 4] = ["#3987e5", "#d95926", "#199e70", "#c98500"];
+pub const MODEL_COLORS: [&str; 6] = [
+    "#3987e5", "#2d62a3", "#254874", "#d95926", "#974425", "#c98500",
+];
+/// How Codex's and Claude Code's cost divides over their models.
+const CODEX_MODELS: [f32; 3] = [0.52, 0.30, 0.18];
+const CLAUDE_MODELS: [f32; 2] = [0.78, 0.22];
+
+/// The cost of each tool over the whole range, in the order of `PROVIDER_NAMES`.
+pub fn tool_costs() -> [f32; 4] {
+    let mut costs = [0.0; 4];
+    for day in DAYS_OF_USAGE.iter() {
+        for (cost, of_day) in costs.iter_mut().zip(day.cost) {
+            *cost += of_day;
+        }
+    }
+    costs
+}
+
+/// The requests of each tool: a cheap tool makes more of them for its cost.
+pub fn tool_requests() -> [f32; 4] {
+    let weights = [1.0, 0.7, 2.2, 1.4];
+    let costs = tool_costs();
+    let total: f32 = costs
+        .iter()
+        .zip(weights)
+        .map(|(cost, weight)| cost * weight)
+        .sum();
+    std::array::from_fn(|tool| REQUESTS * costs[tool] * weights[tool] / total)
+}
+
+/// The rows of "Where it went" by model, costliest first: tool, model, cost and requests.
+pub fn model_rows() -> Vec<(usize, &'static str, f32, f32)> {
+    let costs = tool_costs();
+    let requests = tool_requests();
+    let mut rows = vec![
+        (0, MODELS[0], CODEX_MODELS[0]),
+        (0, MODELS[1], CODEX_MODELS[1]),
+        (0, MODELS[2], CODEX_MODELS[2]),
+        (1, MODELS[3], CLAUDE_MODELS[0]),
+        (1, MODELS[4], CLAUDE_MODELS[1]),
+        (2, MODELS[5], 1.0),
+        (3, MODELS[0], 1.0),
+    ]
+    .into_iter()
+    .map(|(tool, model, share)| (tool, model, costs[tool] * share, requests[tool] * share))
+    .collect::<Vec<_>>();
+    rows.sort_by(|a, b| b.2.total_cmp(&a.2));
+    rows
+}
 
 /// 59 days from Friday 14 Aug 2026: steady weekdays, light weekends, every tool every week.
 pub fn days() -> Vec<Day> {
@@ -163,11 +289,15 @@ pub fn days() -> Vec<Day> {
             };
             let codex = 0.40 + random.next() * 0.14;
             let claude = 0.28 + random.next() * 0.14;
-            let copilot = 0.03 + random.next() * 0.04;
+            // Copilot has no log before the setup of day `FIRST_SYNC_DAYS` turns it on.
+            let copilot = if i < FIRST_SYNC_DAYS {
+                0.0
+            } else {
+                0.03 + random.next() * 0.04
+            };
             let pi = 1.0 - codex - claude - copilot;
             Day {
                 label: date_label(i),
-                weekday,
                 cost: [total * codex, total * claude, total * copilot, total * pi],
             }
         })
