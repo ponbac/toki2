@@ -13,7 +13,11 @@ import type { AiBillingOverview } from "@/lib/api/queries/ai-admin";
 import type { AiProvider } from "@/lib/api/queries/ai-usage";
 import { aiUsageReportQueries } from "@/lib/api/queries/ai-usage-report";
 import { USAGE_CHART_THEME, USAGE_CHART_TOOLTIP } from "@/lib/chart-theme";
-import { PENDING_RATE_LABEL, formatConverted } from "../../-lib/billing";
+import {
+  PENDING_RATE_LABEL,
+  formatAmount,
+  formatConverted,
+} from "../../-lib/billing";
 import { formatEstimate, formatUsd } from "../../-lib/format";
 import {
   apiBilledUsage,
@@ -59,11 +63,6 @@ type Amounts = Readonly<{
   /** No rate yet, rather than none at all. */
   ratePending: boolean;
 }>;
-
-/** An estimate or a sum in the billing currency, to hundredths. */
-function formatAmount(amount: number, currency: string): string {
-  return formatFee(amount.toFixed(2), currency);
-}
 
 /**
  * What each subscription bought in the month: the usage it paid for at API

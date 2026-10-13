@@ -23,3 +23,12 @@ export const PROVIDER_COLOR_SCOPE = [
   "[--ai-provider-pi:#e87ba4] dark:[--ai-provider-pi:#d55181]",
   "[--ai-series-1:#2a78d6] dark:[--ai-series-1:#3987e5]",
 ].join(" ");
+
+/**
+ * Colors per billing mode, for the split of the month's total and the bars of
+ * the billing table. They are defined app-wide, so they need no scope.
+ */
+export const BILLING_MODE_COLORS = {
+  api: "var(--viz-1)",
+  subscription: "var(--viz-7)",
+} as const;

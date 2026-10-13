@@ -59,6 +59,8 @@ export function DailySpendChart({
   className?: string;
 }) {
   const [view, setView] = React.useState<View>("chart");
+  // The series the pointer rests on in the legend; the others recede.
+  const [hovered, setHovered] = React.useState<string | null>(null);
   const money = useMoney();
   const { series, rows } = React.useMemo(
     () => dailySpend(report, stackBy, money.perUsd),
@@ -144,9 +146,15 @@ export function DailySpendChart({
       },
       color: {
         domain: series.map((entry) => entry.key),
-        range: series.map((entry) => entry.color),
+        range: series.map((entry) =>
+          hovered === null || hovered === entry.key
+            ? entry.color
+            : `color-mix(in srgb, ${entry.color} 22%, ${SURFACE_COLOR})`,
+        ),
       },
       theme: USAGE_CHART_THEME,
+      // Bars move to their new heights when the currency or a filter changes.
+      svgAnimation: { duration: 350, easing: "ease-out" },
       focus: "group-x",
       focusRing: false,
       tooltip: {
@@ -173,13 +181,13 @@ export function DailySpendChart({
         },
       },
     });
-  }, [rows, series, money]);
+  }, [rows, series, money, hovered]);
 
   return (
     <ChartCard
       className={className}
       title="Estimated spend per day"
-      description={`API-equivalent estimate in ${money.currency}, by local day in ${report.timeZone}. Not a bill.`}
+      description={`By local day in ${report.timeZone}.`}
       actions={
         <>
           <Segmented
@@ -231,13 +239,14 @@ export function DailySpendChart({
                 icon={
                   entry.provider && <AiProviderIcon provider={entry.provider} />
                 }
+                onHover={(on) => setHovered(on ? entry.key : null)}
               />
             ))}
             {unknownDays.length > 0 && (
               <LegendItem
                 shape="ring"
                 color=""
-                label="Includes unpriced usage: cost unknown"
+                label="Includes usage without a known price"
               />
             )}
           </ul>

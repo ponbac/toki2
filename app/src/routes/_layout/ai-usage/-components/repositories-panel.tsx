@@ -1,119 +1,220 @@
 import * as React from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import {
+  Ban,
+  CircleCheck,
+  CircleDashed,
+  Info,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Combobox } from "@/components/combobox";
 import { Button } from "@/components/ui/button";
 import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import { apiErrorMessage } from "@/lib/api/errors";
+import { cn } from "@/lib/utils";
 import { aiProjectMappingMutations } from "@/lib/api/mutations/ai-project-mappings";
 import {
   aiUsageReportQueries,
   type AiUsageProjectKeyList,
 } from "@/lib/api/queries/ai-usage-report";
-import { ChartCard } from "./chart-card";
 import { QueryError } from "./query-state";
+import { RepoKey } from "./repo-key";
 import { useApiErrorMessage } from "../-lib/use-api-error-message";
 import { formatLongDate } from "../-lib/format";
 
 type ProjectKey = AiUsageProjectKeyList["projectKeys"][number];
 
 /**
- * Project keys whose usage is unassigned, with a way to map the ones the user
- * may map or to mark them as personal, and an explanation for the others.
- * The keys the user marked personal follow, with a way to undo that.
+ * The user's repositories that count for no project, by what can be done
+ * about each: the ones to map (or to mark as personal), the ones that cannot
+ * be mapped here and why, and the ones marked personal, with a way to undo
+ * that.
  */
-export function UnassignedKeys({
+export function RepositoriesPanel({
   query,
-  className,
-  id,
 }: {
   query: UseQueryResult<AiUsageProjectKeyList, Error>;
-  className?: string;
-  id?: string;
 }) {
-  const configured = query.data?.timeTrackingConfigured ?? true;
-  const keys =
-    query.data?.projectKeys.filter(
-      (key) => key.status !== "mapped" && key.status !== "personal",
-    ) ?? [];
-  const personal =
-    query.data?.projectKeys.filter((key) => key.status === "personal") ?? [];
-  const mappable = keys.filter((key) => key.mappable);
+  if (query.isPending) {
+    return (
+      <p className="text-sm text-muted-foreground" role="status">
+        Loading repositories…
+      </p>
+    );
+  }
+  if (query.isError) {
+    return (
+      <QueryError
+        message="Could not load your repositories."
+        error={query.error}
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+  const configured = query.data.timeTrackingConfigured;
+  const open = query.data.projectKeys.filter(
+    (key) => key.status !== "mapped" && key.status !== "personal",
+  );
+  const mappable = open.filter((key) => key.mappable);
+  const blocked = open.filter((key) => !key.mappable);
+  const personal = query.data.projectKeys.filter(
+    (key) => key.status === "personal",
+  );
 
-  return (
-    <ChartCard
-      id={id}
-      className={className}
-      title="Unassigned repositories"
-      description={`Usage of these project keys counts for no time-tracking project. A key without a mapping shows its name only to the developers who use it. Mapping it shows the name to admins and applies to everyone's usage of the key, including past usage. A repository that is not client work can be marked ${PERSONAL_LABEL} instead: your usage of it is left out of the bill, and nothing is mapped, so admins do not see its name.`}
-    >
-      {query.isPending ? (
-        <p className="text-sm text-muted-foreground" role="status">
-          Loading project keys…
-        </p>
-      ) : query.isError ? (
-        <QueryError
-          message="Could not load your project keys."
-          error={query.error}
-          onRetry={() => void query.refetch()}
-        />
-      ) : keys.length === 0 && personal.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+  if (open.length === 0 && personal.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border/80 bg-card/60 p-8 text-center">
+        <p className="flex items-center justify-center gap-2 font-medium">
+          <CircleCheck aria-hidden className="size-4 text-[#0ca30c]" />
           All of your usage counts for a project.
         </p>
-      ) : (
-        <div className="space-y-3">
-          {keys.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No repository is waiting to be mapped.
-            </p>
-          )}
-          {!configured && (
-            <p className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs">
-              Time tracking is not configured on this Toki server, so no usage
-              counts for a project and no key can be mapped. Existing mappings
-              apply again once it is configured. Mapping keys cannot fix this;
-              whoever runs Toki has to configure time tracking.
-            </p>
-          )}
-          {mappable.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              You can map a key that has no mapping yet. Once it is mapped, only
-              an admin can change it, so check the project first.
-            </p>
-          )}
-          <ul className="divide-y divide-border/60">
-            {keys.map((key) => (
-              <li key={key.projectKey} className="py-2.5 first:pt-0 last:pb-0">
+        <p className="mt-1 text-sm text-muted-foreground">
+          A repository shows up here when its usage has no time-tracking project
+          yet.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <p className="max-w-3xl text-sm text-muted-foreground">
+        Usage of these repositories counts for no time-tracking project. A
+        repository without a mapping shows its name only to the developers who
+        use it. Mapping it shows the name to admins and applies to
+        everyone&apos;s usage of it, including past usage. One that is not
+        client work can be marked {PERSONAL_LABEL} instead: your usage of it is
+        left out of the bill, and nothing is mapped, so admins do not see its
+        name.
+      </p>
+      {!configured && (
+        <p className="flex max-w-3xl items-start gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs">
+          <Info aria-hidden className="mt-px size-3.5 shrink-0" />
+          Time tracking is not configured on this Toki server, so no usage
+          counts for a project and nothing can be mapped. Existing mappings
+          apply again once it is configured. Mapping cannot fix this; whoever
+          runs Toki has to configure time tracking.
+        </p>
+      )}
+      <div className="grid items-start gap-5 lg:grid-cols-2">
+        <div className="space-y-5">
+          <KeyGroup
+            icon={CircleDashed}
+            title="To map"
+            count={mappable.length}
+            attention={mappable.length > 0}
+            note={
+              mappable.length > 0
+                ? "Once a repository is mapped, only an admin can change it, so check the project first."
+                : "No repository is waiting to be mapped."
+            }
+          >
+            {mappable.map((key) => (
+              <li key={key.projectKey} className="py-3 first:pt-0 last:pb-0">
                 <KeyItem projectKey={key} configured={configured} />
               </li>
             ))}
-          </ul>
-          {personal.length > 0 && (
-            <section
-              aria-labelledby="personal-keys-heading"
-              className="space-y-1.5 border-t border-border/60 pt-3"
+          </KeyGroup>
+          {blocked.length > 0 && (
+            <KeyGroup
+              icon={Ban}
+              title="Cannot be mapped here"
+              count={blocked.length}
             >
-              <h3 id="personal-keys-heading" className="text-sm font-medium">
-                {PERSONAL_LABEL}
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Your usage of these is left out of the bill. Their names are
-                shown only to the developers who use them. If one of them maps a
-                repository to a project, that applies to you too.
-              </p>
-              <ul className="divide-y divide-border/60">
-                {personal.map((key) => (
-                  <li key={key.projectKey} className="py-2 last:pb-0">
-                    <PersonalKeyItem projectKey={key.projectKey} />
-                  </li>
-                ))}
-              </ul>
-            </section>
+              {blocked.map((key) => (
+                <li key={key.projectKey} className="py-3 first:pt-0 last:pb-0">
+                  <KeyItem projectKey={key} configured={configured} />
+                </li>
+              ))}
+            </KeyGroup>
           )}
         </div>
+        {personal.length > 0 && (
+          <KeyGroup
+            icon={UserRound}
+            title={PERSONAL_LABEL}
+            count={personal.length}
+            note="Your usage of these is left out of the bill. Their names are shown only to the developers who use them. If one of them maps a repository to a project, that applies to you too."
+            columns
+          >
+            {personal.map((key) => (
+              <li key={key.projectKey} className="break-inside-avoid">
+                <PersonalKeyItem projectKey={key.projectKey} />
+              </li>
+            ))}
+          </KeyGroup>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One kind of repository: its mark, how many there are, and the list. */
+function KeyGroup({
+  icon: Icon,
+  title,
+  count,
+  attention = false,
+  note,
+  columns = false,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  count: number;
+  /** The group waits for the user: it takes the attention colour. */
+  attention?: boolean;
+  note?: string;
+  /** Lay short rows out in two columns where there is room. */
+  columns?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      aria-label={title}
+      className={cn(
+        "rounded-2xl border bg-card p-5 shadow-sm",
+        attention ? "border-primary/50" : "border-border/70",
       )}
-    </ChartCard>
+    >
+      <header className="flex items-center justify-between gap-3">
+        <h2
+          className={cn(
+            "flex items-center gap-2 text-sm font-semibold",
+            attention && "text-primary",
+          )}
+        >
+          <Icon
+            aria-hidden
+            className={cn("size-4", !attention && "text-muted-foreground")}
+          />
+          {title}
+        </h2>
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums",
+            attention
+              ? "bg-primary/10 text-primary"
+              : "bg-muted text-muted-foreground",
+          )}
+        >
+          {count}
+        </span>
+      </header>
+      {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
+      {count > 0 && (
+        <ul
+          className={cn(
+            "mt-3",
+            columns ? "gap-x-6 sm:columns-2" : "divide-y divide-border/60",
+          )}
+        >
+          {children}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -127,11 +228,8 @@ function KeyItem({
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <p
-          className="min-w-0 truncate font-mono text-sm"
-          title={projectKey.projectKey}
-        >
-          {projectKey.projectKey}
+        <p className="min-w-0 font-mono text-sm">
+          <RepoKey projectKey={projectKey.projectKey} className="max-w-full" />
         </p>
         <p className="text-xs text-muted-foreground">
           Last used {formatLongDate(projectKey.lastUsedOn)}
@@ -207,9 +305,9 @@ function PersonalKeyItem({ projectKey }: { projectKey: string }) {
   });
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-      <p className="min-w-0 truncate font-mono text-sm" title={projectKey}>
-        {projectKey}
+    <div className="group/key flex items-center justify-between gap-2 rounded-md py-0.5">
+      <p className="min-w-0 font-mono text-sm">
+        <RepoKey projectKey={projectKey} className="max-w-full" />
       </p>
       <Button
         type="button"
@@ -218,6 +316,7 @@ function PersonalKeyItem({ projectKey }: { projectKey: string }) {
         disabled={unmark.isPending}
         aria-label={`Undo ${PERSONAL_LABEL} for ${projectKey}`}
         onClick={() => unmark.mutate({ projectKey })}
+        className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
       >
         {unmark.isPending ? "Undoing..." : "Undo"}
       </Button>

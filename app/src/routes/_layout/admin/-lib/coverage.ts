@@ -1,6 +1,7 @@
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import type {
   AiBillingCompleteness,
+  AiDeveloperCompleteness,
   AiMachineCompleteness,
   AiUploadGap,
 } from "@/lib/api/queries/ai-admin";
@@ -41,6 +42,13 @@ export type CoverageTotals = Readonly<{
 
 const NOT_YET = "Not required yet: a sync covers a day once it is over";
 const INACTIVE = "Machine not active this month: nothing required";
+
+/** Readiness that holds billing back. */
+export function needsAttention(developer: AiDeveloperCompleteness): boolean {
+  return (
+    developer.readiness === "noSync" || developer.readiness === "incomplete"
+  );
+}
 
 /** Every local day of `month` (`YYYY-MM`), `YYYY-MM-DD`. */
 export function monthDays(month: string): string[] {

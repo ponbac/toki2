@@ -6,9 +6,8 @@ import type {
   AiUsageTotals,
 } from "@/lib/api/queries/ai-usage-report";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
-import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import {
-  MODEL_SLOTS,
+  MODEL_TINTS,
   OTHER_COLOR,
   PROVIDER_COLORS,
   modelColor,
@@ -43,68 +42,74 @@ export type DailyRow = Readonly<{
 
 const OTHER_KEY = "other";
 
+/** Whether `a` is more usage than `b`: by known cost, then by requests. */
+function outweighs(a: AiUsageTotals, b: AiUsageTotals): boolean {
+  const cost = knownUsd(a.cost) - knownUsd(b.cost);
+  return cost !== 0 ? cost > 0 : a.records > b.records;
+}
+
+/** The tool a model's colour comes from, and its tint among that tool's models. */
+export type ModelTint = Readonly<{ provider: AiProvider; rank: number }>;
+
 /**
- * Colour slots for the models visible under the current filters, ranked by
- * their cost over the whole, unfiltered range. A model keeps its unfiltered
- * slot when that is one of the first `MODEL_SLOTS`, so colours stay put where
- * they can; lower-ranked models take the slots left free, in rank order. Only
- * models beyond every free slot fold into "Other".
+ * The tints of the models visible under the current filters. A model takes
+ * the hue of the tool with most of its usage, and ranks among that tool's
+ * visible models by its cost over the whole, unfiltered range, so its hue
+ * never changes and its tint only when a costlier sibling is filtered out.
+ * Models beyond a tool's `MODEL_TINTS` are absent: they fold into "Other".
  */
-export function modelSlots(
-  visible: readonly string[],
-  unfilteredOrder: readonly string[],
-): ReadonlyMap<string, number> {
-  const rank = new Map(unfilteredOrder.map((model, index) => [model, index]));
-  const ranked = [...new Set(visible)].sort(
+export function modelTints(
+  report: AiUsageReport,
+): ReadonlyMap<string, ModelTint> {
+  const owners = new Map<string, AiUsageReport["models"][number]>();
+  for (const entry of report.models) {
+    const owner = owners.get(entry.model);
+    if (!owner || outweighs(entry.totals, owner.totals)) {
+      owners.set(entry.model, entry);
+    }
+  }
+  const rank = new Map(
+    report.options.models.map((model, index) => [model, index]),
+  );
+  const ranked = [...owners.keys()].sort(
     (a, b) =>
       (rank.get(a) ?? Number.MAX_SAFE_INTEGER) -
         (rank.get(b) ?? Number.MAX_SAFE_INTEGER) || a.localeCompare(b),
   );
-  const slots = new Map<string, number>();
-  const taken = new Set<number>();
+  const tints = new Map<string, ModelTint>();
+  const used = new Map<AiProvider, number>();
   for (const model of ranked) {
-    const preferred = rank.get(model);
-    if (preferred !== undefined && preferred < MODEL_SLOTS) {
-      slots.set(model, preferred);
-      taken.add(preferred);
+    const provider = owners.get(model)?.provider;
+    if (provider === undefined) {
+      continue;
+    }
+    const next = used.get(provider) ?? 0;
+    if (next < MODEL_TINTS) {
+      tints.set(model, { provider, rank: next });
+      used.set(provider, next + 1);
     }
   }
-  const free = Array.from({ length: MODEL_SLOTS }, (_, slot) => slot).filter(
-    (slot) => !taken.has(slot),
-  );
-  for (const model of ranked) {
-    if (!slots.has(model)) {
-      const slot = free.shift();
-      if (slot === undefined) {
-        break;
-      }
-      slots.set(model, slot);
-    }
-  }
-  return slots;
+  return tints;
 }
 
 /**
  * The daily spend chart's series and one row per date of the range, days
- * without usage included. Providers keep fixed colours; models take slots
- * from `modelSlots`, and the rest fold into "Other". Amounts are in the display
- * currency, `perUsd` to the dollar, so that the chart's axis has round steps
- * in it.
+ * without usage included. Providers keep fixed colours; models take tints of
+ * their tool's colour from `modelTints`, stacked tool by tool, and the rest
+ * fold into "Other". Amounts are in the display currency, `perUsd` to the
+ * dollar, so that the chart's axis has round steps in it.
  */
 export function dailySpend(
   report: AiUsageReport,
   stackBy: StackBy,
   perUsd: number,
 ): Readonly<{ series: readonly DailySeries[]; rows: readonly DailyRow[] }> {
-  const slots = modelSlots(
-    report.days.map((day) => day.model),
-    report.options.models,
-  );
+  const tints = modelTints(report);
   const seriesKey = (day: AiUsageReport["days"][number]): string => {
     if (stackBy === "provider") {
       return day.provider;
     }
-    return slots.has(day.model) ? `model:${day.model}` : OTHER_KEY;
+    return tints.has(day.model) ? `model:${day.model}` : OTHER_KEY;
   };
 
   const present = new Set(report.days.map(seriesKey));
@@ -118,12 +123,16 @@ export function dailySpend(
             provider,
           }),
         )
-      : [...slots.entries()]
-          .sort(([, a], [, b]) => a - b)
-          .map(([model, slot]) => ({
+      : [...tints.entries()]
+          .sort(
+            ([, a], [, b]) =>
+              AI_PROVIDERS.indexOf(a.provider) -
+                AI_PROVIDERS.indexOf(b.provider) || a.rank - b.rank,
+          )
+          .map(([model, tint]) => ({
             key: `model:${model}`,
             label: modelLabel(model),
-            color: modelColor(slot),
+            color: modelColor(tint.provider, tint.rank),
           }));
   if (present.has(OTHER_KEY)) {
     series.push({ key: OTHER_KEY, label: "Other models", color: OTHER_COLOR });
@@ -204,92 +213,31 @@ export function addTotals(a: AiUsageTotals, b: AiUsageTotals): AiUsageTotals {
   };
 }
 
-/** One bar of the per-project chart. */
-export type ProjectBar = Readonly<{
-  key: string;
-  label: string;
-  /** Unassigned usage, or several small projects folded together. */
-  deemphasised: boolean;
-  totals: AiUsageTotals;
-}>;
-
-/** What the per-project chart measures. */
-export type ProjectMetric = "cost" | "tokens";
-
-/**
- * The per-project chart's bars, largest first by `metric`: at most `limit`
- * projects, with the rest folded into one bar. Unassigned usage is one bar,
- * and personal usage another.
- */
-export function projectBars(
-  report: AiUsageReport,
-  metric: ProjectMetric,
-  limit = 8,
-): readonly ProjectBar[] {
-  const measure = (totals: AiUsageTotals) =>
-    metric === "cost" ? knownUsd(totals.cost) : totalTokens(totals.tokens);
-  const bars = report.projects
-    .map(
-      (group): ProjectBar => ({
-        key:
-          group.project?.projectId ??
-          (group.personal ? "personal" : "unassigned"),
-        label:
-          group.project?.projectName ??
-          (group.personal ? PERSONAL_LABEL : "Unassigned"),
-        deemphasised: group.project === null,
-        totals: group.totals,
-      }),
-    )
-    .sort((a, b) => measure(b.totals) - measure(a.totals));
-  if (bars.length <= limit) {
-    return bars;
-  }
-
-  const rest = bars.slice(limit - 1);
-  const folded = rest
-    .slice(1)
-    .reduce((sum, bar) => addTotals(sum, bar.totals), rest[0]?.totals ?? EMPTY);
-  return [
-    ...bars.slice(0, limit - 1),
-    {
-      key: "other-projects",
-      label: `${rest.length} more`,
-      deemphasised: true,
-      totals: folded,
-    },
-  ];
-}
-
 const EMPTY: AiUsageTotals = {
   tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
   records: 0,
   cost: { kind: "estimated", usd: 0 },
 };
 
-/** Token counts overall and per provider with usage, in provider order. */
-export function tokenMix(
+/** Usage per tool with any, costliest first, summed over its models. */
+export function toolTotals(
   report: AiUsageReport,
-): readonly Readonly<{ key: string; label: string; tokens: AiTokenCounts }>[] {
-  const byProvider = new Map<AiProvider, AiTokenCounts>();
+): readonly Readonly<{ provider: AiProvider; totals: AiUsageTotals }>[] {
+  const byProvider = new Map<AiProvider, AiUsageTotals>();
   for (const model of report.models) {
     byProvider.set(
       model.provider,
-      addTokens(
-        byProvider.get(model.provider) ?? EMPTY.tokens,
-        model.totals.tokens,
-      ),
+      addTotals(byProvider.get(model.provider) ?? EMPTY, model.totals),
     );
   }
-  const providers = AI_PROVIDERS.flatMap((provider) => {
-    const tokens = byProvider.get(provider);
-    return tokens
-      ? [{ key: provider, label: AI_PROVIDER_LABELS[provider], tokens }]
-      : [];
-  });
-  return providers.length > 1
-    ? [{ key: "all", label: "All", tokens: report.totals.tokens }, ...providers]
-    : providers;
+  return [...byProvider.entries()]
+    .map(([provider, totals]) => ({ provider, totals }))
+    .sort((a, b) => knownUsd(b.totals.cost) - knownUsd(a.totals.cost));
+}
+
+/** How many local days of the report have any usage. */
+export function activeDays(report: AiUsageReport): number {
+  return new Set(report.days.map((day) => day.date)).size;
 }
 
 /** One cell of the hour-of-week heatmap. */

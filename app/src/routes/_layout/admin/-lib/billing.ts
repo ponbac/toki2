@@ -41,8 +41,15 @@ export function lineProject(line: AiBillingLine): {
   return { key: "unassigned", label: UNASSIGNED_LABEL, kind: "unassigned" };
 }
 
+/** The lines no project is charged for: their keys still need a mapping. */
+export function unassignedLines(
+  lines: readonly AiBillingLine[],
+): AiBillingLine[] {
+  return lines.filter((line) => lineProject(line).kind === "unassigned");
+}
+
 /** Exact decimal amount to hundredths. */
-function hundredths(amount: string): number {
+export function hundredths(amount: string): number {
   const [units, cents] = amount.split(".");
   return Number(units) * 100 + Number(cents);
 }
@@ -109,6 +116,11 @@ export function billableTotals(
   return { amounts, unknownRecords, converted, missingCurrencies, usage };
 }
 
+/** An estimate or a sum in the billing currency, to hundredths. */
+export function formatAmount(amount: number, currency: string): string {
+  return formatFee(amount.toFixed(2), currency);
+}
+
 /** Shown where a rate is still being fetched, rather than missing. */
 export const PENDING_RATE_LABEL = "Fetching rate…";
 
@@ -159,15 +171,22 @@ export function lineConverted(
     : amount;
 }
 
-/** Billable amounts side by side per currency, such as `454,19 SEK + 0.75
- * USD`; never summed across currencies. */
-export function formatBillable(totals: BillableTotals): string {
+/** Billable amounts apart per currency, with `unknown` last for unpriced
+ * usage; never summed across currencies. Empty when nothing bills. */
+export function billableParts(totals: BillableTotals): string[] {
   const parts = [...totals.amounts.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([currency, amount]) => formatFee(decimal(amount), currency));
   if (totals.unknownRecords > 0) {
     parts.push("unknown");
   }
+  return parts;
+}
+
+/** Billable amounts side by side per currency, such as `454,19 SEK + 0.75
+ * USD`. */
+export function formatBillable(totals: BillableTotals): string {
+  const parts = billableParts(totals);
   return parts.length > 0 ? parts.join(" + ") : "—";
 }
 

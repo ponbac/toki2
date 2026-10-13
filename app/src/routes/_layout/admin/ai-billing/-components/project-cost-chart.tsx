@@ -13,13 +13,14 @@ import {
 import { costByProject } from "../../-lib/billing";
 import { formatUsd } from "../../-lib/format";
 
-const BAR_SIZE = 16;
-const ROW_HEIGHT = 36;
+const BAR_SIZE = 12;
+const ROW_HEIGHT = 26;
 type Row = Readonly<{ label: string; usd: number; display: string }>;
 
 /**
- * API-equivalent cost per project in the month, one series in one color. The
- * billing table below is its table view and carries every value.
+ * API-equivalent cost per project in the month, one series in one color, kept
+ * short above the billing table: the table's bars show what is billed, which
+ * a subscription makes a different amount. The table carries every value.
  */
 export function ProjectCostChart({
   lines,
@@ -104,15 +105,17 @@ export function ProjectCostChart({
   return (
     <section
       aria-labelledby="project-cost-heading"
-      className="rounded-xl border border-border/60 bg-card/60 p-4"
+      className="rounded-xl border border-border/60 bg-card/60 px-4 py-3"
     >
-      <h2 id="project-cost-heading" className="text-sm font-semibold">
-        API-equivalent cost by project
-      </h2>
-      <p className="mb-3 text-xs text-muted-foreground">
-        What each project&apos;s usage would cost at API prices, whether a
-        subscription or API billing pays for it.
-      </p>
+      <div className="mb-1 flex flex-wrap items-baseline gap-x-3">
+        <h3 id="project-cost-heading" className="text-sm font-semibold">
+          API-equivalent cost by project
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          What each project&apos;s usage would cost at API prices, whether a
+          subscription or API billing pays for it.
+        </p>
+      </div>
       <Chart
         definition={definition}
         height={rows.length * ROW_HEIGHT + 32}

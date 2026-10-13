@@ -154,21 +154,28 @@ export function ChartTooltipFrame({
 
 /**
  * A legend entry: a swatch shaped like the mark, and a text-coloured label.
- * An `icon` in the series colour stands in for the swatch.
+ * An `icon` in the series colour stands in for the swatch. With `onHover`,
+ * pointing at the entry tells the chart to bring its series forward.
  */
 export function LegendItem({
   color,
   label,
   shape = "rect",
   icon,
+  onHover,
 }: {
   color: string;
   label: React.ReactNode;
   shape?: "rect" | "ring";
   icon?: React.ReactNode;
+  onHover?: (hovered: boolean) => void;
 }) {
   return (
-    <li className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <li
+      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      onPointerEnter={onHover && (() => onHover(true))}
+      onPointerLeave={onHover && (() => onHover(false))}
+    >
       {icon ? (
         icon
       ) : shape === "rect" ? (
