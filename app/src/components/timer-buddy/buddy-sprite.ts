@@ -24,6 +24,18 @@ const ANIM_SPEED: Partial<Record<BuddyAnimName, number>> = {
 };
 
 /**
+ * Seconds of standing idle before each idle gesture. Looped back to back, as
+ * the sheets are timed, a yawn or a stuck-out tongue repeats every second.
+ */
+const IDLE_REST_S = { min: 5, max: 20 };
+
+function idleRestTicks(): number {
+  const seconds =
+    IDLE_REST_S.min + Math.random() * (IDLE_REST_S.max - IDLE_REST_S.min);
+  return seconds * 60;
+}
+
+/**
  * Draws one Pokemon from its atlas into an absolutely positioned element.
  * `x`/`y` are where the feet stand, relative to the element's offset parent.
  */
@@ -40,6 +52,11 @@ export class BuddySprite {
   private facing: BuddyFacing = "D";
   private frame = 0;
   private ticks = 0;
+  /**
+   * Idle ticks left before the idle gesture plays. It only runs down while
+   * idling and survives other animations, so short idles still add up to one.
+   */
+  private restTicks = idleRestTicks();
   private looping = true;
   private onEnd: (() => void) | null = null;
   private drawnTransform = "";
@@ -86,6 +103,11 @@ export class BuddySprite {
       return;
     }
 
+    if (this.restTicks <= 0) {
+      // Cut off during an idle gesture: count that as the gesture, or it would
+      // start over as soon as the buddy idles again.
+      this.restTicks = idleRestTicks();
+    }
     this.anim = anim;
     this.frame = 0;
     this.ticks = 0;
@@ -102,7 +124,11 @@ export class BuddySprite {
   /** Advances the animation by `dt` seconds and redraws. */
   tick(dt: number): void {
     const durations = this.sheet.anims[this.anim].durations;
-    this.ticks += dt * 60 * (ANIM_SPEED[this.anim] ?? 1);
+    const elapsed = dt * 60 * (ANIM_SPEED[this.anim] ?? 1);
+    const resting = this.anim === "Idle" && this.looping;
+    const rested = resting ? Math.min(this.restTicks, elapsed) : 0;
+    this.restTicks -= rested;
+    this.ticks += elapsed - rested;
 
     let duration = durations[this.frame] ?? 1;
     while (this.ticks >= duration) {
@@ -111,6 +137,11 @@ export class BuddySprite {
       if (this.frame >= durations.length) {
         if (this.looping) {
           this.frame = 0;
+          if (this.anim === "Idle") {
+            this.ticks = 0;
+            this.restTicks = idleRestTicks();
+            break;
+          }
         } else {
           this.frame = durations.length - 1;
           this.ticks = 0;
