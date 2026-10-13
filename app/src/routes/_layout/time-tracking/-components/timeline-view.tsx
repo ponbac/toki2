@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/tooltip";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { COLORS, withAlpha, buildProjectColorMap } from "./colors";
-import { useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
 import { TimeEntryEditDialog } from "./time-entry-edit-dialog";
 import {
   ActiveTimerBlock,
@@ -585,17 +584,13 @@ export function TimelineView({
   absenceEntries,
   dateRange,
 }: TimelineViewProps) {
-  const { state: timerState } = useTimeTrackingTimer();
-
   const [mode, setMode] = useState<TimelineMode>("week");
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
   const [activeTimerNow, setActiveTimerNow] = useState(() => new Date());
 
   const { data: activeTimer } = useQuery({
     ...timeTrackingQueries.getTimer(),
-    enabled: timerState === "running" || timerState === undefined,
-    refetchInterval:
-      timerState === "running" || timerState === undefined ? 60_000 : false,
+    enabled: false,
     select: (data) => data.timer,
   });
   const normalizedActiveTimer = activeTimer ?? null;
