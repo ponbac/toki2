@@ -1,6 +1,7 @@
 import { CmdK } from "@/components/cmd-k";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { FloatingTimer } from "@/components/floating-timer";
+import { TimerBuddyIntro } from "@/components/timer-buddy/buddy-intro";
 import { SideNavWrapper } from "@/components/side-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -71,6 +72,7 @@ function TimerProvider() {
           <TimerBuddy />
         </Suspense>
       )}
+      <TimerBuddyIntro />
       {!!timer && (
         <TimerEditDialog
           open={editTimerDialogOpen}

@@ -8,7 +8,7 @@ import { BuddySprite } from "./buddy-sprite";
 
 const PREVIEW_SIZE = 64;
 
-/** A small tile showing one buddy idling, for the settings dialog. */
+/** A small tile showing one buddy idling. */
 export function BuddyPreview({
   speciesId,
   className,

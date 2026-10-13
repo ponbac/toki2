@@ -12,14 +12,12 @@ export type BuddyEnergy = "calm" | "lively";
  */
 const READ_ON_INIT = { getOnInit: true };
 
-/** Whether the timer buddy is shown at all. */
-export const timerBuddyEnabledAtom = atomWithStorage(
+const storedEnabledAtom = atomWithStorage<unknown>(
   "timer-buddy-enabled",
-  true,
+  null,
   undefined,
   READ_ON_INIT,
 );
-
 const storedSpeciesAtom = atomWithStorage<unknown>(
   "timer-buddy-species",
   null,
@@ -31,6 +29,22 @@ const storedEnergyAtom = atomWithStorage<unknown>(
   "calm",
   undefined,
   READ_ON_INIT,
+);
+
+/** Whether the timer buddy is shown. It stays off until the user turns it on. */
+export const timerBuddyEnabledAtom = atom(
+  (get) => get(storedEnabledAtom) === true,
+  (_get, set, enabled: boolean) => {
+    set(storedEnabledAtom, enabled);
+  },
+);
+
+/**
+ * Whether the user has said yes or no to the buddy, in the intro toast or in
+ * the settings. Until then the intro toast offers it.
+ */
+export const timerBuddyAnsweredAtom = atom(
+  (get) => typeof get(storedEnabledAtom) === "boolean",
 );
 
 /**
