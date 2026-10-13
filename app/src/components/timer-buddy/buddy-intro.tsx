@@ -78,8 +78,11 @@ function IntroCard({ speciesId }: { speciesId: BuddySpeciesId }) {
         <p className="text-sm font-medium">Want a timer buddy?</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {buddySpeciesName(speciesId)} can live on your timer and react when
-          you save time. Click your avatar to pick another Pokemon or turn it
-          off.
+          you save time. Click your avatar
+          {/* The avatar is only in the corner on the wide, side-nav layout. */}
+          <span className="hidden md:inline"> in the top left corner</span>
+          <span className="md:hidden"> in the top bar</span> to pick another
+          Pokemon or turn it off.
         </p>
         <div className="mt-2.5 flex gap-2">
           <Button type="button" size="sm" onClick={() => setEnabled(true)}>
