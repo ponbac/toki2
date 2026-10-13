@@ -39,10 +39,10 @@ assets.
 - #0026 Raichu: CHUNSOFT
 - #0027 Sandshrew: CHUNSOFT
 - #0028 Sandslash: CHUNSOFT, Emmuffin
-- #0029 Nidoran_F: CHUNSOFT
+- #0029 Nidoran♀: CHUNSOFT
 - #0030 Nidorina: CHUNSOFT
 - #0031 Nidoqueen: CHUNSOFT
-- #0032 Nidoran_M: CHUNSOFT
+- #0032 Nidoran♂: CHUNSOFT
 - #0033 Nidorino: CHUNSOFT
 - #0034 Nidoking: CHUNSOFT
 - #0035 Clefairy: CHUNSOFT
@@ -93,7 +93,7 @@ assets.
 - #0080 Slowbro: CHUNSOFT
 - #0081 Magnemite: CHUNSOFT
 - #0082 Magneton: CHUNSOFT
-- #0083 Farfetch_d: CHUNSOFT
+- #0083 Farfetch'd: CHUNSOFT
 - #0084 Doduo: CHUNSOFT
 - #0085 Dodrio: CHUNSOFT
 - #0086 Seel: CHUNSOFT
@@ -132,7 +132,7 @@ assets.
 - #0119 Seaking: CHUNSOFT
 - #0120 Staryu: CHUNSOFT
 - #0121 Starmie: CHUNSOFT
-- #0122 Mr_Mime: CHUNSOFT
+- #0122 Mr. Mime: CHUNSOFT
 - #0123 Scyther: CHUNSOFT
 - #0124 Jynx: CHUNSOFT
 - #0125 Electabuzz: CHUNSOFT
@@ -260,7 +260,7 @@ assets.
 - #0247 Pupitar: CHUNSOFT
 - #0248 Tyranitar: CHUNSOFT
 - #0249 Lugia: CHUNSOFT
-- #0250 Ho_Oh: CHUNSOFT
+- #0250 Ho-Oh: CHUNSOFT
 - #0251 Celebi: CHUNSOFT
 - #0252 Treecko: CHUNSOFT
 - #0253 Grovyle: CHUNSOFT, Deeshura
@@ -449,7 +449,7 @@ assets.
 - #0436 Bronzor: CHUNSOFT
 - #0437 Bronzong: CHUNSOFT
 - #0438 Bonsly: CHUNSOFT
-- #0439 Mime_Jr_: CHUNSOFT
+- #0439 Mime Jr.: CHUNSOFT
 - #0440 Happiny: CHUNSOFT
 - #0441 Chatot: CHUNSOFT
 - #0442 Spiritomb: CHUNSOFT
@@ -484,7 +484,7 @@ assets.
 - #0471 Glaceon: CHUNSOFT, JFain
 - #0472 Gliscor: CHUNSOFT
 - #0473 Mamoswine: CHUNSOFT
-- #0474 Porygon_Z: CHUNSOFT
+- #0474 Porygon-Z: CHUNSOFT
 - #0475 Gallade: CHUNSOFT
 - #0476 Probopass: CHUNSOFT
 - #0477 Dusknoir: CHUNSOFT
