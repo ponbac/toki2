@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Toki buddies: playground mock</title>
+<style>
+  :root {
+    --bg: hsl(222 25% 8%);
+    --card: hsl(222 22% 11%);
+    --elev: hsl(222 20% 13%);
+    --border: hsl(222 15% 18%);
+    --fg: hsl(40 20% 92%);
+    --muted: hsl(40 10% 55%);
+    --dim: hsl(40 8% 45%);
+    --primary: hsl(38 95% 55%);
+    --secondary: hsl(222 18% 16%);
+    --green: #199e70;
+    --blue: #3987e5;
+    --red: #e66767;
+    --pink: #d55181;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  .stage { position: relative; height: 1000px; overflow: hidden; border-radius: 14px; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; grid-template-columns: 1fr; user-select: none; }
+  .side { display: none !important; }
+  @media (min-width: 1000px) {
+    .stage { grid-template-columns: 196px 1fr; height: 920px; }
+    .side { display: flex !important; }
+  }
+
+  /* ---------- sidebar ---------- */
+  .side { border-right: 1px solid var(--border); padding: 20px 14px; display: flex; flex-direction: column; gap: 4px;
+    background: linear-gradient(180deg, hsl(222 24% 9%), hsl(222 25% 7%)); }
+  .logo { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px; margin: 0 6px 22px; }
+  .logo i { width: 26px; height: 26px; border-radius: 8px; background: var(--primary); display: grid; place-items: center;
+    color: var(--bg); font-style: normal; font-size: 14px; }
+  .nav { padding: 8px 10px; border-radius: 8px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+  .nav b { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid currentColor; opacity: .7; }
+  .nav.on { background: var(--secondary); color: var(--fg); }
+  .nav.on b { border-color: var(--primary); background: hsl(38 95% 55% / .25); }
+  .side .spacer { flex: 1; }
+  .me { border: 1px solid var(--border); background: var(--card); border-radius: 12px; padding: 10px; display: flex; gap: 10px;
+    align-items: center; margin-bottom: 30px; }
+  .me .av { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #c98500, #d95926); }
+  .me small { color: var(--muted); display: block; }
+
+  /* ---------- main ---------- */
+  .main { padding: 22px 20px; position: relative; }
+  .head { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; justify-content: space-between; padding-top: 44px; margin-bottom: 26px; }
+  .head h1 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
+  .head p { margin: 4px 0 0; color: var(--muted); }
+  .head p kbd { font: inherit; color: var(--fg); background: var(--secondary); border: 1px solid var(--border);
+    border-radius: 5px; padding: 0 5px; }
+  .controls { display: flex; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 8px; }
+  .controls select, .controls button { font: inherit; color: var(--fg); background: var(--secondary);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  .controls button.primary { background: var(--primary); color: var(--bg); border-color: transparent; font-weight: 600; }
+  .controls .count { color: var(--muted); padding: 0 6px; min-width: 84px; text-align: center; }
+
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 22px; row-gap: 30px; align-items: start; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+  .card h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; }
+  .card h3 span { color: var(--muted); font-weight: 400; }
+  .stat { grid-column: span 3; height: 92px; }
+  .stat .k { color: var(--muted); }
+  .stat .v { font-size: 21px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .stat .v small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 6px; }
+  .c-week { grid-column: 1 / span 7; height: 290px; }
+  .c-prs { grid-column: 8 / span 5; height: 320px; }
+  .c-entries { grid-column: 1 / span 5; height: 262px; }
+  .c-ai { grid-column: 6 / span 4; height: 214px; }
+  .c-notes { grid-column: 10 / span 3; height: 150px; }
+  .grid.alt .c-week { grid-column: 6 / span 7; height: 250px; }
+  .grid.alt .c-prs { grid-column: 1 / span 5; height: 300px; }
+  .grid.alt .c-entries { grid-column: 1 / span 4; height: 240px; }
+  .grid.alt .c-ai { grid-column: 5 / span 5; height: 190px; }
+  .grid.alt .stat:nth-child(2) { grid-column: span 4; }
+  .grid.alt .stat:nth-child(3) { grid-column: span 2; }
+
+  .bars { display: flex; align-items: flex-end; gap: 14px; height: 196px; padding: 8px 6px 0; border-bottom: 1px solid var(--border); }
+  .bars div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; height: 100%; }
+  .bars i { width: 100%; max-width: 46px; border-radius: 6px 6px 2px 2px; background: hsl(38 95% 55% / .85); display: block; }
+  .bars i.under { background: hsl(222 15% 30%); }
+  .days { display: flex; gap: 14px; padding: 6px 6px 0; color: var(--muted); }
+  .days span { flex: 1; text-align: center; }
+  .row { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); }
+  .row:first-of-type { border-top: 0; }
+  .row .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .t small { display: block; color: var(--muted); }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--secondary); color: var(--muted); flex: none; }
+  .pill.ok { color: var(--green); } .pill.warn { color: var(--primary); }
+  .meter { height: 10px; border-radius: 99px; background: var(--secondary); overflow: hidden; margin: 6px 0 14px; }
+  .meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--blue), #9085e9); }
+  .note { color: var(--muted); }
+
+  .timer { position: absolute; right: 18px; bottom: 18px; width: 320px; height: 78px; background: var(--elev);
+    border: 1px solid hsl(38 95% 55% / .35); border-radius: 16px; display: flex; align-items: center; gap: 14px; padding: 0 16px;
+    box-shadow: 0 12px 40px hsl(222 40% 3% / .6); z-index: 5; }
+  .timer .time { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .timer .what { flex: 1; color: var(--muted); }
+  .timer .what b { color: var(--fg); font-weight: 500; display: block; }
+  .timer button { width: 34px; height: 34px; border-radius: 10px; border: 0; background: var(--primary); }
+
+  /* ---------- buddies ---------- */
+  .buddy-layer { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
+  .buddy { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+  .buddy-spr { position: absolute; pointer-events: auto; cursor: grab; image-rendering: pixelated; background-repeat: no-repeat; }
+  .buddy.dragging .buddy-spr { cursor: grabbing; }
+  .buddy-tag { position: absolute; left: 0; transform: translateX(-50%); white-space: nowrap; pointer-events: none;
+    font: 600 10px/1.3 ui-monospace, monospace; background: hsl(222 25% 6% / .92); border: 1px solid var(--border);
+    color: var(--fg); padding: 4px 7px; border-radius: 7px; opacity: 0; transition: opacity .15s; }
+  .buddy-tag small { color: var(--muted); font-weight: 400; display: block; }
+  .buddy-tag .en { height: 3px; background: var(--secondary); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  .buddy-tag .en i { display: block; height: 100%; background: var(--green); }
+  .buddy:hover .buddy-tag, .buddy.dragging .buddy-tag { opacity: 1; }
+  .buddy.climbing .buddy-tag { display: none; }
+
+  .fx { position: absolute; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -100%);
+    font: 700 14px/1 ui-monospace, monospace; animation: rise 1.3s ease-out forwards; text-shadow: 0 1px 0 #000; }
+  .fx.heart { color: #ff6b9a; } .fx.bang { color: var(--primary); } .fx.note { color: #8fd3ff; }
+  .fx.zz { color: #b9b4ff; font-size: 11px; animation-duration: 2s; }
+  .fx.pow { color: #fff; background: var(--red); padding: 2px 4px; border-radius: 4px; font-size: 10px; }
+  .fx.dust { width: 6px; height: 6px; border-radius: 50%; background: hsl(40 10% 70% / .7); animation: dust .5s ease-out forwards; }
+  .fx.poof { width: 40px; height: 40px; border-radius: 50%; border: 3px solid hsl(40 20% 92% / .8); animation: poof .45s ease-out forwards; transform: translate(-50%, -50%); }
+  @keyframes rise { 0% { opacity: 0; translate: 0 6px; } 15% { opacity: 1; } 100% { opacity: 0; translate: 0 -26px; } }
+  @keyframes dust { to { opacity: 0; translate: var(--dx) -6px; scale: .4; } }
+  @keyframes poof { from { scale: .3; opacity: 1; } to { scale: 1.4; opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <aside class="side">
+    <div class="logo"><i>t</i>Toki</div>
+    <div class="nav on"><b></b>Time tracking</div>
+    <div class="nav"><b></b>Pull requests</div>
+    <div class="nav"><b></b>AI usage</div>
+    <div class="nav"><b></b>Notifications</div>
+    <div class="nav"><b></b>Repositories</div>
+    <div class="spacer"></div>
+    <div class="me" data-perch><div class="av"></div><div>You<small>Lunar Hall</small></div></div>
+  </aside>
+
+  <main class="main">
+    <div class="head">
+      <div>
+        <h1>This week</h1>
+        <p>Mock: Pokémon roam the cards. <kbd>drag</kbd> to pick one up and throw it, <kbd>click</kbd> to poke, <kbd>double-click</kbd> to send it home.</p>
+      </div>
+      <div class="controls" data-perch>
+        <select id="species"></select>
+        <button class="primary" id="add">+ Add</button>
+        <button id="jump">Everyone jump</button>
+        <button id="layout">Rearrange cards</button>
+        <span class="count" id="count"></span>
+      </div>
+    </div>
+
+    <div class="grid" id="grid">
+      <div class="card stat" data-perch><div class="k">Logged this week</div><div class="v">31h 20m<small>/ 40h</small></div></div>
+      <div class="card stat" data-perch><div class="k">Today</div><div class="v">5h 12m<small>/ 8h</small></div></div>
+      <div class="card stat" data-perch><div class="k">Flex balance</div><div class="v" style="color:var(--green)">+3h 40m</div></div>
+      <div class="card stat" data-perch><div class="k">Open PRs</div><div class="v">7<small>2 need review</small></div></div>
+
+      <div class="card c-week" data-perch>
+        <h3>Hours per day <span>Week 42</span></h3>
+        <div class="bars">
+          <div><i style="height:92%"></i></div><div><i style="height:100%"></i></div><div><i style="height:84%"></i></div>
+          <div><i style="height:96%"></i></div><div><i class="under" style="height:58%"></i></div>
+          <div><i class="under" style="height:4%"></i></div><div><i class="under" style="height:4%"></i></div>
+        </div>
+        <div class="days"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+      </div>
+
+      <div class="card c-prs" data-perch>
+        <h3>Pull requests <span>Azure DevOps</span></h3>
+        <div class="row"><span class="dot" style="background:var(--green)"></span><div class="t">Refresh AI usage and active timers<small>toki2 · #178</small></div><span class="pill ok">Approved</span></div>
+        <div class="row"><span class="dot" style="background:var(--primary)"></span><div class="t">Redraw intro video for usage page<small>toki2 · #177</small></div><span class="pill warn">2 comments</span></div>
+        <div class="row"><span class="dot" style="background:var(--blue)"></span><div class="t">Kleer adapter: paginate projects<small>toki2 · #171</small></div><span class="pill">Draft</span></div>
+        <div class="row"><span class="dot" style="background:var(--primary)"></span><div class="t">Rest between the buddy's idle gestures<small>toki2 · #175</small></div><span class="pill warn">Waiting</span></div>
+        <div class="row"><span class="dot" style="background:var(--green)"></span><div class="t">Prevent vertical scroll in tabs<small>toki2 · #176</small></div><span class="pill ok">Merged</span></div>
+      </div>
+
+      <div class="card c-entries" data-perch>
+        <h3>Recent entries <span>Kleer</span></h3>
+        <div class="row"><span class="dot" style="background:var(--blue)"></span><div class="t">Toki · Feature work<small>Timer buddy physics</small></div><span class="pill">2h 05m</span></div>
+        <div class="row"><span class="dot" style="background:var(--pink)"></span><div class="t">Internal · Meetings<small>Weekly sync</small></div><span class="pill">0h 45m</span></div>
+        <div class="row"><span class="dot" style="background:var(--blue)"></span><div class="t">Toki · Code review<small>#177, #178</small></div><span class="pill">1h 10m</span></div>
+        <div class="row"><span class="dot" style="background:var(--green)"></span><div class="t">Customer X · Support<small>Release follow-up</small></div><span class="pill">1h 12m</span></div>
+      </div>
+
+      <div class="card c-ai" data-perch>
+        <h3>AI usage <span>October</span></h3>
+        <div class="note">Tokens this month</div>
+        <div class="meter"><i style="width:64%"></i></div>
+        <div class="note">Sessions</div>
+        <div class="meter"><i style="width:38%"></i></div>
+        <div class="note">Cost: $41.20 of $80</div>
+      </div>
+
+      <div class="card c-notes" data-perch>
+        <h3>Notes</h3>
+        <div class="note">Generate notes from linked work items when saving.</div>
+      </div>
+    </div>
+
+    <div class="timer" data-perch>
+      <button title="Stop"></button>
+      <div class="time" id="clock">01:23:45</div>
+      <div class="what"><b>Toki · Feature work</b>Timer buddy physics</div>
+    </div>
+  </main>
+
+  <div class="buddy-layer" id="layer"></div>
+</div>
+
+<script>
+const SHEETS = {"25":{"name":"Pikachu","anims":{"Idle":{"w":40,"h":56,"durations":[40,2,3,3,3,2],"top":8,"foot":33,"rows":{"D":0,"DR":56,"R":112}},"Walk":{"w":32,"h":40,"durations":[8,10,8,10],"top":0,"foot":25,"rows":{"D":168,"R":208}},"Sleep":{"w":32,"h":40,"durations":[30,35],"top":3,"foot":27,"rows":{"D":248}},"Hop":{"w":40,"h":88,"durations":[2,1,2,3,4,4,3,2,1,2],"top":24,"foot":49,"rows":{"D":288}},"Hurt":{"w":48,"h":64,"durations":[2,8],"top":3,"foot":33,"rows":{"D":376}},"Rotate":{"w":32,"h":40,"durations":[2,2,2,2,2,2,2,2,2],"top":0,"foot":25,"rows":{"D":440}},"Charge":{"w":40,"h":40,"durations":[2,2,2,2,2,2,2,2,2,2],"top":1,"foot":25,"rows":{"D":480,"R":520}},"Attack":{"w":80,"h":80,"durations":[2,4,1,1,1,2,2,2,2,4],"top":22,"foot":46,"rows":{"R":560}},"Swing":{"w":80,"h":96,"durations":[2,1,2,2,3,2,2,1,1],"top":29,"foot":54,"rows":{"R":640}},"Double":{"w":64,"h":64,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":15,"foot":38,"rows":{"R":736}}},"url":"buddy/25.webp"},"4":{"name":"Charmander","anims":{"Idle":{"w":32,"h":40,"durations":[12,8,8,8],"top":4,"foot":26,"rows":{"D":0,"DR":40,"R":80}},"Walk":{"w":32,"h":32,"durations":[6,8,6,8],"top":0,"foot":22,"rows":{"D":120,"R":152}},"Sleep":{"w":32,"h":24,"durations":[30,35],"top":0,"foot":19,"rows":{"D":184}},"Hop":{"w":32,"h":88,"durations":[2,1,2,3,4,4,3,2,1,2],"top":28,"foot":50,"rows":{"D":208}},"Hurt":{"w":48,"h":56,"durations":[2,8],"top":2,"foot":30,"rows":{"D":296}},"Rotate":{"w":24,"h":32,"durations":[2,2,2,2,2,2,2,2,2],"top":0,"foot":22,"rows":{"D":352}},"Charge":{"w":32,"h":40,"durations":[2,2,2,2,2,2,2,2,2,2],"top":1,"foot":26,"rows":{"D":384,"R":424}},"Attack":{"w":64,"h":64,"durations":[2,2,4,2,2,2,2,2,2,2,2],"top":18,"foot":39,"rows":{"R":464}},"Swing":{"w":72,"h":80,"durations":[2,1,2,2,3,2,2,1,1],"top":26,"foot":47,"rows":{"R":528}},"Double":{"w":56,"h":56,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":14,"foot":35,"rows":{"R":608}}},"url":"buddy/4.webp"},"7":{"name":"Squirtle","anims":{"Idle":{"w":32,"h":32,"durations":[30,2,2,4,4,4,2,2],"top":3,"foot":21,"rows":{"D":0,"DR":32,"R":64}},"Walk":{"w":32,"h":32,"durations":[12,8,12,8],"top":3,"foot":21,"rows":{"D":96,"R":128}},"Sleep":{"w":24,"h":24,"durations":[30,35],"top":1,"foot":18,"rows":{"D":160}},"Hop":{"w":32,"h":72,"durations":[2,1,2,3,4,4,3,2,1,2],"top":23,"foot":41,"rows":{"D":184}},"Hurt":{"w":40,"h":56,"durations":[2,8],"top":6,"foot":30,"rows":{"D":256}},"Rotate":{"w":32,"h":32,"durations":[2,2,2,2,2,2,2,2,2],"top":3,"foot":21,"rows":{"D":312}},"Charge":{"w":32,"h":32,"durations":[2,2,2,2,2,2,2,2,2,2],"top":6,"foot":21,"rows":{"D":344,"R":376}},"Attack":{"w":64,"h":72,"durations":[2,4,1,1,1,2,2,2,2,2],"top":23,"foot":42,"rows":{"R":408}},"Swing":{"w":80,"h":80,"durations":[2,1,2,2,3,2,2,1,1],"top":29,"foot":47,"rows":{"R":480}},"Double":{"w":56,"h":56,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":17,"foot":35,"rows":{"R":560}}},"url":"buddy/7.webp"},"1":{"name":"Bulbasaur","anims":{"Idle":{"w":32,"h":40,"durations":[40,6,6],"top":6,"foot":27,"rows":{"D":0,"DR":40,"R":80}},"Walk":{"w":40,"h":40,"durations":[4,4,4,4,4,4],"top":6,"foot":27,"rows":{"D":120,"R":160}},"Sleep":{"w":24,"h":24,"durations":[30,35],"top":0,"foot":20,"rows":{"D":200}},"Hop":{"w":32,"h":80,"durations":[2,1,2,3,4,4,3,2,1,2],"top":26,"foot":47,"rows":{"D":224}},"Hurt":{"w":40,"h":56,"durations":[2,8],"top":3,"foot":33,"rows":{"D":304}},"Rotate":{"w":24,"h":32,"durations":[2,2,2,2,2,2,2,2,2],"top":2,"foot":23,"rows":{"D":360}},"Charge":{"w":32,"h":40,"durations":[2,2,2,2,2,2,2,2,2,2],"top":4,"foot":25,"rows":{"D":392,"R":432}},"Attack":{"w":64,"h":72,"durations":[4,2,4,2,2,2,2,2,2,2,4],"top":24,"foot":42,"rows":{"R":472}},"Swing":{"w":72,"h":72,"durations":[2,1,2,2,3,2,2,1,1],"top":24,"foot":42,"rows":{"R":544}},"Double":{"w":48,"h":56,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":16,"foot":34,"rows":{"R":616}}},"url":"buddy/1.webp"},"133":{"name":"Eevee","anims":{"Idle":{"w":24,"h":32,"durations":[16,16],"top":4,"foot":22,"rows":{"D":0,"DR":32,"R":64}},"Walk":{"w":40,"h":48,"durations":[4,4,4,4,6,2,2],"top":9,"foot":30,"rows":{"D":96,"R":144}},"Sleep":{"w":32,"h":24,"durations":[30,35],"top":0,"foot":18,"rows":{"D":192}},"Hop":{"w":32,"h":80,"durations":[2,1,2,3,4,4,3,2,1,2],"top":25,"foot":46,"rows":{"D":216}},"Hurt":{"w":48,"h":48,"durations":[2,8],"top":3,"foot":28,"rows":{"D":296}},"Rotate":{"w":24,"h":32,"durations":[2,2,2,2,2,2,2,2,2],"top":1,"foot":22,"rows":{"D":344}},"Charge":{"w":24,"h":40,"durations":[2,2,2,2,2,2,2,2,2,2],"top":4,"foot":27,"rows":{"D":376,"R":416}},"Attack":{"w":64,"h":72,"durations":[4,2,2,2,2,2,2,2,4,4,4],"top":20,"foot":41,"rows":{"R":456}},"Swing":{"w":80,"h":72,"durations":[2,1,2,2,3,2,2,1,1],"top":20,"foot":41,"rows":{"R":528}},"Double":{"w":48,"h":64,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":16,"foot":37,"rows":{"R":600}}},"url":"buddy/133.webp"},"39":{"name":"Jigglypuff","anims":{"Idle":{"w":24,"h":32,"durations":[25,8,15,8,15],"top":4,"foot":22,"rows":{"D":0,"DR":32,"R":64}},"Walk":{"w":32,"h":40,"durations":[6,4,4,4,6],"top":8,"foot":26,"rows":{"D":96,"R":136}},"Sleep":{"w":24,"h":24,"durations":[35,35],"top":2,"foot":20,"rows":{"D":176}},"Hop":{"w":24,"h":80,"durations":[2,1,2,3,4,4,3,2,1,2],"top":28,"foot":46,"rows":{"D":200}},"Hurt":{"w":40,"h":48,"durations":[2,8],"top":1,"foot":26,"rows":{"D":280}},"Rotate":{"w":24,"h":32,"durations":[2,2,2,2,2,2,2,2,2],"top":4,"foot":22,"rows":{"D":328}},"Charge":{"w":24,"h":24,"durations":[2,2,2,2,2,2,2,2,2,2],"top":1,"foot":18,"rows":{"D":360,"R":384}},"Attack":{"w":72,"h":80,"durations":[2,2,6,1,1,2,2,2,2,2,2,2,2],"top":27,"foot":47,"rows":{"R":408}},"Swing":{"w":72,"h":80,"durations":[2,1,2,2,3,2,2,1,1],"top":26,"foot":45,"rows":{"R":488}},"Double":{"w":48,"h":64,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":18,"foot":39,"rows":{"R":568}}},"url":"buddy/39.webp"},"94":{"name":"Gengar","anims":{"Idle":{"w":32,"h":40,"durations":[40,4,3,3,3,3,3,4],"top":4,"foot":26,"rows":{"D":0,"DR":40,"R":80}},"Walk":{"w":32,"h":40,"durations":[8,10,8,10],"top":4,"foot":26,"rows":{"D":120,"R":160}},"Sleep":{"w":32,"h":40,"durations":[30,35],"top":3,"foot":30,"rows":{"D":200}},"Hop":{"w":32,"h":80,"durations":[2,1,2,3,4,4,3,2,1,2],"top":24,"foot":46,"rows":{"D":240}},"Hurt":{"w":48,"h":56,"durations":[2,8],"top":3,"foot":31,"rows":{"D":320}},"Rotate":{"w":32,"h":40,"durations":[2,2,2,2,2,2,2,2,2],"top":4,"foot":26,"rows":{"D":376}},"Charge":{"w":32,"h":40,"durations":[2,2,2,2,2,2,2,2,2,2],"top":5,"foot":30,"rows":{"D":416,"R":456}},"Attack":{"w":72,"h":80,"durations":[4,2,4,1,1,1,2,2,2,2,4],"top":22,"foot":47,"rows":{"R":496}},"Swing":{"w":72,"h":80,"durations":[2,1,2,2,3,2,2,1,1],"top":22,"foot":47,"rows":{"R":576}},"Double":{"w":56,"h":64,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":14,"foot":39,"rows":{"R":656}}},"url":"buddy/94.webp"},"143":{"name":"Snorlax","anims":{"Idle":{"w":32,"h":64,"durations":[40,1,3,4,3,1],"top":11,"foot":38,"rows":{"D":0,"DR":64,"R":128}},"Walk":{"w":32,"h":48,"durations":[8,10,8,10],"top":3,"foot":30,"rows":{"D":192,"R":240}},"Sleep":{"w":40,"h":24,"durations":[30,35],"top":0,"foot":19,"rows":{"D":288}},"Hop":{"w":32,"h":96,"durations":[2,1,2,3,4,4,3,2,1,2],"top":27,"foot":54,"rows":{"D":312}},"Hurt":{"w":48,"h":64,"durations":[2,8],"top":3,"foot":35,"rows":{"D":408}},"Rotate":{"w":32,"h":48,"durations":[2,2,2,2,2,2,2,2,2],"top":3,"foot":30,"rows":{"D":472}},"Charge":{"w":32,"h":48,"durations":[2,2,2,2,2,2,2,2,2,2],"top":7,"foot":30,"rows":{"D":520,"R":568}},"Attack":{"w":64,"h":88,"durations":[2,8,1,1,1,2,2,2,2,2],"top":21,"foot":54,"rows":{"R":616}},"Swing":{"w":72,"h":80,"durations":[2,1,2,2,3,2,2,1,1],"top":17,"foot":48,"rows":{"R":704}},"Double":{"w":56,"h":80,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":16,"foot":49,"rows":{"R":784}}},"url":"buddy/143.webp"},"54":{"name":"Psyduck","anims":{"Idle":{"w":24,"h":40,"durations":[16,20,16,20],"top":2,"foot":26,"rows":{"D":0,"DR":40,"R":80}},"Walk":{"w":24,"h":40,"durations":[8,12,8,12],"top":2,"foot":26,"rows":{"D":120,"R":160}},"Sleep":{"w":24,"h":40,"durations":[35,35],"top":3,"foot":27,"rows":{"D":200}},"Hop":{"w":32,"h":80,"durations":[2,1,2,3,4,4,3,2,1,2],"top":22,"foot":46,"rows":{"D":240}},"Hurt":{"w":40,"h":56,"durations":[2,8],"top":1,"foot":31,"rows":{"D":320}},"Rotate":{"w":24,"h":40,"durations":[2,2,2,2,2,2,2,2,2],"top":2,"foot":26,"rows":{"D":376}},"Charge":{"w":24,"h":40,"durations":[2,2,2,2,2,2,2,2,2,2],"top":4,"foot":26,"rows":{"D":416,"R":456}},"Attack":{"w":72,"h":72,"durations":[4,2,4,2,2,2,2,2,2,2,4],"top":19,"foot":43,"rows":{"R":496}},"Swing":{"w":72,"h":80,"durations":[2,1,2,2,3,2,2,1,1],"top":25,"foot":46,"rows":{"R":568}},"Double":{"w":56,"h":64,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":15,"foot":39,"rows":{"R":648}}},"url":"buddy/54.webp"},"197":{"name":"Umbreon","anims":{"Idle":{"w":24,"h":48,"durations":[60,10,2,2,2,2,2,2,2,2,2,2,2,10],"top":6,"foot":32,"rows":{"D":0,"DR":48,"R":96}},"Walk":{"w":32,"h":40,"durations":[8,8,8,8],"top":2,"foot":28,"rows":{"D":144,"R":184}},"Sleep":{"w":32,"h":32,"durations":[30,35],"top":1,"foot":23,"rows":{"D":224}},"Hop":{"w":32,"h":88,"durations":[2,1,2,3,4,4,3,2,1,2],"top":24,"foot":54,"rows":{"D":256}},"Hurt":{"w":56,"h":64,"durations":[2,8],"top":3,"foot":34,"rows":{"D":344}},"Rotate":{"w":24,"h":40,"durations":[2,2,2,2,2,2,2,2,2],"top":2,"foot":28,"rows":{"D":408}},"Charge":{"w":32,"h":40,"durations":[2,2,2,2,2,2,2,2,2,2],"top":0,"foot":30,"rows":{"D":448,"R":488}},"Attack":{"w":64,"h":72,"durations":[2,6,1,1,1,2,2,2,2,4],"top":20,"foot":42,"rows":{"R":528}},"Swing":{"w":72,"h":80,"durations":[2,1,2,2,3,2,2,1,1],"top":21,"foot":46,"rows":{"R":600}},"Double":{"w":56,"h":64,"durations":[2,2,2,2,2,2,3,3,3,2,3,2,2,2,2,2],"top":14,"foot":38,"rows":{"R":680}}},"url":"buddy/197.webp"}};
+
+const S = 2;               // screen px per sprite px, as in the app
+const G = 1500;            // gravity, px/s²
+const MAX_BUDDIES = 12;
+const SPEED = { Attack: .5, Swing: .5, Double: .55, Rotate: .45, Charge: .5, Hurt: .45 };
+const TRAITS = [
+  { label: "Adventurous", climb: 2.2 },
+  { label: "Bouncy", jump: 2.2 },
+  { label: "Lazy", sleep: 3, slow: .75 },
+  { label: "Curious", social: 2 },
+  { label: "Calm" },
+];
+
+const stage = document.getElementById("stage");
+const layer = document.getElementById("layer");
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.min(Math.max(v, a), Math.max(a, b));
+const weighted = (opts) => {
+  let r = Math.random() * opts.reduce((s, o) => s + o[0], 0);
+  for (const [w, f] of opts) { if ((r -= w) <= 0) return f; }
+  return opts[opts.length - 1][1];
+};
+
+/* ---------- world: every [data-perch] element is a platform; tall ones also have two climbable walls ---------- */
+let world = { plats: [], walls: [], w: 0, h: 0 };
+const perchEls = [...document.querySelectorAll("[data-perch]")];
+perchEls.forEach((el, i) => (el.dataset.perchId = "p" + i));
+
+function measure() {
+  const s = stage.getBoundingClientRect();
+  const plats = [], walls = [];
+  for (const el of perchEls) {
+    const r = el.getBoundingClientRect();
+    const left = r.left - s.left, right = r.right - s.left, top = r.top - s.top, bottom = r.bottom - s.top;
+    const id = el.dataset.perchId;
+    plats.push({ id, left, right, x1: left + 12, x2: right - 12, y: top, bottom });
+    if (bottom - top > 70) {
+      walls.push({ id: id + "L", plat: id, side: "L", x: left, y1: top, y2: bottom });
+      walls.push({ id: id + "R", plat: id, side: "R", x: right, y1: top, y2: bottom });
+    }
+  }
+  plats.push({ id: "floor", floor: true, left: 0, right: s.width, x1: 10, x2: s.width - 10, y: s.height - 3, bottom: s.height });
+  world = { plats, walls, w: s.width, h: s.height };
+}
+const platById = (id) => world.plats.find((p) => p.id === id);
+const wallById = (id) => world.walls.find((w) => w.id === id);
+
+/** Jumps worth taking from where the buddy stands: across gutters, up past an edge, or down beside its platform. */
+function jumpPlans(P) {
+  const plans = [];
+  for (const q of world.plats) {
+    if (q.id === P.id || q.x2 - q.x1 < 30) continue;
+    const dy = q.y - P.y;
+    if (dy < -4) {
+      if (dy < -165) continue;                     // too high: climb instead
+      for (const launch of [q.left - 18, q.right + 18]) {
+        if (launch < P.x1 || launch > P.x2) continue;
+        if (blockedAbove(launch, P.y, q.y)) continue;
+        plans.push({ q, launch, land: launch < q.left ? q.x1 + 6 : q.x2 - 6 });
+      }
+    } else if (dy <= 4) {
+      if (q.left > P.right && q.left - P.right < 110) plans.push({ q, launch: P.x2, land: q.x1 + 6 });
+      if (q.right < P.left && P.left - q.right < 110) plans.push({ q, launch: P.x1, land: q.x2 - 6 });
+    } else if (dy < 420) {
+      if (q.x1 < P.left - 20) plans.push({ q, launch: P.x1, land: clamp(P.left - rand(30, 90), q.x1, q.x2) });
+      if (q.x2 > P.right + 20) plans.push({ q, launch: P.x2, land: clamp(P.right + rand(30, 90), q.x1, q.x2) });
+    }
+  }
+  return plans;
+}
+function blockedAbove(x, fromY, toY) {
+  return world.plats.some((o) => !o.floor && x > o.left && x < o.right && o.y < fromY - 4 && o.bottom > toY + 4);
+}
+
+/** Card sides the buddy can reach from its platform and climb to the card's top. */
+function climbPlans(P) {
+  const plans = [];
+  for (const w of world.walls) {
+    if (w.plat === P.id || w.y1 > P.y - 40) continue;
+    const gap = P.y - w.y2;
+    if (gap < -2 || gap > 80) continue;
+    const stand = w.side === "L" ? w.x - 2 : w.x + 2;
+    if (stand < P.x1 - 10 || stand > P.x2 + 10) continue;
+    plans.push({ w, stand: clamp(stand, P.left, P.right) });
+  }
+  return plans;
+}
+
+function fx(x, y, cls, text = "", extra = {}) {
+  const el = document.createElement("div");
+  el.className = "fx " + cls;
+  el.textContent = text;
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+  for (const [k, v] of Object.entries(extra)) el.style.setProperty(k, v);
+  layer.append(el);
+  setTimeout(() => el.remove(), 2100);
+}
+function dust(x, y) {
+  for (const dx of [-14, -6, 6, 14]) fx(x + dx * .6, y, "dust", "", { "--dx": dx + "px" });
+}
+
+/* ---------- one Pokemon with its own little life ---------- */
+const buddies = [];
+const GROUNDED = new Set(["idle", "walk", "sleep", "gesture"]);
+
+class Buddy {
+  constructor(sheet, x, y) {
+    Object.assign(this, { sheet, x, y, vx: 0, vy: 0, rot: 0, mode: "fall", platId: null, lastLeft: 0,
+      anim: "Idle", facing: "D", frame: 0, ticks: 0, loop: true, onEnd: null, freeze: false,
+      wait: 0, next: null, ignore: null, cool: performance.now() + 3000, zz: 0 });
+    this.trait = pick(TRAITS);
+    this.level = Math.floor(rand(4, 42));
+    this.energy = rand(.55, 1);
+    this.speed = rand(38, 58) * (this.trait.slow ?? 1);
+
+    this.root = document.createElement("div");
+    this.root.className = "buddy";
+    this.spr = document.createElement("div");
+    this.spr.className = "buddy-spr";
+    this.spr.style.backgroundImage = `url(${sheet.url})`;
+    this.spr.style.backgroundSize = `${sheet.aw * S}px ${sheet.ah * S}px`;
+    this.tag = document.createElement("div");
+    this.tag.className = "buddy-tag";
+    this.tag.style.top = -(this.body + 34) + "px";
+    this.root.append(this.spr, this.tag);
+    layer.append(this.root);
+    this.bindPointer();
+    this.play("Rotate", "D");
+  }
+
+  get body() { const i = this.sheet.anims.Idle; return Math.max(8, i.foot - i.top) * S; }
+  get head() { return { x: this.x, y: this.y - this.body - 6 }; }
+
+  play(anim, facing, { loop = true, onEnd = null } = {}) {
+    if (facing) this.facing = facing;
+    this.freeze = false;
+    if (this.anim === anim && loop && this.loop) return;
+    Object.assign(this, { anim, frame: 0, ticks: 0, loop, onEnd });
+  }
+
+  tickAnim(dt) {
+    if (this.freeze) return;
+    const d = this.sheet.anims[this.anim].durations;
+    // Hold the first idle frame a while so gestures don't loop back to back.
+    const slow = this.anim === "Idle" && this.frame === 0 ? .12 : 1;
+    this.ticks += dt * 60 * (SPEED[this.anim] ?? 1) * slow;
+    while (this.ticks >= d[this.frame]) {
+      this.ticks -= d[this.frame];
+      if (++this.frame >= d.length) {
+        if (this.loop) { this.frame = 0; continue; }
+        this.frame = d.length - 1; this.ticks = 0;
+        const f = this.onEnd; this.onEnd = null; f?.();
+        break;
+      }
+    }
+  }
+
+  draw() {
+    const a = this.sheet.anims[this.anim];
+    const mirrored = this.facing === "L" || this.facing === "DL";
+    const row = this.facing === "L" ? "R" : this.facing === "DL" ? "DR" : this.facing;
+    const ry = a.rows[row] ?? a.rows.D ?? a.rows.R ?? 0;
+    const st = this.spr.style;
+    st.width = a.w * S + "px";
+    st.height = a.h * S + "px";
+    st.left = -a.w * S / 2 + "px";
+    st.top = -a.foot * S + "px";
+    st.backgroundPosition = `${-this.frame * a.w * S}px ${-ry * S}px`;
+    st.transform = mirrored ? "scaleX(-1)" : "";
+    this.root.style.transform = `translate(${Math.round(this.x)}px, ${Math.round(this.y)}px) rotate(${this.rot}deg)`;
+    this.root.classList.toggle("climbing", this.mode === "climb");
+  }
+
+  label() {
+    return { idle: "hanging out", walk: "wandering", sleep: "napping", gesture: "showing off", jump: "jumping",
+      fall: "wheee", climb: "climbing", drag: "help!" }[this.mode];
+  }
+  renderTag() {
+    this.tag.innerHTML = `${this.sheet.name} <span style="color:var(--muted)">Lv${this.level}</span>` +
+      `<small>${this.trait.label} · ${this.label()}</small><div class="en"><i style="width:${Math.round(this.energy * 100)}%"></i></div>`;
+  }
+
+  /* --- decisions --- */
+  toIdle(wait) {
+    this.mode = "idle";
+    this.play("Idle", pick(["D", "D", "DR", "DL"]));
+    this.wait = wait ?? rand(1, 3.5) * (this.trait.sleep ? 1.6 : 1);
+  }
+
+  decide(P) {
+    const t = this.trait, opts = [];
+    if (this.energy < .25) opts.push([80, () => this.sleep()]);
+    opts.push([30, () => this.walkTo(clamp(this.x + rand(-180, 180), P.x1, P.x2))]);
+    opts.push([9, () => this.gesture()]);
+    opts.push([3 * (t.sleep ?? 1), () => this.sleep()]);
+    const friend = buddies.find((b) => b !== this && b.platId === P.id && GROUNDED.has(b.mode));
+    if (friend) opts.push([10 * (t.social ?? 1), () => this.walkTo(clamp(friend.x + (friend.x > this.x ? -28 : 28), P.x1, P.x2))]);
+    const jumps = jumpPlans(P);
+    if (jumps.length) opts.push([26 * (t.jump ?? 1), () => this.doJump(pick(jumps))]);
+    const climbs = climbPlans(P);
+    if (climbs.length) opts.push([22 * (t.climb ?? 1), () => this.doClimb(pick(climbs))]);
+    if (!P.floor) opts.push([7, () => this.dropOff(P)]);
+    weighted(opts)();
+  }
+
+  walkTo(tx, then) {
+    if (Math.abs(tx - this.x) < 4) { then ? then() : this.toIdle(); return; }
+    this.mode = "walk"; this.tx = tx; this.next = then ?? null;
+  }
+
+  gesture() {
+    this.mode = "gesture";
+    const side = this.facing === "L" || this.facing === "DL" ? "L" : "R";
+    this.play(pick(["Hop", "Double", "Swing", "Charge"]), side, { loop: false, onEnd: () => this.toIdle() });
+    if (Math.random() < .5) fx(this.head.x, this.head.y, "note", "♪");
+  }
+
+  sleep() {
+    this.mode = "sleep";
+    this.play("Sleep", "D");
+    this.wait = rand(6, 14) * (this.trait.sleep ? 1.6 : 1);
+  }
+
+  poke() {
+    if (!GROUNDED.has(this.mode)) return;
+    const wasAsleep = this.mode === "sleep";
+    this.mode = "gesture";
+    this.play("Hop", "D", { loop: false, onEnd: () => this.toIdle() });
+    fx(this.head.x, this.head.y, wasAsleep ? "bang" : "heart", wasAsleep ? "!" : "♥");
+  }
+
+  jumpTo(tx, ty, arc, onLand) {
+    const dist = Math.hypot(tx - this.x, ty - this.y);
+    this.mode = "jump";
+    this.j = { x0: this.x, y0: this.y, x1: tx, y1: ty, cy: Math.min(this.y, ty) - arc * 2, onLand };
+    this.u = 0;
+    this.T = .32 + dist / 750;
+    this.energy = Math.max(0, this.energy - .03);
+    const facing = tx < this.x - 2 ? "L" : tx > this.x + 2 ? "R" : this.facing;
+    if (ty - this.y > 160 && Math.random() < .6) this.play("Rotate", "D");
+    else { this.play("Walk", facing); this.frame = 1; this.freeze = true; }
+  }
+
+  doJump({ q, launch, land }) {
+    this.walkTo(launch, () => {
+      this.mode = "gesture";
+      this.play("Charge", launch < land ? "R" : "L", { loop: false, onEnd: () => {
+        const Q = platById(q.id);
+        if (!Q) return this.toIdle();
+        this.jumpTo(clamp(land, Q.x1, Q.x2), Q.y, rand(28, 50), () => this.land(Q));
+      } });
+    });
+  }
+
+  doClimb({ w, stand }) {
+    this.walkTo(stand, () => {
+      const W = wallById(w.id);
+      if (!W) return this.toIdle();
+      const startY = Math.min(this.y, W.y2 - 10);
+      const begin = () => { this.mode = "climb"; this.wallId = W.id; this.x = W.x; this.rot = W.side === "L" ? -90 : 90; };
+      if (this.y - startY > 10) this.jumpTo(W.x, startY, 12, begin);
+      else begin();
+    });
+  }
+
+  dropOff(P) {
+    const left = Math.random() < .5;
+    this.walkTo(left ? P.x1 : P.x2, () => {
+      this.ignore = P.id; this.ignoreY = P.y;
+      this.x = left ? P.left - 4 : P.right + 4;
+      this.startFall(left ? -70 : 70, -160);
+      this.play("Walk", left ? "L" : "R"); this.frame = 1; this.freeze = true;
+    });
+  }
+
+  startFall(vx, vy) {
+    this.mode = "fall"; this.platId = null; this.vx = vx; this.vy = vy; this.rot = 0;
+  }
+
+  land(P, impact = 0) {
+    Object.assign(this, { platId: P.id, lastLeft: P.left, y: P.y, vx: 0, vy: 0, rot: 0, ignore: null });
+    this.x = clamp(this.x, P.x1, P.x2);
+    if (impact > 950) {
+      this.mode = "gesture";
+      dust(this.x, this.y);
+      this.play("Hurt", "D", { loop: false, onEnd: () => this.toIdle() });
+      fx(this.head.x, this.head.y, "pow", "OOF");
+    } else {
+      if (impact > 300) dust(this.x, this.y);
+      this.toIdle(rand(.4, 1.4));
+    }
+  }
+
+  /* --- per-frame --- */
+  update(dt) {
+    if (GROUNDED.has(this.mode)) {
+      const P = platById(this.platId);
+      if (!P) { this.startFall(0, 0); }
+      else {
+        this.x += P.left - this.lastLeft; this.lastLeft = P.left; this.y = P.y;
+        if (this.x < P.left - 2 || this.x > P.right + 2) this.startFall(0, 0);
+        else this.think(P, dt);
+      }
+    } else this.think(null, dt);
+    this.tickAnim(dt);
+    this.draw();
+  }
+
+  think(P, dt) {
+    switch (this.mode) {
+      case "idle":
+        this.energy = Math.min(1, this.energy + dt * .004);
+        if ((this.wait -= dt) <= 0) this.decide(P);
+        break;
+      case "walk": {
+        const step = this.speed * dt, d = this.tx - this.x;
+        this.energy = Math.max(0, this.energy - dt * .006);
+        if (Math.abs(d) <= step) {
+          this.x = this.tx;
+          const n = this.next; this.next = null;
+          n ? n() : this.toIdle();
+        } else { this.x += Math.sign(d) * step; this.play("Walk", d < 0 ? "L" : "R"); }
+        break;
+      }
+      case "sleep":
+        this.energy = Math.min(1, this.energy + dt * .06);
+        if ((this.zz -= dt) <= 0) { this.zz = 1.6; fx(this.head.x + 10, this.head.y + 8, "zz", "z"); }
+        if ((this.wait -= dt) <= 0) this.toIdle(rand(.5, 1.5));
+        break;
+      case "jump": {
+        this.u += dt / this.T;
+        const u = Math.min(1, this.u), j = this.j;
+        this.x = j.x0 + (j.x1 - j.x0) * u;
+        this.y = (1 - u) ** 2 * j.y0 + 2 * u * (1 - u) * j.cy + u * u * j.y1;
+        if (u >= 1) j.onLand();
+        break;
+      }
+      case "climb": {
+        const W = wallById(this.wallId);
+        if (!W) { this.startFall(0, 0); break; }
+        this.x = W.x;
+        this.y -= 46 * (this.trait.slow ?? 1) * dt;
+        this.energy = Math.max(0, this.energy - dt * .012);
+        this.play("Walk", W.side === "L" ? "R" : "L");
+        if (this.y <= W.y1) {
+          const Q = platById(W.plat);
+          this.y = W.y1; this.rot = 0;
+          if (!Q) { this.startFall(0, 0); break; }
+          this.jumpTo(W.side === "L" ? Q.x1 + 4 : Q.x2 - 4, Q.y, 16, () => this.land(Q));
+        }
+        break;
+      }
+      case "fall": {
+        const py = this.y;
+        this.vy += G * dt;
+        this.vx *= Math.pow(.5, dt);
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        if (this.x < 14) { this.x = 14; this.vx = Math.abs(this.vx) * .5; }
+        if (this.x > world.w - 14) { this.x = world.w - 14; this.vx = -Math.abs(this.vx) * .5; }
+        if (this.ignore && this.y > this.ignoreY + 2) this.ignore = null;
+        if (this.vy > 0) {
+          let hit = null;
+          for (const p of world.plats) {
+            if (p.id === this.ignore || this.x < p.x1 - 6 || this.x > p.x2 + 6) continue;
+            if (py <= p.y + 1 && this.y >= p.y && (!hit || p.y < hit.y)) hit = p;
+          }
+          if (hit) this.land(hit, this.vy);
+        }
+        break;
+      }
+    }
+  }
+
+  bindPointer() {
+    const s = this.spr;
+    s.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      s.setPointerCapture(e.pointerId);
+      this.drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, lx: e.clientX, ly: e.clientY, lt: e.timeStamp, vx: 0, vy: 0 };
+    });
+    s.addEventListener("pointermove", (e) => {
+      const d = this.drag;
+      if (!d || d.id !== e.pointerId) return;
+      if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 5) {
+        d.moved = true;
+        this.mode = "drag"; this.platId = null; this.rot = 0;
+        this.root.classList.add("dragging");
+        this.play("Hurt", "D", { loop: false });
+      }
+      if (!d.moved) return;
+      const r = stage.getBoundingClientRect(), dtm = Math.max(1, e.timeStamp - d.lt) / 1000;
+      d.vx = d.vx * .5 + ((e.clientX - d.lx) / dtm) * .5;
+      d.vy = d.vy * .5 + ((e.clientY - d.ly) / dtm) * .5;
+      d.lx = e.clientX; d.ly = e.clientY; d.lt = e.timeStamp;
+      this.x = e.clientX - r.left;
+      this.y = e.clientY - r.top + this.body * .7;
+    });
+    const end = (e) => {
+      const d = this.drag;
+      if (!d || d.id !== e.pointerId) return;
+      this.drag = null;
+      this.root.classList.remove("dragging");
+      if (!d.moved) return this.poke();
+      this.startFall(clamp(d.vx, -1100, 1100), clamp(d.vy, -1100, 600));
+      if (Math.hypot(d.vx, d.vy) > 500) { this.play("Rotate", "D"); fx(this.head.x, this.head.y, "bang", "!"); }
+    };
+    s.addEventListener("pointerup", end);
+    s.addEventListener("pointercancel", end);
+    s.addEventListener("dblclick", () => this.remove());
+  }
+
+  remove() {
+    fx(this.x, this.y - this.body / 2, "poof");
+    this.root.remove();
+    buddies.splice(buddies.indexOf(this), 1);
+    updateCount();
+  }
+}
+
+/* ---------- meetings: two Pokemon bumping into each other on the same card ---------- */
+function meetings(now) {
+  for (let i = 0; i < buddies.length; i++) for (let k = i + 1; k < buddies.length; k++) {
+    const a = buddies[i], b = buddies[k];
+    if (a.platId !== b.platId || !a.platId) continue;
+    if (!(a.mode === "idle" || a.mode === "walk") || !(b.mode === "idle" || b.mode === "walk")) continue;
+    if (Math.abs(a.x - b.x) > 40 || now < a.cool || now < b.cool) continue;
+    a.cool = b.cool = now + rand(9000, 16000);
+    a.mode = b.mode = "gesture"; a.next = b.next = null;
+    const fa = b.x > a.x ? "R" : "L", fb = fa === "R" ? "L" : "R";
+    if (Math.random() < .7) {
+      const mood = pick([["heart", "♥"], ["note", "♪"], ["bang", "!"]]);
+      fx(a.head.x, a.head.y, mood[0], mood[1]);
+      setTimeout(() => fx(b.head.x, b.head.y, mood[0], mood[1]), 250);
+      a.play("Hop", fa, { loop: false, onEnd: () => a.toIdle() });
+      b.play(pick(["Hop", "Double"]), fb, { loop: false, onEnd: () => b.toIdle() });
+    } else {
+      a.play("Attack", fa, { loop: false, onEnd: () => a.toIdle() });
+      b.play("Idle", fb);
+      setTimeout(() => {
+        if (b.mode !== "gesture") return;
+        fx(b.head.x, b.head.y, "pow", "POW");
+        b.play("Hurt", "D", { loop: false, onEnd: () => b.toIdle() });
+      }, 380);
+    }
+  }
+}
+
+/* ---------- controls ---------- */
+const select = document.getElementById("species");
+for (const id of Object.keys(SHEETS)) select.add(new Option(SHEETS[id].name, id));
+select.add(new Option("Random", "random"), 0);
+select.value = "random";
+
+function spawn(id, x = rand(260, world.w - 60)) {
+  if (buddies.length >= MAX_BUDDIES) return;
+  const key = id === "random" ? pick(Object.keys(SHEETS)) : id;
+  const b = new Buddy(SHEETS[key], x, -40);
+  b.startFall(rand(-40, 40), rand(0, 200));
+  buddies.push(b);
+  updateCount();
+}
+function updateCount() {
+  document.getElementById("count").textContent = `${buddies.length} / ${MAX_BUDDIES} in party`;
+}
+document.getElementById("add").onclick = () => spawn(select.value);
+document.getElementById("jump").onclick = () => {
+  for (const b of buddies) if (GROUNDED.has(b.mode)) {
+    b.startFall(rand(-160, 160), rand(-720, -480));
+    b.play("Rotate", "D");
+  }
+};
+document.getElementById("layout").onclick = () => document.getElementById("grid").classList.toggle("alt");
+
+/* ---------- loop ---------- */
+let last = performance.now(), tagT = 0, secs = 5025;
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000);
+  last = now;
+  measure();
+  for (const b of [...buddies]) b.update(dt);
+  meetings(now);
+  if ((tagT -= dt) <= 0) { tagT = .25; for (const b of buddies) b.renderTag(); }
+  requestAnimationFrame(frame);
+}
+setInterval(() => {
+  secs++;
+  const p = (n) => String(n).padStart(2, "0");
+  document.getElementById("clock").textContent = `${p(Math.floor(secs / 3600))}:${p(Math.floor(secs / 60) % 60)}:${p(secs % 60)}`;
+}, 1000);
+
+Promise.all(Object.values(SHEETS).map((sh) => new Promise((ok) => {
+  const img = new Image();
+  img.onload = () => { sh.aw = img.naturalWidth; sh.ah = img.naturalHeight; ok(); };
+  img.src = sh.url;
+}))).then(() => {
+  measure();
+  updateCount();
+  ["25", "4", "7", "133", "94"].forEach((id, i) => setTimeout(() => spawn(id), 250 + i * 450));
+  requestAnimationFrame(frame);
+});
+</script>
+</body>
+</html>
