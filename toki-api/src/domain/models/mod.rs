@@ -10,6 +10,11 @@ mod ai_usage_numeric;
 mod ai_usage_report;
 mod api_token;
 mod avatar;
+#[allow(
+    dead_code,
+    reason = "only the engine uses the battle types until the buddy battles API stores battles"
+)]
+mod battle;
 mod ids;
 mod project;
 mod time_tracking_user;
@@ -27,6 +32,7 @@ pub use ai_usage_completeness::*;
 pub use ai_usage_report::*;
 pub use api_token::*;
 pub use avatar::*;
+pub use battle::*;
 pub use ids::*;
 pub use project::*;
 pub use time_tracking_user::*;

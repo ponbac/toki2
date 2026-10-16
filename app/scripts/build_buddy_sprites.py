@@ -26,6 +26,10 @@ Get the source (sparse, only the files this script reads):
 Then, from `app/`:
 
     uv run scripts/build_buddy_sprites.py --source /path/to/SpriteCollab
+    bun run buddy:dex
+
+The second command regenerates the battle dex, `toki-api/data/buddy_dex.json`, which
+must list exactly the species built here.
 """
 
 from __future__ import annotations
@@ -335,6 +339,10 @@ def main() -> int:
     total_bytes = sum(f.stat().st_size for f in args.out.iterdir())
     print(f"built {len(species)} species, {total_bytes / 1_000_000:.1f} MB in {args.out}")
     print(f"skipped {len(skipped)}: {skipped}")
+    print(
+        "next: run `bun run buddy:dex` from app/ to regenerate "
+        "toki-api/data/buddy_dex.json for these species"
+    )
     return 0
 
 
