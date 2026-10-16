@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            profile.user_id,\n            profile.enabled,\n            profile.battle_notifications,\n            profile.xp_since,\n            profile.hours_synced_at,\n            profile.hours_sync_attempted_at,\n            buddy.slot AS \"slot?\",\n            buddy.species_id AS \"species_id?\",\n            buddy.visible AS \"visible?\",\n            buddy.xp_base AS \"xp_base?\"\n        FROM buddy_profiles AS profile\n        LEFT JOIN buddies AS buddy ON buddy.user_id = profile.user_id\n        WHERE profile.user_id = $1\n        ORDER BY buddy.slot\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "battle_notifications",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "xp_since",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "hours_synced_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "hours_sync_attempted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "slot?",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 7,
+        "name": "species_id?",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "visible?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "xp_base?",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1b386b43af42658074b291279a676e9ea8a954ac3b86261d821e4849396aa14e"
+}

@@ -6,6 +6,7 @@ mod ai_usage;
 mod ai_usage_report;
 mod api_tokens;
 mod avatar;
+mod buddy;
 mod time_tracking;
 mod work_items;
 
@@ -17,5 +18,6 @@ pub use ai_usage::*;
 pub use ai_usage_report::*;
 pub use api_tokens::*;
 pub use avatar::*;
+pub use buddy::*;
 pub use time_tracking::*;
 pub use work_items::*;

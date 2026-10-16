@@ -170,6 +170,14 @@ impl WeeklyStats {
     }
 }
 
+/// The hours worked on one day: project-backed time entries, including time logged
+/// directly in the provider. Absences do not count.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DailyHours {
+    pub date: Date,
+    pub worked_hours: f64,
+}
+
 /// Request to create a new time entry directly (without timer).
 #[derive(Debug, Clone)]
 pub struct CreateTimeEntryRequest {

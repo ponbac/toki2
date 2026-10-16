@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE buddy_profiles\n            SET hours_synced_at = now()\n            WHERE user_id = $1\n            RETURNING hours_synced_at AS \"hours_synced_at!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hours_synced_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "99a16308a7fbd518b055aa53d8a8e05c0fbeb9afa1a3b128747c81b8f17eae82"
+}

@@ -92,6 +92,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - Kleer support confirmed on 2026-04-27 that flex balance is not directly available through the API. Toki estimates period flex as `coveredHours - scheduledHours`, where `coveredHours = workedHours + absenceHours`.
 - `periodFlexHours` is a selected-period estimate, not Kleer's stored historical flex balance and not Milltime's previous `FlexTimeCurrent` equivalent.
 - Absence hours come from projectless normal Kleer events whose activity id resolves to a known absence activity. Project-backed events count as worked hours; unknown projectless events count as neither worked nor absence hours.
+- `get_daily_hours` reads worked hours per date for buddy XP with one `GET /event` call for the whole range: project-backed events, summed by date. Absences and unknown projectless events are left out.
 - Weekly scheduled hours come from the payroll schedule endpoint. Use `actual-hours` from `payroll-user-schedule-metadatas`; it accounts for employment rate and bank holidays.
 
 ## Absence Reporting

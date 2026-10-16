@@ -39,6 +39,11 @@ impl TimeTrackingServiceError {
             message: message.into(),
         }
     }
+
+    /// Whether the user is not connected to a time tracking user (`not_connected`).
+    pub fn is_not_connected(&self) -> bool {
+        self.status == StatusCode::CONFLICT
+    }
 }
 
 /// Factory trait for creating TimeTrackingService instances from authenticated Toki users.

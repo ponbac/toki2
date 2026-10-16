@@ -75,3 +75,27 @@ _Avoid_: unused subscription
 **Uploaded day**:
 A local day for which a machine's syncs prove its stored usage of a provider is complete: the union of its logged sync intervals, each from the window start to the window end or the report time, whichever is earlier, spans the whole day. Billing a month waits until every machine active in it has uploaded every day for each provider it uses.
 _Avoid_: synced day (a sync can end mid-day)
+
+**Buddy**:
+A pixel-art companion shown next to the timer, of a species that has sprites and battle data. A user enrols by answering whether they want one and choosing its species, and can switch it off without losing it. Each user has a lead and, later, a partner; they level up from the user's Buddy XP and battle colleagues' buddies and the daily trainer.
+_Avoid_: pet, avatar, mascot
+
+**Lead**:
+A user's first buddy, chosen on enrolment. It always fights, and fights first; its XP is the user's total Buddy XP.
+_Avoid_: main buddy, primary buddy
+
+**Partner**:
+A user's second buddy, which unlocks when the lead reaches Lv 10. It earns only the Buddy XP gained after it was first set. It can change species or be hidden, never removed, and a hidden partner still fights. When both users have a partner they battle two against two, otherwise lead against lead.
+_Avoid_: second buddy, sidekick
+
+**Buddy XP**:
+What a user's buddies level up from: 60 per hour logged on a local day, for at most 10 hours a day, from the day the user enrolled, plus 20 for each battle the user starts, whatever its result. Logged hours are project-backed time entries, including time logged directly in the time-tracking provider; absences do not count. Recent days are read again, so later edits count. Changing a buddy's species keeps its XP and level.
+_Avoid_: points, experience
+
+**Battle level**:
+The level a buddy fights at: 47 plus a fifteenth of its level, from about 47.1 for a new buddy to 53.7 at Lv 100. A veteran buddy has an edge over a new one, never an overwhelming one.
+_Avoid_: effective level
+
+**Daily trainer**:
+A computer-controlled opponent that everyone shares for one local day: two species drawn by the date, both Lv 25, and a name from a fixed list. Each user may battle it once a day, apart from the hourly limit on battling colleagues.
+_Avoid_: NPC, boss, bot

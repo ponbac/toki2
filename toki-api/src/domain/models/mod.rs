@@ -15,6 +15,7 @@ mod avatar;
     reason = "only the engine uses the battle types until the buddy battles API stores battles"
 )]
 mod battle;
+mod buddy;
 mod ids;
 mod project;
 mod time_tracking_user;
@@ -33,6 +34,7 @@ pub use ai_usage_report::*;
 pub use api_token::*;
 pub use avatar::*;
 pub use battle::*;
+pub use buddy::*;
 pub use ids::*;
 pub use project::*;
 pub use time_tracking_user::*;

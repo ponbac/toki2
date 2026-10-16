@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE buddy_profiles\n            SET enabled = COALESCE($2, enabled),\n                battle_notifications = COALESCE($3, battle_notifications),\n                updated_at = now()\n            WHERE user_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ac58dfed6df990a87698da85f84cdab6b37418d4cb6fe636fc7a2e877c1851c"
+}

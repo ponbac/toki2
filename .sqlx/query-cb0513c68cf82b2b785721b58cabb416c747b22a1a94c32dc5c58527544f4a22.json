@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE buddy_profiles\n            SET hours_sync_attempted_at = now()\n            WHERE user_id = $1\n              AND hours_sync_attempted_at IS NOT DISTINCT FROM $2\n            RETURNING user_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cb0513c68cf82b2b785721b58cabb416c747b22a1a94c32dc5c58527544f4a22"
+}

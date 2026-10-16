@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE buddies\n                SET visible = $3,\n                    updated_at = now()\n                WHERE user_id = $1\n                  AND slot = $2\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int2",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f43ff5c634f745f2728ae216f027caafeec15181507a10149e475da684bbda33"
+}

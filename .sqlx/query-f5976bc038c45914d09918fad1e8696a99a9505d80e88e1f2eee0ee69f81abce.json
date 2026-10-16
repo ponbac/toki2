@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO buddy_xp_days (user_id, day, logged_hours, xp)\n            SELECT $1, day.day, day.logged_hours, day.xp\n            FROM UNNEST($2::date[], $3::float8[], $4::int4[]) AS day (day, logged_hours, xp)\n            ON CONFLICT (user_id, day) DO UPDATE\n            SET logged_hours = EXCLUDED.logged_hours,\n                xp = EXCLUDED.xp,\n                updated_at = now()\n            WHERE (buddy_xp_days.logged_hours, buddy_xp_days.xp)\n                IS DISTINCT FROM (EXCLUDED.logged_hours, EXCLUDED.xp)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "DateArray",
+        "Float8Array",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5976bc038c45914d09918fad1e8696a99a9505d80e88e1f2eee0ee69f81abce"
+}
