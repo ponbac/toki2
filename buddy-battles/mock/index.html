@@ -1,0 +1,539 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=block" rel="stylesheet">
+<style>:root{--background:#1a1b1e;--foreground:#eee;--card:#222327;--card-foreground:#eee;--muted:#33343a;--muted-foreground:#9a9aa2;--border:#38393f;--primary:#e8e8ea;--primary-foreground:#18181b;--accent:#7aa2ff;--accent-surface:#25304a;--accent-surface-foreground:#cfe0ff;--secondary:#2e2f35;--secondary-foreground:#eee;--popover:#26272b;--popover-foreground:#eee;--chart-1:#6c8cff;--radius:10px;--font-sans:system-ui;--font-mono:ui-monospace,monospace;--success:#3fb950}body{background:var(--background);max-width:728px;margin:0 auto}
+  body { font-family: var(--font-sans); color: var(--foreground); }
+  .wrap { display: flex; flex-direction: column; gap: 14px; }
+  .cap { font-size: 13px; color: var(--muted-foreground); margin: 0; }
+  .cap b { color: var(--foreground); font-weight: 600; }
+
+  /* Handheld bezel around the battle screen */
+  .bezel { background: #2b2d42; border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .scrWrap { position: relative; overflow: hidden; border-radius: 3px; box-shadow: 0 0 0 3px #15161f; }
+  .screen { position: absolute; left: 0; top: 0; width: 240px; height: 160px; transform-origin: 0 0; overflow: hidden;
+    font-family: "Press Start 2P", ui-monospace, monospace; color: #383838; -webkit-font-smoothing: none; }
+  .stage { position: absolute; inset: 0;
+    background: linear-gradient(#f2f7e4 0, #dcefc6 50px, transparent 50px), repeating-linear-gradient(180deg, #9ccf78 0 2px, #acdc88 2px 7px); }
+  .grp { position: absolute; inset: 0; }
+  .plat { position: absolute; border-radius: 50%; background: radial-gradient(ellipse at 50% 45%, #d4ecb4 0 52%, #8cc46c 54% 100%); box-shadow: inset 0 -2px 0 #6a9e50; }
+  .layer { position: absolute; left: 0; top: 0; width: 240px; overflow: hidden; }
+  .spr { position: absolute; image-rendering: pixelated; background-repeat: no-repeat; }
+  .ibox { position: absolute; background: #f8f8d8; border: 1px solid #405038; border-radius: 3px 9px 3px 9px; box-shadow: 2px 2px 0 #889878; padding: 3px 5px 3px 6px; box-sizing: border-box; opacity: 0; }
+  .ir { display: flex; align-items: center; gap: 3px; }
+  .nm { font-size: 6px; flex: 1; white-space: nowrap; }
+  .lv { font-size: 5px; }
+  .balls { display: flex; gap: 1px; }
+  .ball { width: 5px; height: 5px; border-radius: 50%; box-sizing: border-box; border: 1px solid #383838; background: linear-gradient(#e84040 0 45%, #383838 45% 58%, #f8f8f8 58%); }
+  .ball.out { background: #a0a0a0; }
+  .hp { display: flex; align-items: center; gap: 2px; margin-top: 3px; }
+  .hpl { font-size: 4px; background: #485058; color: #f8d048; padding: 1px 2px 0; border-radius: 1px; line-height: 5px; }
+  .hpb { flex: 1; height: 4px; background: #485048; border: 1px solid #303830; border-radius: 2px; overflow: hidden; }
+  .hpb i { display: block; height: 100%; width: 100%; background: #58d080; }
+  .num { font-size: 5px; text-align: right; margin-top: 3px; }
+  .exp { height: 2px; background: #687068; margin: 2px -1px 0 14px; }
+  .exp i { display: block; height: 100%; width: 40%; background: #48a8f8; }
+  .fx { position: absolute; inset: 0; pointer-events: none; }
+  .flash { position: absolute; inset: 0; opacity: 0; }
+  .px { position: absolute; width: 5px; height: 5px; }
+
+  .tb { position: absolute; left: 0; top: 112px; width: 240px; height: 48px; background: #283040; }
+  .tbi { position: absolute; inset: 3px; border: 2px solid #d0a050; border-radius: 4px; background: #40506a; padding: 7px 8px; box-sizing: border-box;
+    color: #f8f8f8; font-size: 7px; line-height: 14px; text-shadow: 1px 1px 0 #6a7890; }
+  .arrow { position: absolute; right: 8px; bottom: 7px; width: 0; height: 0; border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 4px solid #f05050; display: none; animation: blink .4s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .menu { position: absolute; left: 0; top: 112px; width: 240px; height: 48px; display: none; }
+  .mbox { position: absolute; top: 0; height: 48px; background: #f8f8f8; border: 2px solid #587080; box-shadow: inset 0 0 0 1px #c8d0d8; border-radius: 4px; box-sizing: border-box; }
+  .mleft { left: 0; width: 158px; display: grid; grid-template-columns: 1fr 1fr; align-content: center; row-gap: 11px; padding: 0 4px 0 13px; font-size: 5px; }
+  .mv { position: relative; white-space: nowrap; }
+  .mv.cur::before { content: ""; position: absolute; left: -8px; top: 0; border-left: 5px solid #383838; border-top: 3px solid transparent; border-bottom: 3px solid transparent; }
+  .mv.pick { color: #e04838; }
+  .mright { left: 158px; width: 82px; padding: 8px 6px; font-size: 5px; line-height: 11px; }
+  .mright .dice { color: #e04838; }
+
+  .ctrl { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; color: #b8bad8; font: 11px var(--font-mono); }
+  .gb { font: 600 11.5px var(--font-sans); background: #45486c; color: #fff; border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .gb.on { background: #f0c048; color: #2b2d42; }
+  .gb + .gb { margin-left: 4px; }
+
+  /* Toki UI around it */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .ph { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 8px; }
+  .ph h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
+  .sub { font-size: 11.5px; color: var(--muted-foreground); }
+  .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-surface); color: var(--accent-surface-foreground); white-space: nowrap; }
+  .pill.wait { background: var(--muted); color: var(--muted-foreground); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .row:first-of-type { border-top: 0; }
+  .pair { display: flex; flex-shrink: 0; }
+  .ico { width: 34px; height: 34px; position: relative; overflow: hidden; border-radius: 7px; background: var(--muted); }
+  .pair .ico + .ico { margin-left: -6px; box-shadow: -2px 0 0 var(--card); }
+  .info { flex: 1; min-width: 0; }
+  .cb { font: 600 12px var(--font-sans); border-radius: 6px; padding: 5px 11px; border: 0; background: var(--primary); color: var(--primary-foreground); cursor: pointer; white-space: nowrap; }
+  .cb[disabled] { background: var(--muted); color: var(--muted-foreground); cursor: default; }
+  .tabs { display: flex; gap: 4px; margin: 8px 0 4px; }
+  .tab { font: 500 12px var(--font-sans); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted-foreground); cursor: pointer; }
+  .tab.on { background: var(--secondary); color: var(--secondary-foreground); border-color: transparent; }
+  .rk { width: 18px; font: 600 12px var(--font-mono); color: var(--muted-foreground); text-align: right; }
+  .row.me { background: var(--accent-surface); margin: 0 -8px; padding: 7px 8px; border-radius: 6px; border-top-color: transparent; }
+  .score { font: 600 12.5px var(--font-mono); }
+  .foot { margin-top: 8px; font-size: 11.5px; color: var(--muted-foreground); border-top: 1px dashed var(--border); padding-top: 8px; }
+  .bud { display: grid; grid-template-columns: 1.1fr 1fr; gap: 18px; align-items: end; }
+  @media (max-width: 600px) { .bud { grid-template-columns: 1fr; } }
+  .brow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .brow:first-of-type { border-top: 0; }
+  .brow .ico { width: 42px; height: 42px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--muted); overflow: hidden; margin-top: 5px; }
+  .bar i { display: block; height: 100%; background: var(--chart-1); }
+  .tag { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--secondary); color: var(--secondary-foreground); margin-left: 4px; }
+  .sw { width: 34px; height: 20px; border-radius: 999px; background: var(--muted); position: relative; border: 0; cursor: pointer; flex-shrink: 0; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--background); transition: left .15s; }
+  .sw.on { background: var(--primary); } .sw.on::after { left: 17px; }
+  .sw[disabled] { opacity: .5; cursor: default; }
+  .xpline { font-size: 12px; margin-top: 10px; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; }
+  .xpline b { font-weight: 600; } .xpline .r { text-align: right; font-family: var(--font-mono); }
+  .tcard { position: relative; margin-top: 56px; background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+  .tcard .t { font: 600 22px var(--font-mono); letter-spacing: .02em; }
+  .tcard .d { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; }
+  .perch { position: absolute; left: 0; right: 0; top: -60px; height: 60px; pointer-events: none; }
+  .perch .spr { transition: opacity .25s; }
+</style></head>
+<body><div class="wrap">
+<p class="cap"><b>Mock: a team of two, a random move each turn.</b> The battle below is simulated live from the seed, in the same way the Rust engine would produce the stored log. Real PMD sprites, made-up colleagues.</p>
+
+<div class="bezel">
+  <div class="scrWrap" id="scrWrap"><div class="screen" id="screen">
+    <div class="stage" id="stage">
+      <div class="grp" id="gOpp">
+        <div class="plat" style="left:128px;top:51px;width:96px;height:22px"></div>
+        <div class="layer" id="lOpp" style="height:66px"></div>
+      </div>
+      <div class="grp" id="gMe">
+        <div class="plat" style="left:-4px;top:98px;width:136px;height:28px"></div>
+        <div class="layer" id="lMe" style="height:112px"></div>
+      </div>
+      <div class="fx" id="fx"><div class="flash" id="flash"></div></div>
+      <div class="ibox" id="bOpp" style="left:8px;top:10px;width:100px">
+        <div class="ir"><span class="nm" id="nOpp"></span><span class="balls" id="balOpp"></span><span class="lv" id="lvOpp"></span></div>
+        <div class="hp"><span class="hpl">HP</span><div class="hpb"><i id="hpOpp"></i></div></div>
+      </div>
+      <div class="ibox" id="bMe" style="left:128px;top:70px;width:106px">
+        <div class="ir"><span class="nm" id="nMe"></span><span class="balls" id="balMe"></span><span class="lv" id="lvMe"></span></div>
+        <div class="hp"><span class="hpl">HP</span><div class="hpb"><i id="hpMe"></i></div></div>
+        <div class="num" id="numMe"></div>
+        <div class="exp"><i id="expMe"></i></div>
+      </div>
+    </div>
+    <div class="tb"><div class="tbi"><span id="msg"></span></div><div class="arrow" id="arrow"></div></div>
+    <div class="menu" id="menu">
+      <div class="mbox mleft" id="mleft"></div>
+      <div class="mbox mright"><div id="pp"></div><div id="ty"></div><div class="dice">RANDOM!</div></div>
+    </div>
+  </div></div>
+  <div class="ctrl" id="ctrl">
+    <span id="seedl">seed —</span>
+    <span><button class="gb" id="b2x">2×</button><button class="gb" id="bSkip">Skip</button><button class="gb" id="bNew">New seed ↻</button></span>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <div class="ph"><h4>Battle</h4><span class="pill" id="cool">Ready</span></div>
+    <div class="sub">This lists everyone who has a buddy turned on. You can battle once an hour, and the same colleague once a day.</div>
+    <div style="margin-top:6px" id="opps"></div>
+  </div>
+  <div class="panel">
+    <div class="ph"><h4>Leaderboard · October</h4><span class="sub">resets monthly</span></div>
+    <div class="tabs" id="tabs"></div>
+    <div id="board"></div>
+    <div class="foot" id="bfoot"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="ph"><h4>Your buddies</h4><span class="sub">Account → Buddies</span></div>
+  <div class="bud">
+    <div>
+      <div class="brow"><div class="ico" data-ico="25" data-s="1.5"></div><div class="info"><div><b>Pikachu</b> · Lv 31<span class="tag">Lead</span></div><div class="bar"><i style="width:62%"></i></div><div class="sub" style="margin-top:3px">1,210 / 1,954 XP to Lv 32</div></div><button class="sw on" disabled title="The lead buddy is always shown"></button></div>
+      <div class="brow"><div class="ico" data-ico="448" data-s="1.5"></div><div class="info"><div><b>Lucario</b> · Lv 12<span class="tag">2nd</span></div><div class="bar"><i style="width:30%"></i></div><div class="sub" style="margin-top:3px">Unlocked when Pikachu hit Lv 10</div></div><button class="sw on" id="sw2" title="Show on screen"></button></div>
+      <div class="xpline">
+        <span>Today</span><span><b>6 h 30 min</b> logged</span><span class="r">+390 XP</span>
+        <span></span><span><b>1</b> battle</span><span class="r">+20 XP</span>
+        <span></span><span class="sub">60 XP an hour, up to 10 hours a day, weekends too. Both buddies get the XP.</span><span></span>
+      </div>
+    </div>
+    <div>
+      <div class="sub" id="swnote">Both buddies walk around. A hidden 2nd buddy still fights in battles.</div>
+      <div class="tcard"><div class="perch" id="perch"></div>
+        <div class="t">02:14:37</div><div class="d">Review PR #312 · Toki2</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const SP = {"25":{"n":"Pikachu","a":{"Idle":[40,56,[40,2,3,3,3,2],33,{"D":0,"DR":56,"R":112}],"Walk":[32,40,[8,10,8,10],25,{"D":168,"R":208}],"Attack":[80,80,[2,4,1,1,1,2,2,2,2,4],46,{"R":560}],"Hurt":[48,64,[2,8],33,{"D":376}],"Charge":[40,40,[2,2,2,2,2,2,2,2,2,2],25,{"D":480,"R":520}]}},"448":{"n":"Lucario","a":{"Idle":[32,56,[40,2,2,4,2,2],34,{"D":0,"DR":56,"R":112}],"Walk":[32,48,[6,6,6,6],29,{"D":168,"R":216}],"Attack":[64,72,[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],42,{"R":568}],"Hurt":[40,56,[2,8],31,{"D":384}],"Charge":[32,40,[2,2,2,2,2,2,2,2,2,2],27,{"D":488,"R":528}]}},"94":{"n":"Gengar","a":{"Idle":[32,40,[40,4,3,3,3,3,3,4],26,{"D":0,"DR":40,"R":80}],"Walk":[32,40,[8,10,8,10],26,{"D":120,"R":160}],"Attack":[72,80,[4,2,4,1,1,1,2,2,2,2,4],47,{"R":496}],"Hurt":[48,56,[2,8],31,{"D":320}],"Charge":[32,40,[2,2,2,2,2,2,2,2,2,2],30,{"D":416,"R":456}]}},"445":{"n":"Garchomp","a":{"Idle":[48,56,[40,2,12,10,12,2],34,{"D":0,"DR":56,"R":112}],"Walk":[40,48,[10,10,10,10],30,{"D":168,"R":216}],"Attack":[72,80,[2,2,6,1,1,2,2,2,2,2,2,2,2,2],49,{"R":616}],"Hurt":[48,72,[2,8],42,{"D":400}],"Charge":[48,48,[2,2,2,2,2,2,2,2,2,2],30,{"D":520,"R":568}]}},"133":{"n":"Eevee","a":{"Idle":[24,32,[16,16],22,{"D":0,"DR":32,"R":64}]}},"143":{"n":"Snorlax","a":{"Idle":[32,64,[40,1,3,4,3,1],38,{"D":0,"DR":64,"R":128}]}},"6":{"n":"Charizard","a":{"Idle":[40,48,[15,15,15,15],30,{"D":0,"DR":48,"R":96}]}},"9":{"n":"Blastoise","a":{"Idle":[40,40,[32,12,4,4,4,4,4,8],25,{"D":0,"DR":40,"R":80}]}},"197":{"n":"Umbreon","a":{"Idle":[24,48,[60,10,2,2,2,2,2,2,2,2,2,2,2,10],32,{"D":0,"DR":48,"R":96}]}},"282":{"n":"Gardevoir","a":{"Idle":[32,40,[6,12,6,12],26,{"D":0,"DR":40,"R":80}]}},"248":{"n":"Tyranitar","a":{"Idle":[40,48,[14,24,14,24],30,{"D":0,"DR":48,"R":96}]}},"150":{"n":"Mewtwo","a":{"Idle":[32,64,[40,2,4,6,8,6,4,2],38,{"D":0,"DR":64,"R":128}]}}};
+const ATLAS = {
+  25: "buddy/25.webp",
+  448: "buddy/448.webp",
+  94: "buddy/94.webp",
+  445: "buddy/445.webp",
+  133: "buddy/133.webp",
+  143: "buddy/143.webp",
+  6: "buddy/6.webp",
+  9: "buddy/9.webp",
+  197: "buddy/197.webp",
+  282: "buddy/282.webp",
+  248: "buddy/248.webp",
+  150: "buddy/150.webp",
+};
+
+/* ---------- battle data (roughly Gen 5; the real thing generates this from @pkmn/dex) ---------- */
+const DEX = {
+  25: { types: ["Electric"], base: [35, 55, 30, 50, 40, 90], moves: ["Thunderbolt", "Discharge", "Slam", "Quick Attack"] },
+  448: { types: ["Fighting", "Steel"], base: [70, 110, 70, 115, 70, 90], moves: ["Aura Sphere", "Dark Pulse", "Metal Claw", "Dragon Pulse"] },
+  94: { types: ["Ghost", "Poison"], base: [60, 65, 60, 130, 75, 110], moves: ["Shadow Ball", "Shadow Punch", "Dark Pulse", "Payback"] },
+  445: { types: ["Dragon", "Ground"], base: [108, 130, 95, 80, 85, 102], moves: ["Dragon Claw", "Slash", "Crunch", "Dragon Rush"] },
+};
+// [type, category, power, accuracy (0 = never misses), priority, pp]
+const MOVES = {
+  "Thunderbolt": ["Electric", "sp", 95, 100, 0, 15], "Discharge": ["Electric", "sp", 80, 100, 0, 15],
+  "Slam": ["Normal", "ph", 80, 75, 0, 20], "Quick Attack": ["Normal", "ph", 40, 100, 1, 30],
+  "Aura Sphere": ["Fighting", "sp", 90, 0, 0, 20], "Dark Pulse": ["Dark", "sp", 80, 100, 0, 15],
+  "Metal Claw": ["Steel", "ph", 50, 95, 0, 35], "Dragon Pulse": ["Dragon", "sp", 90, 100, 0, 10],
+  "Shadow Ball": ["Ghost", "sp", 80, 100, 0, 15], "Shadow Punch": ["Ghost", "ph", 60, 0, 0, 20],
+  "Payback": ["Dark", "ph", 50, 100, 0, 10], "Dragon Claw": ["Dragon", "ph", 80, 100, 0, 15],
+  "Slash": ["Normal", "ph", 70, 100, 0, 20], "Crunch": ["Dark", "ph", 80, 100, 0, 15], "Dragon Rush": ["Dragon", "ph", 100, 75, 0, 10],
+};
+const CHART = { Electric: { Ground: 0, Dragon: .5, Electric: .5 }, Normal: { Ghost: 0, Steel: .5 },
+  Fighting: { Ghost: 0, Poison: .5, Steel: 2, Normal: 2, Dark: 2 }, Dark: { Ghost: 2, Fighting: .5, Steel: .5, Dark: .5 },
+  Steel: { Steel: .5, Electric: .5 }, Dragon: { Dragon: 2, Steel: .5 }, Ghost: { Ghost: 2, Normal: 0, Dark: .5, Steel: .5 } };
+const TYPE_COL = { Electric: "#f8d030", Normal: "#c8c8a8", Fighting: "#e05038", Dark: "#584860", Steel: "#b8b8d0", Dragon: "#7860f8", Ghost: "#8060b8", Poison: "#b058b0", Ground: "#e0c068" };
+const OPP = "ANNA L.";
+const TEAMS = { me: [[25, 31], [448, 12]], opp: [[94, 27], [445, 18]] };
+// Levels count, but only a little: Lv 1 fights like Lv 47, Lv 100 like Lv 53.7.
+const battleLevel = lv => 47 + lv / 15;
+
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+// Base stat totals are clamped to 380–540: stat gaps inside the band count fully, babies and legendaries are pulled in.
+const normalized = base => { const bst = base.reduce((a, b) => a + b, 0), k = Math.min(540, Math.max(380, bst)) / bst; return base.map(v => v * k); };
+function makeMon([id, lv]) {
+  const b = normalized(DEX[id].base), L = battleLevel(lv), st = i => Math.floor((2 * b[i] + 31) * L / 100) + 5;
+  const hp = Math.floor((2 * b[0] + 31) * L / 100 + L) + 10;
+  return { id, lv, L, name: SP[id].n.toUpperCase(), types: DEX[id].types, moves: DEX[id].moves, maxHp: hp, hp, atk: st(1), def: st(2), spa: st(3), spd: st(4), spe: st(5) };
+}
+function simulate(seed) {
+  const r = mulberry32(seed);
+  const sides = { me: { mons: TEAMS.me.map(makeMon), i: 0 }, opp: { mons: TEAMS.opp.map(makeMon), i: 0 } };
+  const act = s => sides[s].mons[sides[s].i];
+  const log = [{ t: "intro" }, { t: "send", side: "opp", i: 0 }, { t: "send", side: "me", i: 0 }];
+  for (let turn = 1; turn <= 40; turn++) {
+    const pick = { me: Math.floor(r() * 4), opp: Math.floor(r() * 4) };
+    const pr = s => MOVES[act(s).moves[pick[s]]][4];
+    const cmp = pr("me") - pr("opp") || act("me").spe - act("opp").spe;
+    const order = cmp > 0 || (cmp === 0 && r() < .5) ? ["me", "opp"] : ["opp", "me"];
+    for (const s of order) {
+      const o = s === "me" ? "opp" : "me", a = act(s), d = act(o);
+      if (a.hp <= 0) continue;
+      const move = a.moves[pick[s]], [type, cat, pow, acc] = MOVES[move];
+      log.push({ t: "move", side: s, move, pick: pick[s] });
+      if (acc && r() * 100 >= acc) { log.push({ t: "miss", side: s }); continue; }
+      const mult = d.types.reduce((m, dt) => m * ((CHART[type] || {})[dt] ?? 1), 1);
+      if (mult === 0) { log.push({ t: "immune", side: o }); continue; }
+      const crit = r() < (move === "Slash" ? 1 / 8 : 1 / 16);
+      const A = cat === "ph" ? a.atk : a.spa, D = cat === "ph" ? d.def : d.spd;
+      const P = Math.min(100, Math.max(60, pow)); // move power is clamped to 60–100
+      let dmg = Math.floor(Math.floor(Math.floor(2 * a.L / 5 + 2) * P * A / D) / 50) + 2;
+      if (crit) dmg *= 2;
+      dmg = Math.floor(dmg * (85 + Math.floor(r() * 16)) / 100);
+      if (a.types.includes(type)) dmg = Math.floor(dmg * 1.5);
+      dmg = Math.max(1, Math.floor(dmg * mult));
+      const from = d.hp; d.hp = Math.max(0, d.hp - dmg);
+      log.push({ t: "hit", side: o, att: s, from, to: d.hp, max: d.maxHp, mult, crit, type, cat });
+      if (d.hp === 0) log.push({ t: "faint", side: o });
+    }
+    for (const s of ["opp", "me"]) {
+      if (act(s).hp > 0) continue;
+      const sd = sides[s];
+      if (sd.i + 1 < sd.mons.length) { sd.i++; log.push({ t: "send", side: s, i: sd.i }); }
+      else { log.push({ t: "end", winner: s === "me" ? "opp" : "me" }); return { log, teams: { me: TEAMS.me.map(makeMon), opp: TEAMS.opp.map(makeMon) } }; }
+    }
+  }
+  log.push({ t: "end", winner: null });
+  return { log, teams: { me: TEAMS.me.map(makeMon), opp: TEAMS.opp.map(makeMon) } };
+}
+
+/* ---------- sprites ---------- */
+const SIZE = {};
+const loadAll = () => Promise.all(Object.keys(ATLAS).map(id => new Promise(res => {
+  const im = new Image(); im.onload = () => { SIZE[id] = [im.naturalWidth, im.naturalHeight]; res(); };
+  im.onerror = () => { console.error("atlas failed", id); SIZE[id] = [1, 1]; res(); }; im.src = ATLAS[id];
+})));
+let speed = 1, speedPref = 1, gen = 0;
+const sprites = new Set(), tickers = [];
+class Sprite {
+  constructor(parent, id, o = {}) {
+    this.el = document.createElement("div"); this.el.className = "spr"; parent.appendChild(this.el);
+    Object.assign(this, { flip: !!o.flip, scale: o.scale || 2, cx: o.cx || 0, ground: o.ground || 0, pref: o.pref || {}, ui: !!o.ui, dx: 0, dy: 0, pop: 1 });
+    sprites.add(this); this.set(id);
+  }
+  set(id) {
+    this.id = id; const [w, h] = SIZE[id];
+    this.el.style.backgroundImage = `url("${ATLAS[id]}")`;
+    this.el.style.backgroundSize = `${w * this.scale}px ${h * this.scale}px`;
+    this.loop("Idle");
+  }
+  pick(name) {
+    const a = SP[this.id].a[name] || SP[this.id].a.Idle, rows = a[4];
+    const dir = (this.pref[name] || ["R", "D"]).find(d => rows[d] !== undefined) ?? Object.keys(rows)[0];
+    return { w: a[0], h: a[1], d: a[2], foot: a[3], y: rows[dir] };
+  }
+  start(name, looping, done) { this.a = this.pick(name); this.name = name; this.f = 0; this.acc = 0; this.looping = looping; this.done = done; this.render(); }
+  loop(name) { if (this.name !== name || !this.looping) this.start(name, true); }
+  play(name, times = 1) {
+    return new Promise(res => { let n = times; const next = () => { if (--n > 0) this.start(name, false, next); else { this.start("Idle", true); res(); } }; this.start(name, false, next); });
+  }
+  tick(ms) {
+    this.acc += ms * (this.ui ? 1 : speed); const d = this.a.d;
+    while (this.acc >= d[this.f] * 1000 / 60) {
+      this.acc -= d[this.f] * 1000 / 60; this.f++;
+      if (this.f >= d.length) {
+        if (this.looping) this.f = 0;
+        else { this.f = d.length - 1; const cb = this.done; this.done = null; this.looping = true; this.acc = 0; cb && cb(); break; }
+      }
+    }
+    this.render();
+  }
+  render() {
+    const a = this.a, s = this.scale, st = this.el.style;
+    st.width = a.w * s + "px"; st.height = a.h * s + "px";
+    st.left = (this.cx + this.dx - a.w * s / 2) + "px"; st.top = (this.ground + this.dy - a.foot * s) + "px";
+    st.backgroundPosition = `${-this.f * a.w * s}px ${-a.y * s}px`;
+    st.transformOrigin = `50% ${a.foot * s}px`;
+    st.transform = `${this.flip ? "scaleX(-1) " : ""}scale(${this.pop})`;
+  }
+}
+let lastT = performance.now();
+function frame(t) { const ms = Math.min(50, t - lastT); lastT = t; sprites.forEach(s => s.tick(ms)); tickers.forEach(f => f(ms)); requestAnimationFrame(frame); }
+
+/* ---------- battle player ---------- */
+const $ = id => document.getElementById(id);
+class Abort extends Error {}
+const ME_POS = { cx: 64, ground: 110 }, OPP_POS = { cx: 176, ground: 62 };
+let SPR;
+
+function setBar(side, hp, max) {
+  const p = Math.max(0, hp) / max * 100, bar = $("hp" + side);
+  bar.style.width = p + "%"; bar.style.background = p > 50 ? "#58d080" : p > 20 ? "#f8c030" : "#f05838";
+  if (side === "Me") $("numMe").textContent = `${Math.ceil(Math.max(0, hp))}/ ${max}`;
+}
+function setBalls(side, team, out) { $("bal" + side).innerHTML = team.map((_, i) => `<span class="ball ${i < out ? "out" : ""}"></span>`).join(""); }
+
+async function run(seed, g) {
+  speed = speedPref; $("b2x").classList.toggle("on", speedPref === 2);
+  const { log, teams } = simulate(seed);
+  $("seedl").textContent = `battle vs Anna L. · seed ${seed.toString(16).padStart(8, "0")} · ${log.filter(e => e.t === "move").length} moves`;
+  const W = ms => new Promise((res, rej) => setTimeout(() => g === gen ? res() : rej(new Abort()), ms / speed));
+  const T = (ms, fn) => new Promise((res, rej) => { let el = 0, last = performance.now();
+    const step = t => { if (g !== gen) return rej(new Abort()); el += (t - last) * speed; last = t; const p = Math.min(1, el / ms); fn(p); p < 1 ? requestAnimationFrame(step) : res(); };
+    requestAnimationFrame(step); });
+  const A = async p => { await p; if (g !== gen) throw new Abort(); };
+  const msg = async (text, hold = 700) => {
+    $("arrow").style.display = "none";
+    if (speed > 4) $("msg").textContent = text;
+    else for (let i = 1; i <= text.length; i++) { $("msg").textContent = text.slice(0, i); await W(16); }
+    if (hold) { $("arrow").style.display = "block"; await W(hold); $("arrow").style.display = "none"; }
+  };
+  const idx = { me: 0, opp: 0 }, out = { me: 0, opp: 0 };
+  const mon = s => teams[s][idx[s]];
+  const key = s => s === "me" ? "Me" : "Opp";
+  const center = s => s === "me" ? [64, 86] : [176, 38];
+
+  // reset
+  for (const s of ["me", "opp"]) { const sp = SPR[s]; sp.dx = sp.dy = 0; sp.pop = 0; sp.el.style.visibility = "hidden"; sp.el.style.filter = ""; }
+  $("bOpp").style.opacity = $("bMe").style.opacity = 0; $("menu").style.display = "none"; $("msg").textContent = "";
+  $("expMe").style.width = "40%"; $("stage").style.transform = "";
+
+  const flash = async (type) => { const f = $("flash"); f.style.background = TYPE_COL[type]; await T(260, p => f.style.opacity = .5 * (1 - p)); };
+  const shake = () => T(320, p => $("stage").style.transform = `translateX(${Math.round(Math.sin(p * 28) * 3 * (1 - p))}px)`);
+  const burst = async (s, type) => {
+    const [x, y] = center(s), ps = [...Array(6)].map((_, i) => { const d = document.createElement("div"); d.className = "px"; d.style.background = TYPE_COL[type]; d.style.boxShadow = "0 0 0 1px #fff"; $("fx").appendChild(d); return [d, i / 6 * Math.PI * 2]; });
+    await T(260, p => ps.forEach(([d, a]) => { d.style.left = (x - 2 + Math.cos(a) * 18 * p) + "px"; d.style.top = (y - 2 + Math.sin(a) * 14 * p) + "px"; d.style.opacity = 1 - p * p; }));
+    ps.forEach(([d]) => d.remove());
+  };
+  const projectile = async (from, type) => {
+    const [x0, y0] = center(from), [x1, y1] = center(from === "me" ? "opp" : "me");
+    const d = document.createElement("div"); d.className = "px"; d.style.width = d.style.height = "8px"; d.style.borderRadius = "50%";
+    d.style.background = TYPE_COL[type]; d.style.boxShadow = `0 0 0 2px #fff, 0 0 6px 3px ${TYPE_COL[type]}`; $("fx").appendChild(d);
+    await T(300, p => { d.style.left = (x0 + (x1 - x0) * p - 4) + "px"; d.style.top = (y0 + (y1 - y0) * p - 18 * Math.sin(p * Math.PI) - 4) + "px"; });
+    d.remove();
+  };
+  const showBox = async (s) => { const b = $("b" + key(s)), dir = s === "me" ? 1 : -1; await T(260, p => { b.style.opacity = 1; b.style.transform = `translateX(${dir * 50 * (1 - p)}px)`; }); };
+  const fillBox = s => { const m = mon(s), k = key(s); $("n" + k).textContent = m.name; $("lv" + k).textContent = "Lv" + m.lv; setBar(k, m.maxHp, m.maxHp); setBalls(k, teams[s], out[s]); };
+  const roulette = async (m, pick) => {
+    const L = $("mleft"); L.innerHTML = m.moves.map(n => `<span class="mv">${n.toUpperCase()}</span>`).join("");
+    const els = [...L.children], cw = [0, 1, 3, 2], steps = 8 + cw.indexOf(pick);
+    $("menu").style.display = "block";
+    for (let s = 0; s <= steps; s++) {
+      const i = cw[s % 4], [type, , , , , pp] = MOVES[m.moves[i]];
+      els.forEach((e, j) => e.classList.toggle("cur", j === i));
+      $("pp").textContent = `PP ${pp}/${pp}`; $("ty").textContent = `TYPE/${type.toUpperCase()}`;
+      await W(40 + s * s * 2.4);
+    }
+    els[pick].classList.add("pick"); await W(380);
+    $("menu").style.display = "none";
+  };
+
+  const groupIn = T(900, p => { const e = 1 - Math.pow(1 - p, 3); $("gOpp").style.transform = `translateX(${-240 * (1 - e)}px)`; $("gMe").style.transform = `translateX(${240 * (1 - e)}px)`; });
+  for (let n = 0; n < log.length; n++) {
+    const ev = log[n], nx = log[n + 1] || {};
+    if (ev.t === "intro") { await A(groupIn); await msg(`${OPP} wants to battle!`, 800); }
+    else if (ev.t === "send") {
+      idx[ev.side] = ev.i; const m = mon(ev.side), sp = SPR[ev.side];
+      await msg(ev.side === "opp" ? `${OPP} sent out ${m.name}!` : `Go! ${m.name}!`, 0);
+      sp.set(m.id); sp.dy = 0; sp.pop = 0; sp.el.style.visibility = "visible"; sp.el.style.filter = "brightness(0) invert(1)";
+      await T(260, p => sp.pop = p); await W(140); sp.el.style.filter = "";
+      fillBox(ev.side); await showBox(ev.side); await W(350);
+    }
+    else if (ev.t === "move") {
+      const m = mon(ev.side), sp = SPR[ev.side], [type, cat] = MOVES[ev.move];
+      if (ev.side === "me") await roulette(m, ev.pick);
+      await msg(`${m.name} used ${ev.move.toUpperCase()}!`, 200);
+      if (nx.t === "miss") continue;
+      if (cat === "sp") { await A(sp.play("Charge")); flash(type).catch(() => {}); await projectile(ev.side, type); }
+      else {
+        const dir = ev.side === "me" ? 1 : -1, swing = sp.play("Attack");
+        await T(200, p => { sp.dx = dir * 16 * p; sp.dy = -dir * 8 * p; }); await W(100);
+        await T(200, p => { sp.dx = dir * 16 * (1 - p); sp.dy = -dir * 8 * (1 - p); }); await A(swing);
+        await burst(ev.side === "me" ? "opp" : "me", type);
+      }
+    }
+    else if (ev.t === "miss") await msg(`${mon(ev.side).name}'s attack missed!`);
+    else if (ev.t === "immune") await msg(`It doesn't affect ${mon(ev.side).name}...`);
+    else if (ev.t === "hit") {
+      const sp = SPR[ev.side], hurt = sp.play("Hurt", 2);
+      if (ev.mult > 1 || ev.crit) shake().catch(() => {});
+      for (let i = 0; i < 6; i++) { sp.el.style.visibility = i % 2 ? "visible" : "hidden"; await W(65); }
+      sp.el.style.visibility = "visible";
+      await T(Math.max(250, (ev.from - ev.to) / ev.max * 900), p => setBar(key(ev.side), ev.from + (ev.to - ev.from) * p, ev.max));
+      await A(hurt);
+      if (ev.crit) await msg("A critical hit!");
+      if (ev.mult > 1) await msg("It's super effective!"); else if (ev.mult < 1) await msg("It's not very effective...");
+    }
+    else if (ev.t === "faint") {
+      const sp = SPR[ev.side], m = mon(ev.side);
+      await T(380, p => sp.dy = 74 * p); sp.el.style.visibility = "hidden";
+      out[ev.side]++; setBalls(key(ev.side), teams[ev.side], out[ev.side]);
+      await msg(`${m.name} fainted!`);
+      if (ev.side === "me") $("bMe").style.opacity = 0;
+      if (ev.side === "opp") $("bOpp").style.opacity = 0;
+    }
+    else if (ev.t === "end") {
+      if (ev.winner === "me") { await msg(`You defeated ${OPP}!`, 900); await msg(`${OPP}: "My GARCHOMP was on a coffee break..."`, 1600); }
+      else if (ev.winner === "opp") { await msg("You have no buddies left to fight!", 900); await msg(`${OPP} wins this one. Rematch tomorrow!`, 1600); }
+      else await msg("Both sides got tired. It's a draw!", 1600);
+      if (ev.winner !== null) { await msg(`Your buddies gained 20 EXP. Points!`, 300); if (ev.winner === "me") { const e = $("expMe"), w0 = parseFloat(e.style.width); await T(500, p => e.style.width = (w0 + 6 * p) + "%"); } }
+      speed = speedPref; await W(1800);
+    }
+  }
+}
+
+function startBattle(seed) {
+  const g = ++gen;
+  (async () => {
+    let s = seed;
+    for (;;) {
+      try { await run(s, g); } catch (e) { if (!(e instanceof Abort)) console.error(e); return; }
+      if (g !== gen) return;
+      s = (Math.random() * 2 ** 32) >>> 0;
+    }
+  })();
+}
+
+/* ---------- Toki UI around the player ---------- */
+function icon(box, id, scale) {
+  const w = box.clientWidth, h = box.clientHeight;
+  new Sprite(box, id, { scale, cx: w / 2, ground: h - 3, pref: { Idle: ["D"] }, ui: true });
+}
+const PEOPLE = [
+  { n: "Erik S.", b: [6, 9], w: 14, l: 3, dt: 12 },
+  { n: "Anna L.", b: [94, 445], w: 11, l: 6, dt: 15 },
+  { n: "You", b: [25, 448], w: 9, l: 5, dt: 9, me: true },
+  { n: "Jonas B.", b: [248, 282], w: 7, l: 7, dt: 11 },
+  { n: "Sara P.", b: [197, 150], w: 3, l: 1, dt: 2 },
+  { n: "Mia K.", b: [133], w: 3, l: 8, dt: 4 },
+];
+const pairHtml = b => `<div class="pair">${b.map(id => `<div class="ico" data-ico="${id}" data-s="1"></div>`).join("")}</div>`;
+function renderOpps() {
+  const rows = [
+    { p: PEOPLE[1], note: "You're 1–2 against Anna", done: true },
+    { p: PEOPLE[0], note: "Charizard and Blastoise · 0–0" },
+    { p: PEOPLE[3], note: "Tyranitar and Gardevoir · 2–1" },
+    { p: PEOPLE[5], note: "One buddy, so it's 1-on-1 with your lead" },
+  ];
+  $("opps").innerHTML = rows.map(r => `<div class="row">${pairHtml(r.p.b)}<div class="info"><div>${r.p.n}</div><div class="sub">${r.note}</div></div>
+    <button class="cb" ${r.done ? "disabled" : ""}>${r.done ? "Battled today" : "Battle"}</button></div>`).join("");
+  $("opps").querySelectorAll(".cb:not([disabled])").forEach(b => b.onclick = () => {
+    $("cool").textContent = "Next battle in 59 min"; $("cool").classList.add("wait");
+    $("opps").querySelectorAll(".cb").forEach(x => x.disabled = true); b.textContent = "Battled today";
+  });
+}
+const TABS = {
+  "Wins": { rows: [...PEOPLE].sort((a, b) => b.w - a.w), val: p => `${p.w}–${p.l}`, foot: "Ranked on battles only. Levels track logged hours, so a level board would really be an hours board." },
+  "Win rate": { rows: PEOPLE.filter(p => p.w + p.l >= 5).sort((a, b) => b.w / (b.w + b.l) - a.w / (a.w + a.l)), val: p => Math.round(p.w / (p.w + p.l) * 100) + "%", foot: "You need at least 5 battles to show up here. Sara P. has 4." },
+  "Daily trainer": { rows: [...PEOPLE].sort((a, b) => b.dt - a.dt), val: p => `${p.dt} days`, foot: "Days you beat the shared daily trainer. Everyone faces the same seeded team, so it's the fairest board." },
+};
+let tab = "Wins";
+function renderBoard() {
+  $("tabs").innerHTML = Object.keys(TABS).map(k => `<button class="tab ${k === tab ? "on" : ""}">${k}</button>`).join("");
+  $("tabs").querySelectorAll(".tab").forEach(b => b.onclick = () => { tab = b.textContent; renderBoard(); });
+  const t = TABS[tab];
+  $("board").innerHTML = t.rows.slice(0, 5).map((p, i) => `<div class="row ${p.me ? "me" : ""}"><span class="rk">${i + 1}</span>${pairHtml(p.b)}<div class="info">${p.n}</div><span class="score">${t.val(p)}</span></div>`).join("");
+  $("bfoot").textContent = t.foot;
+  hydrateIcons($("board"));
+}
+function hydrateIcons(root) {
+  root.querySelectorAll("[data-ico]").forEach(b => { if (!b.dataset.done) { b.dataset.done = 1; icon(b, +b.dataset.ico, +b.dataset.s); } });
+}
+function perchBuddies() {
+  const perch = $("perch"), W = () => perch.clientWidth;
+  const mk = (id, x, v) => {
+    const s = new Sprite(perch, id, { scale: 1.5, cx: x, ground: 61, pref: { Idle: ["D"], Walk: ["R"] }, ui: true });
+    return { s, x, v, t: 1500 + Math.random() * 2000, walking: true };
+  };
+  const ws = [mk(25, 50, 22), mk(448, 150, -18)];
+  tickers.push(ms => ws.forEach(w => {
+    w.t -= ms;
+    if (w.t <= 0) { w.walking = !w.walking; w.t = w.walking ? 1800 + Math.random() * 2500 : 900 + Math.random() * 1500; if (w.walking && Math.random() < .5) w.v = -w.v; }
+    if (w.walking) { w.x += w.v * ms / 1000; if (w.x < 22 || w.x > W() - 22) { w.v = -w.v; w.x = Math.max(22, Math.min(W() - 22, w.x)); } }
+    w.s.loop(w.walking ? "Walk" : "Idle"); w.s.flip = w.walking && w.v < 0; w.s.cx = w.x;
+  }));
+  $("sw2").onclick = () => {
+    const on = $("sw2").classList.toggle("on"); ws[1].s.el.style.opacity = on ? 1 : 0;
+    $("swnote").textContent = on ? "Both buddies walk around. A hidden 2nd buddy still fights in battles." : "Lucario is hidden from the screen but still fights in battles.";
+  };
+}
+
+(async () => {
+  await loadAll();
+  const wrap = $("scrWrap"), avail = $("ctrl").parentElement.clientWidth - 32, k = Math.min(avail / 240, 2.6);
+  wrap.style.width = 240 * k + "px"; wrap.style.height = 160 * k + "px"; $("screen").style.transform = `scale(${k})`;
+  $("ctrl").style.width = 240 * k + "px";
+  SPR = {
+    me: new Sprite($("lMe"), 25, { scale: 2, ...ME_POS, pref: { Idle: ["R"], Charge: ["R"], Attack: ["R"], Hurt: ["D"] } }),
+    opp: new Sprite($("lOpp"), 94, { scale: 2, ...OPP_POS, flip: true, pref: { Idle: ["DR"], Charge: ["R"], Attack: ["R"], Hurt: ["D"] } }),
+  };
+  renderOpps(); renderBoard(); hydrateIcons(document); perchBuddies();
+  requestAnimationFrame(frame);
+  $("b2x").onclick = () => { speedPref = speedPref === 2 ? 1 : 2; speed = speedPref; $("b2x").classList.toggle("on", speedPref === 2); };
+  $("bSkip").onclick = () => { speed = 40; };
+  $("bNew").onclick = () => startBattle((Math.random() * 2 ** 32) >>> 0);
+  try { await document.fonts.load('8px "Press Start 2P"'); } catch {}
+  startBattle(0x5f3a91c2);
+  console.log("ready, k=" + k.toFixed(2));
+})();
+</script>
+</body></html>
