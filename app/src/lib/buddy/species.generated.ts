@@ -636,3 +636,6 @@ export const BUDDY_SPECIES: ReadonlyArray<readonly [number, string]> = [
   [648, "Meloetta"],
   [649, "Genesect"],
 ];
+
+/** Changes whenever an atlas or manifest changes. Added to the asset URLs. */
+export const BUDDY_SPRITES_VERSION = "52c4a57d8d";
