@@ -6,16 +6,23 @@ use crate::{
     db::DbPool,
     domain::{
         models::{
-            AiUsageTimeZone, Buddy, BuddyClock, BuddyDay, BuddyProfile, BuddyProfileUpdate,
-            BuddySlot, BuddyXpDay, BuddyXpSummary, BuddyXpTally, NewBuddyProfile, SpeciesId,
-            UserId,
+            AiBillingMonth, AiUsageTimeZone, BattleId, BattleOpponent, BattleSetup, Buddy,
+            BuddyBattle, BuddyBattleSummary, BuddyClock, BuddyDay, BuddyProfile,
+            BuddyProfileUpdate, BuddyRival, BuddySlot, BuddyStanding, BuddyXpDay, BuddyXpSummary,
+            BuddyXpTally, NewBuddyProfile, SpeciesId, TrainerBattle, UserId,
         },
-        ports::outbound::BuddyRepository,
+        ports::outbound::{BattlePlan, BuddyRepository},
         BuddyError,
     },
 };
 
+mod battles;
+
 const PROFILE_USER_CONSTRAINT: &str = "buddy_profiles_user_id_fkey";
+const CHALLENGER_CONSTRAINT: &str = "buddy_battles_challenger_id_fkey";
+const DEFENDER_CONSTRAINT: &str = "buddy_battles_defender_id_fkey";
+const COLLEAGUE_DAILY_CONSTRAINT: &str = "buddy_battles_colleague_daily_key";
+const TRAINER_DAILY_CONSTRAINT: &str = "buddy_battles_trainer_daily_key";
 
 pub struct PostgresBuddyRepository {
     pool: DbPool,
@@ -408,15 +415,73 @@ impl BuddyRepository for PostgresBuddyRepository {
         transaction.commit().await.map_err(storage_error)?;
         Ok(synced_at)
     }
+
+    async fn rivals(&self, user_id: &UserId, today: Date) -> Result<Vec<BuddyRival>, BuddyError> {
+        battles::rivals(&self.pool, user_id, today).await
+    }
+
+    async fn last_colleague_battle_at(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<OffsetDateTime>, BuddyError> {
+        battles::last_colleague_battle_at(&self.pool, user_id).await
+    }
+
+    async fn start_battle(
+        &self,
+        challenger_id: &UserId,
+        opponent: BattleOpponent,
+        time_zone: &AiUsageTimeZone,
+        plan: &BattlePlan<'_>,
+    ) -> Result<(BuddyBattle, BattleSetup), BuddyError> {
+        battles::start_battle(&self.pool, challenger_id, opponent, time_zone, plan).await
+    }
+
+    async fn trainer_battle(
+        &self,
+        user_id: &UserId,
+        day: Date,
+    ) -> Result<Option<TrainerBattle>, BuddyError> {
+        battles::trainer_battle(&self.pool, user_id, day).await
+    }
+
+    async fn recent_battles(
+        &self,
+        user_id: &UserId,
+        since: OffsetDateTime,
+        limit: i64,
+    ) -> Result<Vec<BuddyBattleSummary>, BuddyError> {
+        battles::recent_battles(&self.pool, user_id, since, limit).await
+    }
+
+    async fn battle(&self, battle_id: BattleId) -> Result<Option<BuddyBattle>, BuddyError> {
+        battles::load_battle(&self.pool, battle_id).await
+    }
+
+    async fn mark_battle_seen(
+        &self,
+        battle_id: BattleId,
+        defender_id: &UserId,
+    ) -> Result<(), BuddyError> {
+        battles::mark_battle_seen(&self.pool, battle_id, defender_id).await
+    }
+
+    async fn standings(&self, month: AiBillingMonth) -> Result<Vec<BuddyStanding>, BuddyError> {
+        battles::standings(&self.pool, month).await
+    }
 }
 
-/// Maps the constraints a write can break to domain errors.
+/// Maps the constraints a write can break to domain errors. The daily unique keys back
+/// up the rules a battle is planned with, for writes that race past them.
 fn write_error(error: sqlx::Error) -> BuddyError {
     match error
         .as_database_error()
         .and_then(|error| error.constraint())
     {
-        Some(PROFILE_USER_CONSTRAINT) => BuddyError::UserNotFound,
+        Some(PROFILE_USER_CONSTRAINT | CHALLENGER_CONSTRAINT) => BuddyError::UserNotFound,
+        Some(DEFENDER_CONSTRAINT) => BuddyError::OpponentUnavailable,
+        Some(COLLEAGUE_DAILY_CONSTRAINT) => BuddyError::BattledToday,
+        Some(TRAINER_DAILY_CONSTRAINT) => BuddyError::TrainerAlreadyFought,
         _ => storage_error(error),
     }
 }

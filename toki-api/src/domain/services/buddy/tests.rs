@@ -7,16 +7,41 @@ use time::{
     macros::{date, datetime},
     Duration,
 };
+use tokio::sync::mpsc;
 
 use super::*;
 use crate::domain::models::{
-    Buddy, BuddyDay, BuddySlot, BuddyXpDay, BuddyXpSummary, BuddyXpTally, DailyHours, SpeciesId,
+    BattleKind, BattleParticipant, BattleResult, BattleSetup, BattleTally, Buddy,
+    BuddyBattleSummary, BuddyCompetitor, BuddyDay, BuddyRival, BuddySlot, BuddyStanding,
+    BuddyXpDay, BuddyXpSummary, BuddyXpTally, DailyHours, SpeciesId, TrainerBattle,
 };
+use crate::domain::ports::outbound::BattlePlan;
+
+mod battles;
 
 const USER: UserId = UserId::new(7);
+const ANNA: UserId = UserId::new(8);
+const BERTIL: UserId = UserId::new(9);
 const PIKACHU: SpeciesId = SpeciesId::new(25);
 const BULBASAUR: SpeciesId = SpeciesId::new(1);
 const CHARMANDER: SpeciesId = SpeciesId::new(4);
+
+/// A stored battle with what the rules look it up by.
+struct MemoryBattle {
+    battle: BuddyBattle,
+    opponent: BattleOpponent,
+    day: Date,
+}
+
+impl MemoryBattle {
+    fn challenger_id(&self) -> UserId {
+        self.battle
+            .summary
+            .challenger
+            .user_id
+            .expect("challengers are users")
+    }
+}
 
 /// Several users' stored buddy data, behind one lock like a serialising database.
 struct Store {
@@ -24,6 +49,7 @@ struct Store {
     names: HashMap<UserId, String>,
     profiles: HashMap<UserId, BuddyProfile>,
     days: HashMap<UserId, BTreeMap<Date, BuddyXpDay>>,
+    battles: Vec<MemoryBattle>,
 }
 
 impl Store {
@@ -33,13 +59,36 @@ impl Store {
                 .days
                 .get(&user_id)
                 .map_or(0, |days| days.values().map(|day| i64::from(day.xp)).sum()),
-            // This store holds no battles.
-            battles: 0,
+            battles: self
+                .battles
+                .iter()
+                .filter(|battle| battle.challenger_id() == user_id)
+                .count() as i64,
         }
+    }
+
+    fn competitor(&self, user_id: UserId) -> Option<BuddyCompetitor> {
+        Some(BuddyCompetitor {
+            profile: self.profiles.get(&user_id)?.clone(),
+            full_name: self.names[&user_id].clone(),
+            total_xp: self.tally(user_id).total_xp(),
+        })
+    }
+
+    /// Enrolled users in name order, like the store sorts them.
+    fn competitors(&self, mut keep: impl FnMut(&BuddyProfile) -> bool) -> Vec<BuddyCompetitor> {
+        let mut competitors: Vec<_> = self
+            .profiles
+            .values()
+            .filter(|profile| keep(profile))
+            .filter_map(|profile| self.competitor(profile.user_id))
+            .collect();
+        competitors.sort_by(|a, b| a.full_name.cmp(&b.full_name));
+        competitors
     }
 }
 
-/// Stored buddy data in memory. `USER` exists as a user.
+/// Stored buddy data in memory. `USER`, `ANNA` and `BERTIL` exist as users.
 struct MemoryBuddies {
     store: Mutex<Store>,
     fail_saves: bool,
@@ -57,9 +106,14 @@ impl MemoryBuddies {
                     now: datetime!(2026-10-16 10:00 UTC),
                     today: date!(2026 - 10 - 16),
                 },
-                names: HashMap::from([(USER, "Ada Lovelace".to_string())]),
+                names: HashMap::from([
+                    (USER, "Ada Lovelace".to_string()),
+                    (ANNA, "Anna Lind".to_string()),
+                    (BERTIL, "Bertil Ek".to_string()),
+                ]),
                 profiles: HashMap::new(),
                 days: HashMap::new(),
+                battles: Vec::new(),
             }),
             fail_saves,
         })
@@ -81,7 +135,11 @@ impl MemoryBuddies {
     }
 
     fn set_hours_xp(&self, date: Date, xp: i32) {
-        self.store().days.entry(USER).or_default().insert(
+        self.set_hours_xp_of(USER, date, xp);
+    }
+
+    fn set_hours_xp_of(&self, user_id: UserId, date: Date, xp: i32) {
+        self.store().days.entry(user_id).or_default().insert(
             date,
             BuddyXpDay {
                 date,
@@ -89,6 +147,10 @@ impl MemoryBuddies {
                 xp,
             },
         );
+    }
+
+    fn battle_count(&self) -> usize {
+        self.store().battles.len()
     }
 }
 
@@ -181,7 +243,11 @@ impl BuddyRepository for MemoryBuddies {
                 date: today,
                 logged_hours: today_day.map_or(0.0, |day| day.logged_hours),
                 hours_xp: today_day.map_or(0, |day| i64::from(day.xp)),
-                battles: 0,
+                battles: store
+                    .battles
+                    .iter()
+                    .filter(|battle| battle.challenger_id() == *user_id && battle.day == today)
+                    .count() as i64,
             },
         })
     }
@@ -223,6 +289,230 @@ impl BuddyRepository for MemoryBuddies {
             .or_default()
             .extend(days.iter().map(|day| (day.date, *day)));
         Ok(now)
+    }
+
+    async fn rivals(&self, user_id: &UserId, today: Date) -> Result<Vec<BuddyRival>, BuddyError> {
+        let store = self.store();
+        let rivals = store
+            .competitors(|profile| profile.enabled && profile.user_id != *user_id)
+            .into_iter()
+            .map(|competitor| {
+                let mut record = BattleTally::default();
+                let mut battled_today = false;
+                for stored in &store.battles {
+                    let summary = &stored.battle.summary;
+                    let Some(role) = summary.role_of(*user_id) else {
+                        continue;
+                    };
+                    if summary.participant(role.opponent()).user_id != Some(competitor.user_id()) {
+                        continue;
+                    }
+                    match summary.result_for(role) {
+                        BattleResult::Win => record.wins += 1,
+                        BattleResult::Loss => record.losses += 1,
+                        BattleResult::Draw => record.draws += 1,
+                    }
+                    battled_today |= role == BattleSide::Challenger && stored.day == today;
+                }
+                BuddyRival {
+                    competitor,
+                    record,
+                    battled_today,
+                }
+            })
+            .collect();
+        Ok(rivals)
+    }
+
+    async fn last_colleague_battle_at(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<OffsetDateTime>, BuddyError> {
+        Ok(self
+            .store()
+            .battles
+            .iter()
+            .filter(|battle| {
+                battle.challenger_id() == *user_id
+                    && battle.battle.summary.kind == BattleKind::Colleague
+            })
+            .map(|battle| battle.battle.summary.created_at)
+            .max())
+    }
+
+    async fn start_battle(
+        &self,
+        challenger_id: &UserId,
+        opponent: BattleOpponent,
+        _: &AiUsageTimeZone,
+        plan: &BattlePlan<'_>,
+    ) -> Result<(BuddyBattle, BattleSetup), BuddyError> {
+        let mut store = self.store();
+        let clock = store.clock;
+        let started = |battle: &&MemoryBattle| battle.challenger_id() == *challenger_id;
+        let setup = BattleSetup {
+            clock,
+            challenger: store.competitor(*challenger_id),
+            defender: match opponent {
+                BattleOpponent::Colleague(defender_id) => store.competitor(defender_id),
+                BattleOpponent::Trainer => None,
+            },
+            last_colleague_battle_at: store
+                .battles
+                .iter()
+                .filter(started)
+                .filter(|battle| battle.battle.summary.kind == BattleKind::Colleague)
+                .map(|battle| battle.battle.summary.created_at)
+                .max(),
+            fought_today: store
+                .battles
+                .iter()
+                .filter(started)
+                .any(|battle| battle.opponent == opponent && battle.day == clock.today),
+        };
+
+        let new_battle = plan(&setup)?;
+        let (defender_id, defender_name) = match opponent {
+            BattleOpponent::Colleague(defender_id) => {
+                (Some(defender_id), store.names[&defender_id].clone())
+            }
+            BattleOpponent::Trainer => (
+                None,
+                new_battle
+                    .trainer_name
+                    .clone()
+                    .expect("trainer battles name the trainer"),
+            ),
+        };
+        let battle = BuddyBattle {
+            summary: BuddyBattleSummary {
+                id: BattleId::new(store.battles.len() as i32 + 1),
+                kind: opponent.kind(),
+                created_at: clock.now,
+                challenger: BattleParticipant {
+                    user_id: Some(*challenger_id),
+                    name: store.names[challenger_id].clone(),
+                    team: new_battle.challenger_team,
+                },
+                defender: BattleParticipant {
+                    user_id: defender_id,
+                    name: defender_name,
+                    team: new_battle.defender_team,
+                },
+                winner: new_battle.winner,
+                defender_seen_at: None,
+            },
+            seed: new_battle.seed,
+            engine_version: new_battle.engine_version,
+            events: new_battle.events,
+        };
+        store.battles.push(MemoryBattle {
+            battle: battle.clone(),
+            opponent,
+            day: new_battle.battle_day,
+        });
+        Ok((battle, setup))
+    }
+
+    async fn trainer_battle(
+        &self,
+        user_id: &UserId,
+        day: Date,
+    ) -> Result<Option<TrainerBattle>, BuddyError> {
+        Ok(self
+            .store()
+            .battles
+            .iter()
+            .find(|battle| {
+                battle.challenger_id() == *user_id
+                    && battle.opponent == BattleOpponent::Trainer
+                    && battle.day == day
+            })
+            .map(|battle| TrainerBattle {
+                id: battle.battle.summary.id,
+                winner: battle.battle.summary.winner,
+            }))
+    }
+
+    async fn recent_battles(
+        &self,
+        user_id: &UserId,
+        since: OffsetDateTime,
+        limit: i64,
+    ) -> Result<Vec<BuddyBattleSummary>, BuddyError> {
+        let mut battles: Vec<_> = self
+            .store()
+            .battles
+            .iter()
+            .map(|battle| battle.battle.summary.clone())
+            .filter(|summary| summary.role_of(*user_id).is_some() && summary.created_at >= since)
+            .collect();
+        battles.sort_by_key(|summary| std::cmp::Reverse((summary.created_at, summary.id.as_i32())));
+        battles.truncate(limit as usize);
+        Ok(battles)
+    }
+
+    async fn battle(&self, battle_id: BattleId) -> Result<Option<BuddyBattle>, BuddyError> {
+        Ok(self
+            .store()
+            .battles
+            .iter()
+            .find(|battle| battle.battle.summary.id == battle_id)
+            .map(|battle| battle.battle.clone()))
+    }
+
+    async fn mark_battle_seen(
+        &self,
+        battle_id: BattleId,
+        defender_id: &UserId,
+    ) -> Result<(), BuddyError> {
+        let mut store = self.store();
+        let now = store.clock.now;
+        if let Some(stored) = store.battles.iter_mut().find(|battle| {
+            battle.battle.summary.id == battle_id
+                && battle.battle.summary.defender.user_id == Some(*defender_id)
+        }) {
+            stored.battle.summary.defender_seen_at.get_or_insert(now);
+        }
+        Ok(())
+    }
+
+    async fn standings(&self, month: AiBillingMonth) -> Result<Vec<BuddyStanding>, BuddyError> {
+        let store = self.store();
+        let standings = store
+            .competitors(|_| true)
+            .into_iter()
+            .filter_map(|competitor| {
+                let started: Vec<_> = store
+                    .battles
+                    .iter()
+                    .filter(|battle| {
+                        battle.challenger_id() == competitor.user_id() && month.contains(battle.day)
+                    })
+                    .collect();
+                if started.is_empty() {
+                    return None;
+                }
+                let mut colleague = BattleTally::default();
+                let mut trainer_wins = 0;
+                for battle in started {
+                    let result = battle.battle.summary.result_for(BattleSide::Challenger);
+                    match (battle.battle.summary.kind, result) {
+                        (BattleKind::Colleague, BattleResult::Win) => colleague.wins += 1,
+                        (BattleKind::Colleague, BattleResult::Loss) => colleague.losses += 1,
+                        (BattleKind::Colleague, BattleResult::Draw) => colleague.draws += 1,
+                        (BattleKind::Trainer, BattleResult::Win) => trainer_wins += 1,
+                        (BattleKind::Trainer, _) => {}
+                    }
+                }
+                Some(BuddyStanding {
+                    competitor,
+                    colleague,
+                    trainer_wins,
+                })
+            })
+            .collect();
+        Ok(standings)
     }
 }
 
@@ -273,13 +563,41 @@ impl LoggedHours for FakeHours {
     }
 }
 
-fn service(
+/// Passes every notice it is given on to the test.
+struct RecordingNotifier {
+    notices: mpsc::UnboundedSender<BattleNotice>,
+}
+
+impl RecordingNotifier {
+    fn new() -> (Arc<Self>, mpsc::UnboundedReceiver<BattleNotice>) {
+        let (notices, received) = mpsc::unbounded_channel();
+        (Arc::new(Self { notices }), received)
+    }
+}
+
+#[async_trait]
+impl BuddyNotifier for RecordingNotifier {
+    async fn battle_fought(&self, notice: &BattleNotice) {
+        // A test that does not listen has dropped the receiver.
+        let _ = self.notices.send(notice.clone());
+    }
+}
+
+type TestService = BuddyServiceImpl<MemoryBuddies, FakeHours, RecordingNotifier>;
+
+fn service(buddies: &Arc<MemoryBuddies>, hours: &Arc<FakeHours>) -> TestService {
+    service_with(buddies, hours, RecordingNotifier::new().0)
+}
+
+fn service_with(
     buddies: &Arc<MemoryBuddies>,
     hours: &Arc<FakeHours>,
-) -> BuddyServiceImpl<MemoryBuddies, FakeHours> {
+    notifier: Arc<RecordingNotifier>,
+) -> TestService {
     BuddyServiceImpl::new(
         buddies.clone(),
         hours.clone(),
+        notifier,
         AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
     )
 }
@@ -444,8 +762,8 @@ async fn the_partner_unlocks_at_lead_level_10_and_earns_from_then_on() {
     assert!(matches!(error, BuddyError::PartnerLocked), "{error:?}");
     assert!(buddies.profile_now().unwrap().battle_notifications);
 
-    // Twenty XP more and the lead is Lv 10.
-    buddies.set_hours_xp(date!(2026 - 10 - 14), 20);
+    // One battle later the lead is Lv 10.
+    service.battle_trainer(&USER).await.unwrap();
     let overview = service
         .update_profile(&USER, partner(BULBASAUR))
         .await

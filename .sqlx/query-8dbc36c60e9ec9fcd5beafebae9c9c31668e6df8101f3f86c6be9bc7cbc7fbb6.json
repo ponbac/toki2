@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n            FROM buddy_battles\n            WHERE challenger_id = $1\n              AND kind = $2\n              AND defender_id IS NOT DISTINCT FROM $3\n              AND battle_day = $4\n        ) AS \"fought!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fought!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Int4",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8dbc36c60e9ec9fcd5beafebae9c9c31668e6df8101f3f86c6be9bc7cbc7fbb6"
+}

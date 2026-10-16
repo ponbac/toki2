@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE buddy_battles\n        SET defender_seen_at = now()\n        WHERE id = $1\n          AND defender_id = $2\n          AND defender_seen_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "96d4545d4f1ee537f001954adaea5030bdb89a26f1cd63c7bf02455aa974b08f"
+}

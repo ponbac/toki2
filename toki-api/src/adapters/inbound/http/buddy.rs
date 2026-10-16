@@ -1,8 +1,9 @@
 //! Timer buddies: the caller's buddy profile, with their buddies' levels and the XP
-//! they earned today.
+//! they earned today, and their battles against colleagues' buddies and the daily
+//! trainer.
 //!
-//! Every malformed body is a `400` with the usual JSON error. Broken profile rules,
-//! such as a partner before it unlocks, are a `409`.
+//! Every malformed body, path or query is a `400` with the usual JSON error. Broken
+//! battle rules are a `409`, except the hourly limit on colleague battles, a `429`.
 
 use std::sync::Arc;
 
@@ -34,7 +35,9 @@ where
     S: Clone + Send + Sync + 'static,
     Arc<dyn BuddyService>: FromRef<S>,
 {
-    Router::new().route("/", get(get_profile).put(update_profile))
+    Router::new()
+        .route("/", get(get_profile).put(update_profile))
+        .merge(battles::router())
 }
 
 /// The caller's profile, `null` before they enrol.
@@ -180,6 +183,8 @@ async fn update_profile(
         profile: Some(overview.into()),
     }))
 }
+
+mod battles;
 
 #[cfg(test)]
 mod tests;

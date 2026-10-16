@@ -148,6 +148,7 @@ impl AppState {
         ai_billing_service: Arc<dyn AiBillingService>,
         ai_display_rate_service: Arc<dyn AiDisplayRateService>,
         buddy_service: Arc<dyn BuddyService>,
+        web_push_client: IsahcWebPushClient,
     ) -> Self {
         let client_futures = repo_configs
             .into_iter()
@@ -176,7 +177,6 @@ impl AppState {
             .flatten()
             .collect();
 
-        let web_push_client = IsahcWebPushClient::new().expect("Could not create web push client");
         let notification_handler = Arc::new(NotificationHandler::new(
             db_pool.clone(),
             web_push_client.clone(),

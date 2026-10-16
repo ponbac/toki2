@@ -238,10 +238,24 @@ impl From<BuddyError> for ApiError {
         match err {
             BuddyError::Invalid(message) => Self::bad_request(message),
             BuddyError::UnknownSpecies(_) => Self::bad_request(err.to_string()),
-            BuddyError::NotEnrolled | BuddyError::PartnerLocked | BuddyError::NoPartner => {
-                Self::conflict(err.to_string())
+            BuddyError::NotEnrolled
+            | BuddyError::PartnerLocked
+            | BuddyError::NoPartner
+            | BuddyError::Disabled
+            | BuddyError::OpponentUnavailable
+            | BuddyError::BattledToday
+            | BuddyError::TrainerAlreadyFought => Self::conflict(err.to_string()),
+            BuddyError::Cooldown { .. } => {
+                Self::new(StatusCode::TOO_MANY_REQUESTS, err.to_string())
             }
-            BuddyError::UserNotFound => Self::not_found(err.to_string()),
+            BuddyError::NotParticipant => Self::forbidden(err.to_string()),
+            BuddyError::UserNotFound | BuddyError::BattleNotFound => {
+                Self::not_found(err.to_string())
+            }
+            BuddyError::Battle(error) => {
+                tracing::error!("Buddy battle could not be fought: {}", error);
+                Self::internal("buddy battle failed")
+            }
             BuddyError::HoursUnavailable(message) => {
                 tracing::error!("Logged hours for buddy XP are unavailable: {}", message);
                 Self::new(

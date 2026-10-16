@@ -14,6 +14,13 @@ pub trait PushSubscriptionRepository {
         push_subscription: NewPushSubscription,
     ) -> Result<(), RepositoryError>;
     async fn delete_push_subscription(&self, id: &i32) -> Result<(), RepositoryError>;
+    /// Deletes the subscription only while it still has `endpoint`, so a device that
+    /// subscribed again in the meantime keeps its new subscription.
+    async fn delete_push_subscription_if_endpoint(
+        &self,
+        id: &i32,
+        endpoint: &str,
+    ) -> Result<(), RepositoryError>;
 }
 
 pub struct PushSubscriptionRepositoryImpl {
@@ -89,6 +96,22 @@ impl PushSubscriptionRepository for PushSubscriptionRepositoryImpl {
         sqlx::query!(r#"DELETE FROM push_subscriptions WHERE id = $1"#, id)
             .execute(&self.pool)
             .await?;
+
+        Ok(())
+    }
+
+    async fn delete_push_subscription_if_endpoint(
+        &self,
+        id: &i32,
+        endpoint: &str,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query!(
+            r#"DELETE FROM push_subscriptions WHERE id = $1 AND endpoint = $2"#,
+            id,
+            endpoint
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }

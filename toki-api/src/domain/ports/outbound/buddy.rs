@@ -3,11 +3,17 @@ use time::{Date, OffsetDateTime};
 
 use crate::domain::{
     models::{
-        AiUsageTimeZone, BuddyClock, BuddyProfile, BuddyProfileUpdate, BuddyXpDay, BuddyXpSummary,
-        DailyHours, NewBuddyProfile, UserId,
+        AiBillingMonth, AiUsageTimeZone, BattleId, BattleNotice, BattleOpponent, BattleSetup,
+        BuddyBattle, BuddyBattleSummary, BuddyClock, BuddyProfile, BuddyProfileUpdate, BuddyRival,
+        BuddyStanding, BuddyXpDay, BuddyXpSummary, DailyHours, NewBuddyBattle, NewBuddyProfile,
+        TrainerBattle, UserId,
     },
     BuddyError,
 };
+
+/// Decides a new battle from its setup: checks the rules and resolves it, or refuses.
+pub type BattlePlan<'a> =
+    dyn Fn(&BattleSetup) -> Result<NewBuddyBattle, BuddyError> + Send + Sync + 'a;
 
 /// Stored buddy profiles, buddies and the sources of their XP.
 #[async_trait]
@@ -59,6 +65,69 @@ pub trait BuddyRepository: Send + Sync + 'static {
         user_id: &UserId,
         days: &[BuddyXpDay],
     ) -> Result<OffsetDateTime, BuddyError>;
+
+    /// Everyone but the user whose buddy is switched on, by name, with their head-to-
+    /// head record against the user in colleague battles either of them started, and
+    /// whether the user battled them on the local date `today`.
+    async fn rivals(&self, user_id: &UserId, today: Date) -> Result<Vec<BuddyRival>, BuddyError>;
+
+    /// When the user last started a colleague battle.
+    async fn last_colleague_battle_at(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<OffsetDateTime>, BuddyError>;
+
+    /// Starts a battle of `challenger_id` against `opponent`, all or nothing: locks the
+    /// challenger's battles against concurrent ones, reads the setup with the clock in
+    /// `time_zone`, lets `plan` decide the battle and stores it. Returns the stored
+    /// battle and the setup it was decided from. Fails with what `plan` fails with,
+    /// changing nothing, and with `BattledToday` or `TrainerAlreadyFought` when the
+    /// challenger already had that battle today.
+    async fn start_battle(
+        &self,
+        challenger_id: &UserId,
+        opponent: BattleOpponent,
+        time_zone: &AiUsageTimeZone,
+        plan: &BattlePlan<'_>,
+    ) -> Result<(BuddyBattle, BattleSetup), BuddyError>;
+
+    /// The user's battle against the daily trainer on the local date `day`, if any.
+    async fn trainer_battle(
+        &self,
+        user_id: &UserId,
+        day: Date,
+    ) -> Result<Option<TrainerBattle>, BuddyError>;
+
+    /// The battles the user started or defended since `since`, newest first, at most
+    /// `limit` of them.
+    async fn recent_battles(
+        &self,
+        user_id: &UserId,
+        since: OffsetDateTime,
+        limit: i64,
+    ) -> Result<Vec<BuddyBattleSummary>, BuddyError>;
+
+    /// The battle, or `None` when there is no such battle.
+    async fn battle(&self, battle_id: BattleId) -> Result<Option<BuddyBattle>, BuddyError>;
+
+    /// Records that the defender saw the battle now, unless they saw it before.
+    async fn mark_battle_seen(
+        &self,
+        battle_id: BattleId,
+        defender_id: &UserId,
+    ) -> Result<(), BuddyError>;
+
+    /// Everyone who started a battle on a local date in `month`, with the results of
+    /// the battles they started then.
+    async fn standings(&self, month: AiBillingMonth) -> Result<Vec<BuddyStanding>, BuddyError>;
+}
+
+/// Tells users about battles that colleagues started against them.
+#[async_trait]
+pub trait BuddyNotifier: Send + Sync + 'static {
+    /// Tells the defender how the battle went, as far as it can: failures are logged,
+    /// never returned, because a battle never depends on its notice.
+    async fn battle_fought(&self, notice: &BattleNotice);
 }
 
 /// The hours users logged in time tracking.

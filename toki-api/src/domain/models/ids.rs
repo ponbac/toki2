@@ -229,3 +229,23 @@ impl AiSubscriptionId {
         self.0
     }
 }
+
+/// A timer buddy battle identifier (database SERIAL).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BattleId(i32);
+
+impl BattleId {
+    pub const fn new(id: i32) -> Self {
+        Self(id)
+    }
+
+    pub fn as_i32(&self) -> i32 {
+        self.0
+    }
+}
+
+impl fmt::Display for BattleId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}

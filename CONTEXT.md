@@ -99,3 +99,11 @@ _Avoid_: effective level
 **Daily trainer**:
 A computer-controlled opponent that everyone shares for one local day: two species drawn by the date, both Lv 25, and a name from a fixed list. Each user may battle it once a day, apart from the hourly limit on battling colleagues.
 _Avoid_: NPC, boss, bot
+
+**Battle**:
+A fight between a user's buddies and a colleague's, or the daily trainer's, which the server resolves once from a seed when the user starts it; both sides then watch the same replay, so the colleague need not be online. The user who starts it is the challenger, the colleague the defender. It is two against two when both have a partner, otherwise lead against lead, each at the level it has when the battle starts. A user starts at most one colleague battle per rolling hour and battles each colleague at most once per local day; the defender is told by push notification unless they opted out.
+_Avoid_: match, duel, challenge (as a noun)
+
+**Buddy leaderboard**:
+For one local calendar month, the battles each user started: their wins, losses and draws against colleagues, and the days they beat the daily trainer. Defending never counts, and levels and logged hours never rank.
+_Avoid_: ranking, high score

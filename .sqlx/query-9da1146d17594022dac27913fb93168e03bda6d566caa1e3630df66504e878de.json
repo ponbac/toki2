@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            battle.id,\n            battle.kind,\n            battle.created_at,\n            battle.challenger_id,\n            challenger.full_name AS challenger_name,\n            battle.defender_id,\n            defender.full_name AS \"defender_name?\",\n            battle.trainer_name,\n            battle.winner,\n            battle.challenger_team AS \"challenger_team: Json<BattleTeam>\",\n            battle.defender_team AS \"defender_team: Json<BattleTeam>\",\n            battle.defender_seen_at\n        FROM buddy_battles AS battle\n        JOIN users AS challenger ON challenger.id = battle.challenger_id\n        LEFT JOIN users AS defender ON defender.id = battle.defender_id\n        WHERE (battle.challenger_id = $1 OR battle.defender_id = $1)\n          AND battle.created_at >= $2\n        ORDER BY battle.created_at DESC, battle.id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "challenger_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "challenger_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "defender_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "defender_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "trainer_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "winner",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "challenger_team: Json<BattleTeam>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "defender_team: Json<BattleTeam>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 11,
+        "name": "defender_seen_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "9da1146d17594022dac27913fb93168e03bda6d566caa1e3630df66504e878de"
+}
