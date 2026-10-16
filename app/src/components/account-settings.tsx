@@ -142,22 +142,19 @@ export function AccountSettings() {
   const isMutating =
     uploadAvatar.isPending || deleteAvatar.isPending || tokenIssuance.isPending;
 
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && tokenIssuance.isPending) {
+      toast.info("Wait for token creation to finish before closing settings");
+      return;
+    }
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      clearSelectedFile();
+    }
+  };
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen && tokenIssuance.isPending) {
-          toast.info(
-            "Wait for token creation to finish before closing settings",
-          );
-          return;
-        }
-        setOpen(nextOpen);
-        if (!nextOpen) {
-          clearSelectedFile();
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <button
           type="button"
@@ -265,7 +262,7 @@ export function AccountSettings() {
             </div>
           </div>
 
-          <TimerBuddiesCard />
+          <TimerBuddiesCard onNavigate={() => handleOpenChange(false)} />
 
           <ApiTokensSettings issuance={tokenIssuance} />
 
@@ -301,9 +298,10 @@ export function AccountSettings() {
 
 /**
  * The timer buddies at a glance, opening their own settings over the account
- * dialog.
+ * dialog. `onNavigate` closes the account dialog when a link there leaves for
+ * another page.
  */
-function TimerBuddiesCard() {
+function TimerBuddiesCard({ onNavigate }: { onNavigate: () => void }) {
   const [open, setOpen] = React.useState(false);
   const profileQuery = useQuery(buddyApiQueries.profile());
   const profile = profileQuery.data;
@@ -341,6 +339,10 @@ function TimerBuddiesCard() {
         nested
         open={open}
         onOpenChange={setOpen}
+        onNavigate={() => {
+          setOpen(false);
+          onNavigate();
+        }}
         trigger={
           <Button
             type="button"

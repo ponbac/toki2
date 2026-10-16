@@ -19,6 +19,7 @@ import {
   KanbanSquare,
   ReceiptText,
   ShieldCheck,
+  SwordsIcon,
   TimerIcon,
   WalletCards,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import type { ListPullRequest } from "@/lib/api/contracts/pull-request";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { userQueries } from "@/lib/api/queries/user";
+import { useBuddiesEnabled } from "@/lib/buddy/profile";
 import { toast } from "sonner";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import {
@@ -187,6 +189,7 @@ const PAGES = [
   { title: "Time Tracking", to: "/time-tracking", icon: TimerIcon },
   { title: "Repositories", to: "/repositories", icon: FolderGit2 },
   { title: "AI usage", to: "/ai-usage", icon: BrainCircuit },
+  { title: "Buddies", to: "/buddies", icon: SwordsIcon, buddiesOnly: true },
   {
     title: "Admin: AI billing",
     to: "/admin/ai-billing",
@@ -213,7 +216,12 @@ function PagesCommandGroup(props: { close: () => void }) {
     ...userQueries.me(),
     select: (me) => me.roles.includes("Admin"),
   });
-  const pages = PAGES.filter((page) => !("adminOnly" in page) || isAdmin);
+  const buddiesEnabled = useBuddiesEnabled();
+  const pages = PAGES.filter(
+    (page) =>
+      (!("adminOnly" in page) || isAdmin) &&
+      (!("buddiesOnly" in page) || buddiesEnabled),
+  );
 
   return (
     <CommandGroup heading="Pages">
