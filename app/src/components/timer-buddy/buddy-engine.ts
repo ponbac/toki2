@@ -10,12 +10,28 @@ export type BuddyDay = {
   readonly scheduledHours: number;
 };
 
-type BuddyEngineOptions = {
-  /** A viewport-sized, fixed-position element the buddy draws into. */
+/**
+ * The part of the timer a buddy keeps to. A lone buddy has all of it; with two,
+ * the right lane holds the save button and the left one the rest.
+ */
+export type BuddyLane = "full" | "left" | "right";
+
+/**
+ * The lead reacts to everything on the timer. The partner skips the save
+ * hover, the status plate and the floating values, and only hops or flinches
+ * along, so two buddies never tell the user the same thing twice.
+ */
+export type BuddyRole = "lead" | "partner";
+
+/** Options for a new engine. */
+export type BuddyEngineOptions = {
+  /** A viewport-sized, fixed-position element the buddy draws into, one per engine. */
   readonly layer: HTMLElement;
   readonly sheet: BuddySheet;
   /** Shows a still frame on its perch and skips every animation and effect. */
   readonly reducedMotion: boolean;
+  readonly lane: BuddyLane;
+  readonly role: BuddyRole;
 };
 
 /** What the buddy stands on: the timer card, its minimized pill, or the screen's bottom edge. */
@@ -24,6 +40,12 @@ type Ground = {
   readonly x1: number;
   readonly x2: number;
   readonly y: number;
+};
+
+/** The timer, before it is split into lanes, and the centre of its save button if it has one. */
+type Perch = {
+  readonly ground: Ground;
+  readonly saveX: number | null;
 };
 
 /** A timer button the pointer is resting on. */
@@ -41,6 +63,7 @@ type Drag = {
 };
 
 const PERCH_SELECTOR = "[data-buddy-perch]";
+const SAVE_SELECTOR = "[data-buddy-save]";
 /** Keeps the buddy off the rounded corners of the card. */
 const PERCH_INSET = 20;
 /** The card re-mounts briefly around saves; a short absence is not "no timer". */
@@ -59,6 +82,8 @@ const SCREEN_MARGIN = 12;
 const WIDE_VIEWPORT = 768;
 const TIMER_CARD_WIDTH = 400;
 const TIMER_CARD_MARGIN = 16;
+/** Space between two buddies' lanes: about one sprite frame at the timer's scale. */
+const LANE_GAP = 64;
 
 const random = (min: number, max: number) => min + Math.random() * (max - min);
 const clamp = (value: number, min: number, max: number) =>
@@ -71,11 +96,16 @@ const clamp = (value: number, min: number, max: number) =>
  * Behaviour is a chain of small continuations. `task` is the one running now,
  * and starting another replaces it, which is how events interrupt idling.
  * `busy` guards the reactions that must play to the end.
+ *
+ * Two buddies are two engines, each with its own layer, lane and role. They
+ * hear the same events and keep apart by staying in their lanes.
  */
 export class BuddyEngine {
   private readonly layer: HTMLElement;
   private readonly sheet: BuddySheet;
   private readonly still: boolean;
+  private lane: BuddyLane;
+  private readonly role: BuddyRole;
   private readonly sprite: BuddySprite;
   private readonly effects: BuddyEffects;
   private readonly hit: HTMLDivElement;
@@ -113,12 +143,14 @@ export class BuddyEngine {
     this.layer = options.layer;
     this.sheet = options.sheet;
     this.still = options.reducedMotion;
+    this.lane = options.lane;
+    this.role = options.role;
     this.sprite = new BuddySprite(options.sheet);
     this.effects = new BuddyEffects(options.layer);
     this.hit = document.createElement("div");
     this.hit.className = "tb-hit";
 
-    this.home = this.findPerch() ?? this.homeFloor();
+    this.home = this.perchHome() ?? this.homeFloor();
     this.ground = this.home;
     this.sprite.x = (this.home.x1 + this.home.x2) / 2;
     this.sprite.y = this.home.y;
@@ -184,6 +216,47 @@ export class BuddyEngine {
   }
 
   /**
+   * Moves the buddy to another lane, as when the partner is shown or hidden.
+   * Standing on the timer outside its new lane, it walks over, or hops over
+   * once the reaction it is in has played.
+   */
+  setLane(lane: BuddyLane): void {
+    if (lane === this.lane) {
+      return;
+    }
+    this.lane = lane;
+    // Anywhere else, the next re-measure, landing or relocation uses the new lane.
+    if (this.still || this.airborne || !this.atHome) {
+      return;
+    }
+
+    const home = this.measureHome(0);
+    this.home = home;
+    const x = this.sprite.x;
+    if (this.ground.kind !== home.kind || (x >= home.x1 && x <= home.x2)) {
+      return;
+    }
+    // It keeps its footing where it stands, so the next re-measure does not pull it over.
+    this.ground = {
+      ...home,
+      x1: Math.min(home.x1, x),
+      x2: Math.max(home.x2, x),
+    };
+    this.atHome = false;
+    if (this.busy) {
+      return;
+    }
+
+    this.busy = "event";
+    this.asleep = false;
+    this.walk(clamp(x, home.x1, home.x2), 100, () => {
+      this.ground = home;
+      this.atHome = true;
+      this.finish();
+    });
+  }
+
+  /**
    * Feeds the running timer's elapsed seconds. Ticking past a full hour
    * triggers the hourly spin; jumps such as the first load do not.
    */
@@ -206,6 +279,10 @@ export class BuddyEngine {
       !this.noteFocused
     ) {
       this.busy = "event";
+      if (this.role === "partner") {
+        this.once("Hop", this.finish);
+        return;
+      }
       this.effects.floatText(`${hours}h!`, "gain", this.anchor());
       this.sequence([["Rotate"], ["Hop"]], this.finish);
     }
@@ -213,6 +290,9 @@ export class BuddyEngine {
 
   /** The pointer is over the save button at viewport x, or left it (`null`). */
   saveHover(x: number | null): void {
+    if (this.role === "partner") {
+      return;
+    }
     if (x === null) {
       this.clearHover("save");
       return;
@@ -222,6 +302,9 @@ export class BuddyEngine {
 
   /** The pointer entered or left the delete button. */
   deleteHover(active: boolean): void {
+    if (this.role === "partner") {
+      return;
+    }
     if (active) {
       this.setHover({ kind: "delete" });
     } else {
@@ -250,7 +333,9 @@ export class BuddyEngine {
 
     if (changed) {
       this.busy = "event";
-      this.effects.bubble("note", this.anchor());
+      if (this.role === "lead") {
+        this.effects.bubble("note", this.anchor());
+      }
       this.once("Hop", this.finish);
     } else {
       this.rest();
@@ -282,6 +367,12 @@ export class BuddyEngine {
     const toMinutes = fromMinutes + seconds / 60;
     const reachedGoal =
       goalMinutes > 0 && fromMinutes < goalMinutes && toMinutes >= goalMinutes;
+
+    if (this.role === "partner") {
+      // The lead shows what was saved; the partner cheers along.
+      this.sequence(reachedGoal ? [["Hop"], ["Hop"]] : [["Hop"]], this.finish);
+      return;
+    }
 
     if (goalMinutes > 0) {
       this.effects.plate(
@@ -323,6 +414,10 @@ export class BuddyEngine {
     this.hover = null;
     this.asleep = false;
     this.busy = "event";
+    if (this.role === "partner") {
+      this.once("Hurt", this.finish);
+      return;
+    }
     this.effects.floatText(
       `-${formatBuddyDuration(seconds)}`,
       "loss",
@@ -388,7 +483,7 @@ export class BuddyEngine {
 
   // --- where the buddy lives ----------------------------------------------
 
-  private findPerch(): Ground | null {
+  private findPerch(): Perch | null {
     const perch = document.querySelector<HTMLElement>(PERCH_SELECTOR);
     if (!perch) {
       return null;
@@ -396,15 +491,45 @@ export class BuddyEngine {
 
     const rect = perch.getBoundingClientRect();
     const inset = Math.min(PERCH_INSET, rect.width / 4);
+    const save = perch
+      .querySelector<HTMLElement>(SAVE_SELECTOR)
+      ?.getBoundingClientRect();
     return {
-      kind: perch.dataset.buddyPerch === "pill" ? "pill" : "card",
-      x1: rect.left + inset,
-      x2: rect.right - inset,
-      y: Math.round(rect.top),
+      ground: {
+        kind: perch.dataset.buddyPerch === "pill" ? "pill" : "card",
+        x1: rect.left + inset,
+        x2: rect.right - inset,
+        y: Math.round(rect.top),
+      },
+      saveX: save ? save.left + save.width / 2 : null,
     };
   }
 
-  /** With no timer the buddy keeps to the corner the timer would occupy. */
+  /** This buddy's lane of the timer, or `null` when there is no timer. */
+  private perchHome(): Ground | null {
+    const perch = this.findPerch();
+    return perch ? this.inLane(perch.ground, perch.saveX) : null;
+  }
+
+  /**
+   * Narrows a home to this buddy's lane. The lanes sit `LANE_GAP` apart around
+   * the middle, shifted left when the save button is left of the middle, so
+   * the lead in the right lane can always stand over it.
+   */
+  private inLane(ground: Ground, saveX: number | null): Ground {
+    if (this.lane === "full") {
+      return ground;
+    }
+
+    const middle = (ground.x1 + ground.x2) / 2;
+    const split =
+      saveX === null ? middle : Math.min(middle, saveX - LANE_GAP / 2);
+    return this.lane === "right"
+      ? { ...ground, x1: clamp(split + LANE_GAP / 2, ground.x1, ground.x2) }
+      : { ...ground, x2: clamp(split - LANE_GAP / 2, ground.x1, ground.x2) };
+  }
+
+  /** With no timer the buddy keeps to its lane of the corner the timer would occupy. */
   private homeFloor(): Ground {
     const width = window.innerWidth;
     const wide = width >= WIDE_VIEWPORT;
@@ -412,16 +537,19 @@ export class BuddyEngine {
       ? Math.max(TIMER_CARD_MARGIN, width - TIMER_CARD_MARGIN - TIMER_CARD_WIDTH)
       : width * 0.05;
     const right = wide ? width - TIMER_CARD_MARGIN : width * 0.95;
-    return {
-      kind: "floor",
-      x1: left + PERCH_INSET,
-      x2: right - PERCH_INSET,
-      y: window.innerHeight,
-    };
+    return this.inLane(
+      {
+        kind: "floor",
+        x1: left + PERCH_INSET,
+        x2: right - PERCH_INSET,
+        y: window.innerHeight,
+      },
+      null,
+    );
   }
 
   private measureHome(dt: number): Ground {
-    const perch = this.findPerch();
+    const perch = this.perchHome();
     if (perch) {
       this.perchMissingFor = 0;
       return perch;
@@ -762,16 +890,33 @@ export class BuddyEngine {
 
     // Dropped over the timer it lands there; anywhere else it falls to the floor.
     const home = this.home;
+    const perch =
+      home.kind === "floor" ? null : (this.findPerch()?.ground ?? home);
     const overPerch =
-      home.kind !== "floor" &&
-      this.sprite.x >= home.x1 - 10 &&
-      this.sprite.x <= home.x2 + 10 &&
+      perch !== null &&
+      this.sprite.x >= perch.x1 - 10 &&
+      this.sprite.x <= perch.x2 + 10 &&
       this.sprite.y <= home.y + 6;
     const landing = overPerch ? home : this.openFloor();
     this.fall(landing.y, () => {
-      this.ground = landing;
-      this.atHome = overPerch;
-      this.sprite.x = clamp(this.sprite.x, landing.x1, landing.x2);
+      if (perch && overPerch) {
+        this.sprite.x = clamp(this.sprite.x, perch.x1, perch.x2);
+        const inLane =
+          this.sprite.x >= landing.x1 && this.sprite.x <= landing.x2;
+        // In the other buddy's lane it stands where it landed, then hops over to its own.
+        this.ground = inLane
+          ? landing
+          : {
+              ...landing,
+              x1: Math.min(landing.x1, this.sprite.x),
+              x2: Math.max(landing.x2, this.sprite.x),
+            };
+        this.atHome = inLane;
+      } else {
+        this.ground = landing;
+        this.atHome = false;
+        this.sprite.x = clamp(this.sprite.x, landing.x1, landing.x2);
+      }
       this.once("Hop", this.finish);
     });
   };

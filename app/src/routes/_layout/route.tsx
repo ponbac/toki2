@@ -7,12 +7,11 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Outlet, createFileRoute } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
-import { useAtomValue } from "jotai/react";
 import { TimerEditDialog } from "@/components/timer-edit-dialog";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery } from "@tanstack/react-query";
 import { useTimeTrackingEditTimerDialogOpen, useTimeTrackingActions } from "@/hooks/useTimeTrackingStore";
-import { timerBuddyEnabledAtom } from "@/lib/buddy/preferences";
+import { useBuddiesEnabled } from "@/lib/buddy/profile";
 
 const TimerBuddy = lazy(() => import("@/components/timer-buddy/timer-buddy"));
 
@@ -47,7 +46,7 @@ function LayoutComponent() {
 function TimerProvider() {
   const editTimerDialogOpen = useTimeTrackingEditTimerDialogOpen();
   const { setEditTimerDialogOpen } = useTimeTrackingActions();
-  const timerBuddyEnabled = useAtomValue(timerBuddyEnabledAtom);
+  const buddiesEnabled = useBuddiesEnabled();
 
   const { data: connectionStatus } = useQuery(
     timeTrackingQueries.connectionStatus(),
@@ -69,7 +68,7 @@ function TimerProvider() {
   return (
     <>
       <FloatingTimer />
-      {timerBuddyEnabled && (
+      {buddiesEnabled && (
         <Suspense fallback={null}>
           <TimerBuddy />
         </Suspense>
