@@ -50,14 +50,6 @@ export function defaultBuddySpeciesId(seed?: string | null): BuddySpeciesId {
   return species.id;
 }
 
-/** The stored choice when it is still a valid buddy, otherwise the seeded default. */
-export function resolveBuddySpeciesId(
-  selected: BuddySpeciesId | null,
-  seed?: string | null,
-): BuddySpeciesId {
-  return selected ?? defaultBuddySpeciesId(seed);
-}
-
 /** A uniformly random buddy, for the shuffle button. */
 export function randomBuddySpeciesId(): BuddySpeciesId {
   const species =

@@ -1,6 +1,7 @@
 import { MutationOptions } from "@tanstack/react-query";
 import { aiProjectMappingMutations } from "./ai-project-mappings";
 import { aiUsageMutations } from "./ai-usage";
+import { buddyMutations } from "./buddy";
 import { differsMutations } from "./differs";
 import { repositoriesMutations } from "./repositories";
 import { timeTrackingMutations } from "./time-tracking";
@@ -32,6 +33,7 @@ export type MutationFnAsync<T> = T extends (...args: any[]) => {
 export const mutations = {
   ...aiProjectMappingMutations,
   ...aiUsageMutations,
+  ...buddyMutations,
   ...differsMutations,
   ...repositoriesMutations,
   ...timeTrackingMutations,

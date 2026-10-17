@@ -21,3 +21,19 @@ export function formatBuddyMinutes(minutes: number): string {
   }
   return rest === 0 ? `${hours}h` : `${hours}h${String(rest).padStart(2, "0")}m`;
 }
+
+/** Formats an XP amount with thousands separators: "1,954 XP". */
+export function formatBuddyXp(xp: number): string {
+  return `${xp.toLocaleString("en-US")} XP`;
+}
+
+/** Formats logged hours for the XP breakdown: "6h 30m", "8h", "45m". */
+export function formatLoggedHours(hours: number): string {
+  const minutes = Math.round(hours * 60);
+  const whole = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (whole === 0) {
+    return `${rest}m`;
+  }
+  return rest === 0 ? `${whole}h` : `${whole}h ${rest}m`;
+}

@@ -1,29 +1,15 @@
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
-import { type BuddySpeciesId, parseBuddySpeciesId } from "./species";
 
-/** How long the buddy rests between idle behaviours. */
+/** How long the buddies rest between idle behaviours. */
 export type BuddyEnergy = "calm" | "lively";
 
 /**
- * Read from localStorage on first use rather than after mount. Otherwise the
- * first render sees the defaults: a switched-off buddy would still load and
- * flash, and a picked Pokemon would briefly be the default one.
+ * Read from localStorage on first use rather than after mount, so the first
+ * render already has the stored energy.
  */
 const READ_ON_INIT = { getOnInit: true };
 
-const storedEnabledAtom = atomWithStorage<unknown>(
-  "timer-buddy-enabled",
-  null,
-  undefined,
-  READ_ON_INIT,
-);
-const storedSpeciesAtom = atomWithStorage<unknown>(
-  "timer-buddy-species",
-  null,
-  undefined,
-  READ_ON_INIT,
-);
 const storedEnergyAtom = atomWithStorage<unknown>(
   "timer-buddy-energy",
   "calm",
@@ -31,34 +17,10 @@ const storedEnergyAtom = atomWithStorage<unknown>(
   READ_ON_INIT,
 );
 
-/** Whether the timer buddy is shown. It stays off until the user turns it on. */
-export const timerBuddyEnabledAtom = atom(
-  (get) => get(storedEnabledAtom) === true,
-  (_get, set, enabled: boolean) => {
-    set(storedEnabledAtom, enabled);
-  },
-);
-
 /**
- * Whether the user has said yes or no to the buddy, in the intro toast or in
- * the settings. Until then the intro toast offers it.
+ * The buddies' energy level, a preference of this device rather than of the
+ * account. Unknown stored values read as "calm".
  */
-export const timerBuddyAnsweredAtom = atom(
-  (get) => typeof get(storedEnabledAtom) === "boolean",
-);
-
-/**
- * The Pokemon the user picked, or `null` to follow their fallback avatar.
- * Stored values that no longer name an available buddy read as `null`.
- */
-export const timerBuddySpeciesAtom = atom(
-  (get) => parseBuddySpeciesId(get(storedSpeciesAtom)),
-  (_get, set, speciesId: BuddySpeciesId | null) => {
-    set(storedSpeciesAtom, speciesId);
-  },
-);
-
-/** The buddy's energy level. Unknown stored values read as "calm". */
 export const timerBuddyEnergyAtom = atom(
   (get): BuddyEnergy =>
     get(storedEnergyAtom) === "lively" ? "lively" : "calm",

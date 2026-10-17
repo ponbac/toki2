@@ -22,10 +22,18 @@ import { Switch } from "./ui/switch";
 import { useAvatarSourceWithFallback } from "@/hooks/useAvatarSourceWithFallback";
 import { useApiTokenIssuance } from "@/hooks/use-api-token-issuance";
 import { userMutations } from "@/lib/api/mutations/user";
+import { buddyApiQueries } from "@/lib/api/queries/buddy";
 import { userQueries } from "@/lib/api/queries/user";
 import { buildAvatarSources } from "@/lib/avatar";
 import { enablePokemonAvatarFallbackAtom } from "@/lib/avatar-preferences";
-import { TimerBuddySettings } from "./timer-buddy/buddy-settings";
+import {
+  buddyTeam,
+  formatBuddyTeam,
+  useStartingBuddy,
+} from "@/lib/buddy/profile";
+import { cn } from "@/lib/utils";
+import { BuddyPreview } from "./timer-buddy/buddy-preview";
+import { BuddySettingsDialog } from "./timer-buddy/buddy-settings-dialog";
 
 /** Navigation avatar trigger and cohesive account-settings dialog. */
 export function AccountSettings() {
@@ -174,7 +182,7 @@ export function AccountSettings() {
         <DialogHeader>
           <DialogTitle>Account</DialogTitle>
           <DialogDescription>
-            Avatar, timer buddy, API tokens, and AI subscriptions.
+            Avatar, timer buddies, API tokens, and AI subscriptions.
           </DialogDescription>
         </DialogHeader>
 
@@ -257,7 +265,7 @@ export function AccountSettings() {
             </div>
           </div>
 
-          <TimerBuddySettings avatarSeed={me?.email} />
+          <TimerBuddiesCard />
 
           <ApiTokensSettings issuance={tokenIssuance} />
 
@@ -288,5 +296,62 @@ export function AccountSettings() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The timer buddies at a glance, opening their own settings over the account
+ * dialog.
+ */
+function TimerBuddiesCard() {
+  const [open, setOpen] = React.useState(false);
+  const profileQuery = useQuery(buddyApiQueries.profile());
+  const profile = profileQuery.data;
+  const starting = useStartingBuddy();
+
+  // Before enrolling, the buddy on offer is the one the user would start with.
+  const leadSpeciesId = profile ? profile.lead.speciesId : starting.speciesId;
+  const status =
+    profile !== undefined
+      ? profile?.enabled
+        ? formatBuddyTeam(buddyTeam(profile))
+        : "Off"
+      : profileQuery.isError
+        ? "Could not load your buddies"
+        : "Loading...";
+
+  return (
+    <div className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2">
+      {leadSpeciesId === null ? (
+        <div
+          aria-hidden="true"
+          className="size-16 shrink-0 rounded-md border border-border/60 bg-background"
+        />
+      ) : (
+        <BuddyPreview
+          speciesId={leadSpeciesId}
+          className={cn(!profile?.enabled && "opacity-60 grayscale")}
+        />
+      )}
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="text-sm font-medium text-foreground">Timer buddies</p>
+        <p className="truncate text-xs text-muted-foreground">{status}</p>
+      </div>
+      <BuddySettingsDialog
+        nested
+        open={open}
+        onOpenChange={setOpen}
+        trigger={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Open timer buddy settings"
+          >
+            Open
+          </Button>
+        }
+      />
+    </div>
   );
 }

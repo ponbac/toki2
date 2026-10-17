@@ -38,7 +38,7 @@ import {
   isDefaultStartTimerNote,
 } from "@/lib/time-tracking-default-notes";
 import { emitBuddyEvent } from "@/lib/buddy/events";
-import { timerBuddyEnabledAtom } from "@/lib/buddy/preferences";
+import { useBuddiesEnabled } from "@/lib/buddy/profile";
 import { Textarea } from "./ui/textarea";
 import { ScrollArea } from "./ui/scroll-area";
 
@@ -107,7 +107,7 @@ export const FloatingTimer = () => {
   const setLastProject = useSetAtom(lastProjectAtom);
   const setLastActivity = useSetAtom(lastActivityAtom);
   const rememberLastProject = useAtomValue(rememberLastProjectAtom);
-  const timerBuddyEnabled = useAtomValue(timerBuddyEnabledAtom);
+  const buddiesEnabled = useBuddiesEnabled();
 
   const { data: timerResponse } = useQuery({
     ...timeTrackingQueries.getTimer(),
@@ -371,6 +371,8 @@ export const FloatingTimer = () => {
                         variant="ghost"
                         size="icon"
                         onClick={handleSaveButtonClick}
+                        // With two buddies, the lead's lane starts here so it can stand over the button.
+                        data-buddy-save=""
                         onPointerEnter={(e) => {
                           const rect = e.currentTarget.getBoundingClientRect();
                           emitBuddyEvent({
@@ -387,8 +389,8 @@ export const FloatingTimer = () => {
                         <span className="sr-only">Save</span>
                       </Button>
                     </TooltipTrigger>
-                    {/* The buddy runs to the spot above this button, so the tooltip opens below. */}
-                    <TooltipContent side={timerBuddyEnabled ? "bottom" : "top"}>
+                    {/* The lead buddy runs to the spot above this button, so the tooltip opens below. */}
+                    <TooltipContent side={buddiesEnabled ? "bottom" : "top"}>
                       Save (Ctrl/Cmd+Click to save without creating a new timer)
                     </TooltipContent>
                   </Tooltip>

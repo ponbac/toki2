@@ -1,5 +1,6 @@
 import { aiUsageQueries } from "./ai-usage";
 import { aiUsageReportQueries } from "./ai-usage-report";
+import { buddyApiQueries } from "./buddy";
 import { differsQueries } from "./differs";
 import { pullRequestsQueries } from "./pullRequests";
 import { commitsQueries } from "./commits";
@@ -10,6 +11,7 @@ import { workItemsQueries } from "./workItems";
 export const queries = {
   ...aiUsageQueries,
   ...aiUsageReportQueries,
+  ...buddyApiQueries,
   ...userQueries,
   ...differsQueries,
   ...pullRequestsQueries,

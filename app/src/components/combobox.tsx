@@ -25,6 +25,8 @@ type ComboboxItem = {
 };
 
 type ComboboxProps = {
+  /** Names the combobox for screen readers, which otherwise hear only the picked item. */
+  ariaLabel?: string;
   items: ComboboxItem[];
   placeholder: string;
   searchPlaceholder?: string;
@@ -65,6 +67,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
           <Button
             variant="outline"
             role="combobox"
+            aria-label={props.ariaLabel}
             aria-expanded={open}
             className="w-full justify-between"
             disabled={props.disabled}
