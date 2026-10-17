@@ -15,8 +15,8 @@ Permanent notes for Toki's Model Context Protocol endpoint. Read this before cha
 - `/mcp` never accepts the browser session cookie.
 - A Toki personal API token (`Authorization: Bearer toki_…`) always works. Create one under account settings.
 - With `mcp.oauth` configured, `/mcp` is also an OAuth resource server for Microsoft Entra ID:
-  - Unauthenticated requests get `401` with `WWW-Authenticate: Bearer resource_metadata="{api_url}/.well-known/oauth-protected-resource/mcp", scope="{api_url}/mcp/{scope}"`.
-  - The metadata names `https://login.microsoftonline.com/{tenant_id}/v2.0` as the authorization server and `{api_url}/mcp` as the resource.
+  - Unauthenticated requests get `401` with `WWW-Authenticate: Bearer resource_metadata="{api_url}/.well-known/oauth-protected-resource/mcp", scope="{api_url}/mcp/{scope} offline_access"`.
+  - The metadata names `https://login.microsoftonline.com/{tenant_id}/v2.0` as the authorization server and `{api_url}/mcp` as the resource. Its scopes include `offline_access`, because clients request the scopes listed there and Entra issues refresh tokens only for that scope.
   - Tokens must be v2 access tokens signed by the tenant (keys from its JWKS), with `iss` the v2 issuer, `aud` = `auth.client_id`, `tid` = `tenant_id`, and `scope` in `scp`.
   - The token's `preferred_username`, then its `email`, is matched, ignoring case, to an existing Toki user's email, which the web sign-in recorded. Users must have signed in to Toki in the browser once.
 - Neither token kind carries admin power (`AuthMethod::allows_admin_power`).

@@ -41,6 +41,10 @@ pub fn metadata_url(api_url: &Url) -> String {
 }
 
 /// Protected Resource Metadata naming `issuer` as the authorization server.
+///
+/// The scopes include `offline_access`: clients request the scopes listed here,
+/// and Entra issues a refresh token only for that scope, so without it a
+/// connection would expire with its first access token.
 pub fn protected_resource_metadata(
     api_url: &Url,
     issuer: String,
@@ -48,7 +52,7 @@ pub fn protected_resource_metadata(
 ) -> ProtectedResourceMetadata {
     let resource = resource_url(api_url);
     ProtectedResourceMetadata {
-        scopes_supported: vec![format!("{resource}/{scope}")],
+        scopes_supported: vec![format!("{resource}/{scope}"), "offline_access".to_string()],
         resource,
         authorization_servers: vec![issuer],
         bearer_methods_supported: vec!["header".to_string()],
@@ -140,7 +144,7 @@ mod tests {
         let metadata = protected_resource_metadata(&api_url, entra_issuer("tenant"), "mcp");
         assert_eq!(
             metadata.scopes_supported,
-            ["https://toki-api.spinit.se/mcp/mcp"]
+            ["https://toki-api.spinit.se/mcp/mcp", "offline_access"]
         );
         assert_eq!(
             metadata.authorization_servers,

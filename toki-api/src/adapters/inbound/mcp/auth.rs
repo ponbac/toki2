@@ -258,7 +258,10 @@ mod tests {
             metadata: ProtectedResourceMetadata {
                 resource: "https://toki.example/mcp".into(),
                 authorization_servers: vec!["https://login.example/tenant/v2.0".into()],
-                scopes_supported: vec!["https://toki.example/mcp/mcp".into()],
+                scopes_supported: vec![
+                    "https://toki.example/mcp/mcp".into(),
+                    "offline_access".into(),
+                ],
                 bearer_methods_supported: vec!["header".into()],
                 resource_name: "Toki".into(),
             },
@@ -314,7 +317,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             response.headers()[WWW_AUTHENTICATE],
-            "Bearer resource_metadata=\"https://toki.example/.well-known/oauth-protected-resource/mcp\", scope=\"https://toki.example/mcp/mcp\""
+            "Bearer resource_metadata=\"https://toki.example/.well-known/oauth-protected-resource/mcp\", scope=\"https://toki.example/mcp/mcp offline_access\""
         );
     }
 
