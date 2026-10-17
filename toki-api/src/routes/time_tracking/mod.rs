@@ -1,9 +1,9 @@
 mod absences;
 mod admin;
-mod calendar;
-mod connection;
-mod projects;
-mod timer;
+pub(crate) mod calendar;
+pub(crate) mod connection;
+pub(crate) mod projects;
+pub(crate) mod timer;
 
 use axum::{
     routing::{get, put},

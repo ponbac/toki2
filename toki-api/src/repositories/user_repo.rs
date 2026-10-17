@@ -6,6 +6,10 @@ use super::repo_error::RepositoryError;
 pub trait UserRepository {
     async fn get_user(&self, id: UserId) -> Result<User, RepositoryError>;
     async fn get_users(&self) -> Result<Vec<User>, RepositoryError>;
+    /// The user who signed in with this email: the exact match, else the one
+    /// match ignoring case. `None` when emails differing only in case leave
+    /// the match ambiguous.
+    async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError>;
     async fn upsert_user(&self, user: &NewUser) -> Result<User, RepositoryError>;
     async fn followed_repositories(&self, id: UserId) -> Result<Vec<RepoKey>, RepositoryError>;
     async fn follow_repository(
@@ -51,6 +55,39 @@ impl UserRepository for UserRepositoryImpl {
         };
 
         Ok(user)
+    }
+
+    async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError> {
+        let db_users = sqlx::query_as!(
+            DbUser,
+            r#"
+            SELECT id, email, full_name, picture, roles, session_auth_hash
+            FROM users
+            WHERE lower(email) = lower($1)
+            ORDER BY email = $1 DESC
+            LIMIT 2
+            "#,
+            email
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let exact = db_users
+            .first()
+            .is_some_and(|db_user| db_user.email == email);
+        if db_users.len() > 1 && !exact {
+            tracing::warn!("several users' emails differ from the presented one only in case");
+            return Ok(None);
+        }
+
+        Ok(db_users.into_iter().next().map(|db_user| User {
+            id: UserId::from(db_user.id),
+            email: db_user.email,
+            full_name: db_user.full_name,
+            picture: db_user.picture,
+            roles: db_user.roles.into_iter().map(Role::from).collect(),
+            session_auth_hash: db_user.session_auth_hash,
+        }))
     }
 
     async fn get_users(&self) -> Result<Vec<User>, RepositoryError> {
@@ -208,4 +245,46 @@ struct DbUser {
     picture: String,
     roles: Vec<String>,
     session_auth_hash: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::PgPool;
+
+    use super::*;
+
+    async fn insert(pool: &PgPool, email: &str) -> i32 {
+        sqlx::query_scalar(
+            "INSERT INTO users (email, full_name, picture, access_token)
+             VALUES ($1, 'Test User', '', '')
+             RETURNING id",
+        )
+        .bind(email)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn found(repo: &UserRepositoryImpl, email: &str) -> Option<i32> {
+        repo.find_user_by_email(email)
+            .await
+            .unwrap()
+            .map(|user| user.id.as_i32())
+    }
+
+    #[sqlx::test]
+    async fn finds_users_by_email_ignoring_case_unless_ambiguous(pool: PgPool) {
+        let repo = UserRepositoryImpl::new(crate::db::DbPool::from(pool.clone()));
+        let ada = insert(&pool, "ada@example.com").await;
+
+        assert_eq!(found(&repo, "ada@example.com").await, Some(ada));
+        assert_eq!(found(&repo, "Ada@Example.com").await, Some(ada));
+        assert_eq!(found(&repo, "eve@example.com").await, None);
+
+        let shouting_ada = insert(&pool, "ADA@example.com").await;
+
+        assert_eq!(found(&repo, "ada@example.com").await, Some(ada));
+        assert_eq!(found(&repo, "ADA@example.com").await, Some(shouting_ada));
+        assert_eq!(found(&repo, "Ada@Example.com").await, None);
+    }
 }

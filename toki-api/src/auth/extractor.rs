@@ -20,6 +20,12 @@ pub struct AuthUser {
 }
 
 impl AuthUser {
+    /// An identity authenticated outside the session and API-token middleware,
+    /// such as the MCP endpoint's bearer authentication.
+    pub(crate) fn new(principal: UserPrincipal, method: AuthMethod) -> Self {
+        Self { principal, method }
+    }
+
     /// Whether the request came from a browser session or an API token. Routes
     /// may withhold powers from long-lived tokens that sessions have.
     pub fn method(&self) -> AuthMethod {

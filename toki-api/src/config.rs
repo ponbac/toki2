@@ -15,6 +15,8 @@ pub struct Settings {
     pub observability: ObservabilitySettings,
     #[serde(default)]
     pub ai_usage: AiUsageSettings,
+    #[serde(default)]
+    pub mcp: McpSettings,
 }
 
 #[serde_as]
@@ -77,6 +79,24 @@ impl Default for ObservabilitySettings {
             request_body_max_buffered_bytes: default_request_body_max_buffered_bytes(),
         }
     }
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct McpSettings {
+    /// Microsoft Entra ID OAuth for MCP clients. Without it, `/mcp` accepts
+    /// only personal API tokens.
+    #[serde(default)]
+    pub oauth: Option<McpOAuthSettings>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct McpOAuthSettings {
+    /// The Entra tenant whose v2 access tokens `/mcp` accepts.
+    pub tenant_id: String,
+    /// The delegated scope tokens must carry. The app registration whose
+    /// client ID is `auth.client_id` exposes it, under the Application ID URI
+    /// `{api_url}/mcp`.
+    pub scope: String,
 }
 
 #[derive(Deserialize, Clone, Debug)]

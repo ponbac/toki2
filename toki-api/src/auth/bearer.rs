@@ -61,7 +61,7 @@ pub async fn require_authenticated(request: Request<axum::body::Body>, next: Nex
     }
 }
 
-fn bearer_token(headers: &HeaderMap) -> Result<Option<&str>, ()> {
+pub fn bearer_token(headers: &HeaderMap) -> Result<Option<&str>, ()> {
     let Some(value) = headers.get(AUTHORIZATION) else {
         return Ok(None);
     };
