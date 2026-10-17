@@ -22,11 +22,13 @@ use crate::{
     adapters::outbound::postgres::PostgresBuddyRepository,
     auth::{require_authenticated, AuthBackend, AuthSession},
     domain::{
-        models::{AiUsageTimeZone, DailyHours, UserId},
-        ports::outbound::LoggedHours,
+        models::{AiUsageTimeZone, BattleNotice, DailyHours, UserId},
+        ports::outbound::{BuddyNotifier, LoggedHours},
         services::BuddyServiceImpl,
     },
 };
+
+mod battles;
 
 /// Test-only sign-in that starts a browser session for any stored user.
 async fn sign_in(mut session: AuthSession, Path(user_id): Path<i64>) -> StatusCode {
@@ -52,12 +54,21 @@ impl LoggedHours for HoursToday {
     }
 }
 
+/// Battle notices go nowhere; the service tests check who is told.
+struct NoNotices;
+
+#[async_trait]
+impl BuddyNotifier for NoNotices {
+    async fn battle_fought(&self, _: &BattleNotice) {}
+}
+
 /// The routes behind a browser session, with `hours_today` logged today.
 fn app(pool: &PgPool, hours_today: f64) -> Router {
     let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
     let service: Arc<dyn BuddyService> = Arc::new(BuddyServiceImpl::new(
         Arc::new(PostgresBuddyRepository::new(db.clone())),
         Arc::new(HoursToday(hours_today)),
+        Arc::new(NoNotices),
         AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
     ));
     let client = BasicClient::new(ClientId::new("test-client".to_string()))

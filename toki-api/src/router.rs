@@ -13,6 +13,8 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_sessions_moka_store::MokaStore;
 use tower_sessions_sqlx_store::PostgresStore;
 use tracing::Instrument;
+use url::Url;
+use web_push::IsahcWebPushClient;
 
 type SessionStore = CachingSessionStore<MokaStore, PostgresStore>;
 const SESSION_COOKIE_NAME: &str = "toki.sid";
@@ -29,6 +31,7 @@ use crate::{
                 PostgresApiTokenRepository, PostgresAvatarRepository, PostgresBuddyRepository,
             },
             riksbank::RiksbankExchangeRateAdapter,
+            web_push::WebPushBuddyNotifier,
         },
     },
     app_state::AppState,
@@ -54,6 +57,7 @@ use crate::{
         RepoConfig,
     },
     factory::{KleerServiceFactory, TimeTrackingLoggedHours},
+    repositories::PushSubscriptionRepositoryImpl,
     routes,
 };
 
@@ -195,10 +199,19 @@ pub async fn create(
     let ai_subscription_service: Arc<dyn AiSubscriptionService> = Arc::new(
         AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone.clone()),
     );
-    // Buddy XP days are local days of the same company time zone as AI usage.
+    // One web push client sends both pull request notifications and battle notices.
+    let web_push_client = IsahcWebPushClient::new().expect("Could not create web push client");
+    let buddy_notifier = WebPushBuddyNotifier::new(
+        PushSubscriptionRepositoryImpl::new(db_pool.clone()),
+        web_push_client.clone(),
+        Url::parse(&config.application.app_url).expect("Invalid app URL"),
+    );
+    // Buddy XP days, cooldowns and leaderboard months are local days of the same
+    // company time zone as AI usage.
     let buddy_service: Arc<dyn BuddyService> = Arc::new(BuddyServiceImpl::new(
         Arc::new(PostgresBuddyRepository::new(db_pool.clone())),
         Arc::new(TimeTrackingLoggedHours::new(time_tracking_factory.clone())),
+        Arc::new(buddy_notifier),
         ai_usage_time_zone,
     ));
 
@@ -219,6 +232,7 @@ pub async fn create(
         ai_billing_service,
         ai_display_rate_service,
         buddy_service,
+        web_push_client,
     )
     .await;
 

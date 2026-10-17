@@ -184,6 +184,25 @@ pub enum BuddyError {
     PartnerLocked,
     #[error("you have no partner buddy yet")]
     NoPartner,
+    #[error("your buddy is switched off")]
+    Disabled,
+    /// The colleague has no buddy, has switched it off, or does not exist.
+    #[error("that colleague's buddy cannot be battled")]
+    OpponentUnavailable,
+    #[error("you already battled this colleague today")]
+    BattledToday,
+    #[error("you already battled today's trainer")]
+    TrainerAlreadyFought,
+    /// The hourly limit on colleague battles, with how long until the next one.
+    #[error("you can start your next colleague battle in {}", whole_minutes(wait))]
+    Cooldown { wait: time::Duration },
+    #[error("battle not found")]
+    BattleNotFound,
+    #[error("you did not take part in this battle")]
+    NotParticipant,
+    /// A team could not be built from stored buddies, which is a defect.
+    #[error("the battle could not be fought: {0}")]
+    Battle(crate::domain::models::BattleError),
     #[error("user not found")]
     UserNotFound,
     /// Logged hours could not be read from time tracking.
@@ -191,4 +210,14 @@ pub enum BuddyError {
     HoursUnavailable(String),
     #[error("buddy storage error: {0}")]
     Storage(String),
+}
+
+/// A wait in minutes, rounded up to at least one: "1 minute" or "42 minutes".
+fn whole_minutes(wait: &time::Duration) -> String {
+    let minutes = (wait.as_seconds_f64() / 60.0).ceil().max(1.0) as i64;
+    if minutes == 1 {
+        "1 minute".to_string()
+    } else {
+        format!("{minutes} minutes")
+    }
 }

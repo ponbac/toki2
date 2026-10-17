@@ -7,11 +7,6 @@ mod ai_usage;
 mod ai_usage_report;
 mod api_tokens;
 mod avatar;
-#[allow(
-    dead_code,
-    unused_imports,
-    reason = "only the tests run battles until the buddy battles API uses the engine"
-)]
 pub mod battle;
 mod buddy;
 mod time_tracking;

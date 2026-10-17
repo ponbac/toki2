@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            CASE WHEN challenger_id = $1 THEN defender_id ELSE challenger_id END\n                AS \"opponent_id!\",\n            count(*) FILTER (\n                WHERE winner = CASE WHEN challenger_id = $1 THEN 'challenger' ELSE 'defender' END\n            ) AS \"wins!\",\n            count(*) FILTER (\n                WHERE winner = CASE WHEN challenger_id = $1 THEN 'defender' ELSE 'challenger' END\n            ) AS \"losses!\",\n            count(*) FILTER (WHERE winner IS NULL) AS \"draws!\",\n            COALESCE(bool_or(challenger_id = $1 AND battle_day = $2), false)\n                AS \"battled_today!\"\n        FROM buddy_battles\n        WHERE kind = 'colleague'\n          AND (challenger_id = $1 OR defender_id = $1)\n        GROUP BY 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "opponent_id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "wins!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "losses!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "draws!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "battled_today!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "cfffd9fd705ea0a455572b833f546ffa3a780821618cea15d1653b5dbfa7d363"
+}

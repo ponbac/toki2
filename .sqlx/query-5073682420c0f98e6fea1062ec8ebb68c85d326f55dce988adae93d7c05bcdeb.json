@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            profile.user_id,\n            profile.enabled,\n            profile.battle_notifications,\n            profile.xp_since,\n            profile.hours_synced_at,\n            profile.hours_sync_attempted_at,\n            buddy.slot AS \"slot?\",\n            buddy.species_id AS \"species_id?\",\n            buddy.visible AS \"visible?\",\n            buddy.xp_base AS \"xp_base?\",\n            users.full_name,\n            hours.xp AS \"hours_xp!\",\n            started.battles AS \"battles!\"\n        FROM buddy_profiles AS profile\n        JOIN users ON users.id = profile.user_id\n        LEFT JOIN buddies AS buddy ON buddy.user_id = profile.user_id\n        CROSS JOIN LATERAL (\n            SELECT COALESCE(sum(xp), 0)::int8 AS xp\n            FROM buddy_xp_days\n            WHERE user_id = profile.user_id\n        ) AS hours\n        CROSS JOIN LATERAL (\n            SELECT count(*) AS battles\n            FROM buddy_battles\n            WHERE challenger_id = profile.user_id\n        ) AS started\n        WHERE profile.user_id = ANY($1)\n        ORDER BY users.full_name, profile.user_id, buddy.slot\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "battle_notifications",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "xp_since",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "hours_synced_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "hours_sync_attempted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "slot?",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 7,
+        "name": "species_id?",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "visible?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "xp_base?",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "full_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "hours_xp!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "battles!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "5073682420c0f98e6fea1062ec8ebb68c85d326f55dce988adae93d7c05bcdeb"
+}

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            challenger_id,\n            count(*) FILTER (WHERE kind = 'colleague' AND winner = 'challenger') AS \"wins!\",\n            count(*) FILTER (WHERE kind = 'colleague' AND winner = 'defender') AS \"losses!\",\n            count(*) FILTER (WHERE kind = 'colleague' AND winner IS NULL) AS \"draws!\",\n            count(DISTINCT battle_day) FILTER (WHERE kind = 'trainer' AND winner = 'challenger')\n                AS \"trainer_wins!\"\n        FROM buddy_battles\n        WHERE battle_day BETWEEN $1 AND $2\n        GROUP BY challenger_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "challenger_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "wins!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "losses!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "draws!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "trainer_wins!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "057359d6e23e77f57e078eb0aae834cfa3c0cf9c3a4b2864c3b8e2d454344de6"
+}
