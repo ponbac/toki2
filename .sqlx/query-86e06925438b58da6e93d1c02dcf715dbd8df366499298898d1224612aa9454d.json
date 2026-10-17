@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO buddy_profiles (user_id, enabled, battle_notifications, xp_since)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (user_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bool",
+        "Bool",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86e06925438b58da6e93d1c02dcf715dbd8df366499298898d1224612aa9454d"
+}

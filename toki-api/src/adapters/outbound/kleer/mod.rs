@@ -1,7 +1,7 @@
 mod conversions;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
     time::Duration as CacheDuration,
 };
@@ -18,8 +18,8 @@ use time::{Date, Duration};
 use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity, ActivityId,
-        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId, WeeklyStats,
+        CreateAbsencesRequest, CreateTimeEntryRequest, DailyHours, EditTimeEntryRequest, Project,
+        ProjectId, TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId, WeeklyStats,
         KLEER_TIME_TRACKING_PROVIDER,
     },
     ports::outbound::{TimeTrackingClient, TimeTrackingProjectCatalog},
@@ -499,10 +499,16 @@ impl KleerAdapter {
         Self::to_domain_absence_entry_from_event(event, map)
     }
 
+    /// Whether an event is worked time: project-backed, unlike absences and unknown
+    /// projectless events.
+    fn is_worked_event(event: &KleerEventReadable) -> bool {
+        event.client_project.is_some()
+    }
+
     fn event_hours(events: &[KleerEventReadable], map: &AbsenceActivityMap) -> (f64, f64) {
         let worked_hours = events
             .iter()
-            .filter(|event| event.client_project.is_some())
+            .filter(|event| Self::is_worked_event(event))
             .map(|event| event.hours)
             .sum();
         let absence_hours = events
@@ -515,6 +521,19 @@ impl KleerAdapter {
             .sum();
 
         (worked_hours, absence_hours)
+    }
+
+    /// Worked hours per date, in date order, for dates with worked events.
+    fn daily_worked_hours(events: &[KleerEventReadable]) -> Vec<DailyHours> {
+        let mut hours_by_date = BTreeMap::<Date, f64>::new();
+        for event in events.iter().filter(|event| Self::is_worked_event(event)) {
+            *hours_by_date.entry(event.date).or_default() += event.hours;
+        }
+
+        hours_by_date
+            .into_iter()
+            .map(|(date, worked_hours)| DailyHours { date, worked_hours })
+            .collect()
     }
 
     fn verify_deletable_absence_event(
@@ -675,6 +694,19 @@ impl TimeTrackingClient for KleerAdapter {
             scheduled_hours,
             absence_hours,
         ))
+    }
+
+    async fn get_daily_hours(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<DailyHours>, TimeTrackingError> {
+        let events = self
+            .client
+            .list_events(self.target_user_id, date_range.0, date_range.1)
+            .await
+            .map_err(map_kleer_error)?;
+
+        Ok(Self::daily_worked_hours(&events.event_readables))
     }
 
     async fn get_time_entries(
@@ -1398,6 +1430,39 @@ mod tests {
         ];
 
         assert_eq!(KleerAdapter::event_hours(&events, &map), (6.0, 8.0));
+    }
+
+    #[test]
+    fn daily_hours_add_up_project_events_per_date() {
+        let map = KleerAdapter::build_absence_activity_map(&[activity(96858, "Sjuk")]).unwrap();
+        let next_day = event_date().next_day().unwrap();
+        let on = |mut event: KleerEventReadable, date| {
+            event.date = date;
+            event
+        };
+        let events = vec![
+            on(event(1, TARGET_USER_ID, 10, Some(123), 2.5), next_day),
+            event(2, TARGET_USER_ID, 10, Some(123), 6.0),
+            event(3, TARGET_USER_ID, 96858, None, 8.0),
+            event(4, TARGET_USER_ID, 20, Some(456), 1.5),
+            on(event(5, TARGET_USER_ID, 999, None, 2.0), next_day),
+        ];
+
+        assert_eq!(
+            KleerAdapter::daily_worked_hours(&events),
+            vec![
+                DailyHours {
+                    date: event_date(),
+                    worked_hours: 7.5,
+                },
+                DailyHours {
+                    date: next_day,
+                    worked_hours: 2.5,
+                },
+            ]
+        );
+        // The same worked hours as the period totals.
+        assert_eq!(KleerAdapter::event_hours(&events, &map).0, 10.0);
     }
 
     #[test]

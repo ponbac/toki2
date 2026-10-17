@@ -167,3 +167,28 @@ impl ExchangeRateError {
         }
     }
 }
+
+/// Errors that can occur while managing timer buddies.
+#[derive(Debug, Error)]
+pub enum BuddyError {
+    #[error("{0}")]
+    Invalid(String),
+    #[error("there is no buddy species {0}")]
+    UnknownSpecies(crate::domain::models::SpeciesId),
+    #[error("you have no buddy yet")]
+    NotEnrolled,
+    #[error(
+        "the partner unlocks when your lead reaches Lv {}",
+        crate::domain::models::PARTNER_UNLOCK_LEVEL
+    )]
+    PartnerLocked,
+    #[error("you have no partner buddy yet")]
+    NoPartner,
+    #[error("user not found")]
+    UserNotFound,
+    /// Logged hours could not be read from time tracking.
+    #[error("logged hours are unavailable: {0}")]
+    HoursUnavailable(String),
+    #[error("buddy storage error: {0}")]
+    Storage(String),
+}

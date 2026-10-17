@@ -13,6 +13,7 @@ mod avatar;
     reason = "only the tests run battles until the buddy battles API uses the engine"
 )]
 pub mod battle;
+mod buddy;
 mod time_tracking;
 mod work_items;
 
@@ -25,5 +26,6 @@ pub use ai_usage::AiUsageServiceImpl;
 pub use ai_usage_report::AiUsageReportServiceImpl;
 pub use api_tokens::ApiTokenServiceImpl;
 pub use avatar::AvatarServiceImpl;
+pub use buddy::BuddyServiceImpl;
 pub use time_tracking::TimeTrackingServiceImpl;
 pub use work_items::WorkItemServiceImpl;

@@ -10,9 +10,9 @@ use time::{Date, OffsetDateTime};
 use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity,
-        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, NewTimerHistoryEntry,
-        Project, ProjectId, TimeEntry, TimeEntryDayStatus, TimeEntryStatus, TimerHistoryEntry,
-        UserId, WeeklyStats,
+        CreateAbsencesRequest, CreateTimeEntryRequest, DailyHours, EditTimeEntryRequest,
+        NewTimerHistoryEntry, Project, ProjectId, TimeEntry, TimeEntryDayStatus, TimeEntryStatus,
+        TimerHistoryEntry, UserId, WeeklyStats,
     },
     ports::{
         inbound::TimeTrackingService,
@@ -265,6 +265,13 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         self.client.get_time_info(date_range).await
     }
 
+    async fn get_daily_hours(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<DailyHours>, TimeTrackingError> {
+        self.client.get_daily_hours(date_range).await
+    }
+
     async fn get_time_entries(
         &self,
         user_id: &UserId,
@@ -507,6 +514,13 @@ mod tests {
             &self,
             _date_range: (Date, Date),
         ) -> Result<WeeklyStats, TimeTrackingError> {
+            unused_mock_method()
+        }
+
+        async fn get_daily_hours(
+            &self,
+            _date_range: (Date, Date),
+        ) -> Result<Vec<DailyHours>, TimeTrackingError> {
             unused_mock_method()
         }
 

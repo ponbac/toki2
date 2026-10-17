@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE buddies\n                SET species_id = $3,\n                    updated_at = now()\n                WHERE user_id = $1\n                  AND slot = $2\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f2871563227253820f11039b9b52a705a149fac505b95743b1183a089f88d35c"
+}

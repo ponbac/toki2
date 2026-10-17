@@ -4,8 +4,8 @@ use time::Date;
 use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity,
-        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId, WeeklyStats,
+        CreateAbsencesRequest, CreateTimeEntryRequest, DailyHours, EditTimeEntryRequest, Project,
+        ProjectId, TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -38,6 +38,15 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
         &self,
         date_range: (Date, Date),
     ) -> Result<WeeklyStats, TimeTrackingError>;
+
+    /// Get the hours worked on each day of a date range, both ends inclusive.
+    ///
+    /// Counts the same worked hours as `get_time_info`: project-backed time entries,
+    /// not absences. Days without worked hours may be left out.
+    async fn get_daily_hours(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<DailyHours>, TimeTrackingError>;
 
     /// Get time entries from the provider for a date range.
     ///

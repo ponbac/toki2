@@ -5,6 +5,7 @@ pub(crate) mod ai_subscriptions;
 pub(crate) mod ai_usage;
 pub(crate) mod ai_usage_reports;
 mod automation;
+pub(crate) mod buddy;
 mod responses;
 mod time_tracking;
 mod work_items;

@@ -4,11 +4,13 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use az_devops::RepoClient;
 use kleer::KleerCredentials;
+use time::Date;
 use tokio::sync::RwLock;
 use url::Url;
 
@@ -27,15 +29,15 @@ use crate::{
     config::KleerSettings,
     domain::{
         models::{
-            TimeTrackingConnection, TimeTrackingUserLink, UserId, WorkItemProject,
+            DailyHours, TimeTrackingConnection, TimeTrackingUserLink, UserId, WorkItemProject,
             KLEER_TIME_TRACKING_PROVIDER,
         },
         ports::{
             inbound::{TimeTrackingService, WorkItemService},
-            outbound::TimeTrackingUserLinkRepository,
+            outbound::{LoggedHours, TimeTrackingUserLinkRepository},
         },
         services::{TimeTrackingServiceImpl, WorkItemServiceImpl},
-        RepoKey,
+        BuddyError, RepoKey,
     },
     repositories::{TimerRepositoryImpl, UserRepository, UserRepositoryImpl},
 };
@@ -160,6 +162,59 @@ impl TimeTrackingServiceFactory for KleerServiceFactory {
         let service = TimeTrackingServiceImpl::new(Arc::new(adapter), Arc::new(history_adapter));
 
         Ok(Box::new(service))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Logged hours for buddy XP
+// ---------------------------------------------------------------------------
+
+/// How long a read of logged hours may take before buddies use the stored hours.
+const LOGGED_HOURS_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Logged hours read through each user's time tracking service.
+pub struct TimeTrackingLoggedHours {
+    factory: Arc<dyn TimeTrackingServiceFactory>,
+    timeout: Duration,
+}
+
+impl TimeTrackingLoggedHours {
+    pub fn new(factory: Arc<dyn TimeTrackingServiceFactory>) -> Self {
+        Self {
+            factory,
+            timeout: LOGGED_HOURS_TIMEOUT,
+        }
+    }
+}
+
+#[async_trait]
+impl LoggedHours for TimeTrackingLoggedHours {
+    async fn daily_worked_hours(
+        &self,
+        user: UserId,
+        range: (Date, Date),
+    ) -> Result<Option<Vec<DailyHours>>, BuddyError> {
+        let read = async {
+            let service = match self.factory.create_service(user).await {
+                Ok(service) => service,
+                Err(error) if error.is_not_connected() => return Ok(None),
+                Err(error) => return Err(BuddyError::HoursUnavailable(error.message)),
+            };
+            service
+                .get_daily_hours(range)
+                .await
+                .map(Some)
+                .map_err(|error| BuddyError::HoursUnavailable(error.to_string()))
+        };
+
+        tokio::time::timeout(self.timeout, read)
+            .await
+            .map_err(|_| {
+                BuddyError::HoursUnavailable(format!(
+                    "time tracking did not answer within {} s",
+                    self.timeout.as_secs()
+                ))
+            })?
     }
 }
 
@@ -303,6 +358,81 @@ mod tests {
             TimeTrackingConnection::Disconnected {
                 provider: KLEER_TIME_TRACKING_PROVIDER.to_string(),
             }
+        );
+    }
+
+    /// A factory whose services cannot be created, after `delay`.
+    struct UnavailableFactory {
+        error: fn() -> TimeTrackingServiceError,
+        delay: Duration,
+    }
+
+    #[async_trait]
+    impl TimeTrackingServiceFactory for UnavailableFactory {
+        async fn connection_status(
+            &self,
+            _user_id: UserId,
+        ) -> Result<TimeTrackingConnection, TimeTrackingServiceError> {
+            panic!("logged hours do not ask for the connection status")
+        }
+
+        async fn create_service(
+            &self,
+            _user_id: UserId,
+        ) -> Result<Box<dyn TimeTrackingService>, TimeTrackingServiceError> {
+            tokio::time::sleep(self.delay).await;
+            Err((self.error)())
+        }
+    }
+
+    fn logged_hours(error: fn() -> TimeTrackingServiceError) -> TimeTrackingLoggedHours {
+        TimeTrackingLoggedHours::new(Arc::new(UnavailableFactory {
+            error,
+            delay: Duration::ZERO,
+        }))
+    }
+
+    fn range() -> (Date, Date) {
+        let today = time::macros::date!(2026 - 10 - 16);
+        (today, today)
+    }
+
+    #[tokio::test]
+    async fn users_without_time_tracking_have_no_logged_hours_to_read() {
+        let hours = logged_hours(|| TimeTrackingServiceError::not_connected("not connected"))
+            .daily_worked_hours(UserId::new(7), range())
+            .await;
+
+        assert_eq!(hours.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn unconfigured_time_tracking_makes_logged_hours_unavailable() {
+        let hours = logged_hours(|| TimeTrackingServiceError::configuration("no credentials"))
+            .daily_worked_hours(UserId::new(7), range())
+            .await;
+
+        assert!(
+            matches!(hours, Err(BuddyError::HoursUnavailable(_))),
+            "{hours:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn logged_hours_that_take_too_long_are_unavailable() {
+        let hours = TimeTrackingLoggedHours {
+            factory: Arc::new(UnavailableFactory {
+                error: || TimeTrackingServiceError::not_connected("not connected"),
+                delay: Duration::from_secs(5),
+            }),
+            timeout: Duration::from_millis(10),
+        }
+        .daily_worked_hours(UserId::new(7), range())
+        .await;
+
+        assert!(
+            matches!(hours, Err(BuddyError::HoursUnavailable(_))),
+            "{hours:?}"
         );
     }
 

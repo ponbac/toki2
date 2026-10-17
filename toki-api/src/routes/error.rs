@@ -10,8 +10,8 @@ use crate::{
     adapters::inbound::http::{ErrorResponse, TimeTrackingServiceError, WorkItemServiceError},
     app_state::AppStateError,
     domain::{
-        AiProjectMappingError, AiSubscriptionError, AiUsageError, AvatarError, TimeTrackingError,
-        WorkItemError,
+        AiProjectMappingError, AiSubscriptionError, AiUsageError, AvatarError, BuddyError,
+        TimeTrackingError, WorkItemError,
     },
     repositories::RepositoryError,
 };
@@ -228,6 +228,30 @@ impl From<AiSubscriptionError> for ApiError {
             AiSubscriptionError::Storage(message) => {
                 tracing::error!("AI subscription operation failed: {}", message);
                 Self::internal("ai subscription operation failed")
+            }
+        }
+    }
+}
+
+impl From<BuddyError> for ApiError {
+    fn from(err: BuddyError) -> Self {
+        match err {
+            BuddyError::Invalid(message) => Self::bad_request(message),
+            BuddyError::UnknownSpecies(_) => Self::bad_request(err.to_string()),
+            BuddyError::NotEnrolled | BuddyError::PartnerLocked | BuddyError::NoPartner => {
+                Self::conflict(err.to_string())
+            }
+            BuddyError::UserNotFound => Self::not_found(err.to_string()),
+            BuddyError::HoursUnavailable(message) => {
+                tracing::error!("Logged hours for buddy XP are unavailable: {}", message);
+                Self::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "logged hours are unavailable",
+                )
+            }
+            BuddyError::Storage(message) => {
+                tracing::error!("Buddy operation failed: {}", message);
+                Self::internal("buddy operation failed")
             }
         }
     }

@@ -26,7 +26,7 @@ use crate::{
                 PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
                 PostgresAiProjectMappingRepository, PostgresAiSubscriptionRepository,
                 PostgresAiUsageReportRepository, PostgresAiUsageRepository,
-                PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresApiTokenRepository, PostgresAvatarRepository, PostgresBuddyRepository,
             },
             riksbank::RiksbankExchangeRateAdapter,
         },
@@ -41,7 +41,7 @@ use crate::{
             inbound::{
                 AiBillingService, AiDisplayRateService, AiProjectMappingService,
                 AiSubscriptionService, AiUsageReportService, AiUsageService, ApiTokenAuthenticator,
-                ApiTokenService, AvatarService,
+                ApiTokenService, AvatarService, BuddyService,
             },
             outbound::TimeTrackingProjectCatalog,
         },
@@ -49,10 +49,11 @@ use crate::{
             AiBillingServiceImpl, AiDisplayRateServiceImpl, AiExchangeRateSettings,
             AiExchangeRates, AiProjectMappingServiceImpl, AiSubscriptionServiceImpl,
             AiUsageReportServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
+            BuddyServiceImpl,
         },
         RepoConfig,
     },
-    factory::KleerServiceFactory,
+    factory::{KleerServiceFactory, TimeTrackingLoggedHours},
     routes,
 };
 
@@ -82,7 +83,8 @@ pub async fn create(
             "/ai-usage/project-mappings",
             http::ai_project_mappings::router(),
         )
-        .nest("/ai-usage/admin", http::ai_billing::router());
+        .nest("/ai-usage/admin", http::ai_billing::router())
+        .nest("/buddy", http::buddy::router());
 
     let api_tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db_pool.clone()),
@@ -191,8 +193,14 @@ pub async fn create(
             mapping_company,
         ));
     let ai_subscription_service: Arc<dyn AiSubscriptionService> = Arc::new(
-        AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone),
+        AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone.clone()),
     );
+    // Buddy XP days are local days of the same company time zone as AI usage.
+    let buddy_service: Arc<dyn BuddyService> = Arc::new(BuddyServiceImpl::new(
+        Arc::new(PostgresBuddyRepository::new(db_pool.clone())),
+        Arc::new(TimeTrackingLoggedHours::new(time_tracking_factory.clone())),
+        ai_usage_time_zone,
+    ));
 
     // Create app state
     let app_state = AppState::new(
@@ -210,6 +218,7 @@ pub async fn create(
         ai_subscription_service,
         ai_billing_service,
         ai_display_rate_service,
+        buddy_service,
     )
     .await;
 

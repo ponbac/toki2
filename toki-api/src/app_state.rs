@@ -22,7 +22,7 @@ use crate::{
     domain::{
         ports::inbound::{
             AiBillingService, AiDisplayRateService, AiProjectMappingService, AiSubscriptionService,
-            AiUsageReportService, AiUsageService, ApiTokenService, AvatarService,
+            AiUsageReportService, AiUsageService, ApiTokenService, AvatarService, BuddyService,
         },
         CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
         RepoDifferMessage, RepoKey,
@@ -73,6 +73,7 @@ pub struct AppState {
     pub ai_subscription_service: Arc<dyn AiSubscriptionService>,
     pub ai_billing_service: Arc<dyn AiBillingService>,
     pub ai_display_rate_service: Arc<dyn AiDisplayRateService>,
+    pub buddy_service: Arc<dyn BuddyService>,
     pub work_item_factory: Arc<dyn WorkItemServiceFactory>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
@@ -123,6 +124,12 @@ impl FromRef<AppState> for Arc<dyn AiDisplayRateService> {
     }
 }
 
+impl FromRef<AppState> for Arc<dyn BuddyService> {
+    fn from_ref(state: &AppState) -> Self {
+        state.buddy_service.clone()
+    }
+}
+
 impl AppState {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
@@ -140,6 +147,7 @@ impl AppState {
         ai_subscription_service: Arc<dyn AiSubscriptionService>,
         ai_billing_service: Arc<dyn AiBillingService>,
         ai_display_rate_service: Arc<dyn AiDisplayRateService>,
+        buddy_service: Arc<dyn BuddyService>,
     ) -> Self {
         let client_futures = repo_configs
             .into_iter()
@@ -225,6 +233,7 @@ impl AppState {
             ai_subscription_service,
             ai_billing_service,
             ai_display_rate_service,
+            buddy_service,
             work_item_factory,
             repo_clients,
             differ_txs: Arc::new(Mutex::new(differ_txs)),

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO buddies (user_id, slot, species_id, xp_base)\n                VALUES ($1, $2, $3, $4)\n                ON CONFLICT (user_id, slot) DO UPDATE\n                SET species_id = EXCLUDED.species_id,\n                    updated_at = now()\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int2",
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4dc1750949fa1394bfa6c5831ec84a2bab81148898c2539be02cff36e251af76"
+}
