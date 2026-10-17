@@ -19,7 +19,10 @@ const SESSION_COOKIE_NAME: &str = "toki.sid";
 
 use crate::{
     adapters::{
-        inbound::http::{self, agent_openapi, openapi_spec_router},
+        inbound::{
+            http::{self, agent_openapi, openapi_spec_router},
+            mcp,
+        },
         outbound::{
             media::WebpAvatarProcessor,
             postgres::{
@@ -89,6 +92,7 @@ pub async fn create(
     )));
     let api_token_service: Arc<dyn ApiTokenService> = api_tokens.clone();
     let api_token_authenticator: Arc<dyn ApiTokenAuthenticator> = api_tokens;
+    let mcp_api_token_authenticator = api_token_authenticator.clone();
 
     let automation_openapi = agent_openapi();
 
@@ -213,6 +217,9 @@ pub async fn create(
     )
     .await;
 
+    let mcp_auth = mcp_auth(&config, &app_state, mcp_api_token_authenticator);
+    let app_with_auth = app_with_auth.merge(mcp::router(app_state.clone(), mcp_auth));
+
     // Start all the differ threads (if in production)
     #[cfg(not(debug_assertions))]
     app_state.start_all_differs().await;
@@ -245,6 +252,29 @@ pub async fn create(
             crate::observability::log_http_response_middleware,
         ))
         .layer(crate::observability::http_trace_layer())
+}
+
+/// `/mcp` accepts personal API tokens, and Entra access tokens when configured.
+fn mcp_auth(
+    config: &Settings,
+    app_state: &AppState,
+    api_tokens: Arc<dyn ApiTokenAuthenticator>,
+) -> mcp::McpAuth {
+    let oauth = config.mcp.oauth.as_ref().map(|oauth| mcp::McpOAuth {
+        validator: mcp::EntraTokenValidator::new(
+            &oauth.tenant_id,
+            &config.auth.client_id,
+            &oauth.scope,
+        ),
+        users: app_state.user_repo.clone(),
+        metadata: mcp::protected_resource_metadata(
+            &app_state.api_url,
+            mcp::entra_issuer(&oauth.tenant_id),
+            &oauth.scope,
+        ),
+        metadata_url: mcp::metadata_url(&app_state.api_url),
+    });
+    mcp::McpAuth { api_tokens, oauth }
 }
 
 fn authenticated_routes(

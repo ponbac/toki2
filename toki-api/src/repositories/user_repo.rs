@@ -6,6 +6,8 @@ use super::repo_error::RepositoryError;
 pub trait UserRepository {
     async fn get_user(&self, id: UserId) -> Result<User, RepositoryError>;
     async fn get_users(&self) -> Result<Vec<User>, RepositoryError>;
+    /// The user who signed in with this email, ignoring case, if any.
+    async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError>;
     async fn upsert_user(&self, user: &NewUser) -> Result<User, RepositoryError>;
     async fn followed_repositories(&self, id: UserId) -> Result<Vec<RepoKey>, RepositoryError>;
     async fn follow_repository(
@@ -51,6 +53,29 @@ impl UserRepository for UserRepositoryImpl {
         };
 
         Ok(user)
+    }
+
+    async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, RepositoryError> {
+        let db_user = sqlx::query_as!(
+            DbUser,
+            r#"
+            SELECT id, email, full_name, picture, roles, session_auth_hash
+            FROM users
+            WHERE lower(email) = lower($1)
+            "#,
+            email
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(db_user.map(|db_user| User {
+            id: UserId::from(db_user.id),
+            email: db_user.email,
+            full_name: db_user.full_name,
+            picture: db_user.picture,
+            roles: db_user.roles.into_iter().map(Role::from).collect(),
+            session_auth_hash: db_user.session_auth_hash,
+        }))
     }
 
     async fn get_users(&self) -> Result<Vec<User>, RepositoryError> {

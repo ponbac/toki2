@@ -88,3 +88,12 @@ moka = { version = "0.12.16", features = ["future", "sync"] }
 rand = "0.10.3"
 sha2 = "0.11.1"
 uuid = "1.28.0"
+rmcp = { version = "3.5.1", features = [
+    "server",
+    "macros",
+    "transport-streamable-http-server",
+    "elicitation",
+    "request-state",
+] }
+schemars = "1.2.3"
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
