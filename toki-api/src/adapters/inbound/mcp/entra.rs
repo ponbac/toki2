@@ -205,17 +205,55 @@ mod tests {
     const AUDIENCE: &str = "6494e716-bbf2-4164-a1f0-cd682313085b";
     const KEY_ID: &str = "test-key";
 
-    // A throwaway 2048-bit RSA key, used only to sign test tokens.
-    const PRIVATE_KEY: &str = include_str!("testdata/entra_test_key.pem");
-    const MODULUS: &str = include_str!("testdata/entra_test_key.n");
+    /// A signing key generated for the test run, as PKCS#1 DER, and its modulus.
+    static SIGNING_KEY: std::sync::LazyLock<(Vec<u8>, Vec<u8>)> = std::sync::LazyLock::new(|| {
+        use aws_lc_rs::encoding::AsDer;
+
+        let key = aws_lc_rs::rsa::KeyPair::generate(aws_lc_rs::rsa::KeySize::Rsa2048).unwrap();
+        let pkcs8 = key.as_der().unwrap();
+        // PrivateKeyInfo ::= SEQUENCE { version, algorithm, privateKey OCTET STRING }
+        let (_, info, _) = der_element(pkcs8.as_ref());
+        let (_, _, rest) = der_element(info);
+        let (_, _, rest) = der_element(rest);
+        let (_, rsa_private_key, _) = der_element(rest);
+        // RSAPrivateKey ::= SEQUENCE { version, modulus, ... }
+        let (_, fields, _) = der_element(rsa_private_key);
+        let (_, _, rest) = der_element(fields);
+        let (_, modulus, _) = der_element(rest);
+        let modulus = modulus.strip_prefix(&[0]).unwrap_or(modulus);
+        (rsa_private_key.to_vec(), modulus.to_vec())
+    });
+
+    /// Splits one DER element into its tag, contents and the bytes after it.
+    fn der_element(input: &[u8]) -> (u8, &[u8], &[u8]) {
+        let (tag, first) = (input[0], input[1]);
+        let (length, header) = if first < 0x80 {
+            (first as usize, 2)
+        } else {
+            let octets = (first & 0x7f) as usize;
+            let length = input[2..2 + octets]
+                .iter()
+                .fold(0, |length, &byte| (length << 8) | byte as usize);
+            (length, 2 + octets)
+        };
+        (
+            tag,
+            &input[header..header + length],
+            &input[header + length..],
+        )
+    }
 
     async fn validator() -> EntraTokenValidator {
+        let modulus = base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            &SIGNING_KEY.1,
+        );
         let keys: JwkSet = serde_json::from_value(json!({
             "keys": [{
                 "kty": "RSA",
                 "use": "sig",
                 "kid": KEY_ID,
-                "n": MODULUS.trim(),
+                "n": modulus,
                 "e": "AQAB",
             }]
         }))
@@ -243,12 +281,7 @@ mod tests {
     fn sign(claims: &Value) -> String {
         let mut header = Header::new(Algorithm::RS256);
         header.kid = Some(KEY_ID.to_string());
-        encode(
-            &header,
-            claims,
-            &EncodingKey::from_rsa_pem(PRIVATE_KEY.as_bytes()).unwrap(),
-        )
-        .unwrap()
+        encode(&header, claims, &EncodingKey::from_rsa_der(&SIGNING_KEY.0)).unwrap()
     }
 
     fn with(mut claims: Value, field: &str, value: Value) -> Value {

@@ -6430,6 +6430,7 @@ dependencies = [
  "aes-gcm",
  "ammonia",
  "async-trait",
+ "aws-lc-rs",
  "axum",
  "axum-extra",
  "axum-login",
