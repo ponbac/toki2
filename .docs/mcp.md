@@ -33,9 +33,16 @@ Permanent notes for Toki's Model Context Protocol endpoint. Read this before cha
   - A confidential client for hosted clients (claude.ai, Executor) with their web redirect URIs and one labelled secret per hosted service.
 - Entra's discovery document does not advertise `code_challenge_methods_supported`, though it supports S256 PKCE. A strictly conforming client may refuse it; fall back to an API token.
 
+### Spinit tenant (production)
+
+- Resource: `t2m-stats`, client ID `6494e716-bbf2-4164-a1f0-cd682313085b`, scope `https://toki-api.spinit.se/mcp/mcp` (scope ID `34560bbf-e1e3-4762-a69e-d0e7ab255502`).
+- `Toki MCP (native)`: client ID `b68eecf8-03eb-49e4-bc66-657185c9d167`. Redirects `http://localhost/callback`, `http://127.0.0.1/callback`.
+- `Toki MCP (hosted)`: client ID `9dacddfe-b9d4-4d28-8d2a-f3e431824c9d`. Redirect `https://claude.ai/api/mcp/auth_callback`. Add each hosted service's redirect and its own secret when connecting it.
+- Pre-authorized for `mcp`: both client apps and VS Code (`aebc6443-996d-45c2-90f0-388ff96faa56`).
+
 ## Client Setup
 
-Replace `<native-client-id>` and `<hosted-client-id>` with the client apps' IDs.
+`<native-client-id>` is `b68eecf8-03eb-49e4-bc66-657185c9d167` and `<hosted-client-id>` is `9dacddfe-b9d4-4d28-8d2a-f3e431824c9d` in production.
 
 - Claude Code, OAuth: `claude mcp add --transport http --client-id <native-client-id> --callback-port 8080 toki https://toki-api.spinit.se/mcp`, then `/mcp` to sign in.
 - Claude Code, API token: `claude mcp add --transport http toki https://toki-api.spinit.se/mcp --header "Authorization: Bearer toki_…"`.
