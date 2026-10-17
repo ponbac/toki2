@@ -796,7 +796,7 @@ mod tests {
 
     #[sqlx::test]
     async fn api_tokens_upload_and_another_users_upload_is_forbidden(pool: PgPool) {
-        let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+        let db = crate::db::DbPool::from(pool.clone());
         let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
             PostgresApiTokenRepository::new(db.clone()),
         )));
@@ -836,7 +836,7 @@ mod tests {
 
     #[sqlx::test]
     async fn pi_usage_is_stored_with_its_coverage_and_sign_in_hint(pool: PgPool) {
-        let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+        let db = crate::db::DbPool::from(pool.clone());
         let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
             PostgresApiTokenRepository::new(db.clone()),
         )));

@@ -352,7 +352,7 @@ function Warnings({ warnings }: { warnings: readonly string[] }) {
       <TooltipTrigger asChild>
         <button
           type="button"
-          className="inline-flex rounded-sm text-[#c98500] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-[#fab219]"
+          className="inline-flex rounded-sm text-[#c98500] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring dark:text-[#fab219]"
           aria-label={warnings.join(" ")}
         >
           <AlertTriangle className="size-3.5" />

@@ -3,12 +3,9 @@
 
 [advisories]
 ignore = [
-    # RSA timing sidechannel (Marvin Attack) - no patch available yet.
-    # Risk accepted: only used for web-push signatures, attack requires
-    # network observation of many signing operations.
+    # No patched stable rsa release is available for the Marvin Attack.
+    # web-push -> jwt-simple's pure-rust backend -> superboring pulls in rsa,
+    # but Toki's web-push VAPID signatures use ES256 (P-256), not the RSA
+    # private-key/decryption operations affected by this timing side channel.
     "RUSTSEC-2023-0071",
-    
-    # idna Punycode handling - transitive dep via cookie_store -> reqwest@0.11.
-    # Can't update without changing reqwest versions. Low risk for this use case.
-    "RUSTSEC-2024-0421",
 ]

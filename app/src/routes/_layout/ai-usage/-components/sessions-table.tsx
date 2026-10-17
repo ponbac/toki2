@@ -312,7 +312,7 @@ function SessionProjects({
             <button
               type="button"
               aria-label={`Show all ${formatCount(projects.length)} projects of this session`}
-              className="shrink-0 rounded-full border border-border/70 px-1.5 text-[11px] tabular-nums text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="shrink-0 rounded-full border border-border/70 px-1.5 text-[11px] tabular-nums text-muted-foreground outline-hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               +{formatCount(rest.length)}
             </button>

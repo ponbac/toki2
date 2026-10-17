@@ -17,7 +17,7 @@ export function ConfirmDefaultTimerNoteDialog(props: {
 }) {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className="max-w-md border-amber-500/20 bg-gradient-to-br from-background via-background to-amber-500/5 shadow-[0_20px_80px_rgba(245,158,11,0.12)]">
+      <DialogContent className="max-w-md border-amber-500/20 bg-linear-to-br from-background via-background to-amber-500/5 shadow-[0_20px_80px_rgba(245,158,11,0.12)]">
         <DialogHeader>
           <DialogTitle>Save timer with default note?</DialogTitle>
           <DialogDescription>

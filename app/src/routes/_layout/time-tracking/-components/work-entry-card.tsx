@@ -106,7 +106,7 @@ export function WorkEntryCard(props: {
                 {formatHoursAsHoursMinutes(entry.hours)}
               </span>
             </div>
-            <div className="absolute right-4 top-4 flex items-center gap-1 rounded-lg border border-border/50 bg-card p-1 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+            <div className="absolute right-4 top-4 flex items-center gap-1 rounded-lg border border-border/50 bg-card p-1 opacity-0 shadow-xs transition-opacity group-hover:opacity-100">
               {!isLocked && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -200,7 +200,7 @@ function EntryNotePreview(props: {
       <TooltipTrigger asChild>
         <div
           tabIndex={0}
-          className="mt-3 flex min-w-0 items-start gap-2 border-l-2 pl-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="mt-3 flex min-w-0 items-start gap-2 border-l-2 pl-3 text-left outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           style={{
             borderColor: props.projectColor ?? "hsl(var(--border))",
           }}
@@ -211,7 +211,7 @@ function EntryNotePreview(props: {
             </p>
           </div>
           {preview.isMultiline && (
-            <span className="mt-0.5 shrink-0 rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none text-muted-foreground">
+            <span className="mt-0.5 shrink-0 rounded-[0.25rem] border border-border/60 px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none text-muted-foreground">
               {preview.lineLabel}
             </span>
           )}

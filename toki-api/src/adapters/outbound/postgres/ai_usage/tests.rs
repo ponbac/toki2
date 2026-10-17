@@ -21,7 +21,7 @@ const BOTH_OK: &[(AiProvider, AiCoverageStatus)] = &[
 ];
 
 fn repository(pool: &PgPool) -> PostgresAiUsageRepository {
-    PostgresAiUsageRepository::new(sqlx_tracing::PoolBuilder::from(pool.clone()).build())
+    PostgresAiUsageRepository::new(crate::db::DbPool::from(pool.clone()))
 }
 
 async fn insert_user(pool: &PgPool, email: &str) -> UserId {

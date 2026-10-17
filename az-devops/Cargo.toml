@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-azure_core = "0.25.0"
-azure_devops_rust_api = { version = "0.28.0", features = [
+azure_core = "1.1.0"
+azure_devops_rust_api = { version = "0.39.1", features = [
     "core",
     "git",
     "pipelines",
@@ -17,12 +17,12 @@ azure_devops_rust_api = { version = "0.28.0", features = [
 ] }
 serde.workspace = true
 serde_json.workspace = true
+futures = "0.3.34"
 reqwest = { workspace = true, features = ["json"] }
 thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-typespec = "0.4.0"
 
 [dev-dependencies]
 dotenvy.workspace = true

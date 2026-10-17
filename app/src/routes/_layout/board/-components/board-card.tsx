@@ -139,14 +139,14 @@ export function BoardCard({
       }}
       onDragEnd={onDragEnd}
       className={cn(
-        "group relative min-w-0 overflow-hidden rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-sm",
+        "group relative min-w-0 overflow-hidden rounded-lg border border-border/50 bg-card/80 p-3 transition-all duration-200 hover:border-border hover:bg-card hover:shadow-xs",
         isPriorityOne && "bg-red-500/[0.06]",
         isDragging && "opacity-50",
         isMoving && "cursor-progress",
       )}
     >
       {isPriorityOne && (
-        <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-red-300/90 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-linear-to-r from-transparent via-red-300/90 to-transparent" />
       )}
 
       {/* Header row: metadata */}
@@ -167,7 +167,7 @@ export function BoardCard({
               <TooltipTrigger asChild>
                 <span
                   tabIndex={0}
-                  className="inline-flex max-w-8 items-center truncate rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="inline-flex max-w-8 items-center truncate rounded-[0.25rem] bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground outline-hidden ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   +{item.tags.length}
                 </span>

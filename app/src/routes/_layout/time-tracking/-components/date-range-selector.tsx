@@ -83,7 +83,7 @@ export function DateRangeSelector(props: {
             setDateRange={props.setDateRange}
           />
           <Calendar
-            initialFocus
+            autoFocus
             mode="range"
             defaultMonth={dateRange.from}
             selected={dateRange}

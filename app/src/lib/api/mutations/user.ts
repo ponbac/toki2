@@ -39,9 +39,9 @@ export function useUploadAvatar(
       return api.post("users/me/avatar", { body: formData });
     },
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateUserIdentityQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -54,9 +54,9 @@ export function useDeleteAvatar(options?: DefaultMutationOptions<void>) {
     mutationKey: ["user", "avatar", "delete"],
     mutationFn: async () => api.delete("users/me/avatar"),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateUserIdentityQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -87,9 +87,9 @@ export function useCreateApiToken(
     // Clear detached secret-bearing results promptly without a zero-delay GC
     // loop if the observer disappears while the request is still pending.
     gcTime: 1_000,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       // Surface the one-time secret before waiting on a metadata refetch.
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
       await queryClient.invalidateQueries({
         queryKey: userQueries.apiTokens().queryKey,
       });
@@ -108,11 +108,11 @@ export function useRevokeApiToken(
     mutationFn: async ({ tokenId }: RevokeApiTokenVars) =>
       api.delete(`users/me/api-tokens/${tokenId}`),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await queryClient.invalidateQueries({
         queryKey: userQueries.apiTokens().queryKey,
       });
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }

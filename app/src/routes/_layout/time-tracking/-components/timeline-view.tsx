@@ -213,7 +213,7 @@ const PlayButton = React.memo(function PlayButton({
       onClick={handleStartAgain}
       disabled={isStarting}
       className={cn(
-        "absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-card/95 opacity-0 shadow-sm backdrop-blur-sm transition-opacity",
+        "absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-md border border-border/50 bg-card/95 opacity-0 shadow-xs backdrop-blur-xs transition-opacity",
         "hover:bg-primary/10 hover:text-primary",
         "group-hover/block:opacity-100",
         isWeekView && "right-0.5 top-0.5 h-5 w-5",
@@ -341,7 +341,7 @@ const TimelineBlock = React.memo(function TimelineBlock({
         </TooltipTrigger>
         <TooltipContent
           side="right"
-          className="max-w-xs rounded-lg border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-sm"
+          className="max-w-xs rounded-lg border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-xs"
         >
           <div className="space-y-1.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -426,7 +426,7 @@ const TimelineBlock = React.memo(function TimelineBlock({
       </TooltipTrigger>
       <TooltipContent
         side="right"
-        className="max-w-xs rounded-lg border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-sm"
+        className="max-w-xs rounded-lg border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-xs"
       >
         <SavedTimelineCardTooltipBody
           text={text}

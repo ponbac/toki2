@@ -15,7 +15,7 @@ export function EntryCardFrame(props: {
       )}
     >
       {props.showHoverOverlay && (
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/0 to-primary/0 opacity-0 transition-opacity duration-300 group-hover:from-primary/[0.02] group-hover:to-transparent group-hover:opacity-100" />
+        <div className="pointer-events-none absolute inset-0 bg-linear-to-r from-primary/0 via-primary/0 to-primary/0 opacity-0 transition-opacity duration-300 group-hover:from-primary/[0.02] group-hover:to-transparent group-hover:opacity-100" />
       )}
       <div className="relative flex gap-4">{props.children}</div>
     </div>

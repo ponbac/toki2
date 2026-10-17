@@ -101,7 +101,7 @@ impl ExchangeRateProvider for FakeRates {
 
 /// The route composed as in production, behind authentication.
 fn app(pool: &PgPool, rates: Arc<FakeRates>) -> Router {
-    let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+    let db = crate::db::DbPool::from(pool.clone());
     let service: Arc<dyn AiDisplayRateService> =
         Arc::new(AiDisplayRateServiceImpl::new(AiExchangeRates::new(
             Arc::new(PostgresAiExchangeRateRepository::new(db.clone())),
@@ -130,7 +130,7 @@ fn app(pool: &PgPool, rates: Arc<FakeRates>) -> Router {
 /// A bearer token of a new user.
 async fn token(pool: &PgPool) -> String {
     let user = insert_user(pool, "dev@example.com", "User").await;
-    let db = sqlx_tracing::PoolBuilder::from(pool.clone()).build();
+    let db = crate::db::DbPool::from(pool.clone());
     let issued = ApiTokenServiceImpl::new(Arc::new(PostgresApiTokenRepository::new(db)))
         .create(&user, "token-ledger")
         .await

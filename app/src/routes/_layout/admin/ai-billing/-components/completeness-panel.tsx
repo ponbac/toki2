@@ -140,9 +140,9 @@ function Completeness({
                 aria-pressed={scope === option.value}
                 onClick={() => setScope(option.value)}
                 className={cn(
-                  "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                   scope === option.value &&
-                    "bg-background text-foreground shadow-sm",
+                    "bg-background text-foreground shadow-xs",
                 )}
               >
                 {option.label}

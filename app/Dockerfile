@@ -7,7 +7,7 @@ ARG VITE_TIME_TRACKING_PROVIDER_URL
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_TIME_TRACKING_PROVIDER_URL=$VITE_TIME_TRACKING_PROVIDER_URL
 
-COPY package.json bun.lockb ./
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 COPY . .

@@ -618,7 +618,7 @@ mod tests {
     const STALE: &str = "github.com/example/legacy";
 
     fn db(pool: &PgPool) -> DbPool {
-        sqlx_tracing::PoolBuilder::from(pool.clone()).build()
+        crate::db::DbPool::from(pool.clone())
     }
 
     fn company(company_id: &str) -> TimeTrackingCompany {

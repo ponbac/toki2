@@ -109,7 +109,7 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
       {/* Navigation Bar */}
       <div className="fixed left-0 right-0 top-0 z-50 flex h-14 flex-row border-b border-border/50 bg-background/80 backdrop-blur-xl md:h-full md:w-[72px] md:flex-col md:items-stretch md:border-b-0 md:border-r md:bg-card/50">
         {/* Subtle glow effect at top */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent md:inset-y-0 md:left-0 md:h-full md:w-px md:bg-gradient-to-b" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/20 to-transparent md:inset-y-0 md:left-0 md:h-full md:w-px md:bg-linear-to-b" />
 
         <div className="flex w-full flex-row items-center justify-center gap-1 px-3 md:h-auto md:flex-col md:gap-2 md:px-0 md:py-4">
           {/* Logo/Avatar section */}
@@ -223,7 +223,7 @@ function NavLink({
       </TooltipTrigger>
       <TooltipContent
         side="right"
-        className="flex items-center gap-3 rounded-lg border-border/50 bg-card/95 px-3 py-2 font-medium shadow-elevated backdrop-blur-sm"
+        className="flex items-center gap-3 rounded-lg border-border/50 bg-card/95 px-3 py-2 font-medium shadow-elevated backdrop-blur-xs"
       >
         {title}
         {label && (

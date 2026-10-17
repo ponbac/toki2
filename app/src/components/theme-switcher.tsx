@@ -55,7 +55,7 @@ export function ThemeSwitcher() {
       </TooltipTrigger>
       <TooltipContent
         side="right"
-        className="rounded-lg border-border/50 bg-card/95 px-3 py-2 font-medium shadow-elevated backdrop-blur-sm"
+        className="rounded-lg border-border/50 bg-card/95 px-3 py-2 font-medium shadow-elevated backdrop-blur-xs"
       >
         <span>
           Theme: {currentLabel}{" "}

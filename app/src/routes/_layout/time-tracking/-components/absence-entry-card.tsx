@@ -45,7 +45,7 @@ export function AbsenceEntryCard(props: {
               </span>
             </div>
             {absence.deletable && (
-              <div className="absolute right-4 top-4 flex items-center gap-1 rounded-lg border border-border/50 bg-card p-1 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+              <div className="absolute right-4 top-4 flex items-center gap-1 rounded-lg border border-border/50 bg-card p-1 opacity-0 shadow-xs transition-opacity group-hover:opacity-100">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

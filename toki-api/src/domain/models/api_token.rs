@@ -1,6 +1,6 @@
 use std::fmt;
 
-use rand::RngCore;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
@@ -96,7 +96,7 @@ pub struct ApiTokenSecret(String);
 impl ApiTokenSecret {
     pub fn generate() -> Self {
         let mut bytes = [0u8; TOKEN_SECRET_BYTES];
-        rand::thread_rng().fill_bytes(&mut bytes);
+        rand::rng().fill_bytes(&mut bytes);
         Self(format!("{TOKEN_PREFIX}{}", encode_hex(&bytes)))
     }
 

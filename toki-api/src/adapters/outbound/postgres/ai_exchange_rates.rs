@@ -261,7 +261,7 @@ mod tests {
     use crate::domain::models::AiProvidedRate;
 
     fn db(pool: &PgPool) -> DbPool {
-        sqlx_tracing::PoolBuilder::from(pool.clone()).build()
+        crate::db::DbPool::from(pool.clone())
     }
 
     fn stockholm() -> AiUsageTimeZone {

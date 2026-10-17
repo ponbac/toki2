@@ -49,6 +49,10 @@ tsc:
 lint:
     cd app && bun lint
 
+# Test frontend API error handling
+test-app:
+    cd app && bun run test
+
 # Build frontend for production
 build-app:
     cd app && bun run build
@@ -124,7 +128,7 @@ check-omarchy-plugin:
     python3 -m unittest discover -s omarchy-plugin/tests -v
 
 # Verify all code compiles/passes checks
-check-all: check clippy tsc lint check-omarchy-plugin
+check-all: check clippy tsc lint test-app check-omarchy-plugin
 
 # Format frontend code with prettier
 fmt:

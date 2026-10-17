@@ -1,28 +1,13 @@
-import { fontFamily as _fontFamily } from "tailwindcss/defaultTheme";
+import defaultTheme from "tailwindcss/defaultTheme";
 import tailwindcssAnimate from "tailwindcss-animate";
 import tailwindcssTypography from "@tailwindcss/typography";
 
-/** @type {import('tailwindcss').Config} */
-export const darkMode = "selector";
-export const content = [
-  "./pages/**/*.{ts,tsx}",
-  "./components/**/*.{ts,tsx}",
-  "./app/**/*.{ts,tsx}",
-  "./src/**/*.{ts,tsx}",
-];
-export const theme = {
-  container: {
-    center: true,
-    padding: "2rem",
-    screens: {
-      "2xl": "1400px",
-    },
-  },
+const theme = {
   extend: {
     fontFamily: {
-      sans: ["Manrope", "IBM Plex Sans", ..._fontFamily.sans],
-      display: ["Manrope", ..._fontFamily.sans],
-      mono: ["IBM Plex Mono", ..._fontFamily.mono],
+      sans: ["Manrope", "IBM Plex Sans", ...defaultTheme.fontFamily.sans],
+      display: ["Manrope", ...defaultTheme.fontFamily.sans],
+      mono: ["IBM Plex Mono", ...defaultTheme.fontFamily.mono],
     },
     colors: {
       border: "hsl(var(--border))",
@@ -103,4 +88,8 @@ export const theme = {
     },
   },
 };
-export const plugins = [tailwindcssAnimate, tailwindcssTypography];
+/** Preserve the application design tokens and animation plugins in Tailwind 4. */
+export default {
+  theme,
+  plugins: [tailwindcssAnimate, tailwindcssTypography],
+};

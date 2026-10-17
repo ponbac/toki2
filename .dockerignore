@@ -29,5 +29,8 @@
 **/values.dev.yaml
 /bin
 /target
+**/target
+videos/**/out
+videos/**/frames
 LICENSE
 README.md

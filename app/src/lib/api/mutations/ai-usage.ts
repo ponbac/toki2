@@ -37,9 +37,9 @@ export function useCreateAiSubscription(
           .json<unknown>(),
       ),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -59,9 +59,9 @@ export function useUpdateAiSubscription(
           .json<unknown>(),
       ),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -77,9 +77,9 @@ export function useDeleteAiSubscription(
     mutationFn: async ({ subscriptionId }: DeleteAiSubscriptionVars) =>
       api.delete(`ai-usage/subscriptions/${subscriptionId}`),
     ...options,
-    onSuccess: async (data, vars, ctx) => {
+    onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSuccess?.(data, vars, ctx);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }

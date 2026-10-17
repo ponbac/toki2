@@ -29,7 +29,7 @@ export function BoardColumn({
   project: string;
   isDropTarget: boolean;
   draggingItemId: string | null;
-  movingItemIdSet: Set<string>;
+  movingItemIdSet: ReadonlySet<string>;
   onCardDragStart: (itemId: string, sourceColumnId: string) => void;
   onCardDragEnd: () => void;
   onColumnDragOver: (columnId: string) => void;

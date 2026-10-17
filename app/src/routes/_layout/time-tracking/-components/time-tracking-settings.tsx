@@ -95,7 +95,7 @@ export const TimeTrackingSettings = ({
       </TooltipProvider>
       <PopoverContent
         align="end"
-        className="w-[26rem] max-w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden rounded-xl border-border/70 bg-card/95 p-4 text-card-foreground shadow-elevated backdrop-blur supports-[backdrop-filter]:bg-card/90"
+        className="w-[26rem] max-w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden rounded-xl border-border/70 bg-card/95 p-4 text-card-foreground shadow-elevated backdrop-blur-sm supports-[backdrop-filter]:bg-card/90"
         style={{
           maxHeight:
             "min(calc(100vh - 2rem), var(--radix-popover-content-available-height))",

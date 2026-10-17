@@ -53,6 +53,7 @@ const TOGGLEABLE_CATEGORIES = new Set([
   "other",
 ]);
 
+/** Renders filtered work items and prevents duplicate moves while tracking concurrent updates. */
 export function BoardView({
   organization,
   project,
@@ -125,7 +126,9 @@ export function BoardView({
   );
   const categoryFilter = useAtomValue(categoryFilterAtom);
   const movingItemIdsRef = useRef(new Set<string>());
-  const [, setMovingItemVersion] = useState(0);
+  const [movingItemIds, setMovingItemIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
   const [hiddenColumnsByScope, setHiddenColumnsByScope] = useAtom(
@@ -236,8 +239,6 @@ export function BoardView({
       columnsWithItems.map((column) => ({ id: column.id, name: column.name })),
     [columnsWithItems],
   );
-  const allColumnsRef = useRef(allColumns);
-  allColumnsRef.current = allColumns;
 
   const toggleColumnVisibility = useCallback(
     (columnId: string) => {
@@ -283,7 +284,7 @@ export function BoardView({
         return;
       }
 
-      const targetColumn = allColumnsRef.current.find(
+      const targetColumn = allColumns.find(
         (column) => column.id === targetColumnId,
       );
       if (!targetColumn) {
@@ -291,7 +292,7 @@ export function BoardView({
       }
 
       movingItemIdsRef.current.add(itemId);
-      setMovingItemVersion((version) => version + 1);
+      setMovingItemIds(new Set(movingItemIdsRef.current));
 
       try {
         await moveBoardItem({
@@ -306,11 +307,11 @@ export function BoardView({
         toast.error("Failed to move work item.");
       } finally {
         if (movingItemIdsRef.current.delete(itemId)) {
-          setMovingItemVersion((version) => version + 1);
+          setMovingItemIds(new Set(movingItemIdsRef.current));
         }
       }
     },
-    [iterationPath, moveBoardItem, organization, project, team],
+    [allColumns, iterationPath, moveBoardItem, organization, project, team],
   );
 
   const handleCardDragStart = useCallback(
@@ -396,7 +397,7 @@ export function BoardView({
   }
 
   return (
-    <div className="flex min-w-0 w-full flex-col gap-3">
+    <div className="flex w-full min-w-0 flex-col gap-3">
       <BoardFilters
         memberFilter={memberFilter}
         setMemberFilter={setMemberFilter}
@@ -410,7 +411,7 @@ export function BoardView({
         onToggleColumn={toggleColumnVisibility}
         onShowAllColumns={showAllColumns}
       />
-      <div className="h-[calc(100vh-15rem)] min-w-0 w-full">
+      <div className="h-[calc(100vh-15rem)] w-full min-w-0">
         {visibleColumns.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-border/40 bg-muted/20">
             <p className="text-sm text-muted-foreground">
@@ -421,7 +422,7 @@ export function BoardView({
             </Button>
           </div>
         ) : (
-          <div className="flex h-full min-w-0 w-full gap-4 overflow-x-auto pb-2">
+          <div className="flex h-full w-full min-w-0 gap-4 overflow-x-auto pb-2">
             {visibleColumns.map((column) => (
               <div
                 key={column.id}
@@ -438,7 +439,7 @@ export function BoardView({
                     dragState !== null && dragOverColumnId === column.id
                   }
                   draggingItemId={dragState?.itemId ?? null}
-                  movingItemIdSet={movingItemIdsRef.current}
+                  movingItemIdSet={movingItemIds}
                   onCardDragStart={handleCardDragStart}
                   onCardDragEnd={handleCardDragEnd}
                   onColumnDragOver={handleColumnDragOver}

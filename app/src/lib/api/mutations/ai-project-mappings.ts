@@ -42,9 +42,9 @@ export function useMapAiProjectKey(
           .json<unknown>(),
       ),
     ...options,
-    onSettled: async (data, error, vars, ctx) => {
+    onSettled: async (data, error, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSettled?.(data, error, vars, ctx);
+      await options?.onSettled?.(data, error, vars, ctx, mutationContext);
     },
   });
 }
@@ -64,9 +64,9 @@ export function useMarkAiProjectKeyPersonal(
     mutationFn: async (vars: PersonalAiProjectKeyVars) =>
       api.put("ai-usage/project-mappings/personal", { json: vars }),
     ...options,
-    onSettled: async (data, error, vars, ctx) => {
+    onSettled: async (data, error, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSettled?.(data, error, vars, ctx);
+      await options?.onSettled?.(data, error, vars, ctx, mutationContext);
     },
   });
 }
@@ -82,9 +82,9 @@ export function useUnmarkAiProjectKeyPersonal(
     mutationFn: async (vars: PersonalAiProjectKeyVars) =>
       api.delete("ai-usage/project-mappings/personal", { json: vars }),
     ...options,
-    onSettled: async (data, error, vars, ctx) => {
+    onSettled: async (data, error, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);
-      await options?.onSettled?.(data, error, vars, ctx);
+      await options?.onSettled?.(data, error, vars, ctx, mutationContext);
     },
   });
 }

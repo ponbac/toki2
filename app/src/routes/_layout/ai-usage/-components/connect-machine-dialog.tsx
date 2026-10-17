@@ -209,7 +209,7 @@ export function ConnectMachineDialog({
       }}
     >
       <DialogContent
-        className="max-h-[calc(100dvh-2rem)] overflow-y-auto outline-none sm:max-w-xl"
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto outline-hidden sm:max-w-xl"
         // Focus starts on the dialog, not on a system that is not the selected one.
         onOpenAutoFocus={(event) => {
           openerRef.current =

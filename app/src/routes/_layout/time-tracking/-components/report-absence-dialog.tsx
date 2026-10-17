@@ -49,6 +49,7 @@ function getTodayDate() {
   return dayjs().format("YYYY-MM-DD");
 }
 
+/** Builds an absence entry using current provider options and editable daily scheduled hours. */
 export function ReportAbsenceDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -88,40 +89,42 @@ export function ReportAbsenceDialog(props: {
     enabled: props.open && dateRangeIsValid,
   });
 
-  React.useEffect(() => {
-    if (!availableAbsenceTypes || absenceType === null) return;
-    if (
-      !availableAbsenceTypes.some(
-        (option) => option.absenceType === absenceType,
-      )
-    ) {
-      setAbsenceType(null);
+  if (
+    availableAbsenceTypes &&
+    absenceType !== null &&
+    !availableAbsenceTypes.some((option) => option.absenceType === absenceType)
+  ) {
+    setAbsenceType(null);
+  }
+
+  const [defaultsSnapshot, setDefaultsSnapshot] = React.useState({
+    defaults,
+    open: props.open,
+  });
+  if (
+    defaultsSnapshot.defaults !== defaults ||
+    defaultsSnapshot.open !== props.open
+  ) {
+    setDefaultsSnapshot({ defaults, open: props.open });
+    if (props.open && defaults) {
+      setHoursByDate((current) => {
+        const next: Record<string, string> = {};
+        defaults.forEach((day) => {
+          next[day.date] = current[day.date] ?? String(day.scheduledHours);
+        });
+        return next;
+      });
     }
-  }, [availableAbsenceTypes, absenceType]);
+  }
 
-  React.useEffect(() => {
-    if (!props.open || !defaults) return;
-
-    setHoursByDate((current) => {
-      const next: Record<string, string> = {};
-      defaults.forEach((day) => {
-        next[day.date] = current[day.date] ?? String(day.scheduledHours);
-      });
-      return next;
+  const childOptions = React.useMemo(() => {
+    const seen = new Set<string>();
+    return absenceChildren.filter((child) => {
+      if (seen.has(child.name)) return false;
+      seen.add(child.name);
+      return true;
     });
-  }, [defaults, props.open]);
-
-  const childOptions = React.useMemo(
-    () => {
-      const seen = new Set<string>();
-      return absenceChildren.filter((child) => {
-        if (seen.has(child.name)) return false;
-        seen.add(child.name);
-        return true;
-      });
-    },
-    [absenceChildren],
-  );
+  }, [absenceChildren]);
   const selectedChild =
     childOptions.find((child) => child.name === selectedChildName) ?? null;
 
@@ -166,19 +169,13 @@ export function ReportAbsenceDialog(props: {
     submitAttempted && childRequired && selectedChild === null;
   const submitDisabled = !canAttemptSubmit;
 
-  React.useEffect(() => {
-    if (!childRequired) {
-      setSelectedChildName("");
-      return;
-    }
-
-    if (
-      selectedChildName &&
-      !childOptions.some((child) => child.name === selectedChildName)
-    ) {
-      setSelectedChildName("");
-    }
-  }, [childOptions, childRequired, selectedChildName]);
+  if (
+    selectedChildName &&
+    (!childRequired ||
+      !childOptions.some((child) => child.name === selectedChildName))
+  ) {
+    setSelectedChildName("");
+  }
 
   const reset = () => {
     const today = getTodayDate();
@@ -221,7 +218,7 @@ export function ReportAbsenceDialog(props: {
 
     props.onCreate({
       absenceType,
-      child: childRequired ? selectedChild?.name ?? null : null,
+      child: childRequired ? (selectedChild?.name ?? null) : null,
       comment,
       days: positiveDays,
     });
@@ -276,7 +273,7 @@ export function ReportAbsenceDialog(props: {
                 Absence type <span className="text-destructive">*</span>
               </label>
               <Select
-                value={absenceType ?? undefined}
+                value={absenceType ?? ""}
                 disabled={
                   isAbsenceTypesLoading || availableAbsenceTypes?.length === 0
                 }
@@ -340,7 +337,7 @@ export function ReportAbsenceDialog(props: {
             >
               <div className="overflow-hidden p-0.5">
                 <div className="relative">
-                  <Baby className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Baby className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Select
                     value={selectedChildName}
                     disabled={
@@ -372,7 +369,7 @@ export function ReportAbsenceDialog(props: {
                             ? "Loading children..."
                             : isAbsenceChildrenError
                               ? "Could not load children"
-                            : "Select child..."
+                              : "Select child..."
                         }
                       />
                     </SelectTrigger>
@@ -465,7 +462,7 @@ export function ReportAbsenceDialog(props: {
                         >
                           {dayjs(day.date).format("ddd, MMM D")}
                           {isWeekend && (
-                            <span className="ml-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                            <span className="ml-1.5 text-[10px] tracking-wider text-muted-foreground/60 uppercase">
                               off
                             </span>
                           )}
@@ -495,12 +492,12 @@ export function ReportAbsenceDialog(props: {
           </div>
 
           <div className="relative">
-            <MessageSquare className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <MessageSquare className="pointer-events-none absolute top-3 left-3 h-4 w-4 text-muted-foreground" />
             <Textarea
               value={comment}
               onChange={(event) => setComment(event.target.value)}
               placeholder="Comment (optional)"
-              className="min-h-[4.5rem] pl-9 pt-2.5"
+              className="min-h-[4.5rem] pt-2.5 pl-9"
             />
           </div>
 
@@ -568,7 +565,7 @@ function DatePickerButton({
               onOpenChange(false);
             }}
             weekStartsOn={1}
-            initialFocus
+            autoFocus
           />
         </PopoverContent>
       </Popover>

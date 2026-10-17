@@ -20,7 +20,7 @@ export const TailwindIndicator = () => {
   }, []);
 
   // hide in production
-  if (process.env.NODE_ENV === "production") return null;
+  if (import.meta.env.PROD) return null;
 
   const { width, height } = dimensions;
 

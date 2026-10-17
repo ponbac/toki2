@@ -216,7 +216,7 @@ function AiUsagePage() {
             <h1
               ref={headingRef}
               tabIndex={-1}
-              className="font-display text-2xl font-semibold tracking-tight outline-none"
+              className="font-display text-2xl font-semibold tracking-tight outline-hidden"
             >
               AI usage
             </h1>
@@ -229,7 +229,7 @@ function AiUsagePage() {
                   <button
                     type="button"
                     aria-label="How costs are estimated"
-                    className="inline-flex rounded-full align-[-2px] outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    className="inline-flex rounded-full align-[-2px] outline-hidden hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Info aria-hidden className="size-3.5" />
                   </button>

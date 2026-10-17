@@ -143,7 +143,7 @@ export function Summary({
 
   return (
     <div className="card-elevated overflow-hidden rounded-2xl">
-      <div className="relative overflow-hidden border-b border-border/50 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent px-5 py-4">
+      <div className="relative overflow-hidden border-b border-border/50 bg-linear-to-br from-primary/10 via-primary/5 to-transparent px-5 py-4">
         <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
         <div className="relative">
           <div className="flex items-center gap-3">
@@ -464,7 +464,7 @@ function ProjectBreakdownTooltip({
   totalHours: number;
 }) {
   return (
-    <div className="max-w-60 rounded-lg border border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-sm">
+    <div className="max-w-60 rounded-lg border border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-xs">
       <p className="mb-1 break-words font-semibold">{project.name}</p>
       <div className="space-y-0.5 text-sm">
         <p className="text-muted-foreground">
@@ -501,7 +501,7 @@ function DailyHoursTooltip({ row }: { row: DailyRow }) {
   const nonZeroProjects = row.projects.filter((project) => project.hours > 0);
 
   return (
-    <div className="rounded-lg border border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-sm">
+    <div className="rounded-lg border border-border/50 bg-card/95 p-3 shadow-elevated backdrop-blur-xs">
       <p className="mb-2 font-semibold">
         {format(parseISO(row.date), "EEEE, MMM d, yyyy")}
       </p>

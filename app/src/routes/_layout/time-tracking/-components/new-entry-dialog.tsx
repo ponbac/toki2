@@ -247,7 +247,7 @@ export function NewEntryDialog(props: {
                         }
                       }}
                       weekStartsOn={1}
-                      initialFocus
+                      autoFocus
                     />
                   </PopoverContent>
                 </Popover>

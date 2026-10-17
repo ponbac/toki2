@@ -70,7 +70,7 @@ export function PrApprovalHoverCard({
       >
         <div
           className={cn(
-            "border-b border-border/60 bg-gradient-to-r px-3 py-2",
+            "border-b border-border/60 bg-linear-to-r px-3 py-2",
             headerAccentClass,
           )}
         >

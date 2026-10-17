@@ -79,7 +79,7 @@ export function ExportChecks({ checks }: { checks: readonly ExportCheck[] }) {
               disabled={!check.detail}
               className="border-none"
             >
-              <AccordionTrigger className="min-w-0 gap-2.5 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted/50 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:hover:bg-transparent motion-reduce:transition-none [&:disabled>svg]:invisible [&>svg]:text-muted-foreground motion-reduce:[&>svg]:transition-none">
+              <AccordionTrigger className="min-w-0 gap-2.5 rounded-lg px-2 py-2 text-left text-sm hover:bg-muted/50 hover:no-underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:hover:bg-transparent motion-reduce:transition-none [&:disabled>svg]:invisible [&>svg]:text-muted-foreground motion-reduce:[&>svg]:transition-none">
                 {/* Wrapped: the trigger turns its own icons over when open. */}
                 <span className="flex shrink-0">
                   <status.icon

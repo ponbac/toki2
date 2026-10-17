@@ -47,24 +47,21 @@ export function AccountSettings() {
 
   const clearSelectedFile = React.useCallback(() => {
     setSelectedFile(null);
+    setSelectedPreviewUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }, []);
 
   React.useEffect(() => {
-    if (!selectedFile) {
-      setSelectedPreviewUrl(null);
+    if (!selectedPreviewUrl) {
       return;
     }
 
-    const objectUrl = URL.createObjectURL(selectedFile);
-    setSelectedPreviewUrl(objectUrl);
-
     return () => {
-      URL.revokeObjectURL(objectUrl);
+      URL.revokeObjectURL(selectedPreviewUrl);
     };
-  }, [selectedFile]);
+  }, [selectedPreviewUrl]);
 
   const uploadAvatar = userMutations.useUploadAvatar({
     onSuccess: () => {
@@ -129,6 +126,7 @@ export function AccountSettings() {
     }
 
     setSelectedFile(file);
+    setSelectedPreviewUrl(URL.createObjectURL(file));
   };
 
   const isMutating =
@@ -154,16 +152,16 @@ export function AccountSettings() {
         <button
           type="button"
           aria-label="Open account settings"
-          className="group relative rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="group relative rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-hidden"
         >
           <div className="absolute inset-0 rounded-full bg-primary/20 opacity-0 blur-md transition-opacity duration-300 group-hover:opacity-100" />
-          <Avatar className="relative h-10 w-10 rounded-xl border border-border/50 bg-card shadow-sm transition-all duration-300 group-hover:border-primary/30 group-hover:shadow-glow-sm">
+          <Avatar className="relative h-10 w-10 rounded-xl border border-border/50 bg-card shadow-xs transition-all duration-300 group-hover:border-primary/30 group-hover:shadow-glow-sm">
             <AvatarImage
               src={avatarSrc}
               className="rounded-xl"
               onLoadingStatusChange={handleAvatarLoadingStatusChange}
             />
-            <AvatarFallback className="rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 text-sm font-semibold">
+            <AvatarFallback className="rounded-xl bg-linear-to-br from-primary/20 to-primary/5 text-sm font-semibold">
               {initials}
             </AvatarFallback>
           </Avatar>

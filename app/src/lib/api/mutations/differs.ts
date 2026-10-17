@@ -44,16 +44,16 @@ function useStartDiffers(options?: DefaultMutationOptions<RepoKey>) {
 
       return { previous };
     },
-    onError: (err, vars, ctx) => {
+    onError: (err, vars, ctx, mutationContext) => {
       queryClient.setQueryData(queries.differs().queryKey, ctx?.previous);
-      options?.onError?.(err, vars, ctx);
+      return options?.onError?.(err, vars, ctx, mutationContext);
     },
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries(queries.differs());
       queryClient.invalidateQueries({
         queryKey: pullRequestsQueries.baseKey,
       });
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -95,13 +95,13 @@ function useStopDiffers(options?: DefaultMutationOptions<RepoKey>) {
 
       return { previous };
     },
-    onError: (err, vars, ctx) => {
+    onError: (err, vars, ctx, mutationContext) => {
       queryClient.setQueryData(queries.differs().queryKey, ctx?.previous);
-      options?.onError?.(err, vars, ctx);
+      return options?.onError?.(err, vars, ctx, mutationContext);
     },
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries(queries.differs());
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }

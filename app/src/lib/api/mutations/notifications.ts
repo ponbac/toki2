@@ -1,4 +1,5 @@
 import {
+  type MutationFunctionContext,
   QueryClient,
   QueryKey,
   useMutation,
@@ -104,7 +105,13 @@ function updateNotificationsLists(
 async function optimisticUpdateNotificationsLists<TVars>(
   queryClient: QueryClient,
   vars: TVars,
-  onMutate: ((vars: TVars) => Promise<unknown> | unknown) | undefined,
+  onMutate:
+    | ((
+        vars: TVars,
+        context: MutationFunctionContext,
+      ) => Promise<unknown> | unknown)
+    | undefined,
+  mutationContext: MutationFunctionContext,
   updater: (
     notifications: Array<Notification>,
     options: NotificationsListOptions | undefined,
@@ -116,7 +123,7 @@ async function optimisticUpdateNotificationsLists<TVars>(
 
   const previousLists = snapshotNotificationsLists(queryClient);
   updateNotificationsLists(queryClient, updater);
-  const optionsContext = await onMutate?.(vars);
+  const optionsContext = await onMutate?.(vars, mutationContext);
 
   return {
     optionsContext,
@@ -132,13 +139,14 @@ function useMarkNotificationViewed(options?: DefaultMutationOptions<number>) {
     mutationFn: (notificationId: number) =>
       api.post(`notifications/${notificationId}/view`),
     ...options,
-    onMutate: async (notificationId) => {
+    onMutate: async (notificationId, mutationContext) => {
       const viewedAt = new Date().toISOString();
 
       return optimisticUpdateNotificationsLists(
         queryClient,
         notificationId,
         options?.onMutate,
+        mutationContext,
         (notifications, queryOptions) => {
           if (queryOptions?.includeViewed === false) {
             return notifications.filter(
@@ -157,16 +165,32 @@ function useMarkNotificationViewed(options?: DefaultMutationOptions<number>) {
         },
       );
     },
-    onSuccess: (data, vars, ctx) => {
-      options?.onSuccess?.(data, vars, ctx?.optionsContext);
+    onSuccess: (data, vars, ctx, mutationContext) => {
+      return options?.onSuccess?.(
+        data,
+        vars,
+        ctx?.optionsContext,
+        mutationContext,
+      );
     },
-    onError: (error, vars, ctx) => {
+    onError: (error, vars, ctx, mutationContext) => {
       restoreNotificationsLists(queryClient, ctx?.previousLists ?? []);
-      options?.onError?.(error, vars, ctx?.optionsContext);
+      return options?.onError?.(
+        error,
+        vars,
+        ctx?.optionsContext,
+        mutationContext,
+      );
     },
-    onSettled: (data, error, vars, ctx) => {
+    onSettled: (data, error, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({ queryKey: notificationsListQueryKey });
-      options?.onSettled?.(data, error, vars, ctx?.optionsContext);
+      return options?.onSettled?.(
+        data,
+        error,
+        vars,
+        ctx?.optionsContext,
+        mutationContext,
+      );
     },
   });
 }
@@ -178,13 +202,14 @@ function useMarkAllNotificationsViewed(options?: DefaultMutationOptions<void>) {
     mutationKey: ["notifications", "view-all"],
     mutationFn: () => api.post("notifications/view-all"),
     ...options,
-    onMutate: async () => {
+    onMutate: async (_vars, mutationContext) => {
       const viewedAt = new Date().toISOString();
 
       return optimisticUpdateNotificationsLists(
         queryClient,
         undefined,
         options?.onMutate,
+        mutationContext,
         (notifications, queryOptions) => {
           if (queryOptions?.includeViewed === false) {
             return [];
@@ -201,16 +226,32 @@ function useMarkAllNotificationsViewed(options?: DefaultMutationOptions<void>) {
         },
       );
     },
-    onSuccess: (data, vars, ctx) => {
-      options?.onSuccess?.(data, vars, ctx?.optionsContext);
+    onSuccess: (data, vars, ctx, mutationContext) => {
+      return options?.onSuccess?.(
+        data,
+        vars,
+        ctx?.optionsContext,
+        mutationContext,
+      );
     },
-    onError: (error, vars, ctx) => {
+    onError: (error, vars, ctx, mutationContext) => {
       restoreNotificationsLists(queryClient, ctx?.previousLists ?? []);
-      options?.onError?.(error, vars, ctx?.optionsContext);
+      return options?.onError?.(
+        error,
+        vars,
+        ctx?.optionsContext,
+        mutationContext,
+      );
     },
-    onSettled: (data, error, vars, ctx) => {
+    onSettled: (data, error, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({ queryKey: notificationsListQueryKey });
-      options?.onSettled?.(data, error, vars, ctx?.optionsContext);
+      return options?.onSettled?.(
+        data,
+        error,
+        vars,
+        ctx?.optionsContext,
+        mutationContext,
+      );
     },
   });
 }
@@ -223,9 +264,9 @@ function useDeleteNotification(options?: DefaultMutationOptions<number>) {
     mutationFn: (notificationId: number) =>
       api.delete(`notifications/${notificationId}`),
     ...options,
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({ queryKey: notificationsListQueryKey });
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -254,11 +295,11 @@ function useUpdatePreferences(
         json: rule,
       }),
     ...options,
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: notificationsQueries.preferences(vars.repositoryId).queryKey,
       });
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -293,14 +334,14 @@ function useSetPrException(
         },
       ),
     ...options,
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: notificationsQueries.prExceptions(
           vars.repositoryId,
           vars.pullRequestId,
         ).queryKey,
       });
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -327,14 +368,14 @@ function useRemovePrException(
         `notifications/repositories/${repositoryId}/pull-requests/${pullRequestId}/exceptions/${notificationType}`,
       ),
     ...options,
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: notificationsQueries.prExceptions(
           vars.repositoryId,
           vars.pullRequestId,
         ).queryKey,
       });
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -352,11 +393,11 @@ function useSubscribeToPush(
     mutationKey: ["notifications", "subscribe"],
     mutationFn: ({ deviceName }: SubscribePayload) => subscribeUser(deviceName),
     ...options,
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: notificationsQueries.pushSubscriptions().queryKey,
       });
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }
@@ -369,11 +410,11 @@ function useDeletePushSubscription(options?: DefaultMutationOptions<number>) {
     mutationFn: (id: number) =>
       api.delete(`notifications/push-subscriptions/${id}`),
     ...options,
-    onSuccess: (data, vars, ctx) => {
+    onSuccess: (data, vars, ctx, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: notificationsQueries.pushSubscriptions().queryKey,
       });
-      options?.onSuccess?.(data, vars, ctx);
+      return options?.onSuccess?.(data, vars, ctx, mutationContext);
     },
   });
 }

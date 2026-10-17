@@ -88,7 +88,7 @@ export function CurrencySwitch({
               className={cn(
                 "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring",
                 checked
-                  ? "bg-background text-foreground shadow-sm ring-1 ring-inset ring-border"
+                  ? "bg-background text-foreground shadow-xs ring-1 ring-inset ring-border"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >

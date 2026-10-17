@@ -71,7 +71,7 @@ fn company() -> TimeTrackingCompany {
 }
 
 fn db(pool: &PgPool) -> crate::db::DbPool {
-    sqlx_tracing::PoolBuilder::from(pool.clone()).build()
+    crate::db::DbPool::from(pool.clone())
 }
 
 /// Test-only sign-in that starts a browser session for any stored user.

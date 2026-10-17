@@ -132,7 +132,7 @@ export function TimerBuddySettings({
                     type="button"
                     aria-pressed={energy === option.value}
                     onClick={() => setEnergy(option.value)}
-                    className="rounded px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent aria-pressed:text-foreground"
+                    className="rounded px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-accent aria-pressed:text-foreground"
                   >
                     {option.label}
                   </button>

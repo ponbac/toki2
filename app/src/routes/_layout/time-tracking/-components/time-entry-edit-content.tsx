@@ -260,7 +260,7 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
                   }
                 }}
                 weekStartsOn={1}
-                initialFocus
+                autoFocus
               />
             </PopoverContent>
           </Popover>

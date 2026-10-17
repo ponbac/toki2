@@ -66,7 +66,7 @@ export function UsageTabs({
         return (
           <Link
             key={value}
-            from="/ai-usage"
+            from="/ai-usage/"
             to="/ai-usage"
             search={(previous) => ({
               ...previous,
@@ -74,7 +74,7 @@ export function UsageTabs({
             })}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "relative flex items-center gap-2 whitespace-nowrap rounded-t-md px-3 py-2.5 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              "relative flex items-center gap-2 whitespace-nowrap rounded-t-md px-3 py-2.5 text-sm font-semibold outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               active
                 ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground",

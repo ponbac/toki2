@@ -17,14 +17,15 @@ const defaultApiUrl = import.meta.env.DEV
 
 export const API_URL = import.meta.env.VITE_API_URL?.trim() || defaultApiUrl;
 
+/** Authenticated HTTP client with login redirection on 401 and no automatic retries. */
 export const api = ky.create({
-  prefixUrl: API_URL,
+  prefix: API_URL,
   credentials: "include",
   retry: 0,
   timeout: 45_000,
   hooks: {
     afterResponse: [
-      (_, __, response) => {
+      ({ response }) => {
         if (response.status === 401) {
           window.location.replace(`/login?next=${window.location.pathname}`);
         }

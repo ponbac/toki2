@@ -62,13 +62,13 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
         json: body,
       }),
     ...options,
-    onMutate: (vars) => {
+    onMutate: (vars, mutationContext) => {
       queryClient.resetQueries({
         queryKey: timeTrackingQueries.getTimer().queryKey,
       });
-      options?.onMutate?.(vars);
+      return options?.onMutate?.(vars, mutationContext);
     },
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timerBaseKey,
       });
@@ -78,7 +78,7 @@ function useStartTimer(options?: DefaultMutationOptions<StartTimerPayload>) {
         timeSeconds: 0,
       });
 
-      options?.onSuccess?.(data, v, c);
+      return options?.onSuccess?.(data, v, c, mutationContext);
     },
   });
 }
@@ -91,7 +91,7 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
     mutationKey: ["time-tracking", "stopTimer"],
     mutationFn: () => api.delete("time-tracking/timer"),
     ...options,
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       const deletedSeconds =
         useTimeTrackingStore.getState().timer.timeSeconds ?? 0;
       queryClient.invalidateQueries({
@@ -104,7 +104,7 @@ function useStopTimer(options?: DefaultMutationOptions<void>) {
       });
       emitBuddyEvent({ type: "deleted", seconds: deletedSeconds });
 
-      options?.onSuccess?.(data, v, c);
+      return options?.onSuccess?.(data, v, c, mutationContext);
     },
   });
 }
@@ -125,7 +125,7 @@ function useSaveTimer(
         })
         .json<SaveTimerResponse>(),
     ...options,
-    onMutate: async (vars) => {
+    onMutate: async (vars, mutationContext) => {
       // Before the optimistic update below, so the buddy sees today's total without this entry.
       emitBuddyEvent({ type: "saveStarted" });
       await queryClient.cancelQueries({ queryKey: timerQuery.queryKey });
@@ -172,7 +172,7 @@ function useSaveTimer(
           : { visible: false, state: "stopped", timeSeconds: null },
       );
 
-      const optionsContext = await options?.onMutate?.(vars);
+      const optionsContext = await options?.onMutate?.(vars, mutationContext);
       return {
         previousTimer,
         previousTimerState,
@@ -181,7 +181,7 @@ function useSaveTimer(
         optionsContext,
       };
     },
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       if (c?.optimisticEntry) {
         replaceEntryInCachedRanges(queryClient, c.optimisticId, data.entry);
       } else {
@@ -199,9 +199,9 @@ function useSaveTimer(
         seconds: Math.round(data.entry.hours * 3600),
         countsTowardToday: data.entry.date === dayjs().format("YYYY-MM-DD"),
       });
-      options?.onSuccess?.(data, v, c?.optionsContext);
+      return options?.onSuccess?.(data, v, c?.optionsContext, mutationContext);
     },
-    onError: (error, v, c) => {
+    onError: (error, v, c, mutationContext) => {
       if (c?.optimisticEntry) {
         removeEntryFromCachedRanges(queryClient, c.optimisticId);
         applyTimeInfoDelta(
@@ -216,8 +216,10 @@ function useSaveTimer(
       if (c?.previousTimerState) {
         setTimer(c.previousTimerState);
       }
-      options?.onError?.(error, v, c?.optionsContext);
+      return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
+    onSettled: (data, error, v, c, mutationContext) =>
+      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
   });
 }
 
@@ -247,7 +249,7 @@ function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
         json: body,
       }),
     ...options,
-    onMutate: async (vars) => {
+    onMutate: async (vars, mutationContext) => {
       await queryClient.cancelQueries({
         queryKey: timerQuery.queryKey,
       });
@@ -263,23 +265,29 @@ function useEditTimer(options?: DefaultMutationOptions<EditTimerPayload>) {
           : current,
       );
 
-      const optionsContext = await options?.onMutate?.(vars);
+      const optionsContext = await options?.onMutate?.(vars, mutationContext);
       return { previousTimer, optionsContext };
     },
-    onSuccess: (data, v, c) => {
-      options?.onSuccess?.(data, v, c?.optionsContext);
+    onSuccess: (data, v, c, mutationContext) => {
+      return options?.onSuccess?.(data, v, c?.optionsContext, mutationContext);
     },
-    onError: (error, v, c) => {
+    onError: (error, v, c, mutationContext) => {
       if (c?.previousTimer !== undefined) {
         queryClient.setQueryData(timerQuery.queryKey, c.previousTimer);
       }
-      options?.onError?.(error, v, c?.optionsContext);
+      return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
-    onSettled: (data, error, v, c) => {
+    onSettled: (data, error, v, c, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: timerQuery.queryKey,
       });
-      options?.onSettled?.(data, error, v, c?.optionsContext);
+      return options?.onSettled?.(
+        data,
+        error,
+        v,
+        c?.optionsContext,
+        mutationContext,
+      );
     },
   });
 }
@@ -298,7 +306,7 @@ function useEditProjectRegistration(
         })
         .json<TimeEntry>(),
     ...options,
-    onMutate: async (vars) => {
+    onMutate: async (vars, mutationContext) => {
       await cancelTimeTrackingRangeQueries(queryClient);
 
       const previousEntry = findCachedEntry(
@@ -328,19 +336,19 @@ function useEditProjectRegistration(
         optimisticEntry.hours,
       );
 
-      const optionsContext = await options?.onMutate?.(vars);
+      const optionsContext = await options?.onMutate?.(vars, mutationContext);
       return { previousEntry, optimisticEntry, optionsContext };
     },
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       replaceEntryInCachedRanges(queryClient, v.projectRegistrationId, data);
       markTimeTrackingListsStale(queryClient);
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
         refetchType: "none",
       });
-      options?.onSuccess?.(data, v, c?.optionsContext);
+      return options?.onSuccess?.(data, v, c?.optionsContext, mutationContext);
     },
-    onError: (error, v, c) => {
+    onError: (error, v, c, mutationContext) => {
       removeEntryFromCachedRanges(queryClient, v.projectRegistrationId);
       if (c?.optimisticEntry) {
         applyTimeInfoDelta(
@@ -357,8 +365,10 @@ function useEditProjectRegistration(
           c.previousEntry.hours,
         );
       }
-      options?.onError?.(error, v, c?.optionsContext);
+      return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
+    onSettled: (data, error, v, c, mutationContext) =>
+      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
   });
 }
 
@@ -374,7 +384,7 @@ function useDeleteProjectRegistration(
         json: body,
       }),
     ...options,
-    onMutate: async (vars) => {
+    onMutate: async (vars, mutationContext) => {
       await cancelTimeTrackingRangeQueries(queryClient);
 
       const removedEntry = findCachedEntry(
@@ -386,18 +396,18 @@ function useDeleteProjectRegistration(
         applyTimeInfoDelta(queryClient, removedEntry.date, -removedEntry.hours);
       }
 
-      const optionsContext = await options?.onMutate?.(vars);
+      const optionsContext = await options?.onMutate?.(vars, mutationContext);
       return { removedEntry, optionsContext };
     },
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       markTimeTrackingListsStale(queryClient);
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
         refetchType: "none",
       });
-      options?.onSuccess?.(data, v, c?.optionsContext);
+      return options?.onSuccess?.(data, v, c?.optionsContext, mutationContext);
     },
-    onError: (error, v, c) => {
+    onError: (error, v, c, mutationContext) => {
       if (c?.removedEntry) {
         upsertEntryInCachedRanges(queryClient, c.removedEntry);
         applyTimeInfoDelta(
@@ -406,8 +416,10 @@ function useDeleteProjectRegistration(
           c.removedEntry.hours,
         );
       }
-      options?.onError?.(error, v, c?.optionsContext);
+      return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
+    onSettled: (data, error, v, c, mutationContext) =>
+      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
   });
 }
 
@@ -425,7 +437,7 @@ function useCreateProjectRegistration(
         })
         .json<TimeEntry>(),
     ...options,
-    onMutate: async (vars) => {
+    onMutate: async (vars, mutationContext) => {
       await cancelTimeTrackingRangeQueries(queryClient);
 
       const optimisticId = `optimistic:create:${crypto.randomUUID()}`;
@@ -440,10 +452,10 @@ function useCreateProjectRegistration(
         optimisticEntry.hours,
       );
 
-      const optionsContext = await options?.onMutate?.(vars);
+      const optionsContext = await options?.onMutate?.(vars, mutationContext);
       return { optimisticId, optimisticEntry, optionsContext };
     },
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       replaceEntryInCachedRanges(
         queryClient,
         c?.optimisticId ?? data.registrationId,
@@ -454,9 +466,9 @@ function useCreateProjectRegistration(
         queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
         refetchType: "none",
       });
-      options?.onSuccess?.(data, v, c?.optionsContext);
+      return options?.onSuccess?.(data, v, c?.optionsContext, mutationContext);
     },
-    onError: (error, v, c) => {
+    onError: (error, v, c, mutationContext) => {
       if (c?.optimisticEntry) {
         removeEntryFromCachedRanges(
           queryClient,
@@ -468,8 +480,10 @@ function useCreateProjectRegistration(
           -c.optimisticEntry.hours,
         );
       }
-      options?.onError?.(error, v, c?.optionsContext);
+      return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
+    onSettled: (data, error, v, c, mutationContext) =>
+      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
   });
 }
 
@@ -530,7 +544,7 @@ function useCreateAbsences(
         })
         .json<Array<AbsenceEntry>>(),
     ...options,
-    onMutate: async (vars) => {
+    onMutate: async (vars, mutationContext) => {
       await cancelAbsenceQueries(queryClient);
 
       const optimisticEntries = buildOptimisticAbsences(vars);
@@ -539,10 +553,10 @@ function useCreateAbsences(
       }
       applyAbsenceEntriesTimeInfoDelta(queryClient, optimisticEntries, 1);
 
-      const optionsContext = await options?.onMutate?.(vars);
+      const optionsContext = await options?.onMutate?.(vars, mutationContext);
       return { optimisticEntries, optionsContext };
     },
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       if (c?.optimisticEntries) {
         replaceAbsencesInCachedRanges(
           queryClient,
@@ -555,17 +569,19 @@ function useCreateAbsences(
         }
       }
       invalidateAbsenceQueries(queryClient);
-      options?.onSuccess?.(data, v, c?.optionsContext);
+      return options?.onSuccess?.(data, v, c?.optionsContext, mutationContext);
     },
-    onError: (error, v, c) => {
+    onError: (error, v, c, mutationContext) => {
       if (c?.optimisticEntries) {
         for (const entry of c.optimisticEntries) {
           removeAbsenceFromCachedRanges(queryClient, entry.absenceId);
         }
         applyAbsenceEntriesTimeInfoDelta(queryClient, c.optimisticEntries, -1);
       }
-      options?.onError?.(error, v, c?.optionsContext);
+      return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
+    onSettled: (data, error, v, c, mutationContext) =>
+      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
   });
 }
 
@@ -581,7 +597,7 @@ function useDeleteAbsence(
         json: body,
       }),
     ...options,
-    onMutate: async (vars) => {
+    onMutate: async (vars, mutationContext) => {
       await cancelAbsenceQueries(queryClient);
 
       const removedAbsence = findCachedAbsence(queryClient, vars.absenceId);
@@ -590,20 +606,22 @@ function useDeleteAbsence(
         applyAbsenceEntriesTimeInfoDelta(queryClient, [removedAbsence], -1);
       }
 
-      const optionsContext = await options?.onMutate?.(vars);
+      const optionsContext = await options?.onMutate?.(vars, mutationContext);
       return { removedAbsence, optionsContext };
     },
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       invalidateAbsenceQueries(queryClient);
-      options?.onSuccess?.(data, v, c?.optionsContext);
+      return options?.onSuccess?.(data, v, c?.optionsContext, mutationContext);
     },
-    onError: (error, v, c) => {
+    onError: (error, v, c, mutationContext) => {
       if (c?.removedAbsence) {
         upsertAbsenceInCachedRanges(queryClient, c.removedAbsence);
         applyAbsenceEntriesTimeInfoDelta(queryClient, [c.removedAbsence], 1);
       }
-      options?.onError?.(error, v, c?.optionsContext);
+      return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
+    onSettled: (data, error, v, c, mutationContext) =>
+      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
   });
 }
 
@@ -614,11 +632,11 @@ function useImportKleerUsers(options?: DefaultMutationOptions<void>) {
     mutationKey: ["time-tracking", "admin", "importKleerUsers"],
     mutationFn: () => api.post("time-tracking/admin/kleer-users/import"),
     ...options,
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.adminMappings().queryKey,
       });
-      options?.onSuccess?.(data, v, c);
+      return options?.onSuccess?.(data, v, c, mutationContext);
     },
   });
 }
@@ -635,12 +653,12 @@ function useLinkKleerUsersByEmail(
         .post("time-tracking/admin/kleer-users/link-by-email")
         .json<LinkKleerUsersByEmailResponse>(),
     ...options,
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.adminMappings().queryKey,
       });
       queryClient.invalidateQueries({ queryKey: ["time-tracking"] });
-      options?.onSuccess?.(data, v, c);
+      return options?.onSuccess?.(data, v, c, mutationContext);
     },
   });
 }
@@ -655,12 +673,12 @@ function useUpsertKleerUserLink(
     mutationFn: (body: UpsertKleerUserLinkPayload) =>
       api.put("time-tracking/admin/user-links", { json: body }),
     ...options,
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.adminMappings().queryKey,
       });
       queryClient.invalidateQueries({ queryKey: ["time-tracking"] });
-      options?.onSuccess?.(data, v, c);
+      return options?.onSuccess?.(data, v, c, mutationContext);
     },
   });
 }
@@ -675,12 +693,12 @@ function useDeactivateKleerUserLink(
     mutationFn: (body: DeactivateKleerUserLinkPayload) =>
       api.delete(`time-tracking/admin/user-links/${body.userId}`),
     ...options,
-    onSuccess: (data, v, c) => {
+    onSuccess: (data, v, c, mutationContext) => {
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.adminMappings().queryKey,
       });
       queryClient.invalidateQueries({ queryKey: ["time-tracking"] });
-      options?.onSuccess?.(data, v, c);
+      return options?.onSuccess?.(data, v, c, mutationContext);
     },
   });
 }
