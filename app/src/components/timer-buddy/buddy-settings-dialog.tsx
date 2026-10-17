@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link, useMatchRoute } from "@tanstack/react-router";
 import { useAtom } from "jotai/react";
-import { LockIcon, PlusIcon, RotateCcwIcon, ShuffleIcon } from "lucide-react";
+import {
+  LockIcon,
+  PlusIcon,
+  RotateCcwIcon,
+  ShuffleIcon,
+  SwordsIcon,
+} from "lucide-react";
 import * as React from "react";
 import { apiErrorToast } from "@/lib/api/errors";
 import { buddyMutations } from "@/lib/api/mutations/buddy";
@@ -70,18 +77,21 @@ const CARD_CLASS = "rounded-md border border-border/60 bg-muted/30 px-3 py-2";
  *
  * Pass `trigger` to render the button that opens it, which gets the focus back
  * when it closes. Set `nested` when it opens over another dialog, for a lighter
- * overlay.
+ * overlay. `onNavigate` runs when a link leaves for another page in the app;
+ * by default it closes this dialog, and a parent dialog can close itself too.
  */
 export function BuddySettingsDialog({
   open,
   onOpenChange,
   trigger,
   nested = false,
+  onNavigate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   trigger?: React.ReactNode;
   nested?: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -98,14 +108,19 @@ export function BuddySettingsDialog({
             battle your colleagues&apos; buddies.
           </DialogDescription>
         </DialogHeader>
-        <BuddySettingsContent />
+        <BuddySettingsContent
+          onNavigate={onNavigate ?? (() => onOpenChange(false))}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
-function BuddySettingsContent() {
+function BuddySettingsContent({ onNavigate }: { onNavigate: () => void }) {
   const profileQuery = useQuery(buddyApiQueries.profile());
+  const enabled = profileQuery.data?.enabled ?? false;
+  const matchRoute = useMatchRoute();
+  const onBuddiesPage = Boolean(matchRoute({ to: "/buddies" }));
 
   return (
     <>
@@ -135,7 +150,18 @@ function BuddySettingsContent() {
         )}
       </div>
 
-      <DialogFooter className="flex-row items-center justify-end">
+      <DialogFooter className="flex-row items-center justify-between gap-2 sm:justify-between sm:space-x-0">
+        {/* No link to the page the dialog was opened on. */}
+        {enabled && !onBuddiesPage ? (
+          <Button asChild variant="outline" size="sm">
+            <Link to="/buddies" onClick={onNavigate}>
+              <SwordsIcon className="size-4" />
+              Battles &amp; leaderboard
+            </Link>
+          </Button>
+        ) : (
+          <span />
+        )}
         <a
           href={BUDDY_CREDITS_URL}
           target="_blank"

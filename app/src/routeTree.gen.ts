@@ -19,6 +19,7 @@ import { Route as LayoutPrsRouteImport } from "./routes/_layout/prs/route"
 import { Route as LayoutBoardRouteImport } from "./routes/_layout/board/route"
 import { Route as LayoutAdminRouteImport } from "./routes/_layout/admin/route"
 import { Route as LayoutTimeTrackingIndexImport } from "./routes/_layout/time-tracking/index"
+import { Route as LayoutBuddiesIndexImport } from "./routes/_layout/buddies/index"
 import { Route as LayoutAiUsageIndexImport } from "./routes/_layout/ai-usage/index"
 import { Route as LayoutAdminIndexImport } from "./routes/_layout/admin/index"
 import { Route as LayoutAdminProjectMappingsImport } from "./routes/_layout/admin/project-mappings"
@@ -26,6 +27,7 @@ import { Route as LayoutAdminAiSubscriptionsImport } from "./routes/_layout/admi
 import { Route as LayoutRepositoriesAddRouteImport } from "./routes/_layout/repositories/add/route"
 import { Route as LayoutPrsPrIdRouteImport } from "./routes/_layout/prs/$prId/route"
 import { Route as LayoutAdminAiBillingIndexImport } from "./routes/_layout/admin/ai-billing/index"
+import { Route as LayoutBuddiesBattlesBattleIdImport } from "./routes/_layout/buddies/battles/$battleId"
 import { Route as LayoutAdminAiBillingUserIdImport } from "./routes/_layout/admin/ai-billing/$userId"
 import { Route as LayoutRepositoriesNotificationsRepoIdRouteImport } from "./routes/_layout/repositories/notifications/$repoId/route"
 
@@ -78,6 +80,12 @@ const LayoutTimeTrackingIndexRoute = LayoutTimeTrackingIndexImport.update({
   getParentRoute: () => LayoutRouteRoute,
 } as any)
 
+const LayoutBuddiesIndexRoute = LayoutBuddiesIndexImport.update({
+  id: "/buddies/",
+  path: "/buddies/",
+  getParentRoute: () => LayoutRouteRoute,
+} as any)
+
 const LayoutAiUsageIndexRoute = LayoutAiUsageIndexImport.update({
   id: "/ai-usage/",
   path: "/ai-usage/",
@@ -125,6 +133,13 @@ const LayoutAdminAiBillingIndexRoute = LayoutAdminAiBillingIndexImport.update({
   path: "/ai-billing/",
   getParentRoute: () => LayoutAdminRouteRoute,
 } as any)
+
+const LayoutBuddiesBattlesBattleIdRoute =
+  LayoutBuddiesBattlesBattleIdImport.update({
+    id: "/buddies/battles/$battleId",
+    path: "/buddies/battles/$battleId",
+    getParentRoute: () => LayoutRouteRoute,
+  } as any)
 
 const LayoutAdminAiBillingUserIdRoute = LayoutAdminAiBillingUserIdImport.update(
   {
@@ -236,6 +251,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutAiUsageIndexImport
       parentRoute: typeof LayoutRouteImport
     }
+    "/_layout/buddies/": {
+      id: "/_layout/buddies/"
+      path: "/buddies"
+      fullPath: "/buddies"
+      preLoaderRoute: typeof LayoutBuddiesIndexImport
+      parentRoute: typeof LayoutRouteImport
+    }
     "/_layout/time-tracking/": {
       id: "/_layout/time-tracking/"
       path: "/time-tracking"
@@ -256,6 +278,13 @@ declare module "@tanstack/react-router" {
       fullPath: "/admin/ai-billing/$userId"
       preLoaderRoute: typeof LayoutAdminAiBillingUserIdImport
       parentRoute: typeof LayoutAdminRouteImport
+    }
+    "/_layout/buddies/battles/$battleId": {
+      id: "/_layout/buddies/battles/$battleId"
+      path: "/buddies/battles/$battleId"
+      fullPath: "/buddies/battles/$battleId"
+      preLoaderRoute: typeof LayoutBuddiesBattlesBattleIdImport
+      parentRoute: typeof LayoutRouteImport
     }
     "/_layout/admin/ai-billing/": {
       id: "/_layout/admin/ai-billing/"
@@ -324,7 +353,9 @@ interface LayoutRouteRouteChildren {
   LayoutRepositoriesRouteRoute: typeof LayoutRepositoriesRouteRouteWithChildren
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutAiUsageIndexRoute: typeof LayoutAiUsageIndexRoute
+  LayoutBuddiesIndexRoute: typeof LayoutBuddiesIndexRoute
   LayoutTimeTrackingIndexRoute: typeof LayoutTimeTrackingIndexRoute
+  LayoutBuddiesBattlesBattleIdRoute: typeof LayoutBuddiesBattlesBattleIdRoute
 }
 
 const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
@@ -334,7 +365,9 @@ const LayoutRouteRouteChildren: LayoutRouteRouteChildren = {
   LayoutRepositoriesRouteRoute: LayoutRepositoriesRouteRouteWithChildren,
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutAiUsageIndexRoute: LayoutAiUsageIndexRoute,
+  LayoutBuddiesIndexRoute: LayoutBuddiesIndexRoute,
   LayoutTimeTrackingIndexRoute: LayoutTimeTrackingIndexRoute,
+  LayoutBuddiesBattlesBattleIdRoute: LayoutBuddiesBattlesBattleIdRoute,
 }
 
 const LayoutRouteRouteWithChildren = LayoutRouteRoute._addFileChildren(
@@ -355,9 +388,11 @@ export interface FileRoutesByFullPath {
   "/admin/project-mappings": typeof LayoutAdminProjectMappingsRoute
   "/admin/": typeof LayoutAdminIndexRoute
   "/ai-usage": typeof LayoutAiUsageIndexRoute
+  "/buddies": typeof LayoutBuddiesIndexRoute
   "/time-tracking": typeof LayoutTimeTrackingIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
   "/admin/ai-billing/$userId": typeof LayoutAdminAiBillingUserIdRoute
+  "/buddies/battles/$battleId": typeof LayoutBuddiesBattlesBattleIdRoute
   "/admin/ai-billing": typeof LayoutAdminAiBillingIndexRoute
 }
 
@@ -373,9 +408,11 @@ export interface FileRoutesByTo {
   "/admin/project-mappings": typeof LayoutAdminProjectMappingsRoute
   "/admin": typeof LayoutAdminIndexRoute
   "/ai-usage": typeof LayoutAiUsageIndexRoute
+  "/buddies": typeof LayoutBuddiesIndexRoute
   "/time-tracking": typeof LayoutTimeTrackingIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
   "/admin/ai-billing/$userId": typeof LayoutAdminAiBillingUserIdRoute
+  "/buddies/battles/$battleId": typeof LayoutBuddiesBattlesBattleIdRoute
   "/admin/ai-billing": typeof LayoutAdminAiBillingIndexRoute
 }
 
@@ -394,9 +431,11 @@ export interface FileRoutesById {
   "/_layout/admin/project-mappings": typeof LayoutAdminProjectMappingsRoute
   "/_layout/admin/": typeof LayoutAdminIndexRoute
   "/_layout/ai-usage/": typeof LayoutAiUsageIndexRoute
+  "/_layout/buddies/": typeof LayoutBuddiesIndexRoute
   "/_layout/time-tracking/": typeof LayoutTimeTrackingIndexRoute
   "/_layout/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
   "/_layout/admin/ai-billing/$userId": typeof LayoutAdminAiBillingUserIdRoute
+  "/_layout/buddies/battles/$battleId": typeof LayoutBuddiesBattlesBattleIdRoute
   "/_layout/admin/ai-billing/": typeof LayoutAdminAiBillingIndexRoute
 }
 
@@ -416,9 +455,11 @@ export interface FileRouteTypes {
     | "/admin/project-mappings"
     | "/admin/"
     | "/ai-usage"
+    | "/buddies"
     | "/time-tracking"
     | "/repositories/notifications/$repoId"
     | "/admin/ai-billing/$userId"
+    | "/buddies/battles/$battleId"
     | "/admin/ai-billing"
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -433,9 +474,11 @@ export interface FileRouteTypes {
     | "/admin/project-mappings"
     | "/admin"
     | "/ai-usage"
+    | "/buddies"
     | "/time-tracking"
     | "/repositories/notifications/$repoId"
     | "/admin/ai-billing/$userId"
+    | "/buddies/battles/$battleId"
     | "/admin/ai-billing"
   id:
     | "__root__"
@@ -452,9 +495,11 @@ export interface FileRouteTypes {
     | "/_layout/admin/project-mappings"
     | "/_layout/admin/"
     | "/_layout/ai-usage/"
+    | "/_layout/buddies/"
     | "/_layout/time-tracking/"
     | "/_layout/repositories/notifications/$repoId"
     | "/_layout/admin/ai-billing/$userId"
+    | "/_layout/buddies/battles/$battleId"
     | "/_layout/admin/ai-billing/"
   fileRoutesById: FileRoutesById
 }
@@ -492,7 +537,9 @@ export const routeTree = rootRoute
         "/_layout/repositories",
         "/_layout/",
         "/_layout/ai-usage/",
-        "/_layout/time-tracking/"
+        "/_layout/buddies/",
+        "/_layout/time-tracking/",
+        "/_layout/buddies/battles/$battleId"
       ]
     },
     "/login": {
@@ -556,6 +603,10 @@ export const routeTree = rootRoute
       "filePath": "_layout/ai-usage/index.tsx",
       "parent": "/_layout"
     },
+    "/_layout/buddies/": {
+      "filePath": "_layout/buddies/index.tsx",
+      "parent": "/_layout"
+    },
     "/_layout/time-tracking/": {
       "filePath": "_layout/time-tracking/index.tsx",
       "parent": "/_layout"
@@ -567,6 +618,10 @@ export const routeTree = rootRoute
     "/_layout/admin/ai-billing/$userId": {
       "filePath": "_layout/admin/ai-billing/$userId.tsx",
       "parent": "/_layout/admin"
+    },
+    "/_layout/buddies/battles/$battleId": {
+      "filePath": "_layout/buddies/battles/$battleId.tsx",
+      "parent": "/_layout"
     },
     "/_layout/admin/ai-billing/": {
       "filePath": "_layout/admin/ai-billing/index.tsx",

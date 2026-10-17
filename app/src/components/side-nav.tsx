@@ -6,6 +6,7 @@ import {
   GitPullRequest,
   KanbanSquare,
   ShieldCheck,
+  SwordsIcon,
   TimerIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import { router } from "@/main";
 import { useQuery } from "@tanstack/react-query";
 import { differsQueries } from "@/lib/api/queries/differs";
 import { userQueries } from "@/lib/api/queries/user";
+import { useBuddiesEnabled } from "@/lib/buddy/profile";
 import { NotificationsPopover } from "./notifications-popover/notifications-popover";
 import { ThemeSwitcher } from "./theme-switcher";
 import { AccountSettings } from "./account-settings";
@@ -53,6 +55,14 @@ const MENU_ITEMS = [
     to: "/ai-usage",
   },
   {
+    title: "Buddies",
+    icon: SwordsIcon,
+    variant: "ghost",
+    to: "/buddies",
+    buddiesOnly: true,
+    matchNested: true,
+  },
+  {
     title: "Admin",
     icon: ShieldCheck,
     variant: "ghost",
@@ -67,6 +77,8 @@ const MENU_ITEMS = [
   to: LinkDestination;
   /** Shown only to admins. */
   adminOnly?: boolean;
+  /** Shown only while the user's timer buddies are on. */
+  buddiesOnly?: boolean;
   /** Active on nested routes too, such as the admin sections. */
   matchNested?: boolean;
 }[];
@@ -94,14 +106,17 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
     select: (me) => me.roles.includes("Admin"),
   });
 
+  const buddiesEnabled = useBuddiesEnabled();
+
   const menuItems = React.useMemo(
     () =>
       MENU_ITEMS.filter(
         (item) =>
           (item.to !== "/board" || canSeeBoard) &&
-          (!("adminOnly" in item) || isAdmin),
+          (!("adminOnly" in item) || isAdmin) &&
+          (!("buddiesOnly" in item) || buddiesEnabled),
       ),
-    [canSeeBoard, isAdmin],
+    [canSeeBoard, isAdmin, buddiesEnabled],
   );
 
   return (

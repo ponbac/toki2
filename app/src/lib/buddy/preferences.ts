@@ -28,3 +28,24 @@ export const timerBuddyEnergyAtom = atom(
     set(storedEnergyAtom, energy);
   },
 );
+
+/** How fast battle replays play: normal or double speed. */
+export type BuddyReplaySpeed = 1 | 2;
+
+const storedReplaySpeedAtom = atomWithStorage<unknown>(
+  "buddy-battle-replay-speed",
+  1,
+  undefined,
+  READ_ON_INIT,
+);
+
+/**
+ * The speed battle replays start at, a preference of this device. Unknown
+ * stored values read as normal speed.
+ */
+export const buddyReplaySpeedAtom = atom(
+  (get): BuddyReplaySpeed => (get(storedReplaySpeedAtom) === 2 ? 2 : 1),
+  (_get, set, speed: BuddyReplaySpeed) => {
+    set(storedReplaySpeedAtom, speed);
+  },
+);

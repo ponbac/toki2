@@ -1,10 +1,48 @@
-import type { BuddyAnimName, BuddySheet } from "@/lib/buddy/sheet";
+import type { BuddyAnim, BuddyAnimName, BuddySheet } from "@/lib/buddy/sheet";
 
-/** Screen pixels per sprite pixel. An integer keeps the pixel art crisp. */
+/** Screen pixels per sprite pixel on the timer. An integer keeps the pixel art crisp. */
 export const BUDDY_SCALE = 2;
 
-/** Where the buddy looks. Left-facing directions mirror the right-facing rows. */
-export type BuddyFacing = "D" | "DR" | "R" | "DL" | "L";
+/**
+ * Where the buddy looks. `UR`/`UL` are the back view, as your own Pokemon is
+ * seen in battle. Left-facing directions mirror the right-facing rows.
+ */
+export type BuddyFacing = "D" | "DR" | "R" | "UR" | "DL" | "L" | "UL";
+
+/** Options for a new sprite. */
+export type BuddySpriteOptions = {
+  /** Screen pixels per sprite pixel; keep it an integer. Defaults to `BUDDY_SCALE`. */
+  readonly scale?: number;
+};
+
+type PackedFacing = keyof BuddyAnim["rows"];
+
+/** The packed row each facing draws, and whether it is that row mirrored. */
+const FACING_ROWS: Readonly<
+  Record<BuddyFacing, readonly [row: PackedFacing, mirrored: boolean]>
+> = {
+  D: ["D", false],
+  DR: ["DR", false],
+  R: ["R", false],
+  UR: ["UR", false],
+  DL: ["DR", true],
+  L: ["R", true],
+  UL: ["UR", true],
+};
+
+/**
+ * Atlas y offset of a facing, in sprite pixels. Not every animation is packed
+ * in every direction: a missing back view falls back to the side view, and
+ * only to the front when there is no side view either; any other missing
+ * facing falls back to the front.
+ */
+function rowOffset(anim: BuddyAnim, facing: PackedFacing): number {
+  const rows = anim.rows;
+  if (facing === "UR") {
+    return rows.UR ?? rows.R ?? rows.D ?? 0;
+  }
+  return rows[facing] ?? rows.D ?? rows.R ?? 0;
+}
 
 type PlayOptions = {
   readonly facing?: BuddyFacing;
@@ -48,6 +86,7 @@ export class BuddySprite {
   y = 0;
 
   private readonly sheet: BuddySheet;
+  private readonly scale: number;
   private anim: BuddyAnimName = "Idle";
   private facing: BuddyFacing = "D";
   private frame = 0;
@@ -62,8 +101,9 @@ export class BuddySprite {
   private drawnTransform = "";
   private drawnPosition = "";
 
-  constructor(sheet: BuddySheet) {
+  constructor(sheet: BuddySheet, options: BuddySpriteOptions = {}) {
     this.sheet = sheet;
+    this.scale = options.scale ?? BUDDY_SCALE;
     this.element = document.createElement("div");
 
     const style = this.element.style;
@@ -74,7 +114,7 @@ export class BuddySprite {
     style.imageRendering = "pixelated";
     style.backgroundRepeat = "no-repeat";
     style.backgroundImage = `url("${sheet.atlasUrl}")`;
-    style.backgroundSize = `${sheet.atlasWidth * BUDDY_SCALE}px ${sheet.atlasHeight * BUDDY_SCALE}px`;
+    style.backgroundSize = `${sheet.atlasWidth * this.scale}px ${sheet.atlasHeight * this.scale}px`;
     this.applyFrameSize();
     this.draw();
   }
@@ -87,7 +127,7 @@ export class BuddySprite {
   /** Standing height from feet to the top of the head, in CSS pixels. */
   get bodyHeight(): number {
     const idle = this.sheet.anims.Idle;
-    return Math.max(8, idle.foot - idle.top) * BUDDY_SCALE;
+    return Math.max(8, idle.foot - idle.top) * this.scale;
   }
 
   /**
@@ -160,19 +200,17 @@ export class BuddySprite {
   /** Writes the current frame and position to the element. */
   draw(): void {
     const anim = this.sheet.anims[this.anim];
-    const mirrored = this.facing === "L" || this.facing === "DL";
-    const row =
-      this.facing === "L" ? "R" : this.facing === "DL" ? "DR" : this.facing;
-    const rowY = anim.rows[row] ?? anim.rows.D ?? anim.rows.R ?? 0;
+    const [row, mirrored] = FACING_ROWS[this.facing];
+    const rowY = rowOffset(anim, row);
 
-    const position = `${-this.frame * anim.w * BUDDY_SCALE}px ${-rowY * BUDDY_SCALE}px`;
+    const position = `${-this.frame * anim.w * this.scale}px ${-rowY * this.scale}px`;
     if (position !== this.drawnPosition) {
       this.element.style.backgroundPosition = position;
       this.drawnPosition = position;
     }
 
-    const left = Math.round(this.x - (anim.w * BUDDY_SCALE) / 2);
-    const top = Math.round(this.y - anim.foot * BUDDY_SCALE);
+    const left = Math.round(this.x - (anim.w * this.scale) / 2);
+    const top = Math.round(this.y - anim.foot * this.scale);
     const transform = `translate(${left}px, ${top}px)${mirrored ? " scaleX(-1)" : ""}`;
     if (transform !== this.drawnTransform) {
       this.element.style.transform = transform;
@@ -182,7 +220,7 @@ export class BuddySprite {
 
   private applyFrameSize(): void {
     const anim = this.sheet.anims[this.anim];
-    this.element.style.width = `${anim.w * BUDDY_SCALE}px`;
-    this.element.style.height = `${anim.h * BUDDY_SCALE}px`;
+    this.element.style.width = `${anim.w * this.scale}px`;
+    this.element.style.height = `${anim.h * this.scale}px`;
   }
 }
