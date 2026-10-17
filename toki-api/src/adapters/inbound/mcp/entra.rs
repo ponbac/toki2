@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 /// Signing keys are re-read at most this often when a token names an unknown key.
 const KEY_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
@@ -60,6 +60,9 @@ pub struct EntraTokenValidator {
     keys_url: String,
     http: reqwest::Client,
     keys: RwLock<Option<CachedKeys>>,
+    /// Held while re-reading the keys, so concurrent requests share one fetch.
+    /// Holds when the last fetch started, successful or not.
+    refresh: Mutex<Option<Instant>>,
 }
 
 impl EntraTokenValidator {
@@ -73,6 +76,7 @@ impl EntraTokenValidator {
             keys_url: format!("https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"),
             http: reqwest::Client::new(),
             keys: RwLock::new(None),
+            refresh: Mutex::new(None),
         }
     }
 
@@ -135,30 +139,58 @@ impl EntraTokenValidator {
     }
 
     async fn decoding_key(&self, key_id: &str) -> Result<DecodingKey, EntraTokenError> {
-        {
-            let cached = self.keys.read().await;
-            if let Some(cached) = cached.as_ref() {
-                let fresh = cached.fetched_at.elapsed() < KEY_MAX_AGE;
-                match cached.keys.find(key_id) {
-                    Some(jwk) if fresh => return decoding_key(jwk),
-                    None if cached.fetched_at.elapsed() < KEY_REFRESH_INTERVAL => {
-                        return Err(EntraTokenError::Invalid("unknown signing key".into()));
-                    }
-                    _ => {}
-                }
-            }
+        if let Some(key) = self.cached_key(key_id, false).await {
+            return key;
         }
 
-        let keys = self.fetch_keys().await?;
-        let key = keys
-            .find(key_id)
-            .map(decoding_key)
-            .unwrap_or_else(|| Err(EntraTokenError::Invalid("unknown signing key".into())));
-        *self.keys.write().await = Some(CachedKeys {
-            keys,
-            fetched_at: Instant::now(),
-        });
-        key
+        let mut last_fetch = self.refresh.lock().await;
+        // Another request may have refreshed the keys while this one waited.
+        if let Some(key) = self.cached_key(key_id, false).await {
+            return key;
+        }
+        // A fetch just ran and failed: serve the stale keys, or fail, until the
+        // next refresh is due, rather than asking Entra on every request.
+        if last_fetch.is_some_and(|started| started.elapsed() < KEY_REFRESH_INTERVAL) {
+            return self.cached_key(key_id, true).await.unwrap_or_else(|| {
+                Err(EntraTokenError::Keys(
+                    "the last signing key fetch failed".into(),
+                ))
+            });
+        }
+
+        *last_fetch = Some(Instant::now());
+        match self.fetch_keys().await {
+            Ok(keys) => {
+                let key = keys
+                    .find(key_id)
+                    .map(decoding_key)
+                    .unwrap_or_else(|| Err(unknown_key()));
+                *self.keys.write().await = Some(CachedKeys {
+                    keys,
+                    fetched_at: Instant::now(),
+                });
+                key
+            }
+            Err(error) => self.cached_key(key_id, true).await.unwrap_or(Err(error)),
+        }
+    }
+
+    /// The cached answer for `key_id`, when the cache can give one: its key
+    /// while fresh, or that it is unknown right after a fetch. With `stale`,
+    /// any cached answer.
+    async fn cached_key(
+        &self,
+        key_id: &str,
+        stale: bool,
+    ) -> Option<Result<DecodingKey, EntraTokenError>> {
+        let cached = self.keys.read().await;
+        let cached = cached.as_ref()?;
+        let age = cached.fetched_at.elapsed();
+        match cached.keys.find(key_id) {
+            Some(jwk) if stale || age < KEY_MAX_AGE => Some(decoding_key(jwk)),
+            None if stale || age < KEY_REFRESH_INTERVAL => Some(Err(unknown_key())),
+            _ => None,
+        }
     }
 
     async fn fetch_keys(&self) -> Result<JwkSet, EntraTokenError> {
@@ -175,6 +207,12 @@ impl EntraTokenValidator {
     }
 
     #[cfg(test)]
+    fn with_keys_url(mut self, keys_url: String) -> Self {
+        self.keys_url = keys_url;
+        self
+    }
+
+    #[cfg(test)]
     async fn with_keys(self, keys: JwkSet) -> Self {
         *self.keys.write().await = Some(CachedKeys {
             keys,
@@ -188,6 +226,10 @@ impl EntraTokenValidator {
 /// MCP clients discover.
 pub fn issuer(tenant_id: &str) -> String {
     format!("https://login.microsoftonline.com/{tenant_id}/v2.0")
+}
+
+fn unknown_key() -> EntraTokenError {
+    EntraTokenError::Invalid("unknown signing key".into())
 }
 
 fn decoding_key(jwk: &jsonwebtoken::jwk::Jwk) -> Result<DecodingKey, EntraTokenError> {
@@ -325,6 +367,45 @@ mod tests {
                 "{claims}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn concurrent_requests_share_one_key_fetch() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        let fetches = Arc::new(AtomicUsize::new(0));
+        let counter = fetches.clone();
+        let keys = axum::Router::new().route(
+            "/keys",
+            axum::routing::get(move || {
+                let counter = counter.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    axum::Json(json!({ "keys": [] }))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let keys_url = format!("http://{}/keys", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, keys).await.unwrap() });
+
+        let validator =
+            Arc::new(EntraTokenValidator::new(TENANT, AUDIENCE, "mcp").with_keys_url(keys_url));
+        let token = sign(&claims());
+        let requests = (0..20).map(|_| {
+            let validator = validator.clone();
+            let token = token.clone();
+            tokio::spawn(async move { validator.validate(&token).await })
+        });
+        for request in futures::future::join_all(requests).await {
+            assert!(request.unwrap().is_err());
+        }
+
+        assert_eq!(fetches.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
