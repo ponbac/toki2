@@ -59,6 +59,47 @@ pub enum ApiTokenError {
     Storage(String),
 }
 
+/// Errors of the OAuth authorization server. The variants that name an OAuth
+/// error code map to it at the protocol boundary.
+#[derive(Debug, Error)]
+pub enum OAuthError {
+    /// A malformed request: `invalid_request`.
+    #[error("{0}")]
+    InvalidRequest(String),
+    /// An unknown or unacceptable client: `invalid_client`.
+    #[error("{0}")]
+    InvalidClient(String),
+    /// An invalid, expired, revoked or replayed code or refresh token:
+    /// `invalid_grant`.
+    #[error("{0}")]
+    InvalidGrant(String),
+    /// A registration with an unacceptable redirect URI:
+    /// `invalid_redirect_uri`.
+    #[error("{0}")]
+    InvalidRedirectUri(String),
+    /// A registration with other unacceptable metadata:
+    /// `invalid_client_metadata`.
+    #[error("{0}")]
+    InvalidClientMetadata(String),
+    /// The client's metadata document could not be fetched.
+    #[error("{0}")]
+    ClientMetadataUnavailable(String),
+    #[error("not found")]
+    NotFound,
+    #[error("oauth storage error: {0}")]
+    Storage(String),
+}
+
+/// Why an authorization request cannot proceed.
+#[derive(Debug)]
+pub enum AuthorizationError {
+    /// The client or its redirect URI cannot be trusted, so the error is shown
+    /// to the user and never sent to the redirect URI.
+    Unredirectable(OAuthError),
+    /// The error goes back to the client at its redirect URI.
+    Redirect(crate::domain::models::AuthorizationResponse),
+}
+
 /// Errors that can occur while storing or reading AI usage.
 #[derive(Debug, Error)]
 pub enum AiUsageError {

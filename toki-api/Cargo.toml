@@ -43,7 +43,7 @@ bytes = "1.12.1"
 http-body-util = "0.1.5"
 regex = "1.13.1"
 htmd = "0.5.5"
-ammonia = "4.2.3"
+ammonia = "4.2.4"
 futures = "0.3.34"
 futures-util = { version = "0.3.34", default-features = false, features = [
     "sink",
@@ -96,7 +96,3 @@ rmcp = { version = "3.5.1", features = [
     "request-state",
 ] }
 schemars = "1.2.3"
-jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
-
-[dev-dependencies]
-aws-lc-rs = "1.18.2"

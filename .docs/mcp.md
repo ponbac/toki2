@@ -1,6 +1,6 @@
 # MCP Server Notes
 
-Permanent notes for Toki's Model Context Protocol endpoint. Read this before changing MCP tools, MCP authentication, or the Entra app registrations behind them.
+Permanent notes for Toki's Model Context Protocol endpoint and the OAuth authorization server MCP clients sign in through. Read this before changing MCP tools, MCP authentication, or the authorization server.
 
 ## Overview
 
@@ -14,42 +14,50 @@ Permanent notes for Toki's Model Context Protocol endpoint. Read this before cha
 
 - `/mcp` never accepts the browser session cookie.
 - A Toki personal API token (`Authorization: Bearer toki_…`) always works. Create one under account settings.
-- With `mcp.oauth` configured, `/mcp` is also an OAuth resource server for Microsoft Entra ID:
-  - Unauthenticated requests get `401` with `WWW-Authenticate: Bearer resource_metadata="{api_url}/.well-known/oauth-protected-resource/mcp", scope="{api_url}/mcp/{scope}"`.
-  - The metadata names `https://login.microsoftonline.com/{tenant_id}/v2.0` as the authorization server and `{api_url}/mcp` as the resource.
-  - Tokens must be v2 access tokens signed by the tenant (keys from its JWKS), with `iss` the v2 issuer, `aud` = `auth.client_id`, `tid` = `tenant_id`, and `scope` in `scp`.
-  - The token's `preferred_username`, then its `email`, is matched, ignoring case, to an existing Toki user's email, which the web sign-in recorded. Users must have signed in to Toki in the browser once.
+- Otherwise `/mcp` accepts access tokens from Toki's own OAuth 2.1 authorization server (below). Unauthenticated requests get `401` with `WWW-Authenticate: Bearer resource_metadata="{api_url}/.well-known/oauth-protected-resource/mcp", scope="mcp"`. The Protected Resource Metadata names the resource `{api_url}/mcp`, the authorization server `{api_url}`, and the scope `mcp`.
 - Neither token kind carries admin power (`AuthMethod::allows_admin_power`).
-- Settings:
-  - `mcp.oauth.tenant_id` / `TOKI_MCP__OAUTH__TENANT_ID`
-  - `mcp.oauth.scope` / `TOKI_MCP__OAUTH__SCOPE`, the scope name, such as `mcp`
-- Entra issues no Dynamic Client Registration and no Client ID Metadata Documents, so every OAuth client must be configured with a pre-registered client ID.
-- Refresh tokens are between the client and Entra; `/mcp` only validates access tokens and answers an expired one with `401`. Entra issues a refresh token only when the client requests `offline_access`. `/mcp` does not advertise it: the MCP specification says protected resources SHOULD NOT put `offline_access` in `WWW-Authenticate` or `scopes_supported`, because refreshing is the client's concern, and a client may add it when the authorization server's metadata lists it, as Entra's does. Claude does; ChatGPT needs it as a base scope; Executor requests only the advertised scopes, so its connections expire with their first access token and it uses an API token instead.
+- With `application.disable_auth`, the authorization server is not mounted and `/mcp` accepts API tokens only.
 
-## Entra App Registrations
+## Authorization Server
 
-- The resource is Toki's existing app registration (`auth.client_id`). It needs `api.requestedAccessTokenVersion = 2`, the Application ID URI `{api_url}/mcp` (an HTTPS URI on the tenant's verified domain), and the `mcp` delegated scope.
-- MCP clients use separate client apps, pre-authorized for the scope on the resource so users see no consent prompt:
-  - A public client for native clients (Claude Code, Codex, Cursor) with loopback redirect URIs. Entra ignores the port of loopback redirects.
-  - A confidential client for hosted clients (claude.ai, Executor) with their web redirect URIs and one labelled secret per hosted service.
-- Entra's discovery document does not advertise `code_challenge_methods_supported`, though it supports S256 PKCE. A strictly conforming client may refuse it; fall back to an API token.
+Toki is its own authorization server so that MCP clients connect with just the URL: no client IDs or secrets to hand out. Users sign in with their Spinit account through Toki's ordinary Entra web sign-in. Code: `domain/models/oauth.rs`, `domain/services/oauth.rs`, `adapters/inbound/http/oauth/`, `adapters/outbound/postgres/oauth.rs`, `adapters/outbound/cimd.rs`.
 
-### Spinit tenant (production)
-
-- Resource: `t2m-stats`, client ID `6494e716-bbf2-4164-a1f0-cd682313085b`, scope `https://toki-api.spinit.se/mcp/mcp` (scope ID `34560bbf-e1e3-4762-a69e-d0e7ab255502`).
-- `Toki MCP (native)`: client ID `b68eecf8-03eb-49e4-bc66-657185c9d167`. Redirects `http://localhost/callback`, `http://127.0.0.1/callback`.
-- `Toki MCP (hosted)`: client ID `9dacddfe-b9d4-4d28-8d2a-f3e431824c9d`. Redirects `https://claude.ai/api/mcp/auth_callback`, `https://executor.pike-quail.ts.net/api/oauth/callback`, and each ChatGPT connector's own `https://chatgpt.com/connector/oauth/<id>`. Each hosted service has its own labelled secret (`claude.ai`, `chatgpt`, `executor`), valid for 12 months.
-- Pre-authorized for `mcp`: both client apps and VS Code (`aebc6443-996d-45c2-90f0-388ff96faa56`).
+- **Endpoints:** `GET /.well-known/oauth-authorization-server` (RFC 8414), `GET`/`POST /oauth/authorize`, `POST /oauth/token`, `POST /oauth/register` (RFC 7591), `POST /oauth/revoke` (RFC 7009). The issuer is `api_url` without a trailing slash. `/oauth/callback` is unrelated: it is the Entra web sign-in's callback.
+- **Clients** are public and prove possession with PKCE (S256 only); client authentication of any kind is refused with `invalid_client`.
+  - A client_id that is an HTTPS URL is a Client ID Metadata Document, fetched and cached for an hour. Claude, Claude Code, ChatGPT, Codex and VS Code use these. The fetcher connects only to public addresses (checked after DNS resolution), follows no redirects, uses no proxy, and reads at most 5 KB within 5 seconds. A document may declare another `token_endpoint_auth_method` if its `token_endpoint_auth_methods_supported` includes `none`, as ChatGPT's does.
+  - Other client_ids come from dynamic registration, which Cursor and Executor use. Registration is limited to 300 per hour across all callers (an anonymous caller can exhaust it, which blocks only new registrations); registrations that never produced a connection are deleted after 30 days, others are kept, as clients cache their client_id.
+- **Redirect URIs** are `https`, `http` on `localhost`, `127.0.0.1` or `[::1]` (any port matches a registered loopback URI, RFC 8252), or Cursor's `cursor://` callback. The last goes beyond the MCP specification, which allows only HTTPS and localhost, because Cursor registers it alongside its other callbacks and fails if any is rejected. Other private-use schemes are refused: operating systems route many of them to handlers of their own (`ms-settings:`), so native app schemes are allowlisted one by one.
+- **Sign-in and consent:** `/oauth/authorize` validates the client and redirect URI first; until both are trusted, errors are shown as a page and never redirected. It then requires an Entra sign-in from the last 15 minutes, starting one otherwise (usually a silent bounce through Entra), so every connection follows a fresh Entra check of the account. The sign-in continues back to the authorization request through the session's login continuation, which any later sign-in start replaces. The consent page names the client (its metadata document's host is verified; a registered client's name is its own claim) and where the response goes, with a warning for apps on the user's computer. Pending consents are stored in `oauth_authorization_requests`, bound to the user, and decided at most once.
+- **Errors** in a request whose client and redirect URI are valid go back to an app on the user's computer (a loopback or `cursor://` redirect) at once. A web redirect URI gets an error page with a link back instead: anyone can register one, and redirecting there before the user did anything would make Toki an open redirector (RFC 9700, section 4.11.2). The consent decision always redirects.
+- **Responses** always carry `iss`. The `resource` must be `{api_url}/mcp` when sent; `scope` is accepted and ignored, as the only grant is `mcp`.
+- **Tokens** are opaque random values stored as SHA-256 hashes: codes `tmcp_ac_…` (5 minutes, single use), access tokens `tmcp_at_…` (1 hour), refresh tokens `tmcp_rt_…` (30 days idle). Only `/mcp` accepts access tokens; the REST API's bearer middleware accepts only API tokens.
+- **Connections** (`oauth_grants`) last at most 90 days, then the user connects again. Refresh tokens rotate on every use. A rotated refresh token presented again within 30 seconds is refused without consequence (one client refreshing twice at once); later, its reuse revokes the connection, even after the token itself expired: rotated refresh tokens are kept as long as their connection. A replayed authorization code revokes the connection it produced. Code redemption and refresh each run in one locked transaction.
+- **Revocation:** clients revoke through `/oauth/revoke` with their `client_id`, which revokes the whole connection. Users see and disconnect their connections under account settings ("Connected apps", `GET`/`DELETE /users/me/oauth-grants`), which lists connections that can still refresh; "last active" is the last token refresh. Deleting a Toki user deletes its connections. A disabled Entra account cannot start a new connection, but existing ones last until they expire or are revoked.
+- An hourly task deletes expired consents, codes and tokens, and connections revoked or expired over 30 days ago.
 
 ## Client Setup
 
-`<native-client-id>` is `b68eecf8-03eb-49e4-bc66-657185c9d167` and `<hosted-client-id>` is `9dacddfe-b9d4-4d28-8d2a-f3e431824c9d` in production.
+Every OAuth client needs only the URL `https://toki-api.spinit.se/mcp`; the user then signs in and allows access in the browser.
 
-- Claude Code, OAuth: `claude mcp add --transport http --client-id <native-client-id> --callback-port 8080 toki https://toki-api.spinit.se/mcp`, then `/mcp` to sign in.
-- Claude Code, API token: `claude mcp add --transport http toki https://toki-api.spinit.se/mcp --header "Authorization: Bearer toki_…"`.
-- Codex, OAuth: `codex mcp add toki --url https://toki-api.spinit.se/mcp --oauth-client-id <native-client-id>`, then `codex mcp login toki`. Codex prints its callback URL; register that exact URL on the native client.
-- Codex, API token: set `bearer_token_env_var` on `[mcp_servers.toki]` in `config.toml`.
-- claude.ai, Claude Desktop and mobile: Customize → Connectors → Add custom connector with the URL. Claude detects that the server needs its own client; choose "Use your own OAuth client" with `<hosted-client-id>` and its secret. Redirect URI: `https://claude.ai/api/mcp/auth_callback`. Claude adds `offline_access` itself.
-- ChatGPT: Apps → Add → Add custom MCP server with the URL and OAuth. Under Advanced OAuth settings, choose User-Defined OAuth Client with `<hosted-client-id>`, its secret and `client_secret_post`, set the base scopes to `offline_access`, and turn off OIDC: ChatGPT would call Microsoft Graph's userinfo with the Toki access token, which Graph rejects. The dialog shows the connector's own callback URL; register it on the hosted client before connecting.
-- VS Code: add the URL as an HTTP server. It signs in through its built-in Microsoft account provider, whose client ID is pre-authorized on the resource.
-- Executor: add the URL as an MCP integration, add a Bearer header authentication method, and connect it with a Toki API token. Its OAuth method works with `<hosted-client-id>`, but without `offline_access` the connection expires within the hour.
+- claude.ai, Claude Desktop and mobile: Customize → Connectors → Add custom connector with the URL.
+- ChatGPT: Apps → Add → Add custom MCP server with the URL and OAuth.
+- Claude Code: `claude mcp add --transport http toki https://toki-api.spinit.se/mcp`, then `/mcp` to sign in. With an API token instead: add `--header "Authorization: Bearer toki_…"`.
+- Codex: `codex mcp add toki --url https://toki-api.spinit.se/mcp`, then `codex mcp login toki`. With an API token instead: set `bearer_token_env_var` on `[mcp_servers.toki]` in `config.toml`.
+- VS Code (desktop): add the URL as an HTTP server. The browser-hosted vscode.dev is not supported.
+- Cursor: add the URL as a remote MCP server.
+- Executor: add the URL as an MCP integration with OAuth, or with a Bearer header authentication method and a Toki API token.
+- Clients that cannot do OAuth (such as Copilot CLI with a static header) use an API token.
+
+### Moving from the Entra setup
+
+Connections set up before Toki had its own authorization server used Entra client IDs (`b68eecf8-03eb-49e4-bc66-657185c9d167`, or `9dacddfe-b9d4-4d28-8d2a-f3e431824c9d` with a secret). Toki does not know those clients, so such a connection cannot sign in again: remove it and add Toki again with just its URL.
+
+- Claude Code: `claude mcp remove toki`, then add it without `--client-id` and `--callback-port`.
+- Codex: `codex mcp remove toki`, then add it without `--oauth-client-id`, and `codex mcp login toki`.
+- claude.ai: remove the custom connector and add it again without "Use your own OAuth client".
+- ChatGPT: delete the app and add the MCP server again without a user-defined OAuth client.
+- VS Code: remove the server and add it again; sign in with Toki instead of the Microsoft account.
+
+## Retired Entra Setup
+
+Until the switch to Toki's own authorization server, `/mcp` validated Entra access tokens and MCP clients used two Entra app registrations in the Spinit tenant, `Toki MCP (native)` (`b68eecf8-03eb-49e4-bc66-657185c9d167`) and `Toki MCP (hosted)` (`9dacddfe-b9d4-4d28-8d2a-f3e431824c9d`, with per-service secrets), pre-authorized for the `mcp` scope that `t2m-stats` (`6494e716-bbf2-4164-a1f0-cd682313085b`) exposes under the Application ID URI `https://toki-api.spinit.se/mcp`. Nothing uses them now; they can be deleted, along with the `mcp` scope and its pre-authorizations. Leave `t2m-stats` itself alone: it is the web sign-in's app registration.

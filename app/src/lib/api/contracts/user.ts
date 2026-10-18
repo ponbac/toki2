@@ -26,6 +26,18 @@ const createdApiTokenSchema = apiTokenSchema.extend({
   token: z.string().regex(/^toki_[0-9a-f]{64}$/),
 });
 
+const oauthGrantSchema = z
+  .object({
+    id: z.number().int().positive(),
+    clientName: z.string().min(1),
+    clientHost: z.string().min(1).nullable(),
+    redirectDestination: z.string().min(1),
+    createdAt: z.string().datetime({ offset: true }),
+    lastUsedAt: z.string().datetime({ offset: true }),
+    expiresAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 /** A role returned for the signed-in Toki user. */
 export type Role = z.infer<typeof roleSchema>;
 
@@ -37,6 +49,12 @@ export type ApiToken = Readonly<z.infer<typeof apiTokenSchema>>;
 
 /** A newly issued token whose secret is returned exactly once. */
 export type CreatedApiToken = Readonly<z.infer<typeof createdApiTokenSchema>>;
+
+/**
+ * An app connected to Toki over MCP OAuth. `clientHost` is null when the
+ * client's identity is unverified (a dynamically registered client).
+ */
+export type OAuthGrant = Readonly<z.infer<typeof oauthGrantSchema>>;
 
 /** Parses the current-user response at the HTTP boundary. */
 export function parseUser(input: unknown): User {
@@ -51,4 +69,9 @@ export function parseApiTokens(input: unknown): readonly ApiToken[] {
 /** Parses the one-time token issuance response at the HTTP boundary. */
 export function parseCreatedApiToken(input: unknown): CreatedApiToken {
   return createdApiTokenSchema.parse(input);
+}
+
+/** Parses the connected-apps list at the HTTP boundary. */
+export function parseOAuthGrants(input: unknown): readonly OAuthGrant[] {
+  return z.array(oauthGrantSchema).parse(input);
 }

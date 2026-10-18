@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM oauth_authorization_requests\n            WHERE id_hash = $1 AND user_id = $2 AND expires_at > now()\n            RETURNING user_id, client_id, client_name, redirect_uri, resource,\n                      code_challenge, state\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorization_requests",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "client_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorization_requests",
+            "name": "client_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "client_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorization_requests",
+            "name": "client_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "redirect_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorization_requests",
+            "name": "redirect_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "resource",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorization_requests",
+            "name": "resource"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "code_challenge",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorization_requests",
+            "name": "code_challenge"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_authorization_requests",
+            "name": "state"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "abd35fdc57bdcc534d6e59e30d0caa78e335546b627dd6a591eaf6df19c4ea71"
+}

@@ -16,6 +16,8 @@ export type UploadAvatarVars = { file: File };
 export type CreateApiTokenVars = { name: string };
 /** Input for revoking one of the current user's API tokens. */
 export type RevokeApiTokenVars = { tokenId: number };
+/** Input for disconnecting one of the current user's MCP OAuth connections. */
+export type RevokeOAuthGrantVars = { grantId: number };
 
 /** Mutation hooks for current-user profile and credential operations. */
 export const userMutations = {
@@ -23,6 +25,7 @@ export const userMutations = {
   useDeleteAvatar,
   useCreateApiToken,
   useRevokeApiToken,
+  useRevokeOAuthGrant,
 };
 
 /** Uploads an avatar and refreshes every view that renders user identities. */
@@ -111,6 +114,26 @@ export function useRevokeApiToken(
     onSuccess: async (data, vars, ctx, mutationContext) => {
       await queryClient.invalidateQueries({
         queryKey: userQueries.apiTokens().queryKey,
+      });
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
+    },
+  });
+}
+
+/** Disconnects one MCP OAuth connection and refreshes the connected apps. */
+export function useRevokeOAuthGrant(
+  options?: DefaultMutationOptions<RevokeOAuthGrantVars>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["user", "oauth-grants", "revoke"],
+    mutationFn: async ({ grantId }: RevokeOAuthGrantVars) =>
+      api.delete(`users/me/oauth-grants/${grantId}`),
+    ...options,
+    onSuccess: async (data, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({
+        queryKey: userQueries.oauthGrants().queryKey,
       });
       await options?.onSuccess?.(data, vars, ctx, mutationContext);
     },

@@ -2,12 +2,12 @@
 //!
 //! `/mcp` serves Streamable HTTP. Clients on protocol `2026-07-28` and later
 //! are served statelessly; older clients get a session, which their
-//! server-to-client elicitation needs. When OAuth is configured, the endpoint
-//! is an OAuth resource server and publishes its Protected Resource Metadata.
+//! server-to-client elicitation needs. With OAuth, the endpoint is a resource
+//! server of Toki's own authorization server and publishes its Protected
+//! Resource Metadata.
 
 mod auth;
 mod confirm;
-mod entra;
 mod tools;
 
 use std::sync::Arc;
@@ -20,12 +20,13 @@ use tower::ServiceBuilder;
 use url::Url;
 
 pub use auth::{McpAuth, McpOAuth, ProtectedResourceMetadata};
-pub use entra::EntraTokenValidator;
 
 use crate::app_state::AppState;
 
 pub const MCP_PATH: &str = "/mcp";
 const METADATA_PATH: &str = "/.well-known/oauth-protected-resource";
+/// The one scope `/mcp` grants.
+const SCOPE: &str = "mcp";
 
 /// The OAuth resource identifier MCP clients request tokens for.
 pub fn resource_url(api_url: &Url) -> String {
@@ -40,25 +41,16 @@ pub fn metadata_url(api_url: &Url) -> String {
     )
 }
 
-/// Protected Resource Metadata naming `issuer` as the authorization server.
-pub fn protected_resource_metadata(
-    api_url: &Url,
-    issuer: String,
-    scope: &str,
-) -> ProtectedResourceMetadata {
-    let resource = resource_url(api_url);
+/// Protected Resource Metadata naming `issuer`, Toki's authorization server,
+/// as the only authorization server.
+pub fn protected_resource_metadata(api_url: &Url, issuer: String) -> ProtectedResourceMetadata {
     ProtectedResourceMetadata {
-        scopes_supported: vec![format!("{resource}/{scope}")],
-        resource,
+        resource: resource_url(api_url),
+        scopes_supported: vec![SCOPE.to_string()],
         authorization_servers: vec![issuer],
         bearer_methods_supported: vec!["header".to_string()],
         resource_name: "Toki".to_string(),
     }
-}
-
-/// The issuer of Entra v2 access tokens for `tenant_id`.
-pub fn entra_issuer(tenant_id: &str) -> String {
-    entra::issuer(tenant_id)
 }
 
 /// The `/mcp` endpoint and, with OAuth, its metadata documents.
@@ -137,14 +129,13 @@ mod tests {
             metadata_url(&api_url),
             "https://toki-api.spinit.se/.well-known/oauth-protected-resource/mcp"
         );
-        let metadata = protected_resource_metadata(&api_url, entra_issuer("tenant"), "mcp");
-        assert_eq!(
-            metadata.scopes_supported,
-            ["https://toki-api.spinit.se/mcp/mcp"]
-        );
+        let metadata =
+            protected_resource_metadata(&api_url, "https://toki-api.spinit.se".to_string());
+        assert_eq!(metadata.resource, "https://toki-api.spinit.se/mcp");
+        assert_eq!(metadata.scopes_supported, ["mcp"]);
         assert_eq!(
             metadata.authorization_servers,
-            ["https://login.microsoftonline.com/tenant/v2.0"]
+            ["https://toki-api.spinit.se"]
         );
     }
 

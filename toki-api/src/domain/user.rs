@@ -49,7 +49,8 @@ pub enum AuthMethod {
     Session,
     /// A personal API token presented as a bearer credential.
     ApiToken,
-    /// An identity-provider access token presented by an MCP client.
+    /// An OAuth access token Toki's authorization server issued to an MCP
+    /// client.
     AccessToken,
 }
 
