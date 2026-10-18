@@ -5,6 +5,7 @@ import { Save } from "lucide-react";
 import { toast } from "sonner";
 import { AiSubscriptionsSettings } from "./ai-subscriptions-settings";
 import { ApiTokensSettings } from "./api-tokens-settings";
+import { ConnectedAppsSettings } from "./connected-apps-settings";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { Button } from "./ui/button";
 import {
@@ -258,6 +259,8 @@ export function AccountSettings() {
           <TimerBuddySettings avatarSeed={me?.email} />
 
           <ApiTokensSettings issuance={tokenIssuance} />
+
+          <ConnectedAppsSettings />
 
           <AiSubscriptionsSettings />
         </div>
