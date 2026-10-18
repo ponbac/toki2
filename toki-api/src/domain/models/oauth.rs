@@ -30,7 +30,7 @@ pub const ACCESS_TOKEN_LIFETIME: Duration = Duration::hours(1);
 pub const REFRESH_TOKEN_IDLE_LIFETIME: Duration = Duration::days(30);
 /// A connection lasts at most this long; the user then connects again, which
 /// signs them in with Entra again.
-pub const GRANT_LIFETIME: Duration = Duration::days(90);
+pub const GRANT_LIFETIME: Duration = Duration::days(365);
 /// A rotated refresh token presented again within this window is refused
 /// without revoking the connection: one client refreshing twice at once.
 /// Later, its reuse means it leaked, and the connection is revoked.
