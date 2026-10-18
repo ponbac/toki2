@@ -24,6 +24,7 @@ Permanent notes for Toki's Model Context Protocol endpoint. Read this before cha
   - `mcp.oauth.tenant_id` / `TOKI_MCP__OAUTH__TENANT_ID`
   - `mcp.oauth.scope` / `TOKI_MCP__OAUTH__SCOPE`, the scope name, such as `mcp`
 - Entra issues no Dynamic Client Registration and no Client ID Metadata Documents, so every OAuth client must be configured with a pre-registered client ID.
+- Refresh tokens are between the client and Entra; `/mcp` only validates access tokens and answers an expired one with `401`. Entra issues a refresh token only when the client requests `offline_access`. `/mcp` does not advertise it: the MCP specification says protected resources SHOULD NOT put `offline_access` in `WWW-Authenticate` or `scopes_supported`, because refreshing is the client's concern, and a client may add it when the authorization server's metadata lists it, as Entra's does. Claude does; ChatGPT needs it as a base scope; Executor requests only the advertised scopes, so its connections expire with their first access token and it uses an API token instead.
 
 ## Entra App Registrations
 
@@ -37,7 +38,7 @@ Permanent notes for Toki's Model Context Protocol endpoint. Read this before cha
 
 - Resource: `t2m-stats`, client ID `6494e716-bbf2-4164-a1f0-cd682313085b`, scope `https://toki-api.spinit.se/mcp/mcp` (scope ID `34560bbf-e1e3-4762-a69e-d0e7ab255502`).
 - `Toki MCP (native)`: client ID `b68eecf8-03eb-49e4-bc66-657185c9d167`. Redirects `http://localhost/callback`, `http://127.0.0.1/callback`.
-- `Toki MCP (hosted)`: client ID `9dacddfe-b9d4-4d28-8d2a-f3e431824c9d`. Redirect `https://claude.ai/api/mcp/auth_callback`. Add each hosted service's redirect and its own secret when connecting it.
+- `Toki MCP (hosted)`: client ID `9dacddfe-b9d4-4d28-8d2a-f3e431824c9d`. Redirects `https://claude.ai/api/mcp/auth_callback`, `https://executor.pike-quail.ts.net/api/oauth/callback`, and each ChatGPT connector's own `https://chatgpt.com/connector/oauth/<id>`. Each hosted service has its own labelled secret (`claude.ai`, `chatgpt`, `executor`), valid for 12 months.
 - Pre-authorized for `mcp`: both client apps and VS Code (`aebc6443-996d-45c2-90f0-388ff96faa56`).
 
 ## Client Setup
@@ -48,6 +49,7 @@ Permanent notes for Toki's Model Context Protocol endpoint. Read this before cha
 - Claude Code, API token: `claude mcp add --transport http toki https://toki-api.spinit.se/mcp --header "Authorization: Bearer toki_…"`.
 - Codex, OAuth: `codex mcp add toki --url https://toki-api.spinit.se/mcp --oauth-client-id <native-client-id>`, then `codex mcp login toki`. Codex prints its callback URL; register that exact URL on the native client.
 - Codex, API token: set `bearer_token_env_var` on `[mcp_servers.toki]` in `config.toml`.
-- claude.ai, Claude Desktop and mobile: add a custom connector with the URL and, under Advanced, `<hosted-client-id>` and its secret. Redirect URI: `https://claude.ai/api/mcp/auth_callback`.
+- claude.ai, Claude Desktop and mobile: Customize → Connectors → Add custom connector with the URL. Claude detects that the server needs its own client; choose "Use your own OAuth client" with `<hosted-client-id>` and its secret. Redirect URI: `https://claude.ai/api/mcp/auth_callback`. Claude adds `offline_access` itself.
+- ChatGPT: Apps → Add → Add custom MCP server with the URL and OAuth. Under Advanced OAuth settings, choose User-Defined OAuth Client with `<hosted-client-id>`, its secret and `client_secret_post`, set the base scopes to `offline_access`, and turn off OIDC: ChatGPT would call Microsoft Graph's userinfo with the Toki access token, which Graph rejects. The dialog shows the connector's own callback URL; register it on the hosted client before connecting.
 - VS Code: add the URL as an HTTP server. It signs in through its built-in Microsoft account provider, whose client ID is pre-authorized on the resource.
-- Executor: add the URL as an MCP source and connect an OAuth account with `<hosted-client-id>` and its secret. Register the redirect URL its dialog shows on the hosted client.
+- Executor: add the URL as an MCP integration, add a Bearer header authentication method, and connect it with a Toki API token. Its OAuth method works with `<hosted-client-id>`, but without `offline_access` the connection expires within the hour.
