@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO oauth_authorization_requests\n                (id_hash, user_id, client_id, client_name, redirect_uri, resource,\n                 code_challenge, state, expires_at)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "add992c8b14c8abb4d20a24e4576bf0240ac7369fc7bc6ef6cabddbf17156fc3"
+}

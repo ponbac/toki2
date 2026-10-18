@@ -31,7 +31,7 @@ Read `.docs/kleer.md` before Kleer-specific changes. It contains durable Kleer A
 
 ## MCP Notes
 
-Read `.docs/mcp.md` before changing MCP tools or MCP authentication. `/mcp` exposes the curated `/openapi.json` agent surface as MCP tools: adding an agent OpenAPI operation requires adding its tool, which a test enforces.
+Read `.docs/mcp.md` before changing MCP tools, MCP authentication or Toki's OAuth authorization server. `/mcp` exposes the curated `/openapi.json` agent surface as MCP tools: adding an agent OpenAPI operation requires adding its tool, which a test enforces.
 
 ## Version Control
 

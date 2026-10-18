@@ -96,7 +96,3 @@ rmcp = { version = "3.5.1", features = [
     "request-state",
 ] }
 schemars = "1.2.3"
-jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
-
-[dev-dependencies]
-aws-lc-rs = "1.18.2"

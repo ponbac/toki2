@@ -1,14 +1,13 @@
 //! Bearer authentication for the MCP endpoint.
 //!
-//! The endpoint accepts a Toki personal API token, or, when OAuth is
-//! configured, a Microsoft Entra ID access token issued for it. Browser
-//! session cookies are never accepted, so a web page cannot drive an agent
-//! surface with a signed-in user's cookie. Neither kind of token carries admin
-//! power.
+//! The endpoint accepts a Toki personal API token, or, with OAuth, an access
+//! token Toki's own authorization server issued for it. Refresh tokens and
+//! other OAuth secrets are not credentials here. Browser session cookies are
+//! never accepted, so a web page cannot drive an agent surface with a
+//! signed-in user's cookie. Neither kind of token carries admin power.
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use axum::{
     extract::{Request, State},
     http::{header::WWW_AUTHENTICATE, HeaderValue, StatusCode},
@@ -18,30 +17,16 @@ use axum::{
 };
 use serde::Serialize;
 
-use super::entra::{EntraTokenError, EntraTokenValidator};
 use crate::{
     auth::{bearer_token, AuthUser},
-    domain::{ports::inbound::ApiTokenAuthenticator, AuthMethod, UserPrincipal},
-    repositories::{RepositoryError, UserRepository, UserRepositoryImpl},
+    domain::{
+        ports::inbound::{ApiTokenAuthenticator, OAuthAccessTokenAuthenticator},
+        AuthMethod,
+    },
 };
 
 const API_TOKEN_PREFIX: &str = "toki_";
-
-/// Finds the Toki user an access token names.
-#[async_trait]
-pub trait McpUserDirectory: Send + Sync {
-    async fn find_by_email(&self, email: &str) -> Result<Option<UserPrincipal>, RepositoryError>;
-}
-
-#[async_trait]
-impl McpUserDirectory for UserRepositoryImpl {
-    async fn find_by_email(&self, email: &str) -> Result<Option<UserPrincipal>, RepositoryError> {
-        Ok(self
-            .find_user_by_email(email)
-            .await?
-            .map(|user| UserPrincipal::from(&user)))
-    }
-}
+const ACCESS_TOKEN_PREFIX: &str = "tmcp_at_";
 
 /// OAuth 2.0 Protected Resource Metadata (RFC 9728) for the MCP endpoint.
 #[derive(Debug, Clone, Serialize)]
@@ -54,8 +39,7 @@ pub struct ProtectedResourceMetadata {
 }
 
 pub struct McpOAuth {
-    pub validator: EntraTokenValidator,
-    pub users: Arc<dyn McpUserDirectory>,
+    pub access_tokens: Arc<dyn OAuthAccessTokenAuthenticator>,
     pub metadata: ProtectedResourceMetadata,
     /// Where `metadata` is served.
     pub metadata_url: String,
@@ -71,10 +55,6 @@ enum Rejection {
     Unauthenticated {
         error: Option<&'static str>,
     },
-    /// A valid token without the endpoint's scope.
-    InsufficientScope,
-    /// A valid token for someone Toki does not know.
-    UnknownUser,
     Unavailable(String),
 }
 
@@ -93,34 +73,23 @@ impl McpAuth {
             };
         }
 
-        let Some(oauth) = &self.oauth else {
-            return Err(Rejection::Unauthenticated {
-                error: Some("invalid_token"),
-            });
+        let invalid_token = Rejection::Unauthenticated {
+            error: Some("invalid_token"),
         };
-        let identity = oauth.validator.validate(token).await.map_err(|error| {
-            tracing::info!(error = %error, "mcp access token rejected");
-            match error {
-                EntraTokenError::Invalid(_) => Rejection::Unauthenticated {
-                    error: Some("invalid_token"),
-                },
-                EntraTokenError::MissingScope(_) => Rejection::InsufficientScope,
-                EntraTokenError::Keys(message) => Rejection::Unavailable(message),
-            }
-        })?;
-        for email in &identity.emails {
-            match oauth.users.find_by_email(email).await {
-                Ok(Some(principal)) => {
-                    return Ok(AuthUser::new(principal, AuthMethod::AccessToken))
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    tracing::error!(error = %error, "mcp user lookup failed");
-                    return Err(Rejection::Unavailable("Authentication failed.".into()));
-                }
+        let Some(oauth) = &self.oauth else {
+            return Err(invalid_token);
+        };
+        if !token.starts_with(ACCESS_TOKEN_PREFIX) {
+            return Err(invalid_token);
+        }
+        match oauth.access_tokens.authenticate(token).await {
+            Ok(Some(principal)) => Ok(AuthUser::new(principal, AuthMethod::AccessToken)),
+            Ok(None) => Err(invalid_token),
+            Err(error) => {
+                tracing::error!(error = %error, "mcp access token authentication failed");
+                Err(Rejection::Unavailable("Authentication failed.".into()))
             }
         }
-        Err(Rejection::UnknownUser)
     }
 
     fn challenge(&self, error: Option<&str>) -> HeaderValue {
@@ -144,38 +113,27 @@ impl McpAuth {
     }
 
     fn reject(&self, rejection: Rejection) -> Response {
-        let (status, error, message) = match rejection {
-            Rejection::Unauthenticated { error } => (
-                StatusCode::UNAUTHORIZED,
-                error,
-                "Present a Toki API token or an access token for this server.".to_string(),
-            ),
-            Rejection::InsufficientScope => (
-                StatusCode::FORBIDDEN,
-                Some("insufficient_scope"),
-                "The access token lacks this server's scope.".to_string(),
-            ),
-            Rejection::UnknownUser => (
-                StatusCode::FORBIDDEN,
-                None,
-                "No Toki user has this account. Sign in to Toki in the browser once first."
-                    .to_string(),
-            ),
-            Rejection::Unavailable(message) => {
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(ErrorBody { error: message }),
+        match rejection {
+            Rejection::Unauthenticated { error } => {
+                let mut response = (
+                    StatusCode::UNAUTHORIZED,
+                    Json(ErrorBody {
+                        error: "Present a Toki API token or an access token for this server."
+                            .to_string(),
+                    }),
                 )
-                    .into_response()
+                    .into_response();
+                response
+                    .headers_mut()
+                    .insert(WWW_AUTHENTICATE, self.challenge(error));
+                response
             }
-        };
-        let mut response = (status, Json(ErrorBody { error: message })).into_response();
-        if status == StatusCode::UNAUTHORIZED || error.is_some() {
-            response
-                .headers_mut()
-                .insert(WWW_AUTHENTICATE, self.challenge(error));
+            Rejection::Unavailable(message) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ErrorBody { error: message }),
+            )
+                .into_response(),
         }
-        response
     }
 }
 
@@ -213,11 +171,14 @@ pub async fn authenticate(
 
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
     use axum::{body::Body, http::Request, middleware, routing::get, Router};
     use tower::ServiceExt;
 
     use super::*;
-    use crate::domain::{models::UserId, ApiTokenError, Role};
+    use crate::domain::{models::UserId, ApiTokenError, OAuthError, Role, UserPrincipal};
+
+    const CHALLENGE: &str = "Bearer resource_metadata=\"https://toki.example/.well-known/oauth-protected-resource/mcp\", scope=\"mcp\"";
 
     struct StubTokens;
 
@@ -231,15 +192,17 @@ mod tests {
         }
     }
 
-    struct NoUsers;
+    /// Knows every secret ending in `valid`, whatever its kind, so the tests
+    /// show which kinds `/mcp` refuses before asking.
+    struct StubAccessTokens;
 
     #[async_trait]
-    impl McpUserDirectory for NoUsers {
-        async fn find_by_email(
-            &self,
-            _email: &str,
-        ) -> Result<Option<UserPrincipal>, RepositoryError> {
-            Ok(None)
+    impl OAuthAccessTokenAuthenticator for StubAccessTokens {
+        async fn authenticate(&self, presented: &str) -> Result<Option<UserPrincipal>, OAuthError> {
+            if presented.ends_with("unavailable") {
+                return Err(OAuthError::Storage("connection refused".to_string()));
+            }
+            Ok(presented.ends_with("valid").then(principal))
         }
     }
 
@@ -253,12 +216,11 @@ mod tests {
 
     fn oauth() -> McpOAuth {
         McpOAuth {
-            validator: EntraTokenValidator::new("tenant", "audience", "mcp"),
-            users: Arc::new(NoUsers),
+            access_tokens: Arc::new(StubAccessTokens),
             metadata: ProtectedResourceMetadata {
                 resource: "https://toki.example/mcp".into(),
-                authorization_servers: vec!["https://login.example/tenant/v2.0".into()],
-                scopes_supported: vec!["https://toki.example/mcp/mcp".into()],
+                authorization_servers: vec!["https://toki.example".into()],
+                scopes_supported: vec!["mcp".into()],
                 bearer_methods_supported: vec!["header".into()],
                 resource_name: "Toki".into(),
             },
@@ -301,7 +263,17 @@ mod tests {
 
     #[tokio::test]
     async fn an_api_token_authenticates_without_admin_power() {
-        let response = call(app(None), Some("Bearer toki_valid")).await;
+        for oauth in [None, Some(oauth())] {
+            let response = call(app(oauth), Some("Bearer toki_valid")).await;
+
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(body(response).await, "7 false");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_access_token_authenticates_without_admin_power() {
+        let response = call(app(Some(oauth())), Some("Bearer tmcp_at_valid")).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(body(response).await, "7 false");
@@ -312,10 +284,49 @@ mod tests {
         let response = call(app(Some(oauth())), None).await;
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()[WWW_AUTHENTICATE], CHALLENGE);
+    }
+
+    #[tokio::test]
+    async fn an_expired_or_unknown_access_token_asks_for_a_new_one() {
+        let response = call(app(Some(oauth())), Some("Bearer tmcp_at_expired")).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             response.headers()[WWW_AUTHENTICATE],
-            "Bearer resource_metadata=\"https://toki.example/.well-known/oauth-protected-resource/mcp\", scope=\"https://toki.example/mcp/mcp\""
+            format!("{CHALLENGE}, error=\"invalid_token\"")
         );
+    }
+
+    #[tokio::test]
+    async fn refresh_tokens_and_other_secrets_are_not_credentials() {
+        for authorization in [
+            "Bearer tmcp_rt_valid",
+            "Bearer tmcp_ac_valid",
+            "Bearer tmcp_ar_valid",
+            "Bearer eyJhbGciOiJSUzI1NiJ9.e30.valid",
+        ] {
+            let response = call(app(Some(oauth())), Some(authorization)).await;
+
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{authorization}"
+            );
+            assert_eq!(
+                response.headers()[WWW_AUTHENTICATE],
+                format!("{CHALLENGE}, error=\"invalid_token\""),
+                "{authorization}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_access_token_lookup_is_unavailable() {
+        let response = call(app(Some(oauth())), Some("Bearer tmcp_at_unavailable")).await;
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!response.headers().contains_key(WWW_AUTHENTICATE));
     }
 
     #[tokio::test]
@@ -330,8 +341,8 @@ mod tests {
     async fn unknown_and_malformed_credentials_are_rejected() {
         for (oauth, authorization) in [
             (None, "Bearer toki_unknown"),
-            (None, "Bearer eyJhbGciOiJSUzI1NiJ9.e30.c2ln"),
-            (Some(oauth()), "Bearer not-a-jwt"),
+            (None, "Bearer tmcp_at_valid"),
+            (Some(oauth()), "Bearer toki_unknown"),
             (Some(oauth()), "Basic dXNlcjpwYXNz"),
         ] {
             let response = call(app(oauth), Some(authorization)).await;
@@ -347,7 +358,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_session_cookie_is_not_a_credential() {
-        let response = app(None)
+        let response = app(Some(oauth()))
             .oneshot(
                 Request::builder()
                     .uri("/mcp")

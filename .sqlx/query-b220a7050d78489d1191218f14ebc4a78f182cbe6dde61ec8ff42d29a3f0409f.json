@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE oauth_clients\n                    SET last_used_at = now()\n                    WHERE client_id = $1\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b220a7050d78489d1191218f14ebc4a78f182cbe6dde61ec8ff42d29a3f0409f"
+}

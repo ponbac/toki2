@@ -8,7 +8,3 @@ database:
   require_ssl: true
 auth:
   redirect_url: "https://toki-api.spinit.se/oauth/callback"
-mcp:
-  oauth:
-    tenant_id: "d89ef75c-38db-4904-9d78-b872502ca145"
-    scope: "mcp"

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM oauth_clients\n            WHERE last_used_at IS NULL AND created_at < now() - INTERVAL '30 days'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "68427cf70ae96619bd3561e07caaa242a792741a2ca7143129e3048b35a38aeb"
+}

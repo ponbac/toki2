@@ -637,6 +637,9 @@ fn is_sensitive_key(key: &str) -> bool {
             | "code"
             | "state"
             | "pat"
+            | "code_verifier"
+            | "client_assertion"
+            | "request"
     ) || normalized.contains("token")
         || normalized.contains("secret")
         || normalized.contains("password")
@@ -704,6 +707,21 @@ mod tests {
         assert!(redacted.contains("code=%5BREDACTED%5D"));
         assert!(redacted.contains("state=%5BREDACTED%5D"));
         assert!(redacted.contains("api_key=%5BREDACTED%5D"));
+        assert!(!redacted.contains("abc"));
+        assert!(!redacted.contains("def"));
+        assert!(!redacted.contains("ghi"));
+    }
+
+    #[test]
+    fn observability_form_redaction_redacts_oauth_server_parameters() {
+        let redacted = redact_form_or_query(
+            "grant_type=authorization_code&code_verifier=abc&client_assertion=def&request=ghi",
+        );
+
+        assert!(redacted.contains("grant_type=authorization_code"));
+        assert!(redacted.contains("code_verifier=%5BREDACTED%5D"));
+        assert!(redacted.contains("client_assertion=%5BREDACTED%5D"));
+        assert!(redacted.contains("request=%5BREDACTED%5D"));
         assert!(!redacted.contains("abc"));
         assert!(!redacted.contains("def"));
         assert!(!redacted.contains("ghi"));

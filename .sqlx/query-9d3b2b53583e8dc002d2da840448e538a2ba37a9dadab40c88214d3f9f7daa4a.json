@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, email, full_name, picture, roles, session_auth_hash\n            FROM users\n            WHERE lower(email) = lower($1)\n            ORDER BY email = $1 DESC\n            LIMIT 2\n            ",
+  "query": "\n            SELECT u.id, u.email, u.roles, g.resource\n            FROM oauth_tokens t\n            INNER JOIN oauth_grants g ON g.id = t.grant_id\n            INNER JOIN users u ON u.id = g.user_id\n            WHERE t.token_hash = $1\n              AND t.kind = 'access'\n              AND t.expires_at > now()\n              AND g.revoked_at IS NULL\n              AND g.expires_at > now()\n            ",
   "describe": {
     "columns": [
       {
@@ -27,28 +27,6 @@
       },
       {
         "ordinal": 2,
-        "name": "full_name",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "users",
-            "name": "full_name"
-          }
-        }
-      },
-      {
-        "ordinal": 3,
-        "name": "picture",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "users",
-            "name": "picture"
-          }
-        }
-      },
-      {
-        "ordinal": 4,
         "name": "roles",
         "type_info": "TextArray",
         "origin": {
@@ -59,30 +37,28 @@
         }
       },
       {
-        "ordinal": 5,
-        "name": "session_auth_hash",
+        "ordinal": 3,
+        "name": "resource",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "users",
-            "name": "session_auth_hash"
+            "table": "oauth_grants",
+            "name": "resource"
           }
         }
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Bytea"
       ]
     },
     "nullable": [
       false,
       false,
       false,
-      false,
-      false,
       false
     ]
   },
-  "hash": "55a145e3fc64309b76f8ca0055cc06b5874ff033ac7acc989c9278cafc3a191f"
+  "hash": "9d3b2b53583e8dc002d2da840448e538a2ba37a9dadab40c88214d3f9f7daa4a"
 }

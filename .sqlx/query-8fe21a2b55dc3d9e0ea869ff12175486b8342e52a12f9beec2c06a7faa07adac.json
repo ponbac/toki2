@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO oauth_grants\n                        (user_id, client_id, client_name, redirect_uri, resource, expires_at)\n                    VALUES ($1, $2, $3, $4, $5, $6)\n                    RETURNING id\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "oauth_grants",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8fe21a2b55dc3d9e0ea869ff12175486b8342e52a12f9beec2c06a7faa07adac"
+}

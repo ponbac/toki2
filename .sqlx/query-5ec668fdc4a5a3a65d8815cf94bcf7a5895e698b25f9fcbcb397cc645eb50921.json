@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE oauth_grants g\n            SET revoked_at = now()\n            FROM oauth_tokens t\n            WHERE t.token_hash = $1\n              AND g.id = t.grant_id\n              AND g.revoked_at IS NULL\n              AND ($2::TEXT IS NULL OR g.client_id = $2)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ec668fdc4a5a3a65d8815cf94bcf7a5895e698b25f9fcbcb397cc645eb50921"
+}

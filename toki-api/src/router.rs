@@ -13,6 +13,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_sessions_moka_store::MokaStore;
 use tower_sessions_sqlx_store::PostgresStore;
 use tracing::Instrument;
+use url::Url;
 
 type SessionStore = CachingSessionStore<MokaStore, PostgresStore>;
 const SESSION_COOKIE_NAME: &str = "toki.sid";
@@ -24,12 +25,13 @@ use crate::{
             mcp,
         },
         outbound::{
+            cimd::CimdFetcher,
             media::WebpAvatarProcessor,
             postgres::{
                 PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
                 PostgresAiProjectMappingRepository, PostgresAiSubscriptionRepository,
                 PostgresAiUsageReportRepository, PostgresAiUsageRepository,
-                PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresApiTokenRepository, PostgresAvatarRepository, PostgresOAuthRepository,
             },
             riksbank::RiksbankExchangeRateAdapter,
         },
@@ -44,7 +46,7 @@ use crate::{
             inbound::{
                 AiBillingService, AiDisplayRateService, AiProjectMappingService,
                 AiSubscriptionService, AiUsageReportService, AiUsageService, ApiTokenAuthenticator,
-                ApiTokenService, AvatarService,
+                ApiTokenService, AvatarService, OAuthAccessTokenAuthenticator, OAuthService,
             },
             outbound::TimeTrackingProjectCatalog,
         },
@@ -52,6 +54,7 @@ use crate::{
             AiBillingServiceImpl, AiDisplayRateServiceImpl, AiExchangeRateSettings,
             AiExchangeRates, AiProjectMappingServiceImpl, AiSubscriptionServiceImpl,
             AiUsageReportServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
+            OAuthServiceImpl,
         },
         RepoConfig,
     },
@@ -65,6 +68,15 @@ pub async fn create(
     repo_configs: Vec<RepoConfig>,
     config: Settings,
 ) -> Router<()> {
+    // The OAuth authorization server MCP clients sign in through.
+    let api_url = Url::parse(&config.application.api_url).expect("Invalid API URL");
+    let oauth = Arc::new(OAuthServiceImpl::new(
+        Arc::new(PostgresOAuthRepository::new(db_pool.clone())),
+        Arc::new(CimdFetcher::new().expect("Failed to build the client metadata fetcher")),
+        mcp::resource_url(&api_url),
+    ));
+    let oauth_service: Arc<dyn OAuthService> = oauth.clone();
+
     let base_app = Router::new()
         .route("/", get(|| async { "Hello, little World!" }))
         .nest("/pull-requests", routes::pull_requests::router())
@@ -72,7 +84,13 @@ pub async fn create(
         .nest("/repositories", routes::repositories::router())
         .nest("/notifications", routes::notifications::router())
         .nest("/time-tracking", routes::time_tracking::router())
-        .nest("/users", routes::users::router())
+        .nest(
+            "/users",
+            routes::users::router().nest(
+                "/me/oauth-grants",
+                http::oauth::grants_router(oauth_service.clone()),
+            ),
+        )
         .nest("/work-items", routes::work_items::router())
         .nest(
             "/ai-usage",
@@ -102,7 +120,15 @@ pub async fn create(
     } else {
         let auth_layer =
             new_auth_layer(connection_pool.clone(), db_pool.clone(), config.clone()).await;
-        authenticated_routes(base_app, api_token_authenticator).layer(auth_layer)
+        let oauth_server = http::oauth::server_router(
+            oauth_service.clone(),
+            http::oauth::OAuthServerConfig {
+                issuer: oauth_issuer(&api_url),
+                api_origin: api_url.origin().ascii_serialization(),
+            },
+        );
+        spawn_oauth_cleanup(oauth_service.clone());
+        authenticated_routes(base_app, oauth_server, api_token_authenticator).layer(auth_layer)
     }
     .merge(openapi_spec_router(automation_openapi));
 
@@ -217,7 +243,11 @@ pub async fn create(
     )
     .await;
 
-    let mcp_auth = mcp_auth(&config, &app_state, mcp_api_token_authenticator);
+    // Without sign-in there is no authorization server, so `/mcp` then takes
+    // API tokens only.
+    let mcp_access_tokens = (!config.application.disable_auth)
+        .then(|| oauth.clone() as Arc<dyn OAuthAccessTokenAuthenticator>);
+    let mcp_auth = mcp_auth(&app_state, mcp_api_token_authenticator, mcp_access_tokens);
     let app_with_auth = app_with_auth.merge(mcp::router(app_state.clone(), mcp_auth));
 
     // Start all the differ threads (if in production)
@@ -254,34 +284,53 @@ pub async fn create(
         .layer(crate::observability::http_trace_layer())
 }
 
-/// `/mcp` accepts personal API tokens, and Entra access tokens when configured.
+/// `/mcp` accepts personal API tokens, and, given `access_tokens`, access
+/// tokens from Toki's own authorization server.
 fn mcp_auth(
-    config: &Settings,
     app_state: &AppState,
     api_tokens: Arc<dyn ApiTokenAuthenticator>,
+    access_tokens: Option<Arc<dyn OAuthAccessTokenAuthenticator>>,
 ) -> mcp::McpAuth {
-    let oauth = config.mcp.oauth.as_ref().map(|oauth| mcp::McpOAuth {
-        validator: mcp::EntraTokenValidator::new(
-            &oauth.tenant_id,
-            &config.auth.client_id,
-            &oauth.scope,
-        ),
-        users: app_state.user_repo.clone(),
+    let oauth = access_tokens.map(|access_tokens| mcp::McpOAuth {
+        access_tokens,
         metadata: mcp::protected_resource_metadata(
             &app_state.api_url,
-            mcp::entra_issuer(&oauth.tenant_id),
-            &oauth.scope,
+            oauth_issuer(&app_state.api_url),
         ),
         metadata_url: mcp::metadata_url(&app_state.api_url),
     });
     mcp::McpAuth { api_tokens, oauth }
 }
 
+/// The authorization server's issuer identifier: the API URL without a
+/// trailing slash.
+fn oauth_issuer(api_url: &Url) -> String {
+    api_url.as_str().trim_end_matches('/').to_string()
+}
+
+/// Deletes expired authorization server records every hour.
+fn spawn_oauth_cleanup(oauth: Arc<dyn OAuthService>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            if let Err(error) = oauth.remove_expired().await {
+                tracing::error!(error = %error, "failed to delete expired OAuth records");
+            }
+        }
+    });
+}
+
 fn authenticated_routes(
     protected_routes: Router<AppState>,
+    oauth_server: Router<AppState>,
     api_token_authenticator: Arc<dyn ApiTokenAuthenticator>,
 ) -> Router<AppState> {
-    compose_authenticated_routes(protected_routes, auth::router(), api_token_authenticator)
+    compose_authenticated_routes(
+        protected_routes,
+        auth::router().merge(oauth_server),
+        api_token_authenticator,
+    )
 }
 
 fn compose_authenticated_routes<S>(

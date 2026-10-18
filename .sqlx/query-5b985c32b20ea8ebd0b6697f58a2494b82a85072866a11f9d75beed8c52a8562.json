@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE oauth_authorization_codes\n                    SET consumed_at = now(), grant_id = $2\n                    WHERE code_hash = $1\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b985c32b20ea8ebd0b6697f58a2494b82a85072866a11f9d75beed8c52a8562"
+}

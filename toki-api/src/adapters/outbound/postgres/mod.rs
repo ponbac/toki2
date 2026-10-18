@@ -7,6 +7,7 @@ mod ai_usage_reads;
 mod ai_usage_report;
 mod api_tokens;
 mod avatar;
+mod oauth;
 mod timer_history;
 
 pub use ai_billing::PostgresAiBillingRepository;
@@ -20,4 +21,5 @@ pub(crate) use ai_usage_report::tests as ai_usage_fixtures;
 pub use ai_usage_report::PostgresAiUsageReportRepository;
 pub use api_tokens::PostgresApiTokenRepository;
 pub use avatar::PostgresAvatarRepository;
+pub use oauth::PostgresOAuthRepository;
 pub use timer_history::PostgresTimerHistoryAdapter;
