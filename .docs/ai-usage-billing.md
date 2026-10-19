@@ -55,3 +55,15 @@ and billing already sum costs as known subtotals and need no change.
 Deploy Toki's migration and version-3 support **before** the client. Clients only
 send version 3 when a bucket in the upload is partly priced; other uploads keep
 version 1 or 2.
+
+## Upload ordering (`snapshotAt`)
+
+Uploads may carry an optional `snapshotAt` in any version: when the client started
+reading its history. Toki stores the newest applied one per machine and refuses an
+older upload with 409 `SupersededUpload`, changing nothing, so a slow retry or an
+overlapping scheduled and manual sync cannot roll back buckets, hints or coverage.
+Don't resend a payload refused with 409: the newer upload may cover another window or
+providers, so rescan the same window and send that. A snapshot more than 5 minutes
+ahead of the server clock is applied but not stored, so a wrong client clock cannot
+lock its machine out. Coverage logged for such an upload ends at its snapshot.
+Clients that omit it are applied in arrival order, as before.

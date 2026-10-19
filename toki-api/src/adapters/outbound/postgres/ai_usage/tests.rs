@@ -601,6 +601,110 @@ async fn uploads_log_what_they_cover_until_they_were_reported(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn an_upload_that_read_history_earlier_cannot_replace_a_later_one(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let read_at = |snapshot_at, records| {
+        upload(
+            MACHINE_A,
+            "work-laptop",
+            WINDOW,
+            vec![bucket(datetime!(2026-09-22 08:00 UTC), records, Some(0.5))],
+            Vec::new(),
+        )
+        .with_snapshot_at(snapshot_at)
+    };
+    let later = read_at(Some(datetime!(2026-09-22 10:30 UTC)), 5);
+    repository.replace_window(&user, &later).await.unwrap();
+    let stored = snapshot(&pool).await;
+    let logged = || async {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM ai_usage_coverage_log")
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    let logged_before = logged().await;
+
+    // A slow upload or a retry of an earlier run arrives after the later one.
+    let earlier = read_at(Some(datetime!(2026-09-22 10:00 UTC)), 3);
+    assert!(matches!(
+        repository.replace_window(&user, &earlier).await,
+        Err(AiUsageError::SupersededUpload)
+    ));
+    assert_eq!(snapshot(&pool).await, stored);
+    assert_eq!(logged().await, logged_before);
+
+    // Retrying the stored upload stays harmless.
+    repository.replace_window(&user, &later).await.unwrap();
+    assert_eq!(snapshot(&pool).await, stored);
+
+    // Clients that do not report a snapshot keep replacing their window.
+    repository
+        .replace_window(&user, &read_at(None, 3))
+        .await
+        .unwrap();
+    assert_eq!(
+        stored_buckets(&pool, MACHINE_A).await,
+        [(datetime!(2026-09-22 08:00 UTC), "claude".to_string(), 3)]
+    );
+}
+
+#[sqlx::test]
+async fn a_snapshot_ahead_of_the_server_clock_does_not_block_later_uploads(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let fast_clock = upload(MACHINE_A, "laptop", WINDOW, Vec::new(), Vec::new())
+        .with_snapshot_at(Some(datetime!(2099-01-01 00:00 UTC)));
+
+    repository.replace_window(&user, &fast_clock).await.unwrap();
+    repository.replace_window(&user, &fast_clock).await.unwrap();
+    let corrected = upload(MACHINE_A, "laptop", WINDOW, Vec::new(), Vec::new())
+        .with_snapshot_at(Some(OffsetDateTime::now_utc() + time::Duration::minutes(1)));
+    repository.replace_window(&user, &corrected).await.unwrap();
+}
+
+#[sqlx::test]
+async fn snapshots_from_a_slightly_fast_clock_keep_their_order(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let ahead = |minutes| {
+        upload(MACHINE_A, "laptop", WINDOW, Vec::new(), Vec::new()).with_snapshot_at(Some(
+            OffsetDateTime::now_utc() + time::Duration::minutes(minutes),
+        ))
+    };
+
+    // Both read history "in the future"; the later read commits first.
+    repository.replace_window(&user, &ahead(2)).await.unwrap();
+    assert!(matches!(
+        repository.replace_window(&user, &ahead(1)).await,
+        Err(AiUsageError::SupersededUpload)
+    ));
+}
+
+#[sqlx::test]
+async fn an_upload_proves_usage_complete_only_until_its_snapshot(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let upload = upload(MACHINE_A, "laptop", WINDOW, Vec::new(), Vec::new())
+        .with_snapshot_at(Some(datetime!(2026-09-22 09:15 UTC)));
+    repository.replace_window(&user, &upload).await.unwrap();
+
+    let covered: Vec<(String, OffsetDateTime)> = sqlx::query_as(
+        "SELECT provider, covered_until FROM ai_usage_coverage_log ORDER BY provider",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        covered,
+        [
+            ("claude".to_string(), datetime!(2026-09-22 09:15 UTC)),
+            ("codex".to_string(), datetime!(2026-09-22 09:15 UTC)),
+        ]
+    );
+}
+
+#[sqlx::test]
 async fn the_longest_allowed_text_is_stored(pool: PgPool) {
     let repository = repository(&pool);
     let user = insert_user(&pool, "dev@example.com").await;
