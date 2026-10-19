@@ -3,8 +3,8 @@ use time::OffsetDateTime;
 use utoipa::ToSchema;
 
 use crate::domain::models::{
-    AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity, Project,
-    TimeEntry, TimeEntryDayStatus, TimeEntryStatus, TimerHistoryEntry, WeeklyStats,
+    AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity, FlexBalance,
+    Project, TimeEntry, TimeEntryDayStatus, TimeEntryStatus, TimerHistoryEntry, WeeklyStats,
 };
 
 /// Response for the get timer endpoint.
@@ -243,6 +243,34 @@ impl From<WeeklyStats> for WeeklyStatsResponse {
             absence_hours: info.absence_hours,
             covered_hours: info.covered_hours,
             period_flex_hours: info.period_flex_hours,
+        }
+    }
+}
+
+/// Preliminary flex balance response.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FlexBalanceResponse {
+    /// Preliminary balance in hours: the settled balance plus the estimate.
+    pub balance_hours: f64,
+    /// Balance in hours that the time tracking provider has settled.
+    pub settled_hours: f64,
+    /// Last day the settled balance accounts for, `YYYY-MM-DD`.
+    pub settled_through: String,
+    /// Estimated flex in hours from the day after `settledThrough` through `through`.
+    pub estimated_hours: f64,
+    /// Last day of the estimate, `YYYY-MM-DD`.
+    pub through: String,
+}
+
+impl From<FlexBalance> for FlexBalanceResponse {
+    fn from(balance: FlexBalance) -> Self {
+        Self {
+            balance_hours: balance.hours(),
+            settled_hours: balance.settled.hours,
+            settled_through: balance.settled.through.to_string(),
+            estimated_hours: balance.estimated_hours,
+            through: balance.through.to_string(),
         }
     }
 }

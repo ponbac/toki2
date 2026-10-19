@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { formatHoursMinutes } from "@/lib/utils";
+import { FlexBalanceBreakdown } from "@/components/flex-balance";
+import {
+  formatSignedHours,
+  signedHoursColor,
+  useFlexBalance,
+} from "@/lib/flex-balance";
 import { endOfWeek, format, startOfWeek } from "date-fns";
 import {
   CalendarClockIcon,
@@ -26,6 +32,7 @@ export const TimeStats = () => {
     }),
     staleTime: 5 * 60 * 1000,
   });
+  const { data: flexBalance } = useFlexBalance();
 
   const workedHours = timeInfo ? timeInfo.workedHours : 0;
   const scheduledHours = timeInfo ? timeInfo.scheduledHours : 40;
@@ -36,18 +43,12 @@ export const TimeStats = () => {
       ? (timeInfo.coveredHours / timeInfo.scheduledHours) * 100
       : 0;
   const isAhead = percentageCompleted >= 100;
-  const flexColor =
-    periodFlexHours > 0
-      ? "text-emerald-500"
-      : periodFlexHours < 0
-        ? "text-amber-500"
-        : "text-foreground";
 
   return (
     <div className="card-elevated overflow-hidden rounded-2xl">
       {/* Header */}
       <div className="relative overflow-hidden border-b border-border/50 bg-linear-to-br from-primary/10 via-primary/5 to-transparent px-5 py-4">
-        <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+        <div className="absolute -top-8 -right-8 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
         <div className="relative flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20">
             <TrendingUp className="h-5 w-5 text-primary" />
@@ -109,7 +110,7 @@ export const TimeStats = () => {
               <div className="group cursor-default rounded-xl bg-muted/30 p-4 transition-colors hover:bg-muted/50">
                 <div className="mb-2 flex items-center gap-2 text-muted-foreground">
                   <CalendarClockIcon className="h-4 w-4" />
-                  <span className="text-xs font-medium uppercase tracking-wider">
+                  <span className="text-xs font-medium tracking-wider uppercase">
                     Remaining
                   </span>
                 </div>
@@ -126,13 +127,14 @@ export const TimeStats = () => {
               <div className="group cursor-default rounded-xl bg-muted/30 p-4 transition-colors hover:bg-muted/50">
                 <div className="mb-2 flex items-center gap-2 text-muted-foreground">
                   <PiggyBankIcon className="h-4 w-4" />
-                  <span className="text-xs font-medium uppercase tracking-wider">
-                    Flex
+                  <span className="text-xs font-medium tracking-wider uppercase">
+                    This week
                   </span>
                 </div>
-                <p className={`time-display text-xl font-semibold ${flexColor}`}>
-                  {periodFlexHours > 0 ? "+" : ""}
-                  {formatHoursMinutes(periodFlexHours)}
+                <p
+                  className={`time-display text-xl font-semibold ${signedHoursColor(periodFlexHours)}`}
+                >
+                  {formatSignedHours(periodFlexHours)}
                 </p>
               </div>
             </TooltipTrigger>
@@ -144,6 +146,22 @@ export const TimeStats = () => {
             </TooltipContent>
           </Tooltip>
         </div>
+
+        {flexBalance && (
+          <div className="mt-4 border-t border-border/50 pt-4">
+            <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+              <PiggyBankIcon className="h-4 w-4" />
+              <span className="text-xs font-medium tracking-wider uppercase">
+                Flex balance
+              </span>
+            </div>
+            <FlexBalanceBreakdown
+              balance={flexBalance}
+              showTotal
+              className="text-sm"
+            />
+          </div>
+        )}
       </div>
     </div>
   );

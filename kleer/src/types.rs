@@ -292,11 +292,24 @@ pub struct KleerPayrollChild {
     pub birth_date: Option<Date>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct KleerPayrollUserReadable {
     #[serde(default, deserialize_with = "payroll_children_from_any")]
     pub children: Vec<KleerPayrollChild>,
+    /// Comp time (flex) balance in hours after the latest monthly payroll
+    /// report. Negative when the employee owes hours.
+    #[serde(default)]
+    pub comp_time_balance: Option<f64>,
+}
+
+/// A monthly payroll report. `month` is the month whose time it covers, not
+/// the payout month the Kleer UI names it by.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct KleerPayrollMonthReport {
+    pub year: i32,
+    pub month: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -432,6 +445,16 @@ mod tests {
         }"#;
         let parsed: KleerPayrollUserReadable = serde_json::from_str(raw).unwrap();
         assert_eq!(parsed.children[0].name, "Barn3");
+    }
+
+    #[test]
+    fn deserializes_payroll_user_comp_time_balance() {
+        let parsed: KleerPayrollUserReadable =
+            serde_json::from_str(r#"{ "comp-time-balance": -12.7100 }"#).unwrap();
+        assert_eq!(parsed.comp_time_balance, Some(-12.71));
+
+        let parsed: KleerPayrollUserReadable = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed.comp_time_balance, None);
     }
 
     #[test]

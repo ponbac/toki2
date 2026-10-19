@@ -5,7 +5,8 @@ use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity,
         CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId, WeeklyStats,
+        SettledFlexBalance, TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId,
+        WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -38,6 +39,13 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
         &self,
         date_range: (Date, Date),
     ) -> Result<WeeklyStats, TimeTrackingError>;
+
+    /// Get the latest flex balance the provider has settled.
+    ///
+    /// Returns `None` when the provider keeps no flex balance for the user.
+    async fn get_settled_flex_balance(
+        &self,
+    ) -> Result<Option<SettledFlexBalance>, TimeTrackingError>;
 
     /// Get time entries from the provider for a date range.
     ///

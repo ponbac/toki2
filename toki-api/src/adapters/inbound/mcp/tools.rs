@@ -119,6 +119,13 @@ pub struct DateRangeArgs {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct FlexBalanceArgs {
+    /// Last day to estimate flex through, `YYYY-MM-DD`. Normally today.
+    through: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct TimeEntriesArgs {
     /// Inclusive range start, `YYYY-MM-DD`.
     from: String,
@@ -436,6 +443,19 @@ impl TokiMcp {
     ) -> Result<CallToolResult, ErrorData> {
         let user = authenticated(&parts)?;
         respond(calendar::get_time_info(user, self.state(), Query(convert(&args)?)).await)
+    }
+
+    /// The user's preliminary flex balance in hours: the balance the provider has
+    /// settled through `settledThrough`, plus the estimated flex of the days
+    /// after it through `through`.
+    #[tool(annotations(title = "Get flex balance", read_only_hint = true))]
+    async fn get_flex_balance(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(args): Parameters<FlexBalanceArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let user = authenticated(&parts)?;
+        respond(calendar::get_flex_balance(user, self.state(), Query(convert(&args)?)).await)
     }
 
     /// Booked time entries in a date range, with their `registrationId`s.
@@ -1132,6 +1152,7 @@ mod tests {
             "list_time_tracking_activities",
         ),
         ("getTimeInfo", "get_time_info"),
+        ("getFlexBalance", "get_flex_balance"),
         ("listTimeEntries", "list_time_entries"),
         ("listTimeEntryDayStatuses", "list_time_entry_day_statuses"),
         ("getActiveTimer", "get_active_timer"),

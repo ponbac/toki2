@@ -11,6 +11,12 @@ import {
   WatchIcon,
 } from "lucide-react";
 import { cn, formatHoursMinutes } from "@/lib/utils";
+import { FlexBalanceBreakdown } from "./flex-balance";
+import {
+  formatSignedHours,
+  signedHoursColor,
+  useFlexBalance,
+} from "@/lib/flex-balance";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
@@ -636,21 +642,19 @@ function TimeSummary(props: {
     staleTime: 60 * 1000,
   });
 
+  const { data: flexBalance } = useFlexBalance();
+
   if (!timeInfo || !timeInfoToday) {
     return null;
   }
 
   const timeLeft =
     timeInfo.remainingHours - (props.timerHours + props.timerMinutes / 60);
-  const flexTime =
-    timeInfo.periodFlexHours + props.timerHours + props.timerMinutes / 60;
-  const flexLabel = `${flexTime > 0 ? "+" : ""}${formatHoursMinutes(flexTime)}`;
-  const flexColor =
-    flexTime > 0
-      ? "text-emerald-500"
-      : flexTime < 0
-        ? "text-amber-500"
-        : undefined;
+  const timerHours = props.timerHours + props.timerMinutes / 60;
+  const weekFlex = timeInfo.periodFlexHours + timerHours;
+  const flexTime = flexBalance
+    ? flexBalance.balanceHours + timerHours
+    : weekFlex;
 
   const {
     hours: timeTodayHours,
@@ -678,10 +682,27 @@ function TimeSummary(props: {
       </SummaryIcon>
       <SummaryIcon
         icon={<PiggyBankIcon size={20} />}
-        tooltip="Estimated flex this week, including leave"
-        className={flexColor}
+        tooltip={
+          flexBalance ? (
+            <div className="flex min-w-60 flex-col gap-1">
+              <FlexBalanceBreakdown
+                balance={flexBalance}
+                unbookedHours={timerHours}
+              />
+              <div className="flex justify-between gap-4 text-muted-foreground">
+                <span>This week</span>
+                <span className="time-display">
+                  {formatSignedHours(weekFlex)}
+                </span>
+              </div>
+            </div>
+          ) : (
+            "Estimated flex this week, including leave"
+          )
+        }
+        className={signedHoursColor(flexTime)}
       >
-        {flexLabel}
+        {formatSignedHours(flexTime)}
       </SummaryIcon>
     </div>
   );
@@ -690,7 +711,7 @@ function TimeSummary(props: {
 function SummaryIcon(props: {
   icon: React.ReactNode;
   children: React.ReactNode;
-  tooltip: string;
+  tooltip: React.ReactNode;
   className?: string;
 }) {
   return (

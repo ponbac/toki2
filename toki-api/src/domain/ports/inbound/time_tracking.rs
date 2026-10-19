@@ -4,8 +4,8 @@ use time::Date;
 use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity,
-        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimerHistoryEntry, UserId, WeeklyStats,
+        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, FlexBalance, Project,
+        ProjectId, TimeEntry, TimeEntryDayStatus, TimerHistoryEntry, UserId, WeeklyStats,
     },
     TimeTrackingError,
 };
@@ -78,6 +78,15 @@ pub trait TimeTrackingService: Send + Sync + 'static {
         &self,
         date_range: (Date, Date),
     ) -> Result<WeeklyStats, TimeTrackingError>;
+
+    /// Get the preliminary flex balance through `through`, normally today.
+    /// `through` cannot be earlier than the day the balance is settled through.
+    ///
+    /// Returns `None` when the provider keeps no flex balance for the user.
+    async fn get_flex_balance(
+        &self,
+        through: Date,
+    ) -> Result<Option<FlexBalance>, TimeTrackingError>;
 
     /// Get time entries for a date range.
     ///

@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
             get(projects::list_activities),
         )
         .route("/time-info", get(calendar::get_time_info))
+        .route("/flex-balance", get(calendar::get_flex_balance))
         .route(
             "/absences",
             get(absences::get_absences)
@@ -62,8 +63,8 @@ pub fn router() -> Router<AppState> {
 
 pub(crate) use calendar::{
     __path_create_project_registration, __path_delete_project_registration,
-    __path_edit_project_registration, __path_get_time_entries, __path_get_time_entry_day_statuses,
-    __path_get_time_info,
+    __path_edit_project_registration, __path_get_flex_balance, __path_get_time_entries,
+    __path_get_time_entry_day_statuses, __path_get_time_info,
 };
 pub(crate) use connection::__path_connection_status;
 pub(crate) use projects::{__path_list_activities, __path_list_projects};
