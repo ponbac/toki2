@@ -48,7 +48,7 @@ export function FlexBalanceBreakdown(props: {
       />
       {props.showTotal && (
         <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-border/50 pt-2 font-semibold">
-          <span>Flex balance</span>
+          <span>Preliminary total</span>
           <span
             className={cn("time-display text-xl", signedHoursColor(totalHours))}
           >
