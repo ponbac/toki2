@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE ai_usage_machines\n                SET last_snapshot_at = CASE\n                    WHEN $2::timestamptz <= now() + interval '5 minutes' THEN $2::timestamptz\n                    ELSE last_snapshot_at\n                END\n                WHERE id = $1\n                  AND (last_snapshot_at IS NULL OR last_snapshot_at <= $2::timestamptz)\n                RETURNING id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_machines",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0133414b2ecfe7b00e03b2c88c87bceeee5583f609b9c26b415cfdb85e78912f"
+}

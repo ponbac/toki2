@@ -79,17 +79,21 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         // The lock serializes uploads but not in the order their history was
         // read: a slow or retried upload could replace a later one with less.
         // Uploads that report their snapshot are applied only in snapshot order;
-        // an equal snapshot is a retry of the stored upload. A snapshot ahead of
-        // the server's clock counts as now, so a client clock that runs fast or
-        // is corrected back cannot lock its machine out of later uploads.
+        // an equal snapshot is a retry of the stored upload. Snapshots compare
+        // as the client reported them, so two from a fast clock keep their
+        // order. One further ahead of the server than the tolerance is applied
+        // but not remembered, so a wrong clock cannot lock its machine out of
+        // later uploads for longer than the tolerance.
         if let Some(snapshot_at) = upload.snapshot_at() {
             let applied = sqlx::query_scalar!(
                 r#"
                 UPDATE ai_usage_machines
-                SET last_snapshot_at = least($2::timestamptz, now())
+                SET last_snapshot_at = CASE
+                    WHEN $2::timestamptz <= now() + interval '5 minutes' THEN $2::timestamptz
+                    ELSE last_snapshot_at
+                END
                 WHERE id = $1
-                  AND (last_snapshot_at IS NULL
-                       OR last_snapshot_at <= least($2::timestamptz, now()))
+                  AND (last_snapshot_at IS NULL OR last_snapshot_at <= $2::timestamptz)
                 RETURNING id
                 "#,
                 machine.id.as_uuid(),

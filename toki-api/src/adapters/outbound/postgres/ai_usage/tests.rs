@@ -664,6 +664,24 @@ async fn a_snapshot_ahead_of_the_server_clock_does_not_block_later_uploads(pool:
 }
 
 #[sqlx::test]
+async fn snapshots_from_a_slightly_fast_clock_keep_their_order(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let ahead = |minutes| {
+        upload(MACHINE_A, "laptop", WINDOW, Vec::new(), Vec::new()).with_snapshot_at(Some(
+            OffsetDateTime::now_utc() + time::Duration::minutes(minutes),
+        ))
+    };
+
+    // Both read history "in the future"; the later read commits first.
+    repository.replace_window(&user, &ahead(2)).await.unwrap();
+    assert!(matches!(
+        repository.replace_window(&user, &ahead(1)).await,
+        Err(AiUsageError::SupersededUpload)
+    ));
+}
+
+#[sqlx::test]
 async fn an_upload_proves_usage_complete_only_until_its_snapshot(pool: PgPool) {
     let repository = repository(&pool);
     let user = insert_user(&pool, "dev@example.com").await;
