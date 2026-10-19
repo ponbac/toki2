@@ -11,9 +11,10 @@ use crate::{
     adapters::outbound::postgres::{PostgresAiProjectMappingRepository, PostgresAiUsageRepository},
     domain::{
         models::{
-            AiMappedProject, AiProjectFilter, AiProjectKey, AiProjectResolution, AiUsageBucket,
-            AiUsageFilter, AiUsageProjectGroup, AiUsageReportQuery, AiUsageUpload, AiUsageWindow,
-            TimeTrackingCompany, UNATTRIBUTED_PROJECT_KEY,
+            AiMappedProject, AiPartialBucketCost, AiProjectFilter, AiProjectKey,
+            AiProjectResolution, AiUsageBucket, AiUsageFilter, AiUsageProjectGroup,
+            AiUsageReportQuery, AiUsageUpload, AiUsageWindow, TimeTrackingCompany,
+            UNATTRIBUTED_PROJECT_KEY,
         },
         ports::{
             inbound::AiUsageReportService,
@@ -227,7 +228,8 @@ fn variant(
 }
 
 /// Stores buckets from a machine, covering Claude and Codex as ok and Grok
-/// as missing, over a window around them.
+/// as missing, over a window around them. Partly priced buckets carry their
+/// priced subtotal, as in payload version 3.
 pub(crate) async fn record(
     pool: &PgPool,
     user: UserId,
@@ -267,6 +269,7 @@ pub(crate) async fn record(
             coverage(AiProvider::Grok, AiCoverageStatus::Missing, 1),
         ],
         Vec::new(),
+        AiPartialBucketCost::PricedSubtotal,
     )
     .unwrap();
     PostgresAiUsageRepository::new(db(pool))
@@ -439,6 +442,41 @@ async fn costs_are_summed_exactly(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(sessions.sessions[0].totals.priced_cost_usd, 3.0);
+}
+
+#[sqlx::test]
+async fn a_partly_priced_bucket_keeps_its_known_subtotal(pool: PgPool) {
+    let user = insert_user(&pool, "dev@example.com", "User").await;
+    let mut partly = bucket(datetime!(2026-09-22 08:00 UTC), APP, 5, Some(0.75));
+    partly.unpriced_records = 2;
+    record(
+        &pool,
+        user,
+        MACHINE_A,
+        vec![
+            partly,
+            bucket(datetime!(2026-09-22 09:00 UTC), APP, 3, None),
+            bucket(datetime!(2026-09-22 10:00 UTC), APP, 1, Some(0.25)),
+        ],
+    )
+    .await;
+
+    let totals = service(&pool, false)
+        .report(&user, &september(AiUsageFilter::default()))
+        .await
+        .unwrap()
+        .totals;
+
+    assert_eq!(
+        (
+            totals.records,
+            totals.priced_cost_usd,
+            totals.unpriced_buckets,
+            totals.unpriced_records,
+        ),
+        (9, 1.0, 1, 5)
+    );
+    assert_eq!(totals.estimated_cost_usd(), None);
 }
 
 #[sqlx::test]

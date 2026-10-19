@@ -338,8 +338,8 @@ mod tests {
         domain::{
             models::{
                 resolve_billing_mode, AiBillingMode, AiCoverageStatus, AiMachine, AiMachineId,
-                AiPricing, AiPricingStatus, AiProviderCoverage, AiProviderHint, AiUsageUpload,
-                AiUsageWindow,
+                AiPartialBucketCost, AiPricing, AiPricingStatus, AiProviderCoverage,
+                AiProviderHint, AiUsageUpload, AiUsageWindow,
             },
             ports::{inbound::AiSubscriptionService, outbound::AiUsageRepository},
             services::AiSubscriptionServiceImpl,
@@ -725,6 +725,7 @@ mod tests {
                     plan: plan.to_string(),
                 })
                 .collect(),
+            AiPartialBucketCost::PricedSubtotal,
         )
         .unwrap();
         PostgresAiUsageRepository::new(db(pool))

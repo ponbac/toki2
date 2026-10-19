@@ -607,9 +607,9 @@ mod tests {
         },
         domain::{
             models::{
-                AiBillingMonth, AiMachine, AiMappedProject, AiPricing, AiProjectKey,
-                AiProviderCoverage, AiProviderHint, AiUsageBucket, AiUsageUpload, AiUsageWindow,
-                ProjectId, UNATTRIBUTED_PROJECT_KEY,
+                AiBillingMonth, AiMachine, AiMappedProject, AiPartialBucketCost, AiPricing,
+                AiProjectKey, AiProviderCoverage, AiProviderHint, AiUsageBucket, AiUsageUpload,
+                AiUsageWindow, ProjectId, UNATTRIBUTED_PROJECT_KEY,
             },
             ports::outbound::{AiProjectMappingRepository, AiUsageRepository},
         },
@@ -708,6 +708,7 @@ mod tests {
                 })
                 .collect(),
             hints,
+            AiPartialBucketCost::PricedSubtotal,
         )
         .unwrap();
         PostgresAiUsageRepository::new(db(pool))
@@ -1283,6 +1284,7 @@ mod tests {
                 duplicates: 0,
             }],
             Vec::new(),
+            AiPartialBucketCost::PricedSubtotal,
         )
         .unwrap();
         PostgresAiUsageRepository::new(db(&pool))

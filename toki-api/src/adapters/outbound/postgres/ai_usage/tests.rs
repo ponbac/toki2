@@ -2,8 +2,8 @@ use sqlx::PgPool;
 use time::{macros::datetime, OffsetDateTime};
 
 use crate::domain::models::{
-    AiCoverageStatus, AiMachine, AiMachineId, AiPricing, AiPricingStatus, AiProvider,
-    AiProviderCoverage, AiProviderHint, AiTokenCounts, AiUsageBucket, AiUsageWindow,
+    AiCoverageStatus, AiMachine, AiMachineId, AiPartialBucketCost, AiPricing, AiPricingStatus,
+    AiProvider, AiProviderCoverage, AiProviderHint, AiTokenCounts, AiUsageBucket, AiUsageWindow,
 };
 
 use super::*;
@@ -119,6 +119,7 @@ fn upload_covering(
             })
             .collect(),
         hints,
+        AiPartialBucketCost::PricedSubtotal,
     )
     .unwrap()
 }
@@ -415,6 +416,7 @@ async fn later_uploads_update_the_machine_and_the_coverage_they_report(pool: PgP
             duplicates: 0,
         }],
         Vec::new(),
+        AiPartialBucketCost::PricedSubtotal,
     )
     .unwrap();
     repository.replace_window(&user, &later).await.unwrap();
@@ -497,6 +499,7 @@ async fn pricing_is_recorded_only_for_the_providers_it_prices(pool: PgPool) {
         Vec::new(),
         codex_only.coverage().to_vec(),
         Vec::new(),
+        AiPartialBucketCost::PricedSubtotal,
     )
     .unwrap();
     repository.replace_window(&user, &codex_only).await.unwrap();
