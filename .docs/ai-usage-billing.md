@@ -62,6 +62,7 @@ Uploads may carry an optional `snapshotAt` in any version: when the client start
 reading its history. Toki stores the newest applied one per machine (capped at the
 server's clock) and refuses an older upload with 409 `SupersededUpload`, changing
 nothing, so a slow retry or an overlapping scheduled and manual sync cannot roll back
-buckets, hints or coverage. Treat 409 as superseded, not as a failure to retry.
+buckets, hints or coverage. Don't resend a payload refused with 409: the newer upload
+may cover another window or providers, so rescan the same window and send that.
 Coverage logged for such an upload ends at its snapshot. Clients that omit it are
 applied in arrival order, as before.
