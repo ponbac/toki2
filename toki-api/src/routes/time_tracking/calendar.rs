@@ -8,7 +8,8 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     adapters::inbound::http::{
-        ErrorResponse, TimeEntryDayStatusResponse, TimeEntryResponse, WeeklyStatsResponse,
+        ErrorResponse, FlexBalanceResponse, TimeEntryDayStatusResponse, TimeEntryResponse,
+        WeeklyStatsResponse,
     },
     app_state::AppState,
     auth::AuthUser,
@@ -72,6 +73,52 @@ pub async fn get_time_info(
     let time_info = service.get_time_info((from, to)).await?;
 
     Ok(Json(time_info.into()))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct FlexBalanceQuery {
+    /// Last day to estimate flex through, `YYYY-MM-DD`. Normally today.
+    through: String,
+}
+
+/// Get the preliminary flex balance
+///
+/// Returns the flex balance the time tracking provider has settled, plus the
+/// estimated flex of the days after it through `through`.
+#[utoipa::path(
+    get,
+    path = "/time-tracking/flex-balance",
+    operation_id = "getFlexBalance",
+    tag = "Time tracking",
+    params(FlexBalanceQuery),
+    responses(
+        (status = 200, description = "Settled, estimated, and preliminary flex hours", body = FlexBalanceResponse),
+        (status = 400, description = "Invalid date, or a date before the day the balance is settled through", body = ErrorResponse),
+        (status = 401, description = "Missing or invalid credentials"),
+        (status = 404, description = "The time tracking provider keeps no flex balance for the user", body = ErrorResponse),
+        (status = 503, description = "Time tracking provider is unavailable", body = ErrorResponse)
+    )
+)]
+pub async fn get_flex_balance(
+    user: AuthUser,
+    State(app_state): State<AppState>,
+    Query(query): Query<FlexBalanceQuery>,
+) -> Result<Json<FlexBalanceResponse>, ApiError> {
+    record_user_id(user.id);
+    let service = app_state
+        .time_tracking_factory
+        .create_service(user.id)
+        .await?;
+
+    let through = parse_date(&query.through)?;
+
+    let balance = service
+        .get_flex_balance(through)
+        .await?
+        .ok_or_else(|| ApiError::not_found("No flex balance is available for this user"))?;
+
+    Ok(Json(balance.into()))
 }
 
 #[derive(Debug, Deserialize, IntoParams)]

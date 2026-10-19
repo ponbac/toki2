@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import { HTTPError } from "ky";
 import { api } from "../api";
 import dayjs from "dayjs";
 
@@ -21,6 +22,7 @@ const timeTrackingQueryKeys = {
   absenceChildrenBase: ["time-tracking", "absence-children"] as const,
   absenceDayDefaultsBase: ["time-tracking", "absence-day-defaults"] as const,
   timeInfoBase: ["time-tracking", "time-info"] as const,
+  flexBalanceBase: ["time-tracking", "flex-balance"] as const,
   timeEntryDayStatusesBase: [
     "time-tracking",
     "time-entry-day-statuses",
@@ -50,6 +52,8 @@ const timeTrackingQueryKeys = {
     ] as const,
   timeInfo: (query?: DateRangeQuery) =>
     [...timeTrackingQueryKeys.timeInfoBase, query?.from, query?.to] as const,
+  flexBalance: (through: string) =>
+    [...timeTrackingQueryKeys.flexBalanceBase, through] as const,
   timeEntryDayStatuses: (query: DateRangeQuery) =>
     [
       ...timeTrackingQueryKeys.timeEntryDayStatusesBase,
@@ -128,6 +132,7 @@ export const timeTrackingQueries = {
   absenceChildrenBaseKey: timeTrackingQueryKeys.absenceChildrenBase,
   absenceDayDefaultsBaseKey: timeTrackingQueryKeys.absenceDayDefaultsBase,
   timeInfoBaseKey: timeTrackingQueryKeys.timeInfoBase,
+  flexBalanceBaseKey: timeTrackingQueryKeys.flexBalanceBase,
   listProjects: () =>
     queryOptions({
       queryKey: timeTrackingQueries.projectsBaseKey,
@@ -188,6 +193,23 @@ export const timeTrackingQueries = {
             },
           })
           .json<WeeklyStats>();
+      },
+    }),
+  /** `null` when the provider keeps no flex balance for the user. */
+  flexBalance: (through: string) =>
+    queryOptions({
+      queryKey: timeTrackingQueryKeys.flexBalance(through),
+      queryFn: async () => {
+        try {
+          return await api
+            .get("time-tracking/flex-balance", { searchParams: { through } })
+            .json<FlexBalance>();
+        } catch (error) {
+          if (error instanceof HTTPError && error.response.status === 404) {
+            return null;
+          }
+          throw error;
+        }
       },
     }),
   timeEntries: (query?: TimeEntriesQuery) =>
@@ -318,6 +340,17 @@ export type WeeklyStats = {
   absenceHours: number;
   coveredHours: number;
   periodFlexHours: number;
+};
+
+export type FlexBalance = {
+  /** Settled plus estimated hours. */
+  balanceHours: number;
+  /** Hours the time tracking provider has settled through `settledThrough`. */
+  settledHours: number;
+  settledThrough: string;
+  /** Estimated hours from the day after `settledThrough` through `through`. */
+  estimatedHours: number;
+  through: string;
 };
 
 export type Project = {

@@ -499,6 +499,9 @@ function invalidateAbsenceQueries(
   queryClient.invalidateQueries({
     queryKey: timeTrackingQueries.timeInfoBaseKey,
   });
+  queryClient.invalidateQueries({
+    queryKey: timeTrackingQueries.flexBalanceBaseKey,
+  });
 }
 
 function buildOptimisticAbsences(

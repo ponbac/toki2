@@ -10,9 +10,9 @@ use time::{Date, OffsetDateTime};
 use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, ActiveTimer, Activity,
-        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, NewTimerHistoryEntry,
-        Project, ProjectId, TimeEntry, TimeEntryDayStatus, TimeEntryStatus, TimerHistoryEntry,
-        UserId, WeeklyStats,
+        CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, FlexBalance,
+        NewTimerHistoryEntry, Project, ProjectId, TimeEntry, TimeEntryDayStatus, TimeEntryStatus,
+        TimerHistoryEntry, UserId, WeeklyStats,
     },
     ports::{
         inbound::TimeTrackingService,
@@ -265,6 +265,37 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         self.client.get_time_info(date_range).await
     }
 
+    async fn get_flex_balance(
+        &self,
+        through: Date,
+    ) -> Result<Option<FlexBalance>, TimeTrackingError> {
+        let Some(settled) = self.client.get_settled_flex_balance().await? else {
+            return Ok(None);
+        };
+        if through < settled.through {
+            return Err(TimeTrackingError::InvalidInput(format!(
+                "The flex balance is settled through {}; choose that day or later",
+                settled.through
+            )));
+        }
+
+        let estimated_hours = match settled.through.next_day() {
+            Some(from) if from <= through => {
+                self.client
+                    .get_time_info((from, through))
+                    .await?
+                    .period_flex_hours
+            }
+            _ => 0.0,
+        };
+
+        Ok(Some(FlexBalance {
+            settled,
+            estimated_hours,
+            through,
+        }))
+    }
+
     async fn get_time_entries(
         &self,
         user_id: &UserId,
@@ -478,7 +509,7 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::models::{CreateAbsenceDay, TimerHistoryId, TimerId};
+    use crate::domain::models::{CreateAbsenceDay, SettledFlexBalance, TimerHistoryId, TimerId};
     use std::sync::Mutex;
     use time::Duration;
 
@@ -487,6 +518,8 @@ mod tests {
         created_request: Mutex<Option<CreateTimeEntryRequest>>,
         absence_types: Vec<AbsenceType>,
         absence_children: Vec<AbsenceChild>,
+        settled_flex: Option<SettledFlexBalance>,
+        time_info_ranges: Mutex<Vec<(Date, Date)>>,
     }
 
     #[async_trait]
@@ -505,9 +538,16 @@ mod tests {
 
         async fn get_time_info(
             &self,
-            _date_range: (Date, Date),
+            date_range: (Date, Date),
         ) -> Result<WeeklyStats, TimeTrackingError> {
-            unused_mock_method()
+            self.time_info_ranges.lock().unwrap().push(date_range);
+            Ok(WeeklyStats::new(100.11, 104.0, 0.0))
+        }
+
+        async fn get_settled_flex_balance(
+            &self,
+        ) -> Result<Option<SettledFlexBalance>, TimeTrackingError> {
+            Ok(self.settled_flex.clone())
         }
 
         async fn get_time_entries(
@@ -698,6 +738,53 @@ mod tests {
         assert_eq!(saved_entry.end_time, Some(provider_request.end_time));
     }
 
+    #[tokio::test]
+    async fn flex_balance_estimates_the_days_after_the_settled_balance() {
+        let date = |month, day| Date::from_calendar_date(2026, month, day).unwrap();
+        let client = Arc::new(MockTimeTrackingClient {
+            settled_flex: Some(SettledFlexBalance {
+                hours: 101.09,
+                through: date(time::Month::September, 30),
+            }),
+            ..Default::default()
+        });
+        let repo = Arc::new(MockTimerHistoryRepository {
+            active_timer: Mutex::new(None),
+            saved_end_time: Mutex::new(None),
+        });
+        let service = TimeTrackingServiceImpl::new(client.clone(), repo);
+
+        let balance = service
+            .get_flex_balance(date(time::Month::October, 19))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!((balance.estimated_hours - -3.89).abs() < 1e-9);
+        assert!((balance.hours() - 97.2).abs() < 1e-9);
+        assert_eq!(
+            client.time_info_ranges.lock().unwrap().as_slice(),
+            [(
+                date(time::Month::October, 1),
+                date(time::Month::October, 19)
+            )]
+        );
+
+        let balance = service
+            .get_flex_balance(date(time::Month::September, 30))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(balance.estimated_hours, 0.0);
+        assert_eq!(client.time_info_ranges.lock().unwrap().len(), 1);
+
+        assert!(matches!(
+            service
+                .get_flex_balance(date(time::Month::August, 31))
+                .await,
+            Err(TimeTrackingError::InvalidInput(_))
+        ));
+    }
+
     #[test]
     fn create_absences_validation_rejects_invalid_requests() {
         let date = Date::from_calendar_date(2026, time::Month::May, 20).unwrap();
@@ -761,6 +848,7 @@ mod tests {
             created_request: Mutex::new(None),
             absence_types: vec![AbsenceType::Vacation],
             absence_children: Vec::new(),
+            ..Default::default()
         });
         let repo = Arc::new(MockTimerHistoryRepository {
             active_timer: Mutex::new(None),

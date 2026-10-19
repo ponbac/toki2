@@ -239,6 +239,10 @@ export function markTimeTrackingListsStale(queryClient: QueryClient) {
     queryKey: timeTrackingQueries.timeInfoBaseKey,
     refetchType: "none",
   });
+  // The flex balance has no optimistic updates to keep, so it reloads at once.
+  queryClient.invalidateQueries({
+    queryKey: timeTrackingQueries.flexBalanceBaseKey,
+  });
 }
 
 export async function cancelTimeTrackingRangeQueries(queryClient: QueryClient) {

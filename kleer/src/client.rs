@@ -7,8 +7,8 @@ use tracing::{field, Instrument};
 
 use crate::types::{
     KleerActivityList, KleerClientProjectList, KleerEventList, KleerEventReadable,
-    KleerEventRestrictionList, KleerEventWritable, KleerPayrollUserReadable, KleerSavedId,
-    KleerScheduleMetadataList, KleerUserList, KleerUserMe,
+    KleerEventRestrictionList, KleerEventWritable, KleerPayrollMonthReport,
+    KleerPayrollUserReadable, KleerSavedId, KleerScheduleMetadataList, KleerUserList, KleerUserMe,
 };
 
 pub const DEFAULT_BASE_URL: &str = "https://api.kleer.se/v1";
@@ -192,6 +192,21 @@ impl KleerClient {
         user_id: i64,
     ) -> Result<KleerPayrollUserReadable, KleerError> {
         self.get(&format!("payroll/user/{user_id}"), &[]).await
+    }
+
+    /// Kleer answers a month without a report with a 500 whose body says
+    /// "The requested resource was not found".
+    pub async fn get_payroll_month_report(
+        &self,
+        user_id: i64,
+        year: i32,
+        month: u8,
+    ) -> Result<KleerPayrollMonthReport, KleerError> {
+        self.get(
+            &format!("payroll/monthreport/user/{user_id}/year/{year}/month/{month}"),
+            &[],
+        )
+        .await
     }
 
     async fn get<T>(&self, path: &str, query: &[(&str, String)]) -> Result<T, KleerError>

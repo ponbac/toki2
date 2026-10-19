@@ -31,6 +31,7 @@ const BEARER_SCHEME: &str = "bearerAuth";
         crate::routes::time_tracking::delete_project_registration,
         crate::routes::time_tracking::edit_project_registration,
         crate::routes::time_tracking::edit_timer,
+        crate::routes::time_tracking::get_flex_balance,
         crate::routes::time_tracking::get_time_entries,
         crate::routes::time_tracking::get_time_entry_day_statuses,
         crate::routes::time_tracking::get_time_info,
@@ -49,7 +50,7 @@ const BEARER_SCHEME: &str = "bearerAuth";
     ),
     info(
         title = "Toki Agent API",
-        version = "1.4.0",
+        version = "1.5.0",
         description = "Curated automation surface for Toki. Browser session, admin, and media endpoints are not included. Authenticate with a Toki personal API token via HTTP bearer; never embed a real token in this document."
     ),
     modifiers(&BearerSecurity),
@@ -133,6 +134,7 @@ mod tests {
             "/time-tracking/connection",
             "getTimeTrackingConnection",
         ),
+        ("get", "/time-tracking/flex-balance", "getFlexBalance"),
         ("get", "/time-tracking/projects", "listTimeTrackingProjects"),
         (
             "get",
@@ -201,7 +203,7 @@ mod tests {
             version.starts_with("3.1."),
             "expected OpenAPI 3.1.x, got {version}"
         );
-        assert_eq!(spec["info"]["version"], "1.4.0");
+        assert_eq!(spec["info"]["version"], "1.5.0");
         assert_eq!(spec["info"]["title"], "Toki Agent API");
     }
 

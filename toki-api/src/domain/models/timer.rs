@@ -170,6 +170,30 @@ impl WeeklyStats {
     }
 }
 
+/// A flex balance the time tracking provider has settled.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettledFlexBalance {
+    pub hours: f64,
+    /// The last day the balance accounts for.
+    pub through: Date,
+}
+
+/// Preliminary flex balance: the provider's settled balance plus the
+/// estimated flex of the days it does not account for yet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlexBalance {
+    pub settled: SettledFlexBalance,
+    /// Estimated flex from the day after `settled.through` to `through`.
+    pub estimated_hours: f64,
+    pub through: Date,
+}
+
+impl FlexBalance {
+    pub fn hours(&self) -> f64 {
+        self.settled.hours + self.estimated_hours
+    }
+}
+
 /// Request to create a new time entry directly (without timer).
 #[derive(Debug, Clone)]
 pub struct CreateTimeEntryRequest {

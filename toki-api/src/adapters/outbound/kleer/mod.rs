@@ -13,14 +13,14 @@ use kleer::{
     KleerEventRestrictionList, KleerEventWritable, KleerIdRef,
 };
 use moka::future::Cache;
-use time::{Date, Duration};
+use time::{Date, Duration, Month, OffsetDateTime};
 
 use crate::domain::{
     models::{
         AbsenceChild, AbsenceDayDefault, AbsenceEntry, AbsenceType, Activity, ActivityId,
         CreateAbsencesRequest, CreateTimeEntryRequest, EditTimeEntryRequest, Project, ProjectId,
-        TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId, WeeklyStats,
-        KLEER_TIME_TRACKING_PROVIDER,
+        SettledFlexBalance, TimeEntry, TimeEntryDayStatus, TimeTrackingCompany, TimerId,
+        WeeklyStats, KLEER_TIME_TRACKING_PROVIDER,
     },
     ports::outbound::{TimeTrackingClient, TimeTrackingProjectCatalog},
     TimeTrackingError,
@@ -81,6 +81,8 @@ const KLEER_ABSENCE_ACTIVITY_NAMES: &[(AbsenceType, &str)] = &[
         "Övrig frånvaro (Semestergrundande)",
     ),
 ];
+/// How many months back to look for the latest monthly payroll report.
+const MONTH_REPORT_LOOKBACK: usize = 6;
 const KLEER_METADATA_CACHE_TTL: CacheDuration = CacheDuration::from_secs(5 * 60);
 const KLEER_METADATA_CACHE_MAX_ENTRIES: u64 = 32;
 
@@ -552,6 +554,41 @@ impl KleerAdapter {
             .collect()
     }
 
+    /// The last day of the latest month with a monthly payroll report, among
+    /// `as_of`'s month and the months before it. Kleer settles the comp time
+    /// balance through the months that have a report.
+    async fn latest_month_report_end(
+        &self,
+        as_of: Date,
+    ) -> Result<Option<Date>, TimeTrackingError> {
+        for (year, month) in Self::months_back_from(as_of).take(MONTH_REPORT_LOOKBACK) {
+            match self
+                .client
+                .get_payroll_month_report(self.target_user_id, year, month as u8)
+                .await
+            {
+                Ok(_) => {
+                    let end = Date::from_calendar_date(year, month, month.length(year))
+                        .map_err(|e| TimeTrackingError::unknown(e.to_string()))?;
+                    return Ok(Some(end));
+                }
+                Err(error) if is_missing_month_report(&error) => continue,
+                Err(error) if is_missing_payroll_user(&error) => return Ok(None),
+                Err(error) => return Err(map_kleer_error(error)),
+            }
+        }
+        Ok(None)
+    }
+
+    fn months_back_from(date: Date) -> impl Iterator<Item = (i32, Month)> {
+        std::iter::successors(Some((date.year(), date.month())), |&(year, month)| {
+            Some(match month {
+                Month::January => (year - 1, Month::December),
+                month => (year, month.previous()),
+            })
+        })
+    }
+
     fn inclusive_dates(from: Date, to: Date) -> Vec<Date> {
         let mut dates = Vec::new();
         let mut date = from;
@@ -675,6 +712,28 @@ impl TimeTrackingClient for KleerAdapter {
             scheduled_hours,
             absence_hours,
         ))
+    }
+
+    async fn get_settled_flex_balance(
+        &self,
+    ) -> Result<Option<SettledFlexBalance>, TimeTrackingError> {
+        // The balance is Kleer's current one, so the report it closes is the
+        // latest one as of today.
+        let today = OffsetDateTime::now_utc().date();
+        let (payroll_user, through) = tokio::try_join!(
+            async {
+                self.client
+                    .get_payroll_user(self.target_user_id)
+                    .await
+                    .or_else(default_for_missing_payroll_user)
+            },
+            self.latest_month_report_end(today),
+        )?;
+
+        Ok(payroll_user
+            .comp_time_balance
+            .zip(through)
+            .map(|(hours, through)| SettledFlexBalance { hours, through }))
     }
 
     async fn get_time_entries(
@@ -1052,6 +1111,17 @@ fn is_missing_payroll_user(error: &KleerError) -> bool {
     )
 }
 
+fn is_missing_month_report(error: &KleerError) -> bool {
+    match error {
+        KleerError::NotFound => true,
+        KleerError::Response { status, body } => {
+            *status == reqwest::StatusCode::INTERNAL_SERVER_ERROR
+                && body.contains("The requested resource was not found")
+        }
+        _ => false,
+    }
+}
+
 fn is_locked_period(error: &KleerError) -> bool {
     match error {
         KleerError::Response { body, .. } => {
@@ -1085,7 +1155,6 @@ mod tests {
         KleerEventStatus, KleerProjectActivityAssignment, KleerProjectUserAssignment,
         KleerStatusType,
     };
-    use time::Month;
 
     const TARGET_USER_ID: i64 = 987;
 
@@ -1386,6 +1455,21 @@ mod tests {
             &map,
         )
         .is_none());
+    }
+
+    #[test]
+    fn month_report_lookup_steps_back_across_the_year() {
+        let date = Date::from_calendar_date(2026, Month::February, 10).unwrap();
+        let months: Vec<_> = KleerAdapter::months_back_from(date).take(3).collect();
+
+        assert_eq!(
+            months,
+            [
+                (2026, Month::February),
+                (2026, Month::January),
+                (2025, Month::December)
+            ]
+        );
     }
 
     #[test]

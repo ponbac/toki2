@@ -70,6 +70,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - `GET /company/{companyId}/event/statuses`
 - `GET /company/{companyId}/payroll/user/{userId}`
 - `GET /company/{companyId}/payroll/user/{userId}/schedule/{startDate}/to/{endDate}`
+- `GET /company/{companyId}/payroll/monthreport/user/{userId}/year/{year}/month/{month}`
 
 ## Events, Statuses, And Stats
 
@@ -89,8 +90,16 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
   - `absenceHours`
   - `coveredHours`
   - `periodFlexHours`
-- Kleer support confirmed on 2026-04-27 that flex balance is not directly available through the API. Toki estimates period flex as `coveredHours - scheduledHours`, where `coveredHours = workedHours + absenceHours`.
-- `periodFlexHours` is a selected-period estimate, not Kleer's stored historical flex balance and not Milltime's previous `FlexTimeCurrent` equivalent.
+- Toki estimates period flex as `coveredHours - scheduledHours`, where `coveredHours = workedHours + absenceHours`. `periodFlexHours` is a selected-period estimate, not Kleer's stored flex balance.
+
+## Flex Balance
+
+- Kleer support said on 2026-04-27 that the flex balance was not available through the API. It is now: `GET /payroll/user/{userId}` returns `comp-time-balance`, the comp time (flex) balance in hours, negative when the employee owes hours. It reads the same from the production and test APIs.
+- The balance is not live. It is the closing balance (`Utgående kompsaldo`) of the latest monthly payroll report, so it accounts for every day through the end of that report's month. Live validation on 2026-10-19: the balance was `101.0930` while October time was approved but not yet in a report, and stayed unchanged as time was booked that day.
+- `GET /payroll/monthreport/user/{userId}/year/{year}/month/{month}` exists for each month with a report. `month` is the month whose time the report covers: the Kleer UI names the report by its payout month, so its "Oktober 2026" report is API month 9 and covers September. A month without a report answers `500` with `{"message":"The requested resource was not found"}`.
+- Kleer's monthly change in the balance equals Toki's period estimate for that month: August 2026 `107.73 -> 113.80` (`+6.07`, with 80 h absence) and September 2026 `113.80 -> 101.09` (`-12.71`, with 24 h absence) both matched `periodFlexHours` exactly.
+- `GET /time-tracking/flex-balance?through=` therefore reports a preliminary balance: `comp-time-balance`, settled through the end of the latest month with a report (looked up backwards from the current month, at most 6 months), plus `periodFlexHours` from the next day through `through`. Kleer only exposes the current balance, so a `through` before the settled day answers `400`. Without a balance or a report in that window it answers `404`.
+- Not yet verified: whether a report that exists but is not yet approved (listed by `GET /payroll/monthreport/open`) is already in `comp-time-balance`. Toki counts any existing report as settled. Check this when the November 2026 report (October time) appears.
 - Absence hours come from projectless normal Kleer events whose activity id resolves to a known absence activity. Project-backed events count as worked hours; unknown projectless events count as neither worked nor absence hours.
 - Weekly scheduled hours come from the payroll schedule endpoint. Use `actual-hours` from `payroll-user-schedule-metadatas`; it accounts for employment rate and bank holidays.
 
