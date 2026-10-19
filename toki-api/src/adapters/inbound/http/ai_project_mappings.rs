@@ -298,9 +298,10 @@ mod tests {
         auth::{authenticate_bearer, require_authenticated, AuthBackend, AuthSession},
         domain::{
             models::{
-                AiCoverageStatus, AiMachine, AiMachineId, AiPricing, AiPricingStatus, AiProvider,
-                AiProviderCoverage, AiTokenCounts, AiUsageBucket, AiUsageTimeZone, AiUsageUpload,
-                AiUsageWindow, Project, TimeTrackingCompany, UserId,
+                AiCoverageStatus, AiMachine, AiMachineId, AiPartialBucketCost, AiPricing,
+                AiPricingStatus, AiProvider, AiProviderCoverage, AiTokenCounts, AiUsageBucket,
+                AiUsageTimeZone, AiUsageUpload, AiUsageWindow, Project, TimeTrackingCompany,
+                UserId,
             },
             ports::{
                 inbound::ApiTokenAuthenticator,
@@ -566,6 +567,7 @@ mod tests {
                 duplicates: 0,
             }],
             Vec::new(),
+            AiPartialBucketCost::PricedSubtotal,
         )
         .unwrap();
         let db = crate::db::DbPool::from(pool.clone());

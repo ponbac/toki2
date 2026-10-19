@@ -20,9 +20,9 @@ use crate::{
     auth::AuthUser,
     domain::{
         models::{
-            AiCoverageStatus, AiMachine, AiMachineId, AiPricing, AiPricingStatus, AiProvider,
-            AiProviderCoverage, AiProviderHint, AiTokenCounts, AiUsageBucket, AiUsageUpload,
-            AiUsageWindow,
+            AiCoverageStatus, AiMachine, AiMachineId, AiPartialBucketCost, AiPricing,
+            AiPricingStatus, AiProvider, AiProviderCoverage, AiProviderHint, AiTokenCounts,
+            AiUsageBucket, AiUsageUpload, AiUsageWindow,
         },
         ports::inbound::AiUsageService,
     },
@@ -32,7 +32,7 @@ use crate::{
 /// A two-week upload is typically a few hundred kilobytes, but a long window can
 /// reach several megabytes, beyond Axum's 2 MB default.
 const MAX_UPLOAD_BYTES: usize = 16 * 1024 * 1024;
-const SUPPORTED_VERSIONS: [u64; 2] = [1, 2];
+const SUPPORTED_VERSIONS: [u64; 3] = [1, 2, 3];
 
 pub fn router<S>() -> Router<S>
 where
@@ -45,12 +45,14 @@ where
     )
 }
 
-/// Version 1 upload from `token-ledger sync`. All instants are RFC 3339 UTC.
+/// Upload from `token-ledger sync`. All instants are RFC 3339 UTC.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsageUploadRequest {
-    /// Payload format version. Versions `1` and `2` are supported.
-    #[schema(value_type = u64, minimum = 1, maximum = 2)]
+    /// Payload format version. Versions `1`, `2` and `3` are supported. Version
+    /// `2` adds `billingProvider`; version `3` adds the priced subtotal of partly
+    /// priced buckets in `estimatedCostUsd`.
+    #[schema(value_type = u64, minimum = 1, maximum = 3)]
     version: Value,
     machine: AiUsageMachinePayload,
     /// token-ledger version, for diagnostics.
@@ -159,15 +161,17 @@ pub struct AiUsageBucketPayload {
     #[schema(min_length = 1, max_length = 512)]
     project: String,
     provider: AiUsageProvider,
-    /// Version 2: subscription payer, distinct from the source tool.
+    /// Version 2 and later: subscription payer, distinct from the source tool.
     billing_provider: Option<AiUsageProvider>,
     #[schema(max_length = 512)]
     model: String,
     tokens: AiUsageTokensPayload,
     #[schema(minimum = 1)]
     records: i64,
-    /// API-equivalent USD, or null exactly when `unpricedRecords` is positive.
-    /// Null is unknown, never zero.
+    /// API-equivalent USD of the priced records. In versions `1` and `2`, null
+    /// exactly when `unpricedRecords` is positive. In version `3`, null exactly
+    /// when every record is unpriced, and otherwise the priced subtotal, which
+    /// excludes any unpriced records. Null is unknown, never zero.
     #[serde(deserialize_with = "Option::deserialize")]
     #[schema(required = true, minimum = 0)]
     estimated_cost_usd: Option<f64>,
@@ -254,7 +258,8 @@ pub struct UnsupportedAiUsageVersionResponse {
 /// reports as `ok` or `partial`, the upload atomically replaces the machine's
 /// usage of that provider inside `window`; other providers keep their stored
 /// usage. Repeating an upload is harmless. Costs are API-equivalent USD
-/// estimates; null is unknown, never zero.
+/// estimates; null is unknown, never zero. From version 3, a bucket with
+/// unpriced records can still carry the cost of its priced records.
 #[utoipa::path(
     put,
     path = "/ai-usage/machines/{machine_id}/usage",
@@ -290,10 +295,10 @@ pub async fn upload_usage(
         .into());
     }
 
-    let request = match serde_json::from_slice::<AiUsageUploadRequest>(&body) {
+    let (request, version) = match serde_json::from_slice::<AiUsageUploadRequest>(&body) {
         Ok(request) => {
-            check_version(Some(&request.version))?;
-            request
+            let version = check_version(Some(&request.version))?;
+            (request, version)
         }
         Err(error) => {
             // Only a rejected body is read a second time: a newer client should
@@ -308,7 +313,7 @@ pub async fn upload_usage(
 
     let path_machine_id = AiMachineId::parse(&machine_id)
         .ok_or_else(|| ApiError::bad_request("machine_id must be a UUID"))?;
-    let upload = request.into_upload()?;
+    let upload = request.into_upload(version)?;
     if upload.machine().id != path_machine_id {
         return Err(
             ApiError::bad_request("machine.id must equal the machine_id in the path").into(),
@@ -354,9 +359,10 @@ impl IntoResponse for UploadRejection {
     }
 }
 
-/// A missing or malformed version is a bad request; only a well-formed version
-/// that is not supported is `UnsupportedVersion`.
-fn check_version(version: Option<&Value>) -> Result<(), UploadRejection> {
+/// Returns the supported version. A missing or malformed version is a bad
+/// request; only a well-formed version that is not supported is
+/// `UnsupportedVersion`.
+fn check_version(version: Option<&Value>) -> Result<u64, UploadRejection> {
     let version = version
         .filter(|version| !version.is_null())
         .ok_or_else(|| ApiError::bad_request("version is required"))?;
@@ -365,7 +371,7 @@ fn check_version(version: Option<&Value>) -> Result<(), UploadRejection> {
         .ok_or_else(|| ApiError::bad_request("version must be a non-negative integer"))?;
 
     if SUPPORTED_VERSIONS.contains(&version) {
-        Ok(())
+        Ok(version)
     } else {
         Err(UploadRejection::UnsupportedVersion(version))
     }
@@ -415,17 +421,23 @@ fn is_json(headers: &HeaderMap) -> bool {
 }
 
 impl AiUsageUploadRequest {
-    fn into_upload(self) -> Result<AiUsageUpload, ApiError> {
-        if self.version.as_u64() == Some(1)
+    /// Converts a request whose `version` is supported.
+    fn into_upload(self, version: u64) -> Result<AiUsageUpload, ApiError> {
+        if version < 2
             && self
                 .buckets
                 .iter()
                 .any(|bucket| bucket.billing_provider.is_some())
         {
             return Err(ApiError::bad_request(
-                "billingProvider requires payload version 2",
+                "billingProvider requires payload version 2 or later",
             ));
         }
+        let partial_cost = if version >= 3 {
+            AiPartialBucketCost::PricedSubtotal
+        } else {
+            AiPartialBucketCost::Omitted
+        };
         let machine_id = AiMachineId::parse(&self.machine.id)
             .ok_or_else(|| ApiError::bad_request("machine.id must be a UUID"))?;
         let machine = AiMachine {
@@ -501,6 +513,7 @@ impl AiUsageUploadRequest {
             buckets,
             coverage,
             provider_hints,
+            partial_cost,
         )?)
     }
 }
@@ -735,6 +748,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn only_version_3_carries_the_priced_subtotal_of_a_partly_priced_bucket() {
+        let service = Arc::new(RecordingService::default());
+        let app = app(service.clone(), Arc::new(AnyTokenAuthenticator));
+
+        let mut partly = payload(1);
+        partly["buckets"][0]["unpricedRecords"] = json!(4);
+        for version in [1, 2] {
+            partly["version"] = json!(version);
+            let (status, body) = put(app.clone(), MACHINE, Some("toki_any"), &partly).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "version {version}");
+            assert_eq!(
+                body["error"],
+                "buckets[0]: estimatedCostUsd must be null exactly when unpricedRecords is positive"
+            );
+        }
+        partly["version"] = json!(3);
+        let (status, _) = put(app.clone(), MACHINE, Some("toki_any"), &partly).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // An all-unpriced bucket still has no cost, not a zero one.
+        let mut unpriced = payload(2);
+        unpriced["version"] = json!(3);
+        unpriced["buckets"][1]["estimatedCostUsd"] = json!(0.0);
+        let (status, body) = put(app.clone(), MACHINE, Some("toki_any"), &unpriced).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body["error"],
+            "buckets[1]: estimatedCostUsd must be null exactly when every record is unpriced"
+        );
+        unpriced["buckets"][1]["estimatedCostUsd"] = Value::Null;
+        let (status, _) = put(app, MACHINE, Some("toki_any"), &unpriced).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let uploads = service.uploads.lock().unwrap();
+        let costs: Vec<_> = uploads
+            .iter()
+            .flat_map(AiUsageUpload::buckets)
+            .map(|bucket| (bucket.estimated_cost_usd, bucket.unpriced_records))
+            .collect();
+        assert_eq!(costs, [(Some(0.0421), 4), (Some(0.0421), 0), (None, 14)]);
+    }
+
+    #[tokio::test]
     async fn an_unsupported_version_is_reported_before_validation() {
         let service = Arc::new(RecordingService::default());
         let app = app(service.clone(), Arc::new(AnyTokenAuthenticator));
@@ -743,12 +799,12 @@ mod tests {
             app,
             MACHINE,
             Some("toki_any"),
-            &json!({ "version": 3, "buckets": "a format this server does not know" }),
+            &json!({ "version": 4, "buckets": "a format this server does not know" }),
         )
         .await;
 
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(body["supportedVersions"], json!([1, 2]));
+        assert_eq!(body["supportedVersions"], json!([1, 2, 3]));
         assert!(service.uploads.lock().unwrap().is_empty());
     }
 

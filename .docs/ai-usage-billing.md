@@ -42,3 +42,16 @@ payer splits; keep mixed client versions from syncing the same installation.
 
 Token Ledger's `docs/billing-hints.md` describes platform paths, optional config,
 failure isolation, append ordering, and required log retention for backfills.
+
+## Partly priced buckets (version 3)
+
+Versions 1 and 2 require `estimatedCostUsd` to be null whenever a bucket has any
+unpriced records, so the known cost of the bucket's priced records was dropped and
+Toki under-reported and under-billed that usage. Version 3 sends the priced subtotal
+instead: `estimatedCostUsd` is null exactly when every record is unpriced, and
+otherwise excludes the `unpricedRecords`, which stay an unknown amount on top. Reports
+and billing already sum costs as known subtotals and need no change.
+
+Deploy Toki's migration and version-3 support **before** the client. Clients only
+send version 3 when a bucket in the upload is partly priced; other uploads keep
+version 1 or 2.

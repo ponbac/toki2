@@ -202,9 +202,24 @@ pub struct AiUsageBucket {
     pub model: String,
     pub tokens: AiTokenCounts,
     pub records: i64,
-    /// `None` when some records could not be priced.
+    /// The cost of the priced records, or `None` when it is unknown: when no
+    /// record could be priced, and, in uploads that omit partial costs
+    /// (`AiPartialBucketCost::Omitted`), when any record could not be priced.
+    /// While `unpriced_records` is positive, a cost is only a known subtotal.
     pub estimated_cost_usd: Option<f64>,
     pub unpriced_records: i64,
+}
+
+/// How an upload reports the cost of a bucket that is only partly priced: some
+/// of its records have a known price and some do not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiPartialBucketCost {
+    /// Payload versions 1 and 2: the cost is `None` whenever any record is
+    /// unpriced, so a partly priced bucket's known subtotal is not reported.
+    Omitted,
+    /// Payload version 3: the cost is the subtotal of the priced records, and
+    /// `None` only when every record is unpriced.
+    PricedSubtotal,
 }
 
 /// One provider's history coverage on the uploading machine.
@@ -288,6 +303,7 @@ impl AiUsageUpload {
         mut buckets: Vec<AiUsageBucket>,
         coverage: Vec<AiProviderCoverage>,
         mut provider_hints: Vec<AiProviderHint>,
+        partial_cost: AiPartialBucketCost,
     ) -> Result<Self, AiUsageError> {
         for (field, value, required) in [
             ("machine.label", &machine.label, true),
@@ -335,7 +351,7 @@ impl AiUsageUpload {
             .collect::<HashSet<_>>();
 
         for (index, bucket) in buckets.iter_mut().enumerate() {
-            validate_bucket(bucket, &window, &replaced)
+            validate_bucket(bucket, &window, &replaced, partial_cost)
                 .map_err(|problem| invalid(format!("buckets[{index}]: {problem}")))?;
         }
 
@@ -487,9 +503,11 @@ impl AiUsageDateRange {
 pub struct AiUsageTotals {
     pub tokens: AiTokenCounts,
     pub records: i64,
-    /// The sum of the known costs only.
+    /// The sum of the known costs only, including the priced subtotals of
+    /// partly priced buckets.
     pub priced_cost_usd: f64,
-    /// Buckets whose cost is unknown.
+    /// Buckets without a known cost. A partly priced bucket with a known
+    /// subtotal is not counted here, but its unpriced records are.
     pub unpriced_buckets: i64,
     pub unpriced_records: i64,
 }
@@ -506,6 +524,7 @@ fn validate_bucket(
     bucket: &mut AiUsageBucket,
     window: &AiUsageWindow,
     replaced: &HashSet<AiProvider>,
+    partial_cost: AiPartialBucketCost,
 ) -> Result<(), String> {
     bucket.hour_start =
         whole_utc_hour(bucket.hour_start).ok_or("hourStart must be a whole UTC hour")?;
@@ -559,10 +578,24 @@ fn validate_bucket(
     {
         return Err("estimatedCostUsd must be a non-negative number or null".to_string());
     }
-    if bucket.estimated_cost_usd.is_none() != (bucket.unpriced_records > 0) {
-        return Err(
-            "estimatedCostUsd must be null exactly when unpricedRecords is positive".to_string(),
-        );
+    match partial_cost {
+        AiPartialBucketCost::Omitted
+            if bucket.estimated_cost_usd.is_none() != (bucket.unpriced_records > 0) =>
+        {
+            return Err(
+                "estimatedCostUsd must be null exactly when unpricedRecords is positive"
+                    .to_string(),
+            );
+        }
+        AiPartialBucketCost::PricedSubtotal
+            if bucket.estimated_cost_usd.is_none()
+                != (bucket.unpriced_records == bucket.records) =>
+        {
+            return Err(
+                "estimatedCostUsd must be null exactly when every record is unpriced".to_string(),
+            );
+        }
+        _ => {}
     }
 
     Ok(())

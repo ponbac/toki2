@@ -30,11 +30,11 @@ use crate::{
     auth::{authenticate_bearer, require_authenticated, AuthBackend, AuthSession},
     domain::{
         models::{
-            AiCoverageStatus, AiCurrency, AiMachine, AiMachineId, AiMonthlyCost, AiPricing,
-            AiPricingStatus, AiProjectKey, AiProvidedRate, AiProvider, AiProviderCoverage,
-            AiSubscriptionPeriod, AiSubscriptionPlan, AiSubscriptionTerms, AiTokenCounts,
-            AiUsageBucket, AiUsageTimeZone, AiUsageUpload, AiUsageWindow, ProjectId,
-            TimeTrackingCompany, UNATTRIBUTED_PROJECT_KEY,
+            AiCoverageStatus, AiCurrency, AiMachine, AiMachineId, AiMonthlyCost,
+            AiPartialBucketCost, AiPricing, AiPricingStatus, AiProjectKey, AiProvidedRate,
+            AiProvider, AiProviderCoverage, AiSubscriptionPeriod, AiSubscriptionPlan,
+            AiSubscriptionTerms, AiTokenCounts, AiUsageBucket, AiUsageTimeZone, AiUsageUpload,
+            AiUsageWindow, ProjectId, TimeTrackingCompany, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::{
             inbound::{ApiTokenAuthenticator, ApiTokenService},
@@ -420,6 +420,7 @@ async fn upload(
             })
             .collect(),
         Vec::new(),
+        AiPartialBucketCost::PricedSubtotal,
     )
     .unwrap();
     PostgresAiUsageRepository::new(db(pool))

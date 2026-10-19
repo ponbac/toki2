@@ -36,24 +36,38 @@ fn upload(buckets: Vec<AiUsageBucket>) -> Result<AiUsageUpload, AiUsageError> {
     upload_with_hints(buckets, Vec::new())
 }
 
+fn upload_reporting(
+    partial_cost: AiPartialBucketCost,
+    buckets: Vec<AiUsageBucket>,
+) -> Result<AiUsageUpload, AiUsageError> {
+    upload_covering_with(BOTH_OK, buckets, Vec::new(), partial_cost)
+}
+
+const BOTH_OK: &[(AiProvider, AiCoverageStatus)] = &[
+    (AiProvider::Claude, AiCoverageStatus::Ok),
+    (AiProvider::Codex, AiCoverageStatus::Ok),
+];
+
 fn upload_with_hints(
     buckets: Vec<AiUsageBucket>,
     hints: Vec<AiProviderHint>,
 ) -> Result<AiUsageUpload, AiUsageError> {
-    upload_covering(
-        &[
-            (AiProvider::Claude, AiCoverageStatus::Ok),
-            (AiProvider::Codex, AiCoverageStatus::Ok),
-        ],
-        buckets,
-        hints,
-    )
+    upload_covering(BOTH_OK, buckets, hints)
 }
 
 fn upload_covering(
     coverage: &[(AiProvider, AiCoverageStatus)],
     buckets: Vec<AiUsageBucket>,
     hints: Vec<AiProviderHint>,
+) -> Result<AiUsageUpload, AiUsageError> {
+    upload_covering_with(coverage, buckets, hints, AiPartialBucketCost::Omitted)
+}
+
+fn upload_covering_with(
+    coverage: &[(AiProvider, AiCoverageStatus)],
+    buckets: Vec<AiUsageBucket>,
+    hints: Vec<AiProviderHint>,
+    partial_cost: AiPartialBucketCost,
 ) -> Result<AiUsageUpload, AiUsageError> {
     AiUsageUpload::new(
         AiMachine {
@@ -82,6 +96,7 @@ fn upload_covering(
             })
             .collect(),
         hints,
+        partial_cost,
     )
 }
 
@@ -193,6 +208,58 @@ fn rejects_invalid_buckets() {
 }
 
 #[test]
+fn only_version_3_reports_the_priced_subtotal_of_a_partly_priced_bucket() {
+    let mut partly = bucket();
+    partly.unpriced_records = 4;
+    let mut unpriced = bucket_at(9);
+    unpriced.estimated_cost_usd = None;
+    unpriced.unpriced_records = unpriced.records;
+
+    let upload = upload_reporting(
+        AiPartialBucketCost::PricedSubtotal,
+        vec![bucket_at(7), partly.clone(), unpriced.clone()],
+    )
+    .unwrap();
+    let costs: Vec<_> = upload
+        .buckets()
+        .iter()
+        .map(|bucket| (bucket.estimated_cost_usd, bucket.unpriced_records))
+        .collect();
+    assert_eq!(costs, [(Some(0.0421), 0), (Some(0.0421), 4), (None, 14)]);
+
+    // Versions 1 and 2 cannot tell a subtotal from a total.
+    assert!(
+        message(upload_reporting(AiPartialBucketCost::Omitted, vec![partly]))
+            .contains("null exactly when unpricedRecords is positive")
+    );
+
+    type Mutation = fn(&mut AiUsageBucket);
+    let invalid_subtotals: [(&str, Mutation); 3] = [
+        ("some records priced", |b| {
+            b.estimated_cost_usd = None;
+            b.unpriced_records = 4;
+        }),
+        ("every record unpriced", |b| {
+            b.estimated_cost_usd = Some(0.0);
+            b.unpriced_records = b.records;
+        }),
+        ("every record priced", |b| b.estimated_cost_usd = None),
+    ];
+    for (case, mutate) in invalid_subtotals {
+        let mut invalid = bucket();
+        mutate(&mut invalid);
+        assert_eq!(
+            message(upload_reporting(
+                AiPartialBucketCost::PricedSubtotal,
+                vec![invalid],
+            )),
+            "buckets[0]: estimatedCostUsd must be null exactly when every record is unpriced",
+            "{case}"
+        );
+    }
+}
+
+#[test]
 fn rejects_a_repeated_bucket_key() {
     let mut other_model = bucket();
     other_model.model = "other-model".to_string();
@@ -251,6 +318,7 @@ fn uploaded_counts_follow_the_clients_safe_integer_contract() {
             Vec::new(),
             vec![coverage],
             Vec::new(),
+            AiPartialBucketCost::Omitted,
         )
     };
     assert!(with_coverage(boundary.clone()).is_ok());
@@ -336,6 +404,7 @@ fn machine_and_pricing_text_is_at_most_512_characters() {
             Vec::new(),
             Vec::new(),
             Vec::new(),
+            AiPartialBucketCost::Omitted,
         )
     };
 
@@ -411,6 +480,7 @@ fn replacing_coverage_requires_all_existing_history_to_be_read() {
                 duplicates: 0,
             }],
             Vec::new(),
+            AiPartialBucketCost::Omitted,
         )
     };
 
