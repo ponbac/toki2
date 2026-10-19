@@ -50,8 +50,8 @@ export function formatHoursAsHoursMinutes(hours: number | string) {
 }
 
 export function formatHoursMinutes(hours: number) {
-  const isNegative = Math.round(hours * 60) < 0;
   const { hours: hrs, minutes: mins } = splitHours(Math.abs(hours));
+  const isNegative = hours < 0 && (hrs > 0 || mins > 0);
 
   const formattedHrs = String(hrs).padStart(2, "0");
   const formattedMins = String(mins).padStart(2, "0");
