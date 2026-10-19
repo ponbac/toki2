@@ -7,7 +7,7 @@ import {
   timeTrackingQueries,
 } from "@/lib/api/queries/time-tracking";
 import { apiErrorToast } from "@/lib/api/errors";
-import { cn, getWeekNumber } from "@/lib/utils";
+import { cn, getWeekNumber, splitHours } from "@/lib/utils";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
 import { useTimeTrackingData } from "@/hooks/useTimeTrackingData";
 import { Combobox } from "@/components/combobox";
@@ -32,10 +32,8 @@ type TimeEntryEditContentProps = {
 
 export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
   const [note, setNote] = useState(props.entry.note);
-  const [hours, setHours] = useState(Math.floor(props.entry.hours));
-  const [minutes, setMinutes] = useState(
-    Math.round((props.entry.hours - Math.floor(props.entry.hours)) * 60),
-  );
+  const [hours, setHours] = useState(splitHours(props.entry.hours).hours);
+  const [minutes, setMinutes] = useState(splitHours(props.entry.hours).minutes);
   const [selectedDate, setSelectedDate] = useState(props.entry.date);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [startTime, setStartTime] = useState(
@@ -48,9 +46,8 @@ export function TimeEntryEditContent(props: TimeEntryEditContentProps) {
     const initialStart = props.entry.startTime
       ? dayjs(props.entry.startTime).format("HH:mm")
       : "06:00";
-    const initialHours = Math.floor(props.entry.hours);
-    const initialMinutes = Math.round(
-      (props.entry.hours - Math.floor(props.entry.hours)) * 60,
+    const { hours: initialHours, minutes: initialMinutes } = splitHours(
+      props.entry.hours,
     );
     if (initialStart && (initialHours > 0 || initialMinutes > 0)) {
       const startDate = dayjs(`2000-01-01T${initialStart}`);

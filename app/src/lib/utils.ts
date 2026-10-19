@@ -32,10 +32,15 @@ export function getWeekNumber(date: Date) {
   return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
+/** Splits decimal hours into whole hours and minutes, rounding to the nearest minute first so minutes never reach 60. */
+export function splitHours(hours: number) {
+  const totalMinutes = Math.round(hours * 60);
+  return { hours: Math.floor(totalMinutes / 60), minutes: totalMinutes % 60 };
+}
+
 export function formatHoursAsHoursMinutes(hours: number | string) {
   const hoursNum = typeof hours === "string" ? parseFloat(hours) : hours;
-  const wholeHours = Math.floor(hoursNum);
-  const minutes = Math.round((hoursNum - wholeHours) * 60);
+  const { hours: wholeHours, minutes } = splitHours(hoursNum);
 
   if (wholeHours > 0) {
     return `${wholeHours}h ${minutes}m`;
@@ -45,10 +50,8 @@ export function formatHoursAsHoursMinutes(hours: number | string) {
 }
 
 export function formatHoursMinutes(hours: number) {
-  const isNegative = hours < 0;
-  const absHours = Math.abs(hours);
-  const hrs = Math.floor(absHours);
-  const mins = Math.round((absHours - hrs) * 60);
+  const isNegative = Math.round(hours * 60) < 0;
+  const { hours: hrs, minutes: mins } = splitHours(Math.abs(hours));
 
   const formattedHrs = String(hrs).padStart(2, "0");
   const formattedMins = String(mins).padStart(2, "0");
