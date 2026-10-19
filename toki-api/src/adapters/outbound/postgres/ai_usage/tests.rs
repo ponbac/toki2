@@ -39,6 +39,7 @@ async fn insert_user(pool: &PgPool, email: &str) -> UserId {
 
 fn bucket(hour_start: OffsetDateTime, records: i64, cost: Option<f64>) -> AiUsageBucket {
     AiUsageBucket {
+        billing_provider: None,
         hour_start,
         session_key: "9b1f0c6e2d4a8b7c3e5f1a2b4c6d8e0f".to_string(),
         project_key: PROJECT.to_string(),
@@ -58,6 +59,7 @@ fn bucket(hour_start: OffsetDateTime, records: i64, cost: Option<f64>) -> AiUsag
 
 fn codex_bucket(hour_start: OffsetDateTime, records: i64) -> AiUsageBucket {
     AiUsageBucket {
+        billing_provider: None,
         provider: AiProvider::Codex,
         ..bucket(hour_start, records, Some(0.01))
     }

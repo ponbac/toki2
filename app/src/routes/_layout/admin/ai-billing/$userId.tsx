@@ -164,9 +164,18 @@ function DeveloperMonthView({
     ]),
   );
   const billing = new Map<string, string>();
-  for (const row of data.dailyUsage) {
+  const billingIds = new Map<string, number | null>();
+  for (const row of rows) {
+    const key = `${row.day}:${row.provider}`;
+    const mixed =
+      billingIds.has(key) && billingIds.get(key) !== row.subscriptionId;
+    if (mixed || billing.get(key) === "Mixed billing") {
+      billing.set(key, "Mixed billing");
+      continue;
+    }
+    billingIds.set(key, row.subscriptionId);
     billing.set(
-      `${row.day}:${row.provider}`,
+      key,
       row.subscriptionId === null
         ? "API"
         : `Subscription · ${plans.get(row.subscriptionId) ?? "declared plan"}`,

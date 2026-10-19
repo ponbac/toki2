@@ -75,6 +75,7 @@ fn usage(
     cents: i64,
 ) -> AiDailyUsage {
     AiDailyUsage {
+        billing_provider: None,
         user_id: DEV,
         provider,
         day,

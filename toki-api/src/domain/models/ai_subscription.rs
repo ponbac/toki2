@@ -216,14 +216,13 @@ pub struct AiSubscriptionTerms {
 impl AiSubscriptionTerms {
     /// Rejects terms for a provider that has no subscriptions of its own.
     pub fn ensure_declarable(&self) -> Result<(), AiSubscriptionError> {
-        match self.provider {
-            AiProvider::Pi => Err(invalid(
+        if self.provider.supports_subscription() {
+            Ok(())
+        } else {
+            Err(invalid(
                 "pi has no subscriptions of its own: declare the ChatGPT subscription that \
                  pays for its usage for codex",
-            )),
-            AiProvider::Codex | AiProvider::Claude | AiProvider::Grok | AiProvider::Copilot => {
-                Ok(())
-            }
+            ))
         }
     }
 }

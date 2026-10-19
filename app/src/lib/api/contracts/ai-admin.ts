@@ -192,6 +192,7 @@ const dayUsageSchema = z
   .object({
     day: localDateSchema,
     provider: providerSchema,
+    billingProvider: providerSchema.nullable().optional(),
     model: z.string(),
     machineId: z.string().uuid(),
     // Null sums every key no developer has mapped: their names are withheld.

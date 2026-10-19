@@ -296,6 +296,8 @@ impl AiBillingUsage {
 /// time-tracking project its key maps to, or to Unassigned (`None`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiDailyUsage {
+    /// Explicit subscription payer; the usage provider remains its source tool.
+    pub billing_provider: Option<AiProvider>,
     pub user_id: UserId,
     pub provider: AiProvider,
     pub day: Date,
@@ -667,7 +669,7 @@ pub fn bill_month(
         let billed = match resolve_billing_mode(
             subscriptions,
             row.user_id,
-            row.provider,
+            row.billing_provider.unwrap_or(row.provider),
             row.day,
             row.chatgpt_sign_in,
         ) {
@@ -805,6 +807,8 @@ pub fn bill_month(
 /// provider, model, machine and project, never by hour or session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiDeveloperDayUsage {
+    /// Explicit subscription payer; the usage provider remains its source tool.
+    pub billing_provider: Option<AiProvider>,
     pub day: Date,
     pub provider: AiProvider,
     /// As in `AiDailyUsage`.
@@ -886,7 +890,7 @@ pub fn billed_day_usage(
             let subscription_id = match resolve_billing_mode(
                 subscriptions,
                 user_id,
-                usage.provider,
+                usage.billing_provider.unwrap_or(usage.provider),
                 usage.day,
                 usage.chatgpt_sign_in,
             ) {

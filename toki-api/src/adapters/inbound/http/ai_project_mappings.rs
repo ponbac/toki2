@@ -539,6 +539,7 @@ mod tests {
             buckets
                 .iter()
                 .map(|&(project_key, hour_start)| AiUsageBucket {
+                    billing_provider: None,
                     hour_start,
                     session_key: "9b1f0c6e2d4a8b7c3e5f1a2b4c6d8e0f".to_string(),
                     project_key: project_key.to_string(),

@@ -367,6 +367,7 @@ fn bucket(
     cost: Option<f64>,
 ) -> AiUsageBucket {
     AiUsageBucket {
+        billing_provider: None,
         hour_start,
         session_key: SESSIONS[session].to_string(),
         project_key: project_key.to_string(),

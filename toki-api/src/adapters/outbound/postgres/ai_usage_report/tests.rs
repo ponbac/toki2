@@ -193,6 +193,7 @@ pub(crate) fn bucket(
     cost: Option<f64>,
 ) -> AiUsageBucket {
     AiUsageBucket {
+        billing_provider: None,
         hour_start,
         session_key: SESSION.to_string(),
         project_key: project_key.to_string(),

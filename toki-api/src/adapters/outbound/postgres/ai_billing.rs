@@ -111,6 +111,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                 bucket.user_id,
                 bucket.provider,
                 (bucket.hour_start AT TIME ZONE $3)::date AS "day!",
+                bucket.billing_provider,
                 bool_or(sign_in.day IS NOT NULL) AS "chatgpt_sign_in!",
                 MIN(bucket.project_key) AS "project_key!",
                 SUM(bucket.input_tokens)::int8 AS "input_tokens!",
@@ -134,8 +135,8 @@ impl AiBillingRepository for PostgresAiBillingRepository {
               AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
               AND ($4::int4 IS NULL OR bucket.user_id = $4)
               AND personal.project_key IS NULL
-            GROUP BY bucket.user_id, bucket.provider, 3, mapping.project_id
-            ORDER BY bucket.user_id, bucket.provider, 3, mapping.project_id NULLS LAST
+            GROUP BY bucket.user_id, bucket.provider, 3, mapping.project_id, bucket.billing_provider
+            ORDER BY bucket.user_id, bucket.provider, 3, mapping.project_id NULLS LAST, bucket.billing_provider
             "#,
             dates.start(),
             dates.end(),
@@ -154,6 +155,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         rows.into_iter()
             .map(|row| {
                 Ok(AiDailyUsage {
+                    billing_provider: row.billing_provider.as_deref().map(provider).transpose()?,
                     user_id: UserId::new(row.user_id),
                     provider: provider(&row.provider)?,
                     day: row.day,
@@ -203,6 +205,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             SELECT
                 (bucket.hour_start AT TIME ZONE $4)::date AS "day!",
                 bucket.provider,
+                bucket.billing_provider,
                 bool_or(sign_in.day IS NOT NULL) AS "chatgpt_sign_in!",
                 bucket.model,
                 bucket.machine_id::text AS "machine_id!",
@@ -232,8 +235,8 @@ impl AiBillingRepository for PostgresAiBillingRepository {
               AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)
               AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)
               AND bucket.project_key <> ALL($8::text[])
-            GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key
-            ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key
+            GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key, bucket.billing_provider
+            ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key, bucket.billing_provider
             "#,
             user_id.as_i32(),
             dates.start(),
@@ -251,6 +254,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         rows.into_iter()
             .map(|row| {
                 Ok(AiDeveloperDayUsage {
+                    billing_provider: row.billing_provider.as_deref().map(provider).transpose()?,
                     day: row.day,
                     provider: provider(&row.provider)?,
                     chatgpt_sign_in: row.chatgpt_sign_in,
@@ -635,6 +639,7 @@ mod tests {
         cost: f64,
     ) -> AiUsageBucket {
         AiUsageBucket {
+            billing_provider: None,
             hour_start,
             session_key: format!("{records:032x}"),
             project_key: project_key.to_string(),
@@ -1163,6 +1168,133 @@ mod tests {
         assert_eq!(records(None).await, 1);
         assert_eq!(records(Some(&user)).await, 1);
         assert_eq!(records(Some(&UserId::new(user.as_i32() + 1))).await, 0);
+    }
+
+    #[sqlx::test]
+    async fn mixed_payers_survive_storage_and_both_daily_billing_views(pool: PgPool) {
+        use crate::{
+            adapters::outbound::postgres::PostgresAiSubscriptionRepository,
+            domain::{
+                models::{
+                    AiCurrency, AiMonthlyCost, AiSubscriptionPeriod, AiSubscriptionPlan,
+                    AiSubscriptionScope, AiSubscriptionTerms,
+                },
+                ports::outbound::AiSubscriptionRepository,
+            },
+        };
+        let start = datetime!(2026-09-22 08:00 UTC);
+        let end = datetime!(2026-09-22 09:00 UTC);
+        let native = AiUsageBucket {
+            provider: AiProvider::Copilot,
+            ..bucket(start, MAPPED, 1, 0.1)
+        };
+        let proxy = AiUsageBucket {
+            billing_provider: Some(AiProvider::Codex),
+            ..native.clone()
+        };
+        let user = setup_with(
+            &pool,
+            (start, end),
+            vec![native.clone(), proxy],
+            &[AiProvider::Copilot],
+            Vec::new(),
+        )
+        .await;
+        let repository = PostgresAiBillingRepository::new(db(&pool));
+        let zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
+        let dates = AiBillingMonth::parse("2026-09").unwrap().dates();
+        let daily = repository
+            .daily_usage(dates, &zone, None, Some(&user))
+            .await
+            .unwrap();
+        assert_eq!(daily.len(), 2);
+        assert!(daily
+            .iter()
+            .all(|row| row.provider == AiProvider::Copilot && row.usage.records == 1));
+        assert_eq!(
+            daily
+                .iter()
+                .filter(|row| row.billing_provider == Some(AiProvider::Codex))
+                .count(),
+            1
+        );
+        let detail = repository
+            .developer_usage(&user, dates, &zone, None)
+            .await
+            .unwrap();
+        assert_eq!(detail.len(), 2);
+        assert_eq!(
+            detail
+                .iter()
+                .filter(|row| row.billing_provider == Some(AiProvider::Codex))
+                .count(),
+            1
+        );
+
+        let subscriptions = PostgresAiSubscriptionRepository::new(db(&pool));
+        let missing = subscriptions
+            .plan_mismatch_days(AiSubscriptionScope::User(user), dates, &zone)
+            .await
+            .unwrap();
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].provider, AiProvider::Codex);
+        assert_eq!(missing[0].plans, ["routed from copilot"]);
+        subscriptions
+            .insert(
+                &user,
+                &AiSubscriptionTerms {
+                    provider: AiProvider::Codex,
+                    plan: AiSubscriptionPlan::parse("ChatGPT Plus").unwrap(),
+                    monthly_cost: AiMonthlyCost::parse("20").unwrap(),
+                    currency: AiCurrency::parse("USD").unwrap(),
+                    period: AiSubscriptionPeriod::new(date!(2026 - 01 - 01), None).unwrap(),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(subscriptions
+            .plan_mismatch_days(AiSubscriptionScope::User(user), dates, &zone)
+            .await
+            .unwrap()
+            .is_empty());
+
+        // A later v1-style authoritative replacement also removes obsolete payer splits.
+        let replacement = AiUsageUpload::new(
+            AiMachine {
+                id: AiMachineId::parse(MACHINE).unwrap(),
+                label: "laptop".into(),
+                client_version: "0.5.1".into(),
+                time_zone: "Europe/Stockholm".into(),
+            },
+            AiUsageWindow::new(start, end).unwrap(),
+            AiPricing {
+                status: AiPricingStatus::Custom,
+                fetched_at: None,
+                source: "test".into(),
+            },
+            vec![native],
+            vec![AiProviderCoverage {
+                provider: AiProvider::Copilot,
+                status: AiCoverageStatus::Ok,
+                files: 1,
+                unreadable: 0,
+                malformed_lines: 0,
+                skipped_records: 0,
+                duplicates: 0,
+            }],
+            Vec::new(),
+        )
+        .unwrap();
+        PostgresAiUsageRepository::new(db(&pool))
+            .replace_window(&user, &replacement)
+            .await
+            .unwrap();
+        let daily = repository
+            .daily_usage(dates, &zone, None, Some(&user))
+            .await
+            .unwrap();
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].billing_provider, None);
     }
 
     #[sqlx::test]

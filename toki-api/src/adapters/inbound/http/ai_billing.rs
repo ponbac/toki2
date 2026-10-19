@@ -764,6 +764,7 @@ struct DayUsageResponse {
     /// `YYYY-MM-DD`.
     day: String,
     provider: AiUsageProvider,
+    billing_provider: Option<AiUsageProvider>,
     model: String,
     machine_id: String,
     /// Null for the summed usage of every project key no developer has mapped:
@@ -783,6 +784,7 @@ impl From<AiBilledDayUsage> for DayUsageResponse {
         Self {
             day: usage.day.to_string(),
             provider: usage.provider.into(),
+            billing_provider: usage.billing_provider.map(Into::into),
             model: usage.model,
             machine_id: usage.machine_id.to_string(),
             project: project_response(&usage.project),

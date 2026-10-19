@@ -32,7 +32,7 @@ use crate::{
 /// A two-week upload is typically a few hundred kilobytes, but a long window can
 /// reach several megabytes, beyond Axum's 2 MB default.
 const MAX_UPLOAD_BYTES: usize = 16 * 1024 * 1024;
-const SUPPORTED_VERSIONS: [u64; 1] = [1];
+const SUPPORTED_VERSIONS: [u64; 2] = [1, 2];
 
 pub fn router<S>() -> Router<S>
 where
@@ -49,8 +49,8 @@ where
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsageUploadRequest {
-    /// Payload format version. Only `1` is supported.
-    #[schema(value_type = u64, minimum = 1, maximum = 1)]
+    /// Payload format version. Versions `1` and `2` are supported.
+    #[schema(value_type = u64, minimum = 1, maximum = 2)]
     version: Value,
     machine: AiUsageMachinePayload,
     /// token-ledger version, for diagnostics.
@@ -144,7 +144,7 @@ pub enum AiUsageProvider {
 }
 
 /// One session's usage of one model during one UTC hour. The key
-/// `(hourStart, sessionKey, project, provider, model)` is unique per upload.
+/// `(hourStart, sessionKey, project, provider, model, billingProvider)` is unique per upload.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsageBucketPayload {
@@ -159,6 +159,8 @@ pub struct AiUsageBucketPayload {
     #[schema(min_length = 1, max_length = 512)]
     project: String,
     provider: AiUsageProvider,
+    /// Version 2: subscription payer, distinct from the source tool.
+    billing_provider: Option<AiUsageProvider>,
     #[schema(max_length = 512)]
     model: String,
     tokens: AiUsageTokensPayload,
@@ -414,6 +416,16 @@ fn is_json(headers: &HeaderMap) -> bool {
 
 impl AiUsageUploadRequest {
     fn into_upload(self) -> Result<AiUsageUpload, ApiError> {
+        if self.version.as_u64() == Some(1)
+            && self
+                .buckets
+                .iter()
+                .any(|bucket| bucket.billing_provider.is_some())
+        {
+            return Err(ApiError::bad_request(
+                "billingProvider requires payload version 2",
+            ));
+        }
         let machine_id = AiMachineId::parse(&self.machine.id)
             .ok_or_else(|| ApiError::bad_request("machine.id must be a UUID"))?;
         let machine = AiMachine {
@@ -437,6 +449,7 @@ impl AiUsageUploadRequest {
             .buckets
             .into_iter()
             .map(|bucket| AiUsageBucket {
+                billing_provider: bucket.billing_provider.map(Into::into),
                 hour_start: bucket.hour_start,
                 session_key: bucket.session_key,
                 project_key: bucket.project,
@@ -674,6 +687,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn billing_overrides_need_v2_and_keep_mixed_source_buckets_distinct() {
+        let service = Arc::new(RecordingService::default());
+        let mut body = payload(1);
+        body["buckets"][0]["billingProvider"] = json!("codex");
+        let (status, _) = put(
+            app(service.clone(), Arc::new(AnyTokenAuthenticator)),
+            MACHINE,
+            Some("toki_any"),
+            &body,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        body["version"] = json!(2);
+        let mut native = body["buckets"][0].clone();
+        native.as_object_mut().unwrap().remove("billingProvider");
+        body["buckets"].as_array_mut().unwrap().push(native);
+        let (status, _) = put(
+            app(service.clone(), Arc::new(AnyTokenAuthenticator)),
+            MACHINE,
+            Some("toki_any"),
+            &body,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        {
+            let uploads = service.uploads.lock().unwrap();
+            let buckets = uploads[0].buckets();
+            assert_eq!(buckets.len(), 2);
+            assert_eq!(buckets[0].provider, AiProvider::Claude);
+            assert_eq!(buckets[0].billing_provider, Some(AiProvider::Codex));
+            assert_eq!(buckets[1].billing_provider, None);
+        }
+        for invalid in ["claude", "pi", "unknown"] {
+            body["buckets"][0]["billingProvider"] = json!(invalid);
+            let (status, _) = put(
+                app(service.clone(), Arc::new(AnyTokenAuthenticator)),
+                MACHINE,
+                Some("toki_any"),
+                &body,
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}");
+        }
+        assert_eq!(service.uploads.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
     async fn an_unsupported_version_is_reported_before_validation() {
         let service = Arc::new(RecordingService::default());
         let app = app(service.clone(), Arc::new(AnyTokenAuthenticator));
@@ -682,12 +743,12 @@ mod tests {
             app,
             MACHINE,
             Some("toki_any"),
-            &json!({ "version": 2, "buckets": "a format this server does not know" }),
+            &json!({ "version": 3, "buckets": "a format this server does not know" }),
         )
         .await;
 
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(body["supportedVersions"], json!([1]));
+        assert_eq!(body["supportedVersions"], json!([1, 2]));
         assert!(service.uploads.lock().unwrap().is_empty());
     }
 
