@@ -182,6 +182,7 @@ impl From<AiUsageError> for ApiError {
                 Self::bad_request(message)
             }
             AiUsageError::MachineOwnedByAnotherUser => Self::forbidden(err.to_string()),
+            AiUsageError::SupersededUpload => Self::conflict(err.to_string()),
             AiUsageError::NumericRange => {
                 Self::new(StatusCode::UNPROCESSABLE_ENTITY, err.to_string())
             }

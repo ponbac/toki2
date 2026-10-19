@@ -73,6 +73,14 @@ pub struct AiUsageUploadRequest {
     coverage: Vec<AiUsageCoveragePayload>,
     #[serde(default)]
     provider_hints: Vec<AiUsageProviderHintPayload>,
+    /// When the client started reading the history in this upload, by its own
+    /// clock: every record written before it is included. Optional in every
+    /// version. When present, an upload whose snapshot is older than the one
+    /// already stored for the machine is refused with 409 and changes nothing,
+    /// and the upload proves usage complete only until this instant.
+    #[serde(default, deserialize_with = "utc_instant::nullable")]
+    #[schema(value_type = Option<String>, format = DateTime)]
+    snapshot_at: Option<OffsetDateTime>,
 }
 
 /// The uploading installation.
@@ -257,9 +265,11 @@ pub struct UnsupportedAiUsageVersionResponse {
 /// upload registers the machine to the caller. For each provider that `coverage`
 /// reports as `ok` or `partial`, the upload atomically replaces the machine's
 /// usage of that provider inside `window`; other providers keep their stored
-/// usage. Repeating an upload is harmless. Costs are API-equivalent USD
-/// estimates; null is unknown, never zero. From version 3, a bucket with
-/// unpriced records can still carry the cost of its priced records.
+/// usage. Repeating an upload is harmless. An upload with a `snapshotAt` older
+/// than one already stored for the machine is refused with 409. Costs are
+/// API-equivalent USD estimates; null is unknown, never zero. From version 3,
+/// a bucket with unpriced records can still carry the cost of its priced
+/// records.
 #[utoipa::path(
     put,
     path = "/ai-usage/machines/{machine_id}/usage",
@@ -274,6 +284,7 @@ pub struct UnsupportedAiUsageVersionResponse {
         (status = 400, description = "The body is not a valid payload or names another machine", body = ErrorResponse),
         (status = 401, description = "Missing or invalid credentials"),
         (status = 403, description = "The machine is registered to another user", body = ErrorResponse),
+        (status = 409, description = "A newer snapshot from this machine is already stored; nothing changed", body = ErrorResponse),
         (status = 413, description = "The body exceeds 16 MiB"),
         (status = 415, description = "The body is not JSON"),
         (status = 422, description = "Unsupported payload version", body = UnsupportedAiUsageVersionResponse),
@@ -514,7 +525,8 @@ impl AiUsageUploadRequest {
             coverage,
             provider_hints,
             partial_cost,
-        )?)
+        )?
+        .with_snapshot_at(self.snapshot_at))
     }
 }
 
@@ -842,6 +854,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn snapshot_at_is_an_optional_utc_instant() {
+        let service = Arc::new(RecordingService::default());
+        let app = app(service.clone(), Arc::new(AnyTokenAuthenticator));
+
+        let mut offset = payload(1);
+        offset["snapshotAt"] = json!("2026-09-22T11:00:00.000+02:00");
+        let (status, _) = put(app.clone(), MACHINE, Some("toki_any"), &offset).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        let mut read = payload(1);
+        read["snapshotAt"] = json!("2026-09-22T09:00:00.000Z");
+        for body in [payload(1), read] {
+            let (status, _) = put(app.clone(), MACHINE, Some("toki_any"), &body).await;
+            assert_eq!(status, StatusCode::OK);
+        }
+
+        let snapshots: Vec<_> = service
+            .uploads
+            .lock()
+            .unwrap()
+            .iter()
+            .map(AiUsageUpload::snapshot_at)
+            .collect();
+        assert_eq!(
+            snapshots,
+            [None, Some(time::macros::datetime!(2026-09-22 09:00 UTC))]
+        );
+    }
+
+    #[tokio::test]
     async fn rejects_a_bucket_outside_the_window_or_another_machines_path() {
         let service = Arc::new(RecordingService::default());
         let app = app(service.clone(), Arc::new(AnyTokenAuthenticator));
@@ -949,6 +991,57 @@ mod tests {
 
         let (status, _) = put(app, MACHINE, None, &payload(2)).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[sqlx::test]
+    async fn an_upload_older_than_the_stored_snapshot_is_a_conflict(pool: PgPool) {
+        let db = crate::db::DbPool::from(pool.clone());
+        let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
+            PostgresApiTokenRepository::new(db.clone()),
+        )));
+        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(Arc::new(
+            PostgresAiUsageRepository::new(db),
+        )));
+        let app = app(service, tokens.clone());
+        let id: i32 = sqlx::query_scalar(
+            "INSERT INTO users (email, full_name, picture, access_token)
+             VALUES ('dev@example.com', 'Test User', '', '')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let issued = tokens
+            .create(&UserId::new(id), "token-ledger")
+            .await
+            .unwrap();
+        let secret = issued.secret.as_str();
+        let read_at = |snapshot_at: &str| {
+            let mut body = payload(1);
+            body["snapshotAt"] = json!(snapshot_at);
+            body
+        };
+
+        let (status, _) = put(
+            app.clone(),
+            MACHINE,
+            Some(secret),
+            &read_at("2026-09-22T10:30:00.000Z"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, body) = put(
+            app,
+            MACHINE,
+            Some(secret),
+            &read_at("2026-09-22T10:00:00.000Z"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(
+            body["error"],
+            "a newer upload from this machine is already stored"
+        );
     }
 
     #[sqlx::test]

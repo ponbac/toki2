@@ -293,6 +293,7 @@ pub struct AiUsageUpload {
     buckets: Vec<AiUsageBucket>,
     coverage: Vec<AiProviderCoverage>,
     provider_hints: Vec<AiProviderHint>,
+    snapshot_at: Option<OffsetDateTime>,
 }
 
 impl AiUsageUpload {
@@ -398,7 +399,19 @@ impl AiUsageUpload {
             buckets,
             coverage,
             provider_hints,
+            snapshot_at: None,
         })
+    }
+
+    /// When the client started reading the history in this upload: every record
+    /// written before it is included. Orders uploads from one machine, so an
+    /// upload that read its history earlier cannot replace one that read it later.
+    /// Clients that do not report it are not ordered.
+    pub fn with_snapshot_at(self, snapshot_at: Option<OffsetDateTime>) -> Self {
+        Self {
+            snapshot_at,
+            ..self
+        }
     }
 
     /// Providers whose stored usage inside the window this upload replaces.
@@ -432,6 +445,10 @@ impl AiUsageUpload {
 
     pub fn provider_hints(&self) -> &[AiProviderHint] {
         &self.provider_hints
+    }
+
+    pub fn snapshot_at(&self) -> Option<OffsetDateTime> {
+        self.snapshot_at
     }
 }
 

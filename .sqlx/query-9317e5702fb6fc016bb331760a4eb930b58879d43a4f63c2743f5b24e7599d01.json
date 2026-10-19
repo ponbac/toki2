@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE ai_usage_machines\n                SET last_snapshot_at = least($2::timestamptz, now())\n                WHERE id = $1\n                  AND (last_snapshot_at IS NULL\n                       OR last_snapshot_at <= least($2::timestamptz, now()))\n                RETURNING id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_machines",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9317e5702fb6fc016bb331760a4eb930b58879d43a4f63c2743f5b24e7599d01"
+}

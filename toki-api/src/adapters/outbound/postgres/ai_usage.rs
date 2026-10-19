@@ -76,6 +76,35 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             return Err(AiUsageError::MachineOwnedByAnotherUser);
         }
 
+        // The lock serializes uploads but not in the order their history was
+        // read: a slow or retried upload could replace a later one with less.
+        // Uploads that report their snapshot are applied only in snapshot order;
+        // an equal snapshot is a retry of the stored upload. A snapshot ahead of
+        // the server's clock counts as now, so a client clock that runs fast or
+        // is corrected back cannot lock its machine out of later uploads.
+        if let Some(snapshot_at) = upload.snapshot_at() {
+            let applied = sqlx::query_scalar!(
+                r#"
+                UPDATE ai_usage_machines
+                SET last_snapshot_at = least($2::timestamptz, now())
+                WHERE id = $1
+                  AND (last_snapshot_at IS NULL
+                       OR last_snapshot_at <= least($2::timestamptz, now()))
+                RETURNING id
+                "#,
+                machine.id.as_uuid(),
+                snapshot_at,
+            )
+            .fetch_optional(&mut transaction.executor())
+            .await
+            .map_err(storage_error)?;
+
+            // Dropping the transaction rolls back the machine update above.
+            if applied.is_none() {
+                return Err(AiUsageError::SupersededUpload);
+            }
+        }
+
         // Every reported provider updates its coverage, including missing and
         // failed ones; providers the upload does not mention keep theirs.
         let coverage = upload.coverage();
@@ -140,21 +169,23 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         .map_err(storage_error)?;
 
         // Logs what the upload proves for each replaced provider: its stored
-        // usage is complete from the window start until the window end or now,
-        // whichever is earlier, since later usage cannot be in the upload.
+        // usage is complete from the window start until the earliest of the
+        // window end, the snapshot and now, since later usage cannot be in the
+        // upload. LEAST ignores a missing snapshot.
         sqlx::query!(
             r#"
             INSERT INTO ai_usage_coverage_log (
                 machine_id, provider, window_start, covered_until, reported_at
             )
-            SELECT $1, provider, $2, least($3::timestamptz, now()), now()
+            SELECT $1, provider, $2, least($3::timestamptz, $5::timestamptz, now()), now()
             FROM UNNEST($4::text[]) AS provider
-            WHERE $2::timestamptz < least($3::timestamptz, now())
+            WHERE $2::timestamptz < least($3::timestamptz, $5::timestamptz, now())
             "#,
             machine.id.as_uuid(),
             window.start(),
             window.end(),
             &replaced as &[&str],
+            upload.snapshot_at(),
         )
         .execute(&mut transaction.executor())
         .await

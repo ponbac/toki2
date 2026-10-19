@@ -107,6 +107,10 @@ pub enum AiUsageError {
     InvalidUpload(String),
     #[error("machine is registered to another user")]
     MachineOwnedByAnotherUser,
+    /// The machine already stored an upload that read its history later.
+    /// Nothing was changed.
+    #[error("a newer upload from this machine is already stored")]
+    SupersededUpload,
     /// An aggregate cannot be represented by the report's finite costs and
     /// JavaScript-safe integer counts. Stored usage is retained unchanged.
     #[error("ai usage result exceeds the supported numeric range")]
