@@ -14,6 +14,7 @@ fn window() -> AiUsageWindow {
 
 fn bucket() -> AiUsageBucket {
     AiUsageBucket {
+        billing_provider: None,
         hour_start: datetime!(2026-09-22 08:00 UTC),
         session_key: SESSION.to_string(),
         project_key: "github.com/example/app".to_string(),

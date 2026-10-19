@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH sign_in_days AS (\n                SELECT DISTINCT\n                    hint.provider,\n                    (hint.hour_start AT TIME ZONE $4)::date AS day\n                FROM ai_usage_provider_hints AS hint\n                WHERE hint.user_id = $1\n                  AND hint.hour_start >= ($2::date::timestamp AT TIME ZONE $4)\n                  AND hint.hour_start < ($3::date::timestamp AT TIME ZONE $4)\n                  AND hint.provider = $5\n                  AND hint.plan = $6\n            )\n            SELECT\n                (bucket.hour_start AT TIME ZONE $4)::date AS \"day!\",\n                bucket.provider,\n                bucket.billing_provider,\n                bool_or(sign_in.day IS NOT NULL) AS \"chatgpt_sign_in!\",\n                bucket.model,\n                bucket.machine_id::text AS \"machine_id!\",\n                shown.project_key AS \"project_key?\",\n                SUM(bucket.input_tokens)::int8 AS \"input_tokens!\",\n                SUM(bucket.cache_read_tokens)::int8 AS \"cache_read_tokens!\",\n                SUM(bucket.cache_write_tokens)::int8 AS \"cache_write_tokens!\",\n                SUM(bucket.output_tokens)::int8 AS \"output_tokens!\",\n                SUM(bucket.records)::int8 AS \"records!\",\n                round(COALESCE(SUM(bucket.estimated_cost_usd), 0) * 1000000000)::int8\n                    AS \"priced_cost_nanos!\",\n                SUM(bucket.unpriced_records)::int8 AS \"unpriced_records!\"\n            FROM ai_usage_buckets AS bucket\n            LEFT JOIN sign_in_days AS sign_in\n                ON sign_in.provider = bucket.provider\n                AND sign_in.day = (bucket.hour_start AT TIME ZONE $4)::date\n            LEFT JOIN ai_project_mappings AS mapping\n                ON mapping.project_key = bucket.project_key\n            -- The key as an admin may see it: NULL unless it is mapped or names nothing.\n            CROSS JOIN LATERAL (\n                SELECT CASE\n                    WHEN mapping.project_key IS NOT NULL OR bucket.project_key = $7\n                        THEN bucket.project_key\n                END AS project_key\n            ) AS shown\n            WHERE bucket.user_id = $1\n              AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)\n              AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)\n              AND bucket.project_key <> ALL($8::text[])\n            GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key, bucket.billing_provider\n            ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key, bucket.billing_provider\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_buckets",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "billing_provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_buckets",
+            "name": "billing_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "chatgpt_sign_in!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_buckets",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "machine_id!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "project_key?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "input_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "cache_read_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "cache_write_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "output_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "records!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "priced_cost_nanos!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "unpriced_records!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      true,
+      null,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f139c25ede6899832378ecd7467c042f7fd4fb30bada9d177e713e1b93932fd7"
+}

@@ -29,6 +29,11 @@ videos/         # fframes sources of product videos (standalone crates, outside 
 
 Read `.docs/kleer.md` before Kleer-specific changes. It contains durable Kleer API URLs, service-account configuration, mapping rules, status/stat semantics, and implementation touchpoints.
 
+## AI Usage Billing Notes
+
+Read `.docs/ai-usage-billing.md` before changing source/payer routing, sync versions,
+or subscription billing. It covers local proxy hints and the server-first rollout.
+
 ## MCP Notes
 
 Read `.docs/mcp.md` before changing MCP tools, MCP authentication or Toki's OAuth authorization server. `/mcp` exposes the curated `/openapi.json` agent surface as MCP tools: adding an agent OpenAPI operation requires adding its tool, which a test enforces.

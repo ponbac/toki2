@@ -226,12 +226,21 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
         let pi_payer = subscription_provider(AiProvider::Pi, true).unwrap_or(AiProvider::Pi);
         let rows = sqlx::query!(
             r#"
-            WITH hint_days AS (
+            WITH observed_hints AS (
+                SELECT user_id, provider, hour_start, plan
+                FROM ai_usage_provider_hints
+                UNION ALL
+                -- Report the missing payer so the warning offers the correct subscription.
+                SELECT user_id, billing_provider AS provider, hour_start,
+                    'routed from ' || provider AS plan
+                FROM ai_usage_buckets
+                WHERE billing_provider IS NOT NULL
+            ), hint_days AS (
                 SELECT hints.user_id, hints.provider, local.day,
                     CASE WHEN hints.provider = $6 THEN $8 ELSE hints.provider END
                         AS subscription_provider,
                     array_agg(DISTINCT hints.plan ORDER BY hints.plan) AS plans
-                FROM ai_usage_provider_hints AS hints
+                FROM observed_hints AS hints
                 CROSS JOIN LATERAL (
                     SELECT (hints.hour_start AT TIME ZONE $4)::date AS day
                 ) AS local

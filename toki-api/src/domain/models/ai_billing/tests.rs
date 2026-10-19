@@ -61,6 +61,7 @@ fn day_usage(
     usage: AiBillingUsage,
 ) -> AiDailyUsage {
     AiDailyUsage {
+        billing_provider: None,
         user_id,
         provider,
         day,
@@ -782,6 +783,58 @@ fn provider_lines(bill: &AiMonthBill) -> Vec<(AiProvider, Summary)> {
         .iter()
         .map(|line| (line.provider, summary(line)))
         .collect()
+}
+
+#[test]
+fn explicit_payers_pool_one_fee_without_changing_the_source_or_native_billing() {
+    let day = date!(2026 - 09 - 05);
+    let native = day_usage(DEV, AiProvider::Copilot, day, client_a(), priced(20, 1));
+    let proxy = AiDailyUsage {
+        billing_provider: Some(AiProvider::Codex),
+        usage: priced(30, 1),
+        ..native.clone()
+    };
+    let copilot = subscription(
+        2,
+        DEV,
+        AiProvider::Copilot,
+        "200",
+        "SEK",
+        date!(2026 - 01 - 01),
+        None,
+    );
+    let bill = bill_month(
+        september(),
+        &[
+            day_usage(DEV, AiProvider::Codex, day, client_a(), priced(60, 1)),
+            proxy.clone(),
+            native.clone(),
+            pi(day, true, client_b(), 10),
+        ],
+        &[chatgpt(1, DEV, date!(2026 - 01 - 01)), copilot.clone()],
+    )
+    .unwrap();
+    assert_eq!(fee_sum(&bill, 1), 100_000);
+    assert_eq!(fee_sum(&bill, 2), 20_000);
+    let copilot_lines: Vec<_> = bill
+        .lines
+        .iter()
+        .filter(|line| line.provider == AiProvider::Copilot)
+        .map(summary)
+        .collect();
+    assert_eq!(
+        copilot_lines,
+        [
+            line("Client A", "subscription", Some("300.00 SEK"), 30),
+            line("Client A", "subscription", Some("200.00 SEK"), 20),
+        ]
+    );
+
+    // A Copilot subscription must not pay for an explicitly routed ChatGPT request.
+    let uncovered = bill_month(september(), &[proxy, native], &[copilot]).unwrap();
+    assert!(provider_lines(&uncovered)
+        .contains(&(AiProvider::Copilot, line("Client A", "api", None, 30))));
+    assert_eq!(fee_sum(&uncovered, 2), 20_000);
 }
 
 #[test]

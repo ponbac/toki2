@@ -74,6 +74,13 @@ impl AiProvider {
         }
     }
 
+    pub fn supports_subscription(self) -> bool {
+        match self {
+            Self::Pi => false,
+            Self::Codex | Self::Claude | Self::Grok | Self::Copilot => true,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Codex => "codex",
@@ -184,6 +191,8 @@ pub struct AiTokenCounts {
 /// One session's usage of one model during one UTC hour.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiUsageBucket {
+    /// Explicit subscription payer; the usage provider remains its source tool.
+    pub billing_provider: Option<AiProvider>,
     pub hour_start: OffsetDateTime,
     /// 32 lowercase hex characters; opaque and stable per session.
     pub session_key: String,
@@ -338,10 +347,11 @@ impl AiUsageUpload {
                 bucket.project_key.as_str(),
                 bucket.provider,
                 bucket.model.as_str(),
+                bucket.billing_provider,
             );
             if !keys.insert(key) {
                 return Err(invalid(format!(
-                    "buckets[{index}]: duplicate key (hourStart, sessionKey, project, provider, model)"
+                    "buckets[{index}]: duplicate key (hourStart, sessionKey, project, provider, model, billingProvider)"
                 )));
             }
         }
@@ -504,6 +514,11 @@ fn validate_bucket(
     }
     if !replaced.contains(&bucket.provider) {
         return Err(NOT_REPLACED.to_string());
+    }
+    if let Some(payer) = bucket.billing_provider {
+        if payer == bucket.provider || !payer.supports_subscription() {
+            return Err("billingProvider must be a different subscription provider".to_string());
+        }
     }
     if !is_session_key(&bucket.session_key) {
         return Err("sessionKey must be 32 lowercase hex characters".to_string());

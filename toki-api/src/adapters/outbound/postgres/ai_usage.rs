@@ -185,21 +185,21 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             INSERT INTO ai_usage_buckets (
                 user_id, machine_id, hour_start, session_key, project_key, provider, model,
                 input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
-                records, estimated_cost_usd, unpriced_records
+                records, estimated_cost_usd, unpriced_records, billing_provider
             )
             SELECT
                 $1, $2, bucket.hour_start, bucket.session_key, bucket.project_key,
                 bucket.provider, bucket.model, bucket.input_tokens, bucket.cache_read_tokens,
                 bucket.cache_write_tokens, bucket.output_tokens, bucket.records,
-                bucket.estimated_cost_usd::numeric, bucket.unpriced_records
+                bucket.estimated_cost_usd::numeric, bucket.unpriced_records, bucket.billing_provider
             FROM UNNEST(
                 $3::timestamptz[], $4::text[], $5::text[], $6::text[], $7::text[],
                 $8::int8[], $9::int8[], $10::int8[], $11::int8[], $12::int8[],
-                $13::float8[], $14::int8[]
+                $13::float8[], $14::int8[], $15::text[]
             ) AS bucket (
                 hour_start, session_key, project_key, provider, model,
                 input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, records,
-                estimated_cost_usd, unpriced_records
+                estimated_cost_usd, unpriced_records, billing_provider
             )
             "#,
             user_id.as_i32(),
@@ -216,6 +216,8 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             &column(buckets, |b| b.records),
             &column(buckets, |b| b.estimated_cost_usd) as &[Option<f64>],
             &column(buckets, |b| b.unpriced_records),
+            &column(buckets, |b| b.billing_provider.map(|payer| payer.as_str()))
+                as &[Option<&str>],
         )
         .execute(&mut transaction.executor())
         .await
