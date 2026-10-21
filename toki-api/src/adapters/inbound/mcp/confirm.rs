@@ -6,6 +6,12 @@
 //! elicitation request within their session. A client that supports neither
 //! runs the tool directly: its own approval of destructive tools, which tool
 //! annotations announce, is then the only confirmation.
+//!
+//! Clients known to show a form without fields as an approval prompt get one;
+//! accepting it confirms. Others get one required checkbox, as VS Code shows
+//! no prompt at all for a form without fields. The distinction matters for
+//! Codex: in Full Access it accepts a form without fields, but declines a form
+//! with fields without asking, which reads exactly like the user declining.
 
 use std::time::Duration;
 
@@ -24,13 +30,18 @@ use sha2::{Digest, Sha256};
 use crate::auth::AuthUser;
 
 const CONFIRM_KEY: &str = "confirm";
+/// Client names, from `clientInfo`, of clients that show a form without fields
+/// as an approval prompt.
+const APPROVAL_PROMPT_CLIENTS: &[&str] = &["codex-mcp-client", "claude-code"];
 const CONFIRMATION_TTL: Duration = Duration::from_secs(10 * 60);
 
 pub(super) enum Confirmation {
     /// The user confirmed, or the client cannot ask.
     Proceed,
-    /// The user declined or cancelled.
+    /// The user, or the client on their behalf, declined.
     Declined,
+    /// The confirmation was dismissed without an answer.
+    Cancelled,
     /// Return this to the client, which asks the user and retries.
     Ask(InputRequiredResult),
 }
@@ -95,7 +106,7 @@ impl Confirmations {
             let answer: ElicitResult = serde_json::from_value(answer).map_err(|error| {
                 ErrorData::invalid_params(format!("Invalid confirmation answer: {error}"), None)
             })?;
-            return Ok(decision(&answer));
+            return Ok(Form::for_client(context).decision(&answer));
         }
 
         if !client_supports_form_elicitation(context) {
@@ -111,7 +122,9 @@ impl Confirmations {
         let mut requests = InputRequests::new();
         requests.insert(
             CONFIRM_KEY.to_string(),
-            InputRequest::Elicitation(ElicitRequest::new(confirmation_form(message)?)),
+            InputRequest::Elicitation(ElicitRequest::new(
+                Form::for_client(context).params(message)?,
+            )),
         );
         Ok(Confirmation::Ask(InputRequiredResult::new(
             Some(requests),
@@ -132,14 +145,15 @@ impl Confirmations {
             return Ok(Confirmation::Proceed);
         }
 
+        let form = Form::for_client(context);
         let answer = context
             .peer
-            .create_elicitation(confirmation_form(message)?)
+            .create_elicitation(form.params(message)?)
             .await
             .map_err(|error| {
                 ErrorData::internal_error(format!("Could not ask for confirmation: {error}"), None)
             })?;
-        Ok(decision(&answer))
+        Ok(form.decision(&answer))
     }
 }
 
@@ -164,40 +178,70 @@ fn client_supports_form_elicitation(context: &RequestContext<RoleServer>) -> boo
         .is_some_and(|elicitation| elicitation.form.is_some() || elicitation.url.is_none())
 }
 
-fn confirmation_form(message: String) -> Result<ElicitRequestParams, ErrorData> {
-    let requested_schema = serde_json::from_value(json!({
-        "type": "object",
-        "properties": {
-            CONFIRM_KEY: {
-                "type": "boolean",
-                "title": "Confirm",
-                "description": "Run this change in Toki.",
-                "default": true
-            }
-        },
-        "required": [CONFIRM_KEY]
-    }))
-    .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-
-    Ok(ElicitRequestParams::FormElicitationParams {
-        meta: None,
-        message,
-        requested_schema,
-    })
+/// How a client is asked to confirm.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Form {
+    /// No fields: accepting confirms.
+    Approval,
+    /// One required `confirm` checkbox, without a default: VS Code submits
+    /// defaults when the user skips the form, which must not confirm.
+    Checkbox,
 }
 
-fn decision(answer: &ElicitResult) -> Confirmation {
-    let confirmed = answer
-        .content
-        .as_ref()
-        .and_then(|content| content.get(CONFIRM_KEY))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
+impl Form {
+    fn for_client(context: &RequestContext<RoleServer>) -> Self {
+        Self::for_client_name(context.client_info().map(|info| info.name).as_deref())
+    }
 
-    if answer.action == ElicitationAction::Accept && confirmed {
-        Confirmation::Proceed
-    } else {
-        Confirmation::Declined
+    fn for_client_name(name: Option<&str>) -> Self {
+        if name.is_some_and(|name| APPROVAL_PROMPT_CLIENTS.contains(&name)) {
+            Self::Approval
+        } else {
+            Self::Checkbox
+        }
+    }
+
+    fn params(self, message: String) -> Result<ElicitRequestParams, ErrorData> {
+        let requested_schema = match self {
+            Self::Approval => json!({ "type": "object", "properties": {} }),
+            Self::Checkbox => json!({
+                "type": "object",
+                "properties": {
+                    CONFIRM_KEY: {
+                        "type": "boolean",
+                        "title": "Confirm",
+                        "description": "Run this change in Toki."
+                    }
+                },
+                "required": [CONFIRM_KEY]
+            }),
+        };
+        let requested_schema = serde_json::from_value(requested_schema)
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+
+        Ok(ElicitRequestParams::FormElicitationParams {
+            meta: None,
+            message,
+            requested_schema,
+        })
+    }
+
+    fn decision(self, answer: &ElicitResult) -> Confirmation {
+        let checked = || {
+            answer
+                .content
+                .as_ref()
+                .and_then(|content| content.get(CONFIRM_KEY))
+                .and_then(serde_json::Value::as_bool)
+                == Some(true)
+        };
+        match answer.action {
+            ElicitationAction::Accept if self == Self::Approval || checked() => {
+                Confirmation::Proceed
+            }
+            ElicitationAction::Accept | ElicitationAction::Decline => Confirmation::Declined,
+            _ => Confirmation::Cancelled,
+        }
     }
 }
 
@@ -242,30 +286,48 @@ mod tests {
     }
 
     #[test]
+    fn known_approval_prompt_clients_get_a_form_without_fields() {
+        assert_eq!(
+            Form::for_client_name(Some("codex-mcp-client")),
+            Form::Approval
+        );
+        assert_eq!(Form::for_client_name(Some("claude-code")), Form::Approval);
+        assert_eq!(
+            Form::for_client_name(Some("Visual Studio Code")),
+            Form::Checkbox
+        );
+        assert_eq!(Form::for_client_name(None), Form::Checkbox);
+    }
+
+    #[test]
     fn only_an_accepted_confirmation_proceeds() {
-        let answer = |action: &str, confirm: bool| -> ElicitResult {
-            serde_json::from_value(json!({
-                "action": action,
-                "content": { CONFIRM_KEY: confirm },
-            }))
-            .unwrap()
+        let answer =
+            |answer: serde_json::Value| -> ElicitResult { serde_json::from_value(answer).unwrap() };
+        let proceeds = |form: Form, answer: &ElicitResult| {
+            matches!(form.decision(answer), Confirmation::Proceed)
         };
 
+        let accepted = answer(json!({ "action": "accept" }));
+        assert!(proceeds(Form::Approval, &accepted));
+        assert!(!proceeds(Form::Checkbox, &accepted));
+
+        let checked = answer(json!({ "action": "accept", "content": { CONFIRM_KEY: true } }));
+        assert!(proceeds(Form::Checkbox, &checked));
+        let unchecked = answer(json!({ "action": "accept", "content": { CONFIRM_KEY: false } }));
         assert!(matches!(
-            decision(&answer("accept", true)),
-            Confirmation::Proceed
-        ));
-        assert!(matches!(
-            decision(&answer("accept", false)),
+            Form::Checkbox.decision(&unchecked),
             Confirmation::Declined
         ));
-        assert!(matches!(
-            decision(&answer("decline", true)),
-            Confirmation::Declined
-        ));
-        assert!(matches!(
-            decision(&answer("cancel", true)),
-            Confirmation::Declined
-        ));
+
+        for form in [Form::Approval, Form::Checkbox] {
+            assert!(matches!(
+                form.decision(&answer(json!({ "action": "decline" }))),
+                Confirmation::Declined
+            ));
+            assert!(matches!(
+                form.decision(&answer(json!({ "action": "cancel" }))),
+                Confirmation::Cancelled
+            ));
+        }
     }
 }

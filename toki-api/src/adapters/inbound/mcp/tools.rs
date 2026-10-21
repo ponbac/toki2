@@ -91,9 +91,18 @@ impl TokiMcp {
             .await?
         {
             Confirmation::Proceed => Ok(None),
+            // A client can answer for the user, by its approval settings, so
+            // the result does not claim the user saw the confirmation.
             Confirmation::Declined => Ok(Some(
                 CallToolResult::success(vec![ContentBlock::text(
-                    "The user declined. Nothing was changed.",
+                    "The confirmation was declined, by the user or by the client's \
+                     approval settings. Nothing was changed.",
+                )])
+                .into(),
+            )),
+            Confirmation::Cancelled => Ok(Some(
+                CallToolResult::success(vec![ContentBlock::text(
+                    "The confirmation was dismissed without an answer. Nothing was changed.",
                 )])
                 .into(),
             )),
