@@ -441,7 +441,9 @@ impl AiUsageReport {
         let mut machines = sums.machines;
         machines.sort_by(|a, b| costliest_first(&a.totals, &b.totals));
         let mut days = sums.days;
-        days.sort_by(|a, b| (a.date, a.provider, &a.model).cmp(&(b.date, b.provider, &b.model)));
+        days.sort_by(|a, b| {
+            (a.date, a.provider, &a.model, a.payer).cmp(&(b.date, b.provider, &b.model, b.payer))
+        });
         let mut hours = sums.hours;
         hours.sort_by_key(|hour| (hour.weekday.number_from_monday(), hour.hour));
 
