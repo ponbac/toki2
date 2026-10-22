@@ -75,7 +75,7 @@ export function tokenLedger(os: MachineOs): string {
 
 /**
  * The commands that connect a machine, with this server and `token` filled in:
- * save both, upload once, then schedule the daily sync. A token is `toki_` and
+ * save both, upload once, then schedule a sync every two hours. A token is `toki_` and
  * hex digits, so no shell needs it quoted.
  */
 export function setupCommands(
@@ -94,7 +94,7 @@ export function setupCommands(
     },
     { label: "Upload this machine's history", lines: [`${run} sync`] },
     {
-      label: `Sync every day at 12:30 with a ${OS_GUIDES[os].scheduler}`,
+      label: `Sync every 2 hours with a ${OS_GUIDES[os].scheduler}`,
       lines: [`${run} schedule install`],
     },
   ];

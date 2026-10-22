@@ -637,7 +637,7 @@ function CommandsStep({
         </span>
       </p>
       <p className="text-xs text-muted-foreground">
-        A missed daily run {guide.missedRun}.
+        A missed run {guide.missedRun}.
         {os === "linux" &&
           " Without systemd, as in WSL, schedule it with cron instead."}{" "}
         {!copilotNext && "Copilot is read only once its file export is on. "}
