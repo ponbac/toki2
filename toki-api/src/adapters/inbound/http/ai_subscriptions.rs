@@ -86,6 +86,9 @@ where
 pub struct AiSubscriptionRequest {
     /// Not `pi`, which has no subscriptions of its own: a ChatGPT subscription,
     /// declared for `codex`, also pays for Pi usage through its ChatGPT sign-in.
+    /// Not `opencode` either: usage it routes through Copilot or a ChatGPT
+    /// sign-in is billed to that subscription, declared for `copilot` or
+    /// `codex`, and everything else at its estimated API cost.
     provider: AiUsageProvider,
     /// Free text, such as `Claude Max 5x`, `ChatGPT Pro` or `Copilot Business`.
     /// At most 64 Unicode code points.
@@ -341,6 +344,9 @@ pub async fn list_subscriptions(
 /// A ChatGPT subscription is declared for `codex`. It also pays for your Pi
 /// usage on each of those days on which Pi reported its ChatGPT sign-in; Pi
 /// usage on other days bills as API usage, and `pi` takes no subscription.
+/// Nor does `opencode`: your subscriptions to `copilot` and `codex` pay for
+/// the OpenCode usage it routes through Copilot or a ChatGPT sign-in, and its
+/// other usage bills as API usage.
 #[utoipa::path(
     post,
     path = "/ai-usage/subscriptions",

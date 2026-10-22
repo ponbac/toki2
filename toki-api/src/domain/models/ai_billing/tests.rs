@@ -942,6 +942,51 @@ fn signed_in_pi_usage_needs_the_developers_own_codex_subscription_on_the_day() {
 }
 
 #[test]
+fn opencode_usage_bills_to_its_named_payer_and_otherwise_as_api_usage() {
+    let day = date!(2026 - 09 - 05);
+    let opencode = |billing_provider, cents| AiDailyUsage {
+        billing_provider,
+        // Pi's ChatGPT sign-in routing never applies to OpenCode.
+        chatgpt_sign_in: true,
+        ..day_usage(DEV, AiProvider::OpenCode, day, client_a(), priced(cents, 1))
+    };
+    let copilot = subscription(
+        2,
+        DEV,
+        AiProvider::Copilot,
+        "200",
+        "SEK",
+        date!(2026 - 01 - 01),
+        None,
+    );
+    let bill = bill_month(
+        september(),
+        &[
+            opencode(Some(AiProvider::Copilot), 20),
+            opencode(Some(AiProvider::Codex), 30),
+            opencode(None, 40),
+        ],
+        &[chatgpt(1, DEV, date!(2026 - 01 - 01)), copilot],
+    )
+    .unwrap();
+
+    assert_eq!(
+        provider_lines(&bill),
+        [
+            (
+                AiProvider::OpenCode,
+                line("Client A", "subscription", Some("1000.00 SEK"), 30)
+            ),
+            (
+                AiProvider::OpenCode,
+                line("Client A", "subscription", Some("200.00 SEK"), 20)
+            ),
+            (AiProvider::OpenCode, line("Client A", "api", None, 40)),
+        ]
+    );
+}
+
+#[test]
 fn keys_mapped_to_one_project_bill_as_that_project() {
     let bill = bill_month(
         september(),

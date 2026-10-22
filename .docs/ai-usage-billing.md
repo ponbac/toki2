@@ -22,6 +22,18 @@ fee is shared across every source it pays for. Existing unoverridden Pi sign-in
 routing is unchanged. Missing-subscription warnings for explicit overrides identify
 the payer so adding the suggested subscription fixes the right provider.
 
+## OpenCode
+
+OpenCode (`opencode`) routes requests to other vendors, so like Pi it has no
+subscriptions of its own, and declaring one for it is rejected. It relies on the
+payer above instead: Token Ledger sets `billingProvider` to `copilot` for its
+`github-copilot` route and to `codex` for its `openai` route on a ChatGPT sign-in.
+Every other OpenCode bucket has no payer and bills at its API estimate; Pi's
+ChatGPT sign-in days never apply to it. OpenCode sends no plan hints, and Toki
+rejects an upload with one, since no subscription could resolve its mismatch. Roll
+out Toki's migration accepting `opencode` before a Token Ledger release that reads
+it: even a machine without OpenCode reports it as `missing` coverage.
+
 The admin daily response includes nullable `billingProvider`; `subscriptionId`
 identifies the subscription actually used. Daily labels show **Mixed billing** when
 one source used different subscriptions or both API and subscription billing.

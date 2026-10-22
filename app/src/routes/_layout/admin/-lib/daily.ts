@@ -133,6 +133,7 @@ export function dailySeries(
       grok: 0,
       copilot: 0,
       pi: 0,
+      opencode: 0,
     };
     for (const row of rows) {
       if (row.day === day) {

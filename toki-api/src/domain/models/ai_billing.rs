@@ -32,6 +32,10 @@
 //!   over the Codex and the Pi usage it pays for alike: each project's usage of
 //!   each of the two gets a line and a share by the same weights, and the
 //!   subscription is overhead only without usage of either.
+//! - **Explicit payers.** Usage whose bucket names a `billing_provider` is paid
+//!   for by the developer's subscription to that provider covering the day, if
+//!   any, and is API usage otherwise, alike for every source tool. OpenCode has
+//!   no subscriptions of its own, so its usage without a payer is API usage.
 //! - **Unpriced usage.** Records without a known price have no cost, which is
 //!   unknown rather than zero. A split weighs the *priced* cost only, so a
 //!   project whose covered usage is all unpriced gets no share; the line keeps

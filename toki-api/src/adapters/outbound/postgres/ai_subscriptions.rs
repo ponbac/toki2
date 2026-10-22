@@ -1006,25 +1006,38 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn a_subscription_cannot_be_declared_for_pi(pool: PgPool) {
+    async fn a_subscription_cannot_be_declared_for_pi_or_opencode(pool: PgPool) {
         let service = service(&pool);
         let dev = insert_user(&pool, "dev@example.com").await;
         let chatgpt = service
             .create(&dev, &terms(AiProvider::Codex, date!(2026 - 01 - 01), None))
             .await
             .unwrap();
-        let for_pi = terms(AiProvider::Pi, date!(2027 - 01 - 01), None);
 
-        let created = service.create(&dev, &for_pi).await;
-        let updated = service
-            .update(AiSubscriptionScope::User(dev), chatgpt.id, &for_pi)
-            .await;
+        // Each message names the subscriptions that pay for the tool's usage.
+        for (provider, payers) in [
+            (AiProvider::Pi, &["codex"][..]),
+            (
+                AiProvider::OpenCode,
+                &["copilot", "codex", "API estimate"][..],
+            ),
+        ] {
+            let terms = terms(provider, date!(2027 - 01 - 01), None);
+            let created = service.create(&dev, &terms).await;
+            let updated = service
+                .update(AiSubscriptionScope::User(dev), chatgpt.id, &terms)
+                .await;
 
-        for result in [created, updated] {
-            assert!(
-                matches!(&result, Err(AiSubscriptionError::Invalid(message)) if message.contains("codex")),
-                "{result:?}"
-            );
+            for result in [created, updated] {
+                assert!(
+                    matches!(
+                        &result,
+                        Err(AiSubscriptionError::Invalid(message))
+                            if payers.iter().all(|payer| message.contains(payer))
+                    ),
+                    "{result:?}"
+                );
+            }
         }
         assert_eq!(
             service.list(AiSubscriptionScope::User(dev)).await.unwrap(),

@@ -46,12 +46,13 @@ use super::{
 };
 
 /// Providers in display order.
-const PROVIDERS: [AiProvider; 5] = [
+const PROVIDERS: [AiProvider; 6] = [
     AiProvider::Codex,
     AiProvider::Claude,
     AiProvider::Grok,
     AiProvider::Copilot,
     AiProvider::Pi,
+    AiProvider::OpenCode,
 ];
 
 /// A local calendar day and the instants it spans in the configured time zone:

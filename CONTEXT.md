@@ -25,11 +25,11 @@ The single in-progress time-tracking interval for a user, if any.
 _Avoid_: running entry, current registration
 
 **AI subscription**:
-A fixed-fee plan a developer declares for one AI provider, such as Claude Max 5x, with a monthly cost in its own currency and an inclusive period of local dates. One user's subscriptions to one provider never overlap. Pi, which routes its requests to other vendors, has none of its own: a ChatGPT subscription, declared for Codex, also pays for Pi usage on ChatGPT sign-in days.
+A fixed-fee plan a developer declares for one AI provider, such as Claude Max 5x, with a monthly cost in its own currency and an inclusive period of local dates. One user's subscriptions to one provider never overlap. Pi, which routes its requests to other vendors, has none of its own: a ChatGPT subscription, declared for Codex, also pays for Pi usage on ChatGPT sign-in days. Neither has OpenCode, which routes its requests too: the Copilot or Codex subscription its uploaded usage names as payer pays for that usage.
 _Avoid_: seat, license
 
 **Billing mode**:
-How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost. Pi usage is billed by the developer's Codex subscription that covers the day when the day is a ChatGPT sign-in day, and otherwise as API usage.
+How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost. Pi usage is billed by the developer's Codex subscription that covers the day when the day is a ChatGPT sign-in day, and otherwise as API usage. Usage uploaded with an explicit payer, such as OpenCode's through Copilot or a ChatGPT sign-in, is billed by the developer's subscription to that payer covering the day, and otherwise as API usage; OpenCode usage without one is API usage.
 _Avoid_: plan type, tier
 
 **Plan hint**:

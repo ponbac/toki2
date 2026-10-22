@@ -305,6 +305,7 @@ pub enum AiProvider {
     Grok,
     Copilot,
     Pi,
+    OpenCode,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -374,6 +375,8 @@ pub struct OptionalDateRangeArgs {
 #[serde(rename_all = "camelCase")]
 pub struct AiSubscriptionArgs {
     /// Not `pi`: a ChatGPT subscription declared for `codex` also covers Pi.
+    /// Not `opencode`: usage it routes through Copilot or a ChatGPT sign-in is
+    /// billed to that subscription (`copilot` or `codex`), the rest at API cost.
     provider: AiProvider,
     /// Plan name, such as `Claude Max 5x`. At most 64 characters.
     plan: String,

@@ -524,7 +524,9 @@ enum BillingModeResponse {
 struct BillingLineResponse {
     user_id: i32,
     /// The provider used. A share of a Codex subscription's fee can be for Pi
-    /// usage, which that subscription pays for on Pi's ChatGPT sign-in days.
+    /// usage, which that subscription pays for on Pi's ChatGPT sign-in days, and
+    /// a subscription's fee can be for usage of another tool that names it as
+    /// its payer, such as OpenCode routed through Copilot.
     provider: AiUsageProvider,
     /// Null for Unassigned usage and for unallocated overhead.
     project: Option<ProjectResponse>,
