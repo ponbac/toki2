@@ -298,7 +298,7 @@ pub struct AiUsageReport {
     /// What the filters can select in the range, whichever filters are applied.
     pub options: AiUsageFilterOptions,
     pub totals: AiUsageTotals,
-    /// Per local day, provider and model, by day.
+    /// Per local day, provider, model and payer, by day.
     pub days: Vec<AiUsageDayTotals>,
     /// Per project, with all personal usage and all unassigned usage as a
     /// group each, costliest first.
@@ -314,8 +314,13 @@ pub struct AiUsageReport {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiUsageDayTotals {
     pub date: Date,
+    /// The tool that made the requests.
     pub provider: AiProvider,
     pub model: String,
+    /// The provider whose spend this is: the subscription that pays for the
+    /// requests when the client named one, such as Codex for Copilot requests
+    /// sent through a ChatGPT sign-in, or else `provider`.
+    pub payer: AiProvider,
     pub totals: AiUsageTotals,
 }
 
@@ -436,7 +441,9 @@ impl AiUsageReport {
         let mut machines = sums.machines;
         machines.sort_by(|a, b| costliest_first(&a.totals, &b.totals));
         let mut days = sums.days;
-        days.sort_by(|a, b| (a.date, a.provider, &a.model).cmp(&(b.date, b.provider, &b.model)));
+        days.sort_by(|a, b| {
+            (a.date, a.provider, &a.model, a.payer).cmp(&(b.date, b.provider, &b.model, b.payer))
+        });
         let mut hours = sums.hours;
         hours.sort_by_key(|hour| (hour.weekday.number_from_monday(), hour.hour));
 

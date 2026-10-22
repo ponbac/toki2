@@ -10,7 +10,9 @@ metadata an older server ignores.
 The bucket key includes the nullable payer. Native Copilot and requests routed
 through ChatGPT can therefore share an hour, session, project, and model without
 being merged. Coverage, authoritative replacement, reporting, and source labels
-still use the source provider. No request IDs, auth modes, or local hint paths are
+still use the source provider, except that each day row of a developer's usage report
+also carries its `payer` (the explicit payer, else the source), which the daily spend
+chart stacks by by default. No request IDs, auth modes, or local hint paths are
 accepted as billing inputs or stored by this feature.
 
 Billing resolves an explicit payer against the developer's declared subscription

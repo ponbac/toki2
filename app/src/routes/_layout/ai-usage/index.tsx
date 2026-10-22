@@ -40,6 +40,7 @@ import {
 } from "./-components/sessions-table";
 import { SummaryTiles } from "./-components/summary-tiles";
 import { UsageTabs } from "./-components/usage-tabs";
+import { STACK_BY, type StackBy } from "./-lib/aggregate";
 import { formatLongDate } from "./-lib/format";
 import { needsAttention } from "./-lib/machine-findings";
 import { MoneyContext, displayCurrencyAtom, formatZero } from "./-lib/money";
@@ -63,7 +64,7 @@ const searchSchema = z.object({
   unassigned: z.literal(true).optional().catch(undefined),
   personal: z.literal(true).optional().catch(undefined),
   machineId: z.string().uuid().optional().catch(undefined),
-  stackBy: z.enum(["provider", "model"]).optional().catch(undefined),
+  stackBy: z.enum(STACK_BY).optional().catch(undefined),
 });
 
 type Search = z.infer<typeof searchSchema>;
@@ -294,7 +295,7 @@ function AiUsagePage() {
                       machineLabels={machineLabels}
                       sessions={sessions}
                       mappable={mappable}
-                      stackBy={search.stackBy ?? "provider"}
+                      stackBy={search.stackBy ?? "payer"}
                       onStackByChange={(stackBy) =>
                         void navigate({
                           search: (previous) => ({ ...previous, stackBy }),
@@ -358,8 +359,8 @@ function Report({
   machineLabels: ReadonlyMap<string, string>;
   sessions: number | undefined;
   mappable: number;
-  stackBy: "provider" | "model";
-  onStackByChange: (stackBy: "provider" | "model") => void;
+  stackBy: StackBy;
+  onStackByChange: (stackBy: StackBy) => void;
   onFiltersChange: (patch: FilterPatch) => void;
 }) {
   const empty = report.totals.records === 0;

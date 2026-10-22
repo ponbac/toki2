@@ -44,7 +44,7 @@ type SpendPoint = Readonly<{
 }>;
 
 /**
- * Estimated spend per local day, stacked by provider or model. Bars show the
+ * Estimated spend per local day, stacked by payer, tool or model. Bars show the
  * known cost; a ring marks days with unpriced usage, whose cost is unknown.
  */
 export function DailySpendChart({
@@ -195,6 +195,7 @@ export function DailySpendChart({
             value={stackBy}
             onChange={onStackByChange}
             options={[
+              { value: "payer", label: "Paid by" },
               { value: "provider", label: "Tool" },
               { value: "model", label: "Model" },
             ]}

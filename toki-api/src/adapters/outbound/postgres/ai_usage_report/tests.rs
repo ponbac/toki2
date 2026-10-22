@@ -227,8 +227,8 @@ fn variant(
     }
 }
 
-/// Stores buckets from a machine, covering Claude and Codex as ok and Grok
-/// as missing, over a window around them. Partly priced buckets carry their
+/// Stores buckets from a machine, covering Claude, Codex and any other tool of
+/// the buckets as ok and Grok as missing, over a window around them. Partly priced buckets carry their
 /// priced subtotal, as in payload version 3.
 pub(crate) async fn record(
     pool: &PgPool,
@@ -245,6 +245,19 @@ pub(crate) async fn record(
         skipped_records: 0,
         duplicates: 0,
     };
+    let mut covered = vec![
+        coverage(AiProvider::Claude, AiCoverageStatus::Ok, 0),
+        coverage(AiProvider::Codex, AiCoverageStatus::Ok, 0),
+        coverage(AiProvider::Grok, AiCoverageStatus::Missing, 1),
+    ];
+    for bucket in &buckets {
+        if covered
+            .iter()
+            .all(|entry| entry.provider != bucket.provider)
+        {
+            covered.push(coverage(bucket.provider, AiCoverageStatus::Ok, 0));
+        }
+    }
     let upload = AiUsageUpload::new(
         AiMachine {
             id: AiMachineId::parse(machine_id).unwrap(),
@@ -263,11 +276,7 @@ pub(crate) async fn record(
             source: "https://example.com/prices.json".to_string(),
         },
         buckets,
-        vec![
-            coverage(AiProvider::Claude, AiCoverageStatus::Ok, 0),
-            coverage(AiProvider::Codex, AiCoverageStatus::Ok, 0),
-            coverage(AiProvider::Grok, AiCoverageStatus::Missing, 1),
-        ],
+        covered,
         Vec::new(),
         AiPartialBucketCost::PricedSubtotal,
     )
@@ -477,6 +486,73 @@ async fn a_partly_priced_bucket_keeps_its_known_subtotal(pool: PgPool) {
         (9, 1.0, 1, 5)
     );
     assert_eq!(totals.estimated_cost_usd(), None);
+}
+
+#[sqlx::test]
+async fn days_count_usage_for_the_subscription_that_paid_for_it(pool: PgPool) {
+    let user = insert_user(&pool, "dev@example.com", "User").await;
+    let hour = datetime!(2026-09-22 08:00 UTC);
+    let copilot = |cost| {
+        variant(
+            bucket(hour, APP, 1, Some(cost)),
+            "1",
+            AiProvider::Copilot,
+            "gpt",
+        )
+    };
+    record(
+        &pool,
+        user,
+        MACHINE_A,
+        vec![
+            AiUsageBucket {
+                billing_provider: Some(AiProvider::Codex),
+                ..copilot(2.0)
+            },
+            AiUsageBucket {
+                session_key: format!("{:0>32}", "2"),
+                ..copilot(0.5)
+            },
+            variant(
+                bucket(hour, APP, 1, Some(1.0)),
+                "3",
+                AiProvider::Codex,
+                "gpt",
+            ),
+        ],
+    )
+    .await;
+
+    let report = service(&pool, false)
+        .report(&user, &september(AiUsageFilter::default()))
+        .await
+        .unwrap();
+
+    let mut days: Vec<_> = report
+        .days
+        .iter()
+        .map(|day| (day.provider, day.payer, day.totals.priced_cost_usd))
+        .collect();
+    days.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(
+        days,
+        [
+            (AiProvider::Codex, AiProvider::Codex, 1.0),
+            (AiProvider::Copilot, AiProvider::Codex, 2.0),
+            (AiProvider::Copilot, AiProvider::Copilot, 0.5),
+        ]
+    );
+    // Other breakdowns stay by tool.
+    let mut models: Vec<_> = report
+        .models
+        .iter()
+        .map(|model| (model.provider, model.totals.priced_cost_usd))
+        .collect();
+    models.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(
+        models,
+        [(AiProvider::Codex, 1.0), (AiProvider::Copilot, 2.5)]
+    );
 }
 
 #[sqlx::test]
