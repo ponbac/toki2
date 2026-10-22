@@ -181,8 +181,11 @@ const reportSchema = z
       z
         .object({
           date: localDateSchema,
+          /** The tool that made the requests. */
           provider: aiProviderSchema,
           model: z.string(),
+          /** Whose spend it is: the subscription that paid, or else `provider`. */
+          payer: aiProviderSchema,
           totals: aiUsageTotalsSchema,
         })
         .strict(),

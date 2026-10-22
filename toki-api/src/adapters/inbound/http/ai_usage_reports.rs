@@ -355,7 +355,8 @@ pub struct AiUsageReportResponse {
     time_tracking_configured: bool,
     options: AiUsageFilterOptionsResponse,
     totals: AiUsageTotalsResponse,
-    /// Per local day, provider and model, by day. Days without usage are absent.
+    /// Per local day, provider, model and payer, by day. Days without usage are
+    /// absent.
     days: Vec<AiUsageDayResponse>,
     /// Per project, costliest first. All personal usage is one entry and all
     /// unassigned usage another; `project` is null for both.
@@ -393,9 +394,14 @@ pub struct AiUsageDayResponse {
     #[serde(with = "iso_date")]
     #[schema(value_type = String, format = Date)]
     date: Date,
+    /// The tool that made the requests.
     provider: AiUsageProvider,
     /// Empty when the model is unknown.
     model: String,
+    /// The provider whose spend this is: the subscription that pays for the
+    /// requests when the client named one, such as `codex` for Copilot
+    /// requests sent through a ChatGPT sign-in, or else `provider`.
+    payer: AiUsageProvider,
     totals: AiUsageTotalsResponse,
 }
 
@@ -477,6 +483,7 @@ impl From<AiUsageReport> for AiUsageReportResponse {
                     date: day.date,
                     provider: day.provider.into(),
                     model: day.model,
+                    payer: day.payer.into(),
                     totals: day.totals.into(),
                 })
                 .collect(),

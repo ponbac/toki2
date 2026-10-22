@@ -15,8 +15,13 @@ import {
 import { eachDate } from "./date-range";
 import { knownUsd, modelLabel, totalTokens } from "./format";
 
-/** What the daily spend chart stacks by. */
-export type StackBy = "provider" | "model";
+/**
+ * What the daily spend chart can stack by: the provider whose spend it is,
+ * the tool that made the requests, or the model.
+ */
+export const STACK_BY = ["payer", "provider", "model"] as const;
+
+export type StackBy = (typeof STACK_BY)[number];
 
 /** One stacked series of the daily spend chart. */
 export type DailySeries = Readonly<{
@@ -106,15 +111,15 @@ export function dailySpend(
 ): Readonly<{ series: readonly DailySeries[]; rows: readonly DailyRow[] }> {
   const tints = modelTints(report);
   const seriesKey = (day: AiUsageReport["days"][number]): string => {
-    if (stackBy === "provider") {
-      return day.provider;
+    if (stackBy !== "model") {
+      return day[stackBy];
     }
     return tints.has(day.model) ? `model:${day.model}` : OTHER_KEY;
   };
 
   const present = new Set(report.days.map(seriesKey));
   const series: DailySeries[] =
-    stackBy === "provider"
+    stackBy !== "model"
       ? AI_PROVIDERS.filter((provider) => present.has(provider)).map(
           (provider) => ({
             key: provider,

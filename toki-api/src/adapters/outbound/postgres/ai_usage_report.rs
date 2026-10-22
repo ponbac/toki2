@@ -74,15 +74,16 @@ fn key_parameters(keys: &AiKeySelection) -> (Option<Vec<String>>, Option<Vec<Str
 
 // GROUPING() bits of `usage_sums`, from its first grouping column to its last:
 // a set bit means the row is not grouped by that column.
-const BY_DATE: i32 = 1 << 7;
-const BY_WEEKDAY: i32 = 1 << 6;
-const BY_HOUR: i32 = 1 << 5;
-const BY_MACHINE: i32 = 1 << 4;
-const BY_PROVIDER: i32 = 1 << 3;
-const BY_MODEL: i32 = 1 << 2;
+const BY_DATE: i32 = 1 << 8;
+const BY_WEEKDAY: i32 = 1 << 7;
+const BY_HOUR: i32 = 1 << 6;
+const BY_MACHINE: i32 = 1 << 5;
+const BY_PROVIDER: i32 = 1 << 4;
+const BY_MODEL: i32 = 1 << 3;
+const BY_PAYER: i32 = 1 << 2;
 const BY_PROJECT: i32 = 1 << 1;
 const BY_KEY: i32 = 1;
-const ALL_COLUMNS: i32 = (1 << 8) - 1;
+const ALL_COLUMNS: i32 = (1 << 9) - 1;
 
 // The ids `usage_sums` groups keys under. Usage of a key in neither group is
 // unassigned.
@@ -167,6 +168,9 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
                     bucket.machine_id,
                     bucket.provider,
                     bucket.model,
+                    -- Usage another provider's subscription pays for counts as
+                    -- that provider's spend; the rest is its tool's own.
+                    COALESCE(bucket.billing_provider, bucket.provider) AS payer,
                     bucket.project_key,
                     grouped.group_id,
                     bucket.input_tokens,
@@ -191,7 +195,8 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
             SELECT
                 GROUPING(
                     parts.date, parts.weekday, parts.hour, selected.machine_id,
-                    selected.provider, selected.model, selected.group_id, selected.project_key
+                    selected.provider, selected.model, selected.payer, selected.group_id,
+                    selected.project_key
                 ) AS "grouping!",
                 parts.date AS "date?",
                 parts.weekday AS "weekday?",
@@ -199,6 +204,7 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
                 selected.machine_id AS "machine_id?",
                 selected.provider AS "provider?",
                 selected.model AS "model?",
+                selected.payer AS "payer?",
                 selected.group_id AS "group_id?",
                 selected.project_key AS "project_key?",
                 COALESCE(SUM(selected.input_tokens), 0)::int8 AS "input_tokens!",
@@ -218,7 +224,7 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
             ) AS parts
             GROUP BY GROUPING SETS (
                 (),
-                (parts.date, selected.provider, selected.model),
+                (parts.date, selected.provider, selected.model, selected.payer),
                 (selected.group_id),
                 (selected.project_key),
                 (selected.provider, selected.model),
@@ -248,11 +254,12 @@ impl AiUsageReportRepository for PostgresAiUsageReportRepository {
             let grouping = row.grouping;
             if grouping == grouped_by(0) {
                 sums.totals = totals;
-            } else if grouping == grouped_by(BY_DATE | BY_PROVIDER | BY_MODEL) {
+            } else if grouping == grouped_by(BY_DATE | BY_PROVIDER | BY_MODEL | BY_PAYER) {
                 sums.days.push(AiUsageDayTotals {
                     date: row.date.ok_or_else(|| corrupt("a day row has no date"))?,
                     provider: provider(row.provider.as_deref())?,
                     model: row.model.ok_or_else(|| corrupt("a day row has no model"))?,
+                    payer: provider(row.payer.as_deref())?,
                     totals,
                 });
             } else if grouping == grouped_by(BY_PROJECT) {
