@@ -10,7 +10,7 @@ mod auth;
 mod confirm;
 mod tools;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{routing::get, Json, Router};
 use rmcp::transport::streamable_http_server::{
@@ -27,6 +27,10 @@ pub const MCP_PATH: &str = "/mcp";
 const METADATA_PATH: &str = "/.well-known/oauth-protected-resource";
 /// The one scope `/mcp` grants.
 const SCOPE: &str = "mcp";
+/// How long a session lasts without requests. With rmcp's default of 5 minutes,
+/// an idle Codex process retried its event stream against the closed session
+/// for hours, and refreshed its token from there without saving it.
+const SESSION_KEEP_ALIVE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// The OAuth resource identifier MCP clients request tokens for.
 pub fn resource_url(api_url: &Url) -> String {
@@ -68,7 +72,7 @@ where
                 confirmations.clone(),
             ))
         },
-        Arc::new(LocalSessionManager::default()),
+        Arc::new(session_manager()),
         config,
     );
     let endpoint = ServiceBuilder::new()
@@ -91,6 +95,12 @@ where
         }
         None => router,
     }
+}
+
+fn session_manager() -> LocalSessionManager {
+    let mut manager = LocalSessionManager::default();
+    manager.session_config.keep_alive = Some(SESSION_KEEP_ALIVE);
+    manager
 }
 
 fn server_config(api_url: &Url, app_url: &Url) -> StreamableHttpServerConfig {

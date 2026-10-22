@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM oauth_tokens\n            WHERE expires_at < now() - INTERVAL '1 day'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "51fa8d1b7c747874884e93c325d0cbdb823c33287491f8436df95d41b210637a"
+}

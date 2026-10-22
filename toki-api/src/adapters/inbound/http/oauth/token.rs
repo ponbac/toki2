@@ -43,21 +43,56 @@ impl From<IssuedTokens> for TokenResponse {
 }
 
 /// `POST /oauth/token`: the `authorization_code` and `refresh_token` grants.
+/// Every refusal is logged with its reason: a client acts on it silently, often
+/// by dropping its connection.
 pub(super) async fn token(
     State(state): State<ServerState>,
-    PublicClientForm(mut params): PublicClientForm,
+    form: Result<PublicClientForm, PublicClientFormRejection>,
 ) -> Response {
-    let result = match params.take("grant_type").as_deref() {
+    let PublicClientForm(mut params) = match form {
+        Ok(form) => form,
+        Err(rejection) => {
+            tracing::info!("OAuth token request refused: {rejection}");
+            return rejection.into_response();
+        }
+    };
+    let grant_type = params.take("grant_type");
+    let client_id = params.take("client_id");
+
+    match issue_tokens(&state, grant_type.as_deref(), client_id.clone(), params).await {
+        Ok(tokens) => no_store(Json(TokenResponse::from(tokens)).into_response()),
+        Err(refusal) => {
+            if !matches!(refusal, TokenRefusal::Error(OAuthError::Storage(_))) {
+                tracing::info!(
+                    grant_type = grant_type.as_deref(),
+                    client_id = client_id.as_deref(),
+                    "OAuth token request refused: {refusal}"
+                );
+            }
+            refusal.into_response()
+        }
+    }
+}
+
+async fn issue_tokens(
+    state: &ServerState,
+    grant_type: Option<&str>,
+    client_id: Option<String>,
+    mut params: Params,
+) -> Result<IssuedTokens, TokenRefusal> {
+    let missing_client_id = || OAuthError::InvalidClient("client_id is required.".to_string());
+    Ok(match grant_type {
         Some("authorization_code") => {
-            let Some(client_id) = params.take("client_id") else {
-                return missing_client_id();
-            };
+            let client_id = client_id.ok_or_else(missing_client_id)?;
             let (Some(code), Some(redirect_uri), Some(code_verifier)) = (
                 params.take("code"),
                 params.take("redirect_uri"),
                 params.take("code_verifier"),
             ) else {
-                return invalid_request("code, redirect_uri and code_verifier are required.");
+                return Err(OAuthError::InvalidRequest(
+                    "code, redirect_uri and code_verifier are required.".to_string(),
+                )
+                .into());
             };
             let exchange = CodeExchange {
                 code,
@@ -66,14 +101,14 @@ pub(super) async fn token(
                 code_verifier,
                 resource: params.take("resource"),
             };
-            state.service.exchange_code(exchange).await
+            state.service.exchange_code(exchange).await?
         }
         Some("refresh_token") => {
-            let Some(client_id) = params.take("client_id") else {
-                return missing_client_id();
-            };
+            let client_id = client_id.ok_or_else(missing_client_id)?;
             let Some(refresh_token) = params.take("refresh_token") else {
-                return invalid_request("refresh_token is required.");
+                return Err(
+                    OAuthError::InvalidRequest("refresh_token is required.".to_string()).into(),
+                );
             };
             // `scope` may only narrow a refresh, and there is just one scope.
             let refresh = TokenRefresh {
@@ -81,21 +116,34 @@ pub(super) async fn token(
                 client_id,
                 resource: params.take("resource"),
             };
-            state.service.refresh(refresh).await
+            state.service.refresh(refresh).await?
         }
-        Some(_) => {
-            return oauth_error(
+        Some(_) => return Err(TokenRefusal::UnsupportedGrantType),
+        None => {
+            return Err(OAuthError::InvalidRequest("grant_type is required.".to_string()).into())
+        }
+    })
+}
+
+/// Why the token endpoint refuses a request.
+#[derive(Debug, thiserror::Error)]
+enum TokenRefusal {
+    #[error("Only the authorization_code and refresh_token grants are supported.")]
+    UnsupportedGrantType,
+    #[error(transparent)]
+    Error(#[from] OAuthError),
+}
+
+impl IntoResponse for TokenRefusal {
+    fn into_response(self) -> Response {
+        match self {
+            Self::UnsupportedGrantType => oauth_error(
                 StatusCode::BAD_REQUEST,
                 "unsupported_grant_type",
-                "Only the authorization_code and refresh_token grants are supported.",
-            )
+                &self.to_string(),
+            ),
+            Self::Error(error) => token_error(error),
         }
-        None => return invalid_request("grant_type is required."),
-    };
-
-    match result {
-        Ok(tokens) => no_store(Json(TokenResponse::from(tokens)).into_response()),
-        Err(error) => token_error(error),
     }
 }
 
@@ -132,22 +180,20 @@ pub(super) async fn revoke(
 /// is malformed or the client tries to authenticate.
 pub(super) struct PublicClientForm(Params);
 
+#[derive(Debug, thiserror::Error)]
 pub(super) enum PublicClientFormRejection {
+    #[error(transparent)]
     Malformed(ParamError),
     /// The client sent credentials, by `Basic` authentication or otherwise.
-    Authenticating {
-        basic: bool,
-    },
+    #[error("Toki's clients are public and must not authenticate.")]
+    Authenticating { basic: bool },
 }
 
 impl IntoResponse for PublicClientFormRejection {
     fn into_response(self) -> Response {
         match self {
             Self::Malformed(error) => invalid_request(&error.to_string()),
-            Self::Authenticating { basic } => invalid_client(
-                "Toki's clients are public and must not authenticate.",
-                basic,
-            ),
+            Self::Authenticating { basic } => invalid_client(&self.to_string(), basic),
         }
     }
 }
@@ -200,8 +246,4 @@ fn token_error(error: OAuthError) -> Response {
 
 fn invalid_request(description: &str) -> Response {
     oauth_error(StatusCode::BAD_REQUEST, "invalid_request", description)
-}
-
-fn missing_client_id() -> Response {
-    invalid_client("client_id is required.", false)
 }

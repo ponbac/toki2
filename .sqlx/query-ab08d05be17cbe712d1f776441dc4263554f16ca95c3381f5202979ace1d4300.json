@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, client_id, client_name, redirect_uri, created_at, last_used_at, expires_at\n            FROM oauth_grants g\n            WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()\n              -- A grant whose refresh token idled out can never be used again.\n              AND EXISTS (\n                  SELECT 1 FROM oauth_tokens t\n                  WHERE t.grant_id = g.id AND t.kind = 'refresh'\n                    AND t.rotated_at IS NULL AND t.expires_at > now()\n              )\n            ORDER BY created_at DESC, id DESC\n            ",
+  "query": "\n            SELECT id, client_id, client_name, redirect_uri, created_at, last_used_at, expires_at\n            FROM oauth_grants g\n            WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()\n              -- A grant whose refresh tokens idled out can never be used again.\n              AND EXISTS (\n                  SELECT 1 FROM oauth_tokens t\n                  WHERE t.grant_id = g.id AND t.kind = 'refresh'\n                    AND t.expires_at > now()\n              )\n            ORDER BY created_at DESC, id DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -96,5 +96,5 @@
       false
     ]
   },
-  "hash": "1276ca967f42ce471629b7f0002bd265e2c90c2a42e5621b8c35494103d17e55"
+  "hash": "ab08d05be17cbe712d1f776441dc4263554f16ca95c3381f5202979ace1d4300"
 }

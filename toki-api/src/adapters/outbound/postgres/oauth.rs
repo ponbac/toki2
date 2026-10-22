@@ -313,6 +313,7 @@ impl OAuthRepository for PostgresOAuthRepository {
         };
 
         let stored = StoredRefreshToken {
+            grant_id: OAuthGrantId::new(row.grant_id),
             client_id: row.client_id,
             resource: row.resource,
             expires_at: row.expires_at,
@@ -323,15 +324,10 @@ impl OAuthRepository for PostgresOAuthRepository {
 
         let rotation = match judge(&stored) {
             RefreshDecision::Rotate => {
-                if stored.rotated_at.is_some() {
-                    return Err(OAuthError::Storage(
-                        "a rotated refresh token cannot be rotated again".to_string(),
-                    ));
-                }
                 sqlx::query!(
                     r#"
                     UPDATE oauth_tokens
-                    SET rotated_at = now()
+                    SET rotated_at = COALESCE(rotated_at, now())
                     WHERE token_hash = $1
                     "#,
                     token.as_bytes().as_slice(),
@@ -356,10 +352,6 @@ impl OAuthRepository for PostgresOAuthRepository {
                 RefreshRotation::Rotated
             }
             RefreshDecision::Reject(reason) => return Ok(RefreshRotation::Rejected(reason)),
-            RefreshDecision::RevokeGrant(reason) => {
-                revoke_grant_by_id(&mut transaction, row.grant_id).await?;
-                RefreshRotation::Rejected(reason)
-            }
         };
 
         transaction.commit().await.map_err(storage_error)?;
@@ -430,11 +422,11 @@ impl OAuthRepository for PostgresOAuthRepository {
             SELECT id, client_id, client_name, redirect_uri, created_at, last_used_at, expires_at
             FROM oauth_grants g
             WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
-              -- A grant whose refresh token idled out can never be used again.
+              -- A grant whose refresh tokens idled out can never be used again.
               AND EXISTS (
                   SELECT 1 FROM oauth_tokens t
                   WHERE t.grant_id = g.id AND t.kind = 'refresh'
-                    AND t.rotated_at IS NULL AND t.expires_at > now()
+                    AND t.expires_at > now()
               )
             ORDER BY created_at DESC, id DESC
             "#,
@@ -509,17 +501,16 @@ impl OAuthRepository for PostgresOAuthRepository {
         sqlx::query!(
             r#"
             DELETE FROM oauth_tokens
-            WHERE expires_at < now() - INTERVAL '1 day' AND rotated_at IS NULL
+            WHERE expires_at < now() - INTERVAL '1 day'
             "#,
         )
         .execute(&mut transaction.executor())
         .await
         .map_err(storage_error)?;
 
-        // Rotated refresh tokens were kept above, as their reuse revokes the
-        // grant even after they expired; they go with their grant. Deleting
-        // them before the grant takes token locks before grant locks, as a
-        // refresh does, so cleanup and a refresh cannot deadlock.
+        // A grant's remaining tokens go with it. Deleting them before the
+        // grant takes token locks before grant locks, as a refresh does, so
+        // cleanup and a refresh cannot deadlock.
         sqlx::query!(
             r#"
             DELETE FROM oauth_tokens
@@ -780,14 +771,6 @@ mod tests {
         }
     }
 
-    fn rotate_once(token: &StoredRefreshToken) -> RefreshDecision {
-        if token.rotated_at.is_some() {
-            RefreshDecision::Reject("rotated".to_string())
-        } else {
-            RefreshDecision::Rotate
-        }
-    }
-
     /// A grant for `user_id` and `client_id` expiring at `grant_expires_at`,
     /// holding `tokens`.
     async fn connect_with(
@@ -1023,8 +1006,16 @@ mod tests {
             .is_empty());
     }
 
+    async fn rotated_at(pool: &PgPool, token: &OAuthSecretHash) -> Option<OffsetDateTime> {
+        sqlx::query_scalar("SELECT rotated_at FROM oauth_tokens WHERE token_hash = $1")
+            .bind(token.as_bytes().as_slice())
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
     #[sqlx::test]
-    async fn rotation_stores_a_usable_pair_and_marks_the_old_token_rotated(pool: PgPool) {
+    async fn rotation_stores_a_usable_pair_and_keeps_the_first_rotation_time(pool: PgPool) {
         let repository = repository(&pool);
         let user_id = seed_user(&pool, "user@example.com").await;
         let first = connect(&repository, user_id, CLIENT_ID).await;
@@ -1033,7 +1024,7 @@ mod tests {
             let seen = seen.clone();
             move |token: &StoredRefreshToken| {
                 seen.lock().unwrap().push(token.clone());
-                rotate_once(token)
+                RefreshDecision::Rotate
             }
         };
 
@@ -1044,68 +1035,36 @@ mod tests {
             .unwrap();
         assert!(matches!(rotation, RefreshRotation::Rotated));
         assert!(is_active(&repository, &second.access).await);
+        sqlx::query(
+            "UPDATE oauth_tokens SET rotated_at = now() - INTERVAL '3 days' WHERE token_hash = $1",
+        )
+        .bind(first.refresh.as_bytes().as_slice())
+        .execute(&pool)
+        .await
+        .unwrap();
+        let first_rotated_at = rotated_at(&pool, &first.refresh).await;
 
+        let third = tokens();
         let rotation = repository
-            .rotate_refresh_token(&second.refresh, &judge, &tokens().pair)
+            .rotate_refresh_token(&first.refresh, &judge, &third.pair)
             .await
             .unwrap();
         assert!(matches!(rotation, RefreshRotation::Rotated));
-
-        let rejected = tokens();
-        let rotation = repository
-            .rotate_refresh_token(&first.refresh, &judge, &rejected.pair)
-            .await
-            .unwrap();
-        assert!(matches!(rotation, RefreshRotation::Rejected(reason) if reason == "rotated"));
-        assert!(!is_active(&repository, &rejected.access).await);
+        assert!(is_active(&repository, &third.access).await);
+        assert!(is_active(&repository, &second.access).await);
+        assert_eq!(rotated_at(&pool, &first.refresh).await, first_rotated_at);
 
         let seen = seen.lock().unwrap().clone();
         assert_eq!(
             seen.iter()
                 .map(|token| token.rotated_at.is_some())
                 .collect::<Vec<_>>(),
-            [false, false, true]
+            [false, true]
         );
         assert!(seen.iter().all(|token| token.client_id == CLIENT_ID
             && token.resource == RESOURCE
             && !token.grant_revoked));
-    }
-
-    #[sqlx::test]
-    async fn a_refresh_token_reused_late_revokes_its_grant(pool: PgPool) {
-        let repository = repository(&pool);
-        let user_id = seed_user(&pool, "user@example.com").await;
-        let first = connect(&repository, user_id, CLIENT_ID).await;
-        let second = tokens();
-        repository
-            .rotate_refresh_token(&first.refresh, &rotate_once, &second.pair)
-            .await
-            .unwrap();
-
-        let rotation = repository
-            .rotate_refresh_token(
-                &first.refresh,
-                &|_| RefreshDecision::RevokeGrant("reused".to_string()),
-                &tokens().pair,
-            )
-            .await
-            .unwrap();
-
-        assert!(matches!(rotation, RefreshRotation::Rejected(_)));
-        assert!(!is_active(&repository, &second.access).await);
-        let revoked = Arc::new(Mutex::new(None));
-        let judge = {
-            let revoked = revoked.clone();
-            move |token: &StoredRefreshToken| {
-                *revoked.lock().unwrap() = Some(token.grant_revoked);
-                RefreshDecision::Reject("revoked".to_string())
-            }
-        };
-        repository
-            .rotate_refresh_token(&second.refresh, &judge, &tokens().pair)
-            .await
-            .unwrap();
-        assert_eq!(*revoked.lock().unwrap(), Some(true));
+        assert_eq!(seen[0].grant_id, seen[1].grant_id);
     }
 
     #[sqlx::test]
@@ -1159,14 +1118,14 @@ mod tests {
 
         let rotated = tokens();
         repository
-            .rotate_refresh_token(&ending.refresh, &rotate_once, &rotated.pair)
+            .rotate_refresh_token(&ending.refresh, &|_| RefreshDecision::Rotate, &rotated.pair)
             .await
             .unwrap();
         assert!(refresh_expires_with_grant(&pool, &rotated.refresh).await);
     }
 
     #[sqlx::test]
-    async fn concurrent_rotations_of_a_refresh_token_rotate_once(pool: PgPool) {
+    async fn concurrent_refreshes_with_one_token_queue_and_both_rotate(pool: PgPool) {
         let repository = repository(&pool);
         let user_id = seed_user(&pool, "user@example.com").await;
         let first = connect(&repository, user_id, CLIENT_ID).await;
@@ -1180,7 +1139,7 @@ mod tests {
                 let issued = tokens();
                 let judge = move |token: &StoredRefreshToken| {
                     seen.lock().unwrap().push(token.rotated_at.is_some());
-                    rotate_once(token)
+                    RefreshDecision::Rotate
                 };
                 let rotation = repository
                     .rotate_refresh_token(&refresh, &judge, &issued.pair)
@@ -1202,11 +1161,14 @@ mod tests {
             .filter(|(rotation, _)| matches!(rotation, RefreshRotation::Rotated))
             .map(|(_, access)| *access)
             .collect::<Vec<_>>();
-        assert_eq!(rotated.len(), 1);
+        assert_eq!(rotated.len(), 2);
+        // The second waited for the first and saw the token used.
         let mut seen = seen.lock().unwrap().clone();
         seen.sort();
         assert_eq!(seen, [false, true]);
-        assert!(is_active(&repository, &rotated[0]).await);
+        for access in &rotated {
+            assert!(is_active(&repository, access).await);
+        }
     }
 
     async fn count(pool: &PgPool, table: &str) -> i64 {
@@ -1391,6 +1353,13 @@ mod tests {
         let repository = repository(&pool);
         let user_id = seed_user(&pool, "user@example.com").await;
         let other_id = seed_user(&pool, "other@example.com").await;
+        // Its only refresh token was used, and still refreshes.
+        let used = connect(&repository, user_id, CLIENT_ID).await;
+        sqlx::query("UPDATE oauth_tokens SET rotated_at = now() WHERE token_hash = $1")
+            .bind(used.refresh.as_bytes().as_slice())
+            .execute(&pool)
+            .await
+            .unwrap();
         connect(&repository, user_id, CLIENT_ID).await;
         connect(&repository, user_id, OTHER_CLIENT_ID).await;
         connect(&repository, other_id, CLIENT_ID).await;
@@ -1421,7 +1390,7 @@ mod tests {
                 .iter()
                 .map(|grant| grant.client_id.as_str())
                 .collect::<Vec<_>>(),
-            [OTHER_CLIENT_ID, CLIENT_ID]
+            [OTHER_CLIENT_ID, CLIENT_ID, CLIENT_ID]
         );
 
         let newest = grants[0].id;
@@ -1436,8 +1405,8 @@ mod tests {
         ));
 
         let grants = repository.list_active_grants(&user_id).await.unwrap();
-        assert_eq!(grants.len(), 1);
-        assert_eq!(grants[0].client_id, CLIENT_ID);
+        assert_eq!(grants.len(), 2);
+        assert!(grants.iter().all(|grant| grant.client_id == CLIENT_ID));
         assert_eq!(
             repository
                 .list_active_grants(&other_id)
@@ -1605,16 +1574,20 @@ mod tests {
         assert_eq!(count(&pool, "oauth_authorization_requests").await, 1);
         assert_eq!(count(&pool, "oauth_grants").await, 5);
         // The long-revoked grant took its code and both its tokens with it;
-        // the long-expired access token and the expired, never-rotated refresh
-        // token went alone; the expired rotated refresh token stays.
+        // the long-expired access token and both expired refresh tokens, used
+        // or not, went alone.
         assert_eq!(count(&pool, "oauth_authorization_codes").await, 5);
-        assert_eq!(count(&pool, "oauth_tokens").await, 8);
+        assert_eq!(count(&pool, "oauth_tokens").await, 7);
         assert!(repository
             .revoke_grant_of_token(&long_expired_access.refresh, None)
             .await
             .unwrap());
-        assert!(repository
+        assert!(!repository
             .revoke_grant_of_token(&rotated_expired.refresh, None)
+            .await
+            .unwrap());
+        assert!(repository
+            .revoke_grant_of_token(&rotated_expired.access, None)
             .await
             .unwrap());
     }
