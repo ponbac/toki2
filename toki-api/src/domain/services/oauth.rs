@@ -15,7 +15,7 @@ use crate::domain::{
         RefreshDecision, RefreshRotation, RegisteredClient, StoredAuthorizationCode,
         StoredRefreshToken, TokenRefresh, UserId, ValidatedAuthorization, ACCESS_TOKEN_LIFETIME,
         AUTHORIZATION_CODE_LIFETIME, AUTHORIZATION_REQUEST_LIFETIME, GRANT_LIFETIME,
-        REFRESH_REUSE_GRACE, REFRESH_TOKEN_IDLE_LIFETIME,
+        REFRESH_TOKEN_IDLE_LIFETIME,
     },
     ports::{
         inbound::{OAuthAccessTokenAuthenticator, OAuthService},
@@ -349,20 +349,22 @@ impl<R: OAuthRepository, F: ClientMetadataResolver> OAuthService for OAuthServic
             {
                 return reject("resource does not match the refresh token's.");
             }
-            // Reuse is judged before the token's own expiry, so a leaked
-            // ancestor still revokes the connection after it expires.
-            match stored.rotated_at {
-                // Most likely the same client refreshing twice at once: its
-                // other request got the successor, which stays valid.
-                Some(rotated_at) if now - rotated_at < REFRESH_REUSE_GRACE => {
-                    reject("The refresh token was just used; use its successor.")
-                }
-                Some(_) => RefreshDecision::RevokeGrant(
-                    "The refresh token was already used; its connection is revoked.".to_string(),
-                ),
-                None if stored.expires_at <= now => reject("The refresh token has expired."),
-                None => RefreshDecision::Rotate,
+            if stored.expires_at <= now {
+                return reject("The refresh token has expired.");
             }
+            // A used refresh token keeps working instead of revoking its
+            // connection as stolen (RFC 9700, section 4.14.2): Codex runs
+            // several processes that each hold a copy of the token, and not
+            // all of them save the one a refresh returns.
+            if let Some(rotated_at) = stored.rotated_at {
+                tracing::info!(
+                    grant_id = stored.grant_id.as_i32(),
+                    client_id = %stored.client_id,
+                    first_used_seconds_ago = (now - rotated_at).whole_seconds(),
+                    "A used OAuth refresh token was exchanged again"
+                );
+            }
+            RefreshDecision::Rotate
         };
 
         match self
@@ -825,6 +827,7 @@ mod tests {
                 .find(|grant| grant.id == row.grant_id)
                 .expect("a token's grant exists");
             let stored = StoredRefreshToken {
+                grant_id: grant.id,
                 client_id: grant.client_id.clone(),
                 resource: grant.resource.clone(),
                 expires_at: row.expires_at,
@@ -834,17 +837,13 @@ mod tests {
             };
             match judge(&stored) {
                 RefreshDecision::Rotate => {
-                    row.rotated_at = Some(now);
+                    row.rotated_at.get_or_insert(now);
                     grant.last_used_at = now;
                     let (grant_id, grant_expires_at) = (grant.id, grant.expires_at);
                     push_tokens(&mut tables.tokens, grant_id, tokens, grant_expires_at);
                     Ok(RefreshRotation::Rotated)
                 }
                 RefreshDecision::Reject(reason) => Ok(RefreshRotation::Rejected(reason)),
-                RefreshDecision::RevokeGrant(reason) => {
-                    grant.revoke(now);
-                    Ok(RefreshRotation::Rejected(reason))
-                }
             }
         }
 
@@ -899,12 +898,11 @@ mod tests {
         ) -> Result<Vec<OAuthGrant>, OAuthError> {
             let now = OffsetDateTime::now_utc();
             let tables = self.tables.lock().unwrap();
-            // A grant whose refresh token idled out can never be used again.
+            // A grant whose refresh tokens idled out can never be used again.
             let refreshable = |grant_id: OAuthGrantId| {
                 tables.tokens.iter().any(|token| {
                     token.grant_id == grant_id
                         && token.kind == TokenKind::Refresh
-                        && token.rotated_at.is_none()
                         && token.expires_at > now
                 })
             };
@@ -961,12 +959,9 @@ mod tests {
             tables
                 .codes
                 .retain(|row| row.grant_id.is_none_or(|id| grant_ids.contains(&id)));
-            // Rotated refresh tokens stay while their grant does, so their
-            // reuse is still detected.
-            tables.tokens.retain(|row| {
-                grant_ids.contains(&row.grant_id)
-                    && (row.expires_at > day_ago || row.rotated_at.is_some())
-            });
+            tables
+                .tokens
+                .retain(|row| grant_ids.contains(&row.grant_id) && row.expires_at > day_ago);
             tables
                 .clients
                 .retain(|row| row.used || row.created_at > month_ago);
@@ -1658,76 +1653,61 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reuse_within_the_grace_period_fails_without_revoking() {
-        let (service, _) = setup();
+    async fn a_used_refresh_token_refreshes_again_until_it_expires() {
+        let (service, repository) = setup();
         let ada = ada();
         let first = connect(&service, &ada).await;
         let successor = service
             .refresh(refresh_with(&first.refresh_token))
             .await
             .unwrap();
+        // One Codex process refreshed days ago and kept the result to itself;
+        // another still holds the first token.
+        let first_used = OffsetDateTime::now_utc() - Duration::days(3);
+        let mut expires_at = None;
+        repository.update_token(&first.refresh_token, |row| {
+            row.rotated_at = Some(first_used);
+            expires_at = Some(row.expires_at);
+        });
 
+        let reused = service
+            .refresh(refresh_with(&first.refresh_token))
+            .await
+            .unwrap();
+
+        assert_ne!(reused.refresh_token, successor.refresh_token);
+        for issued in [&successor, &reused] {
+            assert_eq!(
+                authenticated(&service, &issued.access_token).await,
+                Some(ada.id)
+            );
+        }
+        repository.update_token(&first.refresh_token, |row| {
+            assert_eq!(row.rotated_at, Some(first_used));
+            assert_eq!(Some(row.expires_at), expires_at);
+        });
+        service
+            .refresh(refresh_with(&successor.refresh_token))
+            .await
+            .unwrap();
+        service
+            .refresh(refresh_with(&reused.refresh_token))
+            .await
+            .unwrap();
+        assert_eq!(service.list_grants(&ada.id).await.unwrap().len(), 1);
+
+        repository.update_token(&first.refresh_token, |row| {
+            row.expires_at = OffsetDateTime::now_utc() - Duration::seconds(1);
+        });
         assert_invalid_grant(
             service.refresh(refresh_with(&first.refresh_token)).await,
-            "concurrent reuse",
+            "expired used token",
         );
         assert_eq!(
             authenticated(&service, &successor.access_token).await,
             Some(ada.id)
         );
         assert_eq!(service.list_grants(&ada.id).await.unwrap().len(), 1);
-        service
-            .refresh(refresh_with(&successor.refresh_token))
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn reuse_after_the_grace_period_revokes_the_connection() {
-        let (service, repository) = setup();
-        let ada = ada();
-        let first = connect(&service, &ada).await;
-        let successor = service
-            .refresh(refresh_with(&first.refresh_token))
-            .await
-            .unwrap();
-        repository.update_token(&first.refresh_token, |row| {
-            row.rotated_at = Some(OffsetDateTime::now_utc() - REFRESH_REUSE_GRACE);
-        });
-
-        assert_invalid_grant(
-            service.refresh(refresh_with(&first.refresh_token)).await,
-            "reuse",
-        );
-        assert_eq!(authenticated(&service, &successor.access_token).await, None);
-        assert_invalid_grant(
-            service
-                .refresh(refresh_with(&successor.refresh_token))
-                .await,
-            "successor of a revoked connection",
-        );
-        assert!(service.list_grants(&ada.id).await.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn reuse_of_an_expired_rotated_token_still_revokes() {
-        let (service, repository) = setup();
-        let first = connect(&service, &ada()).await;
-        let successor = service
-            .refresh(refresh_with(&first.refresh_token))
-            .await
-            .unwrap();
-        repository.update_token(&first.refresh_token, |row| {
-            let past = OffsetDateTime::now_utc() - Duration::days(31);
-            row.rotated_at = Some(past);
-            row.expires_at = past;
-        });
-
-        assert_invalid_grant(
-            service.refresh(refresh_with(&first.refresh_token)).await,
-            "expired reuse",
-        );
-        assert_eq!(authenticated(&service, &successor.access_token).await, None);
     }
 
     #[tokio::test]
@@ -1800,16 +1780,18 @@ mod tests {
             service.decide(&ada.id, abandoned.as_str(), true).await,
             Err(OAuthError::NotFound)
         ));
+        assert_invalid_grant(
+            service.refresh(refresh_with(&first.refresh_token)).await,
+            "expired ancestor after cleanup",
+        );
         assert_eq!(
             authenticated(&service, &successor.access_token).await,
             Some(ada.id)
         );
-        // The long-expired ancestor is kept, so its reuse still revokes.
-        assert_invalid_grant(
-            service.refresh(refresh_with(&first.refresh_token)).await,
-            "reuse after cleanup",
-        );
-        assert_eq!(authenticated(&service, &successor.access_token).await, None);
+        service
+            .refresh(refresh_with(&successor.refresh_token))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

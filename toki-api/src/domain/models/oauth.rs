@@ -25,16 +25,16 @@ use crate::domain::OAuthError;
 pub const OAUTH_SCOPE: &str = "mcp";
 pub const AUTHORIZATION_REQUEST_LIFETIME: Duration = Duration::minutes(10);
 pub const AUTHORIZATION_CODE_LIFETIME: Duration = Duration::minutes(5);
-pub const ACCESS_TOKEN_LIFETIME: Duration = Duration::hours(1);
-/// A refresh token unused for this long expires.
+/// Every request checks an access token's connection, so revoking the
+/// connection stops its access tokens at once, however long they last.
+pub const ACCESS_TOKEN_LIFETIME: Duration = Duration::hours(24);
+/// A refresh token works for this long after it is issued, also after it was
+/// exchanged once. Every refresh issues a new one, so a connection unused for
+/// this long expires.
 pub const REFRESH_TOKEN_IDLE_LIFETIME: Duration = Duration::days(30);
 /// A connection lasts at most this long; the user then connects again, which
 /// signs them in with Entra again.
 pub const GRANT_LIFETIME: Duration = Duration::days(365);
-/// A rotated refresh token presented again within this window is refused
-/// without revoking the connection: one client refreshing twice at once.
-/// Later, its reuse means it leaked, and the connection is revoked.
-pub const REFRESH_REUSE_GRACE: Duration = Duration::seconds(30);
 
 const MAX_URI_LEN: usize = 2048;
 const MAX_CLIENT_NAME_LEN: usize = 100;
@@ -578,6 +578,7 @@ pub enum CodeRedemption {
 /// A refresh token as stored with its grant, locked for rotation.
 #[derive(Debug, Clone)]
 pub struct StoredRefreshToken {
+    pub grant_id: OAuthGrantId,
     pub client_id: String,
     pub resource: String,
     pub expires_at: OffsetDateTime,
@@ -589,12 +590,10 @@ pub struct StoredRefreshToken {
 /// What to do with a refresh token being exchanged, decided on its locked row.
 #[derive(Debug, Clone)]
 pub enum RefreshDecision {
-    /// Mark it rotated and store the new pair.
+    /// Mark it rotated, unless it already was, and store the new pair.
     Rotate,
     /// Refuse without changing anything.
     Reject(String),
-    /// Reuse of a rotated token: revoke the grant and refuse.
-    RevokeGrant(String),
 }
 
 #[derive(Debug, Clone)]

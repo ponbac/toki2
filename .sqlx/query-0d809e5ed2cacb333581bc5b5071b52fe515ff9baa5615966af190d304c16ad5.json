@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE oauth_tokens\n                    SET rotated_at = COALESCE(rotated_at, now())\n                    WHERE token_hash = $1\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d809e5ed2cacb333581bc5b5071b52fe515ff9baa5615966af190d304c16ad5"
+}

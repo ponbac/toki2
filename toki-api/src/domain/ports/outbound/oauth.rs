@@ -66,10 +66,10 @@ pub trait OAuthRepository: Send + Sync + 'static {
 
     /// Rotates a refresh token in one transaction: locks it and its grant,
     /// asks `judge`, and applies the decision before committing.
-    /// - `Rotate`: marks the token rotated, stores `tokens` (the refresh
-    ///   token's expiry capped at the grant's) and records the grant's use.
+    /// - `Rotate`: marks the token rotated unless it already was, stores
+    ///   `tokens` (the refresh token's expiry capped at the grant's) and
+    ///   records the grant's use.
     /// - `Reject`: changes nothing.
-    /// - `RevokeGrant`: revokes the grant.
     ///
     /// Only refresh tokens are found: an access token is `Unknown` here.
     async fn rotate_refresh_token(
@@ -105,11 +105,10 @@ pub trait OAuthRepository: Send + Sync + 'static {
         grant_id: &OAuthGrantId,
     ) -> Result<(), OAuthError>;
 
-    /// Deletes expired consent requests; codes, access tokens and never-rotated
-    /// refresh tokens expired over a day ago; grants revoked or expired over 30
-    /// days ago, with their tokens; and registered clients that never produced
-    /// a grant and are over 30 days old. Rotated refresh tokens stay as long as
-    /// their grant, so their reuse is still detected after they expire.
+    /// Deletes expired consent requests; codes and tokens, used or not,
+    /// expired over a day ago; grants revoked or expired over 30 days ago, with
+    /// their tokens; and registered clients that never produced a grant and are
+    /// over 30 days old.
     async fn delete_expired(&self) -> Result<(), OAuthError>;
 }
 

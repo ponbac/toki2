@@ -800,7 +800,7 @@ async fn the_token_endpoint_exchanges_codes_and_refreshes() {
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body["token_type"], "Bearer");
-    assert_eq!(body["expires_in"], 3600);
+    assert_eq!(body["expires_in"], 86400);
     assert_eq!(body["scope"], "mcp");
     assert!(body["access_token"]
         .as_str()
