@@ -32,6 +32,7 @@ export const PROVIDER_COLORS: Readonly<Record<AiProvider, string>> = {
   grok: SLOTS[2],
   copilot: SLOTS[3],
   pi: SLOTS[4],
+  opencode: SLOTS[5],
 };
 
 /** How many models of one tool get their own tint; the rest fold into "Other". */

@@ -16,15 +16,25 @@ export const PLAN_SUGGESTIONS: Record<AiProvider, readonly string[]> = {
   grok: [],
   copilot: ["Copilot Business"],
   pi: [],
+  opencode: [],
 };
 
 /**
- * The provider a subscription is declared for to pay for `provider`'s usage.
- * Pi has no subscriptions of its own: a ChatGPT subscription, declared for
- * Codex, pays for Pi usage on the days Pi ran on its ChatGPT sign-in.
+ * The provider a subscription is declared for to pay for `provider`'s usage,
+ * or null when none can. Pi has no subscriptions of its own: a ChatGPT
+ * subscription, declared for Codex, pays for Pi usage on the days Pi ran on
+ * its ChatGPT sign-in. OpenCode has none either: each of its buckets names the
+ * subscription that pays for it, if any.
  */
-export function subscriptionProvider(provider: AiProvider): AiProvider {
-  return provider === "pi" ? "codex" : provider;
+export function subscriptionProvider(provider: AiProvider): AiProvider | null {
+  switch (provider) {
+    case "pi":
+      return "codex";
+    case "opencode":
+      return null;
+    default:
+      return provider;
+  }
 }
 
 /** The providers a subscription can be declared for. */

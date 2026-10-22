@@ -17,6 +17,11 @@
 //! ran on that subscription rather than on an API key, which no declaration
 //! records. Pi usage on any other day is API usage.
 //!
+//! OpenCode routes its requests to other vendors as well and has no
+//! subscriptions of its own either. token-ledger names the subscription that pays
+//! for a bucket of its usage instead (`billingProvider`): Copilot for its GitHub
+//! Copilot route and Codex for its ChatGPT sign-in. Its other usage is API usage.
+//!
 //! Date conventions: a subscription period ends *inclusively* on `valid_to`,
 //! the way people state it, while `AiUsageDateRange` ends *exclusively*, the
 //! way usage is summed. Convert with `AiSubscriptionPeriod::to_date_range` and
@@ -216,13 +221,19 @@ pub struct AiSubscriptionTerms {
 impl AiSubscriptionTerms {
     /// Rejects terms for a provider that has no subscriptions of its own.
     pub fn ensure_declarable(&self) -> Result<(), AiSubscriptionError> {
-        if self.provider.supports_subscription() {
-            Ok(())
-        } else {
-            Err(invalid(
+        match self.provider {
+            AiProvider::Pi => Err(invalid(
                 "pi has no subscriptions of its own: declare the ChatGPT subscription that \
                  pays for its usage for codex",
-            ))
+            )),
+            AiProvider::OpenCode => Err(invalid(
+                "opencode has no subscriptions of its own: usage it routes through Copilot or \
+                 a ChatGPT sign-in is billed to that subscription, declared for copilot or \
+                 codex, and everything else to the API estimate",
+            )),
+            AiProvider::Codex | AiProvider::Claude | AiProvider::Grok | AiProvider::Copilot => {
+                Ok(())
+            }
         }
     }
 }
@@ -276,12 +287,15 @@ pub enum AiBillingMode<'a> {
 /// The provider whose subscriptions pay for a day of `provider`'s usage, or
 /// `None` when none can and the day is API usage.
 ///
-/// Every provider but Pi pays with its own subscriptions. Pi's usage is paid for
-/// by a ChatGPT subscription, declared for Codex, when `chatgpt_sign_in` holds:
-/// Pi reported its ChatGPT sign-in for the user on that day.
+/// Every provider but Pi and OpenCode pays with its own subscriptions. Pi's usage
+/// is paid for by a ChatGPT subscription, declared for Codex, when
+/// `chatgpt_sign_in` holds: Pi reported its ChatGPT sign-in for the user on that
+/// day. OpenCode's usage has no payer of its own: only an explicit
+/// `billingProvider` on its buckets routes it to a subscription.
 pub fn subscription_provider(provider: AiProvider, chatgpt_sign_in: bool) -> Option<AiProvider> {
     match provider {
         AiProvider::Pi => chatgpt_sign_in.then_some(AiProvider::Codex),
+        AiProvider::OpenCode => None,
         AiProvider::Codex | AiProvider::Claude | AiProvider::Grok | AiProvider::Copilot => {
             Some(provider)
         }

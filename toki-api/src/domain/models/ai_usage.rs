@@ -60,6 +60,7 @@ pub enum AiProvider {
     Grok,
     Copilot,
     Pi,
+    OpenCode,
 }
 
 impl AiProvider {
@@ -70,13 +71,14 @@ impl AiProvider {
             "grok" => Some(Self::Grok),
             "copilot" => Some(Self::Copilot),
             "pi" => Some(Self::Pi),
+            "opencode" => Some(Self::OpenCode),
             _ => None,
         }
     }
 
     pub fn supports_subscription(self) -> bool {
         match self {
-            Self::Pi => false,
+            Self::Pi | Self::OpenCode => false,
             Self::Codex | Self::Claude | Self::Grok | Self::Copilot => true,
         }
     }
@@ -88,6 +90,7 @@ impl AiProvider {
             Self::Grok => "grok",
             Self::Copilot => "copilot",
             Self::Pi => "pi",
+            Self::OpenCode => "opencode",
         }
     }
 }
@@ -383,6 +386,14 @@ impl AiUsageUpload {
             }
             if !replaced.contains(&hint.provider) {
                 return Err(problem(NOT_REPLACED));
+            }
+            // A hint could only flag a mismatch no subscription resolves: OpenCode
+            // has none of its own, and its buckets name their payer instead.
+            if hint.provider == AiProvider::OpenCode {
+                return Err(problem(
+                    "opencode reports no plan hints: name the subscription that pays for a \
+                     bucket in its billingProvider",
+                ));
             }
             if let Some(text) = text_problem("plan", &hint.plan, true) {
                 return Err(problem(&text));

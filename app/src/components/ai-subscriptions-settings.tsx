@@ -88,18 +88,18 @@ export function AiSubscriptionsSettings() {
       <MismatchWarning
         query={mismatchesQuery}
         declareDisabled={editor !== null}
-        onDeclare={(mismatch) =>
-          setEditor({
-            mode: "create",
-            initial: {
-              ...emptyDraft(
-                subscriptionProvider(mismatch.provider),
-                mismatch.firstDay,
-              ),
-              validTo: mismatch.lastUncoveredDay ?? "",
-            },
-          })
-        }
+        onDeclare={(mismatch) => {
+          const provider = subscriptionProvider(mismatch.provider);
+          if (provider) {
+            setEditor({
+              mode: "create",
+              initial: {
+                ...emptyDraft(provider, mismatch.firstDay),
+                validTo: mismatch.lastUncoveredDay ?? "",
+              },
+            });
+          }
+        }}
       />
 
       <SubscriptionList

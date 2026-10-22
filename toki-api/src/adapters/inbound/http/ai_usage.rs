@@ -151,6 +151,7 @@ pub enum AiUsageProvider {
     Grok,
     Copilot,
     Pi,
+    OpenCode,
 }
 
 /// One session's usage of one model during one UTC hour. The key
@@ -232,7 +233,8 @@ pub enum AiUsageCoverageStatus {
 
 /// A billing plan a provider reported during an hour of the window. Pi names
 /// no plan: its hint is `openai-codex`, the route of its ChatGPT sign-in, for an
-/// hour in which usage ran through that sign-in.
+/// hour in which usage ran through that sign-in. OpenCode reports no hints: its
+/// buckets name the subscription that pays for them in `billingProvider`.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AiUsageProviderHintPayload {
@@ -538,6 +540,7 @@ impl From<AiUsageProvider> for AiProvider {
             AiUsageProvider::Grok => Self::Grok,
             AiUsageProvider::Copilot => Self::Copilot,
             AiUsageProvider::Pi => Self::Pi,
+            AiUsageProvider::OpenCode => Self::OpenCode,
         }
     }
 }
@@ -550,6 +553,7 @@ impl From<AiProvider> for AiUsageProvider {
             AiProvider::Grok => Self::Grok,
             AiProvider::Copilot => Self::Copilot,
             AiProvider::Pi => Self::Pi,
+            AiProvider::OpenCode => Self::OpenCode,
         }
     }
 }
@@ -745,7 +749,7 @@ mod tests {
             assert_eq!(buckets[0].billing_provider, Some(AiProvider::Codex));
             assert_eq!(buckets[1].billing_provider, None);
         }
-        for invalid in ["claude", "pi", "unknown"] {
+        for invalid in ["claude", "pi", "opencode", "unknown"] {
             body["buckets"][0]["billingProvider"] = json!(invalid);
             let (status, _) = put(
                 app(service.clone(), Arc::new(AnyTokenAuthenticator)),
@@ -1120,6 +1124,96 @@ mod tests {
                 "log"
             ]
             .map(|row| (row.to_string(), "pi".to_string()))
+        );
+    }
+
+    #[sqlx::test]
+    async fn opencode_usage_is_stored_with_its_payer_and_without_hints(pool: PgPool) {
+        let db = crate::db::DbPool::from(pool.clone());
+        let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
+            PostgresApiTokenRepository::new(db.clone()),
+        )));
+        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(Arc::new(
+            PostgresAiUsageRepository::new(db),
+        )));
+        let app = app(service, tokens.clone());
+        let id: i32 = sqlx::query_scalar(
+            "INSERT INTO users (email, full_name, picture, access_token)
+             VALUES ('dev@example.com', 'Test User', '', '')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let issued = tokens
+            .create(&UserId::new(id), "token-ledger")
+            .await
+            .unwrap();
+        let secret = issued.secret.as_str();
+        let coverage = |status: &str| {
+            json!([{
+                "provider": "opencode",
+                "status": status,
+                "files": 0,
+                "unreadable": 0,
+                "malformedLines": 0,
+                "skippedRecords": 0,
+                "duplicates": 0
+            }])
+        };
+
+        let mut used = payload(1);
+        used["version"] = json!(2);
+        used["buckets"][0]["provider"] = json!("opencode");
+        used["buckets"][0]["billingProvider"] = json!("copilot");
+        used["coverage"] = coverage("ok");
+        used["providerHints"] = json!([
+            { "provider": "opencode", "hourStart": "2026-09-22T08:00:00.000Z", "plan": "pro" }
+        ]);
+        let (status, body) = put(app.clone(), MACHINE, Some(secret), &used).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("opencode reports no plan hints")),
+            "{body}"
+        );
+
+        used["providerHints"] = json!([]);
+        let (status, body) = put(app.clone(), MACHINE, Some(secret), &used).await;
+        assert_eq!(
+            (status, body),
+            (StatusCode::OK, json!({ "storedBuckets": 1 }))
+        );
+
+        // A machine that never ran OpenCode reports it as missing in every sync.
+        let mut unused = payload(0);
+        unused["coverage"] = coverage("missing");
+        unused["providerHints"] = json!([]);
+        let other_machine = "0b7a3c52-9d1e-4f6a-8b2c-3e4d5f6a7b8c";
+        unused["machine"]["id"] = json!(other_machine);
+        let (status, _) = put(app, other_machine, Some(secret), &unused).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let stored: Vec<(String, String)> = sqlx::query_as(
+            "SELECT 'bucket paid by ' || billing_provider, provider FROM ai_usage_buckets
+             UNION ALL SELECT 'hint ' || plan, provider FROM ai_usage_provider_hints
+             UNION ALL SELECT 'coverage ' || status, provider FROM ai_usage_machine_coverage
+             UNION ALL SELECT 'log', provider FROM ai_usage_coverage_log
+             ORDER BY 1",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored,
+            [
+                "bucket paid by copilot",
+                "coverage missing",
+                "coverage ok",
+                "log"
+            ]
+            .map(|row| (row.to_string(), "opencode".to_string()))
         );
     }
 }
