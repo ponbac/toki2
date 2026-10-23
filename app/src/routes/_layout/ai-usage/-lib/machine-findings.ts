@@ -71,7 +71,12 @@ export function machineFindings(
         text: `${tool}: ${formatCount(entry.malformedLines)} malformed lines and ${formatCount(entry.skippedRecords)} records skipped.`,
       });
     }
-    if (entry.pricing?.status === "unavailable") {
+    // Without rates, a tool's usage is unknown unless it has a price of its
+    // own, such as Copilot's next edit suggestions at zero.
+    if (
+      entry.pricing?.status === "unavailable" &&
+      machine.usage?.cost.kind === "partial"
+    ) {
       findings.push({
         key: `${entry.provider}-pricing`,
         severity: "warning",
