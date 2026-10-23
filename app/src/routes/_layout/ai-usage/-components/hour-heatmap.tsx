@@ -81,7 +81,7 @@ export function HourHeatmap({
         ))}
         {Array.from({ length: 24 }, (_, hour) => (
           <React.Fragment key={hour}>
-            <span className="-mt-px pr-1.5 text-right text-[10px] tabular-nums leading-3 text-muted-foreground">
+            <span className="-mt-px pr-1.5 text-right text-[10px] leading-3 text-muted-foreground tabular-nums">
               {hour % 3 === 0 ? String(hour).padStart(2, "0") : ""}
             </span>
             {grid.map((row, day) => {
@@ -101,7 +101,7 @@ export function HourHeatmap({
                       }}
                     >
                       {unpriced && metric === "cost" && (
-                        <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full border border-card bg-foreground" />
+                        <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full border border-card bg-foreground" />
                       )}
                     </div>
                   </TooltipTrigger>
@@ -155,30 +155,37 @@ export function HourHeatmap({
   );
 }
 
-/** The heatmap's hours with usage as a table, for screen readers. */
+/**
+ * The heatmap's hours with usage as a table, for screen readers. A wrapper
+ * hides it: a table is never narrower than its content, and its caption sits
+ * outside the box `sr-only` clips, so Firefox painted the caption over the
+ * card's title while the page was dimmed for a refetch.
+ */
 function HeatmapTable({ report }: { report: AiUsageReport }) {
   const money = useMoney();
   return (
-    <table className="sr-only">
-      <caption>Usage per local weekday and hour</caption>
-      <thead>
-        <tr>
-          <th scope="col">Weekday</th>
-          <th scope="col">Hour</th>
-          <th scope="col">Estimated cost</th>
-          <th scope="col">Tokens</th>
-        </tr>
-      </thead>
-      <tbody>
-        {report.hours.map((hour) => (
-          <tr key={`${hour.weekday}-${hour.hour}`}>
-            <td>{WEEKDAYS[hour.weekday - 1]}</td>
-            <td>{formatHour(hour.hour)}</td>
-            <td>{formatCost(money, hour.totals.cost)}</td>
-            <td>{formatCompact(totalTokens(hour.totals.tokens))}</td>
+    <div className="sr-only">
+      <table>
+        <caption>Usage per local weekday and hour</caption>
+        <thead>
+          <tr>
+            <th scope="col">Weekday</th>
+            <th scope="col">Hour</th>
+            <th scope="col">Estimated cost</th>
+            <th scope="col">Tokens</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {report.hours.map((hour) => (
+            <tr key={`${hour.weekday}-${hour.hour}`}>
+              <td>{WEEKDAYS[hour.weekday - 1]}</td>
+              <td>{formatHour(hour.hour)}</td>
+              <td>{formatCost(money, hour.totals.cost)}</td>
+              <td>{formatCompact(totalTokens(hour.totals.tokens))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
