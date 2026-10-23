@@ -38,17 +38,23 @@ function machine(cost) {
   };
 }
 
-const keys = (cost) => machineFindings(machine(cost), 7).map((f) => f.key);
+const findings = (cost) => machineFindings(machine(cost), 7);
 
 describe("machine findings", () => {
-  test("missing rates are a warning while usage has no known price", () => {
+  test("unpriced usage is a warning that names missing rates as a cause", () => {
     expect(
-      keys({ kind: "partial", knownUsd: 0, unpricedRecords: 374 }),
-    ).toEqual(["copilot-pricing", "unpriced"]);
+      findings({ kind: "partial", knownUsd: 0, unpricedRecords: 374 }),
+    ).toEqual([
+      {
+        key: "unpriced",
+        severity: "warning",
+        text: "374 of its requests in these dates have no known price, so their cost is unknown. Prices were unavailable when it last synced.",
+      },
+    ]);
   });
 
   test("missing rates are no warning when every request has a price", () => {
     // Copilot's next edit suggestions cost nothing without any rates.
-    expect(keys({ kind: "estimated", usd: 0 })).toEqual([]);
+    expect(findings({ kind: "estimated", usd: 0 })).toEqual([]);
   });
 });
