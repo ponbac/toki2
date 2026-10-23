@@ -71,20 +71,21 @@ export function machineFindings(
         text: `${tool}: ${formatCount(entry.malformedLines)} malformed lines and ${formatCount(entry.skippedRecords)} records skipped.`,
       });
     }
-    if (entry.pricing?.status === "unavailable") {
-      findings.push({
-        key: `${entry.provider}-pricing`,
-        severity: "warning",
-        text: `Prices were unavailable for ${tool}, so its costs from this machine are unknown.`,
-      });
-    }
   }
   if (machine.usage?.cost.kind === "partial") {
     const unpriced = machine.usage.cost.unpricedRecords;
+    // Missing rates are only a likely cause: usage can have a price without
+    // them, such as Copilot's next edit suggestions at zero, and usage is not
+    // reported per tool, so the cause names none.
+    const cause = machine.coverage.some(
+      (entry) => entry.pricing?.status === "unavailable",
+    )
+      ? " Prices were unavailable when it last synced."
+      : "";
     findings.push({
       key: "unpriced",
       severity: "warning",
-      text: `${formatCount(unpriced)} of its requests in these dates ${unpriced === 1 ? "has" : "have"} no known price, so ${unpriced === 1 ? "its" : "their"} cost is unknown.`,
+      text: `${formatCount(unpriced)} of its requests in these dates ${unpriced === 1 ? "has" : "have"} no known price, so ${unpriced === 1 ? "its" : "their"} cost is unknown.${cause}`,
     });
   }
   return findings;

@@ -240,7 +240,8 @@ function AiUsagePage() {
                   priced in USD
                   {shown === "USD" ? "" : ` and shown in ${shown}`}. Usage
                   without a known price shows as unknown, never as{" "}
-                  {formatZero(shown)}.
+                  {formatZero(shown)}. Copilot&apos;s next edit suggestions cost{" "}
+                  {formatZero(shown)}: GitHub does not bill them.
                 </TooltipContent>
               </Tooltip>
             </p>

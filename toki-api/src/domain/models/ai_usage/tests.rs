@@ -260,6 +260,57 @@ fn only_version_3_reports_the_priced_subtotal_of_a_partly_priced_bucket() {
 }
 
 #[test]
+fn copilot_next_edit_suggestions_cost_nothing_unless_another_subscription_paid() {
+    let copilot = |hour, model: &str, payer| {
+        let mut bucket = bucket_at(hour);
+        bucket.provider = AiProvider::Copilot;
+        bucket.model = model.to_string();
+        bucket.billing_provider = payer;
+        bucket.estimated_cost_usd = None;
+        bucket.unpriced_records = bucket.records;
+        bucket
+    };
+    let mut priced = copilot(11, "copilot-nes-oct", None);
+    priced.estimated_cost_usd = Some(0.0421);
+    priced.unpriced_records = 0;
+    let mut not_copilot = copilot(12, "nes-callisto", None);
+    not_copilot.provider = AiProvider::Claude;
+
+    let upload = upload_covering(
+        &[
+            (AiProvider::Copilot, AiCoverageStatus::Ok),
+            (AiProvider::Claude, AiCoverageStatus::Ok),
+        ],
+        vec![
+            copilot(7, "copilot-nes-lysithea-24", None),
+            copilot(8, "nes-callisto", None),
+            copilot(9, "copilot-nes-lysithea-24", Some(AiProvider::Codex)),
+            copilot(10, "gpt-5-mini", None),
+            priced,
+            not_copilot,
+        ],
+        Vec::new(),
+    )
+    .unwrap();
+    let costs: Vec<_> = upload
+        .buckets()
+        .iter()
+        .map(|bucket| (bucket.estimated_cost_usd, bucket.unpriced_records))
+        .collect();
+    assert_eq!(
+        costs,
+        [
+            (Some(0.0), 0),
+            (Some(0.0), 0),
+            (None, 14),
+            (None, 14),
+            (Some(0.0), 0),
+            (None, 14),
+        ]
+    );
+}
+
+#[test]
 fn rejects_a_repeated_bucket_key() {
     let mut other_model = bucket();
     other_model.model = "other-model".to_string();

@@ -213,6 +213,24 @@ pub struct AiUsageBucket {
     pub unpriced_records: i64,
 }
 
+impl AiUsageBucket {
+    /// Whether the usage costs nothing: next edit suggestions paid for by
+    /// Copilot, which bills no plan for them. Clients find no API price for
+    /// their models and upload them as unpriced.
+    fn is_included_at_no_cost(&self) -> bool {
+        self.provider == AiProvider::Copilot
+            && self.billing_provider.is_none()
+            && is_next_edit_suggestions_model(&self.model)
+    }
+}
+
+/// A model behind Copilot's next edit suggestions, such as `copilot-nes-oct`
+/// or `nes-callisto`. VS Code fetches the list from Copilot, so new models are
+/// matched by these prefixes rather than by name.
+fn is_next_edit_suggestions_model(model: &str) -> bool {
+    model.starts_with("copilot-nes-") || model.starts_with("nes-")
+}
+
 /// How an upload reports the cost of a bucket that is only partly priced: some
 /// of its records have a known price and some do not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -357,6 +375,10 @@ impl AiUsageUpload {
         for (index, bucket) in buckets.iter_mut().enumerate() {
             validate_bucket(bucket, &window, &replaced, partial_cost)
                 .map_err(|problem| invalid(format!("buckets[{index}]: {problem}")))?;
+            if bucket.is_included_at_no_cost() {
+                bucket.estimated_cost_usd = Some(0.0);
+                bucket.unpriced_records = 0;
+            }
         }
 
         let mut keys = HashSet::with_capacity(buckets.len());

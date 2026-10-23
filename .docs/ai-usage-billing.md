@@ -70,6 +70,14 @@ Deploy Toki's migration and version-3 support **before** the client. Clients onl
 send version 3 when a bucket in the upload is partly priced; other uploads keep
 version 1 or 2.
 
+## Copilot next edit suggestions
+
+GitHub bills no Copilot plan for code completions or next edit suggestions (NES).
+Token Ledger finds no API price for NES models such as `copilot-nes-lysithea-24`
+and uploads them as unpriced, so Toki stores Copilot buckets whose model starts
+with `copilot-nes-` or `nes-` at zero cost, unless the bucket names another payer.
+VS Code fetches its NES models from Copilot, so new ones are matched by prefix.
+
 ## Upload ordering (`snapshotAt`)
 
 Uploads may carry an optional `snapshotAt` in any version: when the client started
