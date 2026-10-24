@@ -175,6 +175,19 @@ export function shareOf(entry: LedgerEntry, ledger: Ledger): number | null {
   return whole === null || part === null || whole === 0 ? null : part / whole;
 }
 
+/**
+ * A step of the billable ramp, `--billable-1` to `--billable-5`: a position
+ * code that repeats the strip's dearest-first order. Step 1 is the dearest
+ * project and step 5 is always the tail of small or merged projects.
+ */
+export type BillableStep = 1 | 2 | 3 | 4 | 5;
+
+/** Projects at most drawn as segments of their own; the rest form the tail. */
+export const OWN_SEGMENTS = 4;
+
+/** The step of the tail, however few segments come before it. */
+export const TAIL_STEP = 5;
+
 /** One segment of the bill's allocation strip. */
 export type AllocationSegment = Readonly<{
   key: string;
@@ -182,58 +195,103 @@ export type AllocationSegment = Readonly<{
   label: string;
   /** Exact hundredths of the billing currency; always above zero. */
   amount: number;
-  /** The entries the segment stands for: one, or the small projects merged. */
+  /** The entries the segment stands for: one, or the tail merged. */
   entries: readonly LedgerEntry[];
+  /** Its step of the billable ramp; null for Unassigned and overhead. */
+  step: BillableStep | null;
 }>;
 
-/** Projects below this share of the bill are merged into one segment. */
+/** Projects below this share of the bill never get a segment of their own. */
 const SMALL_SHARE = 0.015;
 
+const OWN_STEPS: readonly BillableStep[] = [1, 2, 3, 4];
+
 /**
- * The ledger as the strip draws it: projects dearest first, the small ones
- * merged when there are two or more, then the unassigned usage and the
- * overhead. Entries without a known amount, or of nothing, take no space.
+ * The ledger as the strip draws it. The dearest projects, up to
+ * `OWN_SEGMENTS` of them and each at least `SMALL_SHARE` of the bill, get
+ * segments of their own on steps 1 to 4. Every other project forms the tail
+ * on step 5: kept as its own segment when it is alone, merged into one
+ * `others` segment when there are more. The tail is named "N smaller
+ * projects" when all of it is small, and after its dearest customer when the
+ * cap merged a project that is not. Unassigned usage and overhead follow
+ * without a step. Entries without a known amount, or of nothing, take no
+ * space.
  */
 export function allocationSegments(ledger: Ledger): AllocationSegment[] {
   const known = (e: LedgerEntry) =>
     e.totals.converted !== null && e.totals.converted > 0;
+  const amount = (e: LedgerEntry) => e.totals.converted ?? 0;
   const total = ledgerEntries(ledger)
     .filter(known)
-    .reduce((sum, e) => sum + (e.totals.converted ?? 0), 0);
-  const single = (e: LedgerEntry): AllocationSegment => ({
+    .reduce((sum, e) => sum + amount(e), 0);
+  const single = (
+    e: LedgerEntry,
+    step: BillableStep | null,
+  ): AllocationSegment => ({
     key: e.key,
     kind: e.kind,
     label: e.label,
-    amount: e.totals.converted ?? 0,
+    amount: amount(e),
     entries: [e],
+    step,
   });
 
   const projects = ledger.projects.filter(known);
-  const small = projects.filter(
-    (e) => (e.totals.converted ?? 0) / total < SMALL_SHARE,
-  );
-  const segments =
-    small.length >= 2
-      ? [
-          ...projects.filter((e) => !small.includes(e)).map(single),
-          {
-            key: "others",
-            kind: "others" as const,
-            label: `${small.length} smaller projects`,
-            amount: small.reduce(
-              (sum, e) => sum + (e.totals.converted ?? 0),
-              0,
-            ),
-            entries: small,
-          },
-        ]
-      : projects.map(single);
+  const small = (e: LedgerEntry) => amount(e) / total < SMALL_SHARE;
+  // Projects are dearest first, so the ones with segments of their own are
+  // always the top of the list.
+  let ownCount = 0;
+  while (
+    ownCount < OWN_SEGMENTS &&
+    ownCount < projects.length &&
+    !small(projects[ownCount])
+  ) {
+    ownCount += 1;
+  }
+  const own = projects.slice(0, ownCount);
+  const tail = projects.slice(ownCount);
+
+  const segments = own.map((e, index) => single(e, OWN_STEPS[index]));
+  const [first, ...rest] = tail;
+  if (first && rest.length === 0) {
+    segments.push(single(first, TAIL_STEP));
+  } else if (first) {
+    segments.push({
+      key: "others",
+      kind: "others",
+      label: tail.every(small)
+        ? `${tail.length} smaller projects`
+        : `${first.name.customer} + ${rest.length} more`,
+      amount: tail.reduce((sum, e) => sum + amount(e), 0),
+      entries: tail,
+      step: TAIL_STEP,
+    });
+  }
   for (const e of [ledger.unassigned, ledger.overhead]) {
     if (e && known(e)) {
-      segments.push(single(e));
+      segments.push(single(e, null));
     }
   }
   return segments;
+}
+
+/**
+ * Each ledger entry's step, as its strip segment has it: the entries of the
+ * tail all map to the tail's step. Unassigned usage, overhead and projects
+ * without a segment are absent, so a row can never disagree with its segment.
+ */
+export function segmentSteps(
+  segments: readonly AllocationSegment[],
+): ReadonlyMap<string, BillableStep> {
+  const steps = new Map<string, BillableStep>();
+  for (const segment of segments) {
+    if (segment.step !== null) {
+      for (const entry of segment.entries) {
+        steps.set(entry.key, segment.step);
+      }
+    }
+  }
+  return steps;
 }
 
 /** One developer's month on the bill. */

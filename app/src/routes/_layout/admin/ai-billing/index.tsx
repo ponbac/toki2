@@ -40,7 +40,13 @@ import {
   previousMonth,
   shortDate,
 } from "../-lib/format";
-import { ledgerOf, peopleOf, type AllocationSegment } from "../-lib/ledger";
+import {
+  allocationSegments,
+  ledgerOf,
+  peopleOf,
+  segmentSteps,
+  type AllocationSegment,
+} from "../-lib/ledger";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
 import { monthUploads, type DeveloperUploads } from "../-lib/upload-health";
 import { BillingRules } from "./-components/billing-rules";
@@ -112,6 +118,12 @@ function AiBillingPage() {
     () => (overview ? ledgerOf(overview.lines) : undefined),
     [overview],
   );
+  // The strip's segments decide each ledger row's step, so both read them.
+  const segments = React.useMemo(
+    () => (ledger ? allocationSegments(ledger) : []),
+    [ledger],
+  );
+  const steps = React.useMemo(() => segmentSteps(segments), [segments]);
   const uploads = React.useMemo(
     () => (completeness ? monthUploads(completeness) : undefined),
     [completeness],
@@ -273,6 +285,7 @@ function AiBillingPage() {
               <Statement
                 overview={overview}
                 ledger={ledger}
+                segments={segments}
                 highlighted={highlighted}
                 onHighlight={setHighlighted}
                 onSelect={selectSegment}
@@ -338,6 +351,7 @@ function AiBillingPage() {
                 open={open}
                 onToggle={toggle}
                 focusRow={focusRow}
+                steps={steps}
                 undeclared={undeclared}
                 highlighted={highlighted}
                 onHighlight={setHighlighted}

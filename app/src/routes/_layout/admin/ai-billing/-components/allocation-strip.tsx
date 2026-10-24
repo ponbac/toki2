@@ -9,9 +9,11 @@ export const UNDECIDED_FILL =
 
 /**
  * The month's bill as one bar, split by where its money goes: each project a
- * solid segment in the order of the ledger beneath, the usage without a
- * project hatched, and fees nobody used muted. A segment and the ledger rows
- * it stands for light up together; choosing one opens it in the ledger.
+ * solid segment in the order of the ledger beneath, filled with its step of
+ * the billable ramp (deepest for the dearest, the palest for the tail of
+ * small ones), the usage without a project hatched, and fees nobody used
+ * muted. A segment and the ledger rows it stands for light up together;
+ * choosing one opens it in the ledger.
  */
 export function AllocationStrip({
   segments,
@@ -45,9 +47,8 @@ export function AllocationStrip({
       {segments.map((segment, index) => {
         const share = segment.amount / total;
         const name = segmentName(segment);
-        const fullName = segment.kind === "project" ? segment.label : name;
-        const amount = formatHundredths(segment.amount, currency);
-        const solid = segment.kind === "project" || segment.kind === "others";
+        const lines = describe(segment, total, currency);
+        const solid = segment.step !== null;
         return (
           <li
             key={segment.key}
@@ -56,8 +57,8 @@ export function AllocationStrip({
           >
             <button
               type="button"
-              aria-label={`${fullName}: ${amount}, ${formatShare(share)} of the bill`}
-              title={`${fullName}\n${amount}, ${formatShare(share)}`}
+              aria-label={lines.join("; ")}
+              title={lines.join("\n")}
               onMouseEnter={() => onHighlight(segment.key)}
               onFocus={() => onHighlight(segment.key)}
               onBlur={() => onHighlight(null)}
@@ -66,20 +67,21 @@ export function AllocationStrip({
                 "relative flex w-full min-w-0 flex-col justify-center overflow-hidden rounded-[3px] px-2 text-left transition-opacity duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-hidden motion-reduce:transition-none",
                 index === 0 && "rounded-l-lg",
                 index === segments.length - 1 && "rounded-r-lg",
-                segment.kind === "project" &&
-                  "bg-primary text-primary-foreground",
-                segment.kind === "others" &&
-                  "bg-primary/60 text-primary-foreground",
                 segment.kind === "unassigned" &&
                   "bg-muted text-foreground shadow-[inset_0_0_0_1px_hsl(var(--muted-foreground)/0.35)]",
                 segment.kind === "overhead" &&
-                  "bg-muted-foreground/25 text-foreground",
+                  "bg-muted-foreground/15 text-foreground",
                 anyLit && !isLit(segment) && "opacity-35",
               )}
               style={
-                segment.kind === "unassigned"
-                  ? { backgroundImage: UNDECIDED_FILL }
-                  : undefined
+                segment.step !== null
+                  ? {
+                      backgroundColor: `var(--billable-${segment.step})`,
+                      color: `var(--billable-ink-${segment.step})`,
+                    }
+                  : segment.kind === "unassigned"
+                    ? { backgroundImage: UNDECIDED_FILL }
+                    : undefined
               }
             >
               {/* A segment too narrow for its name shows none; its title,
@@ -100,9 +102,8 @@ export function AllocationStrip({
                 <span
                   className={cn(
                     "truncate text-[11px] leading-tight tabular-nums",
-                    solid
-                      ? "opacity-80"
-                      : "w-fit max-w-full rounded-sm bg-background/85 px-1",
+                    !solid &&
+                      "w-fit max-w-full rounded-sm bg-background/85 px-1",
                   )}
                 >
                   {formatShare(share)}
@@ -114,6 +115,34 @@ export function AllocationStrip({
       })}
     </ul>
   );
+}
+
+/**
+ * A segment in words, one line each: what it is, its amount and its share of
+ * the bill, then every project of a merged tail, dearest first.
+ */
+function describe(
+  segment: AllocationSegment,
+  total: number,
+  currency: string,
+): string[] {
+  const figures = (amount: number) =>
+    `${formatHundredths(amount, currency)}, ${formatShare(amount / total)} of the bill`;
+  switch (segment.kind) {
+    case "others":
+      return [
+        `${segment.entries.length} projects, ${segment.label}: ${figures(segment.amount)}`,
+        ...segment.entries.map(
+          (entry) => `${entry.label}: ${figures(entry.totals.converted ?? 0)}`,
+        ),
+      ];
+    case "project":
+    case "unassigned":
+    case "overhead":
+      return [
+        `${segment.kind === "project" ? segment.label : segmentName(segment)}: ${figures(segment.amount)}`,
+      ];
+  }
 }
 
 /** What a segment is called: a project by its customer, as on an invoice. */

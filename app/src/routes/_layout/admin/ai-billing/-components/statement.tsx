@@ -20,7 +20,6 @@ import {
   plural,
 } from "../../-lib/format";
 import {
-  allocationSegments,
   shareOf,
   type AllocationSegment,
   type Ledger,
@@ -70,12 +69,15 @@ function atApiPrices(
 export function Statement({
   overview,
   ledger,
+  segments,
   highlighted,
   onHighlight,
   onSelect,
 }: {
   overview: AiBillingOverview;
   ledger: Ledger;
+  /** The ledger as the strip draws it. */
+  segments: readonly AllocationSegment[];
   highlighted: string | null;
   onHighlight: (key: string | null) => void;
   onSelect: (segment: AllocationSegment) => void;
@@ -182,7 +184,7 @@ export function Statement({
       </div>
 
       <AllocationStrip
-        segments={allocationSegments(ledger)}
+        segments={segments}
         currency={currency}
         highlighted={highlighted}
         onHighlight={onHighlight}

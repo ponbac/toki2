@@ -40,10 +40,12 @@ import {
   plural,
 } from "../../-lib/format";
 import {
+  TAIL_STEP,
   ledgerEntries,
   ledgerRowId,
   lineHundredths,
   shareOf,
+  type BillableStep,
   type Ledger,
   type LedgerEntry,
 } from "../../-lib/ledger";
@@ -66,6 +68,7 @@ export function ProjectLedger({
   open,
   onToggle,
   focusRow,
+  steps,
   undeclared,
   highlighted,
   onHighlight,
@@ -76,6 +79,8 @@ export function ProjectLedger({
   onToggle: (key: string) => void;
   /** A row to bring into view; each new object brings it again. */
   focusRow: Readonly<{ key: string }> | null;
+  /** Each project's step of the billable ramp, as its strip segment has it. */
+  steps: ReadonlyMap<string, BillableStep>;
   /** Tools each developer used on a plan nobody declared this month. */
   undeclared: ReadonlyMap<number, readonly AiProvider[]>;
   highlighted: string | null;
@@ -124,10 +129,15 @@ export function ProjectLedger({
             overview={overview}
             names={names}
             plans={plans}
+            step={steps.get(entry.key) ?? null}
             undeclared={undeclared}
             isOpen={open.has(entry.key)}
             onToggle={() => onToggle(entry.key)}
-            lit={highlighted === entry.key}
+            lit={
+              highlighted === entry.key ||
+              // The merged tail lights every row it stands for.
+              (highlighted === "others" && steps.get(entry.key) === TAIL_STEP)
+            }
             onHighlight={onHighlight}
           />
         ))}
@@ -156,6 +166,7 @@ function EntryRows({
   overview,
   names,
   plans,
+  step,
   undeclared,
   isOpen,
   onToggle,
@@ -167,6 +178,7 @@ function EntryRows({
   overview: AiBillingOverview;
   names: ReadonlyMap<number, string>;
   plans: ReadonlyMap<number, AiSubscriptionMonth>;
+  step: BillableStep | null;
   undeclared: ReadonlyMap<number, readonly AiProvider[]>;
   isOpen: boolean;
   onToggle: () => void;
@@ -217,7 +229,7 @@ function EntryRows({
                 )}
                 aria-hidden
               />
-              <EntryMarker entry={entry} />
+              <EntryMarker entry={entry} step={step} />
               <EntryName entry={entry} />
             </button>
             {entry.kind === "unassigned" && (
@@ -254,7 +266,9 @@ function EntryRows({
           </span>
         </TableCell>
         <TableCell className="hidden sm:table-cell">
-          {share !== null && <ShareBar share={share} kind={entry.kind} />}
+          {share !== null && (
+            <ShareBar share={share} kind={entry.kind} step={step} />
+          )}
         </TableCell>
         <TableCell
           className={cn(
@@ -308,22 +322,39 @@ function EntryRows({
   );
 }
 
-/** A small mark of what an entry is: a project, undecided, or overhead. */
-function EntryMarker({ entry }: { entry: LedgerEntry }) {
+/**
+ * A row's key to the strip: a project's segment colour, ringed where the
+ * paler steps would fade into the row, and hollow for a project without a
+ * segment; Unassigned hatched and overhead muted, as in the strip.
+ */
+function EntryMarker({
+  entry,
+  step,
+}: {
+  entry: LedgerEntry;
+  step: BillableStep | null;
+}) {
   return (
     <span
       aria-hidden
       className={cn(
         "size-2.5 shrink-0 rounded-[3px]",
-        entry.kind === "project" && "bg-primary",
+        entry.kind === "project" &&
+          step === null &&
+          "shadow-[inset_0_0_0_1.5px_var(--billable-ring)]",
+        step !== null &&
+          step >= 4 &&
+          "shadow-[inset_0_0_0_1px_var(--billable-ring)]",
         entry.kind === "unassigned" &&
           "bg-muted shadow-[inset_0_0_0_1px_hsl(var(--muted-foreground)/0.5)]",
         entry.kind === "overhead" && "bg-muted-foreground/30",
       )}
       style={
-        entry.kind === "unassigned"
-          ? { backgroundImage: UNDECIDED_FILL }
-          : undefined
+        step !== null
+          ? { backgroundColor: `var(--billable-${step})` }
+          : entry.kind === "unassigned"
+            ? { backgroundImage: UNDECIDED_FILL }
+            : undefined
       }
     />
   );
@@ -362,22 +393,32 @@ function EntryName({ entry }: { entry: LedgerEntry }) {
 function ShareBar({
   share,
   kind,
+  step,
 }: {
   share: number;
   kind: LedgerEntry["kind"];
+  step: BillableStep | null;
 }) {
+  // A project without a segment prints its share without a bar.
+  const bar = kind !== "project" || step !== null;
   return (
     <span className="flex items-center gap-2">
       <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-        <span
-          className={cn(
-            "block h-full rounded-full",
-            kind === "project" && "bg-primary",
-            kind === "unassigned" && "bg-muted-foreground/60",
-            kind === "overhead" && "bg-muted-foreground/30",
-          )}
-          style={{ width: `${Math.max(share * 100, 1.5)}%` }}
-        />
+        {bar && (
+          <span
+            className={cn(
+              "block h-full rounded-full",
+              kind === "unassigned" && "bg-muted-foreground/60",
+              kind === "overhead" && "bg-muted-foreground/30",
+            )}
+            style={{
+              width: `${Math.max(share * 100, 1.5)}%`,
+              ...(step !== null && {
+                backgroundColor: `var(--billable-${step})`,
+              }),
+            }}
+          />
+        )}
       </span>
       <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
         {formatShare(share)}
