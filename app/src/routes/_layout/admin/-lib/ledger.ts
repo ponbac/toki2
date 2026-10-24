@@ -215,9 +215,13 @@ const OWN_STEPS: readonly BillableStep[] = [1, 2, 3, 4];
  * projects" when all of it is small, and after its dearest customer when the
  * cap merged a project that is not. Unassigned usage and overhead follow
  * without a step. Entries without a known amount, or of nothing, take no
- * space.
+ * space. While a line has no exchange rate the bill's total is unknown, and
+ * shares of the rest would read as shares of the whole: there is no strip.
  */
 export function allocationSegments(ledger: Ledger): AllocationSegment[] {
+  if (ledger.totals.converted === null) {
+    return [];
+  }
   const known = (e: LedgerEntry) =>
     e.totals.converted !== null && e.totals.converted > 0;
   const amount = (e: LedgerEntry) => e.totals.converted ?? 0;

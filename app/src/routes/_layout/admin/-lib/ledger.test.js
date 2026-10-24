@@ -163,6 +163,20 @@ describe("allocationSegments", () => {
   });
 });
 
+describe("allocationSegments without the whole bill", () => {
+  test("a line without an exchange rate leaves no strip, so no share reads as the whole bill", () => {
+    const ledger = ledgerOf([
+      line("Big - B", "900.00"),
+      line("Foreign - F", null, { missingRate: true, convertedAmount: null }),
+    ]);
+    const segments = allocationSegments(ledger);
+
+    expect(ledger.totals.converted).toBeNull();
+    expect(segments).toEqual([]);
+    expect(segmentSteps(segments).size).toBe(0);
+  });
+});
+
 describe("segmentSteps", () => {
   test("every row maps to its segment's step; Unassigned, overhead and unknown amounts do not", () => {
     const ledger = ledgerOf([
