@@ -648,9 +648,8 @@ function TimeSummary(props: {
     return null;
   }
 
-  const timeLeft =
-    timeInfo.remainingHours - (props.timerHours + props.timerMinutes / 60);
   const timerHours = props.timerHours + props.timerMinutes / 60;
+  const timeLeft = timeInfo.remainingHours - timerHours;
   const weekFlex = timeInfo.periodFlexHours + timerHours;
   const flexTime = flexBalance
     ? flexBalance.balanceHours + timerHours

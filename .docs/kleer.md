@@ -85,7 +85,7 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - Weekly stats expose:
   - `workedHours`
   - `scheduledHours`
-  - `remainingHours`
+  - `remainingHours` (`scheduledHours - coveredHours`, negative once the period is over-covered)
 - Weekly stats also expose estimated Kleer period flex fields:
   - `absenceHours`
   - `coveredHours`

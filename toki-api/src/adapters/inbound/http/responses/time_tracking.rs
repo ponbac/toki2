@@ -228,6 +228,7 @@ impl From<TimerHistoryEntry> for TimerHistoryEntryResponse {
 pub struct WeeklyStatsResponse {
     pub worked_hours: f64,
     pub scheduled_hours: f64,
+    /// Hours left to cover in the period; negative once covered hours exceed scheduled hours.
     pub remaining_hours: f64,
     pub absence_hours: f64,
     pub covered_hours: f64,

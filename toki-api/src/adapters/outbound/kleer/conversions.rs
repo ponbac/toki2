@@ -147,11 +147,11 @@ mod tests {
     }
 
     #[test]
-    fn weekly_stats_allow_positive_and_negative_period_flex() {
+    fn weekly_stats_allow_overtime_in_remaining_hours_and_period_flex() {
         let positive = WeeklyStats::new(42.0, 40.0, 0.0);
         let negative = WeeklyStats::new(30.0, 40.0, 0.0);
 
-        assert_eq!(positive.remaining_hours, 0.0);
+        assert_eq!(positive.remaining_hours, -2.0);
         assert_eq!(positive.period_flex_hours, 2.0);
         assert_eq!(negative.remaining_hours, 10.0);
         assert_eq!(negative.period_flex_hours, -10.0);
