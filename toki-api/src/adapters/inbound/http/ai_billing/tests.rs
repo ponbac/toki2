@@ -809,6 +809,23 @@ async fn the_overview_bills_subscriptions_by_share_and_api_days_at_cost(pool: Pg
     );
     assert_eq!(overview["lines"][0]["subscriptionId"], max);
     assert_eq!(overview["lines"][4]["subscriptionId"], pro);
+    // Usage outside any repository, and of a repository nobody mapped.
+    let unassigned: Vec<&Value> = overview["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|line| &line["unassigned"])
+        .collect();
+    assert_eq!(
+        unassigned,
+        [
+            &Value::Null,
+            &json!("unattributed"),
+            &Value::Null,
+            &json!("unmapped"),
+            &Value::Null
+        ]
+    );
 
     let subscriptions = overview["subscriptions"].as_array().unwrap();
     assert_eq!(
@@ -865,6 +882,95 @@ async fn the_overview_bills_subscriptions_by_share_and_api_days_at_cost(pool: Pg
     assert_eq!(
         developers,
         [&json!("Colleague Example"), &json!("Dev Example")]
+    );
+}
+
+#[sqlx::test]
+async fn unassigned_kinds_split_one_charge_and_sum_to_it_exactly(pool: PgPool) {
+    let app = app(&pool);
+    let August {
+        admin, colleague, ..
+    } = august(&app, &pool).await;
+    // ChatGPT Pro pays for usage of a repository nobody mapped and for usage
+    // outside any repository, 1 : 2 by cost.
+    upload(
+        &pool,
+        colleague.id,
+        COLLEAGUE_LAPTOP,
+        "colleague-laptop",
+        AUGUST_WINDOW,
+        vec![
+            bucket(
+                datetime!(2026-08-10 08:00 UTC),
+                0,
+                TOOLS,
+                AiProvider::Codex,
+                1,
+                Some(1.0),
+            ),
+            bucket(
+                datetime!(2026-08-10 09:00 UTC),
+                1,
+                UNATTRIBUTED_PROJECT_KEY,
+                AiProvider::Codex,
+                2,
+                Some(2.0),
+            ),
+        ],
+    )
+    .await;
+    let caller = Caller::Session(&admin.cookie);
+    let overview = get_json(&app, &caller, "/ai-usage/admin/billing/2026-08").await;
+
+    // The fee is one Unassigned charge of 200.00 USD, 2100.00 SEK, as before
+    // its kinds were shown apart. They split it in each currency by the
+    // largest-remainder method: the odd cent goes to unmapped usage.
+    let colleague_lines: Vec<Value> = overview["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|line| line["userId"] == colleague.id.as_i32())
+        .map(|line| {
+            json!([
+                line["unassigned"],
+                line["billableAmount"],
+                line["convertedAmount"],
+                line["usage"]["apiEquivalentUsd"],
+            ])
+        })
+        .collect();
+    assert_eq!(
+        colleague_lines,
+        [
+            json!(["unmapped", "66.67", "700.00", 1.0]),
+            json!(["unattributed", "133.33", "1400.00", 2.0]),
+        ]
+    );
+    assert_eq!(
+        overview["totals"]["fees"][1],
+        json!({ "currency": "USD", "billed": "200.00", "overhead": "0.00" })
+    );
+
+    let (_, _, csv) = get(&app, &caller, "/ai-usage/admin/billing/2026-08/export.csv").await;
+    let rows = parse_quoted_csv(csv.strip_prefix('\u{feff}').unwrap());
+    let unassigned: Vec<[&str; 4]> = rows
+        .iter()
+        .filter(|row| row[2] == "Unassigned" && row[5] == "subscription" && row[4] == "codex")
+        .map(|row| {
+            [
+                row[22].as_str(),
+                row[7].as_str(),
+                row[9].as_str(),
+                row[13].as_str(),
+            ]
+        })
+        .collect();
+    assert_eq!(
+        unassigned,
+        [
+            ["unmapped", "66.67", "700.00", "1.0000"],
+            ["unattributed", "133.33", "1400.00", "2.0000"],
+        ]
     );
 }
 
@@ -1044,12 +1150,12 @@ async fn a_missing_rate_leaves_sek_empty_and_warns_never_zero(pool: PgPool) {
         )
     );
     assert_eq!(
-        api.last().unwrap(),
+        &api[WARNING],
         "no USD exchange rate for the month: not converted to SEK"
     );
     let sek: Vec<&str> = rows[1..].iter().map(|row| row[9].as_str()).collect();
-    // Client A, then Unassigned, then overhead.
-    assert_eq!(sek, ["454.19", "", "113.55", "", ""]);
+    // Client A, then Unassigned (unmapped, then unattributed), then overhead.
+    assert_eq!(sek, ["454.19", "", "", "113.55", ""]);
 
     // The provider was asked once; it is not asked on every page load.
     assert_eq!(
@@ -1246,9 +1352,7 @@ async fn a_month_without_a_published_average_bills_provisionally_until_it_is(poo
     let (_, _, csv) = get(&app, &admin, "/ai-usage/admin/billing/2026-08/export.csv").await;
     let rows = parse_quoted_csv(csv.strip_prefix('\u{feff}').unwrap());
     assert_eq!(rows[1][9..13], ["224.00", "11.20", "riksbank", "true"]);
-    assert!(rows[1]
-        .last()
-        .unwrap()
+    assert!(rows[1][WARNING]
         .contains("provisional EUR exchange rate: the average of the days published so far"));
 
     // The average is tried again after an hour and, once published,
@@ -1361,7 +1465,7 @@ async fn a_slow_provider_leaves_rates_pending_without_holding_the_bill(pool: PgP
         .find(|row| row[5] == "api" && row[7] == "0.75")
         .unwrap();
     assert_eq!(
-        api.last().unwrap(),
+        &api[WARNING],
         "the USD exchange rate is still being fetched: not converted to SEK yet"
     );
 
@@ -1866,6 +1970,9 @@ async fn malformed_months_and_users_are_bad_requests(pool: PgPool) {
 
 /// Parses CSV that quotes every cell, as RFC 4180 reads it; panics on an
 /// unquoted cell.
+/// The CSV's `warning` column.
+const WARNING: usize = 21;
+
 fn parse_quoted_csv(csv: &str) -> Vec<Vec<String>> {
     let mut rows = Vec::new();
     let mut row = Vec::new();
@@ -1980,6 +2087,7 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "total_tokens",
             "allocation_basis",
             "warning",
+            "unassigned",
         ],
         vec![
             "2026-08",
@@ -2004,10 +2112,11 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "9280",
             "api_cost",
             "",
+            "",
         ],
         vec![
             "2026-08", "101", link, dev, "claude", "api", "", "0.75", "USD", "7.88", "10.50",
-            "riksbank", "false", "0.7500", "0", "300", "3000", "30", "150", "3480", "", "",
+            "riksbank", "false", "0.7500", "0", "300", "3000", "30", "150", "3480", "", "", "",
         ],
         vec![
             "2026-08",
@@ -2032,6 +2141,7 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "5800",
             "",
             "5 unpriced records: their cost is unknown and not billed",
+            "",
         ],
         vec![
             "2026-08",
@@ -2056,6 +2166,7 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "1160",
             "api_cost",
             "",
+            "unattributed",
         ],
         vec![
             "2026-08",
@@ -2080,6 +2191,7 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "0",
             "none",
             "no usage on the days the subscription covers",
+            "",
         ],
     ];
     assert_eq!(rows, expected);

@@ -5,6 +5,7 @@ import type {
   AiSubscriptionMonth,
 } from "@/lib/api/queries/ai-admin";
 import { formatFee } from "@/lib/ai-subscriptions";
+import type { UnassignedKind } from "@/lib/api/contracts/ai-admin";
 
 /*
  * Grouping and wording for billing lines. The server has already decided every
@@ -18,33 +19,64 @@ import { formatFee } from "@/lib/ai-subscriptions";
 export const UNASSIGNED_LABEL = "Unassigned";
 export const OVERHEAD_LABEL = "Unallocated overhead";
 
+/** Each kind of Unassigned usage: its short name, and what it is. */
+export const UNASSIGNED_KIND_LABELS = {
+  unmapped: { label: "Unmapped repositories", detail: "unmapped repositories" },
+  unattributed: {
+    label: "No repository",
+    detail: "outside any repository",
+  },
+} as const satisfies Record<UnassignedKind, unknown>;
+
 export type ProjectKind = "project" | "unassigned" | "overhead";
 
-/** The billing project a line charges: a time-tracking project, Unassigned
- * usage, or a subscription fee without usage. */
+/** The billing project a line charges: a time-tracking project, one kind of
+ * Unassigned usage, or a subscription fee without usage. */
 export function lineProject(line: AiBillingLine): {
   key: string;
   label: string;
   kind: ProjectKind;
+  /** The kind of Unassigned usage; null for a project and for overhead. */
+  unassigned: UnassignedKind | null;
 } {
   if (line.unallocatedOverhead) {
-    return { key: "overhead", label: OVERHEAD_LABEL, kind: "overhead" };
+    return {
+      key: "overhead",
+      label: OVERHEAD_LABEL,
+      kind: "overhead",
+      unassigned: null,
+    };
   }
   if (line.project) {
     return {
       key: `project:${line.project.projectId}`,
       label: line.project.projectName,
       kind: "project",
+      unassigned: null,
     };
   }
-  return { key: "unassigned", label: UNASSIGNED_LABEL, kind: "unassigned" };
+  // The contract sets a kind on every line without a project or overhead.
+  const unassigned = line.unassigned ?? "unmapped";
+  return {
+    key: `unassigned:${unassigned}`,
+    label: UNASSIGNED_KIND_LABELS[unassigned].label,
+    kind: "unassigned",
+    unassigned,
+  };
 }
 
-/** The lines no project is charged for: their keys still need a mapping. */
+/** The lines no project is charged for, of one kind or of both. */
 export function unassignedLines(
   lines: readonly AiBillingLine[],
+  kind?: UnassignedKind,
 ): AiBillingLine[] {
-  return lines.filter((line) => lineProject(line).kind === "unassigned");
+  return lines.filter((line) => {
+    const project = lineProject(line);
+    return (
+      project.kind === "unassigned" &&
+      (kind === undefined || project.unassigned === kind)
+    );
+  });
 }
 
 /** Exact decimal amount to hundredths. */

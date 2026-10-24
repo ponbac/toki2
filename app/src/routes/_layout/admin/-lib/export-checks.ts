@@ -206,13 +206,34 @@ export function ratesCheck({
   };
 }
 
-/** Whether every billed line is charged to a project. */
+/** What a set of lines bills, as a check names it: in the billing currency,
+ * or the original amounts without a rate. */
+function worthOf(
+  lines: readonly AiBillingLine[],
+  billingCurrency: string,
+): string {
+  const totals = billableTotals(lines);
+  if (totals.amounts.size === 0) {
+    return `${plural(lines.length, "line")} of unknown cost`;
+  }
+  return totals.converted === null
+    ? formatBillable(totals)
+    : formatConverted(totals, billingCurrency);
+}
+
+/**
+ * Whether every billed line is charged to a project. Only the usage of
+ * repositories nobody has mapped can be assigned on Project mappings; usage
+ * outside any repository has no key a mapping could name, but no customer is
+ * invoiced for it either.
+ */
 export function mappingsCheck(
   lines: readonly AiBillingLine[],
   billingCurrency: string,
 ): CheckResult {
-  const unassigned = unassignedLines(lines);
-  if (unassigned.length === 0) {
+  const unmapped = unassignedLines(lines, "unmapped");
+  const unattributed = unassignedLines(lines, "unattributed");
+  if (unmapped.length === 0 && unattributed.length === 0) {
     return {
       status: "passed",
       summary:
@@ -221,20 +242,19 @@ export function mappingsCheck(
           : "Every billed line has a project",
     };
   }
-  const totals = billableTotals(unassigned);
-  if (totals.amounts.size === 0) {
+  const outside =
+    unattributed.length > 0
+      ? `${worthOf(unattributed, billingCurrency)} is outside any repository, which no mapping can assign`
+      : null;
+  if (unmapped.length === 0) {
     return {
       status: "attention",
-      summary: `${plural(unassigned.length, "line")} of unknown cost have no project`,
+      summary: `${outside}, so no customer can be invoiced for it`,
     };
   }
-  // Without a rate there is no converted sum: name the original amounts.
-  const worth =
-    totals.converted === null
-      ? formatBillable(totals)
-      : formatConverted(totals, billingCurrency);
+  const toMap = `${worthOf(unmapped, billingCurrency)} comes from repositories nobody has mapped, so no customer can be invoiced for it yet`;
   return {
     status: "attention",
-    summary: `${worth} has no project yet, so no customer can be invoiced for it`,
+    summary: outside === null ? toMap : `${toMap}; ${outside}`,
   };
 }

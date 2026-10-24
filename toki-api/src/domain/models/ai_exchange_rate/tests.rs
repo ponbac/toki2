@@ -2,9 +2,9 @@ use time::macros::{date, datetime};
 
 use super::*;
 use crate::domain::models::{
-    bill_month, AiBillingUsage, AiDailyUsage, AiMappedProject, AiMonthlyCost, AiProvider,
-    AiSubscription, AiSubscriptionId, AiSubscriptionPeriod, AiSubscriptionPlan,
-    AiSubscriptionTerms, AiTokenCounts, AiUsdNanos, ProjectId, UserId,
+    bill_month, AiBillingProject, AiBillingUsage, AiDailyUsage, AiMappedProject, AiMonthlyCost,
+    AiProvider, AiSubscription, AiSubscriptionId, AiSubscriptionPeriod, AiSubscriptionPlan,
+    AiSubscriptionTerms, AiTokenCounts, AiUnassignedKind, AiUsdNanos, ProjectId, UserId,
 };
 
 const DEV: UserId = UserId::new(7);
@@ -80,7 +80,10 @@ fn usage(
         provider,
         day,
         chatgpt_sign_in: false,
-        project,
+        project: project.map_or(
+            AiBillingProject::Unassigned(AiUnassignedKind::Unmapped),
+            AiBillingProject::Mapped,
+        ),
         usage: AiBillingUsage {
             tokens: AiTokenCounts {
                 input: 100,
@@ -363,12 +366,12 @@ fn both_currencies_split_by_the_same_recorded_weights() {
     let mut all_unpriced = usage(AiProvider::Claude, date!(2026 - 09 - 02), None, 0);
     all_unpriced.usage.unpriced_records = 1;
     let mut more_tokens = all_unpriced.clone();
-    more_tokens.project = project("101", "Client A");
+    more_tokens.project = AiBillingProject::Mapped(project("101", "Client A").unwrap());
     more_tokens.usage.tokens.input = 300;
     let mut no_tokens = all_unpriced.clone();
     no_tokens.usage.tokens.input = 0;
     let mut more_records = no_tokens.clone();
-    more_records.project = project("101", "Client A");
+    more_records.project = AiBillingProject::Mapped(project("101", "Client A").unwrap());
     more_records.usage.records = 3;
     for (rows, basis) in [
         (

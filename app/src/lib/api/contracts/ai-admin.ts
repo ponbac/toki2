@@ -46,11 +46,22 @@ const usageSchema = z
   })
   .strict();
 
+/** Why usage is Unassigned: repositories nobody mapped to a project (or
+ * mapped outside the configured company), or usage outside any repository,
+ * which no mapping can assign. */
+export const UNASSIGNED_KINDS = ["unmapped", "unattributed"] as const;
+export type UnassignedKind = (typeof UNASSIGNED_KINDS)[number];
+
 const billingLineSchema = z
   .object({
     userId: id,
     provider: providerSchema,
     project: projectSchema.nullable(),
+    /** The kind of Unassigned usage, exactly when the line has neither a
+     * project nor is overhead. An Unassigned charge has a line per kind;
+     * they split it exactly in each currency, so a line's `convertedAmount`
+     * need not be its own `billableAmount` converted. */
+    unassigned: z.enum(UNASSIGNED_KINDS).nullable(),
     billingMode: z.enum(["api", "subscription"]),
     unallocatedOverhead: z.boolean(),
     subscriptionId: id.nullable(),
@@ -66,7 +77,13 @@ const billingLineSchema = z
     missingRate: z.boolean(),
     usage: usageSchema,
   })
-  .strict();
+  .strict()
+  .refine(
+    (line) =>
+      (line.unassigned !== null) ===
+      (line.project === null && !line.unallocatedOverhead),
+    { message: "unassigned must be set exactly on Unassigned usage" },
+  );
 
 const subscriptionMonthSchema = z
   .object({

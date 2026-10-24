@@ -8,11 +8,12 @@ use crate::{
     db::DbPool,
     domain::{
         models::{
-            AiBillingDeveloper, AiBillingMachine, AiBillingUsage, AiCoverageInterval,
-            AiCoverageStatus, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay, AiMachineId,
-            AiMappingResolver, AiPersonalUsage, AiPricingStatus, AiProvider, AiProviderReport,
-            AiTokenCounts, AiUsageDateRange, AiUsageTimeZone, AiUsdNanos, TimeTrackingCompany,
-            UserId, PI_CHATGPT_SIGN_IN_HINT, UNATTRIBUTED_PROJECT_KEY,
+            AiBillingDeveloper, AiBillingMachine, AiBillingProject, AiBillingUsage,
+            AiCoverageInterval, AiCoverageStatus, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay,
+            AiMachineId, AiMappingResolver, AiPersonalUsage, AiPricingStatus, AiProvider,
+            AiProviderReport, AiTokenCounts, AiUnassignedKind, AiUsageDateRange, AiUsageTimeZone,
+            AiUsdNanos, TimeTrackingCompany, UserId, PI_CHATGPT_SIGN_IN_HINT,
+            UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::AiBillingRepository,
         AiBillingError,
@@ -72,6 +73,10 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         // billionths of a dollar. The shared resolver alone decides which
         // mappings resolve; SQL groups its explicit key-to-project projection
         // before rounding, so splitting usage across keys cannot change a bill.
+        // Unassigned usage is kept apart by kind, `unattributed` and the rest,
+        // but still rounded as one: each kind gets the rounded running total
+        // through it less the one before it, so the kinds sum to the rounded
+        // total of the project exactly.
         // The range uses `ai_usage_buckets_hour_start_idx`, or
         // the `(user_id, hour_start)` index for one user. A day is one of
         // Pi's ChatGPT sign-in when any of the user's machines hinted it in
@@ -106,37 +111,67 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                   AND ($4::int4 IS NULL OR hint.user_id = $4)
                   AND hint.provider = $7
                   AND hint.plan = $8
+            ),
+            kinds AS (
+                SELECT
+                    bucket.user_id,
+                    bucket.provider,
+                    (bucket.hour_start AT TIME ZONE $3)::date AS day,
+                    bucket.billing_provider,
+                    mapping.project_id,
+                    bucket.project_key = $11 AS unattributed,
+                    bool_or(sign_in.day IS NOT NULL) AS chatgpt_sign_in,
+                    MIN(bucket.project_key) AS project_key,
+                    SUM(bucket.input_tokens)::int8 AS input_tokens,
+                    SUM(bucket.cache_read_tokens)::int8 AS cache_read_tokens,
+                    SUM(bucket.cache_write_tokens)::int8 AS cache_write_tokens,
+                    SUM(bucket.output_tokens)::int8 AS output_tokens,
+                    SUM(bucket.records)::int8 AS records,
+                    COALESCE(SUM(bucket.estimated_cost_usd), 0) AS cost,
+                    SUM(bucket.unpriced_records)::int8 AS unpriced_records
+                FROM ai_usage_buckets AS bucket
+                LEFT JOIN resolved_projects AS mapping ON mapping.project_key = bucket.project_key
+                LEFT JOIN sign_in_days AS sign_in
+                    ON sign_in.user_id = bucket.user_id
+                    AND sign_in.provider = bucket.provider
+                    AND sign_in.day = (bucket.hour_start AT TIME ZONE $3)::date
+                LEFT JOIN personal_keys AS personal
+                    ON personal.user_id = bucket.user_id
+                    AND personal.project_key = bucket.project_key
+                WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)
+                  AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
+                  AND ($4::int4 IS NULL OR bucket.user_id = $4)
+                  AND personal.project_key IS NULL
+                GROUP BY bucket.user_id, bucket.provider, 3, mapping.project_id,
+                    bucket.billing_provider, 6
             )
             SELECT
-                bucket.user_id,
-                bucket.provider,
-                (bucket.hour_start AT TIME ZONE $3)::date AS "day!",
-                bucket.billing_provider,
-                bool_or(sign_in.day IS NOT NULL) AS "chatgpt_sign_in!",
-                MIN(bucket.project_key) AS "project_key!",
-                SUM(bucket.input_tokens)::int8 AS "input_tokens!",
-                SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
-                SUM(bucket.cache_write_tokens)::int8 AS "cache_write_tokens!",
-                SUM(bucket.output_tokens)::int8 AS "output_tokens!",
-                SUM(bucket.records)::int8 AS "records!",
-                round(COALESCE(SUM(bucket.estimated_cost_usd), 0) * 1000000000)::int8
-                    AS "priced_cost_nanos!",
-                SUM(bucket.unpriced_records)::int8 AS "unpriced_records!"
-            FROM ai_usage_buckets AS bucket
-            LEFT JOIN resolved_projects AS mapping ON mapping.project_key = bucket.project_key
-            LEFT JOIN sign_in_days AS sign_in
-                ON sign_in.user_id = bucket.user_id
-                AND sign_in.provider = bucket.provider
-                AND sign_in.day = (bucket.hour_start AT TIME ZONE $3)::date
-            LEFT JOIN personal_keys AS personal
-                ON personal.user_id = bucket.user_id
-                AND personal.project_key = bucket.project_key
-            WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)
-              AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
-              AND ($4::int4 IS NULL OR bucket.user_id = $4)
-              AND personal.project_key IS NULL
-            GROUP BY bucket.user_id, bucket.provider, 3, mapping.project_id, bucket.billing_provider
-            ORDER BY bucket.user_id, bucket.provider, 3, mapping.project_id NULLS LAST, bucket.billing_provider
+                user_id AS "user_id!",
+                provider AS "provider!",
+                day AS "day!",
+                billing_provider,
+                chatgpt_sign_in AS "chatgpt_sign_in!",
+                project_key AS "project_key!",
+                unattributed AS "unattributed!",
+                input_tokens AS "input_tokens!",
+                cache_read_tokens AS "cache_read_tokens!",
+                cache_write_tokens AS "cache_write_tokens!",
+                output_tokens AS "output_tokens!",
+                records AS "records!",
+                (
+                    round(SUM(cost) OVER through * 1000000000)
+                    - round(COALESCE(SUM(cost) OVER before, 0) * 1000000000)
+                )::int8 AS "priced_cost_nanos!",
+                unpriced_records AS "unpriced_records!"
+            FROM kinds
+            WINDOW
+                project AS (
+                    PARTITION BY user_id, provider, day, project_id, billing_provider
+                    ORDER BY unattributed
+                ),
+                through AS (project ROWS UNBOUNDED PRECEDING),
+                before AS (project ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+            ORDER BY user_id, provider, day, project_id NULLS LAST, billing_provider, unattributed
             "#,
             dates.start(),
             dates.end(),
@@ -148,22 +183,30 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             PI_CHATGPT_SIGN_IN_HINT,
             &personal_users,
             &personal_keys,
+            UNATTRIBUTED_PROJECT_KEY,
         )
         .fetch_all(&self.pool)
         .await
         .map_err(storage_error)?;
         rows.into_iter()
             .map(|row| {
+                // Mappings may hold different names for a renamed project.
+                // Preserve the first used key's name, as before grouping in
+                // SQL; every key in the group resolves to the same id.
+                let project = match resolver.project(&row.project_key) {
+                    Some(project) => AiBillingProject::Mapped(project.clone()),
+                    None if row.unattributed => {
+                        AiBillingProject::Unassigned(AiUnassignedKind::Unattributed)
+                    }
+                    None => AiBillingProject::Unassigned(AiUnassignedKind::Unmapped),
+                };
                 Ok(AiDailyUsage {
                     billing_provider: row.billing_provider.as_deref().map(provider).transpose()?,
                     user_id: UserId::new(row.user_id),
                     provider: provider(&row.provider)?,
                     day: row.day,
                     chatgpt_sign_in: row.chatgpt_sign_in,
-                    // Mappings may hold different names for a renamed project.
-                    // Preserve the first used key's name, as before grouping
-                    // in SQL; every key in the group resolves to the same id.
-                    project: resolver.project(&row.project_key).cloned(),
+                    project,
                     usage: usage(
                         [
                             row.input_tokens,
@@ -625,6 +668,20 @@ mod tests {
         crate::db::DbPool::from(pool.clone())
     }
 
+    const UNMAPPED_USAGE: AiBillingProject =
+        AiBillingProject::Unassigned(AiUnassignedKind::Unmapped);
+
+    /// A project's name, or `unmapped` or `unattributed` for Unassigned usage.
+    fn billed_to(project: AiBillingProject) -> String {
+        match project {
+            AiBillingProject::Mapped(project) => project.name,
+            AiBillingProject::Unassigned(AiUnassignedKind::Unmapped) => "unmapped".to_string(),
+            AiBillingProject::Unassigned(AiUnassignedKind::Unattributed) => {
+                "unattributed".to_string()
+            }
+        }
+    }
+
     fn company(company_id: &str) -> TimeTrackingCompany {
         TimeTrackingCompany {
             provider: "kleer".to_string(),
@@ -778,8 +835,62 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(unconfigured.len(), 1);
-        assert_eq!(unconfigured[0].project, None);
+        assert_eq!(unconfigured[0].project, UNMAPPED_USAGE);
         assert_eq!(unconfigured[0].usage, one_key[0].usage);
+    }
+
+    #[sqlx::test]
+    async fn unassigned_kinds_are_apart_but_rounded_as_one(pool: PgPool) {
+        let unmapped = "github.com/example/new";
+        let user = setup(
+            &pool,
+            (
+                datetime!(2026-09-01 00:00 UTC),
+                datetime!(2026-09-02 00:00 UTC),
+            ),
+            vec![
+                bucket(datetime!(2026-09-01 00:00 UTC), unmapped, 1, 0.0024999996),
+                bucket(
+                    datetime!(2026-09-01 01:00 UTC),
+                    UNATTRIBUTED_PROJECT_KEY,
+                    2,
+                    0.0024999996,
+                ),
+            ],
+        )
+        .await;
+        let repository = PostgresAiBillingRepository::new(db(&pool));
+        let month = AiBillingMonth::parse("2026-09").unwrap();
+        let zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
+        let rows = repository
+            .daily_usage(
+                month.dates(),
+                &zone,
+                Some(&company("company-1")),
+                Some(&user),
+            )
+            .await
+            .unwrap();
+
+        // Rounded apart, the kinds would be 2_500_000 each and bill 0.01 USD.
+        // Together they are 4_999_999, as when both were one Unassigned group.
+        assert_eq!(
+            rows.iter()
+                .map(|row| (
+                    billed_to(row.project.clone()),
+                    row.usage.records,
+                    row.usage.priced_cost.nanos()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("unmapped".to_string(), 1, 2_500_000),
+                ("unattributed".to_string(), 2, 2_499_999),
+            ]
+        );
+        let bill = crate::domain::models::bill_month(month, &rows, &[]).unwrap();
+        assert_eq!(bill.lines.len(), 1);
+        assert_eq!(bill.lines[0].usage.priced_cost.nanos(), 4_999_999);
+        assert_eq!(bill.lines[0].billable().unwrap().to_decimal(), "0.00");
     }
 
     #[sqlx::test]
@@ -858,7 +969,7 @@ mod tests {
                         assert_eq!((row.user_id, row.provider), (user, AiProvider::Claude));
                         (
                             row.day,
-                            row.project.map(|project| project.name),
+                            billed_to(row.project),
                             row.usage.records,
                             row.usage.priced_cost.nanos(),
                         )
@@ -867,7 +978,7 @@ mod tests {
             }
         };
 
-        let client_a = || Some("Client A".to_string());
+        let client_a = || "Client A".to_string();
         assert_eq!(
             days("2026-03").await,
             [
@@ -875,8 +986,19 @@ mod tests {
                 (date!(2026 - 03 - 28), client_a(), 2, 200_000_000),
                 // 0.1 + 0.2 is exactly 0.3: costs are summed as NUMERIC.
                 (date!(2026 - 03 - 29), client_a(), 12, 300_000_000),
-                (date!(2026 - 03 - 30), None, 16, 300_000_000),
-                (date!(2026 - 03 - 31), None, 32, 400_000_000),
+                // A stale mapping can be mapped again: it is unmapped usage.
+                (
+                    date!(2026 - 03 - 30),
+                    "unmapped".to_string(),
+                    16,
+                    300_000_000
+                ),
+                (
+                    date!(2026 - 03 - 31),
+                    "unattributed".to_string(),
+                    32,
+                    400_000_000
+                ),
             ]
         );
         // Without time tracking configured no mapping resolves: all Unassigned.
@@ -890,7 +1012,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(unconfigured.len(), 5, "{unconfigured:?}");
-        assert!(unconfigured.iter().all(|day| day.project.is_none()));
+        assert!(unconfigured
+            .iter()
+            .all(|day| matches!(day.project, AiBillingProject::Unassigned(_))));
         assert_eq!(
             days("2026-10").await,
             [
@@ -1082,7 +1206,7 @@ mod tests {
                     .await
                     .unwrap()
                     .into_iter()
-                    .map(|day| (day.project.map(|project| project.name), day.usage.records))
+                    .map(|day| (billed_to(day.project), day.usage.records))
                     .collect::<Vec<_>>();
                 let rows = repository
                     .developer_usage(&user, september, zone, Some(configured))
@@ -1117,7 +1241,7 @@ mod tests {
         assert_eq!(
             billed().await,
             (
-                vec![(name("Client A"), 1), (None, 4)],
+                vec![("Client A".to_string(), 1), ("unmapped".to_string(), 4)],
                 vec![(name(MAPPED), 1), (None, 4)],
             )
         );
@@ -1131,7 +1255,7 @@ mod tests {
         assert_eq!(
             billed().await,
             (
-                vec![(name("Client A"), 3), (None, 4)],
+                vec![("Client A".to_string(), 3), ("unmapped".to_string(), 4)],
                 vec![(name(side_project), 2), (name(MAPPED), 1), (None, 4)],
             )
         );

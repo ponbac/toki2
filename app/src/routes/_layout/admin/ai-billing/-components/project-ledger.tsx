@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { AttentionPill } from "../../-components/attention-pill";
 import {
   OVERHEAD_LABEL,
+  UNASSIGNED_KIND_LABELS,
   UNASSIGNED_LABEL,
   formatConverted,
   lineConverted,
@@ -231,7 +232,7 @@ function EntryRows({
               <EntryMarker entry={entry} step={step} />
               <EntryName entry={entry} />
             </button>
-            {entry.kind === "unassigned" && (
+            {entry.unassigned === "unmapped" && (
               <Button
                 asChild
                 variant="outline"
@@ -377,7 +378,12 @@ function EntryName({ entry }: { entry: LedgerEntry }) {
       return (
         <span className="min-w-0 sm:truncate">
           <span className="font-semibold">{UNASSIGNED_LABEL}</span>
-          <span className="text-muted-foreground"> no project yet</span>
+          <span className="text-muted-foreground">
+            {" "}
+            {entry.unassigned === null
+              ? "no project yet"
+              : UNASSIGNED_KIND_LABELS[entry.unassigned].detail}
+          </span>
         </span>
       );
     case "overhead":

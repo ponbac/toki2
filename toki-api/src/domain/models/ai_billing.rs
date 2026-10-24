@@ -61,7 +61,12 @@
 //!   (`AiPersonalUsage`).
 //!
 //! Usage that no project mapping resolves, including `unattributed` usage,
-//! belongs to the Unassigned project (`None`).
+//! belongs to the Unassigned project (`None`). It bills as one project, so
+//! the bill is the same whatever made its usage Unassigned. The bill only
+//! shows it apart by kind (`AiUnassignedKind`): `AiBillingLine::parts` splits
+//! an Unassigned line's amounts, in its own currency and in the billing
+//! currency, between the kinds by the largest-remainder method, so the parts
+//! sum to the line exactly and no project's amount changes.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -70,9 +75,9 @@ use crate::domain::AiBillingError;
 use time::{Date, Month};
 
 use super::{
-    resolve_billing_mode, AiBillingDeveloper, AiBillingMode, AiConvertedBill, AiCurrency,
-    AiMachineId, AiMappedProject, AiProvider, AiSubscription, AiSubscriptionId, AiTokenCounts,
-    AiUsageDateRange, UserId, MAX_SAFE_COUNT,
+    resolve_billing_mode, AiBillingDeveloper, AiBillingMode, AiConvertedAmount, AiConvertedBill,
+    AiCurrency, AiMachineId, AiMappedProject, AiProvider, AiSubscription, AiSubscriptionId,
+    AiTokenCounts, AiUsageDateRange, UserId, MAX_SAFE_COUNT,
 };
 
 const NANOS_PER_USD: i64 = 1_000_000_000;
@@ -296,8 +301,29 @@ impl AiBillingUsage {
     }
 }
 
+/// Why usage is Unassigned, which decides what could assign it. In the order
+/// the bill shows them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AiUnassignedKind {
+    /// Usage of project keys that no mapping to the configured company
+    /// resolves: unmapped repositories, and keys mapped to a project of another
+    /// company. Mapping its keys assigns it.
+    Unmapped,
+    /// `unattributed` usage: outside any repository, with no project metadata.
+    /// No mapping can assign it.
+    Unattributed,
+}
+
+/// Where a day's usage bills: the time-tracking project its key maps to, or
+/// Unassigned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AiBillingProject {
+    Mapped(AiMappedProject),
+    Unassigned(AiUnassignedKind),
+}
+
 /// A developer's usage of one provider on one local day, attributed to the
-/// time-tracking project its key maps to, or to Unassigned (`None`).
+/// time-tracking project its key maps to, or to one kind of Unassigned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiDailyUsage {
     /// Explicit subscription payer; the usage provider remains its source tool.
@@ -308,7 +334,14 @@ pub struct AiDailyUsage {
     /// Whether the provider reported its ChatGPT sign-in for the developer on
     /// this day (`PI_CHATGPT_SIGN_IN_HINT`). Only Pi does.
     pub chatgpt_sign_in: bool,
-    pub project: Option<AiMappedProject>,
+    pub project: AiBillingProject,
+    pub usage: AiBillingUsage,
+}
+
+/// The usage of one kind of Unassigned within a billing line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiUnassignedUsage {
+    pub kind: AiUnassignedKind,
     pub usage: AiBillingUsage,
 }
 
@@ -346,9 +379,124 @@ pub struct AiBillingLine {
     pub charge: AiBillingCharge,
     /// The usage the line charges for; zero for overhead.
     pub usage: AiBillingUsage,
+    /// An Unassigned line's usage by kind, in kind order, of the kinds it has;
+    /// they sum to `usage`. Empty for a project's line and for overhead.
+    pub unassigned: Vec<AiUnassignedUsage>,
+}
+
+/// A billing line, or one kind of an Unassigned line's usage, as the bill
+/// shows it (`AiBillingLine::parts`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiBillingLinePart<'a> {
+    pub line: &'a AiBillingLine,
+    /// The kind of Unassigned usage; `None` for a project's line and for
+    /// overhead.
+    pub unassigned: Option<AiUnassignedKind>,
+    pub usage: AiBillingUsage,
+    /// What the part bills, as `AiBillingLine::billable` for the line.
+    pub billable: Option<AiFeeAmount>,
+    /// What the part bills in the billing currency.
+    pub converted: AiConvertedAmount,
 }
 
 impl AiBillingLine {
+    /// The line as the bill shows it, given what it bills in the billing
+    /// currency: the line itself, or for Unassigned usage of both kinds, one
+    /// part per kind.
+    ///
+    /// The kinds split the line's amount and its converted amount apart, each
+    /// by the largest-remainder method with weights as a subscription's fee
+    /// is split (`allocation_weights` over the kinds' usage), ties going to
+    /// Unmapped. The parts therefore sum to the line exactly in both
+    /// currencies, but a part's cents need not be its own estimate rounded,
+    /// and its converted amount need not be its own amount converted: two
+    /// kinds of 0.004 USD each bill 0.01 and 0.00 USD, and at 10 SEK per USD
+    /// 0.05 SEK each. An API part whose usage is all unpriced has an unknown
+    /// amount, as an API line does; its weight, and so its share, is zero.
+    pub fn parts(
+        &self,
+        converted: &AiConvertedAmount,
+    ) -> Result<Vec<AiBillingLinePart<'_>>, AiBillingError> {
+        if self.unassigned.len() < 2 {
+            return Ok(vec![AiBillingLinePart {
+                line: self,
+                unassigned: self.unassigned.first().map(|part| part.kind),
+                usage: self.usage,
+                billable: self.billable(),
+                converted: converted.clone(),
+            }]);
+        }
+
+        let usages: Vec<AiBillingUsage> = self.unassigned.iter().map(|part| part.usage).collect();
+        let (_, weights) = allocation_weights(&usages);
+        let split = |total: i64| -> Result<Vec<i64>, AiBillingError> {
+            match allocate_largest_remainder(total, &weights)? {
+                Some(parts) => Ok(parts),
+                None if total == 0 => Ok(vec![0; weights.len()]),
+                None => Err(AiBillingError::Invalid(
+                    "an Unassigned line bills an amount without usage to split it by".to_string(),
+                )),
+            }
+        };
+        let currency = match &self.charge {
+            AiBillingCharge::Api => AiCurrency::usd(),
+            AiBillingCharge::Subscription { fee, .. }
+            | AiBillingCharge::UnallocatedOverhead { fee, .. } => fee.currency.clone(),
+        };
+        let shares = split(self.billable().map_or(0, |billed| billed.hundredths))?;
+        let converted_shares = match converted {
+            AiConvertedAmount::Converted { amount, .. } => Some(split(amount.hundredths)?),
+            _ => None,
+        };
+        let zero = AiConvertedAmount::Converted {
+            amount: AiFeeAmount::zero(AiCurrency::billing()),
+            rate: None,
+        };
+
+        Ok(self
+            .unassigned
+            .iter()
+            .enumerate()
+            .map(|(index, kind)| {
+                let unknown = matches!(self.charge, AiBillingCharge::Api)
+                    && kind.usage.priced_cost == AiUsdNanos::ZERO
+                    && kind.usage.unpriced_records > 0;
+                let billable = (!unknown).then(|| AiFeeAmount {
+                    hundredths: shares[index],
+                    currency: currency.clone(),
+                });
+                let converted = match (&billable, converted, &converted_shares) {
+                    (None, _, _) => AiConvertedAmount::UnknownAmount,
+                    (Some(_), AiConvertedAmount::Converted { amount, rate }, Some(shares)) => {
+                        AiConvertedAmount::Converted {
+                            amount: AiFeeAmount {
+                                hundredths: shares[index],
+                                currency: amount.currency.clone(),
+                            },
+                            rate: rate.clone(),
+                        }
+                    }
+                    // Without a weight, the part takes no share of any amount.
+                    (Some(_), _, _) if weights[index] == 0 => zero.clone(),
+                    (Some(_), AiConvertedAmount::MissingRate { currency }, _) => {
+                        AiConvertedAmount::MissingRate {
+                            currency: currency.clone(),
+                        }
+                    }
+                    // The line's amount is unknown, but not this part's.
+                    (Some(_), _, _) => zero.clone(),
+                };
+                AiBillingLinePart {
+                    line: self,
+                    unassigned: Some(kind.kind),
+                    usage: kind.usage,
+                    billable,
+                    converted,
+                }
+            })
+            .collect())
+    }
+
     /// What the line bills: a fee share, or an API line's estimate rounded to
     /// whole US cents. `None` for an API line whose usage is all unpriced, so
     /// its cost is unknown, not zero.
@@ -570,29 +718,51 @@ pub fn allocate_largest_remainder(
 struct ProjectUsage {
     project: Option<AiMappedProject>,
     usage: AiBillingUsage,
+    /// Unassigned usage by kind; empty for a project.
+    unassigned: BTreeMap<AiUnassignedKind, AiBillingUsage>,
 }
 
-/// Usage per project, keyed by project id; `None` is Unassigned. Projects
-/// with one id and different names (renamed between two keys' mappings) merge
-/// under the first name seen.
+impl ProjectUsage {
+    fn unassigned(&self) -> Vec<AiUnassignedUsage> {
+        self.unassigned
+            .iter()
+            .map(|(kind, usage)| AiUnassignedUsage {
+                kind: *kind,
+                usage: *usage,
+            })
+            .collect()
+    }
+}
+
+/// Usage per project, keyed by project id; `None` is Unassigned, whatever its
+/// kind. Projects with one id and different names (renamed between two keys'
+/// mappings) merge under the first name seen.
 #[derive(Debug, Default)]
 struct Projects(BTreeMap<Option<String>, ProjectUsage>);
 
 impl Projects {
     fn add(
         &mut self,
-        project: &Option<AiMappedProject>,
+        project: &AiBillingProject,
         usage: &AiBillingUsage,
     ) -> Result<(), AiBillingError> {
-        let key = project.as_ref().map(|project| project.id.to_string());
-        self.0
-            .entry(key)
+        let (mapped, kind) = match project {
+            AiBillingProject::Mapped(project) => (Some(project), None),
+            AiBillingProject::Unassigned(kind) => (None, Some(*kind)),
+        };
+        let entry = self
+            .0
+            .entry(mapped.map(|project| project.id.to_string()))
             .or_insert_with(|| ProjectUsage {
-                project: project.clone(),
+                project: mapped.cloned(),
                 usage: AiBillingUsage::default(),
-            })
-            .usage
-            .add(usage)
+                unassigned: BTreeMap::new(),
+            });
+        entry.usage.add(usage)?;
+        if let Some(kind) = kind {
+            entry.unassigned.entry(kind).or_default().add(usage)?;
+        }
+        Ok(())
     }
 
     /// By project name, then id, with Unassigned last.
@@ -620,12 +790,12 @@ impl Projects {
 }
 
 /// The weights a subscription's fee is split by, and what they measure.
-fn allocation_weights(projects: &[ProjectUsage]) -> (AiAllocationBasis, Vec<u128>) {
+fn allocation_weights(usages: &[AiBillingUsage]) -> (AiAllocationBasis, Vec<u128>) {
     let weights = |weight: fn(&AiBillingUsage) -> i64| -> Vec<u128> {
-        projects
+        usages
             .iter()
-            .map(|project| {
-                u128::try_from(weight(&project.usage))
+            .map(|usage| {
+                u128::try_from(weight(usage))
                     .expect("billing usage is validated before allocating a fee")
             })
             .collect()
@@ -737,7 +907,9 @@ pub fn bill_month(
                 }
             }
 
-            let (basis, weights) = allocation_weights(&used_projects);
+            let used_usage: Vec<AiBillingUsage> =
+                used_projects.iter().map(|project| project.usage).collect();
+            let (basis, weights) = allocation_weights(&used_usage);
             let shares = allocate_largest_remainder(prorated_fee.hundredths, &weights)?;
             let (basis, weights) = match shares {
                 Some(shares) => {
@@ -747,6 +919,7 @@ pub fn bill_month(
                         lines.push(AiBillingLine {
                             user_id,
                             provider: used_provider,
+                            unassigned: project.unassigned(),
                             project: project.project,
                             charge: AiBillingCharge::Subscription {
                                 subscription_id: subscription.id,
@@ -770,6 +943,7 @@ pub fn bill_month(
                             fee: prorated_fee.clone(),
                         },
                         usage: AiBillingUsage::default(),
+                        unassigned: Vec::new(),
                     });
                     (None, Vec::new())
                 }
@@ -790,6 +964,7 @@ pub fn bill_month(
             lines.push(AiBillingLine {
                 user_id,
                 provider,
+                unassigned: project.unassigned(),
                 project: project.project,
                 charge: AiBillingCharge::Api,
                 usage: project.usage,

@@ -39,8 +39,16 @@ export function BillingRules({ timeZone }: { timeZone: string }) {
             unallocated overhead
           </span>
           . Usage whose project key is unmapped, stale or unattributed is{" "}
-          <span className="font-medium text-foreground">Unassigned</span>; map
-          its keys under Project mappings and the bill updates.
+          <span className="font-medium text-foreground">Unassigned</span>, one
+          project of the bill however a fee is split. It is shown in two parts:
+          usage of repositories nobody has mapped, which mapping the
+          repositories under Project mappings assigns, and usage outside any
+          repository, which no mapping can assign. Its amount is rounded and
+          converted to SEK as one line first, then each figure is split between
+          the parts by their cost (largest remainder, ties to unmapped), so the
+          parts add up to it exactly. A part&apos;s amount may therefore differ
+          by a cent from its own estimate rounded, and its SEK amount from its
+          own amount converted.
         </li>
         <li>
           <span className="font-medium text-foreground">{PERSONAL_LABEL}.</span>{" "}
