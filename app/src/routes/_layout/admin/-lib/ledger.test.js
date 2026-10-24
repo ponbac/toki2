@@ -66,50 +66,50 @@ const steps = (segments) =>
   segments.map((s) => [s.kind, s.label, s.step, s.entries.length]);
 
 const OCTOBER = [
-  ["Lerums Djursjukhus - Apport", "6454.93"],
-  ["Rentalföretagen - Rentalkod 2.0", "1901.18"],
-  ["Ecogain - AI project", "1532.07"],
-  ["Ex-Change Parts - Infrastructure Hexagon", "1259.38"],
-  ["ChildX - Widget", "629.85"],
-  ["Scartab - Self-billing", "246.17"],
-  ["Nordicon - Inläsning av mail", "210.75"],
-  ["Ramirent - Ramiconnect", "135.42"],
-  ["Blixt Biltvättar - Webbplats", "8.72"],
+  ["Norrsken Logistik - Kundportal", "6454.93"],
+  ["Tallbo Fastighet - Underhåll", "1901.18"],
+  ["Ljusdal Energi - Driftstöd", "1532.07"],
+  ["Bo-Ek Bygg - Offertverktyg", "1259.38"],
+  ["Glimmer Retail - Butiksapp", "629.85"],
+  ["Stensjö Vård - Bokning", "246.17"],
+  ["Hamnverket - Integrationer", "210.75"],
+  ["Kvarnens Mat - E-handel", "135.42"],
+  ["Ekdal Media - Webbplats", "8.72"],
   [null, "6880.84"],
 ];
 
 const SEPTEMBER = [
-  ["Lerums Djursjukhus - Apport", "8755.80"],
-  ["Ecogain - AI project", "1021.80"],
-  ["Rentalföretagen - Rentalkod 2.0", "784.30"],
-  ["ChildX - Widget", "372.49"],
-  ["Scartab - Self-billing", "328.65"],
-  ["Ramirent - Ramiconnect", "142.98"],
-  ["Nordicon - Inläsning av mail", "59.31"],
-  ["DS Smith Maintenance", "8.39"],
+  ["Norrsken Logistik - Kundportal", "8755.80"],
+  ["Ljusdal Energi - Driftstöd", "1021.80"],
+  ["Tallbo Fastighet - Underhåll", "784.30"],
+  ["Glimmer Retail - Butiksapp", "372.49"],
+  ["Stensjö Vård - Bokning", "328.65"],
+  ["Kvarnens Mat - E-handel", "142.98"],
+  ["Hamnverket - Integrationer", "59.31"],
+  ["Nordhamn Drift", "8.39"],
   [null, "7588.09"],
 ];
 
 describe("allocationSegments", () => {
   test("October: four projects of their own, the rest named after the dearest", () => {
     expect(steps(allocationSegments(month(OCTOBER)))).toEqual([
-      ["project", "Lerums Djursjukhus - Apport", 1, 1],
-      ["project", "Rentalföretagen - Rentalkod 2.0", 2, 1],
-      ["project", "Ecogain - AI project", 3, 1],
-      ["project", "Ex-Change Parts - Infrastructure Hexagon", 4, 1],
-      // ChildX is 3% of the bill: merged by the cap, not by its size.
-      ["others", "ChildX + 4 more", 5, 5],
+      ["project", "Norrsken Logistik - Kundportal", 1, 1],
+      ["project", "Tallbo Fastighet - Underhåll", 2, 1],
+      ["project", "Ljusdal Energi - Driftstöd", 3, 1],
+      ["project", "Bo-Ek Bygg - Offertverktyg", 4, 1],
+      // Glimmer Retail is 3% of the bill: merged by the cap, not by its size.
+      ["others", "Glimmer Retail + 4 more", 5, 5],
       ["unassigned", "Unassigned", null, 1],
     ]);
   });
 
   test("September: a tail merged by the cap is named after its dearest", () => {
     expect(steps(allocationSegments(month(SEPTEMBER)))).toEqual([
-      ["project", "Lerums Djursjukhus - Apport", 1, 1],
-      ["project", "Ecogain - AI project", 2, 1],
-      ["project", "Rentalföretagen - Rentalkod 2.0", 3, 1],
-      ["project", "ChildX - Widget", 4, 1],
-      ["others", "Scartab + 3 more", 5, 4],
+      ["project", "Norrsken Logistik - Kundportal", 1, 1],
+      ["project", "Ljusdal Energi - Driftstöd", 2, 1],
+      ["project", "Tallbo Fastighet - Underhåll", 3, 1],
+      ["project", "Glimmer Retail - Butiksapp", 4, 1],
+      ["others", "Stensjö Vård + 3 more", 5, 4],
       ["unassigned", "Unassigned", null, 1],
     ]);
   });
@@ -181,8 +181,8 @@ describe("segmentSteps", () => {
         expect(map.get(entry.key) ?? null).toBe(segment.step);
       }
     }
-    expect(map.get("project:ChildX - Widget")).toBe(5);
-    expect(map.get("project:Blixt Biltvättar - Webbplats")).toBe(5);
+    expect(map.get("project:Glimmer Retail - Butiksapp")).toBe(5);
+    expect(map.get("project:Ekdal Media - Webbplats")).toBe(5);
     expect(map.has("unassigned")).toBe(false);
     expect(map.has("overhead")).toBe(false);
     expect(map.has("project:Unpriced - U")).toBe(false);
@@ -191,14 +191,10 @@ describe("segmentSteps", () => {
 
 describe("splitProjectName", () => {
   test.each([
-    ["Lerums Djursjukhus - Apport", "Lerums Djursjukhus", "Apport"],
-    [
-      "Ex-Change Parts - Infrastructure Hexagon",
-      "Ex-Change Parts",
-      "Infrastructure Hexagon",
-    ],
+    ["Norrsken Logistik - Kundportal", "Norrsken Logistik", "Kundportal"],
+    ["Bo-Ek Bygg - Offertverktyg", "Bo-Ek Bygg", "Offertverktyg"],
     ["Customer - Phase 1 - Build", "Customer", "Phase 1 - Build"],
-    ["DS Smith Maintenance", "DS Smith Maintenance", null],
+    ["Nordhamn Drift", "Nordhamn Drift", null],
     [" - Orphan", " - Orphan", null],
   ])("%s", (name, customer, project) => {
     expect(splitProjectName(name)).toEqual({ customer, project });

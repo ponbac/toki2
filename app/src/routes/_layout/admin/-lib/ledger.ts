@@ -31,7 +31,7 @@ export type ProjectName = Readonly<{
 
 const NAME_SEPARATOR = " - ";
 
-/** Splits `Lerums Djursjukhus - Apport` at its first ` - `. A name without
+/** Splits `Norrsken Logistik - Kundportal` at its first ` - `. A name without
  * the separator, or with nothing on one side of it, is all customer. */
 export function splitProjectName(name: string): ProjectName {
   const at = name.indexOf(NAME_SEPARATOR);
