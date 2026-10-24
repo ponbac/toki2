@@ -1,10 +1,9 @@
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import type {
-  AiBillingCompleteness,
-  AiDeveloperCompleteness,
   AiMachineCompleteness,
   AiUploadGap,
 } from "@/lib/api/queries/ai-admin";
+import { shortDate } from "./format";
 
 /*
  * A billing month's upload coverage, day by day. The server has already
@@ -14,7 +13,7 @@ import type {
  */
 
 /** What a strip shows for one local day. */
-export type CoverageState = "uploaded" | "missing" | "notRequired";
+export type CoverageState = "uploaded" | "partial" | "missing" | "notRequired";
 
 /** One local day of a strip, and what its state means in words. */
 export type CoverageCell = Readonly<{
@@ -26,29 +25,8 @@ export type CoverageCell = Readonly<{
 /** A provider's uploads from one machine. */
 export type ProviderCoverage = AiMachineCompleteness["providers"][number];
 
-/** How much of what a month requires has been uploaded. */
-export type CoverageTotals = Readonly<{
-  /** Machines active in the month: the ones that must upload. */
-  machines: number;
-  /** Days of the month through its last required day. */
-  requiredDays: number;
-  /** `machines × requiredDays`. */
-  required: number;
-  /** Required machine-days no provider uploaded. */
-  missing: number;
-  /** Uploaded machine-days on which an expected provider is missing. */
-  providerOnly: number;
-}>;
-
 const NOT_YET = "Not required yet: a sync covers a day once it is over";
 const INACTIVE = "Machine not active this month: nothing required";
-
-/** Readiness that holds billing back. */
-export function needsAttention(developer: AiDeveloperCompleteness): boolean {
-  return (
-    developer.readiness === "noSync" || developer.readiness === "incomplete"
-  );
-}
 
 /** Every local day of `month` (`YYYY-MM`), `YYYY-MM-DD`. */
 export function monthDays(month: string): string[] {
@@ -79,6 +57,13 @@ export function gapDayCount(gaps: readonly AiUploadGap[]): number {
       count + Math.round((instant(gap.to) - instant(gap.from)) / dayMs) + 1,
     0,
   );
+}
+
+/** `Aug 5–19`, or `Aug 31` for one day. */
+export function formatGap(gap: AiUploadGap): string {
+  return gap.from === gap.to
+    ? shortDate(gap.from)
+    : `${shortDate(gap.from)}–${shortDate(gap.to)}`;
 }
 
 /** Whether `day` is one a machine must have uploaded by now. */
@@ -137,14 +122,13 @@ export function machineCells(
     const without = machine.providers
       .filter((provider) => inGaps(provider.gaps, day))
       .map((provider) => AI_PROVIDER_LABELS[provider.provider]);
-    return {
-      day,
-      state: "uploaded",
-      text:
-        without.length > 0
-          ? `Uploaded, except ${without.join(" and ")}`
-          : "Uploaded",
-    };
+    return without.length > 0
+      ? {
+          day,
+          state: "partial",
+          text: `Uploaded, except ${without.join(" and ")}`,
+        }
+      : { day, state: "uploaded", text: "Uploaded" };
   });
 }
 
@@ -164,37 +148,4 @@ export function providerCells(
       ? { day, state: "missing", text: `${label} not uploaded` }
       : { day, state: "uploaded", text: `${label} uploaded` };
   });
-}
-
-/** What the month requires of the machines active in it, and what is missing. */
-export function coverageTotals(
-  completeness: AiBillingCompleteness,
-  days: readonly string[],
-): CoverageTotals {
-  const required = days.filter((day) =>
-    isRequired(day, completeness.requiredThrough),
-  );
-  const machines = completeness.developers
-    .flatMap((developer) => developer.machines)
-    .filter((machine) => machine.activeInMonth);
-  let missing = 0;
-  let providerOnly = 0;
-  for (const machine of machines) {
-    for (const day of required) {
-      if (inGaps(machine.gaps, day)) {
-        missing += 1;
-      } else if (
-        machine.providers.some((provider) => inGaps(provider.gaps, day))
-      ) {
-        providerOnly += 1;
-      }
-    }
-  }
-  return {
-    machines: machines.length,
-    requiredDays: required.length,
-    required: machines.length * required.length,
-    missing,
-    providerOnly,
-  };
 }

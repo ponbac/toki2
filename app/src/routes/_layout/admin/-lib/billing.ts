@@ -5,7 +5,6 @@ import type {
   AiSubscriptionMonth,
 } from "@/lib/api/queries/ai-admin";
 import { formatFee } from "@/lib/ai-subscriptions";
-import { formatEstimate } from "./format";
 
 /*
  * Grouping and wording for billing lines. The server has already decided every
@@ -56,6 +55,11 @@ export function hundredths(amount: string): number {
 
 function decimal(hundredthsAmount: number): string {
   return `${Math.floor(hundredthsAmount / 100)}.${String(hundredthsAmount % 100).padStart(2, "0")}`;
+}
+
+/** Exact hundredths as an amount in `currency`, such as `6 454,93 SEK`. */
+export function formatHundredths(amount: number, currency: string): string {
+  return formatFee(decimal(amount), currency);
 }
 
 /** What a set of lines bills: the sum of their billable amounts per
@@ -293,35 +297,6 @@ export function groupLines(
       (a, b) =>
         kindRank[a.kind] - kindRank[b.kind] || a.label.localeCompare(b.label),
     );
-}
-
-/** A month of API-equivalent cost per project, largest first, for a chart. */
-export function costByProject(
-  lines: readonly AiBillingLine[],
-): { label: string; usd: number; display: string }[] {
-  const projects = new Map<string, { label: string; lines: AiBillingLine[] }>();
-  for (const line of lines) {
-    if (line.unallocatedOverhead) {
-      continue;
-    }
-    const project = lineProject(line);
-    const entry = projects.get(project.key) ?? {
-      label: project.label,
-      lines: [],
-    };
-    entry.lines.push(line);
-    projects.set(project.key, entry);
-  }
-  return [...projects.values()]
-    .map(({ label, lines }) => {
-      const { usage } = billableTotals(lines);
-      return {
-        label,
-        usd: usage.apiEquivalentUsd,
-        display: formatEstimate(usage),
-      };
-    })
-    .sort((a, b) => b.usd - a.usd || a.label.localeCompare(b.label));
 }
 
 export function allocationLabel(

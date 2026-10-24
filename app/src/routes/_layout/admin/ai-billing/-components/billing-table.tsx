@@ -39,8 +39,10 @@ import {
   lineWarnings,
   type LineGroup,
 } from "../../-lib/billing";
-import { formatEstimate, formatTokens } from "../../-lib/format";
+import { formatTokens } from "../../-lib/format";
 import { BILLING_MODE_COLORS } from "../../-lib/providers";
+import { formatEstimateIn } from "../../-lib/estimates";
+import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
 /** What a group is, as the icon that leads its row. */
 const GROUP_ICONS = {
@@ -89,6 +91,7 @@ export function BillingTable({
   /** The developers whose uploads for the month are incomplete. */
   uploadsMissing?: ReadonlySet<number>;
 }) {
+  const money = useEstimateMoney();
   const names = new Map(developers.map((d) => [d.userId, d.fullName]));
   const plans = new Map(subscriptions.map((s) => [s.subscriptionId, s]));
   const groups = groupLines(lines, developers, groupBy);
@@ -190,7 +193,7 @@ export function BillingTable({
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">
                 {group.totals.usage.records > 0
-                  ? formatEstimate(group.totals.usage)
+                  ? formatEstimateIn(group.totals.usage, money)
                   : "—"}
               </TableCell>
               <TableCell className="text-right tabular-nums">
@@ -264,7 +267,7 @@ export function BillingTable({
                   <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
                     {line.unallocatedOverhead
                       ? "—"
-                      : formatEstimate(line.usage)}
+                      : formatEstimateIn(line.usage, money)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">
                     {line.unallocatedOverhead

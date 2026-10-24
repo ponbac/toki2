@@ -4,7 +4,9 @@ import type {
   AiBillingUsage,
 } from "@/lib/api/queries/ai-admin";
 import { addUsage, emptyUsage } from "../../-lib/daily";
-import { formatEstimate, formatTokens } from "../../-lib/format";
+import { formatTokens } from "../../-lib/format";
+import { formatEstimateIn } from "../../-lib/estimates";
+import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
 /**
  * Usage the bill leaves out because its developer marked the repository as
@@ -19,6 +21,7 @@ export function PersonalUsage({
   usage: readonly Readonly<{ userId: number; usage: AiBillingUsage }>[];
   developers?: readonly AiBillingDeveloper[];
 }) {
+  const money = useEstimateMoney();
   if (usage.length === 0) {
     return null;
   }
@@ -40,7 +43,7 @@ export function PersonalUsage({
           {PERSONAL_LABEL}: left out of the bill
         </h3>
         <p className="text-sm tabular-nums">
-          <span className="font-semibold">{formatEstimate(total)}</span>
+          <span className="font-semibold">{formatEstimateIn(total, money)}</span>
           <span className="text-muted-foreground">
             {" "}
             · {formatTokens(total.tokens.total)} tokens
@@ -60,7 +63,7 @@ export function PersonalUsage({
               <span className="text-muted-foreground">
                 {names.get(personal.userId) ?? "Unknown developer"}
               </span>{" "}
-              {formatEstimate(personal.usage)}
+              {formatEstimateIn(personal.usage, money)}
             </li>
           ))}
         </ul>

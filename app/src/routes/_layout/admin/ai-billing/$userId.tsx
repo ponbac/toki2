@@ -47,7 +47,6 @@ import {
 import {
   MONTH_PATTERN,
   formatCount,
-  formatEstimate,
   formatTokens,
   monthLabel,
   previousMonth,
@@ -60,6 +59,12 @@ import { BillingTable } from "./-components/billing-table";
 import { MissingRatesAlert } from "./-components/exchange-rates";
 import { DailyCostChart } from "./-components/daily-cost-chart";
 import { SubscriptionMonths } from "./-components/subscription-months";
+import { formatEstimateIn } from "../-lib/estimates";
+import {
+  EstimateMoneyContext,
+  useBillEstimateMoney,
+  useEstimateMoney,
+} from "../-lib/use-estimate-money";
 
 const searchSchema = z.object({
   month: z.string().regex(MONTH_PATTERN).optional().catch(undefined),
@@ -83,68 +88,72 @@ function DeveloperMonthPage() {
     enabled: validUser,
     placeholderData: keepPreviousData,
   });
+  // Estimates show in the bill's currency, at the rate of the bill on screen.
+  const estimates = useBillEstimateMoney(query.data);
 
   return (
-    <div className={cn("flex flex-col gap-6", PROVIDER_COLOR_SCOPE)}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <Button asChild variant="ghost" size="sm" className="-ml-2 w-fit">
-            <Link to="/admin/ai-billing" search={{ month }}>
-              <ArrowLeft className="size-4" />
-              All developers
-            </Link>
-          </Button>
-          <h2 className="text-xl font-semibold">
-            {query.data?.developer.fullName ?? "Developer"}
-            <span className="ml-2 text-base font-normal text-muted-foreground">
-              {monthLabel(month)}
-            </span>
-          </h2>
-          {query.data && (
-            <p className="text-sm text-muted-foreground">
-              {query.data.developer.email} · days in {query.data.timeZone}
-            </p>
-          )}
-        </div>
-        <MonthPicker
-          month={month}
-          onChange={(next) =>
-            navigate({ search: (prev) => ({ ...prev, month: next }) })
-          }
-        />
-      </div>
-
-      {!validUser ? (
-        <p className="text-sm text-destructive" role="alert">
-          That is not a developer.
-        </p>
-      ) : query.isPending ? (
-        <div className="flex flex-col gap-3" role="status" aria-label="Loading">
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-64 w-full" />
-        </div>
-      ) : query.isError ? (
-        <QueryError
-          error={query.error}
-          what="this developer's month"
-          onRetry={() => query.refetch()}
-        />
-      ) : (
-        <div
-          className={cn(
-            "flex flex-col gap-6 transition-opacity",
-            query.isPlaceholderData && "opacity-60",
-          )}
-        >
-          {/* Keyed by the loaded month, so its filters start over. */}
-          <DeveloperMonthView
-            key={query.data.month}
-            month={query.data.month}
-            data={query.data}
+    <EstimateMoneyContext.Provider value={estimates}>
+      <div className={cn("flex flex-col gap-6", PROVIDER_COLOR_SCOPE)}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <Button asChild variant="ghost" size="sm" className="-ml-2 w-fit">
+              <Link to="/admin/ai-billing" search={{ month }}>
+                <ArrowLeft className="size-4" />
+                All developers
+              </Link>
+            </Button>
+            <h2 className="text-xl font-semibold">
+              {query.data?.developer.fullName ?? "Developer"}
+              <span className="ml-2 text-base font-normal text-muted-foreground">
+                {monthLabel(month)}
+              </span>
+            </h2>
+            {query.data && (
+              <p className="text-sm text-muted-foreground">
+                {query.data.developer.email} · days in {query.data.timeZone}
+              </p>
+            )}
+          </div>
+          <MonthPicker
+            month={month}
+            onChange={(next) =>
+              navigate({ search: (prev) => ({ ...prev, month: next }) })
+            }
           />
         </div>
-      )}
-    </div>
+
+        {!validUser ? (
+          <p className="text-sm text-destructive" role="alert">
+            That is not a developer.
+          </p>
+        ) : query.isPending ? (
+          <div className="flex flex-col gap-3" role="status" aria-label="Loading">
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        ) : query.isError ? (
+          <QueryError
+            error={query.error}
+            what="this developer's month"
+            onRetry={() => query.refetch()}
+          />
+        ) : (
+          <div
+            className={cn(
+              "flex flex-col gap-6 transition-opacity",
+              query.isPlaceholderData && "opacity-60",
+            )}
+          >
+            {/* Keyed by the loaded month, so its filters start over. */}
+            <DeveloperMonthView
+              key={query.data.month}
+              month={query.data.month}
+              data={query.data}
+            />
+          </div>
+        )}
+      </div>
+    </EstimateMoneyContext.Provider>
   );
 }
 
@@ -497,6 +506,7 @@ function BreakdownTable({
   items: readonly Breakdown[];
   total: AiBillingUsage;
 }) {
+  const money = useEstimateMoney();
   if (items.length === 0) {
     return (
       <p className="p-4 text-sm text-muted-foreground">
@@ -544,7 +554,7 @@ function BreakdownTable({
               {formatTokens(item.usage.tokens.total)}
             </TableCell>
             <TableCell className="text-right tabular-nums">
-              {formatEstimate(item.usage)}
+              {formatEstimateIn(item.usage, money)}
             </TableCell>
             <TableCell className="text-right tabular-nums text-muted-foreground">
               {total.apiEquivalentUsd > 0
