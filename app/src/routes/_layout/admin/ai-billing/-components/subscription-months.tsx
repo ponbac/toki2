@@ -15,7 +15,9 @@ import type {
 import { StatusBadge } from "../../-components/status-badge";
 import { allocationLabel } from "../../-lib/billing";
 import { formatFee } from "@/lib/ai-subscriptions";
-import { formatEstimate, shortDate } from "../../-lib/format";
+import { shortDate } from "../../-lib/format";
+import { formatEstimateIn } from "../../-lib/estimates";
+import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
 /** How each subscription's fee was pro-rated and split this month. */
 export function SubscriptionMonths({
@@ -29,6 +31,7 @@ export function SubscriptionMonths({
   billingCurrency: string;
   showDeveloper?: boolean;
 }) {
+  const money = useEstimateMoney();
   const names = new Map(developers.map((d) => [d.userId, d.fullName]));
   if (subscriptions.length === 0) {
     return (
@@ -121,7 +124,7 @@ export function SubscriptionMonths({
             <TableCell className="text-right tabular-nums text-muted-foreground">
               {subscription.allocation === "unallocated"
                 ? "—"
-                : formatEstimate(subscription.usage)}
+                : formatEstimateIn(subscription.usage, money)}
             </TableCell>
           </TableRow>
         ))}

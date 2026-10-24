@@ -59,6 +59,10 @@ import { SubscriptionMonths } from "./-components/subscription-months";
 import { SubscriptionValueChart } from "./-components/subscription-value";
 import { UndeclaredPlans } from "./-components/undeclared-plans";
 import { UploadsPanel } from "./-components/uploads-panel";
+import {
+  EstimateMoneyContext,
+  useBillEstimateMoney,
+} from "../-lib/use-estimate-money";
 
 /** The parts of the month beneath its statement. */
 const TABS = ["projects", "people", "subscriptions", "data", "rules"] as const;
@@ -118,6 +122,8 @@ function AiBillingPage() {
 
   // Only a bill that loaded: a failed reload shows its error, not old figures.
   const overview = overviewQuery.isSuccess ? overviewQuery.data : undefined;
+  // Estimates show in the bill's currency, at the rate of the bill on screen.
+  const estimates = useBillEstimateMoney(overview);
   const completeness =
     completenessQuery.isSuccess && !completenessQuery.isPlaceholderData
       ? completenessQuery.data
@@ -217,205 +223,211 @@ function AiBillingPage() {
   const stale = overviewQuery.isPlaceholderData && "opacity-60";
 
   return (
-    <div className={cn("flex flex-col gap-8", PROVIDER_COLOR_SCOPE)}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <MonthPicker
-            month={month}
-            onChange={(next) =>
-              navigate({ search: (prev) => ({ ...prev, month: next }) })
-            }
-          />
-          {completeness?.inProgress && (
-            <p className="text-sm text-muted-foreground">
-              In progress
-              {completeness.requiredThrough !== null &&
-                `, usage through ${shortDate(completeness.requiredThrough)}`}
-              . Figures change until the month is over.
-            </p>
-          )}
+    <EstimateMoneyContext.Provider value={estimates}>
+      <div className={cn("flex flex-col gap-8", PROVIDER_COLOR_SCOPE)}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <MonthPicker
+              month={month}
+              onChange={(next) =>
+                navigate({ search: (prev) => ({ ...prev, month: next }) })
+              }
+            />
+            {completeness?.inProgress && (
+              <p className="text-sm text-muted-foreground">
+                In progress
+                {completeness.requiredThrough !== null &&
+                  `, usage through ${shortDate(completeness.requiredThrough)}`}
+                . Figures change until the month is over.
+              </p>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={download.isPending}
+            onClick={() => download.mutate({ month })}
+          >
+            <Download className="size-4" />
+            {download.isPending ? "Exporting..." : "Export CSV"}
+            {openChecks > 0 && (
+              <AttentionPill>
+                {openChecks} open
+                <span className="sr-only">
+                  {openChecks === 1 ? " check" : " checks"} before export
+                </span>
+              </AttentionPill>
+            )}
+          </Button>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={download.isPending}
-          onClick={() => download.mutate({ month })}
-        >
-          <Download className="size-4" />
-          {download.isPending ? "Exporting..." : "Export CSV"}
-          {openChecks > 0 && (
-            <AttentionPill>
-              {openChecks} open
-              <span className="sr-only">
-                {openChecks === 1 ? " check" : " checks"} before export
-              </span>
-            </AttentionPill>
-          )}
-        </Button>
-      </div>
 
-      {overviewQuery.isPending ? (
-        <div role="status" aria-label="Loading the bill" className="space-y-4">
-          <Skeleton className="h-24 w-80" />
-          <Skeleton className="h-14 w-full" />
-        </div>
-      ) : overviewQuery.isError ? (
-        <QueryError
-          error={overviewQuery.error}
-          what="the billing overview"
-          onRetry={() => overviewQuery.refetch()}
-        />
-      ) : (
-        overview &&
-        ledger && (
+        {overviewQuery.isPending ? (
           <div
+            role="status"
+            aria-label="Loading the bill"
+            className="space-y-4"
+          >
+            <Skeleton className="h-24 w-80" />
+            <Skeleton className="h-14 w-full" />
+          </div>
+        ) : overviewQuery.isError ? (
+          <QueryError
+            error={overviewQuery.error}
+            what="the billing overview"
+            onRetry={() => overviewQuery.refetch()}
+          />
+        ) : (
+          overview &&
+          ledger && (
+            <div
+              className={cn(
+                "transition-opacity motion-reduce:transition-none",
+                stale,
+              )}
+            >
+              {overview.lines.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
+                  <p className="font-medium">
+                    Nothing to bill for {monthLabel(overview.month)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    No AI usage that bills was synced for this month and no
+                    subscription covers it.
+                  </p>
+                </div>
+              ) : (
+                <Statement
+                  overview={overview}
+                  ledger={ledger}
+                  segments={segments}
+                  highlighted={highlighted}
+                  onHighlight={setHighlighted}
+                  onSelect={selectSegment}
+                />
+              )}
+            </div>
+          )
+        )}
+
+        <ExportChecks checks={checks} />
+
+        {overview && ledger && (
+          <Tabs
+            value={tab}
+            onValueChange={(value) => {
+              const next = TABS.find((option) => option === value);
+              if (next) {
+                setFocusRow(null);
+                setTab(next);
+              }
+            }}
             className={cn(
               "transition-opacity motion-reduce:transition-none",
               stale,
             )}
           >
-            {overview.lines.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
-                <p className="font-medium">
-                  Nothing to bill for {monthLabel(overview.month)}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  No AI usage that bills was synced for this month and no
-                  subscription covers it.
-                </p>
-              </div>
-            ) : (
-              <Statement
-                overview={overview}
-                ledger={ledger}
-                segments={segments}
-                highlighted={highlighted}
-                onHighlight={setHighlighted}
-                onSelect={selectSegment}
-              />
-            )}
-          </div>
-        )
-      )}
-
-      <ExportChecks checks={checks} />
-
-      {overview && ledger && (
-        <Tabs
-          value={tab}
-          onValueChange={(value) => {
-            const next = TABS.find((option) => option === value);
-            if (next) {
-              setFocusRow(null);
-              setTab(next);
-            }
-          }}
-          className={cn(
-            "transition-opacity motion-reduce:transition-none",
-            stale,
-          )}
-        >
-          <TabsList
-            aria-label="Parts of the month's bill"
-            className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 shadow-[inset_0_-1px_0_hsl(var(--border)/0.6)]"
-          >
-            <TabsTrigger value="projects" className={TAB_TRIGGER}>
-              Projects
-              <Count value={ledger.projects.length} />
-            </TabsTrigger>
-            <TabsTrigger value="people" className={TAB_TRIGGER}>
-              People
-              <Count value={people.length} />
-            </TabsTrigger>
-            <TabsTrigger value="subscriptions" className={TAB_TRIGGER}>
-              Subscriptions
-              <Count value={overview.subscriptions.length} />
-              {mismatches.length > 0 && <Dot label="plans nobody declared" />}
-            </TabsTrigger>
-            <TabsTrigger value="data" className={TAB_TRIGGER}>
-              Uploads and rates
-              {dataNeedsLook && <Dot label="needs attention" />}
-            </TabsTrigger>
-            <TabsTrigger value="rules" className={TAB_TRIGGER}>
-              <Info className="size-4" aria-hidden />
-              How billing works
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="projects" className="mt-5">
-            {overview.lines.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No project is billed for {monthLabel(overview.month)}.
-              </p>
-            ) : (
-              <ProjectLedger
-                overview={overview}
-                ledger={ledger}
-                open={open}
-                onToggle={toggle}
-                focusRow={focusRow}
-                steps={steps}
-                undeclared={undeclared}
-                highlighted={highlighted}
-                onHighlight={setHighlighted}
-              />
-            )}
-          </TabsContent>
-          <TabsContent value="people" className="mt-5">
-            {people.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nobody has AI usage or a subscription in{" "}
-                {monthLabel(overview.month)}.
-              </p>
-            ) : (
-              <PeopleTable
-                overview={overview}
-                people={people}
-                verdicts={verdicts}
-                undeclared={undeclared}
-              />
-            )}
-          </TabsContent>
-          <TabsContent value="subscriptions" className="mt-5 space-y-5">
-            <UndeclaredPlans overview={overview} mismatches={mismatches} />
-            <SubscriptionValueChart overview={overview} />
-            <div className="overflow-hidden rounded-xl border border-border/70 bg-card/60">
-              <SubscriptionMonths
-                billingCurrency={overview.billingCurrency}
-                subscriptions={overview.subscriptions}
-                developers={overview.developers}
-              />
-            </div>
-          </TabsContent>
-          <TabsContent value="data" className="mt-5 space-y-10">
-            <DataChecks
-              query={completenessQuery}
-              uploads={uploads}
-              completeness={completeness}
-            />
-            <section
-              aria-labelledby="rates-heading"
-              className="flex max-w-3xl flex-col gap-2"
+            <TabsList
+              aria-label="Parts of the month's bill"
+              className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 shadow-[inset_0_-1px_0_hsl(var(--border)/0.6)]"
             >
-              <h3 id="rates-heading" className="text-base font-semibold">
-                Exchange rates
-              </h3>
-              <ExchangeRatesPanel
-                key={overview.month}
-                month={overview.month}
-                billingCurrency={overview.billingCurrency}
-                rates={overview.exchangeRates}
-                missingRates={overview.missingRates}
-                pendingRates={overview.pendingRates}
+              <TabsTrigger value="projects" className={TAB_TRIGGER}>
+                Projects
+                <Count value={ledger.projects.length} />
+              </TabsTrigger>
+              <TabsTrigger value="people" className={TAB_TRIGGER}>
+                People
+                <Count value={people.length} />
+              </TabsTrigger>
+              <TabsTrigger value="subscriptions" className={TAB_TRIGGER}>
+                Subscriptions
+                <Count value={overview.subscriptions.length} />
+                {mismatches.length > 0 && <Dot label="plans nobody declared" />}
+              </TabsTrigger>
+              <TabsTrigger value="data" className={TAB_TRIGGER}>
+                Uploads and rates
+                {dataNeedsLook && <Dot label="needs attention" />}
+              </TabsTrigger>
+              <TabsTrigger value="rules" className={TAB_TRIGGER}>
+                <Info className="size-4" aria-hidden />
+                How billing works
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="projects" className="mt-5">
+              {overview.lines.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No project is billed for {monthLabel(overview.month)}.
+                </p>
+              ) : (
+                <ProjectLedger
+                  overview={overview}
+                  ledger={ledger}
+                  open={open}
+                  onToggle={toggle}
+                  focusRow={focusRow}
+                  steps={steps}
+                  undeclared={undeclared}
+                  highlighted={highlighted}
+                  onHighlight={setHighlighted}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="people" className="mt-5">
+              {people.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nobody has AI usage or a subscription in{" "}
+                  {monthLabel(overview.month)}.
+                </p>
+              ) : (
+                <PeopleTable
+                  overview={overview}
+                  people={people}
+                  verdicts={verdicts}
+                  undeclared={undeclared}
+                />
+              )}
+            </TabsContent>
+            <TabsContent value="subscriptions" className="mt-5 space-y-5">
+              <UndeclaredPlans overview={overview} mismatches={mismatches} />
+              <SubscriptionValueChart overview={overview} />
+              <div className="overflow-hidden rounded-xl border border-border/70 bg-card/60">
+                <SubscriptionMonths
+                  billingCurrency={overview.billingCurrency}
+                  subscriptions={overview.subscriptions}
+                  developers={overview.developers}
+                />
+              </div>
+            </TabsContent>
+            <TabsContent value="data" className="mt-5 space-y-10">
+              <DataChecks
+                query={completenessQuery}
+                uploads={uploads}
+                completeness={completeness}
               />
-            </section>
-          </TabsContent>
-          <TabsContent value="rules" className="mt-5">
-            <BillingRules timeZone={overview.timeZone} />
-          </TabsContent>
-        </Tabs>
-      )}
-    </div>
+              <section
+                aria-labelledby="rates-heading"
+                className="flex max-w-3xl flex-col gap-2"
+              >
+                <h3 id="rates-heading" className="text-base font-semibold">
+                  Exchange rates
+                </h3>
+                <ExchangeRatesPanel
+                  key={overview.month}
+                  month={overview.month}
+                  billingCurrency={overview.billingCurrency}
+                  rates={overview.exchangeRates}
+                  missingRates={overview.missingRates}
+                  pendingRates={overview.pendingRates}
+                />
+              </section>
+            </TabsContent>
+            <TabsContent value="rules" className="mt-5">
+              <BillingRules timeZone={overview.timeZone} />
+            </TabsContent>
+          </Tabs>
+        )}
+      </div>
+    </EstimateMoneyContext.Provider>
   );
 }
 

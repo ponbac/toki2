@@ -12,7 +12,12 @@ import {
   USAGE_CHART_TOOLTIP,
 } from "@/lib/chart-theme";
 import type { DayPoint } from "../../-lib/daily";
-import { formatUsd, shortDate } from "../../-lib/format";
+import { shortDate } from "../../-lib/format";
+import {
+  formatEstimateAmount,
+  formatEstimateTick,
+} from "../../-lib/estimates";
+import { useEstimateMoney } from "../../-lib/use-estimate-money";
 import { PROVIDER_COLOR_VARS } from "../../-lib/providers";
 
 /**
@@ -27,6 +32,7 @@ export function DailyCostChart({
   /** How each provider's usage bills on each day, `${day}:${provider}`. */
   billing: ReadonlyMap<string, string>;
 }) {
+  const money = useEstimateMoney();
   const { providers, definition } = useMemo(() => {
     const providers = AI_PROVIDERS.filter((provider) =>
       points.some((point) => point[provider] > 0),
@@ -78,7 +84,10 @@ export function DailyCostChart({
           grid: { stroke: "hsl(var(--border) / 0.6)", strokeOpacity: 1 },
           axis: {
             ...USAGE_CHART_AXIS,
-            ticks: { ...USAGE_CHART_AXIS.ticks, format: formatUsd },
+            ticks: {
+              ...USAGE_CHART_AXIS.ticks,
+              format: (usd: number) => formatEstimateTick(usd, money),
+            },
           },
         },
       },
@@ -101,14 +110,14 @@ export function DailyCostChart({
               ? ["No priced usage"]
               : used.map(
                   (provider) =>
-                    `${AI_PROVIDER_LABELS[provider]}: ${formatUsd(point[provider])} · ${billing.get(`${point.day}:${provider}`) ?? "API"}`,
+                    `${AI_PROVIDER_LABELS[provider]}: ${formatEstimateAmount(point[provider], money)} · ${billing.get(`${point.day}:${provider}`) ?? "API"}`,
                 )),
           ].join("\n");
         },
       },
     });
     return { providers, definition };
-  }, [points, billing]);
+  }, [points, billing, money]);
   if (providers.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border/80 p-6 text-center text-sm text-muted-foreground">
@@ -136,7 +145,7 @@ export function DailyCostChart({
         height={256}
         className="min-w-0"
         ariaLabel="Daily API-equivalent cost by AI provider"
-        ariaDescription="Each day's bar stacks the providers' priced usage in USD. Exact values and unpriced usage are listed in the tables below."
+        ariaDescription={`Each day's bar stacks the providers' priced usage in ${money.kind === "converted" ? money.currency : "USD"}. Exact values and unpriced usage are listed in the tables below.`}
         renderTooltipBody={({ primaryPoint }) =>
           primaryPoint ? (
             <DayTooltip
@@ -160,6 +169,7 @@ function DayTooltip({
   providers: readonly AiProvider[];
   billing: ReadonlyMap<string, string>;
 }) {
+  const money = useEstimateMoney();
   const used = providers.filter((provider) => point[provider] > 0);
   return (
     <div className="min-w-44 rounded-lg border border-border/60 bg-card px-3 py-2 text-sm shadow-elevated">
@@ -177,7 +187,7 @@ function DayTooltip({
               aria-hidden
             />
             <span className="font-semibold tabular-nums">
-              {formatUsd(point[provider])}
+              {formatEstimateAmount(point[provider], money)}
             </span>
             <span className="text-xs text-muted-foreground">
               {AI_PROVIDER_LABELS[provider]} ·{" "}

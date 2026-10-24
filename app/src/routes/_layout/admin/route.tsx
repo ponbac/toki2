@@ -48,7 +48,7 @@ function AdminLayout() {
           <h1 className="text-2xl font-bold">Admin</h1>
           <p className="text-sm text-muted-foreground">
             AI usage billing, and the mappings and subscriptions it depends on.
-            USD figures are API-equivalent estimates, not provider bills.
+            Costs at API prices are estimates, not provider bills.
           </p>
         </div>
         <nav

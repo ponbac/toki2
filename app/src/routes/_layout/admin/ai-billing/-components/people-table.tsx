@@ -15,10 +15,12 @@ import type { AiBillingOverview } from "@/lib/api/queries/ai-admin";
 import type { AiProvider } from "@/lib/api/queries/ai-usage";
 import { cn } from "@/lib/utils";
 import { formatConverted, UNASSIGNED_LABEL } from "../../-lib/billing";
-import { formatEstimate, formatShare, listOf } from "../../-lib/format";
+import { formatShare, listOf } from "../../-lib/format";
 import { splitProjectName, type PersonRow } from "../../-lib/ledger";
 import type { UploadVerdict } from "../../-lib/upload-health";
 import { VerdictBadge } from "./uploads-panel";
+import { formatEstimateIn } from "../../-lib/estimates";
+import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
 /** Projects named in a row before the rest are counted. */
 const NAMED_PROJECTS = 2;
@@ -42,6 +44,7 @@ export function PeopleTable({
   /** Tools each developer used on a plan nobody declared this month. */
   undeclared: ReadonlyMap<number, readonly AiProvider[]>;
 }) {
+  const money = useEstimateMoney();
   const currency = overview.billingCurrency;
   const billed = overview.totals.converted.billed;
   const whole = billed === null ? null : Number(billed) * 100;
@@ -123,12 +126,12 @@ export function PeopleTable({
                 <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
                   {person.totals === null || person.totals.usage.records === 0
                     ? "—"
-                    : formatEstimate(person.totals.usage)}
+                    : formatEstimateIn(person.totals.usage, money)}
                 </TableCell>
                 <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums xl:table-cell">
                   {person.personal === null
                     ? "—"
-                    : formatEstimate(person.personal)}
+                    : formatEstimateIn(person.personal, money)}
                 </TableCell>
               </TableRow>
             );

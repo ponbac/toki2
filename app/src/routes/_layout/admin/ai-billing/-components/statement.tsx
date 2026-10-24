@@ -1,30 +1,22 @@
 import type * as React from "react";
 import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import { formatFee } from "@/lib/ai-subscriptions";
-import type {
-  AiBillingOverview,
-  AiBillingUsage,
-} from "@/lib/api/queries/ai-admin";
+import type { AiBillingOverview } from "@/lib/api/queries/ai-admin";
 import { cn } from "@/lib/utils";
 import {
   PENDING_RATE_LABEL,
   allPending,
-  formatAmount,
   formatHundredths,
 } from "../../-lib/billing";
 import { addUsage, emptyUsage } from "../../-lib/daily";
-import {
-  formatEstimate,
-  formatShare,
-  monthLabel,
-  plural,
-} from "../../-lib/format";
+import { formatShare, monthLabel, plural } from "../../-lib/format";
 import {
   shareOf,
   type AllocationSegment,
   type Ledger,
 } from "../../-lib/ledger";
-import { billUsdRate } from "../../-lib/subscription-value";
+import { estimateRateNote, formatEstimateIn } from "../../-lib/estimates";
+import { useEstimateMoney } from "../../-lib/use-estimate-money";
 import { AllocationStrip } from "./allocation-strip";
 
 /** An exact amount with its cents and currency set apart, for the headline. */
@@ -44,21 +36,6 @@ function Headline({ amount }: { amount: string }) {
       )}
     </p>
   );
-}
-
-/** What all the usage on the bill would cost at API prices, put in the
- * billing currency at the bill's own dollar rate where it has one. */
-function atApiPrices(
-  usage: AiBillingUsage,
-  usdRate: number | null,
-  currency: string,
-): string {
-  const unknown = usage.unpricedRecords > 0 && usage.apiEquivalentUsd === 0;
-  if (usdRate === null || currency === "USD" || unknown) {
-    return formatEstimate(usage);
-  }
-  const amount = formatAmount(usage.apiEquivalentUsd * usdRate, currency);
-  return usage.unpricedRecords > 0 ? `${amount} + unknown` : amount;
 }
 
 /**
@@ -97,7 +74,11 @@ export function Statement({
         fee.billed !== "0.00" && overview.missingRates.includes(fee.currency),
     )
     .map((fee) => fee.currency);
-  const usdRate = billUsdRate(overview.exchangeRates, currency);
+  const money = useEstimateMoney();
+  // Units of the billing currency per dollar, where the page knows them.
+  const usdRate =
+    money.kind === "converted" ? money.perUsd : currency === "USD" ? 1 : null;
+  const rateNote = estimateRateNote(money);
   const billed = converted.billed;
   const billShare =
     billed !== null &&
@@ -148,9 +129,11 @@ export function Statement({
                   : formatFee(converted.api, currency)
             }
             note={
-              hasApi
-                ? `${formatFee(totals.apiBilledUsd, "USD")}${totals.apiUnpricedRecords > 0 ? " + unknown" : ""}`
-                : "Nothing billed by usage"
+              !hasApi
+                ? "Nothing billed by usage"
+                : totals.apiUnpricedRecords > 0
+                  ? "Priced usage; some has no known price"
+                  : "Usage no plan paid for"
             }
           />
           <Figure
@@ -170,12 +153,10 @@ export function Statement({
           />
           <Figure
             label="At API prices"
-            value={atApiPrices(totals.usage, usdRate, currency)}
+            value={formatEstimateIn(totals.usage, money)}
             note={
               billShare === null
-                ? usdRate !== null && currency !== "USD"
-                  ? formatEstimate(totals.usage)
-                  : "What the usage would cost by the token"
+                ? "What the usage would cost by the token"
                 : `The bill is ${formatShare(billShare)} of it`
             }
             muted
@@ -191,14 +172,20 @@ export function Statement({
         onSelect={onSelect}
       />
 
-      {overview.personalUsage.length > 0 && (
+      {(overview.personalUsage.length > 0 || rateNote !== null) && (
         <p className="text-xs text-muted-foreground">
-          Left out of the bill as {PERSONAL_LABEL.toLowerCase()}:{" "}
-          <span className="tabular-nums">{formatEstimate(personal)}</span> at
-          API prices, from {plural(overview.personalUsage.length, "developer")}.
-          {usdRate !== null &&
-            currency !== "USD" &&
-            ` Dollar estimates convert at ${usdRate.toLocaleString("en-US", { maximumFractionDigits: 4 })} ${currency}.`}
+          {overview.personalUsage.length > 0 && (
+            <>
+              Left out of the bill as {PERSONAL_LABEL.toLowerCase()}:{" "}
+              <span className="tabular-nums">
+                {formatEstimateIn(personal, money)}
+              </span>{" "}
+              at API prices, from{" "}
+              {plural(overview.personalUsage.length, "developer")}.{" "}
+            </>
+          )}
+          {rateNote !== null &&
+            `Prices by the token are priced in dollars and shown at ${rateNote}.`}
         </p>
       )}
     </section>

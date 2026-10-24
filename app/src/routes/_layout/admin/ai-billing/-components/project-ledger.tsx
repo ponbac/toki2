@@ -33,12 +33,7 @@ import {
   lineConverted,
   lineWarnings,
 } from "../../-lib/billing";
-import {
-  formatCount,
-  formatEstimate,
-  formatShare,
-  plural,
-} from "../../-lib/format";
+import { formatCount, formatShare, plural } from "../../-lib/format";
 import {
   TAIL_STEP,
   ledgerEntries,
@@ -50,6 +45,8 @@ import {
   type LedgerEntry,
 } from "../../-lib/ledger";
 import { UNDECIDED_FILL } from "./allocation-strip";
+import { formatEstimateIn } from "../../-lib/estimates";
+import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
 /** Lines billing less than this, in hundredths, fold away in an open row. */
 const SMALL_LINE = 100;
@@ -86,6 +83,7 @@ export function ProjectLedger({
   highlighted: string | null;
   onHighlight: (key: string | null) => void;
 }) {
+  const money = useEstimateMoney();
   React.useEffect(() => {
     if (focusRow === null) {
       return;
@@ -151,7 +149,7 @@ export function ProjectLedger({
               {formatConverted(ledger.totals, currency, overview.pendingRates)}
             </TableCell>
             <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
-              {formatEstimate(ledger.totals.usage)}
+              {formatEstimateIn(ledger.totals.usage, money)}
             </TableCell>
           </TableRow>
         </TableFooter>
@@ -185,6 +183,7 @@ function EntryRows({
   lit: boolean;
   onHighlight: (key: string | null) => void;
 }) {
+  const money = useEstimateMoney();
   const [showSmall, setShowSmall] = React.useState(false);
   const currency = overview.billingCurrency;
   const share = shareOf(entry, ledger);
@@ -280,7 +279,9 @@ function EntryRows({
           {formatConverted(entry.totals, currency, overview.pendingRates)}
         </TableCell>
         <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
-          {entry.kind === "overhead" ? "—" : formatEstimate(entry.totals.usage)}
+          {entry.kind === "overhead"
+            ? "—"
+            : formatEstimateIn(entry.totals.usage, money)}
         </TableCell>
       </TableRow>
 
@@ -449,6 +450,7 @@ function LineRow({
    * likely more than the plan's share would be. */
   undeclaredPlan: boolean;
 }) {
+  const money = useEstimateMoney();
   const warnings = lineWarnings(line, subscription, currency, pendingRates);
   return (
     <TableRow id={id} className="border-0 text-[13px] hover:bg-muted/30">
@@ -489,7 +491,7 @@ function LineRow({
         {lineConverted(line, currency, pendingRates)}
       </TableCell>
       <TableCell className="hidden py-1.5 text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
-        {line.unallocatedOverhead ? "—" : formatEstimate(line.usage)}
+        {line.unallocatedOverhead ? "—" : formatEstimateIn(line.usage, money)}
       </TableCell>
     </TableRow>
   );
