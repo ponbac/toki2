@@ -115,7 +115,7 @@ export const TimeStats = () => {
                   </span>
                 </div>
                 <p className="time-display text-xl font-semibold">
-                  {formatHoursMinutes(Math.max(0, remainingHours))}
+                  {formatHoursMinutes(remainingHours)}
                 </p>
               </div>
             </TooltipTrigger>

@@ -150,6 +150,7 @@ impl TimeEntry {
 pub struct WeeklyStats {
     pub worked_hours: f64,
     pub scheduled_hours: f64,
+    /// Negative once covered hours exceed scheduled hours.
     pub remaining_hours: f64,
     pub absence_hours: f64,
     pub covered_hours: f64,
@@ -164,7 +165,7 @@ impl WeeklyStats {
             scheduled_hours,
             absence_hours,
             covered_hours,
-            remaining_hours: (scheduled_hours - covered_hours).max(0.0),
+            remaining_hours: scheduled_hours - covered_hours,
             period_flex_hours: covered_hours - scheduled_hours,
         }
     }

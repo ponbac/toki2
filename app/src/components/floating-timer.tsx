@@ -649,8 +649,7 @@ function TimeSummary(props: {
   }
 
   const timerHours = props.timerHours + props.timerMinutes / 60;
-  // `remainingHours` stops at zero; derive it here so overtime counts down past it.
-  const timeLeft = timeInfo.scheduledHours - timeInfo.coveredHours - timerHours;
+  const timeLeft = timeInfo.remainingHours - timerHours;
   const weekFlex = timeInfo.periodFlexHours + timerHours;
   const flexTime = flexBalance
     ? flexBalance.balanceHours + timerHours
