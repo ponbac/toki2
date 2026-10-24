@@ -1,3 +1,4 @@
+import * as React from "react";
 import {
   keepPreviousData,
   useQuery,
@@ -16,38 +17,49 @@ import {
   type AiBillingCompleteness,
   type AiBillingOverview,
 } from "@/lib/api/queries/ai-admin";
+import type {
+  AiProvider,
+  AiSubscriptionMismatchList,
+} from "@/lib/api/queries/ai-usage";
 import { cn } from "@/lib/utils";
 import { AttentionPill } from "../-components/attention-pill";
 import { MonthPicker } from "../-components/month-picker";
 import { QueryError } from "../-components/query-error";
-import { needsAttention } from "../-lib/coverage";
 import {
   mappingsCheck,
+  monthMismatches,
+  plansCheck,
   ratesCheck,
   uploadsCheck,
   type CheckResult,
 } from "../-lib/export-checks";
-import { MONTH_PATTERN, monthLabel, previousMonth } from "../-lib/format";
+import {
+  MONTH_PATTERN,
+  formatCount,
+  monthLabel,
+  previousMonth,
+  shortDate,
+} from "../-lib/format";
+import { ledgerOf, peopleOf, type AllocationSegment } from "../-lib/ledger";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
-import { BillSummary } from "./-components/bill-summary";
+import { monthUploads, type DeveloperUploads } from "../-lib/upload-health";
 import { BillingRules } from "./-components/billing-rules";
-import { BillingTable } from "./-components/billing-table";
-import { CompletenessPanel } from "./-components/completeness-panel";
 import { ExchangeRatesPanel } from "./-components/exchange-rates";
 import { ExportChecks, type ExportCheck } from "./-components/export-checks";
-import { PersonalUsage } from "./-components/personal-usage";
-import { ProjectCostChart } from "./-components/project-cost-chart";
+import { PeopleTable } from "./-components/people-table";
+import { ProjectLedger } from "./-components/project-ledger";
+import { Statement } from "./-components/statement";
 import { SubscriptionMonths } from "./-components/subscription-months";
 import { SubscriptionValueChart } from "./-components/subscription-value";
-import { UnassignedLines } from "./-components/unassigned-lines";
+import { UndeclaredPlans } from "./-components/undeclared-plans";
+import { UploadsPanel } from "./-components/uploads-panel";
 
-/** What sits beneath the month's total and its checks. */
-const TABS = ["bill", "subscriptions", "personal", "rules"] as const;
+/** The parts of the month beneath its statement. */
+const TABS = ["projects", "people", "subscriptions", "data", "rules"] as const;
 type BillingTab = (typeof TABS)[number];
 
 const searchSchema = z.object({
   month: z.string().regex(MONTH_PATTERN).optional().catch(undefined),
-  groupBy: z.enum(["project", "developer"]).optional().catch(undefined),
   tab: z.enum(TABS).optional().catch(undefined),
 });
 
@@ -63,7 +75,7 @@ const TAB_TRIGGER =
 function AiBillingPage() {
   const search = Route.useSearch();
   const month = search.month ?? previousMonth();
-  const groupBy = search.groupBy ?? "project";
+  const tab = search.tab ?? "projects";
   const navigate = useNavigate({ from: Route.fullPath });
 
   const overviewQuery = useQuery({
@@ -74,299 +86,441 @@ function AiBillingPage() {
     ...aiAdminQueries.completeness(month),
     placeholderData: keepPreviousData,
   });
+  const mismatchesQuery = useQuery(aiAdminQueries.subscriptionMismatches());
   const download = aiAdminMutations.useDownloadBillingCsv({
     onError: apiErrorToast("Failed to export the billing CSV"),
   });
 
+  const [highlighted, setHighlighted] = React.useState<string | null>(null);
+  const [open, setOpen] = React.useState<ReadonlySet<string>>(new Set());
+  // The ledger row to bring into view; a new object asks again.
+  const [focusRow, setFocusRow] = React.useState<{ key: string } | null>(null);
+  // A new month starts with every row closed.
+  const [openMonth, setOpenMonth] = React.useState(month);
+  if (openMonth !== month) {
+    setOpenMonth(month);
+    setOpen(new Set());
+  }
+
   // Only a bill that loaded: a failed reload shows its error, not old figures.
   const overview = overviewQuery.isSuccess ? overviewQuery.data : undefined;
-  const checks = exportChecks(completenessQuery, overviewQuery);
-  const openChecks = checks.filter(
-    (check) => check.status === "attention",
-  ).length;
-  // Flags on the bill are only for the month the bill is of.
-  const uploadsMissing =
-    overview && completenessQuery.data?.month === overview.month
-      ? new Set(
-          completenessQuery.data.developers
-            .filter(needsAttention)
-            .map((developer) => developer.userId),
-        )
+  const completeness =
+    completenessQuery.isSuccess && !completenessQuery.isPlaceholderData
+      ? completenessQuery.data
       : undefined;
+  const ledger = React.useMemo(
+    () => (overview ? ledgerOf(overview.lines) : undefined),
+    [overview],
+  );
+  const uploads = React.useMemo(
+    () => (completeness ? monthUploads(completeness) : undefined),
+    [completeness],
+  );
+  const people = React.useMemo(
+    () =>
+      overview
+        ? peopleOf(
+            overview,
+            uploads
+              ?.filter((upload) => upload.verdict !== "noActivity")
+              .map((upload) => upload.developer),
+          )
+        : [],
+    [overview, uploads],
+  );
+  const verdicts = React.useMemo(
+    () =>
+      uploads &&
+      new Map(uploads.map((u) => [u.developer.userId, u.verdict] as const)),
+    [uploads],
+  );
 
-  const hasLines = overview !== undefined && overview.lines.length > 0;
-  const tabs: BillingTab[] = [
-    ...(hasLines ? (["bill", "subscriptions"] as const) : []),
-    ...(overview && overview.personalUsage.length > 0
-      ? (["personal"] as const)
-      : []),
-    "rules",
-  ];
-  const tab = search.tab && tabs.includes(search.tab) ? search.tab : tabs[0];
+  const setTab = (next: BillingTab) =>
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: next === "projects" ? undefined : next,
+      }),
+    });
+  const showEntry = (key: string) => {
+    setTab("projects");
+    setOpen((previous) => new Set(previous).add(key));
+    setFocusRow({ key });
+  };
+  const selectSegment = (segment: AllocationSegment) => {
+    if (segment.kind === "others") {
+      setTab("projects");
+      const first = segment.entries[0];
+      setFocusRow(first ? { key: first.key } : null);
+    } else {
+      showEntry(segment.key);
+    }
+  };
+  const toggle = (key: string) =>
+    setOpen((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+      return next;
+    });
+
+  const checks = exportChecks({
+    completenessQuery,
+    uploads,
+    overviewQuery,
+    mismatchesQuery,
+    open: {
+      uploads: () => setTab("data"),
+      rates: () => setTab("data"),
+      projects: () =>
+        ledger?.unassigned
+          ? showEntry(ledger.unassigned.key)
+          : setTab("projects"),
+      plans: () => setTab("subscriptions"),
+    },
+  });
+  const openChecks = checks.filter((c) => c.status === "attention").length;
+  const dataNeedsLook = checks.some(
+    (c) => (c.id === "uploads" || c.id === "rates") && c.status === "attention",
+  );
+  const mismatches =
+    overview && mismatchesQuery.isSuccess
+      ? monthMismatches(
+          mismatchesQuery.data,
+          overview.firstDay,
+          overview.lastDay,
+        )
+      : [];
+  const undeclared = new Map<number, AiProvider[]>();
+  for (const mismatch of mismatches) {
+    const tools = undeclared.get(mismatch.userId) ?? [];
+    if (!tools.includes(mismatch.provider)) {
+      undeclared.set(mismatch.userId, [...tools, mismatch.provider]);
+    }
+  }
   const stale = overviewQuery.isPlaceholderData && "opacity-60";
 
   return (
-    <div className={cn("flex flex-col gap-6", PROVIDER_COLOR_SCOPE)}>
+    <div className={cn("flex flex-col gap-8", PROVIDER_COLOR_SCOPE)}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <MonthPicker
-          month={month}
-          onChange={(next) =>
-            navigate({ search: (prev) => ({ ...prev, month: next }) })
-          }
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <Tabs
-            value={groupBy}
-            onValueChange={(value) =>
-              navigate({
-                search: (prev) => ({
-                  ...prev,
-                  groupBy: value === "developer" ? "developer" : undefined,
-                }),
-              })
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <MonthPicker
+            month={month}
+            onChange={(next) =>
+              navigate({ search: (prev) => ({ ...prev, month: next }) })
             }
-          >
-            <TabsList>
-              <TabsTrigger value="project">By project</TabsTrigger>
-              <TabsTrigger value="developer">By developer</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={download.isPending}
-            onClick={() => download.mutate({ month })}
-          >
-            <Download className="size-4" />
-            {download.isPending ? "Exporting..." : "Export CSV"}
-            {openChecks > 0 && (
-              <AttentionPill>
-                {openChecks} open
-                <span className="sr-only">
-                  {openChecks === 1 ? " check" : " checks"} before export
-                </span>
-              </AttentionPill>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-2">
-        {overviewQuery.isPending ? (
-          <div role="status" aria-label="Loading billing">
-            <Skeleton className="h-56 w-full" />
-          </div>
-        ) : overviewQuery.isError ? (
-          <QueryError
-            error={overviewQuery.error}
-            what="the billing overview"
-            onRetry={() => overviewQuery.refetch()}
           />
-        ) : overview === undefined ? null : overview.lines.length === 0 ? (
-          <div
-            className={cn(
-              "rounded-xl border border-dashed border-border/80 p-8 text-center transition-opacity motion-reduce:transition-none",
-              stale,
-            )}
-          >
-            <p className="font-medium">
-              Nothing to bill for {monthLabel(overview.month)}
-            </p>
+          {completeness?.inProgress && (
             <p className="text-sm text-muted-foreground">
-              No AI usage that bills was synced for this month and no
-              subscription covers it.
+              In progress
+              {completeness.requiredThrough !== null &&
+                `, usage through ${shortDate(completeness.requiredThrough)}`}
+              . Figures change until the month is over.
             </p>
-          </div>
-        ) : (
-          <div
-            className={cn(
-              "transition-opacity motion-reduce:transition-none",
-              stale,
-            )}
-          >
-            <BillSummary
-              month={overview.month}
-              totals={overview.totals}
-              exchangeRates={overview.exchangeRates}
-              missingRates={overview.missingRates}
-              pendingRates={overview.pendingRates}
-              personalUsage={overview.personalUsage}
-            />
-          </div>
-        )}
-        {/* Keyed by the month, so its open rows follow the new month's checks. */}
-        <ExportChecks key={month} checks={checks} />
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={download.isPending}
+          onClick={() => download.mutate({ month })}
+        >
+          <Download className="size-4" />
+          {download.isPending ? "Exporting..." : "Export CSV"}
+          {openChecks > 0 && (
+            <AttentionPill>
+              {openChecks} open
+              <span className="sr-only">
+                {openChecks === 1 ? " check" : " checks"} before export
+              </span>
+            </AttentionPill>
+          )}
+        </Button>
       </div>
 
       {overviewQuery.isPending ? (
-        <Skeleton className="h-64 w-full" />
+        <div role="status" aria-label="Loading the bill" className="space-y-4">
+          <Skeleton className="h-24 w-80" />
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : overviewQuery.isError ? (
+        <QueryError
+          error={overviewQuery.error}
+          what="the billing overview"
+          onRetry={() => overviewQuery.refetch()}
+        />
       ) : (
-        overview && (
-          <Tabs
-            value={tab}
-            onValueChange={(value) => {
-              const next = TABS.find((option) => option === value);
-              navigate({
-                search: (prev) => ({
-                  ...prev,
-                  tab: next === tabs[0] ? undefined : next,
-                }),
-              });
-            }}
+        overview &&
+        ledger && (
+          <div
             className={cn(
               "transition-opacity motion-reduce:transition-none",
               stale,
             )}
           >
-            <TabsList
-              aria-label="Parts of the month's bill"
-              className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 shadow-[inset_0_-1px_0_hsl(var(--border)/0.6)]"
-            >
-              {tabs.includes("bill") && (
-                <TabsTrigger value="bill" className={TAB_TRIGGER}>
-                  The bill
-                </TabsTrigger>
-              )}
-              {tabs.includes("subscriptions") && (
-                <TabsTrigger value="subscriptions" className={TAB_TRIGGER}>
-                  Subscriptions
-                  {overview.subscriptions.length > 0 && (
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-semibold tabular-nums leading-none text-muted-foreground">
-                      {overview.subscriptions.length}
-                    </span>
-                  )}
-                </TabsTrigger>
-              )}
-              {tabs.includes("personal") && (
-                <TabsTrigger value="personal" className={TAB_TRIGGER}>
-                  Personal usage
-                </TabsTrigger>
-              )}
-              <TabsTrigger value="rules" className={TAB_TRIGGER}>
-                <Info className="size-4" aria-hidden />
-                How billing works
-              </TabsTrigger>
-            </TabsList>
+            {overview.lines.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
+                <p className="font-medium">
+                  Nothing to bill for {monthLabel(overview.month)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  No AI usage that bills was synced for this month and no
+                  subscription covers it.
+                </p>
+              </div>
+            ) : (
+              <Statement
+                overview={overview}
+                ledger={ledger}
+                highlighted={highlighted}
+                onHighlight={setHighlighted}
+                onSelect={selectSegment}
+              />
+            )}
+          </div>
+        )
+      )}
 
-            <TabsContent value="bill" className="mt-4 space-y-4">
-              <ProjectCostChart lines={overview.lines} />
-              <div className="rounded-xl border border-border/60 bg-card/60">
-                <BillingTable
-                  month={overview.month}
-                  billingCurrency={overview.billingCurrency}
-                  pendingRates={overview.pendingRates}
-                  lines={overview.lines}
-                  developers={overview.developers}
-                  subscriptions={overview.subscriptions}
-                  groupBy={groupBy}
-                  uploadsMissing={uploadsMissing}
-                />
-              </div>
-            </TabsContent>
-            <TabsContent value="subscriptions" className="mt-4 space-y-4">
-              <SubscriptionValueChart overview={overview} />
-              <div className="rounded-xl border border-border/60 bg-card/60">
-                <SubscriptionMonths
-                  billingCurrency={overview.billingCurrency}
-                  subscriptions={overview.subscriptions}
-                  developers={overview.developers}
-                />
-              </div>
-            </TabsContent>
-            <TabsContent value="personal" className="mt-4">
-              <PersonalUsage
-                usage={overview.personalUsage}
+      <ExportChecks checks={checks} />
+
+      {overview && ledger && (
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            const next = TABS.find((option) => option === value);
+            if (next) {
+              setFocusRow(null);
+              setTab(next);
+            }
+          }}
+          className={cn(
+            "transition-opacity motion-reduce:transition-none",
+            stale,
+          )}
+        >
+          <TabsList
+            aria-label="Parts of the month's bill"
+            className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 shadow-[inset_0_-1px_0_hsl(var(--border)/0.6)]"
+          >
+            <TabsTrigger value="projects" className={TAB_TRIGGER}>
+              Projects
+              <Count value={ledger.projects.length} />
+            </TabsTrigger>
+            <TabsTrigger value="people" className={TAB_TRIGGER}>
+              People
+              <Count value={people.length} />
+            </TabsTrigger>
+            <TabsTrigger value="subscriptions" className={TAB_TRIGGER}>
+              Subscriptions
+              <Count value={overview.subscriptions.length} />
+              {mismatches.length > 0 && <Dot label="plans nobody declared" />}
+            </TabsTrigger>
+            <TabsTrigger value="data" className={TAB_TRIGGER}>
+              Uploads and rates
+              {dataNeedsLook && <Dot label="needs attention" />}
+            </TabsTrigger>
+            <TabsTrigger value="rules" className={TAB_TRIGGER}>
+              <Info className="size-4" aria-hidden />
+              How billing works
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="projects" className="mt-5">
+            {overview.lines.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No project is billed for {monthLabel(overview.month)}.
+              </p>
+            ) : (
+              <ProjectLedger
+                overview={overview}
+                ledger={ledger}
+                open={open}
+                onToggle={toggle}
+                focusRow={focusRow}
+                undeclared={undeclared}
+                highlighted={highlighted}
+                onHighlight={setHighlighted}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="people" className="mt-5">
+            {people.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nobody has AI usage or a subscription in{" "}
+                {monthLabel(overview.month)}.
+              </p>
+            ) : (
+              <PeopleTable
+                overview={overview}
+                people={people}
+                verdicts={verdicts}
+                undeclared={undeclared}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="subscriptions" className="mt-5 space-y-5">
+            <UndeclaredPlans overview={overview} mismatches={mismatches} />
+            <SubscriptionValueChart overview={overview} />
+            <div className="overflow-hidden rounded-xl border border-border/70 bg-card/60">
+              <SubscriptionMonths
+                billingCurrency={overview.billingCurrency}
+                subscriptions={overview.subscriptions}
                 developers={overview.developers}
               />
-            </TabsContent>
-            <TabsContent value="rules" className="mt-4">
-              <BillingRules timeZone={overview.timeZone} />
-            </TabsContent>
-          </Tabs>
-        )
+            </div>
+          </TabsContent>
+          <TabsContent value="data" className="mt-5 space-y-10">
+            <DataChecks
+              query={completenessQuery}
+              uploads={uploads}
+              completeness={completeness}
+            />
+            <section
+              aria-labelledby="rates-heading"
+              className="flex max-w-3xl flex-col gap-2"
+            >
+              <h3 id="rates-heading" className="text-base font-semibold">
+                Exchange rates
+              </h3>
+              <ExchangeRatesPanel
+                key={overview.month}
+                month={overview.month}
+                billingCurrency={overview.billingCurrency}
+                rates={overview.exchangeRates}
+                missingRates={overview.missingRates}
+                pendingRates={overview.pendingRates}
+              />
+            </section>
+          </TabsContent>
+          <TabsContent value="rules" className="mt-5">
+            <BillingRules timeZone={overview.timeZone} />
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );
 }
 
-/**
- * The month's pre-export checks. Uploads stand on the completeness query
- * alone; the other two read the bill, wait while it loads and are left out
- * when it failed, since the bill's own error says so.
- */
-function exportChecks(
-  completenessQuery: UseQueryResult<AiBillingCompleteness, Error>,
-  overviewQuery: UseQueryResult<AiBillingOverview, Error>,
-): ExportCheck[] {
-  // Another month's answer, held while this month's loads, is no answer for
-  // this month: until its own arrives a check is pending, not passed.
-  const uploads: CheckResult =
-    completenessQuery.isPending || completenessQuery.isPlaceholderData
-      ? { status: "pending", summary: "Checking what every machine uploaded" }
-      : completenessQuery.isError
-        ? {
-            status: "attention",
-            summary: "Could not check what every machine uploaded",
-          }
-        : uploadsCheck(completenessQuery.data);
-  const checks: ExportCheck[] = [
-    {
-      id: "uploads",
-      label: "Uploads",
-      ...uploads,
-      detail: completenessQuery.isPlaceholderData ? undefined : (
-        <CompletenessPanel query={completenessQuery} />
-      ),
-    },
-  ];
-  if (overviewQuery.isPending || overviewQuery.isPlaceholderData) {
-    checks.push(
-      {
-        id: "rates",
-        label: "Exchange rates",
-        status: "pending",
-        summary: "Loading the bill",
-      },
-      {
-        id: "mappings",
-        label: "Mappings",
-        status: "pending",
-        summary: "Loading the bill",
-      },
-    );
-  } else if (overviewQuery.isSuccess) {
-    const overview = overviewQuery.data;
-    checks.push(
-      {
-        id: "rates",
-        label: "Exchange rates",
-        ...ratesCheck(overview),
-        detail: (
-          <ExchangeRatesPanel
-            key={overview.month}
-            month={overview.month}
-            billingCurrency={overview.billingCurrency}
-            rates={overview.exchangeRates}
-            missingRates={overview.missingRates}
-            pendingRates={overview.pendingRates}
-          />
-        ),
-      },
-      {
-        id: "mappings",
-        label: "Mappings",
-        ...mappingsCheck(overview.lines, overview.billingCurrency),
-        detail: (
-          <UnassignedLines
-            month={overview.month}
-            billingCurrency={overview.billingCurrency}
-            pendingRates={overview.pendingRates}
-            lines={overview.lines}
-            developers={overview.developers}
-          />
-        ),
-      },
+/** The uploads check in full, once this month's answer is in. */
+function DataChecks({
+  query,
+  uploads,
+  completeness,
+}: {
+  query: UseQueryResult<AiBillingCompleteness, Error>;
+  uploads: readonly DeveloperUploads[] | undefined;
+  completeness: AiBillingCompleteness | undefined;
+}) {
+  if (query.isError) {
+    return (
+      <QueryError
+        error={query.error}
+        what="the month's uploads"
+        onRetry={() => query.refetch()}
+      />
     );
   }
-  return checks;
+  if (!completeness || !uploads) {
+    return (
+      <div role="status" aria-label="Checking uploads" className="space-y-2">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+  return <UploadsPanel completeness={completeness} uploads={uploads} />;
+}
+
+function Count({ value }: { value: number }) {
+  return value > 0 ? (
+    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] leading-none font-semibold text-muted-foreground tabular-nums">
+      {formatCount(value)}
+    </span>
+  ) : null;
+}
+
+/** A small amber mark on a tab whose content needs a look. */
+function Dot({ label }: { label: string }) {
+  return (
+    <span
+      className="size-1.5 rounded-full bg-[#c98500] dark:bg-[#fab219]"
+      role="img"
+      aria-label={label}
+    />
+  );
+}
+
+/**
+ * The month's checks before export. A check whose answer is still loading,
+ * or is another month's answer held while this one loads, is pending; one
+ * whose query failed needs attention, since it could not be made.
+ */
+function exportChecks({
+  completenessQuery,
+  uploads,
+  overviewQuery,
+  mismatchesQuery,
+  open,
+}: {
+  completenessQuery: UseQueryResult<AiBillingCompleteness, Error>;
+  uploads: readonly DeveloperUploads[] | undefined;
+  overviewQuery: UseQueryResult<AiBillingOverview, Error>;
+  mismatchesQuery: UseQueryResult<AiSubscriptionMismatchList, Error>;
+  open: Readonly<
+    Record<"uploads" | "rates" | "projects" | "plans", () => void>
+  >;
+}): ExportCheck[] {
+  const loadingBill: CheckResult = {
+    status: "pending",
+    summary: "Loading the bill",
+  };
+  const overview =
+    overviewQuery.isSuccess && !overviewQuery.isPlaceholderData
+      ? overviewQuery.data
+      : undefined;
+  const billFailed = overviewQuery.isError;
+
+  const uploadsResult: CheckResult = completenessQuery.isError
+    ? {
+        status: "attention",
+        summary: "Could not check what every machine uploaded",
+      }
+    : completenessQuery.isSuccess &&
+        !completenessQuery.isPlaceholderData &&
+        uploads
+      ? uploadsCheck(completenessQuery.data, uploads)
+      : { status: "pending", summary: "Checking what every machine uploaded" };
+  const ratesResult: CheckResult = billFailed
+    ? { status: "attention", summary: "Could not load the bill" }
+    : overview
+      ? ratesCheck(overview)
+      : loadingBill;
+  const projectsResult: CheckResult = billFailed
+    ? { status: "attention", summary: "Could not load the bill" }
+    : overview
+      ? mappingsCheck(overview.lines, overview.billingCurrency)
+      : loadingBill;
+  const plansResult: CheckResult = mismatchesQuery.isError
+    ? { status: "attention", summary: "Could not compare reported plans" }
+    : mismatchesQuery.isSuccess && overview
+      ? plansCheck(mismatchesQuery.data, overview.firstDay, overview.lastDay)
+      : { status: "pending", summary: "Comparing reported plans" };
+
+  return [
+    { id: "uploads", label: "Uploads", ...uploadsResult, onOpen: open.uploads },
+    {
+      id: "rates",
+      label: "Exchange rates",
+      ...ratesResult,
+      onOpen: open.rates,
+    },
+    {
+      id: "projects",
+      label: "Projects",
+      ...projectsResult,
+      onOpen: open.projects,
+    },
+    { id: "plans", label: "Plans", ...plansResult, onOpen: open.plans },
+  ];
 }

@@ -3,67 +3,137 @@ import type {
   AiBillingLine,
   AiExchangeRate,
 } from "@/lib/api/queries/ai-admin";
+import type {
+  AiSubscriptionMismatch,
+  AiSubscriptionMismatchList,
+} from "@/lib/api/contracts/ai-usage";
 import {
   billableTotals,
   formatBillable,
   formatConverted,
   unassignedLines,
 } from "./billing";
-import { coverageTotals, monthDays, needsAttention } from "./coverage";
-import { listOf, monthLabel, plural } from "./format";
+import { formatCount, listOf, monthLabel, plural, shortDate } from "./format";
+import {
+  UPLOAD_VERDICTS,
+  holdsBillBack,
+  verdictCounts,
+  type DeveloperUploads,
+  type UploadVerdict,
+} from "./upload-health";
 
 /*
  * What holds a month's bill back before it is exported: uploads, exchange
- * rates and project mappings. The server has already decided every fact; this
+ * rates, project mappings and undeclared plans. The server has already decided every fact; this
  * only says each in one line and whether it needs attention.
  */
 
 /** Whether a check lets the month be exported. */
-export type CheckStatus = "passed" | "attention" | "pending";
+export type CheckStatus = "passed" | "attention" | "pending" | "unchecked";
 
 /** A check's state and its one-line summary. */
 export type CheckResult = Readonly<{ status: CheckStatus; summary: string }>;
 
-/** Whether every developer's machines uploaded all the month requires. */
-export function uploadsCheck(completeness: AiBillingCompleteness): CheckResult {
-  const developers = completeness.developers;
-  if (developers.length === 0) {
-    return {
-      status: "passed",
-      summary:
-        "Nobody has a machine that syncs AI usage or a subscription in this month",
-    };
-  }
-  const attention = developers.filter(needsAttention);
-  if (attention.length === 0) {
-    return {
-      status: "passed",
-      summary:
-        completeness.requiredThrough === null
-          ? "No day of this month has passed yet"
-          : completeness.inProgress
-            ? "Every required day so far is uploaded; the month is still in progress"
-            : "Every active machine has uploaded every required day",
-    };
-  }
+/** Verdicts whose missing days are not just a late start or a tool. */
+const SEVERE: ReadonlySet<UploadVerdict> = new Set([
+  "neverSynced",
+  "holes",
+  "nothingUploaded",
+]);
 
-  const totals = coverageTotals(completeness, monthDays(completeness.month));
-  const notSynced = attention.filter(
-    (developer) => developer.readiness === "noSync",
-  ).length;
-  const parts = [
-    `${developers.length - attention.length} of ${plural(developers.length, "developer")} complete`,
-  ];
-  if (totals.missing > 0) {
-    parts.push(`${plural(totals.missing, "machine-day")} missing`);
-  } else if (totals.providerOnly > 0) {
-    parts.push(
-      `a tool is missing on ${plural(totals.providerOnly, "machine-day")}`,
-    );
-  } else if (notSynced > 0) {
-    parts.push(`${plural(notSynced, "developer")} not synced`);
+/**
+ * Whether every developer's machines uploaded all the month requires. A
+ * month in progress whose latest day only waits for its next sync passes.
+ */
+export function uploadsCheck(
+  completeness: AiBillingCompleteness,
+  uploads: readonly DeveloperUploads[],
+): CheckResult {
+  if (uploads.length === 0) {
+    return {
+      status: "passed",
+      summary: "Nobody syncs AI usage or has a subscription this month",
+    };
   }
-  return { status: "attention", summary: parts.join(", ") };
+  if (completeness.requiredThrough === null) {
+    return { status: "passed", summary: "No day of this month has passed yet" };
+  }
+  const counts = verdictCounts(uploads);
+  const problems = UPLOAD_VERDICTS.filter(
+    (verdict) => holdsBillBack(verdict) && counts[verdict] > 0,
+  );
+  if (problems.length === 0) {
+    const since =
+      counts.lateStart > 0
+        ? `; ${formatCount(counts.lateStart)} started mid-month`
+        : "";
+    return {
+      status: "passed",
+      summary:
+        counts.awaitingSync > 0
+          ? `Everything is in, except days that wait for a sync${since}`
+          : counts.lateStart > 0
+            ? `Everything since each first upload is in${since}`
+            : completeness.inProgress
+              ? `Every day through ${shortDate(completeness.requiredThrough)} is uploaded`
+              : "Every active machine uploaded every day",
+    };
+  }
+  const gaps = problems.reduce((sum, verdict) => sum + counts[verdict], 0);
+  const severe = problems
+    .filter((verdict) => SEVERE.has(verdict))
+    .reduce((sum, verdict) => sum + counts[verdict], 0);
+  const of = `${formatCount(gaps)} of ${plural(uploads.length, "developer")}`;
+  return {
+    status: "attention",
+    summary:
+      severe === 0
+        ? `${of} miss a tool on some days`
+        : severe === gaps
+          ? `${of} miss days mid-month or uploaded nothing`
+          : `${of} have gaps; ${formatCount(severe)} miss days or uploaded nothing`,
+  };
+}
+
+/** Undeclared plans whose days overlap the month `firstDay`–`lastDay`. */
+export function monthMismatches(
+  list: AiSubscriptionMismatchList,
+  firstDay: string,
+  lastDay: string,
+): AiSubscriptionMismatch[] {
+  return list.mismatches.filter(
+    (mismatch) => mismatch.firstDay <= lastDay && mismatch.lastDay >= firstDay,
+  );
+}
+
+/**
+ * Whether every paid plan the tools reported in the month is declared: an
+ * undeclared one bills its usage at API prices instead of a share of a fee.
+ * The server compares the last 90 days only, so an older month is unchecked.
+ */
+export function plansCheck(
+  list: AiSubscriptionMismatchList,
+  firstDay: string,
+  lastDay: string,
+): CheckResult {
+  if (lastDay < list.from) {
+    return {
+      status: "unchecked",
+      summary: "Plans are only compared over the last 90 days",
+    };
+  }
+  const mismatches = monthMismatches(list, firstDay, lastDay);
+  if (mismatches.length === 0) {
+    return {
+      status: "passed",
+      summary: "Every paid plan the tools reported is declared",
+    };
+  }
+  const developers = new Set(mismatches.map((mismatch) => mismatch.userId));
+  return {
+    status: "attention",
+    summary: `${plural(developers.size, "developer")} ${developers.size === 1 ? "uses" : "use"} a plan nobody declared, so it bills at API prices`,
+  };
 }
 
 /** One rate as the summary names it, such as `USD 10.0169 (provisional)`. */
@@ -170,14 +240,19 @@ export function mappingsCheck(
     };
   }
   const totals = billableTotals(unassigned);
-  const count = `${plural(unassigned.length, "line")} unassigned`;
   if (totals.amounts.size === 0) {
-    return { status: "attention", summary: count };
+    return {
+      status: "attention",
+      summary: `${plural(unassigned.length, "line")} of unknown cost have no project`,
+    };
   }
   // Without a rate there is no converted sum: name the original amounts.
   const worth =
     totals.converted === null
       ? formatBillable(totals)
       : formatConverted(totals, billingCurrency);
-  return { status: "attention", summary: `${count}, worth ${worth}` };
+  return {
+    status: "attention",
+    summary: `${worth} has no project yet, so no customer can be invoiced for it`,
+  };
 }

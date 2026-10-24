@@ -5,7 +5,7 @@ import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AiProviderIcon } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import { formatFee } from "@/lib/ai-subscriptions";
@@ -49,6 +49,10 @@ const FILLS = {
 } as const;
 
 const ROW = "row";
+/** API usage billing less than this, in hundredths, folds away. */
+const SMALL_API_USAGE = 100;
+/** Fewer small entries than this stay in view. */
+const FOLD_AT = 3;
 const BAR_HEIGHT = 22;
 
 /**
@@ -111,6 +115,19 @@ export function SubscriptionValueChart({
       apiUsage: apiBilledUsage(overview.lines, overview.developers),
     };
   }, [subscriptions, overview.developers, overview.lines, usdRate]);
+
+  const [showSmall, setShowSmall] = useState(false);
+  // Usage that bills under one unit each folds away, unless it is unknown.
+  const small = apiUsage.filter(
+    (usage) =>
+      usage.totals.converted !== null &&
+      usage.totals.converted < SMALL_API_USAGE &&
+      usage.totals.unknownRecords === 0,
+  );
+  const folded = small.length >= FOLD_AT && !showSmall;
+  const listed = folded
+    ? apiUsage.filter((usage) => !small.includes(usage))
+    : apiUsage;
 
   if (subscriptions.length === 0 && apiUsage.length === 0) {
     return null;
@@ -268,7 +285,7 @@ export function SubscriptionValueChart({
             )}
           </p>
           <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 text-sm">
-            {apiUsage.map((usage) => (
+            {listed.map((usage) => (
               <div
                 key={`${usage.userId}:${usage.provider}`}
                 className="contents"
@@ -304,6 +321,15 @@ export function SubscriptionValueChart({
               </div>
             ))}
           </dl>
+          {folded && (
+            <button
+              type="button"
+              onClick={() => setShowSmall(true)}
+              className="mt-1.5 rounded-sm text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+            >
+              Show {small.length} more under 1 {billingCurrency} each
+            </button>
+          )}
         </div>
       )}
     </section>

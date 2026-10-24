@@ -8,14 +8,17 @@ import { weekdayDate } from "../../-lib/format";
 
 /** A day a sync covered: the quiet step of the sequential ramp. */
 export const UPLOADED_COLOR = "var(--viz-seq-2)";
+/** A day uploaded without one of its tools, in the warning status colour. */
+export const PARTIAL_COLOR = "var(--coverage-partial)";
 /** A required day nothing covered, in the critical status colour. */
 export const MISSING_COLOR = "var(--coverage-missing)";
 /** The outline of a day that is not required. */
 export const NOT_REQUIRED_COLOR = "var(--viz-grid)";
 
-/** Defines `--coverage-missing` for light and dark; set it on an ancestor. */
+/** Defines `--coverage-missing` and `--coverage-partial` for light and dark;
+ * set it on an ancestor. */
 export const COVERAGE_COLOR_SCOPE =
-  "[--coverage-missing:#d03b3b] dark:[--coverage-missing:#e66767]";
+  "[--coverage-missing:#d03b3b] dark:[--coverage-missing:#e66767] [--coverage-partial:#e3a21a] dark:[--coverage-partial:#c98500]";
 
 const ROW = "row";
 const FOCUSED = [
@@ -83,8 +86,8 @@ export function CoverageStrip({
       guides: false,
       margin: 0,
       color: {
-        domain: ["uploaded", "missing"],
-        range: [UPLOADED_COLOR, MISSING_COLOR],
+        domain: ["uploaded", "partial", "missing"],
+        range: [UPLOADED_COLOR, PARTIAL_COLOR, MISSING_COLOR],
       },
       theme: USAGE_CHART_THEME,
       focus: "nearest-x",
@@ -102,7 +105,7 @@ export function CoverageStrip({
       height={thin ? 10 : 18}
       className="min-w-0"
       ariaLabel={`${subject}: uploads by day`}
-      ariaDescription="Each cell is one local day: uploaded, missing, or not required. The text beside the row lists the missing days."
+      ariaDescription="Each cell is one local day: uploaded, uploaded without a tool, missing, or not required. The text beside the row lists the missing days."
       renderTooltipBody={({ primaryPoint }) =>
         primaryPoint ? (
           <div className="rounded-lg border border-border/60 bg-card px-3 py-2 text-sm shadow-elevated">

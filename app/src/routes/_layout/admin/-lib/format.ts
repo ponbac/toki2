@@ -17,6 +17,10 @@ const compact = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
 const whole = new Intl.NumberFormat("en-US");
+const percent = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 0,
+});
 
 /** Dollars with cents; a positive amount under a cent shows as `<$0.01`. */
 export function formatUsd(amount: number): string {
@@ -41,6 +45,11 @@ export function formatEstimate(usage: AiBillingUsage): string {
 
 export function formatTokens(tokens: number): string {
   return compact.format(tokens);
+}
+
+/** A share from 0 to 1 as a percentage, never rounded down to nothing. */
+export function formatShare(share: number): string {
+  return share > 0 && share < 0.01 ? "under 1%" : percent.format(share);
 }
 
 export function formatCount(count: number): string {

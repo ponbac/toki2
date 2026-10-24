@@ -7,7 +7,7 @@ import {
   type AiSubscription,
   type AiSubscriptionMismatch,
   type AiSubscriptionTerms,
-} from "@/lib/api/queries/ai-usage";
+} from "@/lib/api/contracts/ai-usage";
 
 /** Suggested plan names. Plans are free text, so any name is accepted. */
 export const PLAN_SUGGESTIONS: Record<AiProvider, readonly string[]> = {
