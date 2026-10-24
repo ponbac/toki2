@@ -8,4 +8,12 @@ ignore = [
     # but Toki's web-push VAPID signatures use ES256 (P-256), not the RSA
     # private-key/decryption operations affected by this timing side channel.
     "RUSTSEC-2023-0071",
+    # crypto-bigint timing leaks are only patched in 0.7.6, but the whole
+    # RustCrypto 0.13 elliptic-curve line pins crypto-bigint 0.5. web-push ->
+    # jwt-simple 0.12 -> p256 0.13 is the only path, and no web-push release
+    # (nor web-push-native) has moved to jwt-simple 0.14+. The flagged code is
+    # mostly 0.7-only (UintRef, BoxedMontyForm, the post-0.5 borrowing_sub
+    # rewrite), and the only secret it touches is the VAPID signing key, signed
+    # in background workers. Drop this once web-push moves to p256 0.14.
+    "RUSTSEC-2026-0387",
 ]
