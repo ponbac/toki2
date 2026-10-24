@@ -39,26 +39,28 @@ import {
   TAIL_STEP,
   ledgerEntries,
   ledgerRowId,
-  lineHundredths,
   shareOf,
   type BillableStep,
   type Ledger,
   type LedgerEntry,
+  type LedgerPerson,
 } from "../../-lib/ledger";
 import { UNDECIDED_FILL } from "./allocation-strip";
 import { formatEstimateIn } from "../../-lib/estimates";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
-/** Lines billing less than this, in hundredths, fold away in an open row. */
-const SMALL_LINE = 100;
-/** Fewer small lines than this stay in view. */
+/** Developers billing less than this, in hundredths, fold away in an open
+ * row. */
+const SMALL_PERSON = 100;
+/** Fewer small developers than this stay in view. */
 const FOLD_AT = 3;
 
 /**
  * The month's bill by project, dearest first: what to invoice each customer,
  * whose usage it is, with what, and what it would have cost at API prices.
  * Usage without a project and fees nobody used follow the projects. A row
- * opens to its lines; the row pointed at lights its segment of the strip.
+ * opens to its developers, each with their lines beneath when they have more
+ * than one; the row pointed at lights its segment of the strip.
  */
 export function ProjectLedger({
   overview,
@@ -188,18 +190,20 @@ function EntryRows({
   const [showSmall, setShowSmall] = React.useState(false);
   const currency = overview.billingCurrency;
   const share = shareOf(entry, ledger);
-  const small = entry.lines.filter((line) => {
-    const amount = lineHundredths(line);
-    return amount !== null && amount < SMALL_LINE;
-  });
+  // Only an amount known in full folds away as small.
+  const small = entry.people.filter(
+    ({ totals }) =>
+      totals.converted !== null &&
+      totals.unknownRecords === 0 &&
+      totals.converted < SMALL_PERSON,
+  );
   const folded = small.length >= FOLD_AT && !showSmall;
   const shown = folded
-    ? entry.lines.filter((line) => !small.includes(line))
-    : entry.lines;
+    ? entry.people.filter((person) => !small.includes(person))
+    : entry.people;
   const detailsId = `${ledgerRowId(entry.key)}-lines`;
-  const people = entry.developers.map(
-    (userId) => names.get(userId) ?? `User ${userId}`,
-  );
+  const nameOf = (userId: number) => names.get(userId) ?? `User ${userId}`;
+  const people = entry.people.map((person) => nameOf(person.userId));
 
   return (
     <TableBody className="border-b border-border/60 last:border-b-0">
@@ -256,14 +260,7 @@ function EntryRows({
           )}
         </TableCell>
         <TableCell className="hidden lg:table-cell">
-          <span className="flex items-center gap-1.5">
-            {entry.providers.map((provider) => (
-              <span key={provider} title={AI_PROVIDER_LABELS[provider]}>
-                <AiProviderIcon provider={provider} className="size-4" />
-                <span className="sr-only">{AI_PROVIDER_LABELS[provider]}</span>
-              </span>
-            ))}
-          </span>
+          <ProviderIcons providers={entry.providers} className="size-4" />
         </TableCell>
         <TableCell className="hidden sm:table-cell">
           {share !== null && (
@@ -287,35 +284,30 @@ function EntryRows({
       </TableRow>
 
       {isOpen &&
-        shown.map((line, index) => (
-          <LineRow
-            key={`${line.userId}-${line.provider}-${line.billingMode}-${line.subscriptionId ?? "api"}-${index}`}
+        shown.map((person, index) => (
+          <PersonRows
+            key={person.userId}
             id={index === 0 ? detailsId : undefined}
-            line={line}
-            name={names.get(line.userId) ?? `User ${line.userId}`}
-            month={overview.month}
-            subscription={
-              line.subscriptionId === null
-                ? undefined
-                : plans.get(line.subscriptionId)
-            }
-            currency={currency}
-            pendingRates={overview.pendingRates}
-            undeclaredPlan={
-              line.billingMode === "api" &&
-              (undeclared.get(line.userId) ?? []).includes(line.provider)
-            }
+            person={person}
+            name={nameOf(person.userId)}
+            overview={overview}
+            plans={plans}
+            undeclared={undeclared}
           />
         ))}
       {isOpen && folded && (
-        <TableRow className="hover:bg-transparent">
+        <TableRow
+          id={shown.length === 0 ? detailsId : undefined}
+          className="hover:bg-transparent"
+        >
           <TableCell colSpan={6} className="py-1.5 pl-12">
             <button
               type="button"
               onClick={() => setShowSmall(true)}
               className="rounded-sm text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
             >
-              Show {plural(small.length, "more line")} under 1 {currency} each
+              Show {plural(small.length, "more developer")} under 1 {currency}{" "}
+              each
             </button>
           </TableCell>
         </TableRow>
@@ -434,72 +426,300 @@ function ShareBar({
   );
 }
 
-/** One line of an open row: whose usage, with what, paid how. */
+/** How a developer's lines show: what each tool and plan is needed for. */
+type LineSource = Readonly<{
+  overview: AiBillingOverview;
+  plans: ReadonlyMap<number, AiSubscriptionMonth>;
+  undeclared: ReadonlyMap<number, readonly AiProvider[]>;
+}>;
+
+/**
+ * A developer in an open row. With one line they take a single row; with
+ * more, a row of their subtotal and a row beneath it for each line.
+ */
+function PersonRows({
+  id,
+  person,
+  name,
+  ...source
+}: LineSource & {
+  id?: string;
+  person: LedgerPerson;
+  name: string;
+}) {
+  const money = useEstimateMoney();
+  const { overview } = source;
+  const [only, ...others] = person.lines;
+  if (only !== undefined && others.length === 0) {
+    return <LineRow id={id} line={only} name={name} {...source} />;
+  }
+  const overhead = person.lines.every((line) => line.unallocatedOverhead);
+  const tools = <ProviderIcons providers={person.providers} />;
+  return (
+    <>
+      <TableRow id={id} className="border-0 text-[13px] hover:bg-muted/30">
+        <TableCell className="py-1.5 pl-12">
+          <PersonLink
+            userId={person.userId}
+            name={name}
+            month={overview.month}
+          />
+          <span className="sr-only">, subtotal</span>
+          <span className="mt-1 block md:hidden">{tools}</span>
+        </TableCell>
+        <DetailCells>{tools}</DetailCells>
+        <TableCell
+          className={cn(
+            "py-1.5 text-right whitespace-nowrap tabular-nums",
+            person.totals.converted === null &&
+              "text-[#c98500] dark:text-[#fab219]",
+          )}
+        >
+          {formatConverted(
+            person.totals,
+            overview.billingCurrency,
+            overview.pendingRates,
+          )}
+        </TableCell>
+        <TableCell className="hidden py-1.5 text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
+          {overhead ? "—" : formatEstimateIn(person.totals.usage, money)}
+        </TableCell>
+      </TableRow>
+      {person.lines.map((line, index) => (
+        <ToolLineRow
+          key={`${line.provider}-${line.billingMode}-${line.subscriptionId ?? "api"}-${index}`}
+          line={line}
+          name={name}
+          last={index === person.lines.length - 1}
+          {...source}
+        />
+      ))}
+    </>
+  );
+}
+
+/** The marks of the tools used, each named for screen readers. */
+function ProviderIcons({
+  providers,
+  className,
+}: {
+  providers: readonly AiProvider[];
+  className?: string;
+}) {
+  return (
+    <span className="flex items-center gap-1.5">
+      {providers.map((provider) => (
+        <span key={provider} title={AI_PROVIDER_LABELS[provider]}>
+          <AiProviderIcon provider={provider} className={className} />
+          <span className="sr-only">{AI_PROVIDER_LABELS[provider]}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** A developer's only line in an open row: whose usage, with what, paid how. */
 function LineRow({
   id,
   line,
   name,
-  month,
-  subscription,
-  currency,
-  pendingRates,
-  undeclaredPlan,
-}: {
+  ...source
+}: LineSource & {
   id?: string;
   line: AiBillingLine;
   name: string;
-  month: string;
-  subscription: AiSubscriptionMonth | undefined;
-  currency: string;
-  pendingRates: readonly string[];
-  /** The tool reported a paid plan nobody declared: these API prices are
-   * likely more than the plan's share would be. */
-  undeclaredPlan: boolean;
 }) {
-  const money = useEstimateMoney();
-  const warnings = lineWarnings(line, subscription, currency, pendingRates);
+  const { overview } = source;
   return (
     <TableRow id={id} className="border-0 text-[13px] hover:bg-muted/30">
       <TableCell className="py-1.5 pl-12">
-        <Link
-          to="/admin/ai-billing/$userId"
-          params={{ userId: String(line.userId) }}
-          search={{ month }}
-          className="underline-offset-4 hover:underline"
-        >
-          {name}
-        </Link>
+        <PersonLink userId={line.userId} name={name} month={overview.month} />
+        <ToolDetail
+          line={line}
+          {...source}
+          className="mt-0.5 flex flex-wrap text-xs md:hidden"
+        />
       </TableCell>
-      <TableCell className="hidden py-1.5 md:table-cell" colSpan={2}>
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-muted-foreground">
-          <AiProviderIcon provider={line.provider} />
-          <span className="text-foreground">
-            {AI_PROVIDER_LABELS[line.provider]}
-          </span>
-          {line.billingMode === "subscription"
-            ? `on ${subscription?.plan ?? "a subscription"}`
-            : "at API prices"}
-          {warnings.length > 0 && <Warnings warnings={warnings} />}
-          {undeclaredPlan && (
-            <AttentionPill title="The tool reported a paid plan nobody declared, so this bills at API prices instead of a share of the plan's fee.">
-              plan not declared
-            </AttentionPill>
+      <DetailCells>
+        <ToolDetail line={line} {...source} className="inline-flex" />
+      </DetailCells>
+      <LineAmounts line={line} overview={overview} />
+    </TableRow>
+  );
+}
+
+/** One line beneath a developer's subtotal, hung off a guide from their name. */
+function ToolLineRow({
+  line,
+  name,
+  last,
+  ...source
+}: LineSource & {
+  line: AiBillingLine;
+  name: string;
+  last: boolean;
+}) {
+  return (
+    <TableRow className="border-0 text-xs text-muted-foreground hover:bg-muted/30">
+      <TableCell className="relative py-1 pl-[4.25rem]">
+        <span
+          aria-hidden
+          className={cn(
+            "absolute top-0 left-[3.25rem] border-l border-border",
+            last ? "bottom-1/2" : "bottom-0",
           )}
-        </span>
+        />
+        <span
+          aria-hidden
+          className="absolute top-1/2 left-[3.25rem] w-3 border-t border-border"
+        />
+        <span className="sr-only">Breakdown for {name}: </span>
+        <ToolDetail
+          line={line}
+          {...source}
+          className="flex flex-wrap md:hidden"
+        />
       </TableCell>
-      <TableCell className="hidden py-1.5 sm:table-cell" />
+      <DetailCells className="py-1">
+        <ToolDetail line={line} {...source} className="inline-flex" />
+      </DetailCells>
+      <LineAmounts line={line} overview={source.overview} className="py-1" />
+    </TableRow>
+  );
+}
+
+function PersonLink({
+  userId,
+  name,
+  month,
+}: {
+  userId: number;
+  name: string;
+  month: string;
+}) {
+  return (
+    <Link
+      to="/admin/ai-billing/$userId"
+      params={{ userId: String(userId) }}
+      search={{ month }}
+      className="underline-offset-4 hover:underline"
+    >
+      {name}
+    </Link>
+  );
+}
+
+/**
+ * A row's tool and plan, and its empty share. They run under People and
+ * Tools on wide screens; where Tools is hidden, under People and Share.
+ */
+function DetailCells({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <TableCell
+        className={cn("hidden py-1.5 md:table-cell lg:hidden", className)}
+        colSpan={2}
+      >
+        {children}
+      </TableCell>
+      <TableCell
+        className={cn("hidden py-1.5 lg:table-cell", className)}
+        colSpan={2}
+      >
+        {children}
+      </TableCell>
+      <TableCell
+        className={cn(
+          "hidden py-1.5 sm:table-cell md:hidden lg:table-cell",
+          className,
+        )}
+      />
+    </>
+  );
+}
+
+/** A line's tool, how it is paid, and what to look into about it. */
+function ToolDetail({
+  line,
+  overview,
+  plans,
+  undeclared,
+  className,
+}: LineSource & { line: AiBillingLine; className?: string }) {
+  const subscription =
+    line.subscriptionId === null ? undefined : plans.get(line.subscriptionId);
+  const warnings = lineWarnings(
+    line,
+    subscription,
+    overview.billingCurrency,
+    overview.pendingRates,
+  );
+  // The tool reported a paid plan nobody declared: these API prices are
+  // likely more than the plan's share would be.
+  const undeclaredPlan =
+    line.billingMode === "api" &&
+    (undeclared.get(line.userId) ?? []).includes(line.provider);
+  return (
+    <span
+      className={cn(
+        "items-center gap-x-1.5 whitespace-nowrap text-muted-foreground",
+        className,
+      )}
+    >
+      <AiProviderIcon provider={line.provider} />
+      <span className="text-foreground">
+        {AI_PROVIDER_LABELS[line.provider]}
+      </span>
+      {line.billingMode === "subscription"
+        ? `on ${subscription?.plan ?? "a subscription"}`
+        : "at API prices"}
+      {warnings.length > 0 && <Warnings warnings={warnings} />}
+      {undeclaredPlan && (
+        <AttentionPill title="The tool reported a paid plan nobody declared, so this bills at API prices instead of a share of the plan's fee.">
+          plan not declared
+        </AttentionPill>
+      )}
+    </span>
+  );
+}
+
+/** What a line bills, and what it would have cost at API prices. */
+function LineAmounts({
+  line,
+  overview,
+  className,
+}: {
+  line: AiBillingLine;
+  overview: AiBillingOverview;
+  className?: string;
+}) {
+  const money = useEstimateMoney();
+  return (
+    <>
       <TableCell
         className={cn(
           "py-1.5 text-right whitespace-nowrap tabular-nums",
           line.missingRate && "text-[#c98500] dark:text-[#fab219]",
+          className,
         )}
       >
-        {lineConverted(line, currency, pendingRates)}
+        {lineConverted(line, overview.billingCurrency, overview.pendingRates)}
       </TableCell>
-      <TableCell className="hidden py-1.5 text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
+      <TableCell
+        className={cn(
+          "hidden py-1.5 text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell",
+          className,
+        )}
+      >
         {line.unallocatedOverhead ? "—" : formatEstimateIn(line.usage, money)}
       </TableCell>
-    </TableRow>
+    </>
   );
 }
 
