@@ -64,7 +64,7 @@ export function AllocationStrip({
               onBlur={() => onHighlight(null)}
               onClick={() => onSelect(segment)}
               className={cn(
-                "relative flex w-full min-w-0 flex-col justify-center overflow-hidden rounded-[3px] px-2 text-left transition-opacity duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-hidden motion-reduce:transition-none",
+                "relative flex w-full min-w-0 flex-col justify-center overflow-hidden rounded-[3px] px-2 text-left transition-opacity duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-hidden motion-reduce:transition-none @max-[4.5rem]:px-1.5",
                 index === 0 && "rounded-l-lg",
                 index === segments.length - 1 && "rounded-r-lg",
                 segment.kind === "unassigned" &&
@@ -84,20 +84,35 @@ export function AllocationStrip({
                     : undefined
               }
             >
-              {/* A segment too narrow for its name shows none; its title,
-                  label and the ledger still name it. */}
+              {/* A narrower segment shortens its name, then drops it for its
+                  share alone, then shows nothing; its title, label and the
+                  ledger still name it. */}
               <span
                 aria-hidden
-                className="flex min-w-0 flex-col @max-[4.5rem]:hidden"
+                className="flex min-w-0 flex-col @max-[1.75rem]:hidden"
               >
                 <span
                   className={cn(
-                    "truncate text-xs leading-tight font-semibold",
+                    "truncate text-xs leading-tight font-semibold @max-[3rem]:hidden",
                     !solid &&
                       "w-fit max-w-full rounded-sm bg-background/85 px-1",
                   )}
                 >
-                  {name}
+                  {segment.short === name ? (
+                    name
+                  ) : (
+                    <>
+                      <span className="@max-[10rem]:hidden">{name}</span>
+                      <span className="flex min-w-0 @min-[10rem]:hidden">
+                        <span className="truncate">{segment.short}</span>
+                        {segment.more > 0 && (
+                          <span className="shrink-0">
+                            &nbsp;+{segment.more}
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  )}
                 </span>
                 <span
                   className={cn(
