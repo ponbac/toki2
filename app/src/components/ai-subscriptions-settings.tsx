@@ -79,7 +79,7 @@ export function AiSubscriptionsSettings() {
         <p className="text-xs text-muted-foreground">
           Declare the AI plans you pay a monthly fee for. On days without one, a
           provider&apos;s usage is billed at its estimated API cost in billing
-          reports.
+          reports. Copilot takes none: GitHub bills it per credit.
           {subscriptionsQuery.data &&
             ` Dates are calendar days in ${subscriptionsQuery.data.timeZone}.`}
         </p>

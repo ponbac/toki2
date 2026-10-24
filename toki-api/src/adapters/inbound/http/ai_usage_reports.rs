@@ -3,8 +3,8 @@
 //! Every route reads the authenticated user's usage and nobody else's, for
 //! admins too: there is no user parameter. They take a browser session or the
 //! user's own API token. Because only the owner reads them, they go down to
-//! local hours and sessions. Costs are API-equivalent USD estimates, not bills,
-//! and an unknown cost is null, never zero.
+//! local hours and sessions. Costs are USD estimates, not bills, and an unknown
+//! cost is null, never zero.
 //!
 //! Every malformed query is a `400` with the usual JSON error.
 
@@ -234,8 +234,8 @@ pub struct AiUsageTotalsResponse {
     tokens: AiUsageTokensResponse,
     /// Deduplicated provider requests.
     records: i64,
-    /// The API-equivalent cost estimate in USD, or null when any of the usage
-    /// could not be priced: then the cost is unknown, not zero.
+    /// The estimated cost in USD, or null when any of the usage could not be
+    /// priced: then the cost is unknown, not zero.
     estimated_cost_usd: Option<f64>,
     /// The sum of the known costs. It is the whole estimate when
     /// `unpricedRecords` is 0, and only a known subtotal otherwise.
@@ -809,7 +809,9 @@ impl From<AiProjectKeyUsage> for AiUsageProjectKeyResponse {
 /// of local days in the server's AI usage time zone: totals, and breakdowns by
 /// day, project, model, machine and local hour of the week. It defaults to the
 /// current month. Filters narrow every figure; `options` lists what they can
-/// select. Costs are API-equivalent USD estimates, not bills. When any usage is
+/// select. Costs are USD estimates, not bills: usage Copilot pays for at
+/// Copilot's rates, other usage at API prices, OpenAI's implicit cache writes
+/// included, although their tokens count as `input`. When any usage is
 /// unpriced, `estimatedCostUsd` is null and `pricedCostUsd` is only the known
 /// subtotal.
 #[utoipa::path(

@@ -21,6 +21,8 @@ const BEARER_SCHEME: &str = "bearerAuth";
         crate::adapters::inbound::http::ai_subscriptions::list_subscriptions,
         crate::adapters::inbound::http::ai_subscriptions::update_subscription,
         crate::adapters::inbound::http::ai_usage::upload_usage,
+        crate::adapters::inbound::http::ai_usage::repricing::get_repricing,
+        crate::adapters::inbound::http::ai_usage::repricing::reprice_usage,
         crate::adapters::inbound::http::ai_usage_reports::get_report,
         crate::adapters::inbound::http::ai_usage_reports::list_machines,
         crate::adapters::inbound::http::ai_usage_reports::list_project_keys,
@@ -50,7 +52,7 @@ const BEARER_SCHEME: &str = "bearerAuth";
     ),
     info(
         title = "Toki Agent API",
-        version = "1.5.0",
+        version = "1.6.0",
         description = "Curated automation surface for Toki. Browser session, admin, and media endpoints are not included. Authenticate with a Toki personal API token via HTTP bearer; never embed a real token in this document."
     ),
     modifiers(&BearerSecurity),
@@ -119,6 +121,11 @@ mod tests {
         ("delete", "/time-tracking/time-entries", "deleteTimeEntry"),
         ("delete", "/time-tracking/timer", "stopActiveTimer"),
         ("get", "/ai-usage/machines", "listAiUsageMachines"),
+        (
+            "get",
+            "/ai-usage/machines/{machine_id}/repricing",
+            "getAiUsageRepricing",
+        ),
         ("get", "/ai-usage/project-keys", "listAiUsageProjectKeys"),
         ("get", "/ai-usage/report", "getAiUsageReport"),
         ("get", "/ai-usage/sessions", "listAiUsageSessions"),
@@ -154,6 +161,11 @@ mod tests {
         ("get", "/work-items/format-for-llm", "formatWorkItemForLlm"),
         ("get", "/work-items/iterations", "listWorkItemIterations"),
         ("get", "/work-items/projects", "listWorkItemProjects"),
+        (
+            "post",
+            "/ai-usage/machines/{machine_id}/repricing",
+            "repriceAiUsage",
+        ),
         ("post", "/ai-usage/subscriptions", "createAiSubscription"),
         ("post", "/time-tracking/time-entries", "createTimeEntry"),
         ("post", "/time-tracking/timer", "startActiveTimer"),
@@ -203,7 +215,7 @@ mod tests {
             version.starts_with("3.1."),
             "expected OpenAPI 3.1.x, got {version}"
         );
-        assert_eq!(spec["info"]["version"], "1.5.0");
+        assert_eq!(spec["info"]["version"], "1.6.0");
         assert_eq!(spec["info"]["title"], "Toki Agent API");
     }
 

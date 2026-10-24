@@ -14,7 +14,7 @@ export const PLAN_SUGGESTIONS: Record<AiProvider, readonly string[]> = {
   codex: ["ChatGPT Plus", "ChatGPT Pro"],
   claude: ["Claude Pro", "Claude Max 5x", "Claude Max 20x"],
   grok: [],
-  copilot: ["Copilot Business"],
+  copilot: [],
   pi: [],
   opencode: [],
 };
@@ -23,14 +23,16 @@ export const PLAN_SUGGESTIONS: Record<AiProvider, readonly string[]> = {
  * The provider a subscription is declared for to pay for `provider`'s usage,
  * or null when none can. Pi has no subscriptions of its own: a ChatGPT
  * subscription, declared for Codex, pays for Pi usage on the days Pi ran on
- * its ChatGPT sign-in. OpenCode has none either: each of its buckets names the
- * subscription that pays for it, if any.
+ * its ChatGPT sign-in. OpenCode has none either: each of its buckets names its
+ * payer, if any. Copilot takes none: GitHub bills its usage per credit, so it
+ * bills at its estimated cost.
  */
 export function subscriptionProvider(provider: AiProvider): AiProvider | null {
   switch (provider) {
     case "pi":
       return "codex";
     case "opencode":
+    case "copilot":
       return null;
     default:
       return provider;

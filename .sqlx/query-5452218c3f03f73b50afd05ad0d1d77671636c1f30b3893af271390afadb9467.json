@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_usage_buckets AS stored\n            SET estimated_cost_usd = priced.estimated_cost_usd::numeric,\n                unpriced_records = priced.unpriced_records,\n                pricing_basis = $3\n            FROM UNNEST(\n                $4::timestamptz[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],\n                $10::int8[], $11::int8[], $12::int8[], $13::int8[], $14::int8[],\n                $15::float8[], $16::int8[]\n            ) AS priced (\n                hour_start, session_key, project_key, provider, model, billing_provider,\n                input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, records,\n                estimated_cost_usd, unpriced_records\n            )\n            WHERE stored.machine_id = $2\n              AND stored.hour_start = priced.hour_start\n              AND stored.provider = priced.provider\n              AND stored.session_key = priced.session_key\n              AND md5(stored.project_key) = md5(priced.project_key)\n              AND md5(stored.model) = md5(priced.model)\n              AND COALESCE(stored.billing_provider, '') = COALESCE(priced.billing_provider, '')\n              AND stored.project_key = priced.project_key\n              AND stored.model = priced.model\n              AND stored.user_id = $1\n              AND stored.input_tokens = priced.input_tokens\n              AND stored.cache_read_tokens = priced.cache_read_tokens\n              AND stored.cache_write_tokens = priced.cache_write_tokens\n              AND stored.output_tokens = priced.output_tokens\n              AND stored.records = priced.records\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Uuid",
+        "Text",
+        "TimestamptzArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Float8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5452218c3f03f73b50afd05ad0d1d77671636c1f30b3893af271390afadb9467"
+}

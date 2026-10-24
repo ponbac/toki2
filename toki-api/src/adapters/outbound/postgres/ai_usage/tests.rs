@@ -2,8 +2,9 @@ use sqlx::PgPool;
 use time::{macros::datetime, OffsetDateTime};
 
 use crate::domain::models::{
-    AiCoverageStatus, AiMachine, AiMachineId, AiPartialBucketCost, AiPricing, AiPricingStatus,
-    AiProvider, AiProviderCoverage, AiProviderHint, AiTokenCounts, AiUsageBucket, AiUsageWindow,
+    AiCoverageStatus, AiMachine, AiMachineId, AiPartialBucketCost, AiPricing, AiPricingBasis,
+    AiPricingStatus, AiProvider, AiProviderCoverage, AiProviderHint, AiProviderRepricing,
+    AiTokenCounts, AiUsageBucket, AiUsageWindow,
 };
 
 use super::*;
@@ -755,4 +756,326 @@ async fn only_time_zones_the_database_knows_are_accepted(pool: PgPool) {
 
     assert!(knows("Europe/Stockholm").await);
     assert!(!knows("Europe/Stokholm").await);
+}
+
+fn basis(raw: &str) -> AiPricingBasis {
+    AiPricingBasis::parse(raw).unwrap()
+}
+
+fn machine(raw: &str) -> AiMachineId {
+    AiMachineId::parse(raw).unwrap()
+}
+
+/// Stored `(session_key, billing_provider, cost, unpriced_records,
+/// pricing_basis)` of every bucket, by session and payer.
+type StoredCost = (String, Option<String>, Option<f64>, i64, Option<String>);
+
+async fn stored_costs(pool: &PgPool) -> Vec<StoredCost> {
+    sqlx::query_as(
+        "SELECT session_key, billing_provider, estimated_cost_usd::float8, unpriced_records,
+             pricing_basis
+         FROM ai_usage_buckets
+         ORDER BY machine_id, hour_start, session_key, billing_provider NULLS FIRST",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Every stored row other than buckets, sync times included.
+async fn sync_state(pool: &PgPool) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT row_to_json(h)::text FROM (
+             SELECT * FROM ai_usage_provider_hints ORDER BY machine_id, hour_start, plan
+         ) h
+         UNION ALL
+         SELECT row_to_json(c)::text FROM (
+             SELECT * FROM ai_usage_machine_coverage ORDER BY machine_id, provider
+         ) c
+         UNION ALL
+         SELECT row_to_json(l)::text FROM (SELECT * FROM ai_usage_coverage_log ORDER BY id) l
+         UNION ALL
+         SELECT row_to_json(m)::text FROM (SELECT * FROM ai_usage_machines ORDER BY id) m",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+fn session(index: u8) -> String {
+    format!("{index:032x}")
+}
+
+#[sqlx::test]
+async fn an_upload_stores_its_pricing_basis_on_every_bucket(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let hour = datetime!(2026-09-22 08:00 UTC);
+    let buckets = || vec![bucket(hour, 2, Some(0.2)), codex_bucket(hour, 3)];
+    repository
+        .replace_window(
+            &user,
+            &upload(MACHINE_A, "laptop", WINDOW, buckets(), Vec::new())
+                .with_pricing_basis(Some(basis("copilot-rates@2026-10-24"))),
+        )
+        .await
+        .unwrap();
+    repository
+        .replace_window(
+            &user,
+            &upload(MACHINE_B, "desktop", WINDOW, buckets(), Vec::new()),
+        )
+        .await
+        .unwrap();
+
+    let bases: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT machine_id::text, provider, pricing_basis FROM ai_usage_buckets
+         ORDER BY machine_id, provider",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let new = || Some("copilot-rates@2026-10-24".to_string());
+    assert_eq!(
+        bases,
+        [
+            (MACHINE_B.to_string(), "claude".to_string(), None),
+            (MACHINE_B.to_string(), "codex".to_string(), None),
+            (MACHINE_A.to_string(), "claude".to_string(), new()),
+            (MACHINE_A.to_string(), "codex".to_string(), new()),
+        ]
+    );
+}
+
+#[sqlx::test]
+async fn a_repricing_updates_only_buckets_it_reproduces_exactly(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let hour = datetime!(2026-09-22 08:00 UTC);
+    let stored = |index: u8, payer: Option<AiProvider>| AiUsageBucket {
+        session_key: session(index),
+        billing_provider: payer,
+        ..bucket(hour, 2, Some(0.2))
+    };
+    let codex = Some(AiProvider::Codex);
+    repository
+        .replace_window(
+            &user,
+            &upload(
+                MACHINE_A,
+                "laptop",
+                WINDOW,
+                vec![
+                    stored(1, None),
+                    stored(2, codex),
+                    stored(3, None),
+                    stored(4, None),
+                    stored(5, None),
+                    stored(6, codex),
+                    stored(7, None),
+                ],
+                vec![hint(hour)],
+            ),
+        )
+        .await
+        .unwrap();
+    let state = sync_state(&pool).await;
+
+    let repriced = |index: u8, payer: Option<AiProvider>| AiUsageBucket {
+        estimated_cost_usd: Some(0.5),
+        unpriced_records: 1,
+        ..stored(index, payer)
+    };
+    let mut more_output = repriced(3, None);
+    more_output.tokens.output += 1;
+    let mut more_records = repriced(4, None);
+    more_records.records += 1;
+    let mut other_model = repriced(7, None);
+    other_model.model = "other-model".to_string();
+    let never_stored = AiUsageBucket {
+        hour_start: datetime!(2026-09-22 09:00 UTC),
+        ..repriced(1, None)
+    };
+    let buckets = [
+        repriced(1, None),
+        repriced(2, codex),
+        more_output,
+        more_records,
+        // The payer is part of the key, NULL included.
+        repriced(5, codex),
+        repriced(6, None),
+        other_model,
+        never_stored,
+    ];
+
+    let updated = repository
+        .reprice_buckets(
+            &user,
+            &machine(MACHINE_A),
+            &basis("new"),
+            &buckets.iter().collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(updated, 2);
+    let old = |index: u8, payer: Option<&str>| {
+        (
+            session(index),
+            payer.map(str::to_string),
+            Some(0.2),
+            0,
+            None,
+        )
+    };
+    assert_eq!(
+        stored_costs(&pool).await,
+        [
+            (session(1), None, Some(0.5), 1, Some("new".to_string())),
+            (
+                session(2),
+                Some("codex".to_string()),
+                Some(0.5),
+                1,
+                Some("new".to_string())
+            ),
+            old(3, None),
+            old(4, None),
+            old(5, None),
+            old(6, Some("codex")),
+            old(7, None),
+        ]
+    );
+    assert_eq!(sync_state(&pool).await, state);
+
+    // Repricing again with the same values still counts every match.
+    let updated = repository
+        .reprice_buckets(
+            &user,
+            &machine(MACHINE_A),
+            &basis("new"),
+            &buckets.iter().collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated, 2);
+}
+
+#[sqlx::test]
+async fn repricing_sees_only_the_users_own_machine(pool: PgPool) {
+    let repository = repository(&pool);
+    let owner = insert_user(&pool, "owner@example.com").await;
+    let intruder = insert_user(&pool, "intruder@example.com").await;
+    let stored = bucket(datetime!(2026-09-22 08:00 UTC), 2, Some(0.2));
+    repository
+        .replace_window(
+            &owner,
+            &upload(
+                MACHINE_A,
+                "laptop",
+                WINDOW,
+                vec![stored.clone()],
+                Vec::new(),
+            ),
+        )
+        .await
+        .unwrap();
+    let before = snapshot(&pool).await;
+    let floor = datetime!(2026-09-01 00:00 UTC);
+
+    for machine_id in [MACHINE_A, MACHINE_B] {
+        let status = repository
+            .stale_pricing(&intruder, &machine(machine_id), &basis("new"), floor)
+            .await
+            .unwrap();
+        assert_eq!(status, [], "{machine_id}");
+        let updated = repository
+            .reprice_buckets(&intruder, &machine(machine_id), &basis("new"), &[&stored])
+            .await
+            .unwrap();
+        assert_eq!(updated, 0, "{machine_id}");
+    }
+
+    assert_eq!(snapshot(&pool).await, before);
+}
+
+#[sqlx::test]
+async fn stale_pricing_finds_the_earliest_hour_another_basis_priced(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let at = |hour: u8| datetime!(2026-09-22 00:00 UTC).replace_hour(hour).unwrap();
+    let grok_bucket = |hour| AiUsageBucket {
+        provider: AiProvider::Grok,
+        ..bucket(hour, 1, Some(0.1))
+    };
+    let only = |provider| [(provider, AiCoverageStatus::Ok)];
+    // No basis until 09:00, an old one from then on, and the current one for
+    // Codex from 10:00 and for Grok.
+    for (machine_id, window, coverage, buckets, pricing_basis) in [
+        (
+            MACHINE_A,
+            (at(6), at(9)),
+            BOTH_OK,
+            vec![bucket(at(7), 1, Some(0.1)), bucket(at(8), 1, Some(0.1))],
+            None,
+        ),
+        (
+            MACHINE_A,
+            (at(9), at(12)),
+            BOTH_OK,
+            vec![bucket(at(9), 1, Some(0.1)), codex_bucket(at(9), 1)],
+            Some("old"),
+        ),
+        (
+            MACHINE_A,
+            (at(10), at(12)),
+            &only(AiProvider::Codex)[..],
+            vec![codex_bucket(at(10), 1), codex_bucket(at(11), 1)],
+            Some("new"),
+        ),
+        (
+            MACHINE_A,
+            (at(6), at(12)),
+            &only(AiProvider::Grok)[..],
+            vec![grok_bucket(at(10))],
+            Some("new"),
+        ),
+        (
+            MACHINE_B,
+            (at(6), at(12)),
+            BOTH_OK,
+            vec![bucket(at(7), 1, Some(0.1)), codex_bucket(at(10), 1)],
+            None,
+        ),
+    ] {
+        let upload = upload_covering(machine_id, "laptop", window, coverage, buckets, Vec::new())
+            .with_pricing_basis(pricing_basis.map(basis));
+        repository.replace_window(&user, &upload).await.unwrap();
+    }
+
+    let status = repository
+        .stale_pricing(&user, &machine(MACHINE_A), &basis("new"), at(8))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        status,
+        [
+            AiProviderRepricing {
+                provider: AiProvider::Claude,
+                from: Some(at(8)),
+                stale_buckets: 2,
+            },
+            AiProviderRepricing {
+                provider: AiProvider::Codex,
+                from: Some(at(9)),
+                stale_buckets: 1,
+            },
+            AiProviderRepricing {
+                provider: AiProvider::Grok,
+                from: None,
+                stale_buckets: 0,
+            },
+        ]
+    );
 }

@@ -615,3 +615,141 @@ fn bucket_at(hour: u8) -> AiUsageBucket {
     bucket.hour_start = bucket.hour_start.replace_hour(hour).unwrap();
     bucket
 }
+
+fn repricing(buckets: Vec<AiUsageBucket>) -> Result<AiRepricing, AiUsageError> {
+    AiRepricing::new(
+        AiMachineId::parse("5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a").unwrap(),
+        "0.8.0".to_string(),
+        AiPricing {
+            status: AiPricingStatus::Fresh,
+            fetched_at: None,
+            source: "https://example.com/prices.json".to_string(),
+        },
+        AiPricingBasis::parse("copilot-rates@2026-10-24;tiers").unwrap(),
+        buckets,
+    )
+}
+
+fn repricing_rejection(buckets: Vec<AiUsageBucket>) -> String {
+    match repricing(buckets) {
+        Err(AiUsageError::InvalidUpload(message)) => message,
+        other => panic!("expected an invalid repricing, got {other:?}"),
+    }
+}
+
+#[test]
+fn pricing_bases_are_1_to_128_characters_without_nul() {
+    for valid in ["a".repeat(128), "é".repeat(128), " ".to_string()] {
+        assert_eq!(
+            AiPricingBasis::parse(valid.clone()).map(|basis| basis.as_str().to_string()),
+            Some(valid)
+        );
+    }
+    for invalid in [
+        String::new(),
+        "a".repeat(129),
+        "é".repeat(129),
+        "a\0b".to_string(),
+    ] {
+        assert_eq!(AiPricingBasis::parse(invalid.clone()), None, "{invalid:?}");
+    }
+}
+
+#[test]
+fn a_repricing_validates_buckets_like_an_upload_but_in_any_hour() {
+    // No window or coverage limits where its buckets lie.
+    let mut long_ago = bucket();
+    long_ago.hour_start = datetime!(2020-01-01 03:00 +02:00);
+    long_ago.provider = AiProvider::Pi;
+    let accepted = repricing(vec![long_ago]).unwrap();
+    assert_eq!(
+        accepted.buckets[0].hour_start.offset(),
+        UtcOffset::UTC,
+        "hours are normalised to UTC"
+    );
+
+    // Version 3 costs: a partly priced bucket carries its priced subtotal.
+    let mut partly = bucket();
+    partly.unpriced_records = 4;
+    assert!(repricing(vec![partly]).is_ok());
+
+    let mut unpriced_at_zero = bucket();
+    unpriced_at_zero.unpriced_records = unpriced_at_zero.records;
+    unpriced_at_zero.estimated_cost_usd = Some(0.0);
+    let mut half_hour = bucket();
+    half_hour.hour_start = datetime!(2026-09-22 08:30 UTC);
+    let mut paid_by_itself = bucket();
+    paid_by_itself.billing_provider = Some(AiProvider::Claude);
+    let mut other_model = bucket();
+    other_model.model = "other-model".to_string();
+    for (buckets, expected) in [
+        (
+            vec![unpriced_at_zero],
+            "buckets[0]: estimatedCostUsd must be null exactly when every record is unpriced",
+        ),
+        (
+            vec![half_hour],
+            "buckets[0]: hourStart must be a whole UTC hour",
+        ),
+        (
+            vec![paid_by_itself],
+            "buckets[0]: billingProvider must be a different subscription provider",
+        ),
+        (
+            vec![bucket(), other_model, bucket()],
+            "buckets[2]: duplicate key (hourStart, sessionKey, project, provider, model, billingProvider)",
+        ),
+    ] {
+        assert_eq!(repricing_rejection(buckets), expected);
+    }
+}
+
+#[test]
+fn a_repricing_carries_at_most_20000_buckets() {
+    let buckets = |count: usize| {
+        (0..count)
+            .map(|index| AiUsageBucket {
+                session_key: format!("{index:032x}"),
+                ..bucket()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    assert!(repricing(buckets(MAX_REPRICED_BUCKETS)).is_ok());
+    assert_eq!(
+        repricing_rejection(buckets(MAX_REPRICED_BUCKETS + 1)),
+        "buckets: at most 20000 buckets can be repriced at once"
+    );
+}
+
+#[test]
+fn a_repricing_stores_copilot_next_edit_suggestions_at_no_cost() {
+    let mut suggestions = bucket();
+    suggestions.provider = AiProvider::Copilot;
+    suggestions.model = "copilot-nes-oct".to_string();
+    suggestions.estimated_cost_usd = None;
+    suggestions.unpriced_records = suggestions.records;
+
+    let repriced = repricing(vec![suggestions]).unwrap();
+
+    assert_eq!(
+        (
+            repriced.buckets[0].estimated_cost_usd,
+            repriced.buckets[0].unpriced_records
+        ),
+        (Some(0.0), 0)
+    );
+}
+
+#[test]
+fn only_buckets_from_the_floor_on_can_be_repriced() {
+    let repricing = repricing(vec![bucket_at(7), bucket_at(8), bucket_at(9)]).unwrap();
+
+    let (repriced, before_floor) = repricing.split_at_floor(datetime!(2026-09-22 08:00 UTC));
+
+    let hours: Vec<_> = repriced
+        .iter()
+        .map(|bucket| bucket.hour_start.hour())
+        .collect();
+    assert_eq!((hours, before_floor), (vec![8, 9], 1));
+}

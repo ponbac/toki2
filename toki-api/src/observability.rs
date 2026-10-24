@@ -468,16 +468,19 @@ pub(crate) async fn capture_request_body_middleware(
 }
 
 /// Whether the request's body names project keys that only their developers
-/// may see, so that it is never logged: a `token-ledger sync` upload, which
-/// names every repository the developer worked in, and a personal mark, which
-/// names one they keep to themselves.
+/// may see, so that it is never logged: a `token-ledger sync` upload and a
+/// reprice-only upload, which both name every repository the developer worked
+/// in, and a personal mark, which names one they keep to themselves.
 fn names_private_project_keys(path: &str) -> bool {
-    let upload = path
+    let machine_upload = path
         .strip_prefix("/ai-usage/machines/")
-        .and_then(|rest| rest.strip_suffix("/usage"))
+        .and_then(|rest| {
+            rest.strip_suffix("/usage")
+                .or_else(|| rest.strip_suffix("/repricing"))
+        })
         .is_some_and(|machine_id| !machine_id.contains('/'));
 
-    upload || path == "/ai-usage/project-mappings/personal"
+    machine_upload || path == "/ai-usage/project-mappings/personal"
 }
 
 fn should_capture_body(headers: &HeaderMap, settings: &ObservabilitySettings) -> bool {
@@ -888,6 +891,7 @@ mod tests {
     fn observability_never_captures_bodies_that_name_private_project_keys() {
         for path in [
             "/ai-usage/machines/5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a/usage",
+            "/ai-usage/machines/5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a/repricing",
             "/ai-usage/project-mappings/personal",
         ] {
             assert!(names_private_project_keys(path), "{path}");
@@ -897,6 +901,8 @@ mod tests {
             "/ai-usage/project-mappings",
             "/ai-usage/project-mappings/personal/extra",
             "/ai-usage/machines/5f0c5a1e/usage/extra",
+            "/ai-usage/machines/5f0c5a1e/repricing/extra",
+            "/ai-usage/machines/5f0c5a1e/other/repricing",
             "/time-tracking/timer",
         ] {
             assert!(!names_private_project_keys(path), "{path}");

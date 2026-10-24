@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                provider AS \"provider!\",\n                min(hour_start) FILTER (\n                    WHERE hour_start >= $3 AND pricing_basis IS DISTINCT FROM $4\n                ) AS stale_from,\n                count(*) FILTER (\n                    WHERE hour_start >= $3 AND pricing_basis IS DISTINCT FROM $4\n                ) AS \"stale_buckets!\"\n            FROM ai_usage_buckets\n            WHERE machine_id = $2\n              AND user_id = $1\n            GROUP BY provider\n            ORDER BY provider COLLATE \"C\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_buckets",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "stale_from",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "stale_buckets!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Uuid",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "a177d81b6edf456499e3f20a2a895a1754844d9be6e8286607e001851399b514"
+}

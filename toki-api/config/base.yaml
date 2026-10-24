@@ -18,6 +18,9 @@ kleer:
 ai_usage:
   # IANA time zone that defines AI usage days and billing months.
   time_zone: "Europe/Stockholm"
+  # The earliest hour (RFC 3339) a reprice-only upload from token-ledger may
+  # change. Stored costs before it stay as they are.
+  reprice_floor: "2026-10-01T00:00:00Z"
   # Monthly average exchange rates to SEK, the billing currency (Riksbank SWEA API).
   exchange_rates:
     base_url: "https://api.riksbank.se/swea/v1"

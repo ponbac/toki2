@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use strum::{Display, EnumString};
+use time::OffsetDateTime;
 
 #[derive(Deserialize, Clone)]
 pub struct Settings {
@@ -86,6 +87,13 @@ pub struct AiUsageSettings {
     pub time_zone: String,
     #[serde(default)]
     pub exchange_rates: ExchangeRateSettings,
+    /// The earliest hour a reprice-only upload may change, an RFC 3339
+    /// instant. Stored costs before it stay as they are.
+    #[serde(
+        default = "default_ai_usage_reprice_floor",
+        with = "time::serde::rfc3339"
+    )]
+    pub reprice_floor: OffsetDateTime,
 }
 
 impl Default for AiUsageSettings {
@@ -93,6 +101,7 @@ impl Default for AiUsageSettings {
         Self {
             time_zone: default_ai_usage_time_zone(),
             exchange_rates: ExchangeRateSettings::default(),
+            reprice_floor: default_ai_usage_reprice_floor(),
         }
     }
 }
@@ -124,6 +133,10 @@ fn default_exchange_rate_base_url() -> String {
 
 fn default_ai_usage_time_zone() -> String {
     "Europe/Stockholm".to_string()
+}
+
+fn default_ai_usage_reprice_floor() -> OffsetDateTime {
+    time::macros::datetime!(2026-10-01 00:00 UTC)
 }
 
 fn default_request_body_max_logged_bytes() -> usize {
@@ -216,4 +229,26 @@ pub enum Environment {
     Local,
     #[strum(ascii_case_insensitive, serialize = "production")]
     Production,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use time::macros::datetime;
+
+    use super::*;
+
+    #[test]
+    fn base_config_sets_the_reprice_floor() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/base.yaml");
+        let settings = config::Config::builder()
+            .add_source(config::File::from(base))
+            .build()
+            .unwrap();
+
+        let ai_usage: AiUsageSettings = settings.get("ai_usage").unwrap();
+
+        assert_eq!(ai_usage.reprice_floor, datetime!(2026-10-01 00:00 UTC));
+    }
 }

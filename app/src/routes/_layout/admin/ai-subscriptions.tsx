@@ -121,7 +121,8 @@ function AdminSubscriptionsPage() {
       <p className="text-sm text-muted-foreground">
         Everyone&apos;s declared AI subscriptions. A subscription&apos;s fee
         pays for its provider&apos;s usage on the days it covers; other days
-        bill as API usage at their estimated cost.
+        bill as API usage at their estimated cost. Copilot takes none: GitHub
+        bills it per credit.
         {subscriptionsQuery.data &&
           ` Dates are calendar days in ${subscriptionsQuery.data.timeZone}, and both ends are included.`}
       </p>

@@ -9,7 +9,7 @@ use crate::{
             subscription_provider, AiCurrency, AiMonthlyCost, AiPlanMismatchDay, AiProvider,
             AiSubscription, AiSubscriptionId, AiSubscriptionPeriod, AiSubscriptionPlan,
             AiSubscriptionScope, AiSubscriptionTerms, AiUsageDateRange, AiUsageTimeZone, UserId,
-            PI_CHATGPT_SIGN_IN_HINT, UNPAID_PLAN_HINTS,
+            METERED_PAYERS, PI_CHATGPT_SIGN_IN_HINT, UNPAID_PLAN_HINTS,
         },
         ports::outbound::AiSubscriptionRepository,
         AiSubscriptionError,
@@ -222,8 +222,14 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
         // comparable with the (user_id, hour_start) index, and the covering check
         // matches the no-overlap constraint's index expression. Pi's hints count
         // only for its ChatGPT sign-in, against the subscriptions that pay for it.
+        // A day a metered payer pays for is never a mismatch: no subscription to
+        // it can be declared.
         // Whose subscriptions pay for Pi usage on its ChatGPT sign-in.
         let pi_payer = subscription_provider(AiProvider::Pi, true).unwrap_or(AiProvider::Pi);
+        let metered_payers = METERED_PAYERS
+            .iter()
+            .map(|payer| payer.as_str())
+            .collect::<Vec<_>>();
         let rows = sqlx::query!(
             r#"
             WITH observed_hints AS (
@@ -264,7 +270,8 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
                       AND later.valid_from > hint_days.day
                 ) AS next_subscription_from
             FROM hint_days
-            WHERE NOT EXISTS (
+            WHERE hint_days.subscription_provider <> ALL($9::text[])
+              AND NOT EXISTS (
                 SELECT 1
                 FROM ai_subscriptions AS covering
                 WHERE covering.user_id = hint_days.user_id
@@ -281,6 +288,7 @@ impl AiSubscriptionRepository for PostgresAiSubscriptionRepository {
             AiProvider::Pi.as_str(),
             PI_CHATGPT_SIGN_IN_HINT,
             pi_payer.as_str(),
+            &metered_payers as &[&str],
         )
         .fetch_all(&self.pool)
         .await
@@ -339,7 +347,7 @@ mod tests {
             models::{
                 resolve_billing_mode, AiBillingMode, AiCoverageStatus, AiMachine, AiMachineId,
                 AiPartialBucketCost, AiPricing, AiPricingStatus, AiProviderCoverage,
-                AiProviderHint, AiUsageUpload, AiUsageWindow,
+                AiProviderHint, AiTokenCounts, AiUsageBucket, AiUsageUpload, AiUsageWindow,
             },
             ports::{inbound::AiSubscriptionService, outbound::AiUsageRepository},
             services::AiSubscriptionServiceImpl,
@@ -598,8 +606,8 @@ mod tests {
     async fn fees_are_stored_as_exact_decimals(pool: PgPool) {
         let repository = repository(&pool);
         let dev = insert_user(&pool, "dev@example.com").await;
-        let mut usd = terms(AiProvider::Copilot, date!(2026 - 01 - 01), None);
-        usd.plan = AiSubscriptionPlan::parse("Copilot Business").unwrap();
+        let mut usd = terms(AiProvider::Claude, date!(2026 - 01 - 01), None);
+        usd.plan = AiSubscriptionPlan::parse("Claude Pro").unwrap();
         usd.monthly_cost = AiMonthlyCost::parse("19.99").unwrap();
         usd.currency = AiCurrency::parse("usd").unwrap();
         let mut largest = terms(AiProvider::Grok, date!(2026 - 01 - 01), None);
@@ -1005,8 +1013,146 @@ mod tests {
         );
     }
 
+    /// Stores one bucket per `(hour, source, payer)` and the given plan hints
+    /// from one machine of `user`.
+    async fn upload_usage(
+        pool: &PgPool,
+        user: &UserId,
+        machine_id: &str,
+        buckets: &[(OffsetDateTime, AiProvider, Option<AiProvider>)],
+        hints: &[(OffsetDateTime, AiProvider, &str)],
+    ) {
+        let hours = buckets
+            .iter()
+            .map(|&(hour, _, _)| hour)
+            .chain(hints.iter().map(|&(hour, _, _)| hour));
+        let first = hours.clone().min().unwrap();
+        let last = hours.max().unwrap();
+        let mut sources = buckets
+            .iter()
+            .map(|&(_, source, _)| source)
+            .chain(hints.iter().map(|&(_, provider, _)| provider))
+            .collect::<Vec<_>>();
+        sources.sort();
+        sources.dedup();
+        let upload = AiUsageUpload::new(
+            AiMachine {
+                id: AiMachineId::parse(machine_id).unwrap(),
+                label: "laptop".to_string(),
+                client_version: "0.7.0".to_string(),
+                time_zone: "Europe/Stockholm".to_string(),
+            },
+            AiUsageWindow::new(first, last + time::Duration::HOUR).unwrap(),
+            AiPricing {
+                status: AiPricingStatus::Fresh,
+                fetched_at: None,
+                source: "https://example.com/prices.json".to_string(),
+            },
+            buckets
+                .iter()
+                .map(|&(hour_start, provider, billing_provider)| AiUsageBucket {
+                    billing_provider,
+                    hour_start,
+                    session_key: "0123456789abcdef0123456789abcdef".to_string(),
+                    project_key: "unattributed".to_string(),
+                    provider,
+                    model: "gpt-6.1-sol".to_string(),
+                    tokens: AiTokenCounts {
+                        input: 1_000,
+                        cache_read: 0,
+                        cache_write: 0,
+                        output: 100,
+                    },
+                    records: 1,
+                    estimated_cost_usd: Some(0.01),
+                    unpriced_records: 0,
+                })
+                .collect(),
+            sources
+                .into_iter()
+                .map(|provider| AiProviderCoverage {
+                    provider,
+                    status: AiCoverageStatus::Ok,
+                    files: 1,
+                    unreadable: 0,
+                    malformed_lines: 0,
+                    skipped_records: 0,
+                    duplicates: 0,
+                })
+                .collect(),
+            hints
+                .iter()
+                .map(|&(hour_start, provider, plan)| AiProviderHint {
+                    provider,
+                    hour_start,
+                    plan: plan.to_string(),
+                })
+                .collect(),
+            AiPartialBucketCost::PricedSubtotal,
+        )
+        .unwrap();
+        PostgresAiUsageRepository::new(db(pool))
+            .replace_window(user, &upload)
+            .await
+            .unwrap();
+    }
+
     #[sqlx::test]
-    async fn a_subscription_cannot_be_declared_for_pi_or_opencode(pool: PgPool) {
+    async fn days_a_metered_payer_pays_for_are_never_mismatches(pool: PgPool) {
+        let repository = repository(&pool);
+        let dev = insert_user(&pool, "dev@example.com").await;
+        upload_usage(
+            &pool,
+            &dev,
+            LAPTOP,
+            &[
+                // OpenCode through Copilot, which GitHub bills per credit.
+                (
+                    datetime!(2026 - 10 - 13 10:00 UTC),
+                    AiProvider::OpenCode,
+                    Some(AiProvider::Copilot),
+                ),
+                // Copilot through a ChatGPT sign-in, which a Codex subscription
+                // pays for.
+                (
+                    datetime!(2026 - 10 - 14 10:00 UTC),
+                    AiProvider::Copilot,
+                    Some(AiProvider::Codex),
+                ),
+            ],
+            // A Copilot plan, which no subscription could cover either.
+            &[(
+                datetime!(2026 - 10 - 15 10:00 UTC),
+                AiProvider::Copilot,
+                "business",
+            )],
+        )
+        .await;
+
+        let days = repository
+            .plan_mismatch_days(
+                AiSubscriptionScope::User(dev),
+                AiUsageDateRange::from_inclusive(date!(2026 - 10 - 01), date!(2026 - 10 - 31))
+                    .unwrap(),
+                &stockholm(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            days,
+            [AiPlanMismatchDay {
+                user_id: dev,
+                provider: AiProvider::Codex,
+                day: date!(2026 - 10 - 14),
+                plans: plans(&["routed from copilot"]),
+                next_subscription_from: None,
+            }]
+        );
+    }
+
+    #[sqlx::test]
+    async fn a_subscription_cannot_be_declared_for_pi_opencode_or_copilot(pool: PgPool) {
         let service = service(&pool);
         let dev = insert_user(&pool, "dev@example.com").await;
         let chatgpt = service
@@ -1014,13 +1160,11 @@ mod tests {
             .await
             .unwrap();
 
-        // Each message names the subscriptions that pay for the tool's usage.
+        // Each message says what pays for the tool's usage instead.
         for (provider, payers) in [
             (AiProvider::Pi, &["codex"][..]),
-            (
-                AiProvider::OpenCode,
-                &["copilot", "codex", "API estimate"][..],
-            ),
+            (AiProvider::OpenCode, &["codex", "estimated cost"][..]),
+            (AiProvider::Copilot, &["per credit", "estimated cost"][..]),
         ] {
             let terms = terms(provider, date!(2027 - 01 - 01), None);
             let created = service.create(&dev, &terms).await;

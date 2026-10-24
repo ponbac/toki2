@@ -2,10 +2,10 @@
 //!
 //! Every read here covers one user's usage and nobody else's. Because only the
 //! owner reads it, it goes down to local hours of day and sessions; views of
-//! other developers' usage aggregate to days instead. Costs are API-equivalent
-//! USD estimates, not bills. The store sums them exactly, as NUMERIC, and
-//! converts each sum once; a cost that is unknown for any usage stays unknown:
-//! totals keep the known subtotal and count what is unpriced.
+//! other developers' usage aggregate to days instead. Costs are USD estimates,
+//! not bills. The store sums them exactly, as NUMERIC, and converts each sum
+//! once; a cost that is unknown for any usage stays unknown: totals keep the
+//! known subtotal and count what is unpriced.
 
 use std::collections::{BTreeMap, HashMap};
 

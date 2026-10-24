@@ -25,15 +25,15 @@ The single in-progress time-tracking interval for a user, if any.
 _Avoid_: running entry, current registration
 
 **AI subscription**:
-A fixed-fee plan a developer declares for one AI provider, such as Claude Max 5x, with a monthly cost in its own currency and an inclusive period of local dates. One user's subscriptions to one provider never overlap. Pi, which routes its requests to other vendors, has none of its own: a ChatGPT subscription, declared for Codex, also pays for Pi usage on ChatGPT sign-in days. Neither has OpenCode, which routes its requests too: the Copilot or Codex subscription its uploaded usage names as payer pays for that usage.
+A fixed-fee plan a developer declares for one AI provider, such as Claude Max 5x, with a monthly cost in its own currency and an inclusive period of local dates. One user's subscriptions to one provider never overlap. Pi, which routes its requests to other vendors, has none of its own: a ChatGPT subscription, declared for Codex, also pays for Pi usage on ChatGPT sign-in days. Neither has OpenCode, which routes its requests too: the Codex subscription pays for the usage it uploads with Codex as payer. Copilot takes none: it is a metered payer.
 _Avoid_: seat, license
 
 **Billing mode**:
-How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost. Pi usage is billed by the developer's Codex subscription that covers the day when the day is a ChatGPT sign-in day, and otherwise as API usage. Usage uploaded with an explicit payer, such as OpenCode's through Copilot or a ChatGPT sign-in, is billed by the developer's subscription to that payer covering the day, and otherwise as API usage; OpenCode usage without one is API usage.
+How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost. Pi usage is billed by the developer's Codex subscription that covers the day when the day is a ChatGPT sign-in day, and otherwise as API usage. Usage uploaded with an explicit payer, such as OpenCode's through a ChatGPT sign-in, is billed by the developer's subscription to that payer covering the day, and otherwise as API usage; OpenCode usage without one is API usage. Usage a metered payer pays for is always API usage.
 _Avoid_: plan type, tier
 
 **Plan hint**:
-A billing plan a provider reported during an hour of uploaded usage, such as Codex `plan_type`. Evidence only: a hint of a paid plan (not `free`) on a day that bills as API usage is a mismatch to review, and declared AI subscriptions stay authoritative. Pi names no plan; its one hint, `openai-codex`, is the route of its ChatGPT sign-in and makes the day a ChatGPT sign-in day, the only way a hint bears on a billing mode.
+A billing plan a provider reported during an hour of uploaded usage, such as Codex `plan_type`. Evidence only: a hint of a paid plan (not `free`) on a day that bills as API usage is a mismatch to review, unless a metered payer pays for the day, and declared AI subscriptions stay authoritative. Pi names no plan; its one hint, `openai-codex`, is the route of its ChatGPT sign-in and makes the day a ChatGPT sign-in day, the only way a hint bears on a billing mode.
 _Avoid_: detected subscription
 
 **ChatGPT sign-in day**:
@@ -41,8 +41,12 @@ A local day on which Pi hinted, in any hour and from any of a developer's machin
 _Avoid_: OAuth day, subscription day
 
 **API-equivalent cost**:
-What AI usage would cost at the provider's API prices, estimated in USD by token-ledger. Usage on days without an AI subscription bills at it, and on subscription days it weighs how the fee is split across projects. Unpriced usage has an unknown cost, never zero.
+What AI usage would cost its payer, estimated in USD by token-ledger: at Copilot's rates for usage Copilot pays for, and at the vendor's API prices otherwise, with OpenAI's implicit cache writes priced whoever pays. The name predates Copilot pricing. Usage on days without an AI subscription bills at it, and on subscription days it weighs how the fee is split across projects. Unpriced usage has an unknown cost, never zero.
 _Avoid_: actual cost, spend, bill
+
+**Metered payer**:
+A provider that bills usage as it is used, so no AI subscription to it can be declared and none is ever missing: GitHub Copilot, billed per credit. Usage it pays for, OpenCode's through Copilot included, is API usage at its API-equivalent cost.
+_Avoid_: pay-as-you-go subscription
 
 **Billing currency**:
 The one currency AI usage is billed in, SEK. Every billable amount is shown in it, converted at the month's exchange rate, next to its original amount and currency. Amounts already in SEK, and zero amounts, need no rate.

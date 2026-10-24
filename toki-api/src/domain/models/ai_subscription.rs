@@ -18,9 +18,13 @@
 //! records. Pi usage on any other day is API usage.
 //!
 //! OpenCode routes its requests to other vendors as well and has no
-//! subscriptions of its own either. token-ledger names the subscription that pays
-//! for a bucket of its usage instead (`billingProvider`): Copilot for its GitHub
-//! Copilot route and Codex for its ChatGPT sign-in. Its other usage is API usage.
+//! subscriptions of its own either. token-ledger names the payer of a bucket of
+//! its usage instead (`billingProvider`): Copilot for its GitHub Copilot route and
+//! Codex for its ChatGPT sign-in. Its other usage is API usage.
+//!
+//! Copilot takes no subscription either: GitHub bills its usage per credit
+//! (`METERED_PAYERS`). Usage it pays for, OpenCode's through Copilot included,
+//! bills at its estimated cost, which token-ledger prices at Copilot's rates.
 //!
 //! Date conventions: a subscription period ends *inclusively* on `valid_to`,
 //! the way people state it, while `AiUsageDateRange` ends *exclusively*, the
@@ -43,6 +47,10 @@ pub const UNPAID_PLAN_HINTS: &[&str] = &["free"];
 /// The plan hint Pi uploads for an hour of usage through its ChatGPT sign-in:
 /// the name of that route, which has no API-key variant. Pi names no plan.
 pub const PI_CHATGPT_SIGN_IN_HINT: &str = "openai-codex";
+/// Payers whose provider bills usage as it is used, so no subscription to them
+/// can be declared (`AiSubscriptionTerms::ensure_declarable`) and no day they pay
+/// for is a mismatch. GitHub bills Copilot per credit.
+pub const METERED_PAYERS: &[AiProvider] = &[AiProvider::Copilot];
 /// How many local days, ending today, a mismatch search covers by default.
 pub const DEFAULT_MISMATCH_DAYS: i64 = 90;
 /// The most integer digits a monthly cost may have, as `NUMERIC(12, 2)` allows.
@@ -138,7 +146,7 @@ impl AiCurrency {
         &self.0
     }
 
-    /// US dollars, the currency of API-equivalent estimates.
+    /// US dollars, the currency of usage cost estimates.
     pub fn usd() -> Self {
         Self("USD".to_string())
     }
@@ -219,7 +227,8 @@ pub struct AiSubscriptionTerms {
 }
 
 impl AiSubscriptionTerms {
-    /// Rejects terms for a provider that has no subscriptions of its own.
+    /// Rejects terms for a provider that has no subscriptions of its own, and
+    /// for the `METERED_PAYERS`.
     pub fn ensure_declarable(&self) -> Result<(), AiSubscriptionError> {
         match self.provider {
             AiProvider::Pi => Err(invalid(
@@ -227,13 +236,15 @@ impl AiSubscriptionTerms {
                  pays for its usage for codex",
             )),
             AiProvider::OpenCode => Err(invalid(
-                "opencode has no subscriptions of its own: usage it routes through Copilot or \
-                 a ChatGPT sign-in is billed to that subscription, declared for copilot or \
-                 codex, and everything else to the API estimate",
+                "opencode has no subscriptions of its own: usage it routes through a ChatGPT \
+                 sign-in is billed to that subscription, declared for codex, and the rest, \
+                 usage through Copilot included, at its estimated cost",
             )),
-            AiProvider::Codex | AiProvider::Claude | AiProvider::Grok | AiProvider::Copilot => {
-                Ok(())
-            }
+            AiProvider::Copilot => Err(invalid(
+                "copilot takes no subscription: GitHub bills Copilot usage per credit, so it \
+                 bills at its estimated cost",
+            )),
+            AiProvider::Codex | AiProvider::Claude | AiProvider::Grok => Ok(()),
         }
     }
 }
@@ -291,7 +302,8 @@ pub enum AiBillingMode<'a> {
 /// is paid for by a ChatGPT subscription, declared for Codex, when
 /// `chatgpt_sign_in` holds: Pi reported its ChatGPT sign-in for the user on that
 /// day. OpenCode's usage has no payer of its own: only an explicit
-/// `billingProvider` on its buckets routes it to a subscription.
+/// `billingProvider` on its buckets routes it to a subscription. No subscription
+/// to a metered payer, Copilot, can be declared, so its days are API usage.
 pub fn subscription_provider(provider: AiProvider, chatgpt_sign_in: bool) -> Option<AiProvider> {
     match provider {
         AiProvider::Pi => chatgpt_sign_in.then_some(AiProvider::Codex),
