@@ -185,7 +185,7 @@ export function Statement({
             </>
           )}
           {rateNote !== null &&
-            `Prices by the token are priced in dollars and shown at ${rateNote}.`}
+            `API prices are in dollars, shown here at ${rateNote}.`}
         </p>
       )}
     </section>
