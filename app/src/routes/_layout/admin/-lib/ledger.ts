@@ -66,6 +66,24 @@ export function ledgerRowId(key: string): string {
   return `ledger-${key.replace(/[^a-zA-Z0-9-]/g, "-")}`;
 }
 
+/** One developer's lines within an entry. */
+export type LedgerPerson = Readonly<{
+  userId: number;
+  /** Dearest first. */
+  lines: readonly AiBillingLine[];
+  totals: BillableTotals;
+  /** The tools used, in the providers' display order. */
+  providers: readonly AiProvider[];
+}>;
+
+/** The tools a set of lines used, without fees nobody used. */
+function providersOf(lines: readonly AiBillingLine[]): AiProvider[] {
+  const used = new Set(
+    lines.filter((line) => !line.unallocatedOverhead).map((l) => l.provider),
+  );
+  return AI_PROVIDERS.filter((provider) => used.has(provider));
+}
+
 /** Whoever and whatever a set of lines bills. */
 export type LedgerEntry = Readonly<{
   key: string;
@@ -77,8 +95,8 @@ export type LedgerEntry = Readonly<{
   /** Dearest first. */
   lines: readonly AiBillingLine[];
   totals: BillableTotals;
-  /** The developers whose usage it is, dearest first. */
-  developers: readonly number[];
+  /** Each developer's lines, dearest developer first. */
+  people: readonly LedgerPerson[];
   /** The tools used, in the providers' display order. */
   providers: readonly AiProvider[];
 }>;
@@ -91,16 +109,23 @@ function entry(
   const sorted = [...lines].sort((a, b) =>
     byAmount(lineHundredths(a), lineHundredths(b)),
   );
-  const developers = new Map<number, number>();
+  const byUser = new Map<number, AiBillingLine[]>();
   for (const line of sorted) {
-    developers.set(
-      line.userId,
-      (developers.get(line.userId) ?? 0) + (lineHundredths(line) ?? 0),
-    );
+    byUser.set(line.userId, [...(byUser.get(line.userId) ?? []), line]);
   }
-  const used = new Set(
-    lines.filter((line) => !line.unallocatedOverhead).map((l) => l.provider),
-  );
+  const people = [...byUser.entries()]
+    .map(([userId, own]): LedgerPerson => ({
+      userId,
+      lines: own,
+      totals: billableTotals(own),
+      providers: providersOf(own),
+    }))
+    .sort(
+      (a, b) =>
+        byAmount(a.totals.converted, b.totals.converted) ||
+        b.totals.usage.apiEquivalentUsd - a.totals.usage.apiEquivalentUsd ||
+        a.userId - b.userId,
+    );
   return {
     key,
     kind,
@@ -112,10 +137,8 @@ function entry(
         : { customer: label, project: null },
     lines: sorted,
     totals: billableTotals(sorted),
-    developers: [...developers.entries()]
-      .sort(([, a], [, b]) => b - a)
-      .map(([userId]) => userId),
-    providers: AI_PROVIDERS.filter((provider) => used.has(provider)),
+    people,
+    providers: providersOf(lines),
   };
 }
 

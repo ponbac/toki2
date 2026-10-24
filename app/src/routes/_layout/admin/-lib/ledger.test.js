@@ -53,7 +53,7 @@ describe("ledgerOf", () => {
       "Unpriced - C",
     ]);
     expect(ledger.projects[0].totals.converted).toBe(50000);
-    expect(ledger.projects[0].developers).toEqual([1, 2]);
+    expect(ledger.projects[0].people.map((p) => p.userId)).toEqual([1, 2]);
     expect(ledger.unassigned.map((e) => e.totals.converted)).toEqual([50000]);
     expect(ledger.overhead?.totals.converted).toBe(5000);
   });
@@ -72,7 +72,7 @@ describe("ledgerOf", () => {
         e.unassigned,
         e.label,
         e.totals.converted,
-        e.developers,
+        e.people.map((p) => p.userId),
       ]),
     ).toEqual([
       ["unassigned:unmapped", "unmapped", "Unmapped repositories", 2000, [1]],
@@ -85,6 +85,39 @@ describe("ledgerOf", () => {
       ],
     ]);
     expect(ledger.totals.converted).toBe(42500);
+  });
+
+  test("groups an entry's lines by developer, dearest first", () => {
+    const [entry] = ledgerOf([
+      line("P - X", "30.00", { userId: 1, provider: "pi" }),
+      line("P - X", "500.00", { userId: 2 }),
+      line("P - X", "400.00", { userId: 1, provider: "claude" }),
+      line("P - X", "200.00", { userId: 1 }),
+      line("P - X", null, {
+        userId: 3,
+        missingRate: true,
+        billableCurrency: "USD",
+      }),
+      line("P - X", "80.00", { userId: 1, billingMode: "subscription" }),
+    ]).projects;
+
+    expect(
+      entry.people.map((p) => [
+        p.userId,
+        p.totals.converted,
+        p.lines.map((l) => l.convertedAmount),
+        p.providers,
+      ]),
+    ).toEqual([
+      [
+        1,
+        71000,
+        ["400.00", "200.00", "80.00", "30.00"],
+        ["codex", "claude", "pi"],
+      ],
+      [2, 50000, ["500.00"], ["codex"]],
+      [3, null, [null], ["codex"]],
+    ]);
   });
 });
 
