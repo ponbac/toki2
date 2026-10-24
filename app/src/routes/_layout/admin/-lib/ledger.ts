@@ -7,6 +7,10 @@ import type {
 } from "@/lib/api/queries/ai-admin";
 import { AI_PROVIDERS, type AiProvider } from "@/lib/api/contracts/ai-usage";
 import {
+  UNASSIGNED_KINDS,
+  type UnassignedKind,
+} from "@/lib/api/contracts/ai-admin";
+import {
   billableTotals,
   hundredths,
   lineProject,
@@ -64,6 +68,8 @@ export function ledgerRowId(key: string): string {
 export type LedgerEntry = Readonly<{
   key: string;
   kind: ProjectKind;
+  /** The kind of Unassigned usage; null for a project and for overhead. */
+  unassigned: UnassignedKind | null;
   label: string;
   name: ProjectName;
   /** Dearest first. */
@@ -77,8 +83,7 @@ export type LedgerEntry = Readonly<{
 
 function entry(
   key: string,
-  kind: ProjectKind,
-  label: string,
+  { kind, unassigned, label }: ReturnType<typeof lineProject>,
   lines: readonly AiBillingLine[],
 ): LedgerEntry {
   const sorted = [...lines].sort((a, b) =>
@@ -97,6 +102,7 @@ function entry(
   return {
     key,
     kind,
+    unassigned,
     label,
     name:
       kind === "project"
@@ -115,8 +121,9 @@ function entry(
 export type Ledger = Readonly<{
   /** Time-tracking projects, dearest first. */
   projects: readonly LedgerEntry[];
-  /** Usage no project is charged for; null when every line has one. */
-  unassigned: LedgerEntry | null;
+  /** Usage no project is charged for, by kind: repositories nobody mapped,
+   * then usage outside any repository. Empty when every line has a project. */
+  unassigned: readonly LedgerEntry[];
   /** Subscription fees nobody used; null without any. */
   overhead: LedgerEntry | null;
   /** Every line together. */
@@ -127,20 +134,16 @@ export type Ledger = Readonly<{
 export function ledgerOf(lines: readonly AiBillingLine[]): Ledger {
   const groups = new Map<
     string,
-    { kind: ProjectKind; label: string; lines: AiBillingLine[] }
+    { project: ReturnType<typeof lineProject>; lines: AiBillingLine[] }
   >();
   for (const line of lines) {
     const project = lineProject(line);
-    const group = groups.get(project.key) ?? {
-      kind: project.kind,
-      label: project.label,
-      lines: [],
-    };
+    const group = groups.get(project.key) ?? { project, lines: [] };
     group.lines.push(line);
     groups.set(project.key, group);
   }
   const entries = [...groups.entries()].map(([key, group]) =>
-    entry(key, group.kind, group.label, group.lines),
+    entry(key, group.project, group.lines),
   );
   return {
     projects: entries
@@ -151,7 +154,9 @@ export function ledgerOf(lines: readonly AiBillingLine[]): Ledger {
           b.totals.usage.apiEquivalentUsd - a.totals.usage.apiEquivalentUsd ||
           a.label.localeCompare(b.label),
       ),
-    unassigned: entries.find((e) => e.kind === "unassigned") ?? null,
+    unassigned: UNASSIGNED_KINDS.flatMap(
+      (kind) => entries.find((e) => e.unassigned === kind) ?? [],
+    ),
     overhead: entries.find((e) => e.kind === "overhead") ?? null,
     totals: billableTotals(lines),
   };
@@ -162,7 +167,7 @@ export function ledgerOf(lines: readonly AiBillingLine[]): Ledger {
 export function ledgerEntries(ledger: Ledger): readonly LedgerEntry[] {
   return [
     ...ledger.projects,
-    ...(ledger.unassigned ? [ledger.unassigned] : []),
+    ...ledger.unassigned,
     ...(ledger.overhead ? [ledger.overhead] : []),
   ];
 }
@@ -271,7 +276,7 @@ export function allocationSegments(ledger: Ledger): AllocationSegment[] {
       step: TAIL_STEP,
     });
   }
-  for (const e of [ledger.unassigned, ledger.overhead]) {
+  for (const e of [...ledger.unassigned, ledger.overhead]) {
     if (e && known(e)) {
       segments.push(single(e, null));
     }
@@ -343,7 +348,7 @@ export function peopleOf(
       personal:
         overview.personalUsage.find((p) => p.userId === userId)?.usage ?? null,
       projects: ledger.projects.map((e) => e.label),
-      hasUnassigned: ledger.unassigned !== null,
+      hasUnassigned: ledger.unassigned.length > 0,
     };
   });
   return rows.sort(

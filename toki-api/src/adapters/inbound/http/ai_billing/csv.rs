@@ -3,10 +3,11 @@
 use std::collections::HashMap;
 
 use crate::domain::models::{
-    AiAllocationBasis, AiBillingCharge, AiBillingLine, AiConvertedAmount, AiCurrency,
+    AiAllocationBasis, AiBillingCharge, AiBillingLinePart, AiConvertedAmount, AiCurrency,
     AiExchangeRate, AiExchangeRateValue, AiFeeAmount, AiMonthBill, AiMonthOverview,
-    AiSubscriptionMonth, AiUsdNanos, BILLING_CURRENCY,
+    AiSubscriptionMonth, AiUnassignedKind, AiUsdNanos, BILLING_CURRENCY,
 };
+use crate::domain::AiBillingError;
 
 /// How the CSV names usage without a project and fees without usage.
 const UNASSIGNED: &str = "Unassigned";
@@ -14,7 +15,7 @@ const UNALLOCATED_OVERHEAD: &str = "Unallocated overhead";
 
 /// The CSV columns, in order. `billable_sek` is named after the billing
 /// currency (`csv_header`).
-const CSV_HEADER: [&str; 22] = [
+const CSV_HEADER: [&str; 23] = [
     "month",
     "project_id",
     "project",
@@ -37,6 +38,8 @@ const CSV_HEADER: [&str; 22] = [
     "total_tokens",
     "allocation_basis",
     "warning",
+    // Last, so the columns before it keep their places.
+    "unassigned",
 ];
 
 /// Replaced by `billable_` and the billing currency in lower case.
@@ -57,7 +60,10 @@ fn csv_header() -> impl Iterator<Item = String> {
 ///
 /// Each row is one charge of one developer's use of one provider to one
 /// project. `billable_amount` is what to bill, in `billable_currency`, and is
-/// the same amount the overview shows:
+/// the same amount the overview shows. `Unassigned` usage has a row per kind,
+/// named in `unassigned`: `unmapped` for repositories without a mapping, and
+/// `unattributed` for usage outside any repository. They split one charge in
+/// each currency, as the overview does (`AiBillingLine::parts`).
 ///
 /// - `subscription` rows bill their share of the pro-rated fee, exactly, in the
 ///   fee's currency. `api_equivalent_usd` is the estimate the share was weighed
@@ -73,10 +79,11 @@ fn csv_header() -> impl Iterator<Item = String> {
 /// average of the days published so far. Without a rate, the four are empty
 /// and the warning says so. An
 /// estimate that is wholly unknown, because every record is unpriced, is empty
-/// rather than zero. Rows are ordered by project (Unassigned, then overhead,
-/// last), developer, provider and billing mode. Every cell is quoted and
-/// guarded against spreadsheet formula injection (`csv_cell`).
-pub fn render_csv(overview: &AiMonthOverview) -> String {
+/// rather than zero. Rows are ordered by project (Unassigned, unmapped before
+/// unattributed, then overhead, last), developer, provider and billing mode.
+/// Every cell is quoted and guarded against spreadsheet formula injection
+/// (`csv_cell`).
+pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> {
     let bill: &AiMonthBill = &overview.bill;
     let names: HashMap<i32, &str> = overview
         .developers
@@ -89,37 +96,54 @@ pub fn render_csv(overview: &AiMonthOverview) -> String {
         .map(|month| (month.subscription.id.as_i32(), month))
         .collect();
 
-    let mut lines: Vec<(&AiBillingLine, &AiConvertedAmount)> =
-        bill.lines.iter().zip(&overview.converted.lines).collect();
-    let project_rank = |line: &AiBillingLine| match (&line.charge, &line.project) {
+    let mut parts: Vec<AiBillingLinePart<'_>> = bill
+        .lines
+        .iter()
+        .zip(&overview.converted.lines)
+        .map(|(line, converted)| line.parts(converted))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    let project_rank = |part: &AiBillingLinePart| match (&part.line.charge, &part.line.project) {
         (AiBillingCharge::UnallocatedOverhead { .. }, _) => 2,
         (_, None) => 1,
         (_, Some(_)) => 0,
     };
-    let developer = |line: &AiBillingLine| names.get(&line.user_id.as_i32()).copied().unwrap_or("");
-    lines.sort_by(|(a, _), (b, _)| {
+    let developer = |part: &AiBillingLinePart| {
+        names
+            .get(&part.line.user_id.as_i32())
+            .copied()
+            .unwrap_or("")
+    };
+    parts.sort_by(|a, b| {
         project_rank(a)
             .cmp(&project_rank(b))
             .then_with(|| {
-                let name = |line: &AiBillingLine| {
-                    line.project
+                let name = |part: &AiBillingLinePart| {
+                    part.line
+                        .project
                         .as_ref()
                         .map(|project| (project.name.clone(), project.id.to_string()))
                 };
                 name(a).cmp(&name(b))
             })
+            .then_with(|| a.unassigned.cmp(&b.unassigned))
             .then_with(|| developer(a).cmp(developer(b)))
-            .then_with(|| a.user_id.as_i32().cmp(&b.user_id.as_i32()))
-            .then_with(|| a.provider.as_str().cmp(b.provider.as_str()))
+            .then_with(|| a.line.user_id.as_i32().cmp(&b.line.user_id.as_i32()))
+            .then_with(|| a.line.provider.as_str().cmp(b.line.provider.as_str()))
             .then_with(|| {
-                let mode = |line: &AiBillingLine| matches!(line.charge, AiBillingCharge::Api);
+                let mode =
+                    |part: &AiBillingLinePart| matches!(part.line.charge, AiBillingCharge::Api);
                 mode(a).cmp(&mode(b))
             })
     });
 
     let mut csv = String::from("\u{feff}");
     push_row(&mut csv, csv_header());
-    for (line, converted) in lines {
+    for part in &parts {
+        let line = part.line;
+        let converted = &part.converted;
         let subscription = match &line.charge {
             AiBillingCharge::Api => None,
             AiBillingCharge::Subscription {
@@ -136,14 +160,14 @@ pub fn render_csv(overview: &AiMonthOverview) -> String {
             (_, Some(project)) => (project.id.to_string(), project.name.clone()),
             (_, None) => (String::new(), UNASSIGNED.to_string()),
         };
-        let usage = &line.usage;
+        let usage = &part.usage;
         let unknown_cost = usage.priced_cost == AiUsdNanos::ZERO && usage.unpriced_records > 0;
         let billing_mode = match &line.charge {
             AiBillingCharge::Api => "api",
             _ => "subscription",
         };
-        let billable = line.billable();
-        let (billable_amount, billable_currency) = match (&line.charge, &billable) {
+        let billable = &part.billable;
+        let (billable_amount, billable_currency) = match (&line.charge, billable) {
             (_, Some(amount)) => (amount.to_decimal(), amount.currency.as_str().to_string()),
             (AiBillingCharge::Api, None) => (String::new(), "USD".to_string()),
             (_, None) => (String::new(), String::new()),
@@ -157,7 +181,7 @@ pub fn render_csv(overview: &AiMonthOverview) -> String {
                 bill.month.to_string(),
                 project_id,
                 project,
-                developer(line).to_string(),
+                developer(part).to_string(),
                 line.provider.as_str().to_string(),
                 billing_mode.to_string(),
                 subscription
@@ -195,22 +219,29 @@ pub fn render_csv(overview: &AiMonthOverview) -> String {
                     (_, None) => "none",
                 }
                 .to_string(),
-                warning(line, converted, basis, &overview.converted.pending_rates),
+                warning(part, basis, &overview.converted.pending_rates),
+                match part.unassigned {
+                    Some(AiUnassignedKind::Unmapped) => "unmapped",
+                    Some(AiUnassignedKind::Unattributed) => "unattributed",
+                    None => "",
+                }
+                .to_string(),
             ],
         );
     }
 
-    csv
+    Ok(csv)
 }
 
 /// Why a row's figures need a second look, if they do.
 fn warning(
-    line: &AiBillingLine,
-    converted: &AiConvertedAmount,
+    part: &AiBillingLinePart,
     basis: Option<AiAllocationBasis>,
     pending: &[AiCurrency],
 ) -> String {
-    let unpriced = line.usage.unpriced_records;
+    let line = part.line;
+    let converted = &part.converted;
+    let unpriced = part.usage.unpriced_records;
     let mut warnings = Vec::new();
     match (&line.charge, basis) {
         (AiBillingCharge::UnallocatedOverhead { .. }, _) => {

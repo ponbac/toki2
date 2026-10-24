@@ -38,12 +38,12 @@ use crate::{
     domain::{
         models::{
             AiAllocationBasis, AiBilledDayUsage, AiBillingCharge, AiBillingDeveloper,
-            AiBillingLine, AiBillingMonth, AiBillingUsage, AiConvertedAmount, AiConvertedBill,
+            AiBillingLinePart, AiBillingMonth, AiBillingUsage, AiConvertedAmount, AiConvertedBill,
             AiConvertedTotals, AiCurrency, AiDeveloperCompleteness, AiDeveloperMonth,
             AiDeveloperReadiness, AiExchangeRate, AiExchangeRateValue, AiFeeAmount,
             AiMachineCompleteness, AiMappedProject, AiMonthBill, AiMonthCompleteness,
-            AiMonthTotals, AiProviderCompleteness, AiSubscriptionMonth, AiUsageDateRange, UserId,
-            BILLING_CURRENCY, MACHINE_STALE_AFTER,
+            AiMonthTotals, AiProviderCompleteness, AiSubscriptionMonth, AiUnassignedKind,
+            AiUsageDateRange, UserId, BILLING_CURRENCY, MACHINE_STALE_AFTER,
         },
         ports::inbound::AiBillingService,
         AiBillingError,
@@ -169,7 +169,8 @@ async fn month_completeness(
 
     Ok(Json(completeness.into()))
 }
-
+/// The month's bill as CSV, one row per project (Unassigned per kind), developer,
+/// provider and charge.
 /// The month's bill as CSV, one row per project, developer, provider and charge.
 async fn export_csv(
     State(service): State<Arc<dyn AiBillingService>>,
@@ -191,7 +192,7 @@ async fn export_csv(
                     .map_err(|_| ApiError::internal("invalid export file name"))?,
             ),
         ],
-        render_csv(&overview),
+        render_csv(&overview)?,
     )
         .into_response())
 }
@@ -319,7 +320,11 @@ impl BillResponse {
                 .lines
                 .iter()
                 .zip(&converted.lines)
-                .map(|(line, converted)| BillingLineResponse::new(line, converted))
+                .map(|(line, converted)| line.parts(converted))
+                .collect::<Result<Vec<_>, _>>()?
+                .iter()
+                .flatten()
+                .map(BillingLineResponse::new)
                 .collect(),
             subscriptions: bill
                 .subscriptions
@@ -518,7 +523,30 @@ enum BillingModeResponse {
     Subscription,
 }
 
-/// One charge of a developer's usage of a provider to a project.
+/// Why a line's usage is Unassigned.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum UnassignedKindResponse {
+    /// Repositories without a mapping to a project of the configured company.
+    Unmapped,
+    /// Usage outside any repository, which no mapping can assign.
+    Unattributed,
+}
+
+impl From<AiUnassignedKind> for UnassignedKindResponse {
+    fn from(kind: AiUnassignedKind) -> Self {
+        match kind {
+            AiUnassignedKind::Unmapped => Self::Unmapped,
+            AiUnassignedKind::Unattributed => Self::Unattributed,
+        }
+    }
+}
+
+/// One charge of a developer's usage of a provider to a project. Unassigned
+/// usage has a line per kind (`unassigned`), which split the one charge the
+/// bill makes for it, in each currency by the largest-remainder method: they
+/// sum to it exactly, but a line's `convertedAmount` need not be its own
+/// `billableAmount` converted.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BillingLineResponse {
@@ -530,6 +558,9 @@ struct BillingLineResponse {
     provider: AiUsageProvider,
     /// Null for Unassigned usage and for unallocated overhead.
     project: Option<ProjectResponse>,
+    /// Why the usage is Unassigned; null for a project's line and for
+    /// overhead.
+    unassigned: Option<UnassignedKindResponse>,
     billing_mode: BillingModeResponse,
     /// A subscription fee without usage in the month; it has no project.
     unallocated_overhead: bool,
@@ -561,7 +592,9 @@ fn project_response(project: &Option<AiMappedProject>) -> Option<ProjectResponse
 }
 
 impl BillingLineResponse {
-    fn new(line: &AiBillingLine, converted: &AiConvertedAmount) -> Self {
+    fn new(part: &AiBillingLinePart<'_>) -> Self {
+        let line = part.line;
+        let converted = &part.converted;
         let (billing_mode, overhead, subscription_id, currency) = match &line.charge {
             AiBillingCharge::Api => (BillingModeResponse::Api, false, None, "USD".to_string()),
             AiBillingCharge::Subscription {
@@ -588,10 +621,11 @@ impl BillingLineResponse {
             user_id: line.user_id.as_i32(),
             provider: line.provider.into(),
             project: project_response(&line.project),
+            unassigned: part.unassigned.map(Into::into),
             billing_mode,
             unallocated_overhead: overhead,
             subscription_id,
-            billable_amount: line.billable().map(|amount| amount.to_decimal()),
+            billable_amount: part.billable.as_ref().map(AiFeeAmount::to_decimal),
             billable_currency: currency,
             converted_amount: converted.amount().map(AiFeeAmount::to_decimal),
             exchange_rate: converted
@@ -599,7 +633,7 @@ impl BillingLineResponse {
                 .and_then(AiExchangeRate::rate)
                 .map(AiExchangeRateValue::to_decimal),
             missing_rate: matches!(converted, AiConvertedAmount::MissingRate { .. }),
-            usage: (&line.usage).into(),
+            usage: (&part.usage).into(),
         }
     }
 }

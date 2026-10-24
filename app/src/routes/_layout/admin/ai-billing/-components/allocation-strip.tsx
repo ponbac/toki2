@@ -136,8 +136,11 @@ function describe(
           (entry) => `${entry.label}: ${figures(entry.totals.converted ?? 0)}`,
         ),
       ];
-    case "project":
     case "unassigned":
+      return [
+        `${UNASSIGNED_LABEL}: ${segmentName(segment)}: ${figures(segment.amount)}`,
+      ];
+    case "project":
     case "overhead":
       return [
         `${segment.kind === "project" ? segment.label : segmentName(segment)}: ${figures(segment.amount)}`,
@@ -151,7 +154,6 @@ function segmentName(segment: AllocationSegment): string {
     case "project":
       return segment.entries[0]?.name.customer ?? segment.label;
     case "unassigned":
-      return UNASSIGNED_LABEL;
     case "others":
     case "overhead":
       return segment.label;

@@ -53,6 +53,14 @@ fn unpriced(records: i64, tokens: i64) -> AiBillingUsage {
     }
 }
 
+/// A project, or `None` for repositories nobody mapped.
+fn billed_to(project: Option<AiMappedProject>) -> AiBillingProject {
+    project.map_or(
+        AiBillingProject::Unassigned(AiUnassignedKind::Unmapped),
+        AiBillingProject::Mapped,
+    )
+}
+
 fn day_usage(
     user_id: UserId,
     provider: AiProvider,
@@ -66,7 +74,7 @@ fn day_usage(
         provider,
         day,
         chatgpt_sign_in: false,
-        project,
+        project: billed_to(project),
         usage,
     }
 }
@@ -1197,4 +1205,214 @@ fn unsupported_monthly_totals_are_errors_instead_of_saturated_bills() {
         allocate_largest_remainder(2, &[u128::MAX]),
         Err(AiBillingError::NumericRange)
     ));
+}
+
+/// Claude usage outside any repository.
+fn unattributed(day: Date, usage: AiBillingUsage) -> AiDailyUsage {
+    AiDailyUsage {
+        project: AiBillingProject::Unassigned(AiUnassignedKind::Unattributed),
+        ..claude(day, None, usage)
+    }
+}
+
+/// A part as `(kind, billable, converted hundredths)`; `None` where unknown.
+type PartSummary = (Option<AiUnassignedKind>, Option<String>, Option<i64>);
+
+fn part_summaries(line: &AiBillingLine, converted: &AiConvertedAmount) -> Vec<PartSummary> {
+    line.parts(converted)
+        .unwrap()
+        .iter()
+        .map(|part| {
+            (
+                part.unassigned,
+                part.billable
+                    .as_ref()
+                    .map(|fee| format!("{} {}", fee.to_decimal(), fee.currency.as_str())),
+                match &part.converted {
+                    AiConvertedAmount::Converted { amount, .. } => Some(amount.hundredths),
+                    _ => None,
+                },
+            )
+        })
+        .collect()
+}
+
+fn sek(hundredths: i64) -> AiConvertedAmount {
+    AiConvertedAmount::Converted {
+        amount: AiFeeAmount {
+            hundredths,
+            currency: AiCurrency::billing(),
+        },
+        rate: None,
+    }
+}
+
+#[test]
+fn unassigned_usage_bills_as_one_project_whatever_its_kinds() {
+    use AiUnassignedKind::{Unattributed, Unmapped};
+    let day = date!(2026 - 09 - 03);
+    let fee = |id| {
+        subscription(
+            id,
+            DEV,
+            AiProvider::Claude,
+            "1.00",
+            "SEK",
+            date!(2026 - 01 - 01),
+            None,
+        )
+    };
+    let rows = [
+        claude(day, client_a(), priced(10, 1)),
+        claude(day, None, priced(10, 1)),
+        unattributed(day, priced(10, 1)),
+    ];
+    // The same usage, all of one kind: the bill as it was before kinds.
+    let one_kind: Vec<AiDailyUsage> = rows
+        .iter()
+        .map(|row| match row.project {
+            AiBillingProject::Unassigned(_) => claude(day, None, row.usage),
+            _ => row.clone(),
+        })
+        .collect();
+
+    // Split three ways, 1.00 SEK would leave Client A 0.34. Unassigned is one
+    // project of the split, so Client A gets 0.33 either way.
+    let bill = bill_month(september(), &rows, &[fee(1)]).unwrap();
+    let before = bill_month(september(), &one_kind, &[fee(1)]).unwrap();
+    assert_eq!(summaries(&bill), summaries(&before));
+    assert_eq!(bill.subscriptions, before.subscriptions);
+    assert_eq!(bill.totals().unwrap(), before.totals().unwrap());
+    assert_eq!(
+        summaries(&bill),
+        [
+            line("Client A", "subscription", Some("0.33 SEK"), 10),
+            line("Unassigned", "subscription", Some("0.67 SEK"), 20),
+        ]
+    );
+    assert_eq!(
+        bill.lines[1]
+            .unassigned
+            .iter()
+            .map(|kind| (kind.kind, kind.usage.records))
+            .collect::<Vec<_>>(),
+        [(Unmapped, 1), (Unattributed, 1)]
+    );
+
+    // The kinds split the line's 0.67 SEK evenly: the odd hundredth goes to
+    // Unmapped.
+    assert_eq!(
+        part_summaries(&bill.lines[1], &sek(67)),
+        [
+            (Some(Unmapped), Some("0.34 SEK".to_string()), Some(34)),
+            (Some(Unattributed), Some("0.33 SEK".to_string()), Some(33)),
+        ]
+    );
+    // A project's line is its own one part.
+    assert_eq!(
+        part_summaries(&bill.lines[0], &sek(33)),
+        [(None, Some("0.33 SEK".to_string()), Some(33))]
+    );
+}
+
+#[test]
+fn api_kinds_split_the_lines_cents_and_its_converted_amount_apart() {
+    use AiUnassignedKind::{Unattributed, Unmapped};
+    let day = date!(2026 - 09 - 03);
+    let bill = bill_month(
+        september(),
+        &[
+            claude(day, None, priced_nanos(4_000_000)),
+            unattributed(day, priced_nanos(4_000_000)),
+        ],
+        &[],
+    )
+    .unwrap();
+    let [unassigned] = bill.lines.as_slice() else {
+        panic!("one Unassigned line: {:?}", bill.lines);
+    };
+    assert_eq!(unassigned.billable().unwrap().to_decimal(), "0.01");
+
+    // 0.004 USD each: the line's cent goes to Unmapped, but the 0.10 SEK it
+    // converts to at 10 SEK per USD is split evenly.
+    assert_eq!(
+        part_summaries(unassigned, &sek(10)),
+        [
+            (Some(Unmapped), Some("0.01 USD".to_string()), Some(5)),
+            (Some(Unattributed), Some("0.00 USD".to_string()), Some(5)),
+        ]
+    );
+    // Without a rate, neither part's converted amount is known.
+    let missing = AiConvertedAmount::MissingRate {
+        currency: AiCurrency::usd(),
+    };
+    assert_eq!(
+        part_summaries(unassigned, &missing),
+        [
+            (Some(Unmapped), Some("0.01 USD".to_string()), None),
+            (Some(Unattributed), Some("0.00 USD".to_string()), None),
+        ]
+    );
+}
+
+#[test]
+fn an_unassigned_kind_is_unknown_only_when_its_own_usage_is_unpriced() {
+    use AiUnassignedKind::{Unattributed, Unmapped};
+    let day = date!(2026 - 09 - 03);
+    let free = AiBillingUsage {
+        records: 1,
+        ..AiBillingUsage::default()
+    };
+    let missing = AiConvertedAmount::MissingRate {
+        currency: AiCurrency::usd(),
+    };
+
+    // The line's cost is unknown, but free usage outside any repository
+    // still bills a known zero.
+    let bill = bill_month(
+        september(),
+        &[claude(day, None, unpriced(1, 10)), unattributed(day, free)],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(bill.lines[0].billable(), None);
+    assert_eq!(
+        part_summaries(&bill.lines[0], &AiConvertedAmount::UnknownAmount),
+        [
+            (Some(Unmapped), None, None),
+            (Some(Unattributed), Some("0.00 USD".to_string()), Some(0)),
+        ]
+    );
+
+    // The line's cost is known: the unpriced kind stays unknown, takes no
+    // share, and without a rate a part of no weight still converts to zero.
+    let bill = bill_month(
+        september(),
+        &[
+            claude(day, None, priced(3, 10)),
+            unattributed(day, unpriced(1, 10)),
+        ],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        part_summaries(&bill.lines[0], &sek(32)),
+        [
+            (Some(Unmapped), Some("0.03 USD".to_string()), Some(32)),
+            (Some(Unattributed), None, None),
+        ]
+    );
+    let bill = bill_month(
+        september(),
+        &[claude(day, None, priced(3, 10)), unattributed(day, free)],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        part_summaries(&bill.lines[0], &missing),
+        [
+            (Some(Unmapped), Some("0.03 USD".to_string()), None),
+            (Some(Unattributed), Some("0.00 USD".to_string()), Some(0)),
+        ]
+    );
 }

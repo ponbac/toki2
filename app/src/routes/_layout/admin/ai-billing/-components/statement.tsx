@@ -11,9 +11,9 @@ import {
 import { addUsage, emptyUsage } from "../../-lib/daily";
 import { formatShare, monthLabel, plural } from "../../-lib/format";
 import {
-  shareOf,
   type AllocationSegment,
   type Ledger,
+  type LedgerEntry,
 } from "../../-lib/ledger";
 import { estimateRateNote, formatEstimateIn } from "../../-lib/estimates";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
@@ -209,6 +209,14 @@ function AllocationSentence({
     0,
   );
   const unassigned = ledger.unassigned;
+  // Null when a kind has a line without an exchange rate.
+  const unassignedTotal = unassigned.reduce<number | null>(
+    (sum, entry) =>
+      sum === null || entry.totals.converted === null
+        ? null
+        : sum + entry.totals.converted,
+    0,
+  );
   const overhead = ledger.overhead;
   const amount = (value: number) => (
     <span className="font-semibold text-foreground tabular-nums">
@@ -219,7 +227,11 @@ function AllocationSentence({
   if (assigned === null) {
     return <>A line without an exchange rate leaves the split unknown.</>;
   }
-  const unassignedShare = unassigned ? shareOf(unassigned, ledger) : null;
+  const whole = ledger.totals.converted;
+  const unassignedShare =
+    whole === null || whole === 0 || unassignedTotal === null
+      ? null
+      : unassignedTotal / whole;
   return (
     <>
       {projects.length === 0 ? (
@@ -229,12 +241,29 @@ function AllocationSentence({
           {amount(assigned)} goes to {plural(projects.length, "project")}.
         </>
       )}
-      {unassigned && unassigned.totals.converted !== null && (
+      {unassigned.length > 0 && unassignedTotal === null && (
         <>
           {" "}
-          {amount(unassigned.totals.converted)}
+          Usage without a project is unknown in {currency}: a line of it has no
+          exchange rate.
+        </>
+      )}
+      {unassigned.length > 0 && unassignedTotal !== null && (
+        <>
+          {" "}
+          {amount(unassignedTotal)}
           {unassignedShare !== null && `, ${formatShare(unassignedShare)},`} has
-          no project yet.
+          no project yet
+          {unassigned.length === 1 ? (
+            <>: it {unassignedDetail(unassigned[0])}.</>
+          ) : (
+            <>
+              : {amount(unassigned[0].totals.converted ?? 0)}{" "}
+              {unassignedDetail(unassigned[0])} and{" "}
+              {amount(unassigned[1].totals.converted ?? 0)}{" "}
+              {unassignedDetail(unassigned[1])}.
+            </>
+          )}
         </>
       )}
       {overhead && overhead.totals.converted !== null && (
@@ -242,6 +271,14 @@ function AllocationSentence({
       )}
     </>
   );
+}
+
+/** Where an Unassigned entry's usage comes from, and whether a mapping can
+ * assign it. */
+function unassignedDetail(entry: LedgerEntry): string {
+  return entry.unassigned === "unattributed"
+    ? "is outside any repository, which no mapping can assign"
+    : "comes from repositories nobody has mapped";
 }
 
 /** One figure beside the headline, with a short note beneath. */

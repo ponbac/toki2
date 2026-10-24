@@ -89,3 +89,31 @@ providers, so rescan the same window and send that. A snapshot more than 5 minut
 ahead of the server clock is applied but not stored, so a wrong client clock cannot
 lock its machine out. Coverage logged for such an upload ends at its snapshot.
 Clients that omit it are applied in arrival order, as before.
+
+## Unassigned usage by kind
+
+Usage that no mapping to the configured company resolves bills to Unassigned. The
+bill shows it in two kinds, from `unattributed` and from every other key:
+
+- **unmapped**: repositories nobody has mapped, and keys mapped to another
+  company's project. Mapping them on Admin > Project mappings assigns them,
+  as long as time tracking is configured. A key with surrounding whitespace
+  cannot be mapped.
+- **unattributed**: usage outside any repository, which no mapping can assign.
+
+Unassigned still bills as one project: a subscription fee is split over it and
+the projects as before, and an API line rounds to cents once. Splitting it into
+two projects of the fee split could move a cent to a mapped project, and two API
+lines could change the totals by a cent. `AiBillingLine::parts` then splits the
+Unassigned line's amount, and its converted amount, between the kinds by the
+largest-remainder method, weighted like a fee split, with ties to unmapped.
+The kinds therefore sum exactly to the Unassigned amount in both currencies,
+but a kind's cents need not be its own estimate rounded, and its SEK amount need
+not be its own amount converted. For example, two kinds of $0.004 each bill
+$0.01 and $0.00, and at 10 SEK per USD, 0.05 SEK each.
+
+`daily_usage` keeps the kinds apart in SQL but rounds their costs as one group:
+each kind gets the rounded running total through it, less the one before it.
+Unmapped key names are never returned. The HTTP lines carry `unassigned`
+(`unmapped`, `unattributed` or null), and the CSV has an `unassigned` column,
+last so the other columns keep their places.

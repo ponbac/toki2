@@ -16,9 +16,12 @@ pub trait AiBillingRepository: Send + Sync + 'static {
     /// Usage in `dates`, local days in `time_zone`, of `user_id` or everyone,
     /// summed per user, provider, day and the project its key resolves to now
     /// (`AiMappingResolver` with `mapping_company` as the configured company);
-    /// otherwise the usage is Unassigned. Usage of a key its user marked
-    /// personal is left out. A bucket belongs to the local date its hour starts
-    /// on. This is what bills, so every page bills from the same sums.
+    /// otherwise the usage is Unassigned, summed apart by kind: `unattributed`
+    /// usage, and the usage of every other key together, whose names are not
+    /// returned. The kinds' costs are rounded as the one group they bill as,
+    /// so they sum to it exactly. Usage of a key its user marked personal is
+    /// left out. A bucket belongs to the local date its hour starts on. This
+    /// is what bills, so every page bills from the same sums.
     async fn daily_usage(
         &self,
         dates: AiUsageDateRange,
