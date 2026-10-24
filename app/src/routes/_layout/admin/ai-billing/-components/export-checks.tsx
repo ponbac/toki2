@@ -1,9 +1,4 @@
-import {
-  AlertTriangle,
-  CheckCircle2,
-  CircleDashed,
-  Loader2,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CheckStatus } from "../../-lib/export-checks";
 
@@ -33,11 +28,6 @@ const STATUS = {
     icon: Loader2,
     className: "animate-spin text-muted-foreground motion-reduce:animate-none",
     label: "Checking",
-  },
-  unchecked: {
-    icon: CircleDashed,
-    className: "text-muted-foreground",
-    label: "Not checked",
   },
 } as const satisfies Record<CheckStatus, unknown>;
 

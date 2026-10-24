@@ -139,6 +139,24 @@ export const aiAdminQueries = {
           await api.get("ai-usage/admin/subscriptions").json<unknown>(),
         ),
     }),
+  /**
+   * Everyone's undeclared-subscription evidence on the local days `from`
+   * through `to`, both `YYYY-MM-DD` and inclusive. The server groups evidence
+   * into runs that may span days without any, so a run's bounding dates do
+   * not show that a month had evidence: ask for the month itself.
+   */
+  subscriptionMismatchesIn: (from: string, to: string) =>
+    queryOptions({
+      queryKey: [...keys.mismatches, from, to] as const,
+      queryFn: async () =>
+        parseAiSubscriptionMismatchList(
+          await api
+            .get("ai-usage/admin/subscription-mismatches", {
+              searchParams: { from, to },
+            })
+            .json<unknown>(),
+        ),
+    }),
   /** Everyone's undeclared-subscription evidence over the last 90 days. */
   subscriptionMismatches: () =>
     queryOptions({

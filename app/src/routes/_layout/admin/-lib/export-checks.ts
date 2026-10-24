@@ -3,10 +3,7 @@ import type {
   AiBillingLine,
   AiExchangeRate,
 } from "@/lib/api/queries/ai-admin";
-import type {
-  AiSubscriptionMismatch,
-  AiSubscriptionMismatchList,
-} from "@/lib/api/contracts/ai-usage";
+import type { AiSubscriptionMismatchList } from "@/lib/api/contracts/ai-usage";
 import {
   billableTotals,
   formatBillable,
@@ -29,7 +26,7 @@ import {
  */
 
 /** Whether a check lets the month be exported. */
-export type CheckStatus = "passed" | "attention" | "pending" | "unchecked";
+export type CheckStatus = "passed" | "attention" | "pending";
 
 /** A check's state and its one-line summary. */
 export type CheckResult = Readonly<{ status: CheckStatus; summary: string }>;
@@ -84,52 +81,37 @@ export function uploadsCheck(
     .filter((verdict) => SEVERE.has(verdict))
     .reduce((sum, verdict) => sum + counts[verdict], 0);
   const of = `${formatCount(gaps)} of ${plural(uploads.length, "developer")}`;
+  // The verb agrees with the count it follows: "1 of 3 developers misses".
+  const verb = (count: number, one: string, many: string) =>
+    count === 1 ? one : many;
   return {
     status: "attention",
     summary:
       severe === 0
-        ? `${of} miss a tool on some days`
+        ? `${of} ${verb(gaps, "misses", "miss")} a tool on some days`
         : severe === gaps
-          ? `${of} miss days mid-month or uploaded nothing`
-          : `${of} have gaps; ${formatCount(severe)} miss days or uploaded nothing`,
+          ? `${of} ${verb(gaps, "misses", "miss")} days mid-month or uploaded nothing`
+          : `${of} ${verb(gaps, "has", "have")} gaps; ${formatCount(severe)} ${verb(severe, "misses", "miss")} days or uploaded nothing`,
   };
 }
 
-/** Undeclared plans whose days overlap the month `firstDay`–`lastDay`. */
-export function monthMismatches(
-  list: AiSubscriptionMismatchList,
-  firstDay: string,
-  lastDay: string,
-): AiSubscriptionMismatch[] {
-  return list.mismatches.filter(
-    (mismatch) => mismatch.firstDay <= lastDay && mismatch.lastDay >= firstDay,
-  );
-}
-
 /**
- * Whether every paid plan the tools reported in the month is declared: an
- * undeclared one bills its usage at API prices instead of a share of a fee.
- * The server compares the last 90 days only, so an older month is unchecked.
+ * Whether every paid plan the tools reported is declared: an undeclared one
+ * bills its usage at API prices instead of a share of a fee. `list` must be
+ * the evidence of the bill's month alone: the server groups evidence into runs
+ * that may span days without any, so a wider search cannot say which months
+ * had it.
  */
-export function plansCheck(
-  list: AiSubscriptionMismatchList,
-  firstDay: string,
-  lastDay: string,
-): CheckResult {
-  if (lastDay < list.from) {
-    return {
-      status: "unchecked",
-      summary: "Plans are only compared over the last 90 days",
-    };
-  }
-  const mismatches = monthMismatches(list, firstDay, lastDay);
-  if (mismatches.length === 0) {
+export function plansCheck(list: AiSubscriptionMismatchList): CheckResult {
+  if (list.mismatches.length === 0) {
     return {
       status: "passed",
       summary: "Every paid plan the tools reported is declared",
     };
   }
-  const developers = new Set(mismatches.map((mismatch) => mismatch.userId));
+  const developers = new Set(
+    list.mismatches.map((mismatch) => mismatch.userId),
+  );
   return {
     status: "attention",
     summary: `${plural(developers.size, "developer")} ${developers.size === 1 ? "uses" : "use"} a plan nobody declared, so it bills at API prices`,

@@ -27,7 +27,6 @@ import { MonthPicker } from "../-components/month-picker";
 import { QueryError } from "../-components/query-error";
 import {
   mappingsCheck,
-  monthMismatches,
   plansCheck,
   ratesCheck,
   uploadsCheck,
@@ -47,6 +46,7 @@ import {
   segmentSteps,
   type AllocationSegment,
 } from "../-lib/ledger";
+import { monthDays } from "../-lib/coverage";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
 import { monthUploads, type DeveloperUploads } from "../-lib/upload-health";
 import { BillingRules } from "./-components/billing-rules";
@@ -92,7 +92,15 @@ function AiBillingPage() {
     ...aiAdminQueries.completeness(month),
     placeholderData: keepPreviousData,
   });
-  const mismatchesQuery = useQuery(aiAdminQueries.subscriptionMismatches());
+  // The month's own evidence: runs from a wider search can span months
+  // without any.
+  const days = monthDays(month);
+  const mismatchesQuery = useQuery(
+    aiAdminQueries.subscriptionMismatchesIn(
+      days[0] ?? month,
+      days.at(-1) ?? month,
+    ),
+  );
   const download = aiAdminMutations.useDownloadBillingCsv({
     onError: apiErrorToast("Failed to export the billing CSV"),
   });
@@ -196,14 +204,9 @@ function AiBillingPage() {
   const dataNeedsLook = checks.some(
     (c) => (c.id === "uploads" || c.id === "rates") && c.status === "attention",
   );
-  const mismatches =
-    overview && mismatchesQuery.isSuccess
-      ? monthMismatches(
-          mismatchesQuery.data,
-          overview.firstDay,
-          overview.lastDay,
-        )
-      : [];
+  const mismatches = mismatchesQuery.isSuccess
+    ? mismatchesQuery.data.mismatches
+    : [];
   const undeclared = new Map<number, AiProvider[]>();
   for (const mismatch of mismatches) {
     const tools = undeclared.get(mismatch.userId) ?? [];
@@ -517,8 +520,8 @@ function exportChecks({
       : loadingBill;
   const plansResult: CheckResult = mismatchesQuery.isError
     ? { status: "attention", summary: "Could not compare reported plans" }
-    : mismatchesQuery.isSuccess && overview
-      ? plansCheck(mismatchesQuery.data, overview.firstDay, overview.lastDay)
+    : mismatchesQuery.isSuccess
+      ? plansCheck(mismatchesQuery.data)
       : { status: "pending", summary: "Comparing reported plans" };
 
   return [

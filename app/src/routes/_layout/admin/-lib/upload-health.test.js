@@ -153,6 +153,32 @@ describe("uploadsCheck", () => {
     });
   });
 
+  test("a tool missing after a late start still needs attention", () => {
+    const month = october([
+      developer(1, "Late and missing a tool", [
+        machine({
+          gaps: [{ from: "2026-10-01", to: "2026-10-08" }],
+          providers: [
+            {
+              provider: "opencode",
+              status: "ok",
+              pricingStatus: "fresh",
+              expected: true,
+              gaps: [{ from: "2026-10-09", to: "2026-10-14" }],
+            },
+          ],
+        }),
+      ]),
+    ]);
+    const uploads = monthUploads(month);
+
+    expect(uploads[0].verdict).toBe("toolGaps");
+    expect(uploadsCheck(month, uploads)).toEqual({
+      status: "attention",
+      summary: "1 of 1 developer misses a tool on some days",
+    });
+  });
+
   test("a hole needs attention and is counted apart from tool gaps", () => {
     const month = october([
       developer(1, "Hole", [
@@ -178,7 +204,7 @@ describe("uploadsCheck", () => {
 
     expect(uploadsCheck(month, monthUploads(month))).toEqual({
       status: "attention",
-      summary: "2 of 3 developers have gaps; 1 miss days or uploaded nothing",
+      summary: "2 of 3 developers have gaps; 1 misses days or uploaded nothing",
     });
   });
 });

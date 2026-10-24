@@ -51,10 +51,11 @@ export type UploadVerdict =
   | "holes"
   /** Active machines, but not one required day uploaded. */
   | "nothingUploaded"
-  /** Only days before their first upload are missing. */
-  | "lateStart"
-  /** Every day is in, but an expected tool is missing on some. */
+  /** An expected tool is missing on some uploaded days, whether or not
+   * days before the first upload are missing too. */
   | "toolGaps"
+  /** Only days before their first upload are missing, from every tool. */
+  | "lateStart"
   /** Only the latest required day waits for a sync. */
   | "awaitingSync"
   /** Everything required is uploaded. */
@@ -67,8 +68,8 @@ export const UPLOAD_VERDICTS: readonly UploadVerdict[] = [
   "neverSynced",
   "holes",
   "nothingUploaded",
-  "lateStart",
   "toolGaps",
+  "lateStart",
   "awaitingSync",
   "complete",
   "noActivity",
@@ -224,10 +225,12 @@ export function developerUploads(
           ? "nothingUploaded"
           : has("hole")
             ? "holes"
-            : has("beforeFirstUpload")
-              ? "lateStart"
-              : toolDays > 0
-                ? "toolGaps"
+            : // A missing tool may be usage that never reached the bill,
+              // so it outranks a late start, which does not hold it back.
+              toolDays > 0
+              ? "toolGaps"
+              : has("beforeFirstUpload")
+                ? "lateStart"
                 : has("awaitingSync")
                   ? "awaitingSync"
                   : "complete";
