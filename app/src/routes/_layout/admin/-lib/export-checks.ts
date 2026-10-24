@@ -222,10 +222,11 @@ function worthOf(
 }
 
 /**
- * Whether every billed line is charged to a project. Only the usage of
- * repositories nobody has mapped can be assigned on Project mappings; usage
- * outside any repository has no key a mapping could name, but no customer is
- * invoiced for it either.
+ * Whether every repository the bill charges for is mapped to a project.
+ * Usage of repositories nobody has mapped needs attention: mapping them on
+ * Project mappings assigns it. Usage outside any repository has no key a
+ * mapping could name, so it does not hold the bill back, though the summary
+ * still says no customer is invoiced for it.
  */
 export function mappingsCheck(
   lines: readonly AiBillingLine[],
@@ -248,8 +249,8 @@ export function mappingsCheck(
       : null;
   if (unmapped.length === 0) {
     return {
-      status: "attention",
-      summary: `${outside}, so no customer can be invoiced for it`,
+      status: "passed",
+      summary: `Every repository is mapped; ${outside}`,
     };
   }
   const toMap = `${worthOf(unmapped, billingCurrency)} comes from repositories nobody has mapped, so no customer can be invoiced for it yet`;

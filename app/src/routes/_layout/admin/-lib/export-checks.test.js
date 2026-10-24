@@ -52,12 +52,15 @@ describe("mappingsCheck", () => {
     );
   });
 
-  test("usage outside any repository alone still needs attention, but not a mapping", () => {
-    const check = mappingsCheck([line("unattributed", "300.00")], "SEK");
+  test("usage outside any repository alone passes: there is nothing to map", () => {
+    const check = mappingsCheck(
+      [line(null, "10.00"), line("unattributed", "300.00")],
+      "SEK",
+    );
 
-    expect(check.status).toBe("attention");
+    expect(check.status).toBe("passed");
     expect(check.summary).toMatch(
-      /^300,00\sSEK is outside any repository, which no mapping can assign, so no customer can be invoiced for it$/,
+      /^Every repository is mapped; 300,00\sSEK is outside any repository, which no mapping can assign$/,
     );
   });
 
