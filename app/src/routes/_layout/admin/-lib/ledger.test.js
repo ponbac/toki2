@@ -197,6 +197,32 @@ describe("allocationSegments", () => {
     expect(segments[4].entries).toHaveLength(26);
     expect(segments[4].label).toBe("Customer 4 + 25 more");
   });
+
+  test("short names: a project by its customer, the tail and Unassigned in a word or two", () => {
+    expect(
+      allocationSegments(month(OCTOBER_BY_KIND)).map((s) => [s.short, s.more]),
+    ).toEqual([
+      ["Norrsken Logistik", 0],
+      ["Tallbo Fastighet", 0],
+      ["Ljusdal Energi", 0],
+      ["Bo-Ek Bygg", 0],
+      ["Glimmer Retail", 4],
+      ["Unmapped", 0],
+      ["No repo", 0],
+    ]);
+    const small = allocationSegments(
+      month([
+        ["Big - B", "9700.00"],
+        ["Tiny - T", "100.00"],
+        ["Wee - W", "100.00"],
+        ["Mini - I", "100.00"],
+      ]),
+    );
+    expect(small.map((s) => [s.short, s.more])).toEqual([
+      ["Big", 0],
+      ["3 smaller", 0],
+    ]);
+  });
 });
 
 describe("allocationSegments without the whole bill", () => {

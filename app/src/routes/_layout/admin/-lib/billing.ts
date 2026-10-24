@@ -18,12 +18,20 @@ import type { UnassignedKind } from "@/lib/api/contracts/ai-admin";
 
 export const UNASSIGNED_LABEL = "Unassigned";
 export const OVERHEAD_LABEL = "Unallocated overhead";
+/** Overhead where its label does not fit, as in a narrow strip segment. */
+export const OVERHEAD_SHORT_LABEL = "Overhead";
 
-/** Each kind of Unassigned usage: its short name, and what it is. */
+/** Each kind of Unassigned usage: its name, the name in a word or two where
+ * that does not fit, and what it is. */
 export const UNASSIGNED_KIND_LABELS = {
-  unmapped: { label: "Unmapped repositories", detail: "unmapped repositories" },
+  unmapped: {
+    label: "Unmapped repositories",
+    short: "Unmapped",
+    detail: "unmapped repositories",
+  },
   unattributed: {
     label: "No repository",
+    short: "No repo",
     detail: "outside any repository",
   },
 } as const satisfies Record<UnassignedKind, unknown>;

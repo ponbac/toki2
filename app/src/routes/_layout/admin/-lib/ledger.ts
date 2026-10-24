@@ -11,6 +11,8 @@ import {
   type UnassignedKind,
 } from "@/lib/api/contracts/ai-admin";
 import {
+  OVERHEAD_SHORT_LABEL,
+  UNASSIGNED_KIND_LABELS,
   billableTotals,
   hundredths,
   lineProject,
@@ -198,6 +200,13 @@ export type AllocationSegment = Readonly<{
   key: string;
   kind: ProjectKind | "others";
   label: string;
+  /** What the strip calls it where its label does not fit: a project by its
+   * customer, the tail by its dearest customer or in a word, the rest in a
+   * word or two. */
+  short: string;
+  /** The projects a tail named after its dearest customer merges besides
+   * it, kept beside `short` however narrow; 0 for every other segment. */
+  more: number;
   /** Exact hundredths of the billing currency; always above zero. */
   amount: number;
   /** The entries the segment stands for: one, or the tail merged. */
@@ -240,6 +249,8 @@ export function allocationSegments(ledger: Ledger): AllocationSegment[] {
     key: e.key,
     kind: e.kind,
     label: e.label,
+    short: shortName(e),
+    more: 0,
     amount: amount(e),
     entries: [e],
     step,
@@ -265,12 +276,15 @@ export function allocationSegments(ledger: Ledger): AllocationSegment[] {
   if (first && rest.length === 0) {
     segments.push(single(first, TAIL_STEP));
   } else if (first) {
+    const named = !tail.every(small);
     segments.push({
       key: "others",
       kind: "others",
-      label: tail.every(small)
-        ? `${tail.length} smaller projects`
-        : `${first.name.customer} + ${rest.length} more`,
+      label: named
+        ? `${first.name.customer} + ${rest.length} more`
+        : `${tail.length} smaller projects`,
+      short: named ? first.name.customer : `${tail.length} smaller`,
+      more: named ? rest.length : 0,
       amount: tail.reduce((sum, e) => sum + amount(e), 0),
       entries: tail,
       step: TAIL_STEP,
@@ -301,6 +315,18 @@ export function segmentSteps(
     }
   }
   return steps;
+}
+
+/** An entry's segment where its label does not fit. */
+function shortName(e: LedgerEntry): string {
+  switch (e.kind) {
+    case "project":
+      return e.name.customer;
+    case "unassigned":
+      return UNASSIGNED_KIND_LABELS[e.unassigned ?? "unmapped"].short;
+    case "overhead":
+      return OVERHEAD_SHORT_LABEL;
+  }
 }
 
 /** One developer's month on the bill. */
