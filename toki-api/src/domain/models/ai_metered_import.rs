@@ -9,9 +9,10 @@
 //!   seat history starts when Toki first listed the account.
 //! - **Months.** Hourly runs import the current month in `Changes` mode, plus
 //!   the previous month while it is within the settle days; nightly runs, from
-//!   02:00 UTC, refresh the current month in `Full`, plus the previous month for
-//!   30 days after it ends. Months holding a slice that was never fetched join
-//!   in `Changes` mode, which always fetches missing days.
+//!   02:00 UTC until one finishes its plan, refresh the current month in `Full`,
+//!   plus the previous month for 30 days after it ends. Months holding a slice
+//!   that was never fetched join in `Changes` mode, which always fetches
+//!   missing days.
 //! - **Coverage.** A slice is complete once fetched after its period ended.
 //!   A source is imported through the latest day whose expected slices, and
 //!   every earlier one's, are complete. The settle lag is the longest a slice
@@ -111,7 +112,9 @@ pub struct AiImportHistory {
     pub last_attempt_at: Option<OffsetDateTime>,
     /// The last run that succeeded or was partial.
     pub last_success_at: Option<OffsetDateTime>,
-    /// The start of the last nightly run that succeeded or was partial.
+    /// The start of the last nightly run that finished its plan: succeeded,
+    /// or partial from account errors only. A run that stopped (its `error`)
+    /// did not finish the full refresh.
     pub last_nightly_success_at: Option<OffsetDateTime>,
 }
 
@@ -286,9 +289,9 @@ pub fn gap_months(expected: &AiExpectedSlices, fetched: &AiSliceSet) -> Vec<AiBi
 /// The run due at `now` from the schedule, or `None`.
 ///
 /// - `None` while the last attempt is less than 55 minutes old.
-/// - Nightly, when now is at or after 02:00 UTC and no nightly run succeeded
-///   since: the current month `Full`, plus the previous month `Full` while
-///   today is at most 30 days after its last day.
+/// - Nightly, when now is at or after 02:00 UTC and no nightly run finished
+///   its plan since: the current month `Full`, plus the previous month `Full`
+///   while today is at most 30 days after its last day.
 /// - Otherwise hourly: the current month in `Changes`, plus the previous month
 ///   while today is at most `settle_days` after its last day.
 /// - `gaps` join in `Changes`. Months before `backfill_from`'s are never
@@ -565,6 +568,9 @@ pub struct AiImportRun {
     pub slices_fetched: u32,
     pub slices_changed: u32,
     pub account_errors: u32,
+    /// Why the run stopped before finishing its plan, if it did (a rate
+    /// limit, the request cap, an organization-scope error, ...). Account
+    /// errors that let the other accounts continue are not the run's error.
     pub error: Option<String>,
     pub sources: Vec<AiSourceOutcome>,
 }

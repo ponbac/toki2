@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                max(started_at) AS last_attempt_at,\n                max(finished_at) FILTER (WHERE status IN ('succeeded', 'partial'))\n                    AS last_success_at,\n                max(started_at) FILTER (WHERE kind = 'nightly' AND status IN ('succeeded', 'partial'))\n                    AS last_nightly_success_at\n            FROM ai_provider_import_runs\n            WHERE provider = $1\n            ",
+  "query": "\n            SELECT\n                max(started_at) AS last_attempt_at,\n                max(finished_at) FILTER (WHERE status IN ('succeeded', 'partial'))\n                    AS last_success_at,\n                max(started_at) FILTER (\n                    WHERE kind = 'nightly'\n                      AND status IN ('succeeded', 'partial')\n                      AND error IS NULL\n                ) AS last_nightly_success_at\n            FROM ai_provider_import_runs\n            WHERE provider = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -33,5 +33,5 @@
       null
     ]
   },
-  "hash": "58a3d070cfa952dd8f14292955b34ef00b824e416bc853a577ef146fb0ce5641"
+  "hash": "72661f69668dcdc94e3f57506055c0b623bd268cf893bad4274836ba125a8ec4"
 }
