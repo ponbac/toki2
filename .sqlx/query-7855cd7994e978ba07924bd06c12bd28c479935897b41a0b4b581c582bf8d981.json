@@ -1,0 +1,126 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT product, sku, unit_type, kind, unit_price::text AS \"unit_price!\",\n                gross_quantity::text AS \"gross_quantity!\", gross_amount::text AS \"gross_amount!\",\n                discount_quantity::text AS \"discount_quantity!\",\n                discount_amount::text AS \"discount_amount!\",\n                net_quantity::text AS \"net_quantity!\", net_amount::text AS \"net_amount!\",\n                fetched_at\n            FROM ai_provider_usage_summaries\n            WHERE provider = $1 AND month = $2\n            ORDER BY product, sku, unit_type\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "product",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_summaries",
+            "name": "product"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "sku",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_summaries",
+            "name": "sku"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "unit_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_summaries",
+            "name": "unit_type"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_summaries",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "unit_price!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "gross_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "gross_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "discount_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "discount_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "net_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "net_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "fetched_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_summaries",
+            "name": "fetched_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "7855cd7994e978ba07924bd06c12bd28c479935897b41a0b4b581c582bf8d981"
+}

@@ -10,16 +10,22 @@
 //!   never flagged.
 //! - **Users with metered usage but no link** are users whose usage the payer
 //!   paid for on window days that none of their `User` dispositions covers.
+//! - **Accounts with credits but no disposition** are accounts the usage
+//!   import found credits for on window days that no disposition covers, seat
+//!   or no seat: every account with credits needs a disposition.
+//! - **The default period** of a new disposition covers the uncovered seat
+//!   days (`default_period`); once those are covered, or for an account that
+//!   never held a seat, the uncovered credit days (`credit_default_period`).
 
 use std::collections::HashMap;
 
 use time::{Date, Month};
 
 use super::{
-    namespace_noise, suggest_targets, AiAccountDispositionId, AiAccountPeriod, AiAccountSuggestion,
-    AiBillingDeveloper, AiBillingUsage, AiDirectoryStatus, AiMeteredUserDay, AiProvider,
-    AiProviderAccountId, AiStoredProviderAccount, AiSuggestionAccount, AiUsageDateRange,
-    AiUserActivity, UserId,
+    day_ranges, namespace_noise, suggest_targets, AiAccountCreditDay, AiAccountDispositionId,
+    AiAccountPeriod, AiAccountSuggestion, AiBillingDeveloper, AiBillingMonth, AiBillingUsage,
+    AiDirectoryStatus, AiMeteredUserDay, AiProvider, AiProviderAccountId, AiStoredProviderAccount,
+    AiSuggestionAccount, AiUsageDateRange, AiUsdNanos, AiUserActivity, UserId,
 };
 use crate::domain::AiProviderAccountError;
 
@@ -50,9 +56,17 @@ pub struct AiAccountRow {
     pub current_disposition: Option<AiAccountDispositionId>,
     /// Seated days in the review window that no disposition covers.
     pub uncovered_seat_days: Vec<AiUsageDateRange>,
+    /// The account's gross credits (`G`) in the current UTC month.
+    pub credits_this_month: AiUsdNanos,
+    /// Review window days with credits that no disposition covers.
+    pub uncovered_credit_days: Vec<AiUsageDateRange>,
+    /// Review window days with credits outside every seat.
+    pub credit_days_without_seat: u32,
+    /// Uncovered seat days or uncovered credit days.
     pub needs_look: bool,
     /// Best first; empty when none or when `default_period` is `None`.
     pub suggestions: Vec<AiAccountSuggestion>,
+    /// The period a new disposition defaults to; see the module documentation.
     pub default_period: Option<AiAccountPeriod>,
 }
 
@@ -82,6 +96,8 @@ pub struct AiAccountOverview {
     pub activity: Vec<(UserId, AiUserActivity)>,
     /// By the cost of their unlinked usage, largest first.
     pub unlinked_users: Vec<AiUnlinkedUser>,
+    /// The month of each account's `credits_this_month`.
+    pub credits_month: AiBillingMonth,
 }
 
 /// Everything the admin page shows about a payer's accounts.
@@ -103,6 +119,11 @@ pub struct AiAccountOverviewInput {
     pub metered: Vec<AiMeteredUserDay>,
     /// The namespace whose words logins carry (`namespace_noise`).
     pub namespace: String,
+    /// Each account's gross credits per UTC day, from the usage import, in
+    /// the review window and `credits_month`.
+    pub credits: Vec<AiAccountCreditDay>,
+    /// The month `credits_this_month` covers: today's UTC month.
+    pub credits_month: AiBillingMonth,
 }
 
 /// The first day of the UTC month before `today`'s.
@@ -139,6 +160,24 @@ pub fn account_suggestions(
     namespace: &str,
     window: AiUsageDateRange,
 ) -> HashMap<AiProviderAccountId, Vec<AiAccountSuggestion>> {
+    suggestions_for(
+        accounts,
+        |account| account.default_period(window.last_day(), window),
+        users,
+        activity,
+        namespace,
+    )
+}
+
+/// The suggestions for every account, each for the period a new disposition
+/// of it would get.
+fn suggestions_for(
+    accounts: &[AiStoredProviderAccount],
+    default_period: impl Fn(&AiStoredProviderAccount) -> Option<AiAccountPeriod>,
+    users: &[AiBillingDeveloper],
+    activity: &HashMap<UserId, AiUserActivity>,
+    namespace: &str,
+) -> HashMap<AiProviderAccountId, Vec<AiAccountSuggestion>> {
     let suggestion_accounts: Vec<AiSuggestionAccount> = accounts
         .iter()
         .map(|account| AiSuggestionAccount {
@@ -152,7 +191,7 @@ pub fn account_suggestions(
                 .profile
                 .as_ref()
                 .and_then(|profile| profile.email.clone()),
-            default_period: account.default_period(window.last_day(), window),
+            default_period: default_period(account),
         })
         .collect();
     let dispositions: Vec<_> = accounts
@@ -179,6 +218,8 @@ pub fn account_overview(
         users,
         metered,
         namespace,
+        credits,
+        credits_month,
     } = input;
     let window = AiUsageDateRange::from_inclusive(review_from, today).ok_or_else(|| {
         AiProviderAccountError::Invalid("the review window ends before it starts".to_string())
@@ -188,24 +229,97 @@ pub fn account_overview(
         .filter(|day| window.start() <= day.day && day.day < window.end())
         .collect();
     let activity = user_activity(&metered)?;
-    let mut suggestions = account_suggestions(&accounts, &users, &activity, &namespace, window);
+    let mut credits_by_account: HashMap<AiProviderAccountId, Vec<AiAccountCreditDay>> =
+        HashMap::new();
+    for day in credits.into_iter().filter(|day| day.gross.nanos() > 0) {
+        credits_by_account
+            .entry(day.account_id)
+            .or_default()
+            .push(day);
+    }
+    let uncovered_credit_days = |account: &AiStoredProviderAccount| {
+        day_ranges(
+            credits_by_account
+                .get(&account.account_id)
+                .into_iter()
+                .flatten()
+                .map(|day| day.day)
+                .filter(|day| window.start() <= *day && *day < window.end())
+                .filter(|day| account.disposition_on(*day).is_none()),
+        )
+    };
+    // The seat days' default, else the credit days' once every seat day is
+    // covered (or the account never held a seat), so an account that needs a
+    // look for its credits alone can be given a disposition too.
+    let default_periods: HashMap<AiProviderAccountId, Option<AiAccountPeriod>> = accounts
+        .iter()
+        .map(|account| {
+            let period = match account.default_period(today, window) {
+                Some(period) if !account.seats.is_empty() => Some(period),
+                seat_default => account
+                    .credit_default_period(&uncovered_credit_days(account))
+                    .or(seat_default),
+            };
+            (account.account_id, period)
+        })
+        .collect();
+    let mut suggestions = suggestions_for(
+        &accounts,
+        |account| default_periods.get(&account.account_id).copied().flatten(),
+        &users,
+        &activity,
+        &namespace,
+    );
 
     let mut rows: Vec<AiAccountRow> = accounts
         .into_iter()
         .map(|account| {
             let uncovered_seat_days = account.uncovered_seat_days(today, window);
-            AiAccountRow {
+            let uncovered_credit_days = uncovered_credit_days(&account);
+            let credits = credits_by_account
+                .get(&account.account_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let credits_this_month = credits
+                .iter()
+                .filter(|day| credits_month.contains(day.day))
+                .try_fold(0_i64, |total, day| total.checked_add(day.gross.nanos()))
+                .and_then(AiUsdNanos::new)
+                .ok_or_else(|| {
+                    AiProviderAccountError::Storage(
+                        "an account's credits exceed the supported range".to_string(),
+                    )
+                })?;
+            let window_credit_days: Vec<Date> = credits
+                .iter()
+                .map(|day| day.day)
+                .filter(|day| window.start() <= *day && *day < window.end())
+                .collect();
+            let seated = account.seated_days(today);
+            let credit_days_without_seat = window_credit_days
+                .iter()
+                .filter(|day| {
+                    !seated
+                        .iter()
+                        .any(|range| range.start() <= **day && **day < range.end())
+                })
+                .count();
+            Ok(AiAccountRow {
                 current_disposition: account
                     .disposition_on(today)
                     .map(|disposition| disposition.id),
-                needs_look: !uncovered_seat_days.is_empty(),
+                needs_look: !uncovered_seat_days.is_empty() || !uncovered_credit_days.is_empty(),
                 uncovered_seat_days,
+                credits_this_month,
+                uncovered_credit_days,
+                credit_days_without_seat: u32::try_from(credit_days_without_seat)
+                    .unwrap_or(u32::MAX),
                 suggestions: suggestions.remove(&account.account_id).unwrap_or_default(),
-                default_period: account.default_period(today, window),
+                default_period: default_periods.get(&account.account_id).copied().flatten(),
                 account,
-            }
+            })
         })
-        .collect();
+        .collect::<Result<_, AiProviderAccountError>>()?;
     let top_activity = |row: &AiAccountRow| {
         row.suggestions
             .first()
@@ -283,6 +397,7 @@ pub fn account_overview(
         accounts: rows,
         activity,
         unlinked_users,
+        credits_month,
     })
 }
 

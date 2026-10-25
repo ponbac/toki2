@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT ON (source.source)\n                source.source, source.imported_through, source.settle_lag_days, source.error\n            FROM ai_provider_import_run_sources AS source\n            JOIN ai_provider_import_runs AS run ON run.id = source.run_id\n            WHERE run.provider = $1 AND run.status <> 'running'\n            ORDER BY source.source, run.finished_at DESC, run.id DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "imported_through",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "imported_through"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "settle_lag_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "settle_lag_days"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "bd53707e6e344b58e8989131743e5ce1987f48aa3929fbbe3f24dc0991504eab"
+}

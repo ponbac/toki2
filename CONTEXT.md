@@ -99,3 +99,47 @@ _Avoid_: unknown account, non-Toki user
 **Unlinked account**:
 A provider account without a disposition on some day it held a seat or used credits. Its usage on such days is nobody's yet, so it needs an admin's look.
 _Avoid_: unmapped account, orphan account
+
+**Metered usage import**:
+Toki's copy of what a metered payer billed: each provider account's credits per UTC day and model, the organization's totals per model, its rows per SKU and repository, and the month summary. Re-importing unchanged data changes nothing.
+_Avoid_: GitHub sync
+
+**Gross credits (G)**:
+A provider account's credits at the payer's gross quantity, priced at the $0.01 list rate before the pool discount. Customers are charged only their attributed part.
+_Avoid_: net, cost, invoice amount
+
+**Tracked Copilot (T)**:
+Toki's Copilot-priced estimate of the Copilot-paid usage of the user a provider account is linked to, in credits per UTC day and model. Unpriced usage carries no weight, and neither do free models (next edit suggestions, gpt-4o-mini): whatever Toki priced them at stays out of T.
+_Avoid_: actual usage
+
+**Reconciliation**:
+Comparing G with T per provider account, UTC day and group of (SKU, model): what the T/G rule would attribute, without billing it.
+_Avoid_: matching, audit
+
+**Attributed Copilot**:
+min(G, T) per UTC day and (SKU, model) group on days an account is linked to a user: what the T/G rule would bill to that user's destinations.
+_Avoid_: billed Copilot
+
+**Untracked Copilot**:
+G minus attributed Copilot on days an account is linked to a user: usage GitHub billed that Toki did not track, such as the cloud agent or untracked tools. It is Spinit overhead, never spread over customers.
+_Avoid_: unbilled, missing usage
+
+**Unknown account**:
+The per-day residual: the organization's credits minus the sum over every provider account Toki imports, on days whose import is complete or still settling. Usage of accounts Toki never listed. It settles only once the organization's stored month equals the payer's month total.
+_Avoid_: external account, unlinked account
+
+**Payer check**:
+The latest comparison of a provider account's, or the organization's, stored days with the payer's month total: equal, different, or failed. An account's mismatch flags the account; the organization's keeps every residual day from settling, and a failed one makes them an import gap.
+_Avoid_: sync check
+
+**Import freshness**:
+Whether the metered usage import is recent and complete enough to trust: fresh, or stale with the first reason (a failed run, an old success, coverage behind, an old summary, a seated account that failed).
+_Avoid_: sync status
+
+**Settle lag**:
+How many days after a UTC day ended the payer still changed its numbers, as observed by the import. Only a change in what the payer sent counts, never Toki relabelling or a login rename. Days within the settle lag are provisional, and only settled days raise the flags that compare G with T.
+_Avoid_: delay
+
+**IDE aggregate**:
+The organization usage row of AI credits without a repository: the sum of every account's IDE credits. Shown, never added to per-account credits.
+_Avoid_: unassigned repository

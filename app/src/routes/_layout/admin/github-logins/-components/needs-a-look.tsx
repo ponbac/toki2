@@ -13,9 +13,9 @@ import {
 } from "../../-lib/provider-accounts";
 
 /**
- * What still needs a decision in the review window: seated accounts on days
- * no disposition covers, and users whose Copilot-paid usage has no link.
- * Picking an entry opens its account's editor.
+ * What still needs a decision in the review window: accounts with seats or
+ * credits on days no disposition covers, and users whose Copilot-paid usage
+ * has no link. Picking an entry opens its account's editor.
  */
 export function NeedsALook({
   accounts,
@@ -40,7 +40,7 @@ export function NeedsALook({
     return (
       <p className="flex items-center gap-2 rounded-xl border border-border/70 bg-card/60 px-4 py-3 text-sm">
         <CheckCircle2 className="size-4 shrink-0 text-[#0ca30c]" aria-hidden />
-        Every seat holder has a disposition.
+        Every account with a seat or credits has a disposition.
       </p>
     );
   }
@@ -50,8 +50,8 @@ export function NeedsALook({
       <Card
         title="Accounts without a disposition"
         count={accounts.length}
-        hint={`Seats held since ${reviewFrom} on days no disposition covers.`}
-        empty="None: every seat has a disposition on every day."
+        hint={`Seats held or credits used since ${reviewFrom} on days no disposition covers.`}
+        empty="None: every seat and every credit has a disposition on every day."
       >
         {accounts.map((account) => {
           const top = account.suggestions[0];
@@ -69,9 +69,18 @@ export function NeedsALook({
                     {seatSummary(account.seats).label}
                   </span>
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  Uncovered: {describeRanges(account.uncoveredSeatDays)}
-                </span>
+                {account.uncoveredSeatDays.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Seat days uncovered:{" "}
+                    {describeRanges(account.uncoveredSeatDays)}
+                  </span>
+                )}
+                {account.uncoveredCreditDays.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Credits on days without a disposition:{" "}
+                    {describeRanges(account.uncoveredCreditDays)}
+                  </span>
+                )}
                 <span className="text-xs text-muted-foreground">
                   {top
                     ? `Maybe ${userName(top.userId, names)} (${top.confidence})`

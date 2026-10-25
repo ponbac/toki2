@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_provider_import_run_sources (\n                run_id, source, status, requests, slices_fetched, slices_changed,\n                imported_through, settle_lag_days, error\n            )\n            SELECT $1, row.source, row.status, row.requests, row.fetched, row.changed,\n                row.through, row.lag, row.error\n            FROM UNNEST(\n                $2::text[], $3::text[], $4::int4[], $5::int4[], $6::int4[], $7::date[],\n                $8::int4[], $9::text[]\n            ) AS row(source, status, requests, fetched, changed, through, lag, error)\n            ON CONFLICT (run_id, source) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray",
+        "TextArray",
+        "Int4Array",
+        "Int4Array",
+        "Int4Array",
+        "DateArray",
+        "Int4Array",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d3aae844ccdd2a7de8331fa58715535acae8aa1b3684310e29c01fc624d64de2"
+}

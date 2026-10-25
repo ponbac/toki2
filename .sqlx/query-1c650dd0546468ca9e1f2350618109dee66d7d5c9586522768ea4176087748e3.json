@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO ai_provider_org_usage (\n                    provider, day, product, sku, unit_type, repository, kind, unit_price, quantity,\n                    gross_amount, discount_amount, net_amount, credit_usd_nanos, reported_at,\n                    fetched_at\n                )\n                SELECT $1, row.day, row.product, row.sku, row.unit, row.repository, row.kind,\n                    row.unit_price::numeric, row.quantity::numeric, row.gross_amount::numeric,\n                    row.discount_amount::numeric, row.net_amount::numeric, row.credit_usd,\n                    row.reported_at, row.fetched_at\n                FROM UNNEST(\n                    $2::date[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[],\n                    $8::text[], $9::text[], $10::text[], $11::text[], $12::text[], $13::int8[],\n                    $14::timestamptz[], $15::timestamptz[]\n                ) AS row(\n                    day, product, sku, unit, repository, kind, unit_price, quantity, gross_amount,\n                    discount_amount, net_amount, credit_usd, reported_at, fetched_at\n                )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "DateArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Int8Array",
+        "TimestamptzArray",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c650dd0546468ca9e1f2350618109dee66d7d5c9586522768ea4176087748e3"
+}

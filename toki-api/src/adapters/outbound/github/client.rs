@@ -1,6 +1,6 @@
 //! An HTTP client for GitHub's REST API, authenticated as a GitHub App
 //! installation. Shared through `Arc` by every GitHub adapter, so they share
-//! one installation token.
+//! one installation token and one pacer.
 
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use time::OffsetDateTime;
 
 use super::{app_auth::GithubAppAuth, GithubAppCredentials};
-use crate::domain::ProviderAccountDirectoryError;
+use crate::domain::{MeteredUsageSourceError, ProviderAccountDirectoryError};
 
 /// The REST API version every request asks for.
 const API_VERSION: &str = "2022-11-28";
@@ -24,6 +24,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(60 * 60);
 /// The most characters of GitHub's own error message kept in an error.
 const MAX_MESSAGE_CHARS: usize = 300;
+/// The least time between the starts of two requests: at most 10 a second,
+/// under GitHub's secondary limit of 900 points a minute for the whole REST
+/// API.
+pub(super) const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(100);
 
 /// A failed GitHub request. Adapter-local, so each port maps it to its own
 /// error. Messages carry at most GitHub's own `message`, never a credential.
@@ -59,12 +63,34 @@ impl From<GithubError> for ProviderAccountDirectoryError {
     }
 }
 
+impl From<GithubError> for MeteredUsageSourceError {
+    fn from(error: GithubError) -> Self {
+        match error {
+            GithubError::Unauthorized(message) => Self::Unauthorized(message),
+            GithubError::Forbidden(message) => Self::Forbidden(message),
+            GithubError::NotFound(message) => Self::NotFound(message),
+            GithubError::Unprocessable(message) => {
+                Self::Response(format!("GitHub could not process the request: {message}"))
+            }
+            GithubError::RateLimited { retry_after } => Self::RateLimited { retry_after },
+            GithubError::Unavailable(message) => Self::Unavailable(message),
+            GithubError::Response(message) => Self::Response(message),
+            GithubError::Token(inner) => (*inner).into(),
+        }
+    }
+}
+
 /// A successful response's body.
 pub(super) struct GithubResponse {
     body: String,
 }
 
 impl GithubResponse {
+    /// The body as text.
+    pub(super) fn into_body(self) -> String {
+        self.body
+    }
+
     /// The body as JSON; malformed JSON is a `Response` error.
     pub(super) fn json<T: DeserializeOwned>(&self) -> Result<T, GithubError> {
         serde_json::from_str(&self.body)
@@ -77,6 +103,8 @@ pub(super) struct GithubAppClient {
     http: Client,
     api_base: String,
     auth: GithubAppAuth,
+    /// When the next request may start.
+    next_start: tokio::sync::Mutex<tokio::time::Instant>,
 }
 
 impl GithubAppClient {
@@ -111,7 +139,21 @@ impl GithubAppClient {
             http,
             api_base,
             auth,
+            next_start: tokio::sync::Mutex::new(tokio::time::Instant::now()),
         })
+    }
+
+    /// Waits until a request may start: `MIN_REQUEST_INTERVAL` after the
+    /// previous one started. Slots are reserved in order, so concurrent
+    /// callers queue without holding the lock while they wait.
+    async fn pace(&self) {
+        let start = {
+            let mut next = self.next_start.lock().await;
+            let start = (*next).max(tokio::time::Instant::now());
+            *next = start + MIN_REQUEST_INTERVAL;
+            start
+        };
+        tokio::time::sleep_until(start).await;
     }
 
     /// `GET {api_base}{path}` with the installation token. A `401` drops the
@@ -135,6 +177,7 @@ impl GithubAppClient {
     }
 
     async fn send_get(&self, path: &str, token: &str) -> Result<Response, GithubError> {
+        self.pace().await;
         github_request(self.http.get(format!("{}{path}", self.api_base)))
             .bearer_auth(token)
             .send()

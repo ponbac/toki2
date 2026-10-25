@@ -1,0 +1,45 @@
+{
+  "timePeriod": { "year": 2026, "month": 10 },
+  "organization": "example-org",
+  "usageItems": [
+    {
+      "product": "Copilot",
+      "sku": "Copilot AI Credits",
+      "model": "GPT-6.1 Sol",
+      "unitType": "ai-credits",
+      "pricePerUnit": 0.01,
+      "grossQuantity": 2500.0,
+      "grossAmount": 25.0,
+      "discountQuantity": 2500.0,
+      "discountAmount": 25.0,
+      "netQuantity": 0.0,
+      "netAmount": 0.0
+    },
+    {
+      "product": "Copilot",
+      "sku": "Copilot AI Credits",
+      "model": "Code Review model",
+      "unitType": "ai-credits",
+      "pricePerUnit": 0.01,
+      "grossQuantity": 200.0,
+      "grossAmount": 2.0,
+      "discountQuantity": 200.0,
+      "discountAmount": 2.0,
+      "netQuantity": 0.0,
+      "netAmount": 0.0
+    },
+    {
+      "product": "Copilot",
+      "sku": "Copilot Cloud Agent",
+      "model": "Claude Sonnet 5.5",
+      "unitType": "ai-credits",
+      "pricePerUnit": 0.01,
+      "grossQuantity": 50.0,
+      "grossAmount": 0.5,
+      "discountQuantity": 50.0,
+      "discountAmount": 0.5,
+      "netQuantity": 0.0,
+      "netAmount": 0.0
+    }
+  ]
+}

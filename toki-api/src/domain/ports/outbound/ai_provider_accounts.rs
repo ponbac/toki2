@@ -3,9 +3,10 @@ use time::OffsetDateTime;
 
 use crate::domain::{
     models::{
-        AiAccountDisposition, AiAccountDispositionId, AiAccountDispositionTerms,
-        AiBillingDeveloper, AiDirectoryStatus, AiMeteredUserDay, AiProvider, AiProviderAccountId,
-        AiProviderAccountProfile, AiSeatListing, AiStoredProviderAccount, AiUsageDateRange, UserId,
+        AiAccountCreditDay, AiAccountDisposition, AiAccountDispositionId,
+        AiAccountDispositionTerms, AiBillingDeveloper, AiDirectoryStatus, AiMeteredUserDay,
+        AiProvider, AiProviderAccountId, AiProviderAccountProfile, AiSeatListing,
+        AiStoredProviderAccount, AiUsageDateRange, UserId,
     },
     AiProviderAccountError, ProviderAccountDirectoryError,
 };
@@ -125,4 +126,12 @@ pub trait AiProviderAccountRepository: Send + Sync + 'static {
         payer: AiProvider,
         dates: AiUsageDateRange,
     ) -> Result<Vec<AiMeteredUserDay>, AiProviderAccountError>;
+
+    /// Each account's gross credits (`G`, every kind) per UTC day within
+    /// `dates`, from the usage import.
+    async fn account_credit_days(
+        &self,
+        payer: AiProvider,
+        dates: AiUsageDateRange,
+    ) -> Result<Vec<AiAccountCreditDay>, AiProviderAccountError>;
 }

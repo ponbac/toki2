@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO ai_provider_usage_slices\n            (provider, source, account_id, day, fetched_at, changed_at, complete_at)\n        SELECT $1, $2, $3, input.day, $4, $4, CASE WHEN $4 >= input.ends THEN $4 END\n        FROM UNNEST($5::date[], $6::timestamptz[]) AS input(day, ends)\n        ON CONFLICT (provider, source, account_id, day) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "DateArray",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dcfb45e86f413e1c16186b98f5da0f1abcd905d64e99496e1d178aefbd261e9e"
+}

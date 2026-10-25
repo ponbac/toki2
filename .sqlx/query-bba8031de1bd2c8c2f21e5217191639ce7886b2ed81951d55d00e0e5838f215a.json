@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT product, sku, model_label, SUM(gross_quantity)::text AS \"gross!\"\n                FROM ai_provider_account_usage\n                WHERE provider = $1 AND account_id = $2 AND day >= $3 AND day < $4\n                GROUP BY product, sku, model_label\n                ORDER BY product, sku, model_label\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "product",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "product"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "sku",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "sku"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "model_label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "model_label"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "gross!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "bba8031de1bd2c8c2f21e5217191639ce7886b2ed81951d55d00e0e5838f215a"
+}

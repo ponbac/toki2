@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_provider_import_runs (\n                provider, kind, requested_by, months, full_months, started_at, status\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, 'running')\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4",
+        "DateArray",
+        "DateArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e804c0595517b27b681b3552d9638b4b7356ba2cb65c45e5b8d5a4e66137eaa6"
+}

@@ -88,6 +88,11 @@ const suggestionSchema = z
   })
   .strict();
 
+/** Inclusive UTC days. */
+const dayRangeSchema = z
+  .object({ from: utcDateSchema, through: utcDateSchema })
+  .strict();
+
 const periodSchema = z
   .object({ validFrom: utcDateSchema, validTo: utcDateSchema.nullable() })
   .strict();
@@ -112,9 +117,16 @@ const accountSchema = z
     /** The disposition whose period holds today. */
     currentDispositionId: id.nullable(),
     /** Seated days in the review window that no disposition covers. */
-    uncoveredSeatDays: z.array(
-      z.object({ from: utcDateSchema, through: utcDateSchema }).strict(),
-    ),
+    uncoveredSeatDays: z.array(dayRangeSchema),
+    /** The account's gross credits this UTC month (`creditsMonth`), as
+     * hundredths of a credit. */
+    creditsThisMonth: z.string().regex(/^\d+\.\d{2}$/),
+    /** Review window days with credits that no disposition covers. */
+    uncoveredCreditDays: z.array(dayRangeSchema),
+    /** Review window days with credits outside every seat. */
+    creditDaysWithoutSeat: count,
+    /** Whether seated or credit days in the review window lack a
+     * disposition. */
     needsLook: z.boolean(),
     /** Best first; empty without a default period. */
     suggestions: z.array(suggestionSchema),
@@ -170,6 +182,8 @@ const providerAccountsSchema = z
     activity: z.array(activitySchema),
     /** Users with such usage on days without a link. */
     unlinkedUsers: z.array(unlinkedUserSchema),
+    /** The UTC month of each account's `creditsThisMonth`, `YYYY-MM`. */
+    creditsMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
   })
   .strict();
 

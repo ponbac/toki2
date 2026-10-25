@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT source, status, requests, slices_fetched, slices_changed, imported_through,\n                settle_lag_days, error\n            FROM ai_provider_import_run_sources\n            WHERE run_id = $1\n            ORDER BY source\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "requests",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "requests"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "slices_fetched",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "slices_fetched"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "slices_changed",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "slices_changed"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "imported_through",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "imported_through"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "settle_lag_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "settle_lag_days"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "95898458fdb26d1a247d0e8d13099aad2658844fd58aa50ae9a9d31213fc49d0"
+}

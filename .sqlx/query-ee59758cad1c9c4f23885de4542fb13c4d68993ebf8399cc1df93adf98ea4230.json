@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT account_id, checked_at, payer_gross_quantity::text AS payer_gross,\n                stored_gross_quantity::text AS \"stored_gross!\", matches, error\n            FROM ai_provider_usage_checks\n            WHERE provider = $1 AND month = $2\n            ORDER BY source, account_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_checks",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "checked_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_checks",
+            "name": "checked_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "payer_gross",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "stored_gross!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "matches",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_checks",
+            "name": "matches"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_checks",
+            "name": "error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "ee59758cad1c9c4f23885de4542fb13c4d68993ebf8399cc1df93adf98ea4230"
+}

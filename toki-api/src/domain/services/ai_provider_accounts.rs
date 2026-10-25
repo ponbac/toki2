@@ -16,10 +16,11 @@ use crate::domain::{
     models::{
         account_overview, account_suggestions, directory_refresh_due, review_window, user_activity,
         utc_day, AiAcceptedSuggestions, AiAccountDisposition, AiAccountDispositionId,
-        AiAccountDispositionTerms, AiAccountOverviewInput, AiAccountTarget, AiDirectoryHealth,
-        AiDirectoryOverview, AiDirectoryRefresh, AiProvider, AiProviderAccountId,
-        AiProviderAccountOverview, AiProviderAccountProfile, AiSuggestionConfidence,
-        AiSuggestionSkip, AiUsageDateRange, UserId, MAX_ACCEPTED_SUGGESTIONS,
+        AiAccountDispositionTerms, AiAccountOverviewInput, AiAccountTarget, AiBillingMonth,
+        AiDirectoryHealth, AiDirectoryOverview, AiDirectoryRefresh, AiProvider,
+        AiProviderAccountId, AiProviderAccountOverview, AiProviderAccountProfile,
+        AiSuggestionConfidence, AiSuggestionSkip, AiUsageDateRange, UserId,
+        MAX_ACCEPTED_SUGGESTIONS,
     },
     ports::{
         inbound::AiProviderAccountService,
@@ -215,13 +216,23 @@ impl<R: AiProviderAccountRepository> AiProviderAccountService for AiProviderAcco
         let accounts = self.repository.accounts(self.payer).await?;
         let users = self.repository.users().await?;
         let status = self.repository.directory_status(self.payer).await?;
+        // The review window holds the current month's days through today.
+        let credits = self
+            .repository
+            .account_credit_days(self.payer, window)
+            .await?;
+        let today = window.last_day();
+        let credits_month = AiBillingMonth::containing(today)
+            .ok_or_else(|| AiProviderAccountError::Storage(format!("no month contains {today}")))?;
         let overview = account_overview(AiAccountOverviewInput {
-            today: window.last_day(),
+            today,
             review_from: window.start(),
             accounts,
             users,
             metered,
             namespace: self.namespace.clone(),
+            credits,
+            credits_month,
         })?;
 
         Ok(AiProviderAccountOverview {

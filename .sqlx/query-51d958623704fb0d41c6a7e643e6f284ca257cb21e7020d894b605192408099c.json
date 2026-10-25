@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT source.source, max(run.finished_at) AS \"succeeded_at!\"\n            FROM ai_provider_import_run_sources AS source\n            JOIN ai_provider_import_runs AS run ON run.id = source.run_id\n            WHERE run.provider = $1 AND source.status = 'succeeded' AND run.finished_at IS NOT NULL\n            GROUP BY source.source\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_run_sources",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "succeeded_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "51d958623704fb0d41c6a7e643e6f284ca257cb21e7020d894b605192408099c"
+}

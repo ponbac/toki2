@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        INSERT INTO ai_provider_org_credits (\n                            provider, day, product, sku, model_label, model, auto_routed, kind,\n                            unit_type, unit_price, gross_quantity, gross_amount, discount_quantity,\n                            discount_amount, net_quantity, net_amount, gross_usd_nanos, fetched_at\n                        )\n                        SELECT $1, row.day, row.product, row.sku, row.label, row.model, row.auto,\n                            row.kind, row.unit, row.unit_price::numeric,\n                            row.gross_quantity::numeric, row.gross_amount::numeric,\n                            row.discount_quantity::numeric, row.discount_amount::numeric,\n                            row.net_quantity::numeric, row.net_amount::numeric, row.gross_usd,\n                            row.fetched_at\n                        FROM UNNEST(\n                            $2::date[], $3::text[], $4::text[], $5::text[], $6::text[],\n                            $7::bool[], $8::text[], $9::text[], $10::text[], $11::text[],\n                            $12::text[], $13::text[], $14::text[], $15::text[], $16::text[],\n                            $17::int8[], $18::timestamptz[]\n                        ) AS row(\n                            day, product, sku, label, model, auto, kind, unit, unit_price,\n                            gross_quantity, gross_amount, discount_quantity, discount_amount,\n                            net_quantity, net_amount, gross_usd, fetched_at\n                        )\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "DateArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "BoolArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Int8Array",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "99a99c58229bb74b99015731fb0ea52fd2b0029640da5e8a6ad2f519ae31207f"
+}

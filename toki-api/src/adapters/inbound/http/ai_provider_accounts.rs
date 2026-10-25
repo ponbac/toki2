@@ -24,7 +24,9 @@ use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 
 use crate::{
-    adapters::inbound::http::{ai_billing::UsageResponse, ai_subscriptions::iso_date},
+    adapters::inbound::http::{
+        ai_billing::UsageResponse, ai_metered_usage::credits, ai_subscriptions::iso_date,
+    },
     auth::{require_admin_power, AuthUser},
     domain::{
         models::{
@@ -297,6 +299,8 @@ struct ProviderAccountsResponse {
     activity: Vec<ActivityResponse>,
     /// Users with such usage on days without a link.
     unlinked_users: Vec<UnlinkedUserResponse>,
+    /// The UTC month of each account's `creditsThisMonth`, such as `2026-10`.
+    credits_month: String,
 }
 
 impl From<AiProviderAccountOverview> for ProviderAccountsResponse {
@@ -338,6 +342,7 @@ impl From<AiProviderAccountOverview> for ProviderAccountsResponse {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            credits_month: accounts.credits_month.to_string(),
         }
     }
 }
@@ -378,6 +383,12 @@ struct AccountResponse {
     dispositions: Vec<DispositionResponse>,
     current_disposition_id: Option<i32>,
     uncovered_seat_days: Vec<DayRangeResponse>,
+    /// The account's gross credits this UTC month, as hundredths of a credit.
+    credits_this_month: String,
+    /// Review window days with credits that no disposition covers.
+    uncovered_credit_days: Vec<DayRangeResponse>,
+    /// Review window days with credits outside every seat.
+    credit_days_without_seat: u32,
     needs_look: bool,
     suggestions: Vec<SuggestionResponse>,
     default_period: Option<PeriodResponse>,
@@ -402,6 +413,13 @@ impl From<AiAccountRow> for AccountResponse {
                 .into_iter()
                 .map(DayRangeResponse::from)
                 .collect(),
+            credits_this_month: credits(row.credits_this_month),
+            uncovered_credit_days: row
+                .uncovered_credit_days
+                .into_iter()
+                .map(DayRangeResponse::from)
+                .collect(),
+            credit_days_without_seat: row.credit_days_without_seat,
             needs_look: row.needs_look,
             suggestions: row.suggestions.into_iter().map(Into::into).collect(),
             default_period: row.default_period.map(|period| PeriodResponse {

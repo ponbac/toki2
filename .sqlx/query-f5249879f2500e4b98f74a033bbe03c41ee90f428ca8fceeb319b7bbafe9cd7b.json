@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ai_provider_usage_summaries WHERE provider = $1 AND month = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5249879f2500e4b98f74a033bbe03c41ee90f428ca8fceeb319b7bbafe9cd7b"
+}

@@ -1,0 +1,33 @@
+{
+  "timePeriod": { "year": 2026, "month": 10, "day": 5 },
+  "user": "ada-lovelace",
+  "organization": "example-org",
+  "usageItems": [
+    {
+      "product": "Copilot",
+      "sku": "Copilot AI Credits",
+      "model": "GPT-6.1 Sol",
+      "unitType": "ai-credits",
+      "pricePerUnit": 0.01,
+      "grossQuantity": 60.0,
+      "grossAmount": 0.6,
+      "discountQuantity": 60.0,
+      "discountAmount": 0.6,
+      "netQuantity": 0.0,
+      "netAmount": 0.0
+    },
+    {
+      "product": "Copilot",
+      "sku": "Copilot AI Credits",
+      "model": "Auto: GPT-6.1 Sol",
+      "unitType": "ai-credits",
+      "pricePerUnit": 0.01,
+      "grossQuantity": 12.345678912,
+      "grossAmount": 0.12345678,
+      "discountQuantity": 0.001,
+      "discountAmount": 1e-05,
+      "netQuantity": 12.344678912,
+      "netAmount": 0.12344678
+    }
+  ]
+}

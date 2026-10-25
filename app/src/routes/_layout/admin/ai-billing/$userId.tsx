@@ -54,6 +54,7 @@ import {
 } from "../-lib/format";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
 import { UNASSIGNED_LABEL } from "../-lib/billing";
+import { CopilotCard } from "./-components/copilot-card";
 import { PersonalUsage } from "./-components/personal-usage";
 import { BillingTable } from "./-components/billing-table";
 import { MissingRatesAlert } from "./-components/exchange-rates";
@@ -201,6 +202,14 @@ function DeveloperMonthView({
     />
   );
 
+  const copilot = (
+    <CopilotCard
+      month={month}
+      userId={data.developer.userId}
+      name={data.developer.fullName}
+    />
+  );
+
   if (data.lines.length === 0) {
     return (
       <>
@@ -212,6 +221,7 @@ function DeveloperMonthView({
           </p>
         </div>
         {personal}
+        {copilot}
       </>
     );
   }
@@ -255,6 +265,8 @@ function DeveloperMonthView({
         )}
         {personal}
       </section>
+
+      {copilot}
 
       <section
         aria-labelledby="developer-usage-heading"

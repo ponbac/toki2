@@ -873,3 +873,86 @@ async fn accepting_suggestions_links_verified_matches_only(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+#[sqlx::test]
+async fn the_overview_shows_each_accounts_credits_and_credits_without_a_disposition(pool: PgPool) {
+    use crate::{
+        adapters::outbound::postgres::PostgresAiMeteredUsageRepository,
+        domain::{
+            models::{
+                utc_day, AiBillingMonth, AiCreditKind, AiCreditStoreScope, AiDecimal,
+                AiMeteredAmounts, AiMeteredCredit, AiMeteredModel,
+            },
+            ports::outbound::AiMeteredUsageRepository,
+        },
+    };
+
+    let directory = Arc::new(FakeDirectory::default());
+    let app = app(&pool, directory.clone());
+    let root = admin(&app, &pool).await;
+    // A credits-only account: never listed with a seat.
+    sqlx::query(
+        "INSERT INTO ai_provider_accounts (provider, account_id, login)
+         VALUES ('copilot', 1009, 'credits-only')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let today = utc_day(OffsetDateTime::now_utc());
+    let login = AiProviderLogin::parse("credits-only").unwrap();
+    let quantity = AiDecimal::parse("150.5").unwrap();
+    PostgresAiMeteredUsageRepository::new(db(&pool))
+        .replace_credit_days(
+            AiProvider::Copilot,
+            AiCreditStoreScope::Account {
+                id: AiProviderAccountId::new(1009).unwrap(),
+                login: &login,
+            },
+            &[(
+                today,
+                vec![AiMeteredCredit {
+                    product: "Copilot".to_string(),
+                    sku: "Copilot AI Credits".to_string(),
+                    unit: "ai-credits".to_string(),
+                    model: AiMeteredModel {
+                        label: "GPT-6.1 Sol".to_string(),
+                        model: "gpt-6.1-sol".to_string(),
+                        auto_routed: false,
+                    },
+                    kind: AiCreditKind::Trackable,
+                    amounts: AiMeteredAmounts {
+                        unit_price: AiDecimal::parse("0.01").unwrap(),
+                        gross_quantity: quantity,
+                        gross_amount: quantity,
+                        ..AiMeteredAmounts::default()
+                    },
+                }],
+            )],
+            OffsetDateTime::now_utc(),
+        )
+        .await
+        .unwrap();
+
+    let (status, overview) = send(
+        &app,
+        &Caller::Session(&root.cookie),
+        Method::GET,
+        "/ai-usage/admin/provider-accounts",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    assert_eq!(
+        overview["creditsMonth"],
+        AiBillingMonth::containing(today).unwrap().to_string()
+    );
+    let account = account_json(&overview, "credits-only");
+    assert_eq!(account["creditsThisMonth"], "150.50");
+    assert_eq!(
+        account["uncoveredCreditDays"],
+        json!([{"from": today.to_string(), "through": today.to_string()}])
+    );
+    assert_eq!(account["creditDaysWithoutSeat"], 1);
+    assert_eq!(account["uncoveredSeatDays"], json!([]));
+    assert_eq!(account["needsLook"], true);
+}
