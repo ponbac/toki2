@@ -332,7 +332,7 @@ impl AiConvertedAmount {
 /// when a line it includes has no rate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiConvertedTotals {
-    /// Everything billed: fees, overhead and API usage.
+    /// Everything billed: fees, overhead, API usage and metered credits.
     pub billed: Option<AiFeeAmount>,
     /// Subscription fees, allocated shares and overhead together.
     pub fees: Option<AiFeeAmount>,
@@ -340,6 +340,8 @@ pub struct AiConvertedTotals {
     pub overhead: Option<AiFeeAmount>,
     /// API usage.
     pub api: Option<AiFeeAmount>,
+    /// Metered payers' credits.
+    pub metered: Option<AiFeeAmount>,
 }
 
 /// A month's bill in the billing currency, beside the original amounts.
@@ -504,7 +506,8 @@ fn converted_totals(
         Ok(())
     }
 
-    let (mut billed, mut fees, mut overhead, mut api) = (Some(0), Some(0), Some(0), Some(0));
+    let (mut billed, mut fees, mut overhead, mut api, mut metered) =
+        (Some(0), Some(0), Some(0), Some(0), Some(0));
     for (line, converted) in lines.iter().zip(converted) {
         add(&mut billed, converted)?;
         match line.charge {
@@ -514,6 +517,7 @@ fn converted_totals(
                 add(&mut fees, converted)?;
                 add(&mut overhead, converted)?;
             }
+            AiBillingCharge::Metered(_) => add(&mut metered, converted)?,
         }
     }
     let amount = |hundredths: Option<i64>| {
@@ -528,6 +532,7 @@ fn converted_totals(
         fees: amount(fees),
         overhead: amount(overhead),
         api: amount(api),
+        metered: amount(metered),
     })
 }
 

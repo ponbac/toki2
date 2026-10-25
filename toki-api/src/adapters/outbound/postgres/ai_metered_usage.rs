@@ -21,18 +21,21 @@ use std::collections::{BTreeMap, HashMap};
 use async_trait::async_trait;
 use time::{Date, OffsetDateTime};
 
+use super::ai_usage_reads::{stored_mappings, stored_personal_keys};
 use crate::{
     db::{DbPool, DbTransaction},
     domain::{
         models::{
-            slice_end, AiBillingMonth, AiCreditKey, AiCreditKind, AiCreditStoreScope,
-            AiCreditTotal, AiDecimal, AiImportHistory, AiImportKind, AiImportPlan, AiImportRun,
-            AiImportRunId, AiImportStatus, AiMeteredAmounts, AiMeteredCredit, AiMeteredModel,
+            slice_end, AiBillingMonth, AiBillingProject, AiCreditKey, AiCreditKind,
+            AiCreditStoreScope, AiCreditTotal, AiDecimal, AiImportHistory, AiImportKind,
+            AiImportPlan, AiImportRun, AiImportRunId, AiImportStatus, AiMappingResolver,
+            AiMeteredAmounts, AiMeteredCredit, AiMeteredDestination, AiMeteredModel,
             AiMeteredOrgCharge, AiMeteredSource, AiMeteredSummaryLine, AiMonthMode,
             AiOrgChargeKind, AiProvider, AiProviderAccountId, AiRunStatus, AiSliceRecord,
             AiSourceOutcome, AiSourceState, AiSourceStatus, AiStoredAccountCredit,
-            AiStoredAccountError, AiStoredOrgCredit, AiStoredScope, AiSummaryKind,
-            AiTrackedModelDay, AiUsageCheck, AiUsageDateRange, AiUsdNanos, UserId,
+            AiStoredAccountError, AiStoredOrgCredit, AiStoredScope, AiSummaryKind, AiTokenCounts,
+            AiTrackedModelDay, AiUnassignedKind, AiUsageCheck, AiUsageDateRange, AiUsdNanos,
+            TimeTrackingCompany, UserId, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::{AiImportLease, AiMeteredUsageRepository},
         AiMeteredUsageError,
@@ -1880,14 +1883,44 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         payer: AiProvider,
         dates: AiUsageDateRange,
         reprice_floor: OffsetDateTime,
+        mapping_company: Option<&TimeTrackingCompany>,
         user: Option<UserId>,
     ) -> Result<Vec<AiTrackedModelDay>, AiMeteredUsageError> {
-        // A bucket is on an old pricing basis when it is at or after the
-        // floor and has no basis, or another basis than the latest its own
-        // machine uploaded, over all of the machine's providers.
+        // Keys resolve as the bill resolves them: the shared resolver decides
+        // which mappings count, and personal marks apply only to unmapped
+        // keys. A bucket is on an old pricing basis when it is at or after
+        // the floor and has no basis, or another basis than the latest its own
+        // machine uploaded, over all of the machine's providers. Each cost is
+        // summed exactly per destination and rounded as the user's day and
+        // model: a destination gets the rounded running total through it less
+        // the one before it.
+        let resolver = AiMappingResolver::new(
+            stored_mappings(&self.pool).await.map_err(storage_error)?,
+            mapping_company.cloned(),
+        );
+        let (personal_users, personal_keys): (Vec<i32>, Vec<String>) =
+            stored_personal_keys(&self.pool, user.as_ref())
+                .await
+                .map_err(storage_error)?
+                .into_iter()
+                .filter(|(_, key)| resolver.personal_mark_applies(key))
+                .map(|(user_id, key)| (user_id.as_i32(), key))
+                .unzip();
+        let resolved = resolver.resolved_keys();
+        let keys: Vec<&str> = resolved.iter().map(|(key, _)| *key).collect();
+        let ids: Vec<&str> = resolved
+            .iter()
+            .map(|(_, project)| project.id.as_str())
+            .collect();
         sqlx::query!(
             r#"
-            WITH machines AS (
+            WITH resolved_projects AS (
+                SELECT project_key, project_id
+                FROM UNNEST($6::text[], $7::text[]) AS mapping(project_key, project_id)
+            ), personal_keys AS (
+                SELECT user_id, project_key
+                FROM UNNEST($8::int4[], $9::text[]) AS mark(user_id, project_key)
+            ), machines AS (
                 SELECT DISTINCT machine_id
                 FROM ai_usage_buckets
                 WHERE COALESCE(billing_provider, provider) = $1
@@ -1900,52 +1933,124 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
                 JOIN machines USING (machine_id)
                 WHERE bucket.pricing_basis IS NOT NULL
                 ORDER BY bucket.machine_id, bucket.hour_start DESC
+            ), destinations AS (
+                SELECT
+                    bucket.user_id,
+                    (bucket.hour_start AT TIME ZONE 'UTC')::date AS day,
+                    bucket.model,
+                    personal.project_key IS NOT NULL AS personal,
+                    CASE WHEN personal.project_key IS NULL THEN mapping.project_id END
+                        AS project_id,
+                    personal.project_key IS NULL AND bucket.project_key = $10 AS unattributed,
+                    MIN(bucket.project_key) AS project_key,
+                    SUM(bucket.input_tokens)::int8 AS input_tokens,
+                    SUM(bucket.cache_read_tokens)::int8 AS cache_read_tokens,
+                    SUM(bucket.cache_write_tokens)::int8 AS cache_write_tokens,
+                    SUM(bucket.output_tokens)::int8 AS output_tokens,
+                    SUM(bucket.records)::int8 AS records,
+                    SUM(bucket.unpriced_records)::int8 AS unpriced,
+                    COALESCE(SUM(bucket.estimated_cost_usd), 0) AS cost,
+                    COALESCE(SUM(bucket.estimated_cost_usd) FILTER (
+                        WHERE bucket.hour_start >= $4
+                          AND (bucket.pricing_basis IS NULL
+                               OR bucket.pricing_basis IS DISTINCT FROM current_basis.pricing_basis)
+                    ), 0) AS old_basis_cost,
+                    COUNT(*) FILTER (
+                        WHERE bucket.hour_start >= $4
+                          AND (bucket.pricing_basis IS NULL
+                               OR bucket.pricing_basis IS DISTINCT FROM current_basis.pricing_basis)
+                    )::int8 AS old_basis_buckets,
+                    COALESCE(SUM(bucket.estimated_cost_usd) FILTER (
+                        WHERE bucket.hour_start < $4
+                    ), 0) AS before_floor_cost
+                FROM ai_usage_buckets AS bucket
+                LEFT JOIN current_basis ON current_basis.machine_id = bucket.machine_id
+                LEFT JOIN resolved_projects AS mapping ON mapping.project_key = bucket.project_key
+                LEFT JOIN personal_keys AS personal
+                    ON personal.user_id = bucket.user_id
+                    AND personal.project_key = bucket.project_key
+                WHERE COALESCE(bucket.billing_provider, bucket.provider) = $1
+                  AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE 'UTC')
+                  AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE 'UTC')
+                  AND ($5::int4 IS NULL OR bucket.user_id = $5)
+                GROUP BY 1, 2, 3, 4, 5, 6
             )
             SELECT
-                bucket.user_id,
-                (bucket.hour_start AT TIME ZONE 'UTC')::date AS "day!",
-                bucket.model,
-                SUM(bucket.records)::int8 AS "records!",
-                SUM(bucket.unpriced_records)::int8 AS "unpriced!",
-                round(COALESCE(SUM(bucket.estimated_cost_usd), 0) * 1000000000)::int8
-                    AS "priced_nanos!",
-                round(COALESCE(SUM(bucket.estimated_cost_usd) FILTER (
-                    WHERE bucket.hour_start >= $4
-                      AND (bucket.pricing_basis IS NULL
-                           OR bucket.pricing_basis IS DISTINCT FROM current_basis.pricing_basis)
-                ), 0) * 1000000000)::int8 AS "old_basis_nanos!",
-                COUNT(*) FILTER (
-                    WHERE bucket.hour_start >= $4
-                      AND (bucket.pricing_basis IS NULL
-                           OR bucket.pricing_basis IS DISTINCT FROM current_basis.pricing_basis)
-                )::int8 AS "old_basis_buckets!",
-                round(COALESCE(SUM(bucket.estimated_cost_usd) FILTER (
-                    WHERE bucket.hour_start < $4
-                ), 0) * 1000000000)::int8 AS "before_floor_nanos!"
-            FROM ai_usage_buckets AS bucket
-            LEFT JOIN current_basis ON current_basis.machine_id = bucket.machine_id
-            WHERE COALESCE(bucket.billing_provider, bucket.provider) = $1
-              AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE 'UTC')
-              AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE 'UTC')
-              AND ($5::int4 IS NULL OR bucket.user_id = $5)
-            GROUP BY 1, 2, 3
-            ORDER BY 1, 2, 3
+                user_id AS "user_id!",
+                day AS "day!",
+                model AS "model!",
+                personal AS "personal!",
+                project_id,
+                unattributed AS "unattributed!",
+                project_key AS "project_key!",
+                input_tokens AS "input_tokens!",
+                cache_read_tokens AS "cache_read_tokens!",
+                cache_write_tokens AS "cache_write_tokens!",
+                output_tokens AS "output_tokens!",
+                records AS "records!",
+                unpriced AS "unpriced!",
+                (
+                    round(SUM(cost) OVER through * 1000000000)
+                    - round(COALESCE(SUM(cost) OVER before, 0) * 1000000000)
+                )::int8 AS "priced_nanos!",
+                (
+                    round(SUM(old_basis_cost) OVER through * 1000000000)
+                    - round(COALESCE(SUM(old_basis_cost) OVER before, 0) * 1000000000)
+                )::int8 AS "old_basis_nanos!",
+                old_basis_buckets AS "old_basis_buckets!",
+                (
+                    round(SUM(before_floor_cost) OVER through * 1000000000)
+                    - round(COALESCE(SUM(before_floor_cost) OVER before, 0) * 1000000000)
+                )::int8 AS "before_floor_nanos!"
+            FROM destinations
+            WINDOW
+                destination AS (
+                    PARTITION BY user_id, day, model
+                    ORDER BY personal, project_id NULLS LAST, unattributed
+                ),
+                through AS (destination ROWS UNBOUNDED PRECEDING),
+                before AS (destination ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+            ORDER BY user_id, day, model, personal, project_id NULLS LAST, unattributed
             "#,
             payer.as_str(),
             dates.start(),
             dates.end(),
             reprice_floor,
             user.map(|user| user.as_i32()),
+            &keys as &[&str],
+            &ids as &[&str],
+            &personal_users,
+            &personal_keys,
+            UNATTRIBUTED_PROJECT_KEY,
         )
         .fetch_all(&self.pool)
         .await
         .map_err(storage_error)?
         .into_iter()
         .map(|row| {
+            // Key names never leave the adapter: only the destination does.
+            let destination = if row.personal {
+                AiMeteredDestination::Personal
+            } else {
+                AiMeteredDestination::Project(match resolver.project(&row.project_key) {
+                    Some(project) => AiBillingProject::Mapped(project.clone()),
+                    None if row.unattributed => {
+                        AiBillingProject::Unassigned(AiUnassignedKind::Unattributed)
+                    }
+                    None => AiBillingProject::Unassigned(AiUnassignedKind::Unmapped),
+                })
+            };
             Ok(AiTrackedModelDay {
                 user_id: UserId::new(row.user_id),
                 day: row.day,
                 model: row.model,
+                destination,
+                tokens: AiTokenCounts {
+                    input: row.input_tokens,
+                    cache_read: row.cache_read_tokens,
+                    cache_write: row.cache_write_tokens,
+                    output: row.output_tokens,
+                },
                 priced_cost: nanos(row.priced_nanos)?,
                 records: row.records,
                 unpriced_records: row.unpriced,

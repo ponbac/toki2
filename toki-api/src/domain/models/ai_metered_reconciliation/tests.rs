@@ -1,244 +1,7 @@
 use time::macros::{date, datetime};
 
 use super::*;
-use crate::domain::models::{
-    AiAccountDisposition, AiAccountDispositionId, AiAccountDispositionTerms, AiAccountPeriod,
-    AiMeteredAmounts, AiMeteredModel, AiProviderLogin, AiStoredSeat,
-};
-
-const TODAY: Date = date!(2026 - 10 - 25);
-const ADA: UserId = UserId::new(1);
-const GRACE: UserId = UserId::new(2);
-const ALAN: UserId = UserId::new(3);
-const CREDITS_SKU: &str = "Copilot AI Credits";
-const AGENT_SKU: &str = "Copilot Cloud Agent";
-/// Nanodollars per credit.
-const CREDIT: i64 = 10_000_000;
-
-fn october() -> AiBillingMonth {
-    AiBillingMonth::parse("2026-10").unwrap()
-}
-
-fn usd(nanos: i64) -> AiUsdNanos {
-    AiUsdNanos::new(nanos).unwrap()
-}
-
-fn dec(raw: &str) -> AiDecimal {
-    AiDecimal::parse(raw).unwrap()
-}
-
-fn account_id(id: i64) -> AiProviderAccountId {
-    AiProviderAccountId::new(id).unwrap()
-}
-
-fn seat_since(day: Date) -> AiStoredSeat {
-    let created_at = day.midnight().assume_utc();
-    AiStoredSeat {
-        created_at,
-        pending_cancellation_on: None,
-        last_activity_at: None,
-        last_activity_client: None,
-        first_listed_at: created_at,
-        last_listed_at: datetime!(2026-10-25 06:00 UTC),
-        unlisted_at: None,
-    }
-}
-
-/// An account with a seat since September and the given dispositions.
-fn account(
-    id: i64,
-    login: &str,
-    seated: bool,
-    dispositions: &[(AiAccountTarget, Date, Option<Date>)],
-) -> AiStoredProviderAccount {
-    let login = AiProviderLogin::parse(login).unwrap();
-    AiStoredProviderAccount {
-        account_id: account_id(id),
-        profile: None,
-        seats: if seated {
-            vec![seat_since(date!(2026 - 09 - 01))]
-        } else {
-            Vec::new()
-        },
-        dispositions: dispositions
-            .iter()
-            .enumerate()
-            .map(|(index, (target, from, to))| AiAccountDisposition {
-                id: AiAccountDispositionId::new(i32::try_from(id).unwrap() * 10 + index as i32),
-                payer: AiProvider::Copilot,
-                account_id: account_id(id),
-                login: login.clone(),
-                terms: AiAccountDispositionTerms {
-                    target: *target,
-                    period: AiAccountPeriod::new(*from, *to).unwrap(),
-                },
-                updated_at: datetime!(2026-10-01 08:00 UTC),
-                updated_by: None,
-            })
-            .collect(),
-        login,
-    }
-}
-
-fn linked(id: i64, login: &str, user: UserId) -> AiStoredProviderAccount {
-    account(
-        id,
-        login,
-        true,
-        &[(AiAccountTarget::User(user), date!(2026 - 09 - 01), None)],
-    )
-}
-
-fn metered_credit(sku: &str, label: &str, kind: AiCreditKind, quantity: &str) -> AiMeteredCredit {
-    let label_text = label.to_string();
-    let (auto_routed, rest) = match label.strip_prefix("Auto: ") {
-        Some(rest) => (true, rest),
-        None => (false, label),
-    };
-    let model = match rest {
-        "Code Review model" => "code-review".to_string(),
-        rest => rest.to_lowercase().replace(' ', "-"),
-    };
-    AiMeteredCredit {
-        product: "Copilot".to_string(),
-        sku: sku.to_string(),
-        unit: "ai-credits".to_string(),
-        model: AiMeteredModel {
-            label: label_text,
-            model,
-            auto_routed,
-        },
-        kind,
-        amounts: AiMeteredAmounts {
-            unit_price: dec("0.01"),
-            gross_quantity: dec(quantity),
-            gross_amount: dec(quantity),
-            net_quantity: dec(quantity),
-            net_amount: dec(quantity),
-            ..AiMeteredAmounts::default()
-        },
-    }
-}
-
-fn row(
-    id: i64,
-    day: Date,
-    sku: &str,
-    label: &str,
-    kind: AiCreditKind,
-    quantity: &str,
-) -> AiStoredAccountCredit {
-    let credit = metered_credit(sku, label, kind, quantity);
-    AiStoredAccountCredit {
-        account_id: account_id(id),
-        day,
-        login: format!("account-{id}"),
-        gross_usd: credit.gross_usd().unwrap(),
-        credit,
-        fetched_at: datetime!(2026-10-25 06:00 UTC),
-    }
-}
-
-/// A trackable credits row.
-fn credits(id: i64, day: Date, label: &str, quantity: &str) -> AiStoredAccountCredit {
-    row(
-        id,
-        day,
-        CREDITS_SKU,
-        label,
-        AiCreditKind::Trackable,
-        quantity,
-    )
-}
-
-fn org(day: Date, label: &str, quantity: &str) -> AiStoredOrgCredit {
-    let credit = metered_credit(CREDITS_SKU, label, AiCreditKind::Trackable, quantity);
-    AiStoredOrgCredit {
-        day,
-        gross_usd: credit.gross_usd().unwrap(),
-        credit,
-    }
-}
-
-fn tracked(user: UserId, day: Date, model: &str, nanos: i64) -> AiTrackedModelDay {
-    AiTrackedModelDay {
-        user_id: user,
-        day,
-        model: model.to_string(),
-        priced_cost: usd(nanos),
-        records: 10,
-        unpriced_records: 0,
-        old_basis_cost: AiUsdNanos::ZERO,
-        old_basis_buckets: 0,
-        before_floor_cost: AiUsdNanos::ZERO,
-    }
-}
-
-/// Every day of October through today, complete and fetched.
-fn full_coverage() -> BTreeMap<Date, AiDayCoverage> {
-    let mut coverage = BTreeMap::new();
-    let mut day = october().first_day();
-    while day <= TODAY {
-        coverage.insert(
-            day,
-            AiDayCoverage {
-                org_fetched: true,
-                org_complete: day < TODAY,
-                accounts_missing: 0,
-                accounts_incomplete: u32::from(day == TODAY),
-            },
-        );
-        day = day.next_day().unwrap();
-    }
-    coverage
-}
-
-/// Every account's slice of every covered day, complete before today.
-fn all_slices(
-    accounts: &[AiStoredProviderAccount],
-    coverage: &BTreeMap<Date, AiDayCoverage>,
-) -> HashMap<(AiProviderAccountId, Date), bool> {
-    accounts
-        .iter()
-        .flat_map(|account| {
-            coverage
-                .keys()
-                .map(move |day| ((account.account_id, *day), *day < TODAY))
-        })
-        .collect()
-}
-
-/// The organization's check, matching the payer's month total.
-fn org_check() -> AiUsageCheck {
-    AiUsageCheck {
-        account_id: None,
-        checked_at: datetime!(2026-10-25 06:00 UTC),
-        payer_gross: Some(dec("35")),
-        stored_gross: dec("35"),
-        matches: Some(true),
-        error: None,
-    }
-}
-
-fn input(accounts: Vec<AiStoredProviderAccount>) -> AiReconciliationInput {
-    let coverage = full_coverage();
-    AiReconciliationInput {
-        account_slices: all_slices(&accounts, &coverage),
-        payer: AiProvider::Copilot,
-        month: october(),
-        today: TODAY,
-        settle_days: 3,
-        accounts,
-        account_credits: Vec::new(),
-        org_credits: Vec::new(),
-        org_charges: Vec::new(),
-        summary: None,
-        tracked: Vec::new(),
-        checks: vec![org_check()],
-        coverage,
-        focus: None,
-    }
-}
+use crate::domain::models::{ai_metered_fixtures::*, AiMeteredAmounts};
 
 /// Reconciles and asserts the identity on every account.
 fn run(input: AiReconciliationInput) -> AiMeteredReconciliation {
@@ -1060,4 +823,36 @@ fn quiet_accounts_are_not_listed() {
     assert_eq!(logins, ["ada-lovelace"]);
     assert!(result.residual_days.is_empty());
     assert_eq!(pool_exhausted_on(&[]), None);
+}
+
+#[test]
+fn destinations_of_one_model_reconcile_as_the_model() {
+    let day = date!(2026 - 10 - 05);
+    let reconciled = |tracked: Vec<AiTrackedModelDay>| {
+        let mut input = input(vec![linked(1001, "ada-lovelace", ADA)]);
+        input.account_credits = vec![credits(1001, day, "GPT-6.1 Sol", "100")];
+        input.tracked = tracked;
+        run(input).accounts.remove(0)
+    };
+    let one = reconciled(vec![tracked(ADA, day, "gpt-6.1-sol", 80 * CREDIT)]);
+    let split = reconciled(vec![
+        tracked_to(ADA, day, "gpt-6.1-sol", to_project(widget()), 50 * CREDIT),
+        tracked_to(
+            ADA,
+            day,
+            "gpt-6.1-sol",
+            to_unassigned(AiUnassignedKind::Unmapped),
+            20 * CREDIT,
+        ),
+        tracked_to(
+            ADA,
+            day,
+            "gpt-6.1-sol",
+            AiMeteredDestination::Personal,
+            10 * CREDIT,
+        ),
+    ]);
+    assert_eq!(split, one);
+    assert_eq!(split.attributed, usd(80 * CREDIT));
+    assert_eq!(split.untracked, usd(20 * CREDIT));
 }

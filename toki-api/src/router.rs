@@ -43,7 +43,9 @@ use crate::{
     config::Settings,
     db::DbPool,
     domain::{
-        models::{AiImportFreshness, AiProvider, AiUsageTimeZone},
+        models::{
+            AiBillingMonth, AiImportFreshness, AiMeteredCutover, AiProvider, AiUsageTimeZone,
+        },
         ports::{
             inbound::{
                 AiBillingService, AiDisplayRateService, AiMeteredUsageService,
@@ -55,10 +57,11 @@ use crate::{
         },
         services::{
             AiAccountDirectoryState, AiBillingServiceImpl, AiDisplayRateServiceImpl,
-            AiExchangeRateSettings, AiExchangeRates, AiMeteredImportSettings, AiMeteredSourceState,
-            AiMeteredUsageServiceImpl, AiProjectMappingServiceImpl, AiProviderAccountServiceImpl,
-            AiSubscriptionServiceImpl, AiUsageReportServiceImpl, AiUsageServiceImpl,
-            ApiTokenServiceImpl, AvatarServiceImpl, OAuthServiceImpl,
+            AiExchangeRateSettings, AiExchangeRates, AiMeteredImportSettings, AiMeteredMonths,
+            AiMeteredReadSettings, AiMeteredSourceState, AiMeteredUsageServiceImpl,
+            AiProjectMappingServiceImpl, AiProviderAccountServiceImpl, AiSubscriptionServiceImpl,
+            AiUsageReportServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
+            OAuthServiceImpl,
         },
         RepoConfig,
     },
@@ -217,19 +220,53 @@ pub async fn create(
     );
     let ai_display_rate_service: Arc<dyn AiDisplayRateService> =
         Arc::new(AiDisplayRateServiceImpl::new(ai_exchange_rates.clone()));
+    // GitHub bills Copilot per seat and credit: Copilot is the payer whose
+    // accounts and usage these are. The bill and the reconciliation tab read
+    // its months through one loader.
+    let ai_metered_usage_repository =
+        Arc::new(PostgresAiMeteredUsageRepository::new(db_pool.clone()));
+    let ai_provider_account_repository =
+        Arc::new(PostgresAiProviderAccountRepository::new(db_pool.clone()));
+    let metered_cutover = metered_cutover(config.ai_usage.metered_copilot_from.as_deref())
+        .unwrap_or_else(|message| panic!("{message}"))
+        .map(|from| AiMeteredCutover {
+            payer: AiProvider::Copilot,
+            from,
+        });
+    if let Some(cutover) = metered_cutover {
+        let backfill_from = config.ai_usage.metered_import.backfill_from;
+        if cutover.from.first_day() < backfill_from {
+            tracing::warn!(
+                cutover = %cutover.from,
+                %backfill_from,
+                "Copilot usage before the import's backfill shows as not imported"
+            );
+        }
+    }
     let ai_billing_service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::new(
         Arc::new(PostgresAiBillingRepository::new(db_pool.clone())),
         ai_subscription_repository.clone(),
         ai_exchange_rates,
         ai_usage_time_zone.clone(),
         mapping_company.clone(),
+        AiMeteredMonths::new(
+            ai_metered_usage_repository.clone(),
+            ai_provider_account_repository.clone(),
+            AiProvider::Copilot,
+            AiMeteredReadSettings {
+                backfill_from: config.ai_usage.metered_import.backfill_from,
+                reprice_floor: config.ai_usage.reprice_floor,
+                mapping_company: mapping_company.clone(),
+            },
+        ),
+        metered_cutover,
     ));
     // Personal usage reads: always the caller's own usage, admins included.
     let ai_usage_report_service: Arc<dyn AiUsageReportService> =
         Arc::new(AiUsageReportServiceImpl::new(
             Arc::new(PostgresAiUsageReportRepository::new(db_pool.clone())),
             ai_usage_time_zone.clone(),
-            mapping_company,
+            mapping_company.clone(),
         ));
     let ai_subscription_service: Arc<dyn AiSubscriptionService> = Arc::new(
         AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone),
@@ -266,19 +303,17 @@ pub async fn create(
     let account_directory_ready = matches!(account_directory, AiAccountDirectoryState::Ready(_));
     #[cfg(not(debug_assertions))]
     let usage_source_ready = matches!(usage_source, AiMeteredSourceState::Ready(_));
-    // GitHub bills Copilot per seat and credit: Copilot is the payer whose
-    // accounts and usage these are.
     let ai_provider_account_service: Arc<dyn AiProviderAccountService> =
         Arc::new(AiProviderAccountServiceImpl::new(
-            Arc::new(PostgresAiProviderAccountRepository::new(db_pool.clone())),
+            ai_provider_account_repository.clone(),
             account_directory,
             AiProvider::Copilot,
             config.github.organization.clone().unwrap_or_default(),
         ));
     let ai_metered_usage_service: Arc<dyn AiMeteredUsageService> =
         Arc::new(AiMeteredUsageServiceImpl::new(
-            Arc::new(PostgresAiMeteredUsageRepository::new(db_pool.clone())),
-            Arc::new(PostgresAiProviderAccountRepository::new(db_pool.clone())),
+            ai_metered_usage_repository,
+            ai_provider_account_repository,
             usage_source,
             AiProvider::Copilot,
             config.github.organization.clone().unwrap_or_default(),
@@ -287,6 +322,7 @@ pub async fn create(
                 reprice_floor: config.ai_usage.reprice_floor,
                 unattended: cfg!(not(debug_assertions)),
             },
+            mapping_company,
         ));
 
     // Create app state
@@ -364,6 +400,18 @@ pub async fn create(
             crate::observability::log_http_response_middleware,
         ))
         .layer(crate::observability::http_trace_layer())
+}
+
+/// The metered cutover month from `ai_usage.metered_copilot_from`: `None`
+/// when it is unset or blank (the rollback), an error naming the setting when
+/// it is not `YYYY-MM`.
+fn metered_cutover(raw: Option<&str>) -> Result<Option<AiBillingMonth>, String> {
+    let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) else {
+        return Ok(None);
+    };
+    AiBillingMonth::parse(raw)
+        .map(Some)
+        .ok_or_else(|| format!("ai_usage.metered_copilot_from must be YYYY-MM, got {raw:?}"))
 }
 
 /// `/mcp` accepts personal API tokens, and, given `access_tokens`, access
@@ -667,6 +715,21 @@ mod tests {
             .await
             .expect("router should respond");
         assert_eq!(anonymous_public.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn the_metered_cutover_is_a_month_or_nothing() {
+        assert_eq!(metered_cutover(None), Ok(None));
+        assert_eq!(metered_cutover(Some("")), Ok(None));
+        assert_eq!(metered_cutover(Some("  ")), Ok(None));
+        assert_eq!(
+            metered_cutover(Some(" 2026-10 ")),
+            Ok(AiBillingMonth::parse("2026-10"))
+        );
+        for invalid in ["2026-13", "2026-1", "October"] {
+            let error = metered_cutover(Some(invalid)).unwrap_err();
+            assert!(error.contains("ai_usage.metered_copilot_from"), "{error}");
+        }
     }
 
     fn test_auth_layer() -> AuthManagerLayer<AuthBackend, MokaStore> {

@@ -1,7 +1,18 @@
 import { PERSONAL_LABEL } from "@/lib/ai-usage";
+import type { AiMeteredPeriod } from "@/lib/api/queries/ai-admin";
+import { meteredName } from "../../-lib/billing";
+import { monthLabel } from "../../-lib/format";
 
 /** The billing rules, as the server applies them, and the steps after export. */
-export function BillingRules({ timeZone }: { timeZone: string }) {
+export function BillingRules({
+  timeZone,
+  meteredPeriod,
+}: {
+  timeZone: string;
+  /** The metered payer's cutover; null when none is configured. */
+  meteredPeriod: AiMeteredPeriod | null;
+}) {
+  const metered = meteredPeriod ? meteredName(meteredPeriod.provider) : null;
   return (
     <section
       aria-label="How AI usage is billed"
@@ -9,9 +20,10 @@ export function BillingRules({ timeZone }: { timeZone: string }) {
     >
       <ul className="max-w-4xl list-disc space-y-2 pl-5 text-sm text-muted-foreground">
         <li>
-          Days and months are calendar days in {timeZone}. Per developer and
-          provider, each day is billed either by the subscription that covers it
-          or as API usage.
+          Days and months are calendar days in {timeZone}
+          {metered && `, except ${metered}'s, which follow UTC (see below)`}.
+          Per developer and provider, each day is billed either by the
+          subscription that covers it or as API usage.
         </li>
         <li>
           <span className="font-medium text-foreground">API days</span> bill the
@@ -56,7 +68,35 @@ export function BillingRules({ timeZone }: { timeZone: string }) {
           out: it bills nothing and takes no share of a subscription fee, which
           is split over the rest. It is shown apart as an estimate, without the
           repository&apos;s name.
+          {metered &&
+            ` From the cutover, ${metered} usage marked so bills its credits as a line of Spinit's instead.`}
         </li>
+        {meteredPeriod && metered && (
+          <li>
+            <span className="font-medium text-foreground">{metered}.</span> From{" "}
+            {monthLabel(meteredPeriod.from)}, usage {metered} pays for bills
+            from GitHub&apos;s own credits at $0.01 per credit, in USD converted
+            like API lines, per UTC month (GitHub&apos;s billing days); earlier
+            months keep the estimates. Per account, UTC day and model,
+            GitHub&apos;s credits (G) are split by Toki&apos;s tracked estimates
+            (T): when T is at least G, G is split by each destination&apos;s
+            share of T; when T is less, each destination bills its own T and the
+            rest is{" "}
+            <span className="font-medium text-foreground">
+              untracked Copilot
+            </span>
+            , which is Spinit&apos;s. A project is never charged more than its
+            own tracked usage. The cloud agent, accounts that are unlinked,
+            external or unknown, and personal Copilot usage are Spinit&apos;s;
+            code review is billed by repository instead. Each account&apos;s
+            credits are rounded to whole credits once and split over its lines,
+            so they sum to its GitHub gross. A line stays{" "}
+            <span className="font-medium text-foreground">provisional</span>{" "}
+            while its month is in progress, GitHub&apos;s usage is not imported
+            or settled for its days, or its tracked usage is on an old pricing
+            basis or a provisional model.
+          </li>
+        )}
         <li>
           <span className="font-medium text-foreground">Currencies.</span>{" "}
           Everything is billed in SEK at the Riksbank&apos;s average rate for

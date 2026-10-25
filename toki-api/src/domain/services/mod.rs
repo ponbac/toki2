@@ -1,6 +1,7 @@
 mod ai_billing;
 mod ai_display_rates;
 mod ai_exchange_rates;
+mod ai_metered_months;
 mod ai_metered_usage;
 mod ai_project_mapping;
 mod ai_provider_accounts;
@@ -16,6 +17,7 @@ mod work_items;
 pub use ai_billing::AiBillingServiceImpl;
 pub use ai_display_rates::AiDisplayRateServiceImpl;
 pub use ai_exchange_rates::{AiExchangeRateSettings, AiExchangeRates};
+pub use ai_metered_months::{AiMeteredMonths, AiMeteredReadSettings};
 pub use ai_metered_usage::{
     AiMeteredImportSettings, AiMeteredSourceState, AiMeteredUsageServiceImpl,
 };

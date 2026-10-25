@@ -8,7 +8,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { ChartCard, Segmented } from "./chart-card";
+import { Segmented } from "@/components/segmented";
+import { ChartCard } from "./chart-card";
 import { hourGrid } from "../-lib/aggregate";
 import { SEQUENTIAL, sequentialColor } from "../-lib/colors";
 import {

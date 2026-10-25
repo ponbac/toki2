@@ -3,7 +3,8 @@ use async_trait::async_trait;
 use crate::domain::{
     models::{
         AiBillingDeveloper, AiBillingMonth, AiCurrency, AiDeveloperMonth, AiExchangeRate,
-        AiExchangeRateValue, AiMonthCompleteness, AiMonthOverview, AiUsageTimeZone, UserId,
+        AiExchangeRateValue, AiMeteredCutover, AiMonthCompleteness, AiMonthOverview,
+        AiUsageTimeZone, UserId,
     },
     AiBillingError,
 };
@@ -15,16 +16,25 @@ pub trait AiBillingService: Send + Sync + 'static {
     /// The time zone whose calendar days and months billing uses.
     fn time_zone(&self) -> &AiUsageTimeZone;
 
+    /// From which UTC month a metered payer's usage bills from its credits;
+    /// `None` keeps every month on estimates.
+    fn metered_cutover(&self) -> Option<AiMeteredCutover>;
+
     /// Everyone's bill for a month in the configured time zone, also in the
     /// billing currency at the month's exchange rates. Rates that are missing
     /// or due are fetched, waited for only briefly, and reported as pending.
+    /// From the metered cutover on, the metered payer's lines come from its
+    /// credits of the UTC month with the same key.
     async fn month_overview(
         &self,
         month: AiBillingMonth,
     ) -> Result<AiMonthOverview, AiBillingError>;
 
     /// One developer's bill for a month, with their usage per local day by
-    /// provider, model, machine and project. `UserNotFound` for an unknown user.
+    /// provider, model, machine and project (the metered payer's per UTC day
+    /// from the cutover on). Its metered lines are the developer's lines of
+    /// the overview's allocation, so both agree to the cent. `UserNotFound`
+    /// for an unknown user.
     async fn developer_month(
         &self,
         month: AiBillingMonth,

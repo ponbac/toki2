@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
+  SPINIT_OTHER_KEY,
+  SPINIT_UNATTRIBUTED_KEY,
   allocationSegments,
+  ledgerEntries,
   ledgerOf,
+  peopleOf,
+  segmentKeys,
   segmentSteps,
+  spinitShare,
   splitProjectName,
+  statementUnassigned,
 } from "./ledger.ts";
 
 const usage = {
@@ -13,22 +20,25 @@ const usage = {
   tokens: { input: 1, cacheRead: 0, cacheWrite: 0, output: 1, total: 2 },
 };
 
+/** A developer's line; `userId` in `extra` names the developer. */
 function line(projectName, sek, extra = {}) {
+  const { userId = 1, ...rest } = extra;
   return {
-    userId: 1,
+    subject: { kind: "user", userId },
     provider: "codex",
     project: projectName ? { projectId: projectName, projectName } : null,
     unassigned: projectName ? null : "unmapped",
     billingMode: "api",
     unallocatedOverhead: false,
     subscriptionId: null,
+    metered: null,
     billableAmount: sek,
     billableCurrency: "SEK",
     convertedAmount: sek,
     exchangeRate: null,
     missingRate: false,
     usage,
-    ...extra,
+    ...rest,
   };
 }
 
@@ -342,6 +352,309 @@ describe("segmentSteps", () => {
     expect(map.has("unassigned:unmapped")).toBe(false);
     expect(map.has("overhead")).toBe(false);
     expect(map.has("project:Unpriced - U")).toBe(false);
+  });
+});
+
+const ADA = { accountId: 1001, login: "ada-lovelace" };
+
+/**
+ * A metered payer's line of `kind`, with its subject and Unassigned kind as
+ * the server sends them: a developer's for a project, personal or untracked
+ * credits, an account's for unlinked or external credits, and the unknown
+ * account's for its residual.
+ */
+function metered(kind, projectName, sek, extra = {}) {
+  const { userId = 1, account = ADA, ...rest } = extra;
+  const accountKinds = ["unlinkedAccount", "externalAccount"];
+  const subject = accountKinds.includes(kind)
+    ? { kind: "providerAccount", provider: "copilot", ...account }
+    : kind === "unknownAccount"
+      ? { kind: "unknownAccount", provider: "copilot" }
+      : { kind: "user", userId };
+  const project =
+    projectName === null ? null : { projectId: projectName, projectName };
+  return line(null, sek, {
+    subject,
+    provider: "copilot",
+    project,
+    unassigned: kind === "project" && project === null ? "unattributed" : null,
+    billingMode: "metered",
+    billableCurrency: "USD",
+    metered: {
+      kind,
+      credits: `${Math.round(Number(sek) * 10)}.00`,
+      account: kind === "unknownAccount" ? null : account,
+      sku: "Copilot AI Credits",
+      provisional: false,
+      provisionalReasons: [],
+      lowRatio: false,
+    },
+    ...rest,
+  });
+}
+
+/** A month with a metered payer's lines: a project's, Unassigned outside any
+ * repository, and Spinit's of every kind. */
+function meteredMonth() {
+  return [
+    line("Big - B", "300.00"),
+    metered("project", "Big - B", "200.00"),
+    metered("project", null, "40.00"),
+    line(null, "10.00", { unassigned: "unattributed" }),
+    metered("untracked", null, "120.00"),
+    metered("untracked", null, "30.00", { userId: 2 }),
+    metered("personal", null, "25.00"),
+    metered("unlinkedAccount", null, "15.00", {
+      account: { accountId: 2002, login: "grace-hopper" },
+    }),
+    metered("externalAccount", null, "5.00", {
+      account: { accountId: 3003, login: "kj-contractor" },
+    }),
+    metered("unknownAccount", null, "2.00"),
+  ];
+}
+
+describe("a metered payer's lines", () => {
+  test("a project's credits join its entry; Spinit's follow every other entry by kind", () => {
+    const ledger = ledgerOf(meteredMonth());
+
+    expect(ledger.projects.map((e) => [e.label, e.totals.converted])).toEqual([
+      ["Big - B", 50000],
+    ]);
+    expect(
+      ledger.spinit.map((e) => [
+        e.key,
+        e.kind,
+        e.spinit,
+        e.label,
+        e.totals.converted,
+      ]),
+    ).toEqual([
+      [
+        "spinit:untracked",
+        "spinit",
+        "untracked",
+        "Spinit: untracked Copilot",
+        15000,
+      ],
+      [
+        "spinit:personal",
+        "spinit",
+        "personal",
+        "Spinit: personal / internal Copilot",
+        2500,
+      ],
+      [
+        "spinit:accounts",
+        "spinit",
+        "accounts",
+        "Spinit: unlinked, external and unknown accounts",
+        2200,
+      ],
+    ]);
+    expect(
+      ledgerEntries(ledger)
+        .map((e) => e.key)
+        .slice(-3),
+    ).toEqual(["spinit:untracked", "spinit:personal", "spinit:accounts"]);
+    expect(ledger.totals.converted).toBe(74700);
+  });
+
+  test("credits outside any repository stay Unassigned, beside other such usage", () => {
+    const [unattributed] = ledgerOf(meteredMonth()).unassigned;
+
+    expect(unattributed.key).toBe("unassigned:unattributed");
+    expect(unattributed.lines.map((l) => l.billingMode)).toEqual([
+      "metered",
+      "api",
+    ]);
+    expect(unattributed.totals.converted).toBe(5000);
+  });
+
+  test("an entry's people are its subjects: developers and accounts apart", () => {
+    const ledger = ledgerOf(meteredMonth());
+    const accounts = ledger.spinit.find((e) => e.spinit === "accounts");
+    const untracked = ledger.spinit.find((e) => e.spinit === "untracked");
+
+    expect(accounts.people.map((p) => [p.key, p.userId])).toEqual([
+      ["account:copilot:2002", null],
+      ["account:copilot:3003", null],
+      ["unknown:copilot", null],
+    ]);
+    expect(untracked.people.map((p) => [p.key, p.userId])).toEqual([
+      ["user:1", 1],
+      ["user:2", 2],
+    ]);
+  });
+
+  test("untracked credits get a solid segment, the rest of Spinit's one merged", () => {
+    const segments = allocationSegments(ledgerOf(meteredMonth()));
+
+    expect(steps(segments)).toEqual([
+      ["project", "Big - B", 1, 1],
+      ["unassigned", "No repository", null, 1],
+      ["spinit", "Spinit: untracked Copilot", null, 1],
+      ["spinit", "Spinit: other Copilot", null, 3],
+    ]);
+    expect(segments.slice(1).map((s) => [s.key, s.short, s.amount])).toEqual([
+      ["unassigned:unattributed:usage", "No repo", 1000],
+      ["spinit:untracked", "Untracked", 15000],
+      [SPINIT_OTHER_KEY, "Other", 8700],
+    ]);
+    expect(segments[3].entries.map((e) => [e.label, e.totals.converted])).toEqual(
+      [
+        ["Spinit: personal / internal Copilot", 2500],
+        ["Spinit: unlinked, external and unknown accounts", 2200],
+        ["Spinit: Copilot outside any repository", 4000],
+      ],
+    );
+    const keys = segmentKeys(segments);
+    expect(keys.get("spinit:personal")).toEqual([SPINIT_OTHER_KEY]);
+    expect(keys.get("spinit:accounts")).toEqual([SPINIT_OTHER_KEY]);
+    expect(keys.get("project:Big - B")).toEqual(["project:Big - B"]);
+    // The ledger's row outside any repository stands for both of its parts.
+    expect(keys.get("unassigned:unattributed")).toEqual([
+      "unassigned:unattributed:usage",
+      SPINIT_OTHER_KEY,
+    ]);
+    expect(segmentSteps(segments).has("spinit:untracked")).toBe(false);
+  });
+
+  test("the strip draws credits outside any repository as Spinit's, as the sentence counts them", () => {
+    const ledger = ledgerOf(meteredMonth());
+    const segments = allocationSegments(ledger);
+    const share = spinitShare(ledger);
+    const { unassigned, outside } = statementUnassigned(ledger);
+    const drawn = (kind) =>
+      segments
+        .filter((s) => s.kind === kind)
+        .reduce((sum, s) => sum + s.amount, 0);
+
+    expect(drawn("spinit")).toBe(share.total);
+    expect(
+      unassigned.map((e) => [
+        e.key,
+        e.kind,
+        e.lines.map((l) => l.billingMode),
+        e.totals.converted,
+      ]),
+    ).toEqual([["unassigned:unattributed", "unassigned", ["api"], 1000]]);
+    expect(drawn("unassigned")).toBe(1000);
+    expect([
+      outside.key,
+      outside.kind,
+      outside.spinit,
+      outside.totals.converted,
+    ]).toEqual(["unassigned:unattributed", "spinit", "unattributed", 4000]);
+    expect(outside.totals.converted).toBe(share.unattributed);
+    // The ledger itself keeps them under Unassigned.
+    expect(ledger.unassigned[0].totals.converted).toBe(5000);
+  });
+
+  test("credits outside any repository alone keep a Spinit segment of their own", () => {
+    const ledger = ledgerOf([
+      line("Big - B", "300.00"),
+      metered("project", null, "40.00"),
+    ]);
+    const segments = allocationSegments(ledger);
+
+    expect(steps(segments)).toEqual([
+      ["project", "Big - B", 1, 1],
+      ["spinit", "Spinit: Copilot outside any repository", null, 1],
+    ]);
+    expect([segments[1].key, segments[1].short, segments[1].amount]).toEqual([
+      SPINIT_UNATTRIBUTED_KEY,
+      "Outside repos",
+      4000,
+    ]);
+    expect(segments[1].entries[0].key).toBe("unassigned:unattributed");
+    expect(segmentKeys(segments).get("unassigned:unattributed")).toEqual([
+      SPINIT_UNATTRIBUTED_KEY,
+    ]);
+    expect(statementUnassigned(ledger).unassigned).toEqual([]);
+  });
+
+  test("one other kind of Spinit's credits keeps a segment of its own", () => {
+    const segments = allocationSegments(
+      ledgerOf([line("Big - B", "300.00"), metered("personal", null, "25.00")]),
+    );
+
+    expect(steps(segments)).toEqual([
+      ["project", "Big - B", 1, 1],
+      ["spinit", "Spinit: personal / internal Copilot", null, 1],
+    ]);
+    expect(segments[1].short).toBe("Personal");
+  });
+
+  test("what stays with Spinit counts credits outside any repository, not other such usage", () => {
+    expect(spinitShare(ledgerOf(meteredMonth()))).toEqual({
+      total: 23700,
+      untracked: 15000,
+      personal: 2500,
+      accounts: 2200,
+      unattributed: 4000,
+    });
+    expect(spinitShare(ledgerOf([line("Big - B", "300.00")]))).toEqual({
+      total: 0,
+      untracked: 0,
+      personal: 0,
+      accounts: 0,
+      unattributed: 0,
+    });
+  });
+
+  test("a Spinit line without an exchange rate leaves what stays with Spinit unknown", () => {
+    const share = spinitShare(
+      ledgerOf([
+        metered("untracked", null, null, {
+          missingRate: true,
+          convertedAmount: null,
+        }),
+      ]),
+    );
+
+    expect(share.untracked).toBeNull();
+    expect(share.total).toBeNull();
+  });
+});
+
+describe("peopleOf with a metered payer", () => {
+  const overview = {
+    developers: [
+      { userId: 1, fullName: "Ada Lovelace", email: "ada@example.com" },
+      { userId: 2, fullName: "Grace Hopper", email: "grace@example.com" },
+    ],
+    lines: meteredMonth(),
+    subscriptions: [],
+    personalUsage: [],
+  };
+
+  test("lists developers only, with their untracked credits apart", () => {
+    const people = peopleOf(overview);
+
+    expect(
+      people.map((p) => [
+        p.userId,
+        p.totals?.converted,
+        p.api,
+        p.metered?.untracked.converted ?? null,
+        p.projects,
+        p.hasUnassigned,
+      ]),
+    ).toEqual([
+      [1, 69500, true, 12000, ["Big - B"], true],
+      [2, 3000, false, 3000, [], false],
+    ]);
+  });
+
+  test("a developer without metered lines has no metered credits", () => {
+    const [person] = peopleOf({
+      ...overview,
+      lines: [line("Big - B", "300.00")],
+    });
+
+    expect(person.metered).toBeNull();
+    expect(person.api).toBe(true);
   });
 });
 

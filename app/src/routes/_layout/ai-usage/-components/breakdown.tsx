@@ -18,7 +18,8 @@ import type {
   AiUsageTotals,
 } from "@/lib/api/queries/ai-usage-report";
 import { cn } from "@/lib/utils";
-import { ChartCard, Segmented } from "./chart-card";
+import { Segmented } from "@/components/segmented";
+import { ChartCard } from "./chart-card";
 import { Cost } from "./cost";
 import type { FilterPatch } from "./filter-bar";
 import { RepoKey } from "./repo-key";

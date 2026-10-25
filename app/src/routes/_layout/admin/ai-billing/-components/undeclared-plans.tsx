@@ -5,7 +5,11 @@ import { AiProviderIcon } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import type { AiBillingOverview } from "@/lib/api/queries/ai-admin";
 import type { AiSubscriptionMismatch } from "@/lib/api/queries/ai-usage";
-import { billableTotals, formatConverted } from "../../-lib/billing";
+import {
+  billableTotals,
+  formatConverted,
+  lineUserId,
+} from "../../-lib/billing";
 import { plural, shortDate } from "../../-lib/format";
 
 /**
@@ -28,7 +32,7 @@ export function UndeclaredPlans({
     .map((mismatch) => {
       const lines = overview.lines.filter(
         (line) =>
-          line.userId === mismatch.userId &&
+          lineUserId(line) === mismatch.userId &&
           line.provider === mismatch.provider &&
           line.billingMode === "api",
       );

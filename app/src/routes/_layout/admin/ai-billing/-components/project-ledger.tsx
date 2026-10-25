@@ -28,15 +28,24 @@ import { cn } from "@/lib/utils";
 import { AttentionPill } from "../../-components/attention-pill";
 import {
   OVERHEAD_LABEL,
+  SPINIT_KIND_LABELS,
+  SPINIT_LABEL,
   UNASSIGNED_KIND_LABELS,
   UNASSIGNED_LABEL,
   formatConverted,
   lineConverted,
+  lineUserId,
   lineWarnings,
+  formatLineCredits,
+  meteredAccountDetail,
+  meteredName,
+  meteredSku,
+  provisionalWarning,
+  subjectLabel,
+  trackedSkus,
 } from "../../-lib/billing";
 import { formatCount, formatShare, plural } from "../../-lib/format";
 import {
-  TAIL_STEP,
   ledgerEntries,
   ledgerRowId,
   shareOf,
@@ -58,9 +67,10 @@ const FOLD_AT = 3;
 /**
  * The month's bill by project, dearest first: what to invoice each customer,
  * whose usage it is, with what, and what it would have cost at API prices.
- * Usage without a project and fees nobody used follow the projects. A row
- * opens to its developers, each with their lines beneath when they have more
- * than one; the row pointed at lights its segment of the strip.
+ * Usage without a project, fees nobody used and a metered payer's credits
+ * that stay with Spinit follow the projects. A row opens to its developers
+ * (or accounts), each with their lines beneath when they have more than one;
+ * the row pointed at lights its segment of the strip.
  */
 export function ProjectLedger({
   overview,
@@ -69,6 +79,7 @@ export function ProjectLedger({
   onToggle,
   focusRow,
   steps,
+  segmentOf,
   undeclared,
   highlighted,
   onHighlight,
@@ -81,6 +92,8 @@ export function ProjectLedger({
   focusRow: Readonly<{ key: string }> | null;
   /** Each project's step of the billable ramp, as its strip segment has it. */
   steps: ReadonlyMap<string, BillableStep>;
+  /** The strip segments each entry is drawn in, by entry key. */
+  segmentOf: ReadonlyMap<string, readonly string[]>;
   /** Tools each developer used on a plan nobody declared this month. */
   undeclared: ReadonlyMap<number, readonly AiProvider[]>;
   highlighted: string | null;
@@ -102,6 +115,7 @@ export function ProjectLedger({
   const plans = new Map(
     overview.subscriptions.map((s) => [s.subscriptionId, s]),
   );
+  const tracked = trackedSkus(overview.lines);
 
   return (
     <div className="overflow-hidden rounded-xl border border-border/70 bg-card/60">
@@ -130,14 +144,16 @@ export function ProjectLedger({
             overview={overview}
             names={names}
             plans={plans}
+            tracked={tracked}
             step={steps.get(entry.key) ?? null}
             undeclared={undeclared}
             isOpen={open.has(entry.key)}
             onToggle={() => onToggle(entry.key)}
             lit={
               highlighted === entry.key ||
-              // The merged tail lights every row it stands for.
-              (highlighted === "others" && steps.get(entry.key) === TAIL_STEP)
+              // A merged segment lights every row it stands for.
+              (highlighted !== null &&
+                (segmentOf.get(entry.key) ?? []).includes(highlighted))
             }
             onHighlight={onHighlight}
           />
@@ -167,6 +183,7 @@ function EntryRows({
   overview,
   names,
   plans,
+  tracked,
   step,
   undeclared,
   isOpen,
@@ -179,6 +196,7 @@ function EntryRows({
   overview: AiBillingOverview;
   names: ReadonlyMap<number, string>;
   plans: ReadonlyMap<number, AiSubscriptionMonth>;
+  tracked: ReadonlySet<string>;
   step: BillableStep | null;
   undeclared: ReadonlyMap<number, readonly AiProvider[]>;
   isOpen: boolean;
@@ -202,8 +220,10 @@ function EntryRows({
     ? entry.people.filter((person) => !small.includes(person))
     : entry.people;
   const detailsId = `${ledgerRowId(entry.key)}-lines`;
-  const nameOf = (userId: number) => names.get(userId) ?? `User ${userId}`;
-  const people = entry.people.map((person) => nameOf(person.userId));
+  const accounts = entry.people.every((person) => person.userId === null);
+  const people = entry.people.map((person) =>
+    subjectLabel(person.subject, names),
+  );
 
   return (
     <TableBody className="border-b border-border/60 last:border-b-0">
@@ -255,7 +275,7 @@ function EntryRows({
             <span title={people.join(", ")}>
               {people.length === 1
                 ? people[0]
-                : `${formatCount(people.length)} people`}
+                : `${formatCount(people.length)} ${accounts ? "accounts" : "people"}`}
             </span>
           )}
         </TableCell>
@@ -277,7 +297,7 @@ function EntryRows({
           {formatConverted(entry.totals, currency, overview.pendingRates)}
         </TableCell>
         <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
-          {entry.kind === "overhead"
+          {entry.kind === "overhead" || entry.totals.usage.records === 0
             ? "—"
             : formatEstimateIn(entry.totals.usage, money)}
         </TableCell>
@@ -286,13 +306,14 @@ function EntryRows({
       {isOpen &&
         shown.map((person, index) => (
           <PersonRows
-            key={person.userId}
+            key={person.key}
             id={index === 0 ? detailsId : undefined}
             person={person}
-            name={nameOf(person.userId)}
+            name={subjectLabel(person.subject, names)}
             overview={overview}
             plans={plans}
             undeclared={undeclared}
+            tracked={tracked}
           />
         ))}
       {isOpen && folded && (
@@ -306,8 +327,12 @@ function EntryRows({
               onClick={() => setShowSmall(true)}
               className="rounded-sm text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
             >
-              Show {plural(small.length, "more developer")} under 1 {currency}{" "}
-              each
+              Show{" "}
+              {plural(
+                small.length,
+                accounts ? "more account" : "more developer",
+              )}{" "}
+              under 1 {currency} each
             </button>
           </TableCell>
         </TableRow>
@@ -319,7 +344,8 @@ function EntryRows({
 /**
  * A row's key to the strip: a project's segment colour, ringed where the
  * paler steps would fade into the row, and hollow for a project without a
- * segment; Unassigned hatched and overhead muted, as in the strip.
+ * segment; Unassigned hatched, overhead muted and Spinit's credits solid
+ * muted, as in the strip.
  */
 function EntryMarker({
   entry,
@@ -342,6 +368,10 @@ function EntryMarker({
         entry.kind === "unassigned" &&
           "bg-muted shadow-[inset_0_0_0_1px_hsl(var(--muted-foreground)/0.5)]",
         entry.kind === "overhead" && "bg-muted-foreground/30",
+        entry.kind === "spinit" &&
+          (entry.spinit === "untracked"
+            ? "bg-muted-foreground/60"
+            : "bg-muted-foreground/45"),
       )}
       style={
         step !== null
@@ -385,6 +415,16 @@ function EntryName({ entry }: { entry: LedgerEntry }) {
           <span className="text-muted-foreground"> fees without usage</span>
         </span>
       );
+    case "spinit":
+      return (
+        <span className="min-w-0 sm:truncate">
+          <span className="font-semibold">{SPINIT_LABEL}</span>
+          <span className="text-muted-foreground">
+            {" "}
+            {SPINIT_KIND_LABELS[entry.spinit ?? "untracked"].detail}
+          </span>
+        </span>
+      );
   }
 }
 
@@ -409,6 +449,7 @@ function ShareBar({
               "block h-full rounded-full",
               kind === "unassigned" && "bg-muted-foreground/60",
               kind === "overhead" && "bg-muted-foreground/30",
+              kind === "spinit" && "bg-muted-foreground/45",
             )}
             style={{
               width: `${Math.max(share * 100, 1.5)}%`,
@@ -431,6 +472,8 @@ type LineSource = Readonly<{
   overview: AiBillingOverview;
   plans: ReadonlyMap<number, AiSubscriptionMonth>;
   undeclared: ReadonlyMap<number, readonly AiProvider[]>;
+  /** The metered SKUs Toki tracks, which lines need not name. */
+  tracked: ReadonlySet<string>;
 }>;
 
 /**
@@ -459,8 +502,8 @@ function PersonRows({
     <>
       <TableRow id={id} className="border-0 text-[13px] hover:bg-muted/30">
         <TableCell className="py-1.5 pl-12">
-          <PersonLink
-            userId={person.userId}
+          <SubjectLink
+            line={person.lines[0]}
             name={name}
             month={overview.month}
           />
@@ -482,12 +525,14 @@ function PersonRows({
           )}
         </TableCell>
         <TableCell className="hidden py-1.5 text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
-          {overhead ? "—" : formatEstimateIn(person.totals.usage, money)}
+          {overhead || person.totals.usage.records === 0
+            ? "—"
+            : formatEstimateIn(person.totals.usage, money)}
         </TableCell>
       </TableRow>
       {person.lines.map((line, index) => (
         <ToolLineRow
-          key={`${line.provider}-${line.billingMode}-${line.subscriptionId ?? "api"}-${index}`}
+          key={`${line.provider}-${line.billingMode}-${line.subscriptionId ?? line.metered?.sku ?? "api"}-${index}`}
           line={line}
           name={name}
           last={index === person.lines.length - 1}
@@ -533,7 +578,7 @@ function LineRow({
   return (
     <TableRow id={id} className="border-0 text-[13px] hover:bg-muted/30">
       <TableCell className="py-1.5 pl-12">
-        <PersonLink userId={line.userId} name={name} month={overview.month} />
+        <SubjectLink line={line} name={name} month={overview.month} />
         <ToolDetail
           line={line}
           {...source}
@@ -588,24 +633,50 @@ function ToolLineRow({
   );
 }
 
-function PersonLink({
-  userId,
+/**
+ * Whose lines a row holds: a developer, linking to their month, or an account
+ * no developer owns, by login and why, linking to where accounts are linked.
+ */
+function SubjectLink({
+  line,
   name,
   month,
 }: {
-  userId: number;
+  /** One of the subject's lines. */
+  line: AiBillingLine;
   name: string;
   month: string;
 }) {
+  const userId = lineUserId(line);
+  if (userId !== null) {
+    return (
+      <Link
+        to="/admin/ai-billing/$userId"
+        params={{ userId: String(userId) }}
+        search={{ month }}
+        className="underline-offset-4 hover:underline"
+      >
+        {name}
+      </Link>
+    );
+  }
+  const detail = meteredAccountDetail(line);
   return (
-    <Link
-      to="/admin/ai-billing/$userId"
-      params={{ userId: String(userId) }}
-      search={{ month }}
-      className="underline-offset-4 hover:underline"
-    >
-      {name}
-    </Link>
+    <span className="inline-flex items-baseline gap-1.5">
+      {line.subject.kind === "providerAccount" ? (
+        <Link
+          to="/admin/github-logins"
+          className="underline-offset-4 hover:underline"
+        >
+          {name}
+        </Link>
+      ) : (
+        <span>{name}</span>
+      )}
+      {detail !== null && line.subject.kind === "providerAccount" && (
+        <span className="text-xs text-muted-foreground">{detail}</span>
+      )}
+    </span>
   );
 }
 
@@ -650,36 +721,60 @@ function ToolDetail({
   overview,
   plans,
   undeclared,
+  tracked,
   className,
 }: LineSource & { line: AiBillingLine; className?: string }) {
   const subscription =
     line.subscriptionId === null ? undefined : plans.get(line.subscriptionId);
+  const provisional = provisionalWarning(line);
+  // The provisional reasons are the pill's, not the warning's.
   const warnings = lineWarnings(
     line,
     subscription,
     overview.billingCurrency,
     overview.pendingRates,
-  );
+  ).filter((warning) => warning !== provisional);
+  const userId = lineUserId(line);
   // The tool reported a paid plan nobody declared: these API prices are
   // likely more than the plan's share would be.
   const undeclaredPlan =
     line.billingMode === "api" &&
-    (undeclared.get(line.userId) ?? []).includes(line.provider);
+    userId !== null &&
+    (undeclared.get(userId) ?? []).includes(line.provider);
+  const sku = meteredSku(line, tracked);
   return (
     <span
       className={cn(
-        "items-center gap-x-1.5 whitespace-nowrap text-muted-foreground",
+        "flex-wrap items-center gap-x-1.5 whitespace-nowrap text-muted-foreground",
         className,
       )}
     >
       <AiProviderIcon provider={line.provider} />
-      <span className="text-foreground">
-        {AI_PROVIDER_LABELS[line.provider]}
-      </span>
-      {line.billingMode === "subscription"
-        ? `on ${subscription?.plan ?? "a subscription"}`
-        : "at API prices"}
+      {line.metered !== null ? (
+        <>
+          <span className="text-foreground">
+            {meteredName(line.provider)} ·{" "}
+            {formatLineCredits(line.metered.credits)}
+          </span>
+          {sku !== null && <span>{sku}</span>}
+        </>
+      ) : (
+        <>
+          <span className="text-foreground">
+            {AI_PROVIDER_LABELS[line.provider]}
+          </span>
+          {line.billingMode === "subscription"
+            ? `on ${subscription?.plan ?? "a subscription"}`
+            : "at API prices"}
+        </>
+      )}
       {warnings.length > 0 && <Warnings warnings={warnings} />}
+      {provisional !== null && (
+        <AttentionPill title={provisional}>
+          provisional
+          <span className="sr-only">: {provisional}</span>
+        </AttentionPill>
+      )}
       {undeclaredPlan && (
         <AttentionPill title="The tool reported a paid plan nobody declared, so this bills at API prices instead of a share of the plan's fee.">
           plan not declared
@@ -717,7 +812,10 @@ function LineAmounts({
           className,
         )}
       >
-        {line.unallocatedOverhead ? "—" : formatEstimateIn(line.usage, money)}
+        {line.unallocatedOverhead ||
+        (line.metered !== null && line.usage.records === 0)
+          ? "—"
+          : formatEstimateIn(line.usage, money)}
       </TableCell>
     </>
   );

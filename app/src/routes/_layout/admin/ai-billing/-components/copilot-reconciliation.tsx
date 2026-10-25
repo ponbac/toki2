@@ -4,12 +4,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   aiAdminQueries,
   type AiMeteredMonth,
+  type AiMeteredPeriod,
   type AiMeteredUnlinkedTracked,
 } from "@/lib/api/queries/ai-admin";
 import { cn } from "@/lib/utils";
 import { QueryError } from "../../-components/query-error";
 import { monthLabel, plural } from "../../-lib/format";
 import {
+  billingNote,
   formatCredits,
   noDataReason,
   type NoDataReason,
@@ -22,14 +24,18 @@ import { ResidualDays } from "./residual-days";
 
 /**
  * The GitHub Copilot tab: what GitHub billed in a UTC month, per account,
- * against what Toki tracked, with the import's state. Nothing here bills yet.
+ * against what Toki tracked, with the import's state. From the metered
+ * cutover on, the bill's Copilot lines follow its attribution.
  */
 export function CopilotReconciliation({
   month,
+  meteredPeriod,
   onMonth,
 }: {
   /** The UTC month, `YYYY-MM`. */
   month: string;
+  /** The bill's metered cutover; null when none is configured. */
+  meteredPeriod: AiMeteredPeriod | null;
   onMonth: (month: string) => void;
 }) {
   const query = useQuery({
@@ -134,7 +140,7 @@ export function CopilotReconciliation({
         </>
       )}
 
-      <Explanation data={data} />
+      <Explanation data={data} meteredPeriod={meteredPeriod} />
     </div>
   );
 }
@@ -241,7 +247,13 @@ function UnlinkedTracked({
   );
 }
 
-function Explanation({ data }: { data: AiMeteredMonth }) {
+function Explanation({
+  data,
+  meteredPeriod,
+}: {
+  data: AiMeteredMonth;
+  meteredPeriod: AiMeteredPeriod | null;
+}) {
   return (
     <section
       aria-label="How the reconciliation works"
@@ -261,7 +273,7 @@ function Explanation({ data }: { data: AiMeteredMonth }) {
         </li>
         <li>
           <span className="font-medium text-foreground">Attributed</span> is
-          min(G, T) per day and model: what the T/G rule would bill to the
+          min(G, T) per day and model: what the T/G rule bills to the
           user&apos;s destinations, which are customer projects, Unassigned, or
           personal and internal usage that stays with Spinit.{" "}
           <span className="font-medium text-foreground">Untracked</span> is the
@@ -282,8 +294,9 @@ function Explanation({ data }: { data: AiMeteredMonth }) {
           org total equals GitHub&apos;s month total.
         </li>
         <li>
-          Nothing here is billed yet: the bill&apos;s Copilot lines will read
-          these figures in a later release.
+          {billingNote(meteredPeriod)}
+          {meteredPeriod?.applies &&
+            " The bill's unknown-account line leaves code review out, which is billed by repository, so it can differ from the unknown account here."}
         </li>
       </ul>
     </section>

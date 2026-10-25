@@ -24,7 +24,8 @@ use async_trait::async_trait;
 use crate::{
     adapters::outbound::postgres::{
         PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
-        PostgresAiProjectMappingRepository, PostgresAiSubscriptionRepository,
+        PostgresAiMeteredUsageRepository, PostgresAiProjectMappingRepository,
+        PostgresAiProviderAccountRepository, PostgresAiSubscriptionRepository,
         PostgresAiUsageRepository, PostgresApiTokenRepository,
     },
     auth::{authenticate_bearer, require_authenticated, AuthBackend, AuthSession},
@@ -44,7 +45,8 @@ use crate::{
             },
         },
         services::{
-            AiBillingServiceImpl, AiExchangeRateSettings, AiExchangeRates, ApiTokenServiceImpl,
+            AiBillingServiceImpl, AiExchangeRateSettings, AiExchangeRates, AiMeteredMonths,
+            AiMeteredReadSettings, ApiTokenServiceImpl,
         },
         ExchangeRateError,
     },
@@ -207,6 +209,29 @@ fn app_with_rate_settings(
     rates: Arc<FakeRates>,
     settings: AiExchangeRateSettings,
 ) -> Router {
+    app_with(pool, rates, settings, None)
+}
+
+/// The routes with Copilot billed from its credits from `cutover` on, over a
+/// usage import from 1 August 2026.
+fn app_with_cutover(pool: &PgPool, cutover: Option<&str>) -> Router {
+    app_with(
+        pool,
+        FakeRates::august_usd(),
+        AiExchangeRateSettings::default(),
+        cutover.map(|from| AiMeteredCutover {
+            payer: AiProvider::Copilot,
+            from: AiBillingMonth::parse(from).unwrap(),
+        }),
+    )
+}
+
+fn app_with(
+    pool: &PgPool,
+    rates: Arc<FakeRates>,
+    settings: AiExchangeRateSettings,
+    cutover: Option<AiMeteredCutover>,
+) -> Router {
     let db = db(pool);
     let time_zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
     let service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::new(
@@ -220,6 +245,17 @@ fn app_with_rate_settings(
         ),
         time_zone,
         Some(company()),
+        AiMeteredMonths::new(
+            Arc::new(PostgresAiMeteredUsageRepository::new(db.clone())),
+            Arc::new(PostgresAiProviderAccountRepository::new(db.clone())),
+            AiProvider::Copilot,
+            AiMeteredReadSettings {
+                backfill_from: date!(2026 - 08 - 01),
+                reprice_floor: datetime!(2026-10-01 00:00 UTC),
+                mapping_company: Some(company()),
+            },
+        ),
+        cutover,
     ));
     let tokens: Arc<dyn ApiTokenAuthenticator> = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db.clone()),
@@ -628,7 +664,7 @@ async fn august(app: &Router, pool: &PgPool) -> August {
 /// currency, usd, unpriced records, records)`.
 fn line_summary(line: &Value) -> Value {
     json!([
-        line["userId"],
+        line["subject"]["userId"],
         line["provider"],
         line["project"]["projectName"],
         line["billingMode"],
@@ -929,7 +965,7 @@ async fn unassigned_kinds_split_one_charge_and_sum_to_it_exactly(pool: PgPool) {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|line| line["userId"] == colleague.id.as_i32())
+        .filter(|line| line["subject"]["userId"] == colleague.id.as_i32())
         .map(|line| {
             json!([
                 line["unassigned"],
@@ -1046,6 +1082,7 @@ async fn the_overview_converts_every_amount_to_sek_at_the_months_rate(pool: PgPo
             "fees": "2667.74",
             "overhead": "2100.00",
             "api": "7.88",
+            "metered": "0.00",
         })
     );
     assert_eq!(overview["totals"]["apiBilledUsd"], "0.75");
@@ -1116,6 +1153,7 @@ async fn a_missing_rate_leaves_sek_empty_and_warns_never_zero(pool: PgPool) {
             "fees": null,
             "overhead": null,
             "api": null,
+            "metered": "0.00",
         })
     );
     // The original amounts are all still there.
@@ -2088,6 +2126,15 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "allocation_basis",
             "warning",
             "unassigned",
+            "source",
+            "credits",
+            "github_login",
+            "repository",
+            "sku",
+            "period_basis",
+            "adjusts_month",
+            "snapshot_id",
+            "provisional",
         ],
         vec![
             "2026-08",
@@ -2113,10 +2160,49 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "api_cost",
             "",
             "",
+            "subscription",
+            "",
+            "",
+            "",
+            "",
+            "Europe/Stockholm",
+            "",
+            "",
+            "",
         ],
         vec![
-            "2026-08", "101", link, dev, "claude", "api", "", "0.75", "USD", "7.88", "10.50",
-            "riksbank", "false", "0.7500", "0", "300", "3000", "30", "150", "3480", "", "", "",
+            "2026-08",
+            "101",
+            link,
+            dev,
+            "claude",
+            "api",
+            "",
+            "0.75",
+            "USD",
+            "7.88",
+            "10.50",
+            "riksbank",
+            "false",
+            "0.7500",
+            "0",
+            "300",
+            "3000",
+            "30",
+            "150",
+            "3480",
+            "",
+            "",
+            "",
+            "estimate",
+            "",
+            "",
+            "",
+            "",
+            "Europe/Stockholm",
+            "",
+            "",
+            "",
         ],
         vec![
             "2026-08",
@@ -2141,6 +2227,15 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "5800",
             "",
             "5 unpriced records: their cost is unknown and not billed",
+            "",
+            "estimate",
+            "",
+            "",
+            "",
+            "",
+            "Europe/Stockholm",
+            "",
+            "",
             "",
         ],
         vec![
@@ -2167,6 +2262,15 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "api_cost",
             "",
             "unattributed",
+            "subscription",
+            "",
+            "",
+            "",
+            "",
+            "Europe/Stockholm",
+            "",
+            "",
+            "",
         ],
         vec![
             "2026-08",
@@ -2191,6 +2295,15 @@ async fn the_csv_export_bills_per_project_and_guards_against_formulas(pool: PgPo
             "0",
             "none",
             "no usage on the days the subscription covers",
+            "",
+            "subscription",
+            "",
+            "",
+            "",
+            "",
+            "Europe/Stockholm",
+            "",
+            "",
             "",
         ],
     ];
@@ -2320,7 +2433,7 @@ async fn the_drill_down_bills_exactly_as_the_overview(pool: PgPool) {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|line| line["userId"] == dev.id.as_i32())
+        .filter(|line| line["subject"]["userId"] == dev.id.as_i32())
         .collect();
     let shares: Vec<(&Value, &Value)> = own
         .iter()
@@ -2542,4 +2655,757 @@ async fn completeness_flags_machines_that_have_not_uploaded_the_whole_month(pool
         (&old["lastSyncedOn"], &old["stale"], &old["activeInMonth"]),
         (&json!("2026-07-11"), &json!(true), &json!(false))
     );
+}
+
+mod copilot {
+    //! Copilot billed from GitHub's credits: August 2026, with the cutover
+    //! from August and a usage import from 1 August.
+
+    use super::*;
+    use crate::domain::{
+        models::{
+            AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiCreditKind,
+            AiCreditStoreScope, AiDecimal, AiListedSeat, AiMeteredAmounts, AiMeteredCredit,
+            AiMeteredModel, AiMeteredSource, AiProviderAccountId, AiProviderLogin, AiSeatListing,
+            AiUsageCheck,
+        },
+        ports::outbound::{AiMeteredUsageRepository, AiProviderAccountRepository},
+    };
+
+    const ADA_ACCOUNT: i64 = 1001;
+    const CONTRACTOR_ACCOUNT: i64 = 1004;
+    const CREDITS_SKU: &str = "Copilot AI Credits";
+    const AGENT_SKU: &str = "Copilot Cloud Agent";
+    /// The day all of August's credits fall on.
+    const CREDIT_DAY: Date = date!(2026 - 08 - 10);
+
+    fn august() -> AiBillingMonth {
+        AiBillingMonth::parse("2026-08").unwrap()
+    }
+
+    fn dec(raw: &str) -> AiDecimal {
+        AiDecimal::parse(raw).unwrap()
+    }
+
+    fn credit(
+        sku: &str,
+        label: &str,
+        model: &str,
+        kind: AiCreditKind,
+        quantity: &str,
+    ) -> AiMeteredCredit {
+        AiMeteredCredit {
+            product: "Copilot".to_string(),
+            sku: sku.to_string(),
+            unit: "ai-credits".to_string(),
+            model: AiMeteredModel {
+                label: label.to_string(),
+                model: model.to_string(),
+                auto_routed: false,
+            },
+            kind,
+            amounts: AiMeteredAmounts {
+                unit_price: dec("0.01"),
+                gross_quantity: dec(quantity),
+                gross_amount: dec(quantity),
+                net_quantity: dec(quantity),
+                net_amount: dec(quantity),
+                ..AiMeteredAmounts::default()
+            },
+        }
+    }
+
+    fn sol(quantity: &str) -> AiMeteredCredit {
+        credit(
+            CREDITS_SKU,
+            "GPT-6.1 Sol",
+            "gpt-6.1-sol",
+            AiCreditKind::Trackable,
+            quantity,
+        )
+    }
+
+    fn code_review(quantity: &str) -> AiMeteredCredit {
+        credit(
+            CREDITS_SKU,
+            "Code Review model",
+            "code-review",
+            AiCreditKind::RepositoryBilled,
+            quantity,
+        )
+    }
+
+    fn agent(quantity: &str) -> AiMeteredCredit {
+        credit(
+            AGENT_SKU,
+            "GPT-6.1 Sol",
+            "gpt-6.1-sol",
+            AiCreditKind::Untrackable,
+            quantity,
+        )
+    }
+
+    fn luna(quantity: &str) -> AiMeteredCredit {
+        credit(
+            CREDITS_SKU,
+            "GPT-5.4",
+            "gpt-5.4",
+            AiCreditKind::Trackable,
+            quantity,
+        )
+    }
+
+    /// Every day of August, with `rows` on the credit day.
+    fn month_of(rows: Vec<AiMeteredCredit>) -> Vec<(Date, Vec<AiMeteredCredit>)> {
+        let mut days = Vec::new();
+        let mut day = august().first_day();
+        while august().contains(day) {
+            days.push((
+                day,
+                if day == CREDIT_DAY {
+                    rows.clone()
+                } else {
+                    Vec::new()
+                },
+            ));
+            day = day.next_day().unwrap();
+        }
+        days
+    }
+
+    fn check(account: Option<i64>, matches: bool) -> AiUsageCheck {
+        AiUsageCheck {
+            account_id: account.and_then(AiProviderAccountId::new),
+            checked_at: datetime!(2026-09-05 06:00 UTC),
+            payer_gross: Some(dec("1")),
+            stored_gross: dec("1"),
+            matches: Some(matches),
+            error: None,
+        }
+    }
+
+    pub(super) struct CopilotAugust {
+        pub admin: TestUser,
+        pub ada: TestUser,
+    }
+
+    /// Ada's account and an external contractor's, imported for every day of
+    /// August; on the credit day Ada used 100 credits of GPT-6.1 Sol, 12 of
+    /// the cloud agent and 20 of code review, the contractor 70, and an
+    /// account Toki never listed 5. Ada tracked 70 credits to Client A and
+    /// 20 unattributed, and 30 more Copilot routed to Codex.
+    pub(super) async fn copilot_august(app: &Router, pool: &PgPool) -> CopilotAugust {
+        let admin = test_user(
+            app,
+            pool,
+            "admin@example.com",
+            "Admin Example",
+            &["User", "Admin"],
+        )
+        .await;
+        let ada = test_user(app, pool, "ada@example.com", "Ada Lovelace", &["User"]).await;
+        map(pool, APP, "101", "Client A", admin.id).await;
+
+        let accounts = PostgresAiProviderAccountRepository::new(db(pool));
+        let seat = |id: i64, login: &str| AiListedSeat {
+            account_id: AiProviderAccountId::new(id).unwrap(),
+            login: AiProviderLogin::parse(login).unwrap(),
+            created_at: datetime!(2026-07-01 08:00 UTC),
+            pending_cancellation_on: None,
+            last_activity_at: None,
+            last_activity_client: None,
+        };
+        accounts
+            .store_seat_listing(
+                AiProvider::Copilot,
+                &AiSeatListing {
+                    seats: vec![
+                        seat(ADA_ACCOUNT, "ada-lovelace"),
+                        seat(CONTRACTOR_ACCOUNT, "kj-contractor"),
+                    ],
+                    reported_total: Some(2),
+                    ended_on_short_page: true,
+                },
+            )
+            .await
+            .unwrap();
+        for (id, target) in [
+            (ADA_ACCOUNT, AiAccountTarget::User(ada.id)),
+            (CONTRACTOR_ACCOUNT, AiAccountTarget::External),
+        ] {
+            accounts
+                .insert_disposition(
+                    AiProvider::Copilot,
+                    AiProviderAccountId::new(id).unwrap(),
+                    &AiAccountDispositionTerms {
+                        target,
+                        period: AiAccountPeriod::new(date!(2026 - 07 - 01), None).unwrap(),
+                    },
+                    &admin.id,
+                )
+                .await
+                .unwrap();
+        }
+
+        let metered = PostgresAiMeteredUsageRepository::new(db(pool));
+        let fetched_at = datetime!(2026-09-05 06:00 UTC);
+        let ada_login = AiProviderLogin::parse("ada-lovelace").unwrap();
+        let contractor_login = AiProviderLogin::parse("kj-contractor").unwrap();
+        for (scope, rows) in [
+            (
+                AiCreditStoreScope::Account {
+                    id: AiProviderAccountId::new(ADA_ACCOUNT).unwrap(),
+                    login: &ada_login,
+                },
+                vec![sol("100"), agent("12"), code_review("20")],
+            ),
+            (
+                AiCreditStoreScope::Account {
+                    id: AiProviderAccountId::new(CONTRACTOR_ACCOUNT).unwrap(),
+                    login: &contractor_login,
+                },
+                vec![luna("70")],
+            ),
+            (
+                AiCreditStoreScope::Organization,
+                vec![sol("105"), agent("12"), code_review("20"), luna("70")],
+            ),
+        ] {
+            metered
+                .replace_credit_days(AiProvider::Copilot, scope, &month_of(rows), fetched_at)
+                .await
+                .unwrap();
+        }
+        for (source, account) in [
+            (AiMeteredSource::AccountCredits, Some(ADA_ACCOUNT)),
+            (AiMeteredSource::AccountCredits, Some(CONTRACTOR_ACCOUNT)),
+            (AiMeteredSource::OrgCredits, None),
+        ] {
+            metered
+                .record_check(AiProvider::Copilot, source, august(), &check(account, true))
+                .await
+                .unwrap();
+        }
+
+        let copilot = |hour_start, session, key, cost| AiUsageBucket {
+            model: "gpt-6.1-sol".to_string(),
+            ..bucket(hour_start, session, key, AiProvider::Copilot, 7, Some(cost))
+        };
+        let upload = AiUsageUpload::new(
+            AiMachine {
+                id: AiMachineId::parse(LAPTOP).unwrap(),
+                label: "work-laptop".to_string(),
+                client_version: "0.10.0".to_string(),
+                time_zone: "Europe/Stockholm".to_string(),
+            },
+            AiUsageWindow::new(AUGUST_WINDOW.0, AUGUST_WINDOW.1).unwrap(),
+            AiPricing {
+                status: AiPricingStatus::Fresh,
+                fetched_at: None,
+                source: "https://example.com/prices.json".to_string(),
+            },
+            vec![
+                copilot(datetime!(2026-08-10 08:00 UTC), 0, APP, 0.7),
+                AiUsageBucket {
+                    records: 2,
+                    ..copilot(
+                        datetime!(2026-08-10 09:00 UTC),
+                        1,
+                        UNATTRIBUTED_PROJECT_KEY,
+                        0.2,
+                    )
+                },
+                AiUsageBucket {
+                    billing_provider: Some(AiProvider::Codex),
+                    records: 3,
+                    ..copilot(datetime!(2026-08-10 10:00 UTC), 2, APP, 0.3)
+                },
+            ],
+            vec![AiProviderCoverage {
+                provider: AiProvider::Copilot,
+                status: AiCoverageStatus::Ok,
+                files: 1,
+                unreadable: 0,
+                malformed_lines: 0,
+                skipped_records: 0,
+                duplicates: 0,
+            }],
+            Vec::new(),
+            AiPartialBucketCost::PricedSubtotal,
+        )
+        .unwrap();
+        PostgresAiUsageRepository::new(db(pool))
+            .replace_window(&ada.id, &upload)
+            .await
+            .unwrap();
+
+        CopilotAugust { admin, ada }
+    }
+
+    /// A metered line as `(subject, project, unassigned, kind, credits,
+    /// billable, converted, login, sku)`.
+    fn metered_summary(line: &Value) -> Value {
+        json!([
+            line["subject"],
+            line["project"]["projectName"],
+            line["unassigned"],
+            line["metered"]["kind"],
+            line["metered"]["credits"],
+            line["billableAmount"],
+            line["convertedAmount"],
+            line["metered"]["account"]["login"],
+            line["metered"]["sku"],
+        ])
+    }
+
+    fn metered_lines(bill: &Value) -> Vec<Value> {
+        bill["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|line| line["billingMode"] == "metered")
+            .map(metered_summary)
+            .collect()
+    }
+
+    #[sqlx::test]
+    async fn copilot_lines_bill_githubs_credits_split_by_tracked_usage(pool: PgPool) {
+        let app = app_with_cutover(&pool, Some("2026-08"));
+        let CopilotAugust { admin, ada } = copilot_august(&app, &pool).await;
+        let admin = Caller::Session(&admin.cookie);
+        let overview = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08").await;
+
+        let ada_subject = json!({ "kind": "user", "userId": ada.id.as_i32() });
+        assert_eq!(
+            metered_lines(&overview),
+            [
+                // GitHub billed 100 credits of what Ada tracked at 90: each
+                // destination its own, the rest untracked; the cloud agent
+                // is untracked; code review is left out.
+                json!([
+                    ada_subject,
+                    "Client A",
+                    null,
+                    "project",
+                    "70.00",
+                    "0.70",
+                    "7.35",
+                    "ada-lovelace",
+                    CREDITS_SKU
+                ]),
+                json!([
+                    ada_subject,
+                    null,
+                    "unattributed",
+                    "project",
+                    "20.00",
+                    "0.20",
+                    "2.10",
+                    "ada-lovelace",
+                    CREDITS_SKU
+                ]),
+                json!([
+                    ada_subject,
+                    null,
+                    null,
+                    "untracked",
+                    "10.00",
+                    "0.10",
+                    "1.05",
+                    "ada-lovelace",
+                    CREDITS_SKU
+                ]),
+                json!([
+                    ada_subject,
+                    null,
+                    null,
+                    "untracked",
+                    "12.00",
+                    "0.12",
+                    "1.26",
+                    "ada-lovelace",
+                    AGENT_SKU
+                ]),
+                json!([
+                    {
+                        "kind": "providerAccount",
+                        "provider": "copilot",
+                        "accountId": CONTRACTOR_ACCOUNT,
+                        "login": "kj-contractor",
+                    },
+                    null, null, "externalAccount", "70.00", "0.70", "7.35", "kj-contractor", CREDITS_SKU
+                ]),
+                json!([
+                    { "kind": "unknownAccount", "provider": "copilot" },
+                    null, null, "unknownAccount", "5.00", "0.05", "0.53", null, null
+                ]),
+            ]
+        );
+        let client_a = overview["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|line| {
+                line["billingMode"] == "metered" && line["project"]["projectName"] == "Client A"
+            })
+            .unwrap();
+        assert_eq!(
+            client_a["metered"],
+            json!({
+                "kind": "project",
+                "credits": "70.00",
+                "account": { "accountId": ADA_ACCOUNT, "login": "ada-lovelace" },
+                "sku": CREDITS_SKU,
+                "provisional": false,
+                "provisionalReasons": [],
+                "lowRatio": false,
+            })
+        );
+        assert_eq!(client_a["provider"], "copilot");
+        assert_eq!(client_a["billableCurrency"], "USD");
+        assert_eq!(client_a["exchangeRate"], "10.50");
+        assert_eq!(client_a["subscriptionId"], Value::Null);
+        assert_eq!(client_a["usage"]["records"], 7);
+        assert_eq!(client_a["usage"]["apiEquivalentUsd"], 0.7);
+
+        // Copilot routed to Codex still bills as API usage, at its estimate.
+        let api: Vec<Value> = overview["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|line| line["billingMode"] != "metered")
+            .map(line_summary)
+            .collect();
+        assert_eq!(
+            api,
+            [json!([
+                ada.id.as_i32(),
+                "copilot",
+                "Client A",
+                "api",
+                false,
+                "0.30",
+                "USD",
+                0.3,
+                0,
+                3
+            ])]
+        );
+        assert_eq!(overview["totals"]["apiBilledUsd"], "0.30");
+        assert_eq!(overview["totals"]["meteredBilledUsd"], "1.87");
+        assert_eq!(
+            overview["totals"]["converted"],
+            json!({
+                "currency": "SEK",
+                "billed": "22.79",
+                "fees": "0.00",
+                "overhead": "0.00",
+                "api": "3.15",
+                "metered": "19.64",
+            })
+        );
+        assert_eq!(
+            overview["meteredPeriod"],
+            json!({ "provider": "copilot", "from": "2026-08", "applies": true, "timeZone": "UTC" })
+        );
+        assert_eq!(overview["timeZone"], "Europe/Stockholm");
+        let nothing = json!({
+            "apiEquivalentUsd": 0.0,
+            "unpricedRecords": 0,
+            "records": 0,
+            "tokens": { "input": 0, "cacheRead": 0, "cacheWrite": 0, "output": 0, "total": 0 },
+        });
+        assert_eq!(
+            overview["metered"],
+            json!({
+                "provider": "copilot",
+                "provisional": false,
+                "daysNotImported": 0,
+                "lowRatioGroups": 0,
+                "unbilled": {
+                    "trackedUnlinked": nothing,
+                    "notImported": nothing,
+                    "freeModels": nothing,
+                },
+            })
+        );
+        assert_eq!(
+            overview["developers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|developer| &developer["fullName"])
+                .collect::<Vec<_>>(),
+            [&json!("Ada Lovelace")]
+        );
+
+        // The CSV carries the same numbers, with the metered columns.
+        let (status, _, csv) =
+            get(&app, &admin, "/ai-usage/admin/billing/2026-08/export.csv").await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = parse_quoted_csv(csv.strip_prefix('\u{feff}').unwrap());
+        let header = &rows[0];
+        assert_eq!(
+            header[22..],
+            [
+                "unassigned",
+                "source",
+                "credits",
+                "github_login",
+                "repository",
+                "sku",
+                "period_basis",
+                "adjusts_month",
+                "snapshot_id",
+                "provisional",
+            ]
+        );
+        let column = |name: &str| header.iter().position(|cell| cell == name).unwrap();
+        let tail = |row: &Vec<String>| row[column("source")..].to_vec();
+        let project_rows: Vec<(String, String, String, Vec<String>)> = rows[1..]
+            .iter()
+            .map(|row| {
+                (
+                    row[column("project")].clone(),
+                    row[column("developer")].clone(),
+                    row[column("billable_amount")].clone(),
+                    tail(row),
+                )
+            })
+            .collect();
+        let metered_tail = |credits: &str, login: &str, sku: &str| {
+            vec![
+                "github".to_string(),
+                credits.to_string(),
+                login.to_string(),
+                String::new(),
+                sku.to_string(),
+                "UTC".to_string(),
+                String::new(),
+                String::new(),
+                "false".to_string(),
+            ]
+        };
+        let row = |project: &str, developer: &str, amount: &str, tail: Vec<String>| {
+            (
+                project.to_string(),
+                developer.to_string(),
+                amount.to_string(),
+                tail,
+            )
+        };
+        assert_eq!(
+            project_rows,
+            [
+                row(
+                    "Client A",
+                    "Ada Lovelace",
+                    "0.30",
+                    vec![
+                        "estimate".to_string(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        "Europe/Stockholm".to_string(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                    ]
+                ),
+                row(
+                    "Client A",
+                    "Ada Lovelace",
+                    "0.70",
+                    metered_tail("70.00", "ada-lovelace", CREDITS_SKU)
+                ),
+                row(
+                    "Unassigned",
+                    "Ada Lovelace",
+                    "0.20",
+                    metered_tail("20.00", "ada-lovelace", CREDITS_SKU)
+                ),
+                row(
+                    "Untracked Copilot",
+                    "Ada Lovelace",
+                    "0.10",
+                    metered_tail("10.00", "ada-lovelace", CREDITS_SKU)
+                ),
+                row(
+                    "Untracked Copilot",
+                    "Ada Lovelace",
+                    "0.12",
+                    metered_tail("12.00", "ada-lovelace", AGENT_SKU)
+                ),
+                row(
+                    "External account",
+                    "",
+                    "0.70",
+                    metered_tail("70.00", "kj-contractor", CREDITS_SKU)
+                ),
+                row("Unknown account", "", "0.05", metered_tail("5.00", "", "")),
+            ]
+        );
+        assert_eq!(
+            rows[1..]
+                .iter()
+                .filter(|row| row[column("billing_mode")] == "metered")
+                .map(|row| row[column("billable_sek")].clone())
+                .collect::<Vec<_>>(),
+            ["7.35", "2.10", "1.05", "1.26", "7.35", "0.53"]
+        );
+        let unknown = rows.last().unwrap();
+        assert_eq!(
+            unknown[column("warning")],
+            "code review is billed by repository and left out"
+        );
+    }
+
+    #[sqlx::test]
+    async fn without_a_cutover_or_before_it_copilot_bills_at_its_estimate(pool: PgPool) {
+        let before = app_with_cutover(&pool, Some("2026-09"));
+        let CopilotAugust { admin, .. } = copilot_august(&before, &pool).await;
+        let caller = Caller::Session(&admin.cookie);
+        let mut later = get_json(&before, &caller, "/ai-usage/admin/billing/2026-08").await;
+        assert_eq!(
+            later["meteredPeriod"],
+            json!({ "provider": "copilot", "from": "2026-09", "applies": false, "timeZone": "UTC" })
+        );
+        assert_eq!(later["metered"], Value::Null);
+        assert_eq!(later["totals"]["meteredBilledUsd"], "0.00");
+        assert_eq!(later["totals"]["apiBilledUsd"], "1.20");
+
+        let unset = app_with_cutover(&pool, None);
+        let signed_in = test_user(
+            &unset,
+            &pool,
+            "root@example.com",
+            "Root Example",
+            &["Admin"],
+        )
+        .await;
+        let mut none = get_json(
+            &unset,
+            &Caller::Session(&signed_in.cookie),
+            "/ai-usage/admin/billing/2026-08",
+        )
+        .await;
+        assert_eq!(none["meteredPeriod"], Value::Null);
+        later.as_object_mut().unwrap().remove("meteredPeriod");
+        none.as_object_mut().unwrap().remove("meteredPeriod");
+        assert_eq!(later, none);
+        assert!(none["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|line| line["billingMode"] == "api" && line["metered"].is_null()));
+    }
+
+    #[sqlx::test]
+    async fn the_drill_down_shows_the_developers_copilot_lines_and_utc_days(pool: PgPool) {
+        let app = app_with_cutover(&pool, Some("2026-08"));
+        let CopilotAugust { admin, ada } = copilot_august(&app, &pool).await;
+        let month = get_json(
+            &app,
+            &Caller::Session(&admin.cookie),
+            &format!("/ai-usage/admin/billing/2026-08/developers/{}", ada.id),
+        )
+        .await;
+        let lines = month["lines"].as_array().unwrap();
+        assert!(lines
+            .iter()
+            .all(|line| line["subject"] == json!({ "kind": "user", "userId": ada.id.as_i32() })));
+        assert_eq!(
+            metered_lines(&month)
+                .iter()
+                .map(|line| line[4].clone())
+                .collect::<Vec<_>>(),
+            ["70.00", "20.00", "10.00", "12.00"]
+        );
+        assert_eq!(month["totals"]["meteredBilledUsd"], "1.12");
+        assert_eq!(month["metered"]["provisional"], false);
+        let days: Vec<Value> = month["dailyUsage"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                json!([
+                    row["day"],
+                    row["billingMode"],
+                    row["billingProvider"],
+                    row["projectKey"],
+                    row["usage"]["records"],
+                    row["subscriptionId"],
+                ])
+            })
+            .collect();
+        assert_eq!(
+            days,
+            [
+                json!(["2026-08-10", "api", "codex", APP, 3, null]),
+                json!(["2026-08-10", "metered", null, APP, 7, null]),
+                json!([
+                    "2026-08-10",
+                    "metered",
+                    null,
+                    UNATTRIBUTED_PROJECT_KEY,
+                    2,
+                    null
+                ]),
+            ]
+        );
+    }
+
+    #[sqlx::test]
+    async fn provisional_copilot_lines_say_why(pool: PgPool) {
+        let app = app_with_cutover(&pool, Some("2026-08"));
+        let CopilotAugust { admin, .. } = copilot_august(&app, &pool).await;
+        // GitHub's month total for Ada's account no longer matches the stored
+        // days: they may still change.
+        PostgresAiMeteredUsageRepository::new(db(&pool))
+            .record_check(
+                AiProvider::Copilot,
+                AiMeteredSource::AccountCredits,
+                august(),
+                &check(Some(ADA_ACCOUNT), false),
+            )
+            .await
+            .unwrap();
+        let overview = get_json(
+            &app,
+            &Caller::Session(&admin.cookie),
+            "/ai-usage/admin/billing/2026-08",
+        )
+        .await;
+        let metered: Vec<(Value, Value, Value)> = overview["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|line| line["billingMode"] == "metered")
+            .map(|line| {
+                (
+                    line["metered"]["kind"].clone(),
+                    line["metered"]["provisional"].clone(),
+                    line["metered"]["provisionalReasons"].clone(),
+                )
+            })
+            .collect();
+        let settling = (json!(true), json!(["notSettled"]));
+        let settled = (json!(false), json!([]));
+        let with = |kind: &str, (provisional, reasons): &(Value, Value)| {
+            (json!(kind), provisional.clone(), reasons.clone())
+        };
+        assert_eq!(
+            metered,
+            [
+                with("project", &settling),
+                with("project", &settling),
+                with("untracked", &settling),
+                with("untracked", &settling),
+                with("externalAccount", &settled),
+                with("unknownAccount", &settled),
+            ]
+        );
+        assert_eq!(overview["metered"]["provisional"], true);
+    }
 }

@@ -2,9 +2,10 @@ use time::macros::{date, datetime};
 
 use super::*;
 use crate::domain::models::{
-    bill_month, AiBillingProject, AiBillingUsage, AiDailyUsage, AiMappedProject, AiMonthlyCost,
-    AiProvider, AiSubscription, AiSubscriptionId, AiSubscriptionPeriod, AiSubscriptionPlan,
-    AiSubscriptionTerms, AiTokenCounts, AiUnassignedKind, AiUsdNanos, ProjectId, UserId,
+    bill_month, AiBillingProject, AiBillingSubject, AiBillingUsage, AiDailyUsage, AiMappedProject,
+    AiMeteredCharge, AiMeteredChargeKind, AiMonthlyCost, AiProvider, AiSubscription,
+    AiSubscriptionId, AiSubscriptionPeriod, AiSubscriptionPlan, AiSubscriptionTerms, AiTokenCounts,
+    AiUnassignedKind, AiUsdNanos, ProjectId, UserId,
 };
 
 const DEV: UserId = UserId::new(7);
@@ -672,4 +673,53 @@ fn only_non_zero_amounts_in_other_currencies_need_converting() {
     )
     .unwrap();
     assert_eq!(currencies_to_convert(&bill), [AiCurrency::usd()]);
+}
+
+#[test]
+fn metered_lines_convert_their_credits_like_api_lines() {
+    let mut bill = bill_month(
+        september(),
+        &[usage(
+            AiProvider::Codex,
+            date!(2026 - 09 - 02),
+            project("101", "Client A"),
+            3,
+        )],
+        &[],
+    )
+    .unwrap();
+    // Five credits at $0.01: 0.475 → 0.48 SEK at 9.5.
+    bill.lines.push(AiBillingLine {
+        subject: AiBillingSubject::User(DEV),
+        provider: AiProvider::Copilot,
+        project: project("101", "Client A"),
+        charge: AiBillingCharge::Metered(AiMeteredCharge {
+            kind: AiMeteredChargeKind::Project,
+            account: None,
+            sku: None,
+            amount: AiFeeAmount {
+                hundredths: 5,
+                currency: AiCurrency::usd(),
+            },
+            allocated: AiUsdNanos::new(5 * 10_000_000).unwrap(),
+            provisional: Vec::new(),
+            low_ratio: false,
+        }),
+        usage: AiBillingUsage::default(),
+        unassigned: Vec::new(),
+    });
+    assert_eq!(currencies_to_convert(&bill), [AiCurrency::usd()]);
+    let converted = convert_bill(&bill, &[rate("USD", "9.5")], &[]).unwrap();
+    assert_eq!(
+        amounts(&converted.lines),
+        [Some("0.29".to_string()), Some("0.48".to_string())]
+    );
+    assert_eq!(converted.totals.api.unwrap().to_decimal(), "0.29");
+    assert_eq!(converted.totals.metered.unwrap().to_decimal(), "0.48");
+    assert_eq!(converted.totals.billed.unwrap().to_decimal(), "0.77");
+
+    // Without a rate, the metered total is unknown too.
+    let missing = convert_bill(&bill, &[], &[]).unwrap();
+    assert_eq!(missing.totals.metered, None);
+    assert_eq!(missing.missing_rates, [AiCurrency::usd()]);
 }

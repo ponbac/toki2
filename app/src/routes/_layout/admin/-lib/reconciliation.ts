@@ -7,6 +7,7 @@ import type {
   AiMeteredImport,
   AiMeteredMonth,
   AiMeteredOwner,
+  AiMeteredPeriod,
   AiMeteredSourceKind,
   AiMeteredStaleReason,
   AiResidualDay,
@@ -409,4 +410,19 @@ export function checkState(check: AiMeteredCheck | null): CheckState {
     return "failed";
   }
   return check.matches === true ? "equal" : "differs";
+}
+
+/**
+ * Whether the month's bill reads this reconciliation, in a sentence: its
+ * Copilot lines follow the attribution from the metered cutover on, and keep
+ * Toki's estimates before it or without one.
+ */
+export function billingNote(period: AiMeteredPeriod | null): string {
+  if (period === null) {
+    return "Nothing here is billed: the bill keeps Toki's estimates for Copilot.";
+  }
+  const from = monthLabel(period.from);
+  return period.applies
+    ? `The bill's Copilot lines follow this attribution, from ${from} on.`
+    : `This month's bill keeps Toki's estimates for Copilot; from ${from}, the bill's Copilot lines follow this attribution.`;
 }

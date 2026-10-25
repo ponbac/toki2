@@ -29,7 +29,7 @@ A fixed-fee plan a developer declares for one AI provider, such as Claude Max 5x
 _Avoid_: seat, license
 
 **Billing mode**:
-How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost. Pi usage is billed by the developer's Codex subscription that covers the day when the day is a ChatGPT sign-in day, and otherwise as API usage. Usage uploaded with an explicit payer, such as OpenCode's through a ChatGPT sign-in, is billed by the developer's subscription to that payer covering the day, and otherwise as API usage; OpenCode usage without one is API usage. Usage a metered payer pays for is always API usage.
+How a developer's usage of a provider on one local day is billed: by the AI subscription that covers the day, or otherwise as API usage at its estimated cost. Pi usage is billed by the developer's Codex subscription that covers the day when the day is a ChatGPT sign-in day, and otherwise as API usage. Usage uploaded with an explicit payer, such as OpenCode's through a ChatGPT sign-in, is billed by the developer's subscription to that payer covering the day, and otherwise as API usage; OpenCode usage without one is API usage. Usage a metered payer pays for is API usage before the metered cutover, and from it on metered: billed from the payer's own credits per UTC month.
 _Avoid_: plan type, tier
 
 **Plan hint**:
@@ -41,11 +41,11 @@ A local day on which Pi hinted, in any hour and from any of a developer's machin
 _Avoid_: OAuth day, subscription day
 
 **API-equivalent cost**:
-What AI usage would cost its payer, estimated in USD by token-ledger: at Copilot's rates for usage Copilot pays for, and at the vendor's API prices otherwise, with OpenAI's implicit cache writes priced whoever pays. The name predates Copilot pricing. Usage on days without an AI subscription bills at it, and on subscription days it weighs how the fee is split across projects. Unpriced usage has an unknown cost, never zero.
+What AI usage would cost its payer, estimated in USD by token-ledger: at Copilot's rates for usage Copilot pays for, and at the vendor's API prices otherwise, with OpenAI's implicit cache writes priced whoever pays. The name predates Copilot pricing. Usage on days without an AI subscription bills at it (a metered payer's usage from the metered cutover on bills from its credits instead), and on subscription days it weighs how the fee is split across projects. Unpriced usage has an unknown cost, never zero.
 _Avoid_: actual cost, spend, bill
 
 **Metered payer**:
-A provider that bills usage as it is used, so no AI subscription to it can be declared and none is ever missing: GitHub Copilot, billed per credit. Usage it pays for, OpenCode's through Copilot included, is API usage at its API-equivalent cost.
+A provider that bills usage as it is used, so no AI subscription to it can be declared and none is ever missing: GitHub Copilot, billed per credit. Usage it pays for, OpenCode's through Copilot included, is API usage at its API-equivalent cost before the metered cutover, and bills as Copilot lines from it on.
 _Avoid_: pay-as-you-go subscription
 
 **Billing currency**:
@@ -65,7 +65,7 @@ AI usage that counts for no time-tracking project and is not personal usage: its
 _Avoid_: unmapped usage (it is only one of these cases)
 
 **Personal usage**:
-A developer's AI usage of a project key they marked as personal or internal: not client work. It is left out of the bill: it bills nothing on API days and takes no share of a subscription's fee, which is split over the developer's other usage. Admins see it only as an API-equivalent estimate per developer, never the key's name. The mark is the developer's own and applies to their usage alone. Mapping the key clears every mark of it: the mapping then decides for everyone, and deleting it leaves the usage unassigned. Shown as "Personal / internal".
+A developer's AI usage of a project key they marked as personal or internal: not client work. It is left out of the bill: it bills nothing on API days and takes no share of a subscription's fee, which is split over the developer's other usage. From the metered cutover on, the Copilot credits it accounts for bill as a personal/internal Copilot line, Spinit's. Admins see it only as an API-equivalent estimate per developer, never the key's name. The mark is the developer's own and applies to their usage alone. Mapping the key clears every mark of it: the mapping then decides for everyone, and deleting it leaves the usage unassigned. Shown as "Personal / internal".
 _Avoid_: private usage, excluded usage, non-billable usage
 
 **Stale machine**:
@@ -113,19 +113,19 @@ Toki's Copilot-priced estimate of the Copilot-paid usage of the user a provider 
 _Avoid_: actual usage
 
 **Reconciliation**:
-Comparing G with T per provider account, UTC day and group of (SKU, model): what the T/G rule would attribute, without billing it.
+Comparing G with T per provider account, UTC day and group of (SKU, model): what the T/G rule attributes. From the metered cutover on, the bill's Copilot lines follow it, so both agree on G, T, attributed and untracked for every account.
 _Avoid_: matching, audit
 
 **Attributed Copilot**:
-min(G, T) per UTC day and (SKU, model) group on days an account is linked to a user: what the T/G rule would bill to that user's destinations.
+min(G, T) per UTC day and (SKU, model) group on days an account is linked to a user: what the T/G rule bills to that user's destinations, each at most its own tracked cost.
 _Avoid_: billed Copilot
 
 **Untracked Copilot**:
-G minus attributed Copilot on days an account is linked to a user: usage GitHub billed that Toki did not track, such as the cloud agent or untracked tools. It is Spinit overhead, never spread over customers.
+G minus attributed Copilot on days an account is linked to a user: usage GitHub billed that Toki did not track, such as the cloud agent or untracked tools. It bills as the user's untracked Copilot lines, Spinit overhead, never spread over customers.
 _Avoid_: unbilled, missing usage
 
 **Unknown account**:
-The per-day residual: the organization's credits minus the sum over every provider account Toki imports, on days whose import is complete or still settling. Usage of accounts Toki never listed. It settles only once the organization's stored month equals the payer's month total.
+The per-day residual: the organization's credits minus the sum over every provider account Toki imports, on days whose import is complete or still settling. Usage of accounts Toki never listed. It settles only once the organization's stored month equals the payer's month total. From the metered cutover on, a positive month residual bills as one Spinit "unknown account" line, code review left out (it is billed per repository), and while the residual is not settled the month's Copilot lines as a whole are provisional, with or without that line.
 _Avoid_: external account, unlinked account
 
 **Payer check**:
@@ -143,3 +143,23 @@ _Avoid_: delay
 **IDE aggregate**:
 The organization usage row of AI credits without a repository: the sum of every account's IDE credits. Shown, never added to per-account credits.
 _Avoid_: unassigned repository
+
+**Metered cutover**:
+The first UTC month (`ai_usage.metered_copilot_from`) whose bill takes a metered payer's lines from its own credits: from that month's first instant in UTC, usage the payer pays for leaves the local-day reads. Earlier months keep estimates; unsetting it is the rollback.
+_Avoid_: go-live, switch date
+
+**UTC billing month**:
+The month a Copilot line belongs to: the UTC month of the payer's billing day. It shares the month key and exchange rate with the local month every other line follows.
+_Avoid_: GitHub month, calendar month (ambiguous)
+
+**Copilot line**:
+A bill line of credits a metered payer billed, at $0.01 a credit: a project's or Unassigned share by the T/G rule, or one of Spinit's (personal/internal, untracked Copilot, an unlinked, external or unknown account). Each account's lines sum exactly to its gross credits less code review.
+_Avoid_: GitHub line, credit line
+
+**Billing subject**:
+Whom a bill line charges for: a user, a provider account no user owns on the billed days, the unknown account, or a repository.
+_Avoid_: owner, payer
+
+**Provisional Copilot line**:
+A Copilot line that may still change, with its reasons: the month is in progress, a day's import is missing or incomplete, a day may still change, contributing usage is on an old pricing basis, a provisional model contributed, or a row is unrecognized.
+_Avoid_: draft line, estimate

@@ -18,7 +18,7 @@
 //!   that account's check error; the other accounts continue.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex,
@@ -29,18 +29,21 @@ use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use time::{Date, OffsetDateTime};
 
+use super::ai_metered_months::{
+    days_between, AiMeteredMonthData, AiMeteredMonths, AiMeteredReadSettings,
+};
 use crate::domain::{
     models::{
         admin_plan, credit_totals, credit_totals_match, ensure_importable, gap_months,
         held_seat_in, import_freshness, imported_through, open_days, reconcile, scheduled_plan,
-        settle_lag_days, total_gross_quantity, utc_day, AiAccountImportError, AiAccountTarget,
-        AiBillingMonth, AiCreditStoreScope, AiCreditTotal, AiDayCoverage, AiExpectedSlices,
-        AiFreshnessInput, AiImportFreshness, AiImportOverview, AiImportPlan, AiImportRun,
-        AiImportRunId, AiImportStatus, AiMeteredCredit, AiMeteredMonth, AiMeteredPeriod,
-        AiMeteredScope, AiMeteredSource, AiMeteredSourceHealth, AiMonthMode, AiProvider,
-        AiProviderAccountId, AiProviderLogin, AiReconciliationInput, AiRunStatus, AiSliceRecord,
-        AiSliceSet, AiSourceOutcome, AiSourceStatus, AiStoredProviderAccount, AiStoredScope,
-        AiUsageCheck, AiUsageDateRange, UserId, MAX_REQUESTS_PER_RUN, SETTLE_LAG_WINDOW_DAYS,
+        settle_lag_days, total_gross_quantity, utc_day, AiAccountImportError, AiBillingMonth,
+        AiCreditStoreScope, AiCreditTotal, AiExpectedSlices, AiFreshnessInput, AiImportFreshness,
+        AiImportOverview, AiImportPlan, AiImportRun, AiImportRunId, AiImportStatus,
+        AiMeteredCredit, AiMeteredMonth, AiMeteredPeriod, AiMeteredScope, AiMeteredSource,
+        AiMeteredSourceHealth, AiMonthMode, AiProvider, AiProviderAccountId, AiProviderLogin,
+        AiRunStatus, AiSliceRecord, AiSliceSet, AiSourceOutcome, AiSourceStatus,
+        AiStoredProviderAccount, AiStoredScope, AiUsageCheck, AiUsageDateRange,
+        TimeTrackingCompany, UserId, MAX_REQUESTS_PER_RUN, SETTLE_LAG_WINDOW_DAYS,
     },
     ports::{
         inbound::{AiImportTicket, AiMeteredUsageService},
@@ -86,12 +89,16 @@ pub struct AiMeteredUsageServiceImpl<R, A> {
     payer: AiProvider,
     namespace: String,
     settings: AiMeteredImportSettings,
+    /// Reads months as the bill reads them.
+    months: AiMeteredMonths<R, A>,
     single_flight: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<R, A> AiMeteredUsageServiceImpl<R, A> {
     /// `payer` is whose usage this is, such as Copilot, and `namespace` where
-    /// its accounts live, such as the GitHub organization.
+    /// its accounts live, such as the GitHub organization. Tracked usage
+    /// resolves project keys with mappings to `mapping_company`, as the bill
+    /// does.
     pub fn new(
         repository: Arc<R>,
         accounts: Arc<A>,
@@ -99,7 +106,18 @@ impl<R, A> AiMeteredUsageServiceImpl<R, A> {
         payer: AiProvider,
         namespace: String,
         settings: AiMeteredImportSettings,
+        mapping_company: Option<TimeTrackingCompany>,
     ) -> Self {
+        let months = AiMeteredMonths::new(
+            repository.clone(),
+            accounts.clone(),
+            payer,
+            AiMeteredReadSettings {
+                backfill_from: settings.backfill_from,
+                reprice_floor: settings.reprice_floor,
+                mapping_company,
+            },
+        );
         Self {
             repository,
             accounts,
@@ -107,6 +125,7 @@ impl<R, A> AiMeteredUsageServiceImpl<R, A> {
             payer,
             namespace,
             settings,
+            months,
             single_flight: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
@@ -130,21 +149,6 @@ impl<R, A> AiMeteredUsageServiceImpl<R, A> {
             }
         }
     }
-}
-
-/// The days of `month` from `from` through `through`, both inclusive.
-fn days_between(month: AiBillingMonth, from: Date, through: Date) -> Vec<Date> {
-    let mut days = Vec::new();
-    let mut day = from.max(month.first_day());
-    let last = through.min(month.last_day());
-    while day <= last {
-        days.push(day);
-        match day.next_day() {
-            Some(next) => day = next,
-            None => break,
-        }
-    }
-    days
 }
 
 fn clip_error(error: &str) -> String {
@@ -876,60 +880,6 @@ where
         Ok(run)
     }
 
-    /// The reconciled days of `month` and their coverage. `account_slices`
-    /// holds each fetched account slice and whether it is complete.
-    fn coverage(
-        &self,
-        month: AiBillingMonth,
-        today: Date,
-        accounts: &[&AiStoredProviderAccount],
-        account_slices: &HashMap<(AiProviderAccountId, Date), bool>,
-        org_slices: &[AiSliceRecord],
-        checks: &[AiUsageCheck],
-    ) -> BTreeMap<Date, AiDayCoverage> {
-        // An account whose import failed without a seat in the month is not
-        // expected: its error is informational.
-        let informational: HashSet<AiProviderAccountId> = checks
-            .iter()
-            .filter(|check| check.error.is_some())
-            .filter_map(|check| check.account_id)
-            .filter(|account_id| {
-                accounts
-                    .iter()
-                    .find(|account| account.account_id == *account_id)
-                    .is_some_and(|account| !held_seat_in(account, month, today))
-            })
-            .collect();
-        let expected: Vec<AiProviderAccountId> = accounts
-            .iter()
-            .map(|account| account.account_id)
-            .filter(|account_id| !informational.contains(account_id))
-            .collect();
-        let org_slices: HashMap<Date, bool> = org_slices
-            .iter()
-            .map(|slice| (slice.day, slice.is_complete()))
-            .collect();
-
-        days_between(month, self.settings.backfill_from, today)
-            .into_iter()
-            .map(|day| {
-                let mut coverage = AiDayCoverage {
-                    org_fetched: org_slices.contains_key(&day),
-                    org_complete: org_slices.get(&day).copied().unwrap_or(false),
-                    ..AiDayCoverage::default()
-                };
-                for account_id in &expected {
-                    match account_slices.get(&(*account_id, day)) {
-                        None => coverage.accounts_missing += 1,
-                        Some(false) => coverage.accounts_incomplete += 1,
-                        Some(true) => {}
-                    }
-                }
-                (day, coverage)
-            })
-            .collect()
-    }
-
     async fn import_overview(
         &self,
         now: OffsetDateTime,
@@ -998,90 +948,14 @@ where
         month: AiBillingMonth,
         focus: Option<UserId>,
     ) -> Result<AiMeteredMonth, AiMeteredUsageError> {
-        let (now, today) = self.today().await?;
-        let accounts = self.accounts.accounts(self.payer).await?;
-        let status = self.repository.import_status(self.payer).await?;
-        let settle_days = status.settle_days();
-        let dates = month.dates();
-
-        let in_scope: Vec<&AiStoredProviderAccount> = match focus {
-            None => accounts.iter().collect(),
-            Some(user) => accounts
-                .iter()
-                .filter(|account| {
-                    account.dispositions.iter().any(|disposition| {
-                        disposition.terms.target == AiAccountTarget::User(user)
-                            && disposition.terms.period.to_date_range(dates).is_some()
-                    })
-                })
-                .collect(),
-        };
-        let ids: Vec<AiProviderAccountId> =
-            in_scope.iter().map(|account| account.account_id).collect();
-        let account_credits = self
-            .repository
-            .account_credits(self.payer, dates, focus.is_some().then_some(ids.as_slice()))
-            .await?;
-        let checks: Vec<AiUsageCheck> = self
-            .repository
-            .checks(self.payer, month)
-            .await?
-            .into_iter()
-            .filter(|check| {
-                focus.is_none()
-                    || check
-                        .account_id
-                        .is_some_and(|account_id| ids.contains(&account_id))
-            })
-            .collect();
-        let account_slices: HashMap<(AiProviderAccountId, Date), bool> = self
-            .repository
-            .slices(self.payer, AiMeteredSource::AccountCredits, dates)
-            .await?
-            .into_iter()
-            .filter_map(|slice| Some(((slice.account_id?, slice.day), slice.is_complete())))
-            .collect();
-        let org_slices = self
-            .repository
-            .slices(self.payer, AiMeteredSource::OrgCredits, dates)
-            .await?;
-        let coverage = self.coverage(
-            month,
+        let AiMeteredMonthData {
+            now,
             today,
-            &in_scope,
-            &account_slices,
-            &org_slices,
-            &checks,
-        );
-        let (org_credits, org_charges, summary) = match focus {
-            None => (
-                self.repository.org_credits(self.payer, dates).await?,
-                self.repository.org_charges(self.payer, dates).await?,
-                self.repository.summary(self.payer, month).await?,
-            ),
-            Some(_) => (Vec::new(), Vec::new(), None),
-        };
-        let tracked = self
-            .repository
-            .tracked_usage(self.payer, dates, self.settings.reprice_floor, focus)
-            .await?;
-
-        let reconciliation = reconcile(AiReconciliationInput {
-            payer: self.payer,
-            month,
-            today,
-            settle_days,
-            accounts: in_scope.into_iter().cloned().collect(),
-            account_credits,
-            org_credits,
-            org_charges,
-            summary,
-            tracked,
-            checks,
-            coverage,
-            account_slices,
-            focus,
-        })?;
+            accounts,
+            status,
+            input,
+        } = self.months.load(month, focus).await?;
+        let reconciliation = reconcile(input)?;
         let months = self.repository.months(self.payer).await?;
         let import = self.import_overview(now, &accounts, status).await?;
         Ok(AiMeteredMonth {

@@ -3,41 +3,52 @@ use std::{collections::HashSet, sync::Arc};
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
-use super::AiExchangeRates;
+use super::{AiExchangeRates, AiMeteredMonths};
 use crate::domain::{
     models::{
-        assess_completeness, bill_month, billed_day_usage, convert_bill, currencies_to_convert,
-        AiBillingDeveloper, AiBillingMonth, AiConvertedBill, AiCurrency, AiDeveloperMonth,
-        AiExchangeRate, AiExchangeRateValue, AiMachineLabel, AiMonthBill, AiMonthCompleteness,
-        AiMonthOverview, AiSubscription, AiSubscriptionScope, AiUsageTimeZone, TimeTrackingCompany,
-        UserId,
+        add_metered_lines, allocate_metered_credits, assess_completeness, bill_month,
+        billed_day_usage, convert_bill, currencies_to_convert, for_user, AiBillingDeveloper,
+        AiBillingMonth, AiConvertedBill, AiCurrency, AiDeveloperMonth, AiExchangeRate,
+        AiExchangeRateValue, AiMachineLabel, AiMeteredAllocation, AiMeteredCutover, AiMonthBill,
+        AiMonthCompleteness, AiMonthOverview, AiSubscription, AiSubscriptionScope, AiUsageTimeZone,
+        TimeTrackingCompany, UserId,
     },
     ports::{
         inbound::AiBillingService,
-        outbound::{AiBillingRepository, AiExchangeRateRepository, AiSubscriptionRepository},
+        outbound::{
+            AiBillingRepository, AiExchangeRateRepository, AiMeteredUsageRepository,
+            AiProviderAccountRepository, AiSubscriptionRepository,
+        },
     },
     AiBillingError, AiSubscriptionError,
 };
 
-pub struct AiBillingServiceImpl<R, S, X> {
+pub struct AiBillingServiceImpl<R, S, X, M, A> {
     repository: Arc<R>,
     subscriptions: Arc<S>,
     rates: AiExchangeRates<X>,
     time_zone: AiUsageTimeZone,
     mapping_company: Option<TimeTrackingCompany>,
+    /// The metered payer's months, read as reconciliation reads them.
+    metered: AiMeteredMonths<M, A>,
+    cutover: Option<AiMeteredCutover>,
 }
 
-impl<R, S, X: AiExchangeRateRepository> AiBillingServiceImpl<R, S, X> {
+impl<R, S, X: AiExchangeRateRepository, M, A> AiBillingServiceImpl<R, S, X, M, A> {
     /// `time_zone` defines usage days and billing months. Only project mappings
     /// to `mapping_company`, the configured time-tracking company, resolve; with
     /// `None`, all usage is Unassigned. Exchange rates are stored and fetched
-    /// through `rates`, which bounds the fetches.
+    /// through `rates`, which bounds the fetches. From `cutover` on, the
+    /// metered payer's usage bills from its credits, read through `metered`;
+    /// `None` keeps every month on estimates.
     pub fn new(
         repository: Arc<R>,
         subscriptions: Arc<S>,
         rates: AiExchangeRates<X>,
         time_zone: AiUsageTimeZone,
         mapping_company: Option<TimeTrackingCompany>,
+        metered: AiMeteredMonths<M, A>,
+        cutover: Option<AiMeteredCutover>,
     ) -> Self {
         Self {
             repository,
@@ -45,6 +56,8 @@ impl<R, S, X: AiExchangeRateRepository> AiBillingServiceImpl<R, S, X> {
             rates,
             time_zone,
             mapping_company,
+            metered,
+            cutover,
         }
     }
 
@@ -58,7 +71,7 @@ impl<R, S, X: AiExchangeRateRepository> AiBillingServiceImpl<R, S, X> {
     }
 }
 
-impl<R, S: AiSubscriptionRepository, X> AiBillingServiceImpl<R, S, X> {
+impl<R, S: AiSubscriptionRepository, X, M, A> AiBillingServiceImpl<R, S, X, M, A> {
     async fn subscriptions(
         &self,
         scope: AiSubscriptionScope,
@@ -73,21 +86,50 @@ impl<R, S: AiSubscriptionRepository, X> AiBillingServiceImpl<R, S, X> {
     }
 }
 
+impl<R, S, X, M, A> AiBillingServiceImpl<R, S, X, M, A>
+where
+    M: AiMeteredUsageRepository,
+    A: AiProviderAccountRepository,
+{
+    /// The metered payer's lines of `month`'s UTC month, over every account,
+    /// when the month bills them from credits.
+    async fn metered_allocation(
+        &self,
+        month: AiBillingMonth,
+    ) -> Result<Option<AiMeteredAllocation>, AiBillingError> {
+        if !self
+            .cutover
+            .is_some_and(|cutover| cutover.applies_to(month))
+        {
+            return Ok(None);
+        }
+        let data = self.metered.load(month, None).await?;
+        Ok(Some(allocate_metered_credits(&data.input)?))
+    }
+}
+
 #[async_trait]
-impl<R, S, X> AiBillingService for AiBillingServiceImpl<R, S, X>
+impl<R, S, X, M, A> AiBillingService for AiBillingServiceImpl<R, S, X, M, A>
 where
     R: AiBillingRepository,
     S: AiSubscriptionRepository,
     X: AiExchangeRateRepository,
+    M: AiMeteredUsageRepository,
+    A: AiProviderAccountRepository,
 {
     fn time_zone(&self) -> &AiUsageTimeZone {
         &self.time_zone
+    }
+
+    fn metered_cutover(&self) -> Option<AiMeteredCutover> {
+        self.cutover
     }
 
     async fn month_overview(
         &self,
         month: AiBillingMonth,
     ) -> Result<AiMonthOverview, AiBillingError> {
+        let cutover = self.cutover.as_ref();
         let usage = self
             .repository
             .daily_usage(
@@ -95,6 +137,7 @@ where
                 &self.time_zone,
                 self.mapping_company.as_ref(),
                 None,
+                cutover,
             )
             .await?;
         // Read right after what bills, before the rates are fetched: a mark
@@ -107,16 +150,20 @@ where
                 &self.time_zone,
                 self.mapping_company.as_ref(),
                 None,
+                cutover,
             )
             .await?;
         let subscriptions = self.subscriptions(AiSubscriptionScope::AllUsers).await?;
-        let bill = bill_month(month, &usage, &subscriptions)?;
+        let mut bill = bill_month(month, &usage, &subscriptions)?;
+        if let Some(allocation) = self.metered_allocation(month).await? {
+            bill = add_metered_lines(bill, allocation)?;
+        }
         let converted = self.convert(&bill).await?;
 
         let billed: HashSet<UserId> = bill
             .lines
             .iter()
-            .map(|line| line.user_id)
+            .filter_map(|line| line.subject.user_id())
             .chain(
                 bill.subscriptions
                     .iter()
@@ -152,6 +199,7 @@ where
             .into_iter()
             .find(|user| user.user_id == user_id)
             .ok_or(AiBillingError::UserNotFound)?;
+        let cutover = self.cutover.as_ref();
         // Bills from the same per-day sums as the overview, so both agree to
         // the hundredth; the finer rows are for display only.
         let daily = self
@@ -161,6 +209,7 @@ where
                 &self.time_zone,
                 self.mapping_company.as_ref(),
                 Some(&user_id),
+                cutover,
             )
             .await?;
         let usage = self
@@ -170,6 +219,7 @@ where
                 month.dates(),
                 &self.time_zone,
                 self.mapping_company.as_ref(),
+                cutover,
             )
             .await?;
         // Read right after the usage it complements, as in the overview.
@@ -180,6 +230,7 @@ where
                 &self.time_zone,
                 self.mapping_company.as_ref(),
                 Some(&user_id),
+                cutover,
             )
             .await?
             .into_iter()
@@ -188,7 +239,12 @@ where
         let subscriptions = self
             .subscriptions(AiSubscriptionScope::User(user_id))
             .await?;
-        let bill = bill_month(month, &daily, &subscriptions)?;
+        let mut bill = bill_month(month, &daily, &subscriptions)?;
+        // Every account is allocated, as in the overview, and the developer's
+        // lines taken from it: both agree to the cent.
+        if let Some(allocation) = self.metered_allocation(month).await? {
+            bill = add_metered_lines(bill, for_user(allocation, user_id))?;
+        }
         let converted = self.convert(&bill).await?;
         let machines = self
             .repository

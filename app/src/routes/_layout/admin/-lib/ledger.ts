@@ -2,6 +2,7 @@ import type {
   AiBillingDeveloper,
   AiBillingLine,
   AiBillingOverview,
+  AiBillingSubject,
   AiBillingUsage,
   AiSubscriptionMonth,
 } from "@/lib/api/queries/ai-admin";
@@ -12,17 +13,23 @@ import {
 } from "@/lib/api/contracts/ai-admin";
 import {
   OVERHEAD_SHORT_LABEL,
+  SPINIT_KINDS,
+  SPINIT_KIND_LABELS,
   UNASSIGNED_KIND_LABELS,
   billableTotals,
   hundredths,
   lineProject,
+  lineUserId,
+  subjectKey,
   type BillableTotals,
   type ProjectKind,
+  type SpinitKind,
 } from "./billing";
 
 /*
  * A month's bill arranged as a ledger: where its money goes, project by
- * project, and whose usage it is, developer by developer. The server has
+ * project, and whose usage it is, developer by developer (or, for a metered
+ * payer's credits, account by account). The server has
  * decided every amount; this only groups, ranks and measures them. Amounts
  * are compared in exact hundredths of the billing currency, and an amount
  * without a rate takes no part in a share.
@@ -66,9 +73,13 @@ export function ledgerRowId(key: string): string {
   return `ledger-${key.replace(/[^a-zA-Z0-9-]/g, "-")}`;
 }
 
-/** One developer's lines within an entry. */
+/** One subject's lines within an entry: a developer's, or an account's. */
 export type LedgerPerson = Readonly<{
-  userId: number;
+  /** The subject's key, unique within the entry. */
+  key: string;
+  subject: AiBillingSubject;
+  /** The developer; null for any other subject. */
+  userId: number | null;
   /** Dearest first. */
   lines: readonly AiBillingLine[];
   totals: BillableTotals;
@@ -88,14 +99,17 @@ function providersOf(lines: readonly AiBillingLine[]): AiProvider[] {
 export type LedgerEntry = Readonly<{
   key: string;
   kind: ProjectKind;
-  /** The kind of Unassigned usage; null for a project and for overhead. */
+  /** The kind of Unassigned usage; null for every other kind. */
   unassigned: UnassignedKind | null;
+  /** The kind of Spinit's credits; null for every other kind. */
+  spinit: SpinitKind | null;
   label: string;
   name: ProjectName;
   /** Dearest first. */
   lines: readonly AiBillingLine[];
   totals: BillableTotals;
-  /** Each developer's lines, dearest developer first. */
+  /** Each subject's lines, dearest first: developers, and accounts no
+   * developer owns. */
   people: readonly LedgerPerson[];
   /** The tools used, in the providers' display order. */
   providers: readonly AiProvider[];
@@ -103,19 +117,22 @@ export type LedgerEntry = Readonly<{
 
 function entry(
   key: string,
-  { kind, unassigned, label }: ReturnType<typeof lineProject>,
+  { kind, unassigned, spinit, label }: ReturnType<typeof lineProject>,
   lines: readonly AiBillingLine[],
 ): LedgerEntry {
   const sorted = [...lines].sort((a, b) =>
     byAmount(lineHundredths(a), lineHundredths(b)),
   );
-  const byUser = new Map<number, AiBillingLine[]>();
+  const bySubject = new Map<string, AiBillingLine[]>();
   for (const line of sorted) {
-    byUser.set(line.userId, [...(byUser.get(line.userId) ?? []), line]);
+    const subject = subjectKey(line.subject);
+    bySubject.set(subject, [...(bySubject.get(subject) ?? []), line]);
   }
-  const people = [...byUser.entries()]
-    .map(([userId, own]): LedgerPerson => ({
-      userId,
+  const people = [...bySubject.entries()]
+    .map(([subject, own]): LedgerPerson => ({
+      key: subject,
+      subject: own[0].subject,
+      userId: lineUserId(own[0]),
       lines: own,
       totals: billableTotals(own),
       providers: providersOf(own),
@@ -124,12 +141,13 @@ function entry(
       (a, b) =>
         byAmount(a.totals.converted, b.totals.converted) ||
         b.totals.usage.apiEquivalentUsd - a.totals.usage.apiEquivalentUsd ||
-        a.userId - b.userId,
+        a.key.localeCompare(b.key),
     );
   return {
     key,
     kind,
     unassigned,
+    spinit,
     label,
     name:
       kind === "project"
@@ -151,6 +169,10 @@ export type Ledger = Readonly<{
   unassigned: readonly LedgerEntry[];
   /** Subscription fees nobody used; null without any. */
   overhead: LedgerEntry | null;
+  /** A metered payer's credits that stay with Spinit, by kind: untracked,
+   * personal and internal, then the accounts no developer owns. Empty
+   * without any. */
+  spinit: readonly LedgerEntry[];
   /** Every line together. */
   totals: BillableTotals;
 }>;
@@ -183,18 +205,124 @@ export function ledgerOf(lines: readonly AiBillingLine[]): Ledger {
       (kind) => entries.find((e) => e.unassigned === kind) ?? [],
     ),
     overhead: entries.find((e) => e.kind === "overhead") ?? null,
+    spinit: SPINIT_KINDS.flatMap(
+      (kind) => entries.find((e) => e.spinit === kind) ?? [],
+    ),
     totals: billableTotals(lines),
   };
 }
 
 /** Every entry of a ledger, in the order it is read: projects, then the
- * unassigned usage, then the overhead. */
+ * unassigned usage, the overhead, and Spinit's credits. */
 export function ledgerEntries(ledger: Ledger): readonly LedgerEntry[] {
   return [
     ...ledger.projects,
     ...ledger.unassigned,
     ...(ledger.overhead ? [ledger.overhead] : []),
+    ...ledger.spinit,
   ];
+}
+
+/** What of a ledger stays with Spinit, in exact hundredths of the billing
+ * currency; each null while a line of it has no rate. */
+export type SpinitShare = Readonly<{
+  /** Every part together. */
+  total: number | null;
+  untracked: number | null;
+  personal: number | null;
+  accounts: number | null;
+  /** A metered payer's credits on Unassigned usage outside any repository:
+   * an Unassigned line, which no mapping can assign, so the statement counts
+   * it as Spinit's. */
+  unattributed: number | null;
+}>;
+
+/** The sum of some lines' amounts; null when one has none. */
+function sumOf(lines: readonly AiBillingLine[]): number | null {
+  return lines.reduce<number | null>((sum, line) => {
+    const amount = lineHundredths(line);
+    return sum === null || amount === null ? null : sum + amount;
+  }, 0);
+}
+
+/** A ledger's Unassigned usage as the statement reads it, in its sentence
+ * and its strip alike. */
+export type StatementUnassigned = Readonly<{
+  /** Usage that has no project yet, by kind, without a metered payer's
+   * credits outside any repository. */
+  unassigned: readonly LedgerEntry[];
+  /** Those credits, which no mapping can assign, so the statement counts
+   * them as Spinit's (kind `spinit`, `unattributed`); null without any. */
+  outside: LedgerEntry | null;
+}>;
+
+/**
+ * Splits a metered payer's credits outside any repository off the ledger's
+ * Unassigned usage, as the statement counts them: Spinit's, though the ledger
+ * keeps them under Unassigned. Both parts keep the ledger entry's key, so its
+ * row stands for either.
+ */
+export function statementUnassigned(ledger: Ledger): StatementUnassigned {
+  const unassigned: LedgerEntry[] = [];
+  let outside: LedgerEntry | null = null;
+  for (const e of ledger.unassigned) {
+    const credits =
+      e.unassigned === "unattributed"
+        ? e.lines.filter((line) => line.billingMode === "metered")
+        : [];
+    if (credits.length === 0) {
+      unassigned.push(e);
+      continue;
+    }
+    const rest = e.lines.filter((line) => line.billingMode !== "metered");
+    if (rest.length > 0) {
+      unassigned.push(
+        entry(
+          e.key,
+          {
+            key: e.key,
+            kind: "unassigned",
+            unassigned: e.unassigned,
+            spinit: null,
+            label: e.label,
+          },
+          rest,
+        ),
+      );
+    }
+    outside = entry(
+      e.key,
+      {
+        key: e.key,
+        kind: "spinit",
+        unassigned: null,
+        spinit: "unattributed",
+        label: SPINIT_KIND_LABELS.unattributed.label,
+      },
+      credits,
+    );
+  }
+  return { unassigned, outside };
+}
+
+/** What of a ledger stays with Spinit: a metered payer's credits on Spinit's
+ * lines, by kind, and its credits outside any repository. */
+export function spinitShare(ledger: Ledger): SpinitShare {
+  const lines = (kind: SpinitKind) =>
+    ledger.spinit.find((e) => e.spinit === kind)?.lines ?? [];
+  const parts = {
+    untracked: sumOf(lines("untracked")),
+    personal: sumOf(lines("personal")),
+    accounts: sumOf(lines("accounts")),
+    unattributed: sumOf(statementUnassigned(ledger).outside?.lines ?? []),
+  };
+  const values = Object.values(parts);
+  return {
+    total: values.some((value) => value === null)
+      ? null
+      : values.reduce<number>((sum, value) => sum + (value ?? 0), 0),
+    ...parts,
+  };
 }
 
 /** An entry's amount as a share of the ledger's, from 0 to 1; null when
@@ -232,9 +360,11 @@ export type AllocationSegment = Readonly<{
   more: number;
   /** Exact hundredths of the billing currency; always above zero. */
   amount: number;
-  /** The entries the segment stands for: one, or the tail merged. */
+  /** The entries the segment stands for: one, the tail merged, or Spinit's
+   * other credits merged. */
   entries: readonly LedgerEntry[];
-  /** Its step of the billable ramp; null for Unassigned and overhead. */
+  /** Its step of the billable ramp; null for Unassigned, overhead and
+   * Spinit's credits. */
   step: BillableStep | null;
 }>;
 
@@ -251,14 +381,19 @@ const OWN_STEPS: readonly BillableStep[] = [1, 2, 3, 4];
  * `others` segment when there are more. The tail is named "N smaller
  * projects" when all of it is small, and after its dearest customer when the
  * cap merged a project that is not. Unassigned usage and overhead follow
- * without a step. Entries without a known amount, or of nothing, take no
- * space. While a line has no exchange rate the bill's total is unknown, and
- * shares of the rest would read as shares of the whole: there is no strip.
+ * without a step, then Spinit's credits: untracked on a segment of its own,
+ * and the rest (personal, account credits and a metered payer's credits
+ * outside any repository, which the statement counts as Spinit's:
+ * `statementUnassigned`) merged into one "other" segment when there are more
+ * than one. Entries without a known amount, or of nothing, take no space.
+ * While a line has no exchange rate the bill's total is unknown, and shares
+ * of the rest would read as shares of the whole: there is no strip.
  */
 export function allocationSegments(ledger: Ledger): AllocationSegment[] {
   if (ledger.totals.converted === null) {
     return [];
   }
+  const { unassigned, outside } = statementUnassigned(ledger);
   const known = (e: LedgerEntry) =>
     e.totals.converted !== null && e.totals.converted > 0;
   const amount = (e: LedgerEntry) => e.totals.converted ?? 0;
@@ -268,8 +403,9 @@ export function allocationSegments(ledger: Ledger): AllocationSegment[] {
   const single = (
     e: LedgerEntry,
     step: BillableStep | null,
+    key: string = e.key,
   ): AllocationSegment => ({
-    key: e.key,
+    key,
     kind: e.kind,
     label: e.label,
     short: shortName(e),
@@ -313,12 +449,71 @@ export function allocationSegments(ledger: Ledger): AllocationSegment[] {
       step: TAIL_STEP,
     });
   }
-  for (const e of [...ledger.unassigned, ledger.overhead]) {
-    if (e && known(e)) {
-      segments.push(single(e, null));
+  for (const e of unassigned) {
+    if (known(e)) {
+      // Usage outside any repository shares its ledger key with the credits
+      // drawn as Spinit's: a segment key of its own lights it alone.
+      const split = outside !== null && e.key === outside.key;
+      segments.push(single(e, null, split ? `${e.key}:usage` : e.key));
     }
   }
+  if (ledger.overhead && known(ledger.overhead)) {
+    segments.push(single(ledger.overhead, null));
+  }
+  const untracked = ledger.spinit.find((e) => e.spinit === "untracked");
+  if (untracked && known(untracked)) {
+    segments.push(single(untracked, null));
+  }
+  const other = [
+    ...ledger.spinit.filter((e) => e.spinit !== "untracked"),
+    ...(outside ? [outside] : []),
+  ].filter(known);
+  if (other.length === 1) {
+    segments.push(
+      single(
+        other[0],
+        null,
+        other[0] === outside ? SPINIT_UNATTRIBUTED_KEY : other[0].key,
+      ),
+    );
+  } else if (other.length > 1) {
+    segments.push({
+      key: SPINIT_OTHER_KEY,
+      kind: "spinit",
+      label: "Spinit: other Copilot",
+      short: "Other",
+      more: 0,
+      amount: other.reduce((sum, e) => sum + amount(e), 0),
+      entries: other,
+      step: null,
+    });
+  }
   return segments;
+}
+
+/** The key of the segment merging Spinit's personal and account credits,
+ * and a metered payer's credits outside any repository. */
+export const SPINIT_OTHER_KEY = "spinit:other";
+
+/** The key of the segment of a metered payer's credits outside any
+ * repository, when no other credits of Spinit's merge with them. */
+export const SPINIT_UNATTRIBUTED_KEY = "spinit:unattributed";
+
+/**
+ * The segments each ledger entry is drawn in, by key: its own, or the merged
+ * segment it is part of; both for usage outside any repository with a
+ * metered payer's credits among it. Entries without a segment are absent.
+ */
+export function segmentKeys(
+  segments: readonly AllocationSegment[],
+): ReadonlyMap<string, readonly string[]> {
+  const keys = new Map<string, string[]>();
+  for (const segment of segments) {
+    for (const entry of segment.entries) {
+      keys.set(entry.key, [...(keys.get(entry.key) ?? []), segment.key]);
+    }
+  }
+  return keys;
 }
 
 /**
@@ -349,6 +544,8 @@ function shortName(e: LedgerEntry): string {
       return UNASSIGNED_KIND_LABELS[e.unassigned ?? "unmapped"].short;
     case "overhead":
       return OVERHEAD_SHORT_LABEL;
+    case "spinit":
+      return SPINIT_KIND_LABELS[e.spinit ?? "untracked"].short;
   }
 }
 
@@ -366,11 +563,17 @@ export type PersonRow = Readonly<{
   projects: readonly string[];
   /** Whether some of their usage has no project. */
   hasUnassigned: boolean;
+  /** Whether some of their usage bills at API prices. */
+  api: boolean;
+  /** Their metered payer's credits, when they have any: the untracked part,
+   * which stays with Spinit; null without metered lines. */
+  metered: Readonly<{ untracked: BillableTotals }> | null;
 }>;
 
 /**
  * Everyone on the month's bill, and everyone else named in `others` (such as
- * developers whose machines synced but billed nothing), dearest first.
+ * developers whose machines synced but billed nothing), dearest first. Lines
+ * of accounts no developer owns are no one's here.
  */
 export function peopleOf(
   overview: AiBillingOverview,
@@ -381,14 +584,15 @@ export function peopleOf(
     names.set(developer.userId, developer.fullName);
   }
   const ids = new Set<number>([
-    ...overview.lines.map((line) => line.userId),
+    ...overview.lines.flatMap((line) => lineUserId(line) ?? []),
     ...overview.subscriptions.map((s) => s.userId),
     ...overview.personalUsage.map((p) => p.userId),
     ...others.map((developer) => developer.userId),
   ]);
   const rows = [...ids].map((userId): PersonRow => {
-    const lines = overview.lines.filter((line) => line.userId === userId);
+    const lines = overview.lines.filter((line) => lineUserId(line) === userId);
     const ledger = ledgerOf(lines);
+    const metered = lines.filter((line) => line.billingMode === "metered");
     return {
       userId,
       name: names.get(userId) ?? `User ${userId}`,
@@ -398,6 +602,15 @@ export function peopleOf(
         overview.personalUsage.find((p) => p.userId === userId)?.usage ?? null,
       projects: ledger.projects.map((e) => e.label),
       hasUnassigned: ledger.unassigned.length > 0,
+      api: lines.some((line) => line.billingMode === "api"),
+      metered:
+        metered.length > 0
+          ? {
+              untracked: billableTotals(
+                metered.filter((line) => line.metered?.kind === "untracked"),
+              ),
+            }
+          : null,
     };
   });
   return rows.sort(

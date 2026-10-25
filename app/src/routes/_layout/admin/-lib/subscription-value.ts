@@ -5,7 +5,7 @@ import type {
   AiSubscriptionMonth,
 } from "@/lib/api/queries/ai-admin";
 import type { AiProvider } from "@/lib/api/queries/ai-usage";
-import { billableTotals, type BillableTotals } from "./billing";
+import { billableTotals, lineUserId, type BillableTotals } from "./billing";
 
 /*
  * What each subscription's fee bought: the fee beside what the usage it paid
@@ -302,24 +302,31 @@ export function apiBilledUsage(
   developers: readonly AiBillingDeveloper[],
 ): ApiBilledUsage[] {
   const names = new Map(developers.map((d) => [d.userId, d.fullName]));
-  const groups = new Map<string, AiBillingLine[]>();
+  const groups = new Map<
+    string,
+    { userId: number; provider: AiProvider; lines: AiBillingLine[] }
+  >();
   for (const line of lines) {
-    if (line.billingMode !== "api") {
+    const userId = lineUserId(line);
+    if (line.billingMode !== "api" || userId === null) {
       continue;
     }
-    const key = `${line.userId}:${line.provider}`;
-    groups.set(key, [...(groups.get(key) ?? []), line]);
+    const key = `${userId}:${line.provider}`;
+    const group = groups.get(key) ?? {
+      userId,
+      provider: line.provider,
+      lines: [],
+    };
+    group.lines.push(line);
+    groups.set(key, group);
   }
   return [...groups.values()]
-    .map((group): ApiBilledUsage => {
-      const [first] = group;
-      return {
-        userId: first.userId,
-        developer: names.get(first.userId) ?? `User ${first.userId}`,
-        provider: first.provider,
-        totals: billableTotals(group),
-      };
-    })
+    .map((group): ApiBilledUsage => ({
+      userId: group.userId,
+      developer: names.get(group.userId) ?? `User ${group.userId}`,
+      provider: group.provider,
+      totals: billableTotals(group.lines),
+    }))
     .sort(
       (a, b) =>
         (b.totals.converted ?? -1) - (a.totals.converted ?? -1) ||

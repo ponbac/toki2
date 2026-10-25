@@ -1,4 +1,4 @@
-import type * as React from "react";
+import * as React from "react";
 import { PERSONAL_LABEL } from "@/lib/ai-usage";
 import { formatFee } from "@/lib/ai-subscriptions";
 import type { AiBillingOverview } from "@/lib/api/queries/ai-admin";
@@ -7,14 +7,20 @@ import {
   PENDING_RATE_LABEL,
   allPending,
   formatHundredths,
+  hundredths,
+  meteredName,
+  usdAsCredits,
 } from "../../-lib/billing";
 import { addUsage, emptyUsage } from "../../-lib/daily";
 import { formatShare, monthLabel, plural } from "../../-lib/format";
 import {
+  spinitShare,
+  statementUnassigned,
   type AllocationSegment,
   type Ledger,
   type LedgerEntry,
 } from "../../-lib/ledger";
+import { AttentionPill } from "../../-components/attention-pill";
 import { estimateRateNote, formatEstimateIn } from "../../-lib/estimates";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
 import { AllocationStrip } from "./allocation-strip";
@@ -40,8 +46,9 @@ function Headline({ amount }: { amount: string }) {
 
 /**
  * The month's bill as a statement: what it comes to, how much of it goes to
- * projects that can be invoiced and how much has no project yet, drawn as one
- * strip, with the bill split into API usage and subscription fees beside it.
+ * projects that can be invoiced, how much has no project yet and how much
+ * stays with Spinit, drawn as one strip, with the bill split into API usage,
+ * subscription fees and a metered payer's credits beside it.
  */
 export function Statement({
   overview,
@@ -93,6 +100,15 @@ export function Statement({
   );
   const hasApi =
     totals.apiBilledUsd !== "0.00" || totals.apiUnpricedRecords > 0;
+  const metered = overview.metered;
+  // A credit is a cent: the metered lines' cents are their credits.
+  const credits = usdAsCredits(totals.meteredBilledUsd);
+  const unbilled = metered
+    ? [metered.unbilled.notImported, metered.unbilled.trackedUnlinked].reduce(
+        (sum, usage) => addUsage(sum, usage),
+        emptyUsage(),
+      )
+    : null;
 
   return (
     <section
@@ -118,7 +134,12 @@ export function Statement({
             <AllocationSentence ledger={ledger} currency={currency} />
           </p>
         </div>
-        <dl className="grid grid-cols-2 gap-x-7 gap-y-4 sm:grid-cols-3">
+        <dl
+          className={cn(
+            "grid grid-cols-2 gap-x-7 gap-y-4 sm:grid-cols-3",
+            metered && "lg:grid-cols-4",
+          )}
+        >
           <Figure
             label="API usage"
             value={
@@ -136,6 +157,26 @@ export function Statement({
                   : "Usage no plan paid for"
             }
           />
+          {metered && (
+            <Figure
+              label={meteredName(metered.provider)}
+              value={
+                hundredths(totals.meteredBilledUsd) === 0
+                  ? "—"
+                  : converted.metered === null
+                    ? unconverted(["USD"])
+                    : formatFee(converted.metered, currency)
+              }
+              note={`${credits} at $0.01 · UTC month`}
+              badge={
+                metered.provisional ? (
+                  <AttentionPill title="Some of these credits may still change: the month is in progress, or GitHub's usage is not imported or settled for every day.">
+                    provisional
+                  </AttentionPill>
+                ) : null
+              }
+            />
+          )}
           <Figure
             label="Subscription fees"
             value={
@@ -171,6 +212,17 @@ export function Statement({
         onHighlight={onHighlight}
         onSelect={onSelect}
       />
+
+      {metered && unbilled && unbilled.records > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {meteredName(metered.provider)} usage Toki tracked on no line yet:{" "}
+          <span className="tabular-nums">
+            {formatEstimateIn(unbilled, money)}
+          </span>{" "}
+          at API prices, on days GitHub&apos;s credits are not imported or no
+          linked account covers. It bills once they are.
+        </p>
+      )}
 
       {(overview.personalUsage.length > 0 || rateNote !== null) && (
         <p className="text-xs text-muted-foreground">
@@ -208,13 +260,21 @@ function AllocationSentence({
         : sum + entry.totals.converted,
     0,
   );
-  const unassigned = ledger.unassigned;
+  const spinit = spinitShare(ledger);
+  // A metered payer's credits outside any repository are Spinit's here, not
+  // usage waiting for a project, as the strip draws them.
+  const unassigned = statementUnassigned(ledger)
+    .unassigned.map((entry) => ({ entry, amount: entry.totals.converted }))
+    .filter(
+      ({ entry, amount }) =>
+        amount !== 0 ||
+        // An entry of nothing but unpriced usage still has no project.
+        entry.totals.unknownRecords > 0,
+    );
   // Null when a kind has a line without an exchange rate.
   const unassignedTotal = unassigned.reduce<number | null>(
-    (sum, entry) =>
-      sum === null || entry.totals.converted === null
-        ? null
-        : sum + entry.totals.converted,
+    (sum, { amount }) =>
+      sum === null || amount === null ? null : sum + amount,
     0,
   );
   const overhead = ledger.overhead;
@@ -232,6 +292,17 @@ function AllocationSentence({
     whole === null || whole === 0 || unassignedTotal === null
       ? null
       : unassignedTotal / whole;
+  const [first, second] = unassigned;
+  const spinitParts = (
+    [
+      ["untracked Copilot", spinit.untracked],
+      ["personal and internal Copilot", spinit.personal],
+      ["on unlinked, external or unknown accounts", spinit.accounts],
+      ["Copilot outside any repository", spinit.unattributed],
+    ] satisfies [string, number | null][]
+  ).flatMap(([label, value]) =>
+    value !== null && value > 0 ? [{ label, value }] : [],
+  );
   return (
     <>
       {projects.length === 0 ? (
@@ -248,26 +319,52 @@ function AllocationSentence({
           exchange rate.
         </>
       )}
-      {unassigned.length > 0 && unassignedTotal !== null && (
+      {first && unassignedTotal !== null && (
         <>
           {" "}
           {amount(unassignedTotal)}
           {unassignedShare !== null && `, ${formatShare(unassignedShare)},`} has
           no project yet
-          {unassigned.length === 1 ? (
-            <>: it {unassignedDetail(unassigned[0])}.</>
+          {second === undefined ? (
+            <>: it {unassignedDetail(first.entry)}.</>
           ) : (
             <>
-              : {amount(unassigned[0].totals.converted ?? 0)}{" "}
-              {unassignedDetail(unassigned[0])} and{" "}
-              {amount(unassigned[1].totals.converted ?? 0)}{" "}
-              {unassignedDetail(unassigned[1])}.
+              : {amount(first.amount ?? 0)} {unassignedDetail(first.entry)} and{" "}
+              {amount(second.amount ?? 0)} {unassignedDetail(second.entry)}.
             </>
           )}
         </>
       )}
       {overhead && overhead.totals.converted !== null && (
         <> {amount(overhead.totals.converted)} of fees had no usage to bill.</>
+      )}
+      {spinit.total === null && ledger.spinit.length > 0 && (
+        <>
+          {" "}
+          What stays with Spinit is unknown in {currency}: a line of it has no
+          exchange rate.
+        </>
+      )}
+      {spinit.total !== null && spinit.total > 0 && (
+        <>
+          {" "}
+          {amount(spinit.total)} is Spinit&apos;s
+          {spinitParts.length === 1 ? (
+            <> ({spinitParts[0].label}).</>
+          ) : (
+            <>
+              :{" "}
+              {spinitParts.map(({ label, value }, index) => (
+                <React.Fragment key={label}>
+                  {index > 0 &&
+                    (index === spinitParts.length - 1 ? " and " : ", ")}
+                  {amount(value)} {label}
+                </React.Fragment>
+              ))}
+              .
+            </>
+          )}
+        </>
       )}
     </>
   );
@@ -287,15 +384,21 @@ function Figure({
   value,
   note,
   muted = false,
+  badge = null,
 }: {
   label: string;
   value: React.ReactNode;
   note: string;
   muted?: boolean;
+  /** Beside the label, such as a provisional mark. */
+  badge?: React.ReactNode;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {label}
+        {badge}
+      </dt>
       <dd
         className={cn(
           "text-lg leading-snug font-semibold whitespace-nowrap tabular-nums",

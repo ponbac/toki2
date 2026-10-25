@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 
 use crate::domain::models::{
-    AiAllocationBasis, AiBillingCharge, AiBillingLinePart, AiConvertedAmount, AiCurrency,
-    AiExchangeRate, AiExchangeRateValue, AiFeeAmount, AiMonthBill, AiMonthOverview,
-    AiSubscriptionMonth, AiUnassignedKind, AiUsdNanos, BILLING_CURRENCY,
+    AiAllocationBasis, AiBillingCharge, AiBillingLinePart, AiBillingSubject, AiConvertedAmount,
+    AiCurrency, AiExchangeRate, AiExchangeRateValue, AiFeeAmount, AiMeteredAccountReason,
+    AiMeteredCharge, AiMeteredChargeKind, AiMeteredProvisional, AiMonthBill, AiMonthOverview,
+    AiProvider, AiSubscriptionMonth, AiUnassignedKind, AiUsdNanos, BILLING_CURRENCY,
 };
 use crate::domain::AiBillingError;
 
@@ -15,7 +16,7 @@ const UNALLOCATED_OVERHEAD: &str = "Unallocated overhead";
 
 /// The CSV columns, in order. `billable_sek` is named after the billing
 /// currency (`csv_header`).
-const CSV_HEADER: [&str; 23] = [
+const CSV_HEADER: [&str; 32] = [
     "month",
     "project_id",
     "project",
@@ -38,8 +39,17 @@ const CSV_HEADER: [&str; 23] = [
     "total_tokens",
     "allocation_basis",
     "warning",
-    // Last, so the columns before it keep their places.
+    // After the original columns, so those keep their places.
     "unassigned",
+    "source",
+    "credits",
+    "github_login",
+    "repository",
+    "sku",
+    "period_basis",
+    "adjusts_month",
+    "snapshot_id",
+    "provisional",
 ];
 
 /// Replaced by `billable_` and the billing currency in lower case.
@@ -55,10 +65,35 @@ fn csv_header() -> impl Iterator<Item = String> {
     })
 }
 
+/// Where a metered payer's numbers come from, as the `source` column names
+/// it: its billing system.
+fn metered_source(payer: AiProvider) -> &'static str {
+    match payer {
+        AiProvider::Copilot => "github",
+        other => other.as_str(),
+    }
+}
+
+/// A metered line's charge.
+fn metered<'a>(part: &AiBillingLinePart<'a>) -> Option<&'a AiMeteredCharge> {
+    match &part.line.charge {
+        AiBillingCharge::Metered(charge) => Some(charge),
+        _ => None,
+    }
+}
+
+/// A metered payer's name in the Spinit lines' labels.
+fn payer_name(payer: AiProvider) -> &'static str {
+    match payer {
+        AiProvider::Copilot => "Copilot",
+        other => other.as_str(),
+    }
+}
+
 /// Renders a month's bill as RFC 4180 CSV with CRLF line ends and a UTF-8 byte
 /// order mark, so spreadsheet programs read names with accents correctly.
 ///
-/// Each row is one charge of one developer's use of one provider to one
+/// Each row is one charge of one subject's use of one provider to one
 /// project. `billable_amount` is what to bill, in `billable_currency`, and is
 /// the same amount the overview shows. `Unassigned` usage has a row per kind,
 /// named in `unassigned`: `unmapped` for repositories without a mapping, and
@@ -70,6 +105,18 @@ fn csv_header() -> impl Iterator<Item = String> {
 ///   by. A fee without usage is `Unallocated overhead` with no project.
 /// - `api` rows bill their API-equivalent estimate in USD, rounded to whole
 ///   cents; `api_equivalent_usd` keeps it unrounded.
+/// - `metered` rows bill a metered payer's credits at $0.01 (`credits`), per
+///   UTC month (`period_basis`): a project's, or one of Spinit's (`Untracked
+///   Copilot`, `Personal / internal Copilot`, `Unlinked account`, `External
+///   account`, `Unknown account`), with the account's `github_login`, the
+///   `sku` and whether they are `provisional`. `api_equivalent_usd` and the
+///   tokens are the tracked usage the credits were split by.
+///
+/// `source` says where a row's numbers come from: `estimate` (API rows),
+/// `subscription` (fees and overhead) or the metered payer's billing system
+/// (`github`). `period_basis` is the time zone of the row's days. `repository`
+/// (code review), `adjusts_month` and `snapshot_id` (month close) are empty
+/// until those exist.
 ///
 /// Summing `billable_amount` per `billable_currency` gives the overview's
 /// totals. `billable_sek` is the amount in the billing currency, converted at
@@ -77,13 +124,13 @@ fn csv_header() -> impl Iterator<Item = String> {
 /// sums to the overview's converted totals. `rate_source` is `riksbank` or
 /// `admin`, and `rate_provisional` says whether the rate is provisional: an
 /// average of the days published so far. Without a rate, the four are empty
-/// and the warning says so. An
-/// estimate that is wholly unknown, because every record is unpriced, is empty
-/// rather than zero. Rows are ordered by project (Unassigned, unmapped before
-/// unattributed, then overhead, last), developer, provider and billing mode.
-/// Every cell is quoted and guarded against spreadsheet formula injection
-/// (`csv_cell`).
-pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> {
+/// and the warning says so. An estimate that is wholly unknown, because every
+/// record is unpriced, is empty rather than zero. Rows are ordered by project
+/// (Unassigned, unmapped before unattributed, then overhead, untracked,
+/// personal and account rows, last), developer, subject, provider and billing
+/// mode. Every cell is quoted and guarded against spreadsheet formula
+/// injection (`csv_cell`).
+pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String, AiBillingError> {
     let bill: &AiMonthBill = &overview.bill;
     let names: HashMap<i32, &str> = overview
         .developers
@@ -107,13 +154,22 @@ pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> 
         .collect();
     let project_rank = |part: &AiBillingLinePart| match (&part.line.charge, &part.line.project) {
         (AiBillingCharge::UnallocatedOverhead { .. }, _) => 2,
+        (AiBillingCharge::Metered(charge), project) => match charge.kind {
+            AiMeteredChargeKind::Project | AiMeteredChargeKind::Repository => {
+                u8::from(project.is_none())
+            }
+            AiMeteredChargeKind::Untracked => 3,
+            AiMeteredChargeKind::Personal => 4,
+            AiMeteredChargeKind::Account(_) => 5,
+        },
         (_, None) => 1,
         (_, Some(_)) => 0,
     };
     let developer = |part: &AiBillingLinePart| {
-        names
-            .get(&part.line.user_id.as_i32())
-            .copied()
+        part.line
+            .subject
+            .user_id()
+            .and_then(|user_id| names.get(&user_id.as_i32()).copied())
             .unwrap_or("")
     };
     parts.sort_by(|a, b| {
@@ -130,12 +186,29 @@ pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> 
             })
             .then_with(|| a.unassigned.cmp(&b.unassigned))
             .then_with(|| developer(a).cmp(developer(b)))
-            .then_with(|| a.line.user_id.as_i32().cmp(&b.line.user_id.as_i32()))
+            .then_with(|| a.line.subject.order_key().cmp(&b.line.subject.order_key()))
             .then_with(|| a.line.provider.as_str().cmp(b.line.provider.as_str()))
             .then_with(|| {
-                let mode =
-                    |part: &AiBillingLinePart| matches!(part.line.charge, AiBillingCharge::Api);
+                let mode = |part: &AiBillingLinePart| match part.line.charge {
+                    AiBillingCharge::Subscription { .. }
+                    | AiBillingCharge::UnallocatedOverhead { .. } => 0,
+                    AiBillingCharge::Api => 1,
+                    AiBillingCharge::Metered(_) => 2,
+                };
                 mode(a).cmp(&mode(b))
+            })
+            .then_with(|| {
+                let account = |part: &AiBillingLinePart| {
+                    metered(part)
+                        .and_then(|charge| charge.account.as_ref())
+                        .map(|account| (account.login.as_str().to_lowercase(), account.account_id))
+                };
+                account(a).cmp(&account(b))
+            })
+            .then_with(|| {
+                let sku =
+                    |part: &AiBillingLinePart| metered(part).and_then(|charge| charge.sku.clone());
+                sku(a).cmp(&sku(b))
             })
     });
 
@@ -145,7 +218,7 @@ pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> 
         let line = part.line;
         let converted = &part.converted;
         let subscription = match &line.charge {
-            AiBillingCharge::Api => None,
+            AiBillingCharge::Api | AiBillingCharge::Metered(_) => None,
             AiBillingCharge::Subscription {
                 subscription_id, ..
             }
@@ -153,18 +226,45 @@ pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> 
                 subscription_id, ..
             } => subscriptions.get(&subscription_id.as_i32()).copied(),
         };
+        let payer = payer_name(line.provider);
         let (project_id, project) = match (&line.charge, &line.project) {
             (AiBillingCharge::UnallocatedOverhead { .. }, _) => {
                 (String::new(), UNALLOCATED_OVERHEAD.to_string())
             }
+            (AiBillingCharge::Metered(charge), project) => match (charge.kind, project) {
+                (AiMeteredChargeKind::Project | AiMeteredChargeKind::Repository, Some(project)) => {
+                    (project.id.to_string(), project.name.clone())
+                }
+                (AiMeteredChargeKind::Project | AiMeteredChargeKind::Repository, None) => {
+                    (String::new(), UNASSIGNED.to_string())
+                }
+                (AiMeteredChargeKind::Untracked, _) => {
+                    (String::new(), format!("Untracked {payer}"))
+                }
+                (AiMeteredChargeKind::Personal, _) => {
+                    (String::new(), format!("Personal / internal {payer}"))
+                }
+                (AiMeteredChargeKind::Account(AiMeteredAccountReason::Unlinked), _) => {
+                    (String::new(), "Unlinked account".to_string())
+                }
+                (AiMeteredChargeKind::Account(AiMeteredAccountReason::External), _) => {
+                    (String::new(), "External account".to_string())
+                }
+                (AiMeteredChargeKind::Account(AiMeteredAccountReason::Unknown), _) => {
+                    (String::new(), "Unknown account".to_string())
+                }
+            },
             (_, Some(project)) => (project.id.to_string(), project.name.clone()),
             (_, None) => (String::new(), UNASSIGNED.to_string()),
         };
         let usage = &part.usage;
         let unknown_cost = usage.priced_cost == AiUsdNanos::ZERO && usage.unpriced_records > 0;
-        let billing_mode = match &line.charge {
-            AiBillingCharge::Api => "api",
-            _ => "subscription",
+        let (billing_mode, source) = match &line.charge {
+            AiBillingCharge::Api => ("api", "estimate"),
+            AiBillingCharge::Subscription { .. } | AiBillingCharge::UnallocatedOverhead { .. } => {
+                ("subscription", "subscription")
+            }
+            AiBillingCharge::Metered(_) => ("metered", metered_source(line.provider)),
         };
         let billable = &part.billable;
         let (billable_amount, billable_currency) = match (&line.charge, billable) {
@@ -174,6 +274,7 @@ pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> 
         };
         let basis = subscription.and_then(|month| month.basis);
         let rate = converted.rate();
+        let charge = metered(part);
 
         push_row(
             &mut csv,
@@ -212,7 +313,7 @@ pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> 
                 usage.tokens.output.to_string(),
                 usage.total_tokens().to_string(),
                 match (&line.charge, basis) {
-                    (AiBillingCharge::Api, _) => "",
+                    (AiBillingCharge::Api | AiBillingCharge::Metered(_), _) => "",
                     (_, Some(AiAllocationBasis::ApiCost)) => "api_cost",
                     (_, Some(AiAllocationBasis::Tokens)) => "tokens",
                     (_, Some(AiAllocationBasis::Records)) => "records",
@@ -226,11 +327,78 @@ pub fn render_csv(overview: &AiMonthOverview) -> Result<String, AiBillingError> 
                     None => "",
                 }
                 .to_string(),
+                source.to_string(),
+                charge
+                    .map(|charge| format!("{}.00", charge.credits()))
+                    .unwrap_or_default(),
+                charge
+                    .and_then(|charge| charge.account.as_ref())
+                    .map(|account| account.login.as_str().to_string())
+                    .unwrap_or_default(),
+                match &line.subject {
+                    AiBillingSubject::Repository { name, .. } => name.clone(),
+                    _ => String::new(),
+                },
+                charge
+                    .and_then(|charge| charge.sku.clone())
+                    .unwrap_or_default(),
+                if charge.is_some() {
+                    "UTC".to_string()
+                } else {
+                    time_zone.to_string()
+                },
+                // Month close fills these.
+                String::new(),
+                String::new(),
+                charge
+                    .map(|charge| (!charge.provisional.is_empty()).to_string())
+                    .unwrap_or_default(),
             ],
         );
     }
 
     Ok(csv)
+}
+
+/// A metered line's provisional reason, as the warning says it.
+fn provisional_reason(reason: AiMeteredProvisional) -> &'static str {
+    match reason {
+        AiMeteredProvisional::MonthInProgress => "the UTC month is in progress",
+        AiMeteredProvisional::ImportIncomplete => {
+            "the usage import is missing or incomplete for some days"
+        }
+        AiMeteredProvisional::NotSettled => "some days may still change",
+        AiMeteredProvisional::OldPricingBasis => "tracked usage on an old pricing basis",
+        AiMeteredProvisional::ProvisionalModel => "a model with provisional rates",
+        AiMeteredProvisional::Unrecognized => "an unrecognized model or credits row",
+    }
+}
+
+/// What needs a look on a metered line.
+fn metered_warnings(charge: &AiMeteredCharge, unpriced: i64) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if !charge.provisional.is_empty() {
+        let reasons: Vec<&str> = charge
+            .provisional
+            .iter()
+            .map(|reason| provisional_reason(*reason))
+            .collect();
+        warnings.push(format!("provisional: {}", reasons.join(", ")));
+    }
+    if charge.low_ratio {
+        warnings.push(
+            "G/T below 0.85 on a settled day: GitHub billed far less than Toki tracked".to_string(),
+        );
+    }
+    if unpriced > 0 {
+        warnings.push(format!(
+            "{unpriced} unpriced records: they carry no weight in the split"
+        ));
+    }
+    if charge.kind == AiMeteredChargeKind::Account(AiMeteredAccountReason::Unknown) {
+        warnings.push("code review is billed by repository and left out".to_string());
+    }
+    warnings
 }
 
 /// Why a row's figures need a second look, if they do.
@@ -244,6 +412,9 @@ fn warning(
     let unpriced = part.usage.unpriced_records;
     let mut warnings = Vec::new();
     match (&line.charge, basis) {
+        (AiBillingCharge::Metered(charge), _) => {
+            warnings.extend(metered_warnings(charge, unpriced));
+        }
         (AiBillingCharge::UnallocatedOverhead { .. }, _) => {
             warnings.push("no usage on the days the subscription covers".to_string());
         }

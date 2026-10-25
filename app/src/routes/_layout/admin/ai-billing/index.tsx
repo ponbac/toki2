@@ -2,6 +2,7 @@ import * as React from "react";
 import {
   keepPreviousData,
   useQuery,
+  useQueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -44,6 +45,7 @@ import {
   allocationSegments,
   ledgerOf,
   peopleOf,
+  segmentKeys,
   segmentSteps,
   type AllocationSegment,
 } from "../-lib/ledger";
@@ -117,6 +119,19 @@ function AiBillingPage() {
   );
   // The GitHub Copilot tab's month, shared with the tab, for its mark.
   const meteredQuery = useQuery(aiAdminQueries.meteredMonth(month));
+  // The bill's Copilot lines read the imported credits: once a running
+  // import finishes, the bill is reloaded.
+  const queryClient = useQueryClient();
+  const importRunning = meteredQuery.data?.import.running != null;
+  const wasRunning = React.useRef(importRunning);
+  React.useEffect(() => {
+    if (wasRunning.current && !importRunning) {
+      void queryClient.invalidateQueries({
+        queryKey: aiAdminQueries.billing(month).queryKey,
+      });
+    }
+    wasRunning.current = importRunning;
+  }, [importRunning, queryClient, month]);
   const download = aiAdminMutations.useDownloadBillingCsv({
     onError: apiErrorToast("Failed to export the billing CSV"),
   });
@@ -150,6 +165,7 @@ function AiBillingPage() {
     [ledger],
   );
   const steps = React.useMemo(() => segmentSteps(segments), [segments]);
+  const segmentOf = React.useMemo(() => segmentKeys(segments), [segments]);
   const uploads = React.useMemo(
     () => (completeness ? monthUploads(completeness) : undefined),
     [completeness],
@@ -186,12 +202,22 @@ function AiBillingPage() {
     setFocusRow({ key });
   };
   const selectSegment = (segment: AllocationSegment) => {
+    const first = segment.entries[0];
     if (segment.kind === "others") {
       setTab("projects");
-      const first = segment.entries[0];
       setFocusRow(first ? { key: first.key } : null);
-    } else {
-      showEntry(segment.key);
+    } else if (segment.entries.length > 1) {
+      // Spinit's merged credits open every entry they stand for.
+      setTab("projects");
+      setOpen((previous) => {
+        const next = new Set(previous);
+        segment.entries.forEach((entry) => next.add(entry.key));
+        return next;
+      });
+      setFocusRow(first ? { key: first.key } : null);
+    } else if (first) {
+      // A segment of part of an entry has a key of its own: open the entry.
+      showEntry(first.key);
     }
   };
   const toggle = (key: string) =>
@@ -388,6 +414,7 @@ function AiBillingPage() {
                   onToggle={toggle}
                   focusRow={focusRow}
                   steps={steps}
+                  segmentOf={segmentOf}
                   undeclared={undeclared}
                   highlighted={highlighted}
                   onHighlight={setHighlighted}
@@ -423,6 +450,7 @@ function AiBillingPage() {
             <TabsContent value="copilot" className="mt-5">
               <CopilotReconciliation
                 month={month}
+                meteredPeriod={overview.meteredPeriod}
                 onMonth={(next) =>
                   navigate({ search: (prev) => ({ ...prev, month: next }) })
                 }
@@ -452,7 +480,10 @@ function AiBillingPage() {
               </section>
             </TabsContent>
             <TabsContent value="rules" className="mt-5">
-              <BillingRules timeZone={overview.timeZone} />
+              <BillingRules
+                timeZone={overview.timeZone}
+                meteredPeriod={overview.meteredPeriod}
+              />
             </TabsContent>
           </Tabs>
         )}

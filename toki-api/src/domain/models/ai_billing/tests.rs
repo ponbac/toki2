@@ -2,7 +2,8 @@ use time::macros::date;
 
 use super::*;
 use crate::domain::models::{
-    AiMonthlyCost, AiSubscriptionPeriod, AiSubscriptionPlan, AiSubscriptionTerms, ProjectId,
+    allocate_metered_credits, AiExchangeRate, AiMeteredAllocation, AiMonthlyCost,
+    AiSubscriptionPeriod, AiSubscriptionPlan, AiSubscriptionTerms, ProjectId,
 };
 
 const DEV: UserId = UserId::new(7);
@@ -125,6 +126,7 @@ fn summary(line: &AiBillingLine) -> Summary {
         AiBillingCharge::Api => ("api", None),
         AiBillingCharge::Subscription { fee, .. } => ("subscription", Some(fee)),
         AiBillingCharge::UnallocatedOverhead { fee, .. } => ("overhead", Some(fee)),
+        AiBillingCharge::Metered(charge) => ("metered", Some(&charge.amount)),
     };
     let project = match (&line.project, &line.charge) {
         (_, AiBillingCharge::UnallocatedOverhead { .. }) => "Overhead".to_string(),
@@ -745,7 +747,13 @@ fn subscriptions_apply_only_to_their_own_user_and_provider() {
     let lines: Vec<(i32, AiProvider, Summary)> = bill
         .lines
         .iter()
-        .map(|line| (line.user_id.as_i32(), line.provider, summary(line)))
+        .map(|line| {
+            (
+                line.subject.user_id().unwrap().as_i32(),
+                line.provider,
+                summary(line),
+            )
+        })
         .collect();
     assert_eq!(
         lines,
@@ -926,7 +934,11 @@ fn signed_in_pi_usage_needs_the_developers_own_codex_subscription_on_the_day() {
         uncovered
             .lines
             .iter()
-            .map(|line| (line.user_id, line.provider, summary(line)))
+            .map(|line| (
+                line.subject.user_id().unwrap(),
+                line.provider,
+                summary(line)
+            ))
             .collect::<Vec<_>>(),
         [
             (
@@ -1413,6 +1425,273 @@ fn an_unassigned_kind_is_unknown_only_when_its_own_usage_is_unpriced() {
         [
             (Some(Unmapped), Some("0.03 USD".to_string()), None),
             (Some(Unattributed), Some("0.00 USD".to_string()), Some(0)),
+        ]
+    );
+}
+
+/// October 2026 for the metered fixtures.
+fn october() -> AiBillingMonth {
+    AiBillingMonth::parse("2026-10").unwrap()
+}
+
+fn metered_allocation() -> AiMeteredAllocation {
+    use crate::domain::models::ai_metered_fixtures::{
+        account, closed_input, credits, linked, to_unassigned, tracked, tracked_to, CREDIT,
+    };
+    use crate::domain::models::AiAccountTarget;
+    let day = date!(2026 - 10 - 05);
+    let mut input = closed_input(vec![
+        linked(1001, "ada-lovelace", UserId::new(1)),
+        linked(1007, "dev-example", DEV),
+        account(
+            1004,
+            "kj-contractor",
+            true,
+            &[(AiAccountTarget::External, date!(2026 - 09 - 01), None)],
+        ),
+    ]);
+    input.account_credits = vec![
+        credits(1001, day, "GPT-6.1 Sol", "10"),
+        credits(1007, day, "GPT-6.1 Sol", "100"),
+        credits(1004, day, "GPT-5.4", "7"),
+    ];
+    input.tracked = vec![
+        tracked(UserId::new(1), day, "gpt-6.1-sol", 10 * CREDIT),
+        tracked(DEV, day, "gpt-6.1-sol", 60 * CREDIT),
+        tracked_to(
+            DEV,
+            day,
+            "gpt-6.1-sol",
+            to_unassigned(AiUnassignedKind::Unattributed),
+            20 * CREDIT,
+        ),
+    ];
+    allocate_metered_credits(&input).unwrap()
+}
+
+#[test]
+fn metered_lines_join_the_bill_after_each_subjects_other_lines() {
+    let day = date!(2026 - 10 - 05);
+    let usd_chatgpt = subscription(
+        1,
+        DEV,
+        AiProvider::Codex,
+        "100",
+        "USD",
+        date!(2026 - 01 - 01),
+        None,
+    );
+    let bill = bill_month(
+        october(),
+        &[
+            day_usage(DEV, AiProvider::Codex, day, client_a(), priced(60, 1)),
+            AiDailyUsage {
+                chatgpt_sign_in: true,
+                ..day_usage(DEV, AiProvider::Pi, day, client_b(), priced(30, 1))
+            },
+            day_usage(
+                OTHER_DEV,
+                AiProvider::Claude,
+                day,
+                client_a(),
+                priced(20, 1),
+            ),
+        ],
+        &[usd_chatgpt],
+    )
+    .unwrap();
+    let allocation = metered_allocation();
+    let info = allocation.info();
+    let merged = add_metered_lines(bill.clone(), allocation).unwrap();
+
+    let subjects: Vec<(u8, i64, String, i64)> = merged
+        .lines
+        .iter()
+        .map(|line| line.subject.order_key())
+        .collect();
+    let mut sorted = subjects.clone();
+    sorted.sort();
+    assert_eq!(subjects, sorted);
+    // The other lines keep their order, the Pi share of the Codex fee
+    // included.
+    let earlier: Vec<&AiBillingLine> = merged
+        .lines
+        .iter()
+        .filter(|line| !matches!(line.charge, AiBillingCharge::Metered(_)))
+        .collect();
+    assert_eq!(earlier, bill.lines.iter().collect::<Vec<_>>());
+    let kinds: Vec<(Option<i32>, &'static str)> = merged
+        .lines
+        .iter()
+        .map(|line| {
+            (
+                line.subject.user_id().map(|user| user.as_i32()),
+                summary(line).1,
+            )
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            (Some(1), "metered"),
+            (Some(7), "subscription"),
+            (Some(7), "subscription"),
+            // A project, Unassigned unattributed and untracked.
+            (Some(7), "metered"),
+            (Some(7), "metered"),
+            (Some(7), "metered"),
+            (Some(8), "api"),
+            (None, "metered"),
+        ]
+    );
+    assert_eq!(merged.metered, Some(info));
+
+    // Converting pairs the subscription's lines with its weights as before.
+    let usd_rate = AiExchangeRate {
+        month: october(),
+        currency: AiCurrency::usd(),
+        fetched: Some(crate::domain::models::AiFetchedExchangeRate {
+            rate: crate::domain::models::AiExchangeRateValue::parse("10").unwrap(),
+            provider: "example".to_string(),
+            provisional: false,
+            observed_through: date!(2026 - 10 - 31),
+            fetched_at: time::macros::datetime!(2026-11-02 10:00 UTC),
+            fetched_on: date!(2026 - 11 - 02),
+        }),
+        overridden: None,
+    };
+    let before =
+        crate::domain::models::convert_bill(&bill, std::slice::from_ref(&usd_rate), &[]).unwrap();
+    let after = crate::domain::models::convert_bill(&merged, &[usd_rate], &[]).unwrap();
+    let converted = |bill: &AiMonthBill, converted: &AiConvertedBill| {
+        bill.lines
+            .iter()
+            .zip(&converted.lines)
+            .filter(|(line, _)| matches!(line.charge, AiBillingCharge::Subscription { .. }))
+            .map(|(_, converted)| converted.amount().cloned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(converted(&merged, &after), converted(&bill, &before));
+    assert_eq!(
+        after.totals.metered.unwrap().hundredths,
+        (10 + 100 + 7) * 10
+    );
+
+    // Totals count metered credits apart from API usage.
+    let totals = merged.totals().unwrap();
+    assert_eq!(totals.metered_billed.hundredths, 10 + 100 + 7);
+    assert_eq!(totals.api_billed, bill.totals().unwrap().api_billed);
+}
+
+#[test]
+fn a_metered_unassigned_line_is_one_part_of_its_kind() {
+    let merged = add_metered_lines(
+        bill_month(october(), &[], &[]).unwrap(),
+        metered_allocation(),
+    )
+    .unwrap();
+    let unattributed = merged
+        .lines
+        .iter()
+        .find(|line| {
+            line.unassigned.first().map(|part| part.kind) == Some(AiUnassignedKind::Unattributed)
+        })
+        .unwrap();
+    assert_eq!(unattributed.project, None);
+    let billable = unattributed.billable().unwrap();
+    assert_eq!(billable.currency, AiCurrency::usd());
+    let converted = AiConvertedAmount::Converted {
+        amount: AiFeeAmount {
+            hundredths: billable.hundredths * 10,
+            currency: AiCurrency::billing(),
+        },
+        rate: None,
+    };
+    let parts = unattributed.parts(&converted).unwrap();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].unassigned, Some(AiUnassignedKind::Unattributed));
+    assert_eq!(parts[0].billable, Some(billable));
+
+    // Lines of another month never join.
+    assert!(matches!(
+        add_metered_lines(
+            bill_month(september(), &[], &[]).unwrap(),
+            metered_allocation()
+        ),
+        Err(AiBillingError::Invalid(_))
+    ));
+}
+
+#[test]
+fn subjects_order_users_then_accounts_then_the_unknown_account_and_repositories() {
+    let account = |id: i64, login: &str| AiBillingSubject::ProviderAccount {
+        provider: AiProvider::Copilot,
+        account_id: AiProviderAccountId::new(id).unwrap(),
+        login: AiProviderLogin::parse(login).unwrap(),
+    };
+    let subjects = [
+        AiBillingSubject::User(UserId::new(2)),
+        AiBillingSubject::User(UserId::new(10)),
+        account(9, "Ada-Lovelace"),
+        account(3, "kj-contractor"),
+        AiBillingSubject::UnknownAccount {
+            provider: AiProvider::Copilot,
+        },
+        AiBillingSubject::Repository {
+            provider: AiProvider::Copilot,
+            name: "widget-api".to_string(),
+        },
+    ];
+    let keys: Vec<_> = subjects.iter().map(AiBillingSubject::order_key).collect();
+    let mut sorted = keys.clone();
+    sorted.sort();
+    assert_eq!(keys, sorted);
+    assert_eq!(subjects[1].user_id(), Some(UserId::new(10)));
+    assert_eq!(subjects[2].user_id(), None);
+}
+
+#[test]
+fn metered_day_rows_bill_from_credits_whatever_covers_the_day() {
+    let day = date!(2026 - 10 - 05);
+    let row = |provider, metered| AiDeveloperDayUsage {
+        billing_provider: None,
+        day,
+        provider,
+        chatgpt_sign_in: false,
+        model: "gpt-6.1-sol".to_string(),
+        machine_id: AiMachineId::parse("5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a").unwrap(),
+        project_key: None,
+        project: None,
+        usage: priced(10, 1),
+        metered,
+    };
+    let subscriptions = [subscription(
+        3,
+        DEV,
+        AiProvider::Codex,
+        "100",
+        "USD",
+        date!(2026 - 01 - 01),
+        None,
+    )];
+    let billed = billed_day_usage(
+        DEV,
+        vec![
+            row(AiProvider::Copilot, true),
+            row(AiProvider::Codex, false),
+            row(AiProvider::Claude, false),
+        ],
+        &subscriptions,
+    );
+    assert_eq!(
+        billed
+            .iter()
+            .map(|billed| billed.billing)
+            .collect::<Vec<_>>(),
+        [
+            AiDayBilling::Metered,
+            AiDayBilling::Subscription(AiSubscriptionId::new(3)),
+            AiDayBilling::Api,
         ]
     );
 }

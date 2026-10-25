@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use time::Date;
+use time::{Date, OffsetDateTime};
 
 use super::ai_usage_reads::{local_today, stored_mappings, stored_personal_keys};
 use crate::{
@@ -10,9 +10,9 @@ use crate::{
         models::{
             AiBillingDeveloper, AiBillingMachine, AiBillingProject, AiBillingUsage,
             AiCoverageInterval, AiCoverageStatus, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay,
-            AiMachineId, AiMappingResolver, AiPersonalUsage, AiPricingStatus, AiProvider,
-            AiProviderReport, AiTokenCounts, AiUnassignedKind, AiUsageDateRange, AiUsageTimeZone,
-            AiUsdNanos, TimeTrackingCompany, UserId, PI_CHATGPT_SIGN_IN_HINT,
+            AiMachineId, AiMappingResolver, AiMeteredCutover, AiPersonalUsage, AiPricingStatus,
+            AiProvider, AiProviderReport, AiTokenCounts, AiUnassignedKind, AiUsageDateRange,
+            AiUsageTimeZone, AiUsdNanos, TimeTrackingCompany, UserId, PI_CHATGPT_SIGN_IN_HINT,
             UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::AiBillingRepository,
@@ -66,6 +66,7 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         time_zone: &AiUsageTimeZone,
         mapping_company: Option<&TimeTrackingCompany>,
         user_id: Option<&UserId>,
+        metered: Option<&AiMeteredCutover>,
     ) -> Result<Vec<AiDailyUsage>, AiBillingError> {
         // Usage is grouped into local days by the zone's rules, so daylight
         // saving changes and month edges fall where they should. Costs are
@@ -81,9 +82,12 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         // the `(user_id, hour_start)` index for one user. A day is one of
         // Pi's ChatGPT sign-in when any of the user's machines hinted it in
         // an hour that starts on the day, as mismatch days count hints. Usage
-        // of a key its user marked personal is left out: it never bills.
+        // of a key its user marked personal is left out: it never bills, and
+        // neither do a metered payer's buckets from its cutover on, which bill
+        // from its credits per UTC month.
         let resolver = self.resolver(mapping_company).await?;
         let (personal_users, personal_keys) = self.personal_marks(&resolver, user_id).await?;
+        let (metered_payer, metered_from) = metered_bounds(metered);
         let resolved = resolver.resolved_keys();
         let keys: Vec<&str> = resolved.iter().map(|(key, _)| *key).collect();
         let ids: Vec<&str> = resolved
@@ -142,6 +146,9 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                   AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
                   AND ($4::int4 IS NULL OR bucket.user_id = $4)
                   AND personal.project_key IS NULL
+                  AND ($12::text IS NULL
+                       OR COALESCE(bucket.billing_provider, bucket.provider) <> $12
+                       OR bucket.hour_start < $13::timestamptz)
                 GROUP BY bucket.user_id, bucket.provider, 3, mapping.project_id,
                     bucket.billing_provider, 6
             )
@@ -184,6 +191,8 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             &personal_users,
             &personal_keys,
             UNATTRIBUTED_PROJECT_KEY,
+            metered_payer,
+            metered_from,
         )
         .fetch_all(&self.pool)
         .await
@@ -229,9 +238,11 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         dates: AiUsageDateRange,
         time_zone: &AiUsageTimeZone,
         mapping_company: Option<&TimeTrackingCompany>,
+        metered: Option<&AiMeteredCutover>,
     ) -> Result<Vec<AiDeveloperDayUsage>, AiBillingError> {
         let resolver = self.resolver(mapping_company).await?;
         let (_, personal_keys) = self.personal_marks(&resolver, Some(user_id)).await?;
+        let (metered_payer, metered_from) = metered_bounds(metered);
         let rows = sqlx::query!(
             r#"
             WITH sign_in_days AS (
@@ -278,6 +289,9 @@ impl AiBillingRepository for PostgresAiBillingRepository {
               AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE $4)
               AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE $4)
               AND bucket.project_key <> ALL($8::text[])
+              AND ($9::text IS NULL
+                   OR COALESCE(bucket.billing_provider, bucket.provider) <> $9
+                   OR bucket.hour_start < $10::timestamptz)
             GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key, bucket.billing_provider
             ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key, bucket.billing_provider
             "#,
@@ -289,12 +303,15 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             PI_CHATGPT_SIGN_IN_HINT,
             UNATTRIBUTED_PROJECT_KEY,
             &personal_keys,
+            metered_payer,
+            metered_from,
         )
         .fetch_all(&self.pool)
         .await
         .map_err(storage_error)?;
 
-        rows.into_iter()
+        let mut days = rows
+            .into_iter()
             .map(|row| {
                 Ok(AiDeveloperDayUsage {
                     billing_provider: row.billing_provider.as_deref().map(provider).transpose()?,
@@ -320,9 +337,94 @@ impl AiBillingRepository for PostgresAiBillingRepository {
                         row.priced_cost_nanos,
                         row.unpriced_records,
                     )?,
+                    metered: false,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, AiBillingError>>()?;
+        let Some(cutover) = metered else {
+            return Ok(days);
+        };
+
+        // The metered payer's buckets from the cutover on, per UTC day of the
+        // month's dates: they bill from its credits per UTC month.
+        let metered_rows = sqlx::query!(
+            r#"
+            SELECT
+                (bucket.hour_start AT TIME ZONE 'UTC')::date AS "day!",
+                bucket.provider,
+                bucket.billing_provider,
+                bucket.model,
+                bucket.machine_id::text AS "machine_id!",
+                shown.project_key AS "project_key?",
+                SUM(bucket.input_tokens)::int8 AS "input_tokens!",
+                SUM(bucket.cache_read_tokens)::int8 AS "cache_read_tokens!",
+                SUM(bucket.cache_write_tokens)::int8 AS "cache_write_tokens!",
+                SUM(bucket.output_tokens)::int8 AS "output_tokens!",
+                SUM(bucket.records)::int8 AS "records!",
+                round(COALESCE(SUM(bucket.estimated_cost_usd), 0) * 1000000000)::int8
+                    AS "priced_cost_nanos!",
+                SUM(bucket.unpriced_records)::int8 AS "unpriced_records!"
+            FROM ai_usage_buckets AS bucket
+            LEFT JOIN ai_project_mappings AS mapping
+                ON mapping.project_key = bucket.project_key
+            -- The key as an admin may see it: NULL unless it is mapped or names nothing.
+            CROSS JOIN LATERAL (
+                SELECT CASE
+                    WHEN mapping.project_key IS NOT NULL OR bucket.project_key = $4
+                        THEN bucket.project_key
+                END AS project_key
+            ) AS shown
+            WHERE bucket.user_id = $1
+              AND bucket.hour_start >= ($2::date::timestamp AT TIME ZONE 'UTC')
+              AND bucket.hour_start < ($3::date::timestamp AT TIME ZONE 'UTC')
+              AND bucket.hour_start >= $7::timestamptz
+              AND COALESCE(bucket.billing_provider, bucket.provider) = $6
+              AND bucket.project_key <> ALL($5::text[])
+            GROUP BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key, bucket.billing_provider
+            ORDER BY 1, bucket.provider, bucket.model, bucket.machine_id, shown.project_key, bucket.billing_provider
+            "#,
+            user_id.as_i32(),
+            dates.start(),
+            dates.end(),
+            UNATTRIBUTED_PROJECT_KEY,
+            &personal_keys,
+            cutover.payer.as_str(),
+            cutover.starts_at(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_error)?;
+        for row in metered_rows {
+            days.push(AiDeveloperDayUsage {
+                billing_provider: row.billing_provider.as_deref().map(provider).transpose()?,
+                day: row.day,
+                provider: provider(&row.provider)?,
+                chatgpt_sign_in: false,
+                model: row.model,
+                machine_id: machine_id(&row.machine_id)?,
+                project: row
+                    .project_key
+                    .as_deref()
+                    .and_then(|key| resolver.project(key))
+                    .cloned(),
+                project_key: row.project_key,
+                usage: usage(
+                    [
+                        row.input_tokens,
+                        row.cache_read_tokens,
+                        row.cache_write_tokens,
+                        row.output_tokens,
+                    ],
+                    row.records,
+                    row.priced_cost_nanos,
+                    row.unpriced_records,
+                )?,
+                metered: true,
+            });
+        }
+        // Stable: each query keeps its own order within a date.
+        days.sort_by_key(|day| (day.day, day.metered));
+        Ok(days)
     }
 
     async fn personal_usage(
@@ -331,9 +433,11 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         time_zone: &AiUsageTimeZone,
         mapping_company: Option<&TimeTrackingCompany>,
         user_id: Option<&UserId>,
+        metered: Option<&AiMeteredCutover>,
     ) -> Result<Vec<AiPersonalUsage>, AiBillingError> {
         let resolver = self.resolver(mapping_company).await?;
         let (personal_users, personal_keys) = self.personal_marks(&resolver, user_id).await?;
+        let (metered_payer, metered_from) = metered_bounds(metered);
         let rows = sqlx::query!(
             r#"
             SELECT
@@ -353,6 +457,9 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)
               AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
               AND ($4::int4 IS NULL OR bucket.user_id = $4)
+              AND ($7::text IS NULL
+                   OR COALESCE(bucket.billing_provider, bucket.provider) <> $7
+                   OR bucket.hour_start < $8::timestamptz)
             GROUP BY bucket.user_id
             ORDER BY bucket.user_id
             "#,
@@ -362,6 +469,8 @@ impl AiBillingRepository for PostgresAiBillingRepository {
             user_id.map(UserId::as_i32),
             &personal_users,
             &personal_keys,
+            metered_payer,
+            metered_from,
         )
         .fetch_all(&self.pool)
         .await
@@ -579,6 +688,17 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         local_today(&self.pool, time_zone)
             .await
             .map_err(storage_error)
+    }
+}
+
+/// A metered cutover as query parameters: its payer and first instant, both
+/// `None` without one.
+fn metered_bounds(
+    metered: Option<&AiMeteredCutover>,
+) -> (Option<&'static str>, Option<OffsetDateTime>) {
+    match metered {
+        Some(cutover) => (Some(cutover.payer.as_str()), Some(cutover.starts_at())),
+        None => (None, None),
     }
 }
 
@@ -810,7 +930,7 @@ mod tests {
         let month = AiBillingMonth::parse("2026-09").unwrap();
         let zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
         let one_key = repository
-            .daily_usage(month.dates(), &zone, Some(&configured), Some(&user))
+            .daily_usage(month.dates(), &zone, Some(&configured), Some(&user), None)
             .await
             .unwrap();
         assert_eq!(one_key.len(), 1);
@@ -823,7 +943,7 @@ mod tests {
             .await
             .unwrap();
         let two_keys = repository
-            .daily_usage(month.dates(), &zone, Some(&configured), Some(&user))
+            .daily_usage(month.dates(), &zone, Some(&configured), Some(&user), None)
             .await
             .unwrap();
         assert_eq!(two_keys, one_key);
@@ -831,7 +951,7 @@ mod tests {
         assert_eq!(bill.lines[0].billable().unwrap().to_decimal(), "0.00");
 
         let unconfigured = repository
-            .daily_usage(month.dates(), &zone, None, Some(&user))
+            .daily_usage(month.dates(), &zone, None, Some(&user), None)
             .await
             .unwrap();
         assert_eq!(unconfigured.len(), 1);
@@ -868,6 +988,7 @@ mod tests {
                 &zone,
                 Some(&company("company-1")),
                 Some(&user),
+                None,
             )
             .await
             .unwrap();
@@ -961,7 +1082,7 @@ mod tests {
             let dates = AiBillingMonth::parse(month).unwrap().dates();
             async move {
                 repository
-                    .daily_usage(dates, stockholm, Some(&company("company-1")), None)
+                    .daily_usage(dates, stockholm, Some(&company("company-1")), None, None)
                     .await
                     .unwrap()
                     .into_iter()
@@ -1008,6 +1129,7 @@ mod tests {
                 &stockholm,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -1029,6 +1151,7 @@ mod tests {
                 AiBillingMonth::parse("2026-03").unwrap().dates(),
                 &stockholm,
                 Some(&company("company-1")),
+                None,
             )
             .await
             .unwrap();
@@ -1111,6 +1234,7 @@ mod tests {
                         AiBillingMonth::parse("2026-09").unwrap().dates(),
                         &AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
                         Some(configured),
+                        None,
                     )
                     .await
                     .unwrap()
@@ -1202,14 +1326,14 @@ mod tests {
             let (repository, zone, configured) = (&repository, &zone, &configured);
             async move {
                 let daily = repository
-                    .daily_usage(september, zone, Some(configured), None)
+                    .daily_usage(september, zone, Some(configured), None, None)
                     .await
                     .unwrap()
                     .into_iter()
                     .map(|day| (billed_to(day.project), day.usage.records))
                     .collect::<Vec<_>>();
                 let rows = repository
-                    .developer_usage(&user, september, zone, Some(configured))
+                    .developer_usage(&user, september, zone, Some(configured), None)
                     .await
                     .unwrap()
                     .into_iter()
@@ -1222,7 +1346,7 @@ mod tests {
             let (repository, zone, configured) = (&repository, &zone, &configured);
             async move {
                 repository
-                    .personal_usage(september, zone, Some(configured), user_id.as_ref())
+                    .personal_usage(september, zone, Some(configured), user_id.as_ref(), None)
                     .await
                     .unwrap()
                     .into_iter()
@@ -1281,7 +1405,7 @@ mod tests {
             let stockholm = &stockholm;
             async move {
                 repository
-                    .daily_usage(august, stockholm, None, user_id)
+                    .daily_usage(august, stockholm, None, user_id, None)
                     .await
                     .unwrap()
                     .iter()
@@ -1329,7 +1453,7 @@ mod tests {
         let zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
         let dates = AiBillingMonth::parse("2026-09").unwrap().dates();
         let daily = repository
-            .daily_usage(dates, &zone, None, Some(&user))
+            .daily_usage(dates, &zone, None, Some(&user), None)
             .await
             .unwrap();
         assert_eq!(daily.len(), 2);
@@ -1344,7 +1468,7 @@ mod tests {
             1
         );
         let detail = repository
-            .developer_usage(&user, dates, &zone, None)
+            .developer_usage(&user, dates, &zone, None, None)
             .await
             .unwrap();
         assert_eq!(detail.len(), 2);
@@ -1416,11 +1540,138 @@ mod tests {
             .await
             .unwrap();
         let daily = repository
-            .daily_usage(dates, &zone, None, Some(&user))
+            .daily_usage(dates, &zone, None, Some(&user), None)
             .await
             .unwrap();
         assert_eq!(daily.len(), 1);
         assert_eq!(daily[0].billing_provider, None);
+    }
+
+    #[sqlx::test]
+    async fn a_metered_cutover_moves_the_payers_buckets_out_of_local_days(pool: PgPool) {
+        let side_project = "github.com/dev/side-project";
+        let copilot = |hour_start, key, records, cost| AiUsageBucket {
+            provider: AiProvider::Copilot,
+            ..bucket(hour_start, key, records, cost)
+        };
+        let user = setup_with(
+            &pool,
+            (
+                datetime!(2026-07-31 20:00 UTC),
+                datetime!(2026-08-03 00:00 UTC),
+            ),
+            vec![
+                // Midnight on 1 August in Stockholm, still July in UTC: before
+                // the cutover's first instant, so it stays a local day's.
+                copilot(datetime!(2026-07-31 22:00 UTC), MAPPED, 1, 0.1),
+                // The cutover's first hour.
+                copilot(datetime!(2026-08-01 00:00 UTC), MAPPED, 2, 0.2),
+                // Copilot routed to Codex: Codex pays, never metered.
+                AiUsageBucket {
+                    billing_provider: Some(AiProvider::Codex),
+                    ..copilot(datetime!(2026-08-01 01:00 UTC), MAPPED, 4, 0.4)
+                },
+                // OpenCode through Copilot: Copilot pays.
+                AiUsageBucket {
+                    provider: AiProvider::OpenCode,
+                    billing_provider: Some(AiProvider::Copilot),
+                    ..bucket(datetime!(2026-08-02 10:00 UTC), MAPPED, 8, 0.8)
+                },
+                // A personal key's Copilot usage is metered too.
+                copilot(datetime!(2026-08-02 11:00 UTC), side_project, 16, 1.6),
+                // Another payer is untouched.
+                bucket(datetime!(2026-08-02 12:00 UTC), MAPPED, 32, 3.2),
+            ],
+            &[
+                AiProvider::Copilot,
+                AiProvider::Claude,
+                AiProvider::OpenCode,
+            ],
+            Vec::new(),
+        )
+        .await;
+        PostgresAiProjectMappingRepository::new(db(&pool))
+            .mark_personal(&user, &AiProjectKey::parse(side_project).unwrap())
+            .await
+            .unwrap();
+        let repository = PostgresAiBillingRepository::new(db(&pool));
+        let zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
+        let august = AiBillingMonth::parse("2026-08").unwrap();
+        let cutover = AiMeteredCutover {
+            payer: AiProvider::Copilot,
+            from: august,
+        };
+        let records = |rows: &[AiDailyUsage]| {
+            let mut records: Vec<i64> = rows.iter().map(|row| row.usage.records).collect();
+            records.sort_unstable();
+            records
+        };
+
+        let today = repository
+            .daily_usage(august.dates(), &zone, None, None, None)
+            .await
+            .unwrap();
+        // Both of the payer's first hours fall on 1 August in Stockholm.
+        assert_eq!(records(&today), [1 + 2, 4, 8, 32]);
+        let metered = repository
+            .daily_usage(august.dates(), &zone, None, None, Some(&cutover))
+            .await
+            .unwrap();
+        assert_eq!(records(&metered), [1, 4, 32]);
+        // The cutover month's first local date keeps the payer's hours from
+        // before the cutover.
+        assert!(metered
+            .iter()
+            .any(|row| row.day == date!(2026 - 08 - 01) && row.usage.records == 1));
+
+        // Personal usage the payer pays for bills as a metered line instead.
+        let personal = |cutover| {
+            let (repository, zone) = (&repository, &zone);
+            async move {
+                repository
+                    .personal_usage(august.dates(), zone, None, None, cutover)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .map(|row| row.usage.records)
+                    .collect::<Vec<_>>()
+            }
+        };
+        assert_eq!(personal(None).await, [16]);
+        assert!(personal(Some(&cutover)).await.is_empty());
+
+        // The drill-down shows the metered buckets on their UTC days, after
+        // the local rows of the same date; personal keys stay out.
+        let rows = repository
+            .developer_usage(&user, august.dates(), &zone, None, Some(&cutover))
+            .await
+            .unwrap();
+        let shown: Vec<(Date, AiProvider, i64, bool)> = rows
+            .iter()
+            .map(|row| (row.day, row.provider, row.usage.records, row.metered))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                // Paid by Codex first: payers sort with none last.
+                (date!(2026 - 08 - 01), AiProvider::Copilot, 4, false),
+                (date!(2026 - 08 - 01), AiProvider::Copilot, 1, false),
+                (date!(2026 - 08 - 01), AiProvider::Copilot, 2, true),
+                (date!(2026 - 08 - 02), AiProvider::Claude, 32, false),
+                (date!(2026 - 08 - 02), AiProvider::OpenCode, 8, true),
+            ]
+        );
+        assert!(rows.iter().all(|row| !row.chatgpt_sign_in));
+        // Without a cutover, today's rows.
+        let local = repository
+            .developer_usage(&user, august.dates(), &zone, None, None)
+            .await
+            .unwrap();
+        assert!(local.iter().all(|row| !row.metered));
+        assert_eq!(
+            local.iter().map(|row| row.usage.records).sum::<i64>(),
+            1 + 2 + 4 + 8 + 32
+        );
     }
 
     #[sqlx::test]
@@ -1479,7 +1730,7 @@ mod tests {
         ];
 
         let mut daily: Vec<_> = repository
-            .daily_usage(september, &stockholm, None, None)
+            .daily_usage(september, &stockholm, None, None, None)
             .await
             .unwrap()
             .iter()
@@ -1489,7 +1740,7 @@ mod tests {
         assert_eq!(daily, expected);
 
         let developer: Vec<_> = repository
-            .developer_usage(&user, september, &stockholm, None)
+            .developer_usage(&user, september, &stockholm, None, None)
             .await
             .unwrap()
             .iter()

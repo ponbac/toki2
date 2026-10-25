@@ -7,7 +7,7 @@ use crate::domain::{
         AiImportRunId, AiImportStatus, AiMeteredCredit, AiMeteredOrgCharge, AiMeteredPeriod,
         AiMeteredScope, AiMeteredSource, AiMeteredSummaryLine, AiProvider, AiProviderAccountId,
         AiSliceRecord, AiStoredAccountCredit, AiStoredOrgCredit, AiStoredScope, AiTrackedModelDay,
-        AiUsageCheck, AiUsageDateRange, UserId,
+        AiUsageCheck, AiUsageDateRange, TimeTrackingCompany, UserId,
     },
     AiMeteredUsageError, MeteredUsageSourceError,
 };
@@ -184,14 +184,22 @@ pub trait AiMeteredUsageRepository: Send + Sync + 'static {
     ) -> Result<Vec<AiUsageCheck>, AiMeteredUsageError>;
 
     /// Usage `payer` paid for (`COALESCE(billing_provider, provider)`) per
-    /// user, UTC day and model within `dates`, personal keys included, of
-    /// `user` or everyone, with the cost of buckets at or after
-    /// `reprice_floor` on an old pricing basis and of buckets before it.
+    /// user, UTC day, model and destination within `dates`, of `user` or
+    /// everyone, with the cost of buckets at or after `reprice_floor` on an
+    /// old pricing basis and of buckets before it. Keys resolve as for the
+    /// bill (`AiMappingResolver` with `mapping_company` as the configured
+    /// company): a project, Unassigned unmapped (key names are never
+    /// returned) or unattributed; keys their user marked personal are
+    /// included, as `Personal`. The costs of a user's day and model are
+    /// rounded as one: each destination gets the rounded running total
+    /// through it less the one before it, so the destinations sum exactly to
+    /// the model's rounded cost.
     async fn tracked_usage(
         &self,
         payer: AiProvider,
         dates: AiUsageDateRange,
         reprice_floor: OffsetDateTime,
+        mapping_company: Option<&TimeTrackingCompany>,
         user: Option<UserId>,
     ) -> Result<Vec<AiTrackedModelDay>, AiMeteredUsageError>;
 }
