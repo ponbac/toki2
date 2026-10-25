@@ -434,6 +434,7 @@ fn stale_pricing_unknown_models_and_check_problems_are_flagged() {
             stored_gross: dec("10"),
             matches: Some(false),
             error: None,
+            interrupted: false,
         },
         AiUsageCheck {
             account_id: Some(account_id(1003)),
@@ -442,6 +443,7 @@ fn stale_pricing_unknown_models_and_check_problems_are_flagged() {
             stored_gross: dec("5"),
             matches: None,
             error: Some("unexpected usage source response".to_string()),
+            interrupted: false,
         },
         AiUsageCheck {
             account_id: Some(account_id(1005)),
@@ -450,6 +452,7 @@ fn stale_pricing_unknown_models_and_check_problems_are_flagged() {
             stored_gross: AiDecimal::ZERO,
             matches: None,
             error: Some("GitHub knows no Copilot usage for former-member".to_string()),
+            interrupted: false,
         },
     ]);
     let result = run(input);
@@ -629,6 +632,53 @@ fn no_day_settles_until_the_org_total_equals_the_payers() {
 }
 
 #[test]
+fn an_interrupted_account_counts_whatever_its_seat() {
+    // A departed account, unseated in October, whose month a run stopped
+    // importing: not its own error, so it is flagged and every day is an
+    // import gap rather than unknown account.
+    let mut input = input(vec![
+        linked(1001, "ada-lovelace", ADA),
+        account(1005, "former-member", false, &[]),
+    ]);
+    input.org_credits = vec![org(date!(2026 - 10 - 02), "GPT-6.1 Sol", "15")];
+    input.checks.push(AiUsageCheck::interrupted(
+        Some(account_id(1005)),
+        datetime!(2026-10-25 06:00 UTC),
+        AiDecimal::ZERO,
+        "GitHub's rate limiting stopped the import",
+    ));
+    let result = run(input.clone());
+    let former = account_of(&result, "former-member");
+    assert_eq!(former.flags, [AiReconciliationFlag::ImportFailed]);
+    let check = former.check.as_ref().unwrap();
+    assert!(check.interrupted);
+    assert_eq!(
+        check.error.as_deref(),
+        Some("the run stopped before finishing this month: GitHub's rate limiting stopped the import")
+    );
+    assert!(result
+        .residual_days
+        .iter()
+        .all(|day| day.status == AiResidualStatus::Incomplete));
+    assert_eq!(result.totals.unknown_account, 0);
+
+    // Its own error would have been informational.
+    input.checks.pop();
+    input.checks.push(AiUsageCheck {
+        account_id: Some(account_id(1005)),
+        checked_at: datetime!(2026-10-25 06:00 UTC),
+        payer_gross: None,
+        stored_gross: AiDecimal::ZERO,
+        matches: None,
+        error: Some("GitHub knows no Copilot usage for former-member".to_string()),
+        interrupted: false,
+    });
+    let result = run(input);
+    assert!(account_of(&result, "former-member").flags.is_empty());
+    assert_eq!(result.totals.unknown_account, 15 * CREDIT);
+}
+
+#[test]
 fn a_seated_account_that_failed_makes_every_day_an_import_gap() {
     let mut input = input(vec![linked(1001, "ada-lovelace", ADA)]);
     input.org_credits = vec![org(date!(2026 - 10 - 02), "GPT-6.1 Sol", "15")];
@@ -639,6 +689,7 @@ fn a_seated_account_that_failed_makes_every_day_an_import_gap() {
         stored_gross: AiDecimal::ZERO,
         matches: None,
         error: Some("the usage source is unavailable".to_string()),
+        interrupted: false,
     });
     let result = run(input);
     assert!(result

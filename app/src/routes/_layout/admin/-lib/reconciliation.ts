@@ -124,7 +124,7 @@ export const FLAG_HINTS: Readonly<Record<AiMeteredFlag, string>> = {
   payerTotalMismatch:
     "The stored days don't add up to GitHub's month total at the last import.",
   importFailed:
-    "The last import couldn't read this account, which held a seat in the month.",
+    "The last import couldn't read this account, which held a seat in the month, or stopped before finishing its month.",
 };
 
 export type FlagTone = "critical" | "warning" | "neutral";
@@ -227,6 +227,13 @@ export function staleReasonText(reason: AiMeteredStaleReason): string {
     case "accountFailed":
       return `${reason.login} couldn't be imported for ${monthLabel(reason.month)}: ${withoutFullStop(reason.error)}`;
   }
+}
+
+/** Whether an account error makes the import stale: the account held a seat
+ * that month, or a run stopped before finishing its month. An account's own
+ * error without a seat is informational. */
+export function blocksImport(error: AiMeteredAccountError): boolean {
+  return error.seated || error.interrupted;
 }
 
 /** How many accounts the errors are of: one account can fail in several

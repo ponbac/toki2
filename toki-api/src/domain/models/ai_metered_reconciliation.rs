@@ -42,8 +42,9 @@
 //!   It rests on the organization's stored days, so they must equal the
 //!   payer's month total: until the organization's check matches, no day
 //!   settles, and a failed check makes every day an import gap. Days with a
-//!   missing slice are an import gap too, and days that may still change are
-//!   provisional.
+//!   missing slice are an import gap too, as is every day of a month with a
+//!   failed seated account or an interrupted one, and days that may still
+//!   change are provisional.
 //!
 //! Amounts are nanodollars (a credit is 10^7). Signed figures (residuals) are
 //! plain `i64` nanodollars.
@@ -174,6 +175,39 @@ pub struct AiUsageCheck {
     /// Whether every key's totals match; `None` when the check failed.
     pub matches: Option<bool>,
     pub error: Option<String>,
+    /// Whether a run started importing the month and stopped, or died,
+    /// before finishing this scope (a failed check, `error` saying why). Its
+    /// stored days may be half replaced, or older than the organization's
+    /// refreshed days, so it counts whatever the account's seat: never
+    /// informational, and its month is imported again.
+    pub interrupted: bool,
+}
+
+impl AiUsageCheck {
+    /// The check of a scope whose month a run started importing at
+    /// `started_at` and stopped before finishing, for `stop`, the run's
+    /// error ("interrupted" when its process died).
+    pub fn interrupted(
+        account_id: Option<AiProviderAccountId>,
+        started_at: OffsetDateTime,
+        stored_gross: AiDecimal,
+        stop: &str,
+    ) -> Self {
+        Self {
+            account_id,
+            checked_at: started_at,
+            payer_gross: None,
+            stored_gross,
+            matches: None,
+            error: Some(interrupted_check_error(stop)),
+            interrupted: true,
+        }
+    }
+}
+
+/// The error of a check whose month a run stopped importing for `stop`.
+pub fn interrupted_check_error(stop: &str) -> String {
+    format!("the run stopped before finishing this month: {stop}")
 }
 
 /// One day's import coverage.
@@ -230,7 +264,8 @@ pub enum AiReconciliationFlag {
     External,
     /// The stored days differ from the payer's month total.
     PayerTotalMismatch,
-    /// The account's import failed, though it held a seat in the month.
+    /// The account's import failed, though it held a seat in the month, or a
+    /// run stopped before finishing its month (whatever its seat).
     ImportFailed,
 }
 
@@ -337,8 +372,9 @@ pub enum AiResidualStatus {
     /// the organization's stored month does not equal the payer's month total
     /// (or was never checked).
     Provisional,
-    /// A slice is missing, or a seated account's or the organization's check
-    /// failed: an import gap, not unknown account.
+    /// A slice is missing, or a seated account's, an interrupted account's
+    /// or the organization's check failed: an import gap, not unknown
+    /// account.
     Incomplete,
 }
 
@@ -648,8 +684,9 @@ pub(super) struct AccountWalk<'a> {
     pub check: Option<&'a AiUsageCheck>,
     /// It held a seat in the month.
     pub seated: bool,
-    /// Its import failed without a seat in the month: its slices are not
-    /// expected, so missing ones are no gap.
+    /// Its own import failed without a seat in the month: its slices are not
+    /// expected, so missing ones are no gap. An interrupted check excuses no
+    /// one.
     pub excused: bool,
     /// The reconciled days, only the focused user's in one user's view.
     pub days: Vec<AccountDay<'a>>,
@@ -669,8 +706,9 @@ pub(super) struct AiMeteredWalk<'a> {
     /// The user days some account is linked to.
     pub linked_user_days: HashSet<(UserId, Date)>,
     pub accounts: Vec<AccountWalk<'a>>,
-    /// A seated account's import failed in the month.
-    pub seated_errors: bool,
+    /// A seated account's import failed in the month, or a run stopped
+    /// before finishing an account's month.
+    pub import_failed: bool,
     pub org_check: Option<&'a AiUsageCheck>,
 }
 
@@ -767,14 +805,17 @@ pub(super) fn walk(
         .collect();
 
     let mut linked_user_days: HashSet<(UserId, Date)> = HashSet::new();
-    let mut seated_errors = false;
+    let mut import_failed = false;
     let mut accounts = Vec::with_capacity(input.accounts.len());
     for account in &input.accounts {
         let check = checks_by_account.get(&account.account_id).copied();
         let seated = held_seat_in(account, input.month, input.today);
         let failed = check.is_some_and(|check| check.error.is_some());
-        if failed && seated {
-            seated_errors = true;
+        // An interrupted check is no account's own answer: it counts whatever
+        // the seat, and excuses no one.
+        let interrupted = check.is_some_and(|check| check.interrupted);
+        if failed && (seated || interrupted) {
+            import_failed = true;
         }
         let mut account_days = Vec::new();
         for day in &days {
@@ -815,7 +856,7 @@ pub(super) fn walk(
             account,
             check,
             seated,
-            excused: failed && !seated,
+            excused: failed && !seated && !interrupted,
             days: account_days,
         });
     }
@@ -827,7 +868,7 @@ pub(super) fn walk(
         tracked,
         linked_user_days,
         accounts,
-        seated_errors,
+        import_failed,
         org_check: input.checks.iter().find(|check| check.account_id.is_none()),
     })
 }
@@ -962,7 +1003,9 @@ pub fn reconcile(
             if check.matches == Some(false) {
                 flags.push(AiReconciliationFlag::PayerTotalMismatch);
             }
-            if check.error.is_some() && seated {
+            // An interrupted check is no account's own answer: it counts
+            // whatever the seat.
+            if check.error.is_some() && (seated || check.interrupted) {
                 flags.push(AiReconciliationFlag::ImportFailed);
             }
         }
@@ -1133,7 +1176,7 @@ pub fn reconcile(
         &input.account_credits,
         ResidualTrust {
             settling_from: walk.settling_from,
-            seated_errors: walk.seated_errors,
+            import_failed: walk.import_failed,
             org_check: walk.org_check,
         },
     )?;
@@ -1359,8 +1402,9 @@ fn month_group(
 pub(super) struct ResidualTrust<'a> {
     /// The first day within the settle days.
     pub settling_from: Date,
-    /// A seated account's import failed in the month.
-    pub seated_errors: bool,
+    /// A seated account's import failed in the month, or a run stopped
+    /// before finishing an account's month.
+    pub import_failed: bool,
     pub org_check: Option<&'a AiUsageCheck>,
 }
 
@@ -1372,7 +1416,7 @@ pub(super) fn residual_days(
     account_credits: &[AiStoredAccountCredit],
     ResidualTrust {
         settling_from,
-        seated_errors,
+        import_failed,
         org_check,
     }: ResidualTrust<'_>,
 ) -> Result<Vec<AiResidualDay>, AiMeteredUsageError> {
@@ -1426,7 +1470,7 @@ pub(super) fn residual_days(
             let cover = coverage.get(day).copied().unwrap_or_default();
             let status = if !cover.org_fetched
                 || cover.accounts_missing > 0
-                || seated_errors
+                || import_failed
                 || org_failed
             {
                 AiResidualStatus::Incomplete

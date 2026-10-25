@@ -100,11 +100,12 @@ impl<R, A> AiMeteredMonths<R, A> {
         org_slices: &[AiSliceRecord],
         checks: &[AiUsageCheck],
     ) -> BTreeMap<Date, AiDayCoverage> {
-        // An account whose import failed without a seat in the month is not
-        // expected: its error is informational.
+        // An account whose own import failed without a seat in the month is
+        // not expected: its error is informational. An interrupted check is no
+        // answer of the account's own, so it stays expected.
         let informational: HashSet<AiProviderAccountId> = checks
             .iter()
-            .filter(|check| check.error.is_some())
+            .filter(|check| check.error.is_some() && !check.interrupted)
             .filter_map(|check| check.account_id)
             .filter(|account_id| {
                 accounts
@@ -184,9 +185,11 @@ where
             .repository
             .account_credits(self.payer, dates, focus.is_some().then_some(ids.as_slice()))
             .await?;
+        // The running run's marks keep the checks they marked while it runs.
+        let importing = status.running.as_ref().map(|run| run.id);
         let checks: Vec<AiUsageCheck> = self
             .repository
-            .checks(self.payer, month)
+            .checks(self.payer, month, importing)
             .await?
             .into_iter()
             .filter(|check| {

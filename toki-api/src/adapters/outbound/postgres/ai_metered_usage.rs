@@ -26,11 +26,11 @@ use crate::{
     db::{DbPool, DbTransaction},
     domain::{
         models::{
-            slice_end, AiBillingMonth, AiBillingProject, AiCreditKey, AiCreditKind,
-            AiCreditStoreScope, AiCreditTotal, AiDecimal, AiImportHistory, AiImportKind,
-            AiImportPlan, AiImportRun, AiImportRunId, AiImportStatus, AiMappingResolver,
-            AiMeteredAmounts, AiMeteredCredit, AiMeteredDestination, AiMeteredModel,
-            AiMeteredOrgCharge, AiMeteredSource, AiMeteredSummaryLine, AiMonthMode,
+            interrupted_check_error, slice_end, AiBillingMonth, AiBillingProject, AiCreditKey,
+            AiCreditKind, AiCreditStoreScope, AiCreditTotal, AiDecimal, AiImportHistory,
+            AiImportKind, AiImportPlan, AiImportRun, AiImportRunId, AiImportStatus,
+            AiMappingResolver, AiMeteredAmounts, AiMeteredCredit, AiMeteredDestination,
+            AiMeteredModel, AiMeteredOrgCharge, AiMeteredSource, AiMeteredSummaryLine, AiMonthMode,
             AiOrgChargeKind, AiProvider, AiProviderAccountId, AiRunStatus, AiSliceRecord,
             AiSourceOutcome, AiSourceState, AiSourceStatus, AiStoredAccountCredit,
             AiStoredAccountError, AiStoredOrgCredit, AiStoredScope, AiSummaryKind, AiTokenCounts,
@@ -1319,6 +1319,28 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         Ok(changed)
     }
 
+    async fn mark_checks_importing(
+        &self,
+        payer: AiProvider,
+        month: AiBillingMonth,
+        run: AiImportRunId,
+    ) -> Result<(), AiMeteredUsageError> {
+        sqlx::query!(
+            r#"
+            UPDATE ai_provider_usage_checks
+            SET importing_run_id = $3
+            WHERE provider = $1 AND month = $2
+            "#,
+            payer.as_str(),
+            month.first_day(),
+            run.as_i64(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(storage_error)?;
+        Ok(())
+    }
+
     async fn record_check(
         &self,
         payer: AiProvider,
@@ -1326,6 +1348,8 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         month: AiBillingMonth,
         check: &AiUsageCheck,
     ) -> Result<(), AiMeteredUsageError> {
+        // An interrupted check is a run's mark, read back; never stored.
+        debug_assert!(!check.interrupted, "an interrupted check is never stored");
         let account = check
             .account_id
             .map_or(ORGANIZATION, AiProviderAccountId::as_i64);
@@ -1341,7 +1365,8 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
                 payer_gross_quantity = EXCLUDED.payer_gross_quantity,
                 stored_gross_quantity = EXCLUDED.stored_gross_quantity,
                 matches = EXCLUDED.matches,
-                error = EXCLUDED.error
+                error = EXCLUDED.error,
+                importing_run_id = NULL
             "#,
             payer.as_str(),
             source.as_str(),
@@ -1588,29 +1613,45 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
             None => None,
         };
 
+        // Failed checks since the latest finished run started, and marks of
+        // runs started since then that are no longer importing, interrupted
+        // as `checks` reads them. Marks of the running run keep the check
+        // they marked.
         let account_errors = match &last_run {
             Some(run) => sqlx::query!(
                 r#"
-                SELECT account_id, month, error AS "error!"
-                FROM ai_provider_usage_checks
-                WHERE provider = $1
-                  AND source = 'account_credits'
-                  AND error IS NOT NULL
-                  AND checked_at >= $2
-                ORDER BY month, account_id
+                SELECT check_row.account_id, check_row.month, check_row.error,
+                    (marker.id IS NOT NULL) AS "interrupted!",
+                    COALESCE(marker.error, 'interrupted') AS "stop!"
+                FROM ai_provider_usage_checks AS check_row
+                LEFT JOIN ai_provider_import_runs AS marker
+                    ON marker.id = check_row.importing_run_id AND marker.id IS DISTINCT FROM $3
+                WHERE check_row.provider = $1
+                  AND check_row.source = 'account_credits'
+                  AND CASE
+                      WHEN marker.id IS NOT NULL THEN marker.started_at >= $2
+                      ELSE check_row.error IS NOT NULL AND check_row.checked_at >= $2
+                  END
+                ORDER BY check_row.month, check_row.account_id
                 "#,
                 payer.as_str(),
                 run.started_at,
+                running.as_ref().map(|running| running.id.as_i64()),
             )
             .fetch_all(&self.pool)
             .await
             .map_err(storage_error)?
             .into_iter()
             .map(|row| {
+                let error = match (row.interrupted, row.error) {
+                    (false, Some(error)) => error,
+                    _ => interrupted_check_error(&row.stop),
+                };
                 Ok(AiStoredAccountError {
                     account_id: account_id(row.account_id)?,
                     month: month_of(row.month)?,
-                    error: row.error,
+                    error,
+                    interrupted: row.interrupted,
                 })
             })
             .collect::<Result<Vec<_>, AiMeteredUsageError>>()?,
@@ -1852,33 +1893,54 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         &self,
         payer: AiProvider,
         month: AiBillingMonth,
+        importing: Option<AiImportRunId>,
     ) -> Result<Vec<AiUsageCheck>, AiMeteredUsageError> {
+        // A mark of a run other than the one importing now is interrupted, for
+        // that run's error: why it stopped, or "interrupted" while the row of a
+        // run whose process died has none yet.
         sqlx::query!(
             r#"
-            SELECT account_id, checked_at, payer_gross_quantity::text AS payer_gross,
-                stored_gross_quantity::text AS "stored_gross!", matches, error
-            FROM ai_provider_usage_checks
-            WHERE provider = $1 AND month = $2
-            ORDER BY source, account_id
+            SELECT check_row.account_id, check_row.checked_at,
+                check_row.payer_gross_quantity::text AS payer_gross,
+                check_row.stored_gross_quantity::text AS "stored_gross!", check_row.matches,
+                check_row.error, marker.started_at AS "interrupted_at?",
+                COALESCE(marker.error, 'interrupted') AS "stop!"
+            FROM ai_provider_usage_checks AS check_row
+            LEFT JOIN ai_provider_import_runs AS marker
+                ON marker.id = check_row.importing_run_id AND marker.id IS DISTINCT FROM $3
+            WHERE check_row.provider = $1 AND check_row.month = $2
+            ORDER BY check_row.source, check_row.account_id
             "#,
             payer.as_str(),
             month.first_day(),
+            importing.map(AiImportRunId::as_i64),
         )
         .fetch_all(&self.pool)
         .await
         .map_err(storage_error)?
         .into_iter()
         .map(|row| {
+            let account_id = match row.account_id {
+                ORGANIZATION => None,
+                id => Some(account_id(id)?),
+            };
+            let stored_gross = decimal(&row.stored_gross)?;
+            if let Some(started_at) = row.interrupted_at {
+                return Ok(AiUsageCheck::interrupted(
+                    account_id,
+                    started_at,
+                    stored_gross,
+                    &row.stop,
+                ));
+            }
             Ok(AiUsageCheck {
-                account_id: match row.account_id {
-                    ORGANIZATION => None,
-                    id => Some(account_id(id)?),
-                },
+                account_id,
                 checked_at: row.checked_at,
                 payer_gross: row.payer_gross.as_deref().map(decimal).transpose()?,
-                stored_gross: decimal(&row.stored_gross)?,
+                stored_gross,
                 matches: row.matches,
                 error: row.error,
+                interrupted: false,
             })
         })
         .collect()

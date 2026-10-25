@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT check_row.account_id, check_row.month, check_row.error,\n                    (marker.id IS NOT NULL) AS \"interrupted!\",\n                    COALESCE(marker.error, 'interrupted') AS \"stop!\"\n                FROM ai_provider_usage_checks AS check_row\n                LEFT JOIN ai_provider_import_runs AS marker\n                    ON marker.id = check_row.importing_run_id AND marker.id IS DISTINCT FROM $3\n                WHERE check_row.provider = $1\n                  AND check_row.source = 'account_credits'\n                  AND CASE\n                      WHEN marker.id IS NOT NULL THEN marker.started_at >= $2\n                      ELSE check_row.error IS NOT NULL AND check_row.checked_at >= $2\n                  END\n                ORDER BY check_row.month, check_row.account_id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_checks",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "month",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_checks",
+            "name": "month"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_checks",
+            "name": "error"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "interrupted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "stop!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "f7d1c9af46a2b3fbcc2923730bbf7636e1f24cf681dd8e9854fc142a7ac6d128"
+}

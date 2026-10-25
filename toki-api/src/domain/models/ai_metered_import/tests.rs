@@ -442,6 +442,7 @@ fn account_error(seated: bool) -> AiAccountImportError {
         month: month("2026-10"),
         error: "not found".to_string(),
         seated,
+        interrupted: false,
     }
 }
 
@@ -547,6 +548,22 @@ fn freshness_names_the_first_reason_it_is_stale() {
         ..fresh_input()
     };
     assert_eq!(import_freshness(&departed), AiImportFreshness::Fresh);
+    // Unless a run stopped before finishing its month: no answer of its own.
+    let interrupted = AiFreshnessInput {
+        account_errors: vec![AiAccountImportError {
+            interrupted: true,
+            ..account_error(false)
+        }],
+        ..departed
+    };
+    assert!(
+        matches!(
+            stale_reason(&interrupted),
+            AiStaleReason::AccountFailed { .. }
+        ),
+        "{:?}",
+        import_freshness(&interrupted)
+    );
 }
 
 #[test]

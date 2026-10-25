@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_provider_usage_checks\n            SET importing_run_id = $3\n            WHERE provider = $1 AND month = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "51f1d117b0f80906e09e877cac1ebcaf650021062ab651f4f479e34bf3f4c63c"
+}
