@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id FROM ai_usage_machines\n            WHERE id = $1\n              AND user_id = $2\n            FOR NO KEY UPDATE\n            ",
+  "query": "\n            UPDATE ai_usage_machines\n            SET pricing_basis = $3\n            WHERE id = $1\n              AND user_id = $2\n            RETURNING id\n            ",
   "describe": {
     "columns": [
       {
@@ -18,12 +18,13 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Int4"
+        "Int4",
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "0b8aacca0ca5923191584f3a3170dd20dd913c4c562dcf45989118e8a7c4fa2e"
+  "hash": "c16ee292763c6c5e0cc59f25e3c8edd5d933fb21985e9e960337ef06f205cf78"
 }

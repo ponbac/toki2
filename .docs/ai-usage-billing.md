@@ -133,6 +133,20 @@ for equality. It is stored on every bucket the upload writes, in
 but any ordinary upload overwrites it, so only the per-bucket basis tells which
 stored costs an older method priced.
 
+Each machine also keeps its **current pricing basis**, in
+`ai_usage_machines.pricing_basis`: the latest non-null basis of its uploads and
+repricings, in the order they were applied. Every applied upload with a basis sets
+it, and every repricing sets it to the repricing's basis, also when no bucket in
+it lies at or after the floor. An upload without a basis keeps it: Token Ledger
+before 0.10.0 sends none, and 0.10.0 sends none for a run that priced without
+vendor rates (`unavailable`), so such a run never claims the basis a complete run
+does. Its buckets are stored with NULL and read as old on their own. A refused
+upload (409) or another user's repricing changes nothing. The hour a bucket covers
+says when its usage happened, not when it was priced, so the newest bucket's basis
+cannot stand in for it: an upload of an older window or a repricing can move older
+buckets to a new basis while newer ones keep the old. Machines that uploaded
+before the column existed started from their newest bucket's non-null basis.
+
 When the client's basis changes, it reprices stored history through two
 operations on the upload's bearer auth. Neither is an MCP tool:
 
@@ -154,9 +168,9 @@ operations on the upload's bearer auth. Neither is an MCP tool:
   the upload's next edit suggestion rule. It never inserts or deletes usage and
   changes no coverage, hints, snapshot or sync time, so history the machine has
   pruned, and usage it now attributes or routes differently, keeps its stored cost
-  and basis. The response is `{ updated, unmatched, beforeFloor }`; `updated` counts
-  matches whose values were equal already too. The body limit is 16 MiB, as for
-  uploads.
+  and basis. It does record `basis` as the machine's current pricing basis. The
+  response is `{ updated, unmatched, beforeFloor }`; `updated` counts matches whose
+  values were equal already too. The body limit is 16 MiB, as for uploads.
 
 The floor is config `ai_usage.reprice_floor` (RFC 3339, `2026-10-01T00:00:00Z` in
 `base.yaml`): costs before it are never repriced, so already invoiced months keep
@@ -485,11 +499,16 @@ browser's time zone. Account import errors are listed per account and month.
   old pricing basis and tracked without a linked account, and their groups are
   listed with `T = 0`.
 - *On an old pricing basis* is the part of T from buckets at or after
-  `ai_usage.reprice_floor` whose basis is NULL or differs from the latest non-null
-  basis their own machine uploaded (over all of the machine's providers): what the
-  reprice discovery would report as stale. Buckets before the floor are never
-  repriced and are reported apart. A machine that never upgraded is compared with
-  its own latest basis; a fleet-wide basis requirement is left to month close.
+  `ai_usage.reprice_floor` whose basis is NULL or differs from their own machine's
+  current pricing basis (`ai_usage_machines.pricing_basis`, the latest non-null basis
+  of its uploads and repricings in the order they were applied, over all of the
+  machine's providers): what the reprice discovery with that basis would report as
+  stale. Buckets before the floor are never repriced and are reported apart. An
+  upload without a basis leaves the machine's current basis alone, so it never turns
+  repriced history old; only its own NULL-basis buckets count as old. A machine that
+  never sent a basis has none, so all of its usage from the floor on reads as old. A
+  machine that never upgraded its rates is compared with its own current basis; a
+  fleet-wide basis requirement is left to month close.
 - Per account, UTC day and group of (SKU, model) on linked days, `attributed =
   min(G, T)` and `untracked = G − attributed`. Untrackable and unrecognized credits
   have `T = 0`; code review credits are left out (repository-billed). Credits on days
@@ -646,17 +665,19 @@ month has no slice or an incomplete one, or days before the backfill; excused
 accounts, whose import failed without a seat, aside), `notSettled` (a day lies within
 the settle days, or the account's month total is absent, failed or different),
 `oldPricingBasis` (a contributing bucket in a group with credits is on an old pricing
-basis), `provisionalModel` (a model the catalog marks provisional with priced tracked
-usage in a group with credits; G is GitHub's number, so a provisional rate only moves
-a split) and `unrecognized` (a credits row priced otherwise than $0.01 a credit, or a
-model outside the catalog). The unknown-account line is provisional while the month is
-in progress, a day is an import gap, or a day is provisional. The bill's `metered`
-block is provisional when a line is, when tracked usage is not imported, when an
-account day is missing, or when the unknown account's residual is provisional even
-though it bills no line (`AiMeteredAllocation::unknown_account`): a failed
-organization check, or an organization slice that is missing, leaves its days out of
-the residual, and a residual not computed yet is no settled zero. A developer's
-`metered` block leaves the unknown account out, as it is no developer's.
+basis, as the reconciliation tab reads it: NULL or another basis than its machine's
+current pricing basis), `provisionalModel` (a model the catalog marks provisional
+with priced tracked usage in a group with credits; G is GitHub's number, so a
+provisional rate only moves a split) and `unrecognized` (a credits row priced
+otherwise than $0.01 a credit, or a model outside the catalog). The unknown-account
+line is provisional while the month is in progress, a day is an import gap, or a day
+is provisional. The bill's `metered` block is provisional when a line is, when
+tracked usage is not imported, when an account day is missing, or when the unknown
+account's residual is provisional even though it bills no line
+(`AiMeteredAllocation::unknown_account`): a failed organization check, or an
+organization slice that is missing, leaves its days out of the residual, and a
+residual not computed yet is no settled zero. A developer's `metered` block leaves
+the unknown account out, as it is no developer's.
 
 **Subjects and charge kinds.** A billing line's subject is a user, a provider account
 (`{ provider, accountId, login }`: unlinked or external), the unknown account, or a

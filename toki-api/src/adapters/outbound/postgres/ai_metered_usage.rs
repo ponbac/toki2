@@ -1889,8 +1889,10 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         // Keys resolve as the bill resolves them: the shared resolver decides
         // which mappings count, and personal marks apply only to unmapped
         // keys. A bucket is on an old pricing basis when it is at or after
-        // the floor and has no basis, or another basis than the latest its own
-        // machine uploaded, over all of the machine's providers. Each cost is
+        // the floor and has no basis, or another basis than its own machine's
+        // current one: the latest non-null basis of the machine's uploads and
+        // repricings, in the order they were applied, over all of its
+        // providers. A machine that never sent a basis has none. Each cost is
         // summed exactly per destination and rounded as the user's day and
         // model: a destination gets the rounded running total through it less
         // the one before it.
@@ -1920,19 +1922,6 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
             ), personal_keys AS (
                 SELECT user_id, project_key
                 FROM UNNEST($8::int4[], $9::text[]) AS mark(user_id, project_key)
-            ), machines AS (
-                SELECT DISTINCT machine_id
-                FROM ai_usage_buckets
-                WHERE COALESCE(billing_provider, provider) = $1
-                  AND hour_start >= ($2::date::timestamp AT TIME ZONE 'UTC')
-                  AND hour_start < ($3::date::timestamp AT TIME ZONE 'UTC')
-                  AND ($5::int4 IS NULL OR user_id = $5)
-            ), current_basis AS (
-                SELECT DISTINCT ON (bucket.machine_id) bucket.machine_id, bucket.pricing_basis
-                FROM ai_usage_buckets AS bucket
-                JOIN machines USING (machine_id)
-                WHERE bucket.pricing_basis IS NOT NULL
-                ORDER BY bucket.machine_id, bucket.hour_start DESC
             ), destinations AS (
                 SELECT
                     bucket.user_id,
@@ -1953,18 +1942,18 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
                     COALESCE(SUM(bucket.estimated_cost_usd) FILTER (
                         WHERE bucket.hour_start >= $4
                           AND (bucket.pricing_basis IS NULL
-                               OR bucket.pricing_basis IS DISTINCT FROM current_basis.pricing_basis)
+                               OR bucket.pricing_basis IS DISTINCT FROM machine.pricing_basis)
                     ), 0) AS old_basis_cost,
                     COUNT(*) FILTER (
                         WHERE bucket.hour_start >= $4
                           AND (bucket.pricing_basis IS NULL
-                               OR bucket.pricing_basis IS DISTINCT FROM current_basis.pricing_basis)
+                               OR bucket.pricing_basis IS DISTINCT FROM machine.pricing_basis)
                     )::int8 AS old_basis_buckets,
                     COALESCE(SUM(bucket.estimated_cost_usd) FILTER (
                         WHERE bucket.hour_start < $4
                     ), 0) AS before_floor_cost
                 FROM ai_usage_buckets AS bucket
-                LEFT JOIN current_basis ON current_basis.machine_id = bucket.machine_id
+                JOIN ai_usage_machines AS machine ON machine.id = bucket.machine_id
                 LEFT JOIN resolved_projects AS mapping ON mapping.project_key = bucket.project_key
                 LEFT JOIN personal_keys AS personal
                     ON personal.user_id = bucket.user_id

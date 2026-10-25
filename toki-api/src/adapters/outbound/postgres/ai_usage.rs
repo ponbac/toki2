@@ -53,15 +53,21 @@ impl AiUsageRepository for PostgresAiUsageRepository {
 
         // Registers the machine on first upload. Afterwards the conflict update
         // applies only for the owner, and its row lock serializes concurrent
-        // uploads from one machine until commit.
+        // uploads from one machine until commit. The upload's pricing basis
+        // becomes the machine's current one. An upload without one, from an
+        // older client or a run priced without vendor rates, keeps the
+        // machine's: its buckets are old by their own NULL basis.
         let registered = sqlx::query_scalar!(
             r#"
-            INSERT INTO ai_usage_machines (id, user_id, label, client_version, time_zone)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO ai_usage_machines (
+                id, user_id, label, client_version, time_zone, pricing_basis
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (id) DO UPDATE
             SET label = EXCLUDED.label,
                 client_version = EXCLUDED.client_version,
                 time_zone = EXCLUDED.time_zone,
+                pricing_basis = COALESCE(EXCLUDED.pricing_basis, ai_usage_machines.pricing_basis),
                 last_synced_at = now()
             WHERE ai_usage_machines.user_id = EXCLUDED.user_id
             RETURNING id
@@ -71,6 +77,7 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             machine.label,
             machine.client_version,
             machine.time_zone,
+            upload.pricing_basis().map(AiPricingBasis::as_str),
         )
         .fetch_optional(&mut transaction.executor())
         .await
@@ -359,18 +366,21 @@ impl AiUsageRepository for PostgresAiUsageRepository {
     ) -> Result<u64, AiUsageError> {
         let mut transaction = self.pool.begin().await.map_err(storage_error)?;
 
-        // Takes the lock an upload takes on its machine, so a repricing and an
-        // upload from one machine apply one after the other. Another user's
-        // machine, or one never uploaded, has no bucket to match.
+        // Records the repricing's basis as the machine's current one. The
+        // update takes the lock an upload takes on its machine, so a repricing
+        // and an upload from one machine apply one after the other. Another
+        // user's machine, or one never uploaded, has no bucket to match.
         let owned = sqlx::query_scalar!(
             r#"
-            SELECT id FROM ai_usage_machines
+            UPDATE ai_usage_machines
+            SET pricing_basis = $3
             WHERE id = $1
               AND user_id = $2
-            FOR NO KEY UPDATE
+            RETURNING id
             "#,
             machine_id.as_uuid(),
             user_id.as_i32(),
+            basis.as_str(),
         )
         .fetch_optional(&mut transaction.executor())
         .await
