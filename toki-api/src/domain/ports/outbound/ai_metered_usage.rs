@@ -187,7 +187,9 @@ pub trait AiMeteredUsageRepository: Send + Sync + 'static {
     /// Usage `payer` paid for (`COALESCE(billing_provider, provider)`) per
     /// user, UTC day, model and destination within `dates`, of `user` or
     /// everyone, with the cost of buckets at or after `reprice_floor` on an
-    /// old pricing basis and of buckets before it. Keys resolve as for the
+    /// old pricing basis (none, or another than their machine's current one:
+    /// the latest non-null basis of its uploads and repricings, in the order
+    /// they were applied) and of buckets before it. Keys resolve as for the
     /// bill (`AiMappingResolver` with `mapping_company` as the configured
     /// company): a project, Unassigned unmapped (key names are never
     /// returned) or unattributed; keys their user marked personal are

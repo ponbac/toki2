@@ -284,6 +284,28 @@ async fn stored_usage_is_repriced_from_the_floor_on(pool: PgPool) {
     );
     let (status, body) = discover(app.clone(), other, &query).await;
     assert_eq!((status, &body["providers"]), (StatusCode::OK, &json!([])));
+    let machine_basis = || async {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT pricing_basis FROM ai_usage_machines WHERE id = $1::uuid",
+        )
+        .bind(MACHINE)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+    assert_eq!(machine_basis().await, None);
+
+    // A repricing with nothing from the floor on still records the basis the
+    // machine prices with now.
+    let (status, body) = reprice(app.clone(), owner, &repricing(vec![bucket("08", 1, 0.5)])).await;
+    assert_eq!(
+        (status, body),
+        (
+            StatusCode::OK,
+            json!({ "updated": 0, "unmatched": 0, "beforeFloor": 1 })
+        )
+    );
+    assert_eq!(machine_basis().await.as_deref(), Some(BASIS));
 
     let (status, body) = reprice(app.clone(), owner, &new_costs).await;
     assert_eq!(

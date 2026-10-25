@@ -29,9 +29,11 @@ pub trait AiUsageService: Send + Sync + 'static {
     ) -> Result<AiRepricingStatus, AiUsageError>;
 
     /// Gives the user's stored buckets from the machine that `repricing`
-    /// reproduces exactly, from the reprice floor on, its costs and basis.
-    /// Never inserts or deletes usage, and changes nothing else. A machine the
-    /// user has not registered matches no bucket.
+    /// reproduces exactly, from the reprice floor on, its costs and basis, and
+    /// records the basis as the machine's current one, also when no bucket
+    /// lies from the floor on. Never inserts or deletes usage, and changes
+    /// nothing else. A machine the user has not registered matches no bucket
+    /// and keeps its basis.
     async fn reprice(
         &self,
         user_id: &UserId,

@@ -146,8 +146,10 @@ pub struct AiUsagePricingPayload {
     source: String,
     /// Optional in every version: names the pricing method and the rates
     /// behind every cost in the upload, opaque to Toki and compared only for
-    /// equality. Stored on each bucket the upload writes; absent or null stores
-    /// none. Compare it with stored usage through `getAiUsageRepricing`.
+    /// equality. Stored on each bucket the upload writes and as the machine's
+    /// current pricing basis; absent or null stores none on the buckets and
+    /// keeps the machine's. Compare it with stored usage through
+    /// `getAiUsageRepricing`.
     #[serde(default)]
     #[schema(min_length = 1, max_length = 128)]
     basis: Option<String>,

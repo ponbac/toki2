@@ -209,12 +209,24 @@ fn app_with_rate_settings(
     rates: Arc<FakeRates>,
     settings: AiExchangeRateSettings,
 ) -> Router {
-    app_with(pool, rates, settings, None)
+    app_with(pool, rates, settings, None, REPRICE_FLOOR)
 }
+
+/// Costs before it are never repriced, so they are on no old pricing basis.
+const REPRICE_FLOOR: OffsetDateTime = datetime!(2026-10-01 00:00 UTC);
 
 /// The routes with Copilot billed from its credits from `cutover` on, over a
 /// usage import from 1 August 2026.
 fn app_with_cutover(pool: &PgPool, cutover: Option<&str>) -> Router {
+    app_with_cutover_and_floor(pool, cutover, REPRICE_FLOOR)
+}
+
+/// As `app_with_cutover`, with costs repriced from `reprice_floor` on.
+fn app_with_cutover_and_floor(
+    pool: &PgPool,
+    cutover: Option<&str>,
+    reprice_floor: OffsetDateTime,
+) -> Router {
     app_with(
         pool,
         FakeRates::august_usd(),
@@ -223,6 +235,7 @@ fn app_with_cutover(pool: &PgPool, cutover: Option<&str>) -> Router {
             payer: AiProvider::Copilot,
             from: AiBillingMonth::parse(from).unwrap(),
         }),
+        reprice_floor,
     )
 }
 
@@ -231,6 +244,7 @@ fn app_with(
     rates: Arc<FakeRates>,
     settings: AiExchangeRateSettings,
     cutover: Option<AiMeteredCutover>,
+    reprice_floor: OffsetDateTime,
 ) -> Router {
     let db = db(pool);
     let time_zone = AiUsageTimeZone::parse("Europe/Stockholm").unwrap();
@@ -251,7 +265,7 @@ fn app_with(
             AiProvider::Copilot,
             AiMeteredReadSettings {
                 backfill_from: date!(2026 - 08 - 01),
-                reprice_floor: datetime!(2026-10-01 00:00 UTC),
+                reprice_floor,
                 mapping_company: Some(company()),
             },
         ),
@@ -2669,7 +2683,8 @@ mod copilot {
                 AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiCreditKind,
                 AiCreditStoreScope, AiDecimal, AiListedSeat, AiMappedProject, AiMeteredAmounts,
                 AiMeteredCredit, AiMeteredModel, AiMeteredOrgCharge, AiMeteredSource,
-                AiOrgChargeKind, AiProviderAccountId, AiProviderLogin, AiSeatListing, AiUsageCheck,
+                AiOrgChargeKind, AiPricingBasis, AiProviderAccountId, AiProviderLogin,
+                AiSeatListing, AiUsageCheck,
             },
             ports::outbound::{
                 AiMeteredUsageRepository, AiProviderAccountRepository,
@@ -2984,10 +2999,48 @@ mod copilot {
             .await
             .unwrap();
 
-        let copilot = |hour_start, session, key, cost| AiUsageBucket {
+        upload_ada_august(pool, ada.id, credit_day_usage(), None).await;
+
+        CopilotAugust { admin, ada }
+    }
+
+    /// Ada's GPT-6.1 Sol usage of one session in one hour.
+    fn copilot(hour_start: OffsetDateTime, session: usize, key: &str, cost: f64) -> AiUsageBucket {
+        AiUsageBucket {
             model: "gpt-6.1-sol".to_string(),
             ..bucket(hour_start, session, key, AiProvider::Copilot, 7, Some(cost))
-        };
+        }
+    }
+
+    /// Ada's Copilot usage on the credit day: 70 credits to Client A, 20
+    /// unattributed and 30 more routed to Codex.
+    fn credit_day_usage() -> Vec<AiUsageBucket> {
+        vec![
+            copilot(datetime!(2026-08-10 08:00 UTC), 0, APP, 0.7),
+            AiUsageBucket {
+                records: 2,
+                ..copilot(
+                    datetime!(2026-08-10 09:00 UTC),
+                    1,
+                    UNATTRIBUTED_PROJECT_KEY,
+                    0.2,
+                )
+            },
+            AiUsageBucket {
+                billing_provider: Some(AiProvider::Codex),
+                records: 3,
+                ..copilot(datetime!(2026-08-10 10:00 UTC), 2, APP, 0.3)
+            },
+        ]
+    }
+
+    /// Uploads `buckets` as Ada's laptop's August, priced on `basis`.
+    async fn upload_ada_august(
+        pool: &PgPool,
+        ada: UserId,
+        buckets: Vec<AiUsageBucket>,
+        basis: Option<&AiPricingBasis>,
+    ) {
         let upload = AiUsageUpload::new(
             AiMachine {
                 id: AiMachineId::parse(LAPTOP).unwrap(),
@@ -3001,23 +3054,7 @@ mod copilot {
                 fetched_at: None,
                 source: "https://example.com/prices.json".to_string(),
             },
-            vec![
-                copilot(datetime!(2026-08-10 08:00 UTC), 0, APP, 0.7),
-                AiUsageBucket {
-                    records: 2,
-                    ..copilot(
-                        datetime!(2026-08-10 09:00 UTC),
-                        1,
-                        UNATTRIBUTED_PROJECT_KEY,
-                        0.2,
-                    )
-                },
-                AiUsageBucket {
-                    billing_provider: Some(AiProvider::Codex),
-                    records: 3,
-                    ..copilot(datetime!(2026-08-10 10:00 UTC), 2, APP, 0.3)
-                },
-            ],
+            buckets,
             vec![AiProviderCoverage {
                 provider: AiProvider::Copilot,
                 status: AiCoverageStatus::Ok,
@@ -3030,13 +3067,12 @@ mod copilot {
             Vec::new(),
             AiPartialBucketCost::PricedSubtotal,
         )
-        .unwrap();
+        .unwrap()
+        .with_pricing_basis(basis.cloned());
         PostgresAiUsageRepository::new(db(pool))
-            .replace_window(&ada.id, &upload)
+            .replace_window(&ada, &upload)
             .await
             .unwrap();
-
-        CopilotAugust { admin, ada }
     }
 
     /// A metered line as `(subject, project, unassigned, kind, credits,
@@ -3610,6 +3646,82 @@ mod copilot {
                 (json!("repository"), incomplete),
             ]
         );
+        assert_eq!(overview["metered"]["provisional"], true);
+    }
+
+    #[sqlx::test]
+    async fn the_old_pricing_basis_follows_the_basis_the_machine_prices_with(pool: PgPool) {
+        // August's costs may be repriced.
+        let app =
+            app_with_cutover_and_floor(&pool, Some("2026-08"), datetime!(2026-08-01 00:00 UTC));
+        let CopilotAugust { admin, ada } = copilot_august(&app, &pool).await;
+        let admin = Caller::Session(&admin.cookie);
+        let old = AiPricingBasis::parse("copilot-rates@2026-08-01").unwrap();
+        let new = AiPricingBasis::parse("copilot-rates@2026-08-24").unwrap();
+        // Ada's client uploads August on its old rates, now with 2 credits of
+        // usage on the 20th too, then reprices the credit day alone with new
+        // rates (as after pruning the 20th): the older hours are on the
+        // machine's current basis, while the 20th, its newest usage, is left
+        // on the old one.
+        let leftover = copilot(datetime!(2026-08-20 08:00 UTC), 0, APP, 0.02);
+        upload_ada_august(
+            &pool,
+            ada.id,
+            [credit_day_usage(), vec![leftover]].concat(),
+            Some(&old),
+        )
+        .await;
+        let repriced = credit_day_usage();
+        let updated = PostgresAiUsageRepository::new(db(&pool))
+            .reprice_buckets(
+                &ada.id,
+                &AiMachineId::parse(LAPTOP).unwrap(),
+                &new,
+                &repriced.iter().collect::<Vec<_>>(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated, 3);
+        let ada_subject = json!({ "kind": "user", "userId": ada.id.as_i32() });
+        let ada_reasons = |bill: &Value| -> Vec<Value> {
+            bill["lines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|line| line["billingMode"] == "metered" && line["subject"] == ada_subject)
+                .map(|line| line["metered"]["provisionalReasons"].clone())
+                .collect()
+        };
+
+        // GitHub billed nothing on the 20th, so only the repriced hours
+        // contribute to Ada's lines, and they are current.
+        let overview = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08").await;
+        assert_eq!(ada_reasons(&overview), vec![json!([]); 4]);
+        assert_eq!(overview["metered"]["provisional"], false);
+
+        // Once GitHub bills the 20th, the leftover hour contributes on the old
+        // basis.
+        let metered = PostgresAiMeteredUsageRepository::new(db(&pool));
+        let ada_login = AiProviderLogin::parse("ada-lovelace").unwrap();
+        for scope in [
+            AiCreditStoreScope::Account {
+                id: AiProviderAccountId::new(ADA_ACCOUNT).unwrap(),
+                login: &ada_login,
+            },
+            AiCreditStoreScope::Organization,
+        ] {
+            metered
+                .replace_credit_days(
+                    AiProvider::Copilot,
+                    scope,
+                    &[(date!(2026 - 08 - 20), vec![sol("2")])],
+                    datetime!(2026-09-05 06:00 UTC),
+                )
+                .await
+                .unwrap();
+        }
+        let overview = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08").await;
+        assert_eq!(ada_reasons(&overview), vec![json!(["oldPricingBasis"]); 4]);
         assert_eq!(overview["metered"]["provisional"], true);
     }
 }
