@@ -112,8 +112,19 @@ pub trait AiMeteredUsageRepository: Send + Sync + 'static {
         fetched_at: OffsetDateTime,
     ) -> Result<bool, AiMeteredUsageError>;
 
+    /// Marks every stored check of `month` as being imported by `run`, before
+    /// the run touches any of the month's days. Each scope's next check
+    /// clears its mark; one a run left marked is interrupted (`checks`).
+    async fn mark_checks_importing(
+        &self,
+        payer: AiProvider,
+        month: AiBillingMonth,
+        run: AiImportRunId,
+    ) -> Result<(), AiMeteredUsageError>;
+
     /// Stores the latest check of an account's (or, without one, the
-    /// organization's) month against the payer's month total.
+    /// organization's) month against the payer's month total, clearing its
+    /// import mark.
     async fn record_check(
         &self,
         payer: AiProvider,
@@ -176,11 +187,17 @@ pub trait AiMeteredUsageRepository: Send + Sync + 'static {
         month: AiBillingMonth,
     ) -> Result<Option<(Vec<AiMeteredSummaryLine>, OffsetDateTime)>, AiMeteredUsageError>;
 
-    /// The latest checks of `month`, the organization's included.
+    /// The latest checks of `month`, the organization's included. A check
+    /// still marked by a run other than `importing`, the run importing now if
+    /// any, is interrupted (`AiUsageCheck::interrupted`): that run stopped or
+    /// died before finishing the scope's month. Marks of `importing` keep the
+    /// check they marked while it runs. Without `importing`, every mark
+    /// counts, as it should while the caller holds the import lock.
     async fn checks(
         &self,
         payer: AiProvider,
         month: AiBillingMonth,
+        importing: Option<AiImportRunId>,
     ) -> Result<Vec<AiUsageCheck>, AiMeteredUsageError>;
 
     /// Usage `payer` paid for (`COALESCE(billing_provider, provider)`) per

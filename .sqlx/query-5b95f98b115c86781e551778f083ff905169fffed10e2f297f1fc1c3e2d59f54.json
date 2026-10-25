@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT account_id, checked_at, payer_gross_quantity::text AS payer_gross,\n                stored_gross_quantity::text AS \"stored_gross!\", matches, error\n            FROM ai_provider_usage_checks\n            WHERE provider = $1 AND month = $2\n            ORDER BY source, account_id\n            ",
+  "query": "\n            SELECT check_row.account_id, check_row.checked_at,\n                check_row.payer_gross_quantity::text AS payer_gross,\n                check_row.stored_gross_quantity::text AS \"stored_gross!\", check_row.matches,\n                check_row.error, marker.started_at AS \"interrupted_at?\",\n                COALESCE(marker.error, 'interrupted') AS \"stop!\"\n            FROM ai_provider_usage_checks AS check_row\n            LEFT JOIN ai_provider_import_runs AS marker\n                ON marker.id = check_row.importing_run_id AND marker.id IS DISTINCT FROM $3\n            WHERE check_row.provider = $1 AND check_row.month = $2\n            ORDER BY check_row.source, check_row.account_id\n            ",
   "describe": {
     "columns": [
       {
@@ -58,12 +58,30 @@
             "name": "error"
           }
         }
+      },
+      {
+        "ordinal": 6,
+        "name": "interrupted_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "stop!",
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
         "Text",
-        "Date"
+        "Date",
+        "Int8"
       ]
     },
     "nullable": [
@@ -72,8 +90,10 @@
       null,
       null,
       true,
-      true
+      true,
+      true,
+      null
     ]
   },
-  "hash": "ee59758cad1c9c4f23885de4542fb13c4d68993ebf8399cc1df93adf98ea4230"
+  "hash": "5b95f98b115c86781e551778f083ff905169fffed10e2f297f1fc1c3e2d59f54"
 }

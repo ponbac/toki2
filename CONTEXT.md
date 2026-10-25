@@ -129,11 +129,11 @@ The per-day residual: the organization's credits minus the sum over every provid
 _Avoid_: external account, unlinked account
 
 **Payer check**:
-The latest comparison of a provider account's, or the organization's, stored days with the payer's month total: equal, different, or failed. An account's mismatch flags the account; the organization's keeps every residual day from settling, and a failed one makes them an import gap.
+The latest comparison of a provider account's, or the organization's, stored days with the payer's month total: equal, different, or failed. An *interrupted* check is a failed one that a run left behind by stopping or dying before it finished that month; unlike the account's own error, it counts whatever the account's seat, and its month is imported again. An account's mismatch flags the account; the organization's keeps every residual day from settling, and a failed one makes them an import gap.
 _Avoid_: sync check
 
 **Import freshness**:
-Whether the metered usage import is recent and complete enough to trust: fresh, or stale with the first reason (a failed run, an old success, coverage behind, an old summary, a seated account that failed).
+Whether the metered usage import is recent and complete enough to trust: fresh, or stale with the first reason (a failed run, an old success, coverage behind, an old summary, a seated account that failed or an interrupted account).
 _Avoid_: sync status
 
 **Settle lag**:

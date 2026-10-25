@@ -11,11 +11,19 @@
 //!   follow the month mode (`AiMonthMode`); an account whose month total is
 //!   empty is proved empty for every day without day calls. After each scope
 //!   the stored month is checked against the payer's month total.
+//! - **Marks.** Before touching a month's days, a run marks every stored
+//!   check of the month with its id; each scope's new check clears its mark.
+//!   A check a run left marked, because it stopped or its process died before
+//!   finishing that scope, reads as interrupted once the run is no longer
+//!   importing: no check from before vouches for days the run may have half
+//!   replaced, or for an account's days against the organization's refreshed
+//!   ones. An interrupted check counts whatever the account's seat, and its
+//!   month joins the next runs until one finishes it.
 //! - **Errors.** A rate limit, rejected credentials, a refusal, any
 //!   organization-scope error, a storage error, three `Unavailable` answers in
-//!   a row or `MAX_REQUESTS_PER_RUN` stop the run. A source error on the
-//!   organization's credits is also its check error. Other account errors are
-//!   that account's check error; the other accounts continue.
+//!   a row or `MAX_REQUESTS_PER_RUN` stop the run, which keeps the reason; the
+//!   checks it left marked read as interrupted for that reason. Other account
+//!   errors are that account's check error; the other accounts continue.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -190,6 +198,7 @@ struct Tally {
 
 /// One run in progress.
 struct Run<'a, R> {
+    id: AiImportRunId,
     repository: &'a R,
     source: &'a dyn MeteredUsageSource,
     payer: AiProvider,
@@ -397,6 +406,7 @@ impl<R: AiMeteredUsageRepository> Run<'_, R> {
             stored_gross: total_gross_quantity(&stored).ok_or_else(out_of_range)?,
             matches: Some(credit_totals_match(&aggregate, &stored)),
             error: None,
+            interrupted: false,
         };
         self.repository
             .record_check(self.payer, source, month, &check)
@@ -466,7 +476,9 @@ impl<R: AiMeteredUsageRepository> Run<'_, R> {
     }
 
     /// Imports one account's month. Errors that concern only the account
-    /// become its check error.
+    /// become its check error. One that stops the run, or a stop before or
+    /// during the import, leaves the run's mark on the check: it reads as
+    /// interrupted, for the run's reason.
     async fn import_account(
         &self,
         account_id: AiProviderAccountId,
@@ -555,52 +567,44 @@ impl<R: AiMeteredUsageRepository> Run<'_, R> {
             stored_gross: total_gross_quantity(&stored).ok_or_else(out_of_range)?,
             matches: None,
             error: Some(clip_error(error)),
+            interrupted: false,
         };
         self.repository
             .record_check(self.payer, source, month, &check)
             .await
     }
 
-    /// Imports the organization's credits of `month`. A failure from the
-    /// source stops the run and becomes the organization's check error, so
-    /// the residual never rests on days the run may have left half replaced.
+    /// Imports the organization's credits of `month`. Any failure stops the
+    /// run, leaving the run's mark on the organization's check, so the
+    /// residual never rests on days the run may have left half replaced.
     async fn import_org_credits(
         &self,
         month: AiBillingMonth,
         mode: AiMonthMode,
     ) -> Result<(), Failure> {
-        let source = AiMeteredSource::OrgCredits;
-        let result = self
-            .import_credits(
-                source,
-                AiCreditStoreScope::Organization,
-                AiMeteredScope::Organization,
-                month,
-                mode,
-            )
+        self.import_credits(
+            AiMeteredSource::OrgCredits,
+            AiCreditStoreScope::Organization,
+            AiMeteredScope::Organization,
+            month,
+            mode,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Marks the month's checks, before any of its days are touched; a month
+    /// whose checks could not be marked is not imported.
+    async fn mark_checks(&self, month: AiBillingMonth) -> bool {
+        let marked = self
+            .repository
+            .mark_checks_importing(self.payer, month, self.id)
             .await;
-        match result {
-            Ok(_) => Ok(()),
-            Err(Failure::Source(error)) => {
-                let recorded = self
-                    .record_failed_check(
-                        source,
-                        AiStoredScope::Organization,
-                        month,
-                        &error.to_string(),
-                    )
-                    .await;
-                if let Err(storage) = recorded {
-                    // The run stops for the source's error either way.
-                    tracing::warn!(
-                        error = %storage,
-                        "could not record the organization's failed usage check"
-                    );
-                }
-                Err(Failure::Source(error))
-            }
-            Err(other) => Err(other),
+        if let Err(error) = marked {
+            self.halt(AiMeteredSource::OrgCredits, error.to_string());
+            return false;
         }
+        true
     }
 
     async fn run_month(
@@ -609,6 +613,9 @@ impl<R: AiMeteredUsageRepository> Run<'_, R> {
         mode: AiMonthMode,
         accounts: &[(AiProviderAccountId, AiProviderLogin)],
     ) {
+        if !self.mark_checks(month).await {
+            return;
+        }
         self.org_step(
             AiMeteredSource::OrgCredits,
             self.import_org_credits(month, mode),
@@ -627,6 +634,20 @@ impl<R: AiMeteredUsageRepository> Run<'_, R> {
             .collect::<Vec<()>>()
             .await;
     }
+}
+
+/// What the latest checks mean for planning and coverage.
+#[derive(Default)]
+struct CheckedMonths {
+    /// Accounts whose own import of a month failed although they held no
+    /// seat in it (departed people, say): their slices of that month are not
+    /// expected, as in `coverage`, so their errors never make the import
+    /// stale or the month a gap. An interrupted check excuses no one.
+    excused: Vec<(AiProviderAccountId, AiBillingMonth)>,
+    /// Months holding an interrupted check of the organization or a stored
+    /// account: a run stopped before finishing them, so they join the next
+    /// runs until one does.
+    interrupted: Vec<AiBillingMonth>,
 }
 
 fn out_of_range() -> AiMeteredUsageError {
@@ -660,52 +681,72 @@ where
         Ok(slices)
     }
 
-    /// Accounts whose latest import of a month failed although they held no
-    /// seat in it (departed people, say): their slices of that month are not
-    /// expected, as in `coverage`, so their errors never make the import
-    /// stale or the month a gap.
-    async fn excused(
+    /// What every month's latest checks mean for planning and coverage. The
+    /// caller holds the import lock outside of any month's import (its own
+    /// run, if any, is done importing), so every mark left counts.
+    async fn checked_months(
         &self,
         accounts: &[AiStoredProviderAccount],
         today: Date,
-    ) -> Result<Vec<(AiProviderAccountId, AiBillingMonth)>, AiMeteredUsageError> {
-        let mut excused = Vec::new();
+    ) -> Result<CheckedMonths, AiMeteredUsageError> {
+        let mut checked = CheckedMonths::default();
         for month in self.repository.months(self.payer).await? {
-            for check in self.repository.checks(self.payer, month).await? {
-                let Some(account_id) = check.account_id.filter(|_| check.error.is_some()) else {
-                    continue;
+            for check in self.repository.checks(self.payer, month, None).await? {
+                // Checks of accounts no longer stored are never imported again.
+                let account = match check.account_id {
+                    None => None,
+                    Some(account_id) => {
+                        match accounts
+                            .iter()
+                            .find(|account| account.account_id == account_id)
+                        {
+                            Some(account) => Some(account),
+                            None => continue,
+                        }
+                    }
                 };
-                let unseated = accounts
-                    .iter()
-                    .find(|account| account.account_id == account_id)
-                    .is_some_and(|account| !held_seat_in(account, month, today));
-                if unseated {
-                    excused.push((account_id, month));
+                if check.interrupted {
+                    if !checked.interrupted.contains(&month) {
+                        checked.interrupted.push(month);
+                    }
+                } else if let Some(account) = account {
+                    if check.error.is_some() && !held_seat_in(account, month, today) {
+                        checked.excused.push((account.account_id, month));
+                    }
                 }
             }
         }
-        Ok(excused)
+        Ok(checked)
     }
 
-    /// The slices an import should hold through `today`.
-    async fn expected_slices(
+    /// The slices an import should hold through `today`, but those of the
+    /// `excused` accounts' months.
+    fn expected_slices(
         &self,
         accounts: &[AiStoredProviderAccount],
         today: Date,
-    ) -> Result<AiExpectedSlices, AiMeteredUsageError> {
+        excused: Vec<(AiProviderAccountId, AiBillingMonth)>,
+    ) -> AiExpectedSlices {
         let ids: Vec<AiProviderAccountId> =
             accounts.iter().map(|account| account.account_id).collect();
-        Ok(
-            AiExpectedSlices::new(&ids, self.settings.backfill_from, today)
-                .excusing(self.excused(accounts, today).await?),
-        )
+        AiExpectedSlices::new(&ids, self.settings.backfill_from, today).excusing(excused)
     }
 
+    /// Months holding an expected slice never fetched, or an interrupted
+    /// check, oldest first.
     async fn gaps(&self, today: Date) -> Result<Vec<AiBillingMonth>, AiMeteredUsageError> {
         let accounts = self.accounts.accounts(self.payer).await?;
-        let expected = self.expected_slices(&accounts, today).await?;
+        let checked = self.checked_months(&accounts, today).await?;
+        let expected = self.expected_slices(&accounts, today, checked.excused);
         let slices = self.all_slices(today).await?;
-        Ok(gap_months(&expected, &AiSliceSet::fetched(&slices)))
+        let mut gaps = gap_months(&expected, &AiSliceSet::fetched(&slices));
+        for month in checked.interrupted {
+            if !gaps.contains(&month) {
+                gaps.push(month);
+            }
+        }
+        gaps.sort_by_key(|month| month.first_day());
+        Ok(gaps)
     }
 
     /// Records a run of `plan` as running now.
@@ -749,6 +790,7 @@ where
             .map(|account| (account.account_id, account.login.clone()))
             .collect();
         let run = Run {
+            id: run_id,
             repository: self.repository.as_ref(),
             source,
             payer: self.payer,
@@ -781,7 +823,8 @@ where
         }
 
         // Coverage after the run, from the stored slices.
-        let expected = self.expected_slices(&stored_accounts, today).await?;
+        let checked = self.checked_months(&stored_accounts, today).await?;
+        let expected = self.expected_slices(&stored_accounts, today, checked.excused);
         let slices = self.all_slices(today).await?;
         let complete = AiSliceSet::complete(&slices);
         let stop = run.stop.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -887,11 +930,12 @@ where
         org_slices: &[AiSliceRecord],
         checks: &[AiUsageCheck],
     ) -> BTreeMap<Date, AiDayCoverage> {
-        // An account whose import failed without a seat in the month is not
-        // expected: its error is informational.
+        // An account whose own import failed without a seat in the month is
+        // not expected: its error is informational. An interrupted check is no
+        // answer of the account's own, so it stays expected.
         let informational: HashSet<AiProviderAccountId> = checks
             .iter()
-            .filter(|check| check.error.is_some())
+            .filter(|check| check.error.is_some() && !check.interrupted)
             .filter_map(|check| check.account_id)
             .filter(|account_id| {
                 accounts
@@ -950,6 +994,7 @@ where
                     month: error.month,
                     error: error.error.clone(),
                     seated: held_seat_in(account, error.month, today),
+                    interrupted: error.interrupted,
                 })
             })
             .collect();
@@ -1022,9 +1067,11 @@ where
             .repository
             .account_credits(self.payer, dates, focus.is_some().then_some(ids.as_slice()))
             .await?;
+        // The running run's marks keep the checks they marked while it runs.
+        let importing = status.running.as_ref().map(|run| run.id);
         let checks: Vec<AiUsageCheck> = self
             .repository
-            .checks(self.payer, month)
+            .checks(self.payer, month, importing)
             .await?
             .into_iter()
             .filter(|check| {

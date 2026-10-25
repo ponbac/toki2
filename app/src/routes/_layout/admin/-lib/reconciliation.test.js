@@ -3,6 +3,7 @@ import { formatInstant } from "./format.ts";
 import {
   FLAG_LABELS,
   accountsWithErrors,
+  blocksImport,
   canImport,
   checkState,
   creditHundredths,
@@ -264,6 +265,7 @@ describe("freshness", () => {
       month,
       error: "not found",
       seated: true,
+      interrupted: false,
     });
     expect(
       accountsWithErrors([
@@ -272,6 +274,19 @@ describe("freshness", () => {
         error("alan-turing", "2026-10"),
       ]),
     ).toBe(2);
+  });
+
+  test("an account's own error counts with a seat, a stopped run's always", () => {
+    const error = (seated, interrupted) => ({
+      login: "grace-hopper",
+      month: "2026-09",
+      error: "not found",
+      seated,
+      interrupted,
+    });
+    expect(blocksImport(error(true, false))).toBe(true);
+    expect(blocksImport(error(false, false))).toBe(false);
+    expect(blocksImport(error(false, true))).toBe(true);
   });
 
   test("says why a month has no GitHub data, never that an account is missing", () => {

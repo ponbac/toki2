@@ -708,6 +708,7 @@ async fn runs_are_recorded_and_leftovers_marked_interrupted(pool: PgPool) {
                 stored_gross: dec("1.5"),
                 matches: None,
                 error: Some("GitHub knows no Copilot usage for ada-lovelace".to_string()),
+                interrupted: false,
             },
         )
         .await
@@ -724,6 +725,7 @@ async fn runs_are_recorded_and_leftovers_marked_interrupted(pool: PgPool) {
                 stored_gross: dec("12.345678912"),
                 matches: Some(true),
                 error: None,
+                interrupted: false,
             },
         )
         .await
@@ -777,6 +779,7 @@ async fn runs_are_recorded_and_leftovers_marked_interrupted(pool: PgPool) {
             account_id: account(1001),
             month: october(),
             error: "GitHub knows no Copilot usage for ada-lovelace".to_string(),
+            interrupted: false,
         }]
     );
     let accounts = status
@@ -794,7 +797,7 @@ async fn runs_are_recorded_and_leftovers_marked_interrupted(pool: PgPool) {
         .unwrap();
     assert_eq!(org.last_success_at, run.finished_at);
 
-    let checks = repository.checks(COPILOT, october()).await.unwrap();
+    let checks = repository.checks(COPILOT, october(), None).await.unwrap();
     assert_eq!(checks.len(), 2);
     let org_check = checks
         .iter()

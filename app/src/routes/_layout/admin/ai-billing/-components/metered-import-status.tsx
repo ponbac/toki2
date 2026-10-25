@@ -28,6 +28,7 @@ import {
 } from "../../-lib/format";
 import {
   accountsWithErrors,
+  blocksImport,
   canImport,
   freshnessBadge,
   freshnessText,
@@ -199,7 +200,7 @@ function ImportDetails({ data }: { data: AiMeteredMonth }) {
   const [open, setOpen] = React.useState(false);
   const id = React.useId();
   const imported = data.import;
-  const seatedErrors = imported.accountErrors.filter((error) => error.seated);
+  const blockingErrors = imported.accountErrors.filter(blocksImport);
   const last = imported.lastRun;
   if (imported.sources.length === 0 && last === null) {
     return null;
@@ -222,8 +223,8 @@ function ImportDetails({ data }: { data: AiMeteredMonth }) {
           aria-hidden
         />
         Import details
-        {seatedErrors.length > 0 &&
-          ` · ${plural(accountsWithErrors(seatedErrors), "account")} not imported`}
+        {blockingErrors.length > 0 &&
+          ` · ${plural(accountsWithErrors(blockingErrors), "account")} not imported`}
       </button>
       {open && (
         <div
@@ -313,7 +314,12 @@ function ImportDetails({ data }: { data: AiMeteredMonth }) {
                         <span className="text-xs text-muted-foreground">
                           {monthLabel(error.month)}
                         </span>
-                        {error.seated ? (
+                        {error.interrupted ? (
+                          <StatusBadge
+                            tone="warning"
+                            label="Run stopped: imported again next run"
+                          />
+                        ) : error.seated ? (
                           <StatusBadge tone="warning" label="Held a seat" />
                         ) : (
                           <StatusBadge

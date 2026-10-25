@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_provider_usage_checks (\n                provider, source, account_id, month, checked_at, payer_gross_quantity,\n                stored_gross_quantity, matches, error\n            )\n            VALUES ($1, $2, $3, $4, $5, $6::text::numeric, $7::text::numeric, $8, $9)\n            ON CONFLICT (provider, source, account_id, month) DO UPDATE\n            SET checked_at = EXCLUDED.checked_at,\n                payer_gross_quantity = EXCLUDED.payer_gross_quantity,\n                stored_gross_quantity = EXCLUDED.stored_gross_quantity,\n                matches = EXCLUDED.matches,\n                error = EXCLUDED.error,\n                importing_run_id = NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8",
+        "Date",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "573d7da61ec7aeb464e8af8618d587caa11c348684a2e1f26cf825ed6fd9b40c"
+}
