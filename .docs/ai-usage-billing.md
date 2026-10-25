@@ -437,9 +437,22 @@ month therefore cannot match GitHub's month totals, and the checks show it.
   when GitHub's month total differs from the stored one, the open days (from today
   minus the settle days through today); then, if it still differs, every day.
   Settle days are the larger of 3 and the observed settle lag of account credits.
-- Nightly, from 02:00 UTC until one succeeds (`Full`): every day of the current
+- Nightly, from 02:00 UTC until one runs to the end (`Full`): every day of the current
   month, and of the previous month for 30 days after it ended, catching GitHub's late
-  corrections.
+  corrections, including usage moved between days without changing a month total,
+  which change detection cannot see. A nightly run that stopped (below) did not
+  finish the refresh, even when it is partial, so the next scheduled run is nightly
+  again. Account errors that let the other accounts continue still count as finishing
+  it. The failed account's month is tried again by the next run that imports the
+  month: hourly change detection for the current month, and for the previous month
+  within the settle days; otherwise the next night. An account that held a seat makes
+  the import stale while its error is from the latest run. A stop that recurs makes
+  every run from 02:00 UTC to midnight a nightly one. Runs import their months oldest
+  first, so a recurring stop in the previous month leaves the current month to the
+  hourly runs before 02:00 UTC (the import goes stale once the current month's summary
+  is more than 3 hours old). Likewise, once a nightly run needs more than 4,000
+  requests, every retry stops near the same point and leaves what follows to those
+  runs.
 - Months holding a slice never fetched join any run in `Changes` mode, so only the
   scopes with gaps fetch days: the first run backfills, and an account listed later
   costs one month total per month plus its own days.

@@ -1505,14 +1505,20 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         &self,
         payer: AiProvider,
     ) -> Result<AiImportStatus, AiMeteredUsageError> {
+        // A run's `error` is why it stopped, so a nightly run that stopped
+        // (a rate limit, the request cap, ...) never counts as the night's
+        // refresh, while one with only account errors does.
         let history = sqlx::query!(
             r#"
             SELECT
                 max(started_at) AS last_attempt_at,
                 max(finished_at) FILTER (WHERE status IN ('succeeded', 'partial'))
                     AS last_success_at,
-                max(started_at) FILTER (WHERE kind = 'nightly' AND status IN ('succeeded', 'partial'))
-                    AS last_nightly_success_at
+                max(started_at) FILTER (
+                    WHERE kind = 'nightly'
+                      AND status IN ('succeeded', 'partial')
+                      AND error IS NULL
+                ) AS last_nightly_success_at
             FROM ai_provider_import_runs
             WHERE provider = $1
             "#,

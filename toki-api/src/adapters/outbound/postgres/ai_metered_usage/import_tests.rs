@@ -1047,6 +1047,35 @@ async fn the_scheduler_imports_only_when_due(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn a_nightly_run_that_stopped_is_retried_in_full(pool: PgPool) {
+    let setup = setup(&pool, date!(2026 - 10 - 01));
+    october_fixture(&pool, &setup.source).await;
+    // The organization's steps finish, then GitHub rate-limits an account.
+    setup.source.fail(
+        "credits grace-hopper 2026-10",
+        MeteredUsageSourceError::RateLimited { retry_after: None },
+    );
+    let run = setup.service.import_if_due().await.unwrap().unwrap();
+    assert_eq!(run.kind, AiImportKind::Nightly);
+    assert_eq!(run.status, AiRunStatus::Partial, "{:?}", run.error);
+
+    // The full refresh did not finish, so the next scheduled run retries it
+    // instead of detecting changes, which misses days whose usage moved
+    // without changing the month totals.
+    setup.source.failures.lock().unwrap().clear();
+    setup.at(NOW + Duration::hours(1));
+    let run = setup.service.import_if_due().await.unwrap().unwrap();
+    assert_eq!(run.kind, AiImportKind::Nightly);
+    assert_eq!(run.months, [(month("2026-10"), AiMonthMode::Full)]);
+    assert_eq!(run.status, AiRunStatus::Succeeded, "{:?}", run.error);
+
+    // Done for the night.
+    setup.at(NOW + Duration::hours(2));
+    let run = setup.service.import_if_due().await.unwrap().unwrap();
+    assert_eq!(run.kind, AiImportKind::Hourly);
+}
+
+#[sqlx::test]
 async fn coverage_and_the_settle_lag_are_recorded_per_source(pool: PgPool) {
     let setup = setup(&pool, date!(2026 - 10 - 01));
     october_fixture(&pool, &setup.source).await;
