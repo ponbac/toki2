@@ -186,7 +186,9 @@ pub trait AiMeteredUsageRepository: Send + Sync + 'static {
     /// Usage `payer` paid for (`COALESCE(billing_provider, provider)`) per
     /// user, UTC day and model within `dates`, personal keys included, of
     /// `user` or everyone, with the cost of buckets at or after
-    /// `reprice_floor` on an old pricing basis and of buckets before it.
+    /// `reprice_floor` on an old pricing basis (none, or another than their
+    /// machine's current one: the latest non-null basis of its uploads and
+    /// repricings, in the order they were applied) and of buckets before it.
     async fn tracked_usage(
         &self,
         payer: AiProvider,

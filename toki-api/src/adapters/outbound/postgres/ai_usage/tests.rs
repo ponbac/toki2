@@ -782,7 +782,8 @@ async fn stored_costs(pool: &PgPool) -> Vec<StoredCost> {
     .unwrap()
 }
 
-/// Every stored row other than buckets, sync times included.
+/// Every stored row other than buckets, sync times included, without the
+/// machine's current pricing basis.
 async fn sync_state(pool: &PgPool) -> Vec<String> {
     sqlx::query_scalar(
         "SELECT row_to_json(h)::text FROM (
@@ -795,7 +796,9 @@ async fn sync_state(pool: &PgPool) -> Vec<String> {
          UNION ALL
          SELECT row_to_json(l)::text FROM (SELECT * FROM ai_usage_coverage_log ORDER BY id) l
          UNION ALL
-         SELECT row_to_json(m)::text FROM (SELECT * FROM ai_usage_machines ORDER BY id) m",
+         SELECT (to_jsonb(m) - 'pricing_basis')::text FROM (
+             SELECT * FROM ai_usage_machines ORDER BY id
+         ) m",
     )
     .fetch_all(pool)
     .await
@@ -845,6 +848,76 @@ async fn an_upload_stores_its_pricing_basis_on_every_bucket(pool: PgPool) {
             (MACHINE_A.to_string(), "codex".to_string(), new()),
         ]
     );
+}
+
+/// The current pricing basis of `machine_id`.
+async fn machine_basis(pool: &PgPool, machine_id: &str) -> Option<String> {
+    sqlx::query_scalar("SELECT pricing_basis FROM ai_usage_machines WHERE id = $1::uuid")
+        .bind(machine_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test]
+async fn the_latest_basis_uploaded_or_repriced_is_the_machines_pricing_basis(pool: PgPool) {
+    let repository = repository(&pool);
+    let user = insert_user(&pool, "dev@example.com").await;
+    let intruder = insert_user(&pool, "intruder@example.com").await;
+    let hour = datetime!(2026-09-22 08:00 UTC);
+    let synced = |pricing_basis: Option<&str>, snapshot_at| {
+        upload(
+            MACHINE_A,
+            "laptop",
+            WINDOW,
+            vec![bucket(hour, 2, Some(0.2))],
+            Vec::new(),
+        )
+        .with_pricing_basis(pricing_basis.map(basis))
+        .with_snapshot_at(snapshot_at)
+    };
+
+    repository
+        .replace_window(
+            &user,
+            &synced(Some("v1"), Some(datetime!(2026-09-22 10:00 UTC))),
+        )
+        .await
+        .unwrap();
+    assert_eq!(machine_basis(&pool, MACHINE_A).await.as_deref(), Some("v1"));
+
+    // A repricing sets its basis even when no bucket matches.
+    let unmatched = bucket(datetime!(2026-09-22 09:00 UTC), 1, Some(0.1));
+    let updated = repository
+        .reprice_buckets(&user, &machine(MACHINE_A), &basis("v2"), &[&unmatched])
+        .await
+        .unwrap();
+    assert_eq!(updated, 0);
+    assert_eq!(machine_basis(&pool, MACHINE_A).await.as_deref(), Some("v2"));
+
+    // Neither another user's repricing nor a refused upload changes it.
+    repository
+        .reprice_buckets(&intruder, &machine(MACHINE_A), &basis("v3"), &[])
+        .await
+        .unwrap();
+    assert!(matches!(
+        repository
+            .replace_window(
+                &user,
+                &synced(Some("v3"), Some(datetime!(2026-09-22 09:00 UTC))),
+            )
+            .await,
+        Err(AiUsageError::SupersededUpload)
+    ));
+    assert_eq!(machine_basis(&pool, MACHINE_A).await.as_deref(), Some("v2"));
+
+    // An upload without a basis, as from a run priced without vendor rates,
+    // keeps the machine's.
+    repository
+        .replace_window(&user, &synced(None, None))
+        .await
+        .unwrap();
+    assert_eq!(machine_basis(&pool, MACHINE_A).await.as_deref(), Some("v2"));
 }
 
 #[sqlx::test]

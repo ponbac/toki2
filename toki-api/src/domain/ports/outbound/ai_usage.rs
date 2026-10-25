@@ -10,13 +10,15 @@ use crate::domain::{
 
 #[async_trait]
 pub trait AiUsageRepository: Send + Sync + 'static {
-    /// Atomically registers or updates the machine for `user_id` and records the
-    /// coverage of every provider the upload reports. For each replaced provider
+    /// Atomically registers or updates the machine for `user_id`, with the
+    /// upload's pricing basis, when it has one, as the machine's current one
+    /// (an upload without one keeps the machine's), and records the coverage of
+    /// every provider the upload reports. For each replaced provider
     /// (`AiUsageUpload::replaced_providers`), records the upload's pricing,
     /// deletes the machine's buckets and hints inside the upload window, and
-    /// inserts the upload's, each with the upload's pricing basis. It also logs,
-    /// per replaced provider, the interval the upload proves complete: the
-    /// window, ending no later than now. Other providers' stored usage and
+    /// inserts the upload's, each with the upload's pricing basis. It also
+    /// logs, per replaced provider, the interval the upload proves complete:
+    /// the window, ending no later than now. Other providers' stored usage and
     /// pricing are untouched. Returns the number of buckets stored.
     ///
     /// Fails with `MachineOwnedByAnotherUser`, and changes nothing, when another
@@ -41,13 +43,15 @@ pub trait AiUsageRepository: Send + Sync + 'static {
         floor: OffsetDateTime,
     ) -> Result<Vec<AiProviderRepricing>, AiUsageError>;
 
-    /// In one transaction, sets the cost, unpriced record count and `basis` of
-    /// each stored bucket of `user_id` from `machine_id` that has the same key
-    /// (hour, session, project, provider, model and payer), the same token
-    /// counts and the same record count as one of `buckets`. Inserts and
-    /// deletes nothing, and leaves the machine, its coverage and its hints
-    /// alone. Returns how many stored buckets matched, including any whose
-    /// values were equal already. Bucket keys must be unique.
+    /// In one transaction, sets the current pricing basis of `machine_id` to
+    /// `basis` when `user_id` registered it, also when `buckets` is empty, and
+    /// sets the cost, unpriced record count and `basis` of each stored bucket
+    /// of `user_id` from `machine_id` that has the same key (hour, session,
+    /// project, provider, model and payer), the same token counts and the same
+    /// record count as one of `buckets`. Inserts and deletes nothing, and
+    /// leaves the machine's other fields, its coverage and its hints alone.
+    /// Returns how many stored buckets matched, including any whose values
+    /// were equal already. Bucket keys must be unique.
     async fn reprice_buckets(
         &self,
         user_id: &UserId,

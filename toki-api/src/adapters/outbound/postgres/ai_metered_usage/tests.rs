@@ -7,11 +7,16 @@ use time::{
 use super::*;
 use crate::{
     adapters::outbound::postgres::{
-        ai_usage_fixtures::insert_user, PostgresAiProviderAccountRepository,
+        ai_usage_fixtures::{bucket, insert_user},
+        PostgresAiProviderAccountRepository, PostgresAiUsageRepository,
     },
     domain::{
-        models::{AiProviderLogin, AiSourceStatus},
-        ports::outbound::AiProviderAccountRepository,
+        models::{
+            AiCoverageStatus, AiMachine, AiMachineId, AiPartialBucketCost, AiPricing,
+            AiPricingBasis, AiPricingStatus, AiProviderCoverage, AiProviderLogin, AiSourceStatus,
+            AiUsageBucket, AiUsageUpload, AiUsageWindow,
+        },
+        ports::outbound::{AiProviderAccountRepository, AiUsageRepository},
     },
 };
 
@@ -802,13 +807,15 @@ async fn runs_are_recorded_and_leftovers_marked_interrupted(pool: PgPool) {
 const MACHINE: &str = "5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a";
 const OTHER_MACHINE: &str = "6a1d6b2f-4c9f-4e9f-8b68-1e8c2d2f3f4b";
 
-async fn insert_machine(pool: &PgPool, user: UserId, machine: &str) {
+/// A machine whose latest upload carried `basis`.
+async fn insert_machine(pool: &PgPool, user: UserId, machine: &str, basis: Option<&str>) {
     sqlx::query(
-        "INSERT INTO ai_usage_machines (id, user_id, label, client_version, time_zone)
-         VALUES ($1::uuid, $2, 'laptop', '0.10.0', 'Europe/Stockholm')",
+        "INSERT INTO ai_usage_machines (id, user_id, label, client_version, time_zone, pricing_basis)
+         VALUES ($1::uuid, $2, 'laptop', '0.10.0', 'Europe/Stockholm', $3)",
     )
     .bind(machine)
     .bind(user.as_i32())
+    .bind(basis)
     .execute(pool)
     .await
     .unwrap();
@@ -851,8 +858,10 @@ async fn insert_bucket(
 async fn tracked_usage_is_what_the_payer_paid_for_with_the_old_basis_apart(pool: PgPool) {
     let ada = insert_user(&pool, "ada@example.com", "User").await;
     let grace = insert_user(&pool, "grace@example.com", "User").await;
-    insert_machine(&pool, ada, MACHINE).await;
-    insert_machine(&pool, grace, OTHER_MACHINE).await;
+    let new_basis = Some("copilot-rates@2026-10-24");
+    insert_machine(&pool, ada, MACHINE, new_basis).await;
+    // Grace's machine has never sent a basis.
+    insert_machine(&pool, grace, OTHER_MACHINE, None).await;
     // Ada's personal key still counts: the payer paid for it.
     sqlx::query(
         "INSERT INTO ai_personal_project_keys (user_id, project_key)
@@ -863,9 +872,8 @@ async fn tracked_usage_is_what_the_payer_paid_for_with_the_old_basis_apart(pool:
     .await
     .unwrap();
     let floor = datetime!(2026-10-01 00:00 UTC);
-    let new_basis = Some("copilot-rates@2026-10-24");
-    // Ada's machine: Copilot on an old basis, then on the new one; its latest
-    // basis comes from OpenCode routed through Copilot.
+    // Ada's machine: Copilot on an old basis, then on the new one, also for
+    // OpenCode routed through Copilot.
     for (hour, provider, payer, model, cost, basis) in [
         // Before the floor: never repriced.
         (
@@ -933,7 +941,6 @@ async fn tracked_usage_is_what_the_payer_paid_for_with_the_old_basis_apart(pool:
         )
         .await;
     }
-    // Grace's machine has never sent a basis.
     insert_bucket(
         &pool,
         grace,
@@ -975,7 +982,7 @@ async fn tracked_usage_is_what_the_payer_paid_for_with_the_old_basis_apart(pool:
     let fifth = find(ada, date!(2026 - 10 - 05), "gpt-6.1-sol");
     // 3 + 4 + 0.5 (OpenCode through Copilot); Copilot through Codex left out.
     assert_eq!(fifth.priced_cost.nanos(), 7_500_000_000);
-    // Only the bucket on a basis other than the machine's latest is old.
+    // Only the bucket on a basis other than the machine's current one is old.
     assert_eq!(fifth.old_basis_cost.nanos(), usd(3));
     assert_eq!(fifth.old_basis_buckets, 1);
     assert_eq!(fifth.records, 6);
@@ -994,4 +1001,154 @@ async fn tracked_usage_is_what_the_payer_paid_for_with_the_old_basis_apart(pool:
         .await
         .unwrap();
     assert_eq!(only_grace.len(), 1);
+}
+
+/// Uploads Copilot usage of `machine` over `window`, priced on `basis`.
+async fn upload_copilot(
+    pool: &PgPool,
+    user: UserId,
+    machine: &str,
+    window: (OffsetDateTime, OffsetDateTime),
+    buckets: Vec<AiUsageBucket>,
+    basis: Option<&AiPricingBasis>,
+) {
+    let upload = AiUsageUpload::new(
+        AiMachine {
+            id: AiMachineId::parse(machine).unwrap(),
+            label: "laptop".to_string(),
+            client_version: "0.10.0".to_string(),
+            time_zone: "Europe/Stockholm".to_string(),
+        },
+        AiUsageWindow::new(window.0, window.1).unwrap(),
+        AiPricing {
+            status: AiPricingStatus::Fresh,
+            fetched_at: None,
+            source: "https://example.com/prices.json".to_string(),
+        },
+        buckets,
+        vec![AiProviderCoverage {
+            provider: COPILOT,
+            status: AiCoverageStatus::Ok,
+            files: 1,
+            unreadable: 0,
+            malformed_lines: 0,
+            skipped_records: 0,
+            duplicates: 0,
+        }],
+        Vec::new(),
+        AiPartialBucketCost::PricedSubtotal,
+    )
+    .unwrap()
+    .with_pricing_basis(basis.cloned());
+    PostgresAiUsageRepository::new(DbPool::from(pool.clone()))
+        .replace_window(&user, &upload)
+        .await
+        .unwrap();
+}
+
+fn copilot_bucket(hour: OffsetDateTime, cost: f64) -> AiUsageBucket {
+    AiUsageBucket {
+        provider: COPILOT,
+        model: "gpt-6.1-sol".to_string(),
+        ..bucket(hour, "github.com/example/widget-api", 2, Some(cost))
+    }
+}
+
+#[sqlx::test]
+async fn the_old_basis_is_any_but_the_latest_basis_the_machine_sent(pool: PgPool) {
+    let ada = insert_user(&pool, "ada@example.com", "User").await;
+    let grace = insert_user(&pool, "grace@example.com", "User").await;
+    let floor = datetime!(2026-10-01 00:00 UTC);
+    let (earlier, later) = (
+        datetime!(2026-10-04 08:00 UTC),
+        datetime!(2026-10-05 08:00 UTC),
+    );
+    let old = AiPricingBasis::parse("copilot-rates@2026-10-01").unwrap();
+    let new = AiPricingBasis::parse("copilot-rates@2026-10-24").unwrap();
+    for (user, machine) in [(ada, MACHINE), (grace, OTHER_MACHINE)] {
+        upload_copilot(
+            &pool,
+            user,
+            machine,
+            (
+                datetime!(2026-10-04 00:00 UTC),
+                datetime!(2026-10-06 00:00 UTC),
+            ),
+            vec![copilot_bucket(earlier, 1.0), copilot_bucket(later, 2.0)],
+            Some(&old),
+        )
+        .await;
+    }
+    // New rates reach only the earlier hour, so the later one keeps the old
+    // basis although it holds the machine's newest usage. Ada's repricing
+    // finds nothing to match there (as after pruned history); Grace's client
+    // uploads a window around the earlier hour alone.
+    let updated = PostgresAiUsageRepository::new(DbPool::from(pool.clone()))
+        .reprice_buckets(
+            &ada,
+            &AiMachineId::parse(MACHINE).unwrap(),
+            &new,
+            &[&copilot_bucket(earlier, 1.5)],
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated, 1);
+    upload_copilot(
+        &pool,
+        grace,
+        OTHER_MACHINE,
+        (
+            datetime!(2026-10-04 00:00 UTC),
+            datetime!(2026-10-05 00:00 UTC),
+        ),
+        vec![copilot_bucket(earlier, 1.5)],
+        Some(&new),
+    )
+    .await;
+    // A later run priced without vendor rates sends no basis: its own bucket
+    // is old, but the machine keeps the basis it reprices with.
+    let unrated = datetime!(2026-10-06 08:00 UTC);
+    upload_copilot(
+        &pool,
+        ada,
+        MACHINE,
+        (
+            datetime!(2026-10-06 00:00 UTC),
+            datetime!(2026-10-07 00:00 UTC),
+        ),
+        vec![copilot_bucket(unrated, 3.0)],
+        None,
+    )
+    .await;
+
+    let dates =
+        AiUsageDateRange::from_inclusive(date!(2026 - 10 - 04), date!(2026 - 10 - 06)).unwrap();
+    let rows = repository(&pool)
+        .tracked_usage(COPILOT, dates, floor, None)
+        .await
+        .unwrap();
+    let old_basis: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.user_id,
+                row.day,
+                row.old_basis_buckets,
+                row.old_basis_cost.nanos(),
+            )
+        })
+        .collect();
+
+    // Only the later hour, still on the basis the machine no longer prices
+    // with, and the hour without a basis are old.
+    assert_eq!(
+        old_basis,
+        [
+            (ada, date!(2026 - 10 - 04), 0, 0),
+            (ada, date!(2026 - 10 - 05), 1, 2_000_000_000),
+            (ada, date!(2026 - 10 - 06), 1, 3_000_000_000),
+            (grace, date!(2026 - 10 - 04), 0, 0),
+            (grace, date!(2026 - 10 - 05), 1, 2_000_000_000),
+        ]
+    );
 }

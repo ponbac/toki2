@@ -170,8 +170,9 @@ pub async fn get_repricing(
 /// the same four token counts and the same record count; Copilot's next edit
 /// suggestions are stored at no cost, as in an upload. The request is applied
 /// in one transaction. It never inserts or deletes usage and changes no
-/// coverage, hints, snapshot or sync time. Buckets of a machine you have not
-/// registered match nothing.
+/// coverage, hints, snapshot or sync time, but records the basis as the
+/// machine's current pricing basis, also when no bucket lies from the floor
+/// on. Buckets of a machine you have not registered match nothing.
 #[utoipa::path(
     post,
     path = "/ai-usage/machines/{machine_id}/repricing",

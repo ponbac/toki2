@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_usage_machines (\n                id, user_id, label, client_version, time_zone, pricing_basis\n            )\n            VALUES ($1, $2, $3, $4, $5, $6)\n            ON CONFLICT (id) DO UPDATE\n            SET label = EXCLUDED.label,\n                client_version = EXCLUDED.client_version,\n                time_zone = EXCLUDED.time_zone,\n                pricing_basis = COALESCE(EXCLUDED.pricing_basis, ai_usage_machines.pricing_basis),\n                last_synced_at = now()\n            WHERE ai_usage_machines.user_id = EXCLUDED.user_id\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_machines",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ac3aaa8668f0412cedadacfa6fb89f08e173ca73bc9bf1ad9d9abf820f37a0d1"
+}
