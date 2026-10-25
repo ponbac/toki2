@@ -45,13 +45,15 @@
 //!   minus every account's, code review left out) over settled and provisional
 //!   days bills as one "unknown account" line when it is positive.
 //! - **Provisional.** An account's lines are provisional while the month is
-//!   in progress, a day's import is missing or incomplete, a day may still
+//!   in progress, a day's import is missing or incomplete (a run stopping
+//!   before it finished the account's month included), a day may still
 //!   change (within the settle days, or the account's month total is not
 //!   confirmed), a contributing bucket is on an old pricing basis, a
 //!   provisional model contributed, or a row is unrecognized
 //!   (`AiMeteredProvisional`). The allocation as a whole is also provisional
 //!   while the unknown account's residual is (an organization slice missing
-//!   or incomplete, its month total failed or unconfirmed), even when the
+//!   or incomplete, its month total failed or unconfirmed, a seated
+//!   account's import failed or an account's was interrupted), even when the
 //!   residual bills no line: a residual that is not computed yet is no
 //!   settled zero. Likewise for repository credits, from the organization's
 //!   usage slices: a missing one is no settled zero either; and an
@@ -137,8 +139,9 @@ pub enum AiMeteredChargeKind {
 pub enum AiMeteredProvisional {
     /// The UTC month has not ended.
     MonthInProgress,
-    /// A day's slice is missing or not yet complete, or days before the
-    /// import's backfill are not imported.
+    /// A day's slice is missing or not yet complete, a run stopped before
+    /// finishing the account's month, or days before the import's backfill
+    /// are not imported.
     ImportIncomplete,
     /// A day is within the settle days, or the stored month is not confirmed
     /// by the payer's month total (absent, failed or different).
@@ -425,6 +428,11 @@ pub fn allocate_metered_credits(
             if !confirmed {
                 reasons.insert(AiMeteredProvisional::NotSettled);
             }
+        }
+        // A run stopped before finishing the account's month: its days may be
+        // half replaced, whatever their slices say.
+        if account_walk.check.is_some_and(|check| check.interrupted) {
+            reasons.insert(AiMeteredProvisional::ImportIncomplete);
         }
 
         let mut sinks: HashMap<SinkKey, Sink> = HashMap::new();
@@ -812,7 +820,7 @@ fn unknown_account(
         &accounts,
         ResidualTrust {
             settling_from: walk.settling_from,
-            seated_errors: walk.seated_errors,
+            import_failed: walk.import_failed,
             org_check: walk.org_check,
         },
     )?;
@@ -878,7 +886,11 @@ fn unknown_account(
 /// organization's usage slice or with an incomplete one (or days before the
 /// backfill), days within the settle days, and an unrecognized row naming a
 /// repository (code review under a SKU or unit Toki does not know bills
-/// nowhere, so it is flagged, never dropped).
+/// nowhere, so it is flagged, never dropped). They rest on the
+/// organization's usage slices alone, which a run replaces a month at a time,
+/// so no check, failed or interrupted, bears on them: a month a run stopped
+/// importing keeps the bill provisional through the unknown account's
+/// residual instead.
 fn repository_lines(
     input: &AiReconciliationInput,
     walk: &AiMeteredWalk<'_>,

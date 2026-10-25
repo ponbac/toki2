@@ -415,7 +415,9 @@ account and "not installed" for the organization.
   fetch after its period ended, `late_changed_at` the latest fetch that found other
   content from GitHub although the fetch before it was already complete.
   `ai_provider_usage_checks` keeps the latest comparison of each account's (and the
-  organization's) stored month with GitHub's month total (`payer_gross_quantity`).
+  organization's) stored month with GitHub's month total (`payer_gross_quantity`),
+  and the run importing that month, if it has not finished the scope yet
+  (`importing_run_id`).
   `ai_provider_import_runs` and `ai_provider_import_run_sources` record every run:
   kind, months, requests, slices fetched and changed, errors, and per source the
   coverage ("imported through UTC day X") and the observed settle lag.
@@ -465,13 +467,14 @@ month therefore cannot match GitHub's month totals, and the checks show it.
   the import stale while its error is from the latest run. A stop that recurs makes
   every run from 02:00 UTC to midnight a nightly one. Runs import their months oldest
   first, so a recurring stop in the previous month leaves the current month to the
-  hourly runs before 02:00 UTC (the import goes stale once the current month's summary
-  is more than 3 hours old). Likewise, once a nightly run needs more than 4,000
-  requests, every retry stops near the same point and leaves what follows to those
-  runs.
-- Months holding a slice never fetched join any run in `Changes` mode, so only the
-  scopes with gaps fetch days: the first run backfills, and an account listed later
-  costs one month total per month plus its own days.
+  hourly runs before 02:00 UTC, which first import the interrupted previous month in
+  `Changes` mode (the import goes stale once the current month's summary is more than
+  3 hours old). Likewise, once a nightly run needs more than 4,000 requests, every
+  retry stops near the same point and leaves what follows to those runs.
+- Months holding a slice never fetched, or an interrupted check (below), join any
+  run in `Changes` mode, so only the scopes with gaps or changes fetch days: the first
+  run backfills, and an account listed later costs one month total per month plus
+  its own days.
 - Admins can press Import now (`Changes`) or Full refresh for a month. Unattended
   runs happen in release builds only; local debug builds, whose database is usually
   a production copy, never import on their own.
@@ -481,12 +484,28 @@ month therefore cannot match GitHub's month totals, and the checks show it.
   as running only while some session holds the lock (read from `pg_locks`), so a
   run whose process died mid-import (a deploy, a crash) neither shows a spinner
   nor disables Import now; the next run marks it interrupted.
-- A rate limit, rejected credentials, a refusal, any organization-scope error, three
-  `Unavailable` answers in a row or 4,000 requests stop a run. A source error on the
-  organization's credits also becomes the organization's check error, so the
-  residual never rests on days the run may have left half replaced. An account's
-  other errors (not found, an unreadable answer) become its check error while the
-  other accounts continue.
+- A rate limit, rejected credentials, a refusal, any organization-scope error, a
+  storage error, three `Unavailable` answers in a row or 4,000 requests stop a run,
+  which records the reason. An account's other errors (not found, an unreadable
+  answer) become its check error while the other accounts continue.
+- Before touching a month's days, a run marks every stored check of the month
+  (`importing_run_id`); each scope's new check, success or the account's own error,
+  clears its mark. A check still marked by a run that is no longer importing is
+  *interrupted*: the run stopped, or its process died, before finishing that scope,
+  halfway through or not yet reached. It reads as failed ("the run stopped before
+  finishing this month: " and the run's error, `interrupted` for a dead process),
+  dated when that run started. So no check from before vouches for days the run may
+  have left half replaced, or for an account's old days against the organization's
+  refreshed ones. While the run is still importing (the run that holds the lock),
+  its marks keep the checks they marked, so the page does not flicker; planning and
+  coverage, which run under the lock, count every mark left. Months the run never
+  started keep their checks; scopes never checked before stay unchecked.
+- An interrupted check is no answer of the account's own, so it counts whatever the
+  account's seat: the account is flagged and stays expected, every day of the month
+  is an import gap, and the import is stale while the interrupting run is the latest
+  one. Months holding an interrupted check (the organization's or a stored
+  account's) join every run in `Changes` mode, as gaps do, until a run finishes them;
+  if nothing changed that costs the month's N + 3 calls.
 - Calls, with N stored accounts, A accounts with usage in a month and D days: an
   hourly run costs N + 3 per month, plus the open days of each account whose month
   changed; a nightly run N + 3 + A × D + D per month; the first backfill a nightly
@@ -499,15 +518,21 @@ last 62 days. The import is *stale*, with the first reason, when the latest fini
 run failed, the last success is more than 3 hours old, account credits, organization
 credits or organization usage are imported through a day more than two days before
 today, the current month's summary is more than 3 hours old, or an account that held
-a seat in the month could not be imported. Errors of accounts
-without a seat that month (departed people, such as a deleted login GitHub answers
-404 for) are listed but never make the import stale: that account's slices of that
-month are not expected, so they neither hold coverage back nor make the month a gap
-that every run imports again. Stale imports show on the reconciliation tab and the
-developer card and log a warning each hour; nothing else is notified. The reason
+a seat in the month could not be imported, or a run stopped before finishing an
+account's month (interrupted, above). An account's own errors without a seat that
+month (departed people, such as a deleted login GitHub answers 404 for) are listed
+but never make the import stale: that account's slices of that month are not
+expected, so they neither hold coverage back nor make the month a gap that every run
+imports again. Account errors count while they are from the latest finished run, or
+from an interrupted run started since; a later run that imports other months ends
+their staleness, not their flag or import gap. Stale imports show on the
+reconciliation tab and the developer card and log a warning each hour; nothing else
+is notified. The reason
 reaches the page as data (`staleReason`: a `kind` with its instant, UTC day,
 source, login, month or error), which the page phrases with instants in the
-browser's time zone. Account import errors are listed per account and month.
+browser's time zone. Account import errors are listed per account and month, with
+whether the account held a seat and whether a stopped run left them (`seated`,
+`interrupted`).
 
 **Reconciliation**, per UTC month (`domain/models/ai_metered_reconciliation.rs`):
 
@@ -549,7 +574,7 @@ browser's time zone. Account import errors are listed per account and month.
   never raises them. Then old pricing basis, unknown model (an unrecognized row,
   or a model outside the catalog with credits or tracked cost), unlinked, external,
   a stored month that differs from GitHub's month total, and a failed import of an
-  account that held a seat.
+  account that held a seat, or an interrupted one of any account.
 - Repositories: the organization's rows summed per product, SKU, unit and
   repository, with the IDE aggregate flagged, and the code review check: per
   reconciled UTC day, code review credits per repository (the organization's
@@ -557,18 +582,20 @@ browser's time zone. Account import errors are listed per account and month.
   zero within 100 nanodollars, with the month's totals (`codeReview: {
   byAccounts, byRepositories, days: [{ day, byAccounts, byRepositories,
   difference, status }] }`). A day's status is `incomplete` when the
-  organization's usage slice or an expected account slice is missing, or a
-  seated account's import failed; `provisional` while a slice is not complete
-  or the day is within the settle days; else `settled`. A negative difference
-  (accounts exceed repositories) is code review GitHub billed without a
-  repository, inside the IDE aggregate, which bills on no line, or code review
-  in an unrecognized row naming a repository (a SKU or unit Toki does not
-  know). A positive difference (repositories exceed accounts) is code review by
-  accounts Toki does not import (unknown accounts): their "Code Review model"
-  credits are never imported and stay out of the unknown account's line, but
-  their repository rows bill it once, so nothing is wrong with the bill. On an
-  `incomplete` day it may also be an account whose slice is missing. The check
-  is informational: it never makes a line provisional or blocks anything.
+  organization's usage slice or an expected account slice is missing, a
+  seated account's import failed, or a run stopped before finishing an
+  account's month (interrupted, whatever its seat); `provisional` while a
+  slice is not complete or the day is within the settle days; else `settled`.
+  A negative difference (accounts exceed repositories) is code review GitHub
+  billed without a repository, inside the IDE aggregate, which bills on no
+  line, or code review in an unrecognized row naming a repository (a SKU or
+  unit Toki does not know). A positive difference (repositories exceed
+  accounts) is code review by accounts Toki does not import (unknown
+  accounts): their "Code Review model" credits are never imported and stay out
+  of the unknown account's line, but their repository rows bill it once, so
+  nothing is wrong with the bill. On an `incomplete` day it may also be an
+  account whose slice is missing or whose month a run left half imported. The
+  check is informational: it never makes a line provisional or blocks anything.
 - The per-day residual is the organization's credits minus every account's, per day
   and per (SKU, model), zero within 100 nanodollars: unknown account. It rests on
   the organization's stored days, so the organization's check counts: until its
@@ -576,10 +603,10 @@ browser's time zone. Account import errors are listed per account and month.
   call and the day calls), and before its first check, no day settles; a failed
   check makes every day of the month an import gap. A day missing the
   organization's slice or an expected account slice, or any day of a month with a
-  failed seated account, is an import gap too; a day not yet complete or within the
-  settle days is provisional. A negative residual (accounts above the organization)
-  is flagged. The month's response carries the organization's check (`orgCheck`),
-  shown with the residual.
+  failed seated account or an interrupted account, is an import gap too; a day not
+  yet complete or within the settle days is provisional. A negative residual
+  (accounts above the organization) is flagged. The month's response carries the
+  organization's check (`orgCheck`), shown with the residual.
 - The pool card reads the month summary: credits with the pool discount (gross,
   discount, net), seats, GitHub's bill so far (every net amount) and the day the pool
   ran out, the first UTC day whose organization credits have a net quantity.
@@ -698,22 +725,24 @@ tab already flags the days.
 
 **Provisional.** All of an account's lines share its reasons (`provisionalReasons`):
 `monthInProgress` (the UTC month has not ended), `importIncomplete` (a day of the
-month has no slice or an incomplete one, or days before the backfill; excused
-accounts, whose import failed without a seat, aside), `notSettled` (a day lies within
-the settle days, or the account's month total is absent, failed or different),
-`oldPricingBasis` (a contributing bucket in a group with credits is on an old pricing
-basis, as the reconciliation tab reads it: NULL or another basis than its machine's
-current pricing basis), `provisionalModel` (a model the catalog marks provisional
-with priced tracked usage in a group with credits; G is GitHub's number, so a
-provisional rate only moves a split) and `unrecognized` (a credits row priced
-otherwise than $0.01 a credit, or a model outside the catalog). The unknown-account
-line is provisional while the month is in progress, a day is an import gap, or a day
-is provisional. The bill's `metered` block is provisional when a line is, when
-tracked usage is not imported, when an account day is missing, or when the unknown
-account's residual is provisional even though it bills no line
-(`AiMeteredAllocation::unknown_account`): a failed organization check, or an
-organization slice that is missing, leaves its days out of the residual, and a
-residual not computed yet is no settled zero. The same holds for repository credits
+month has no slice or an incomplete one, a run stopped before finishing the account's
+month, whatever its seat, so its days may be half replaced, or days before the
+backfill; excused accounts, whose own import failed without a seat, aside),
+`notSettled` (a day lies within the settle days, or the account's month total is
+absent, failed, interrupted or different), `oldPricingBasis` (a contributing bucket
+in a group with credits is on an old pricing basis, as the reconciliation tab reads
+it: NULL or another basis than its machine's current pricing basis),
+`provisionalModel` (a model the catalog marks provisional with priced tracked usage
+in a group with credits; G is GitHub's number, so a provisional rate only moves a
+split) and `unrecognized` (a credits row priced otherwise than $0.01 a credit, or a
+model outside the catalog). The unknown-account line is provisional while the month
+is in progress, a day is an import gap, or a day is provisional. The bill's `metered`
+block is provisional when a line is, when tracked usage is not imported, when an
+account day is missing, or when the unknown account's residual is provisional even
+though it bills no line (`AiMeteredAllocation::unknown_account`): a failed
+organization check, a failed seated or interrupted account check, or an organization
+slice that is missing, leaves its days out of the residual, and a residual not
+computed yet is no settled zero. The same holds for repository credits
 (`repository_provisional`, see "Repository mappings"). A developer's `metered` block
 leaves the unknown account out, as it is no developer's.
 
@@ -853,7 +882,11 @@ and left out once the repository's mapping resolves.
   fetched after the day ended, or days before the backfill), `notSettled` (a day
   within the settle days) and `unrecognized` (an organization row of the UTC month
   naming a repository is unrecognized). A missing usage slice is no settled zero: it keeps the
-  bill's `metered` block provisional even without repository rows. One developer's
+  bill's `metered` block provisional even without repository rows. They rest on the
+  organization's usage slices alone, which a run replaces a month at a time, so no
+  check bears on them: a month a run stopped importing (an interrupted check, the
+  organization's or an account's) leaves them as they are and keeps the `metered`
+  block provisional through the unknown account's residual instead. One developer's
   part has no repository lines.
 - `AiMeteredAllocation::unmapped_repositories()` names the repositories billing to
   Unassigned: what month close will refuse. An empty repository name never blocks.

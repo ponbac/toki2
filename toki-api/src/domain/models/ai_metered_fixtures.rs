@@ -280,6 +280,7 @@ pub fn org_check() -> AiUsageCheck {
         stored_gross: dec("35"),
         matches: Some(true),
         error: None,
+        interrupted: false,
     }
 }
 

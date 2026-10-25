@@ -12,7 +12,8 @@
 //!   02:00 UTC until one finishes its plan, refresh the current month in `Full`,
 //!   plus the previous month for 30 days after it ends. Months holding a slice
 //!   that was never fetched join in `Changes` mode, which always fetches
-//!   missing days.
+//!   missing days, as do months holding an interrupted check (a run stopped
+//!   before finishing them).
 //! - **Coverage.** A slice is complete once fetched after its period ended.
 //!   A source is imported through the latest day whose expected slices, and
 //!   every earlier one's, are complete. The settle lag is the longest a slice
@@ -581,6 +582,9 @@ pub struct AiStoredAccountError {
     pub account_id: AiProviderAccountId,
     pub month: AiBillingMonth,
     pub error: String,
+    /// Whether the run stopped before finishing the account's month, rather
+    /// than the account failing on its own (see `AiUsageCheck::interrupted`).
+    pub interrupted: bool,
 }
 
 /// An account whose import failed, as freshness weighs it.
@@ -590,9 +594,13 @@ pub struct AiAccountImportError {
     pub login: AiProviderLogin,
     pub month: AiBillingMonth,
     pub error: String,
-    /// Whether the account held a seat in that month. Errors of accounts
-    /// without one (departed people, say) never make the import stale.
+    /// Whether the account held a seat in that month. Its own errors without
+    /// one (departed people, say) never make the import stale.
     pub seated: bool,
+    /// Whether the run stopped before finishing the account's month: no
+    /// answer of the account's own, so it makes the import stale whatever
+    /// the seat.
+    pub interrupted: bool,
 }
 
 /// A source's coverage and last outcome.
@@ -616,7 +624,9 @@ pub struct AiImportStatus {
     pub running: Option<AiImportRun>,
     /// The latest finished run, with its sources.
     pub last_run: Option<AiImportRun>,
-    /// Account errors recorded since the latest finished run started.
+    /// Account errors recorded since the latest finished run started, and
+    /// accounts whose month a run started since then (other than the one
+    /// running) did not finish.
     pub account_errors: Vec<AiStoredAccountError>,
     /// One per source.
     pub sources: Vec<AiSourceState>,
@@ -713,7 +723,8 @@ pub enum AiStaleReason {
     SummaryOld {
         at: OffsetDateTime,
     },
-    /// An account that held a seat in `month` could not be imported.
+    /// An account that held a seat in `month` could not be imported, or a
+    /// run stopped before finishing its month.
     AccountFailed {
         login: AiProviderLogin,
         month: AiBillingMonth,
@@ -773,7 +784,8 @@ pub struct AiFreshnessInput {
 /// - account credits, organization credits or organization usage are imported
 ///   through a day before `today − 2`;
 /// - the current month's summary is more than 3 hours old;
-/// - an account that held a seat in the month could not be imported.
+/// - an account that held a seat in the month could not be imported, or a
+///   run stopped before finishing an account's month.
 pub fn import_freshness(input: &AiFreshnessInput) -> AiImportFreshness {
     if !input.source_ready {
         return AiImportFreshness::Off;
@@ -824,7 +836,11 @@ pub fn import_freshness(input: &AiFreshnessInput) -> AiImportFreshness {
         }
         Some(_) => {}
     }
-    if let Some(error) = input.account_errors.iter().find(|error| error.seated) {
+    if let Some(error) = input
+        .account_errors
+        .iter()
+        .find(|error| error.seated || error.interrupted)
+    {
         return stale(AiStaleReason::AccountFailed {
             login: error.login.clone(),
             month: error.month,

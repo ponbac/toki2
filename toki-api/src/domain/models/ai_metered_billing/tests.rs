@@ -1070,6 +1070,102 @@ fn an_organization_import_gap_keeps_the_month_provisional_without_an_unknown_lin
 }
 
 #[test]
+fn an_interrupted_account_month_stays_provisional_whatever_its_seat() {
+    use AiMeteredProvisional::{ImportIncomplete, NotSettled};
+    let day = date!(2026 - 10 - 05);
+    // Departed: no seat in October, its days still linked to Grace.
+    let mut input = closed_input(vec![
+        linked(1001, "ada-lovelace", ADA),
+        account(
+            1009,
+            "former-member",
+            false,
+            &[(AiAccountTarget::User(GRACE), date!(2026 - 09 - 01), None)],
+        ),
+    ]);
+    input.account_credits = vec![
+        credits(1001, day, "GPT-6.1 Sol", "10"),
+        credits(1009, day, "GPT-6.1 Sol", "4"),
+    ];
+    // Five credits of an account Toki never listed.
+    input.org_credits = vec![org(day, "GPT-6.1 Sol", "19")];
+    input.tracked = vec![
+        tracked(ADA, day, "gpt-6.1-sol", 10 * CREDIT),
+        tracked(GRACE, day, "gpt-6.1-sol", 4 * CREDIT),
+    ];
+    // A day of the departed account's that was never imported.
+    input
+        .account_slices
+        .remove(&(account_id(1009), date!(2026 - 10 - 20)));
+    let set_check = |input: &mut AiReconciliationInput, check: AiUsageCheck| {
+        for stored in &mut input.checks {
+            if stored.account_id == check.account_id {
+                *stored = check.clone();
+            }
+        }
+    };
+
+    // Its own import failed: informational without a seat, so the missing
+    // day is no gap and the residual bills.
+    let mut own_error = input.clone();
+    set_check(
+        &mut own_error,
+        AiUsageCheck {
+            payer_gross: None,
+            matches: None,
+            error: Some("GitHub knows no Copilot usage for former-member".to_string()),
+            ..account_check(1009)
+        },
+    );
+    let allocation = allocate(&own_error);
+    assert_eq!(
+        summary(&allocation),
+        [
+            line("user 1", "project", WIDGET, 10),
+            line("user 2", "project", WIDGET, 4),
+            line("unknown account", "unknown", "", 5),
+        ]
+    );
+    assert!(reasons(&allocation, 2).is_empty());
+    assert_eq!(allocation.days_not_imported, 0);
+    assert!(!allocation.provisional);
+
+    // A run stopped before finishing its month: no answer of its own, so its
+    // days may be half replaced, its missing day is a gap and the residual
+    // is left out, as on the reconciliation tab.
+    let mut interrupted = input;
+    set_check(
+        &mut interrupted,
+        AiUsageCheck::interrupted(
+            Some(account_id(1009)),
+            datetime!(2026-11-02 02:00 UTC),
+            dec("4"),
+            "GitHub's rate limiting stopped the import",
+        ),
+    );
+    let allocation = allocate(&interrupted);
+    assert_eq!(
+        summary(&allocation),
+        [
+            line("user 1", "project", WIDGET, 10),
+            line("user 2", "project", WIDGET, 4),
+        ]
+    );
+    assert!(reasons(&allocation, 1).is_empty());
+    assert_eq!(reasons(&allocation, 2), [ImportIncomplete, NotSettled]);
+    assert_eq!(allocation.days_not_imported, 1);
+    assert_eq!(allocation.unknown_account, [ImportIncomplete]);
+    assert!(allocation.provisional);
+    let reconciliation = reconcile(interrupted).unwrap();
+    assert!(reconciliation
+        .residual_days
+        .iter()
+        .all(|day| day.status == AiResidualStatus::Incomplete));
+    // Ada's own part stays settled: the unknown account is no one's.
+    assert!(!for_user(allocation, ADA).provisional);
+}
+
+#[test]
 fn only_every_account_can_be_allocated() {
     let input = AiReconciliationInput {
         focus: Some(ADA),
@@ -1361,6 +1457,71 @@ fn repository_lines_are_provisional_while_org_usage_is_not_settled() {
         allocation.lines.last().unwrap().charge.provisional,
         [MonthInProgress, ImportIncomplete, NotSettled]
     );
+}
+
+#[test]
+fn a_month_a_run_stopped_importing_leaves_repository_lines_to_the_org_usage() {
+    use AiMeteredProvisional::ImportIncomplete;
+    let day = date!(2026 - 10 - 09);
+    let mut input = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    input.account_credits = vec![
+        credits(1001, day, "GPT-6.1 Sol", "50"),
+        row(
+            1001,
+            day,
+            CREDITS_SKU,
+            "Code Review model",
+            AiCreditKind::RepositoryBilled,
+            "20",
+        ),
+    ];
+    input.org_credits = vec![org(day, "GPT-6.1 Sol", "50")];
+    input.tracked = vec![tracked(ADA, day, "gpt-6.1-sol", 50 * CREDIT)];
+    input.org_charges = vec![repository_credits(day, "widget-api", "20")];
+    input.repository_mappings = widget_mapped();
+    let settled = allocate(&input);
+    assert_eq!(
+        summary(&settled),
+        [
+            line("user 1", "project", WIDGET, 50),
+            line("repository widget-api", "repository", WIDGET, 20),
+        ]
+    );
+    assert!(settled.unknown_account.is_empty());
+    assert!(!settled.provisional);
+    let code_review = reconcile(input.clone()).unwrap().code_review.unwrap();
+    assert_eq!(code_review.days[0].status, AiResidualStatus::Settled);
+
+    // A run that stopped among the accounts leaves Ada's check marked; one
+    // that stopped on the organization's credits leaves the organization's
+    // too, as the accounts come after it. The organization's usage slices,
+    // which a run replaces a month at a time, still stand for the repository
+    // line, while the residual and the code review check wait for a run that
+    // finishes the month.
+    for scopes in [
+        vec![Some(account_id(1001))],
+        vec![None, Some(account_id(1001))],
+    ] {
+        let mut interrupted = input.clone();
+        for check in &mut interrupted.checks {
+            if scopes.contains(&check.account_id) {
+                *check = AiUsageCheck::interrupted(
+                    check.account_id,
+                    datetime!(2026-11-02 02:00 UTC),
+                    dec("50"),
+                    "GitHub's rate limiting stopped the import",
+                );
+            }
+        }
+        let allocation = allocate(&interrupted);
+        assert_eq!(summary(&allocation), summary(&settled));
+        assert!(allocation.lines[1].charge.provisional.is_empty());
+        assert!(allocation.repository_provisional.is_empty());
+        assert_eq!(allocation.unknown_account, [ImportIncomplete]);
+        assert!(allocation.provisional);
+        let code_review = reconcile(interrupted).unwrap().code_review.unwrap();
+        assert_eq!(code_review.days[0].status, AiResidualStatus::Incomplete);
+    }
 }
 
 #[test]

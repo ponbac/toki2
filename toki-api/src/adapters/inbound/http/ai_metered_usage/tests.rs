@@ -560,6 +560,7 @@ fn account_errors_name_their_month_and_stale_reasons_are_structured() {
         month: AiBillingMonth::parse("2026-09").unwrap(),
         error: "GitHub knows no Copilot usage for ada-lovelace".to_string(),
         seated: false,
+        interrupted: false,
     });
     assert_eq!(
         serde_json::to_value(error).unwrap(),
@@ -567,7 +568,8 @@ fn account_errors_name_their_month_and_stale_reasons_are_structured() {
             "login": "ada-lovelace",
             "month": "2026-09",
             "error": "GitHub knows no Copilot usage for ada-lovelace",
-            "seated": false
+            "seated": false,
+            "interrupted": false
         })
     );
     let reason =

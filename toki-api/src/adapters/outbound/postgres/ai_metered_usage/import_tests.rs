@@ -186,10 +186,12 @@ impl MeteredUsageSource for FakeSource {
     }
 }
 
-/// Postgres with the service's clock fixed.
+/// Postgres with the service's clock fixed, and a credits write to fail:
+/// the scope's login (`None` is the organization) and a UTC day it holds.
 struct Clocked {
     inner: PostgresAiMeteredUsageRepository,
     now: Mutex<OffsetDateTime>,
+    failing_write: Mutex<Option<(Option<String>, Date)>>,
 }
 
 #[async_trait]
@@ -226,6 +228,17 @@ impl AiMeteredUsageRepository for Clocked {
         days: &[(Date, Vec<AiMeteredCredit>)],
         fetched_at: OffsetDateTime,
     ) -> Result<u32, AiMeteredUsageError> {
+        let login = match scope {
+            AiCreditStoreScope::Account { login, .. } => Some(login.as_str().to_string()),
+            AiCreditStoreScope::Organization => None,
+        };
+        if let Some((failing, day)) = &*self.failing_write.lock().unwrap() {
+            if *failing == login && days.iter().any(|(candidate, _)| candidate == day) {
+                return Err(AiMeteredUsageError::Storage(
+                    "the database went away".to_string(),
+                ));
+            }
+        }
         self.inner
             .replace_credit_days(payer, scope, days, fetched_at)
             .await
@@ -251,6 +264,14 @@ impl AiMeteredUsageRepository for Clocked {
         self.inner
             .replace_summary(payer, month, rows, fetched_at)
             .await
+    }
+    async fn mark_checks_importing(
+        &self,
+        payer: AiProvider,
+        month: AiBillingMonth,
+        run: AiImportRunId,
+    ) -> Result<(), AiMeteredUsageError> {
+        self.inner.mark_checks_importing(payer, month, run).await
     }
     async fn record_check(
         &self,
@@ -318,8 +339,9 @@ impl AiMeteredUsageRepository for Clocked {
         &self,
         payer: AiProvider,
         month: AiBillingMonth,
+        importing: Option<AiImportRunId>,
     ) -> Result<Vec<AiUsageCheck>, AiMeteredUsageError> {
-        self.inner.checks(payer, month).await
+        self.inner.checks(payer, month, importing).await
     }
     async fn tracked_usage(
         &self,
@@ -354,6 +376,7 @@ fn setup(pool: &PgPool, backfill_from: Date) -> Setup {
     let repository = Arc::new(Clocked {
         inner: PostgresAiMeteredUsageRepository::new(DbPool::from(pool.clone())),
         now: Mutex::new(NOW),
+        failing_write: Mutex::new(None),
     });
     let service = AiMeteredUsageServiceImpl::new(
         repository.clone(),
@@ -380,6 +403,12 @@ fn setup(pool: &PgPool, backfill_from: Date) -> Setup {
 impl Setup {
     fn at(&self, now: OffsetDateTime) {
         *self.repository.now.lock().unwrap() = now;
+    }
+
+    /// Fails storing the credits of `login`'s (`None`: the organization's)
+    /// `day`.
+    fn fail_write(&self, login: Option<&str>, day: Date) {
+        *self.repository.failing_write.lock().unwrap() = Some((login.map(str::to_string), day));
     }
 
     async fn import(&self, month_raw: &str, mode: AiMonthMode) -> AiImportRun {
@@ -636,7 +665,7 @@ async fn changes_fetch_open_days_then_the_whole_month(pool: PgPool) {
     assert_eq!(day_calls(&calls, "grace-hopper").len(), 0);
     let checks = setup
         .repository
-        .checks(AiProvider::Copilot, month("2026-10"))
+        .checks(AiProvider::Copilot, month("2026-10"), None)
         .await
         .unwrap();
     assert!(checks.iter().all(|check| check.matches == Some(true)));
@@ -765,14 +794,479 @@ async fn a_rate_limit_stops_the_run(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn an_account_month_cut_short_by_a_stop_is_no_longer_confirmed(pool: PgPool) {
+    let setup = setup(&pool, date!(2026 - 10 - 01));
+    october_fixture(&pool, &setup.source).await;
+    setup.import("2026-10", AiMonthMode::Changes).await;
+
+    // GitHub posts a late correction on Ada's 12th, which the organization's
+    // credits include. The organization refreshes, then GitHub rate-limits
+    // Ada's day calls after her first days were replaced, before her 12th.
+    let later = NOW + Duration::hours(1);
+    setup.at(later);
+    let twelfth = date!(2026 - 10 - 12);
+    setup.source.set(
+        Some("ada-lovelace"),
+        twelfth,
+        vec![credit("GPT-6.1 Sol", "4")],
+    );
+    setup
+        .source
+        .set(None, twelfth, vec![credit("GPT-6.1 Sol", "4")]);
+    setup.source.fail(
+        "credits ada-lovelace 2026-10-05",
+        MeteredUsageSourceError::RateLimited { retry_after: None },
+    );
+    let run = setup.import("2026-10", AiMonthMode::Changes).await;
+    assert_eq!(run.status, AiRunStatus::Partial, "{:?}", run.error);
+    assert!(run.error.as_deref().unwrap().contains("rate limiting"));
+    assert!(setup
+        .source
+        .calls()
+        .contains(&"credits ada-lovelace 2026-10-04".to_string()));
+
+    // No check from before the run survives it: Ada's partly replaced month
+    // reads as interrupted, as would any account the stop cut off.
+    let checks = setup
+        .repository
+        .checks(AiProvider::Copilot, month("2026-10"), None)
+        .await
+        .unwrap();
+    assert_eq!(checks.len(), 4);
+    assert!(
+        checks.iter().all(|check| check.checked_at == later),
+        "{checks:?}"
+    );
+    let ada = checks
+        .iter()
+        .find(|check| check.account_id == AiProviderAccountId::new(1001))
+        .unwrap();
+    assert!(
+        ada.error.as_deref().unwrap().contains("rate limiting"),
+        "{ada:?}"
+    );
+    assert!(ada.interrupted);
+    assert_eq!(ada.matches, None);
+
+    // So the organization's credits on the 12th are an import gap, not
+    // unknown account, and Ada's seat makes the import stale.
+    let october = setup
+        .service
+        .reconciliation(month("2026-10"))
+        .await
+        .unwrap();
+    assert!(october
+        .reconciliation
+        .residual_days
+        .iter()
+        .all(|day| day.status == AiResidualStatus::Incomplete));
+    assert_eq!(october.reconciliation.totals.unknown_account, 0);
+    let flagged = october
+        .reconciliation
+        .accounts
+        .iter()
+        .find(|account| account.login == "ada-lovelace")
+        .unwrap();
+    assert!(flagged.flags.contains(&AiReconciliationFlag::ImportFailed));
+    assert!(
+        matches!(
+            &october.import.freshness,
+            AiImportFreshness::Stale {
+                reason: AiStaleReason::AccountFailed { login, .. }
+            } if login.as_str() == "ada-lovelace"
+        ),
+        "{:?}",
+        october.import.freshness
+    );
+
+    // The next run imports her 12th and confirms the month again. (Her late
+    // correction stretched the settle lag past the 12th, so the day is
+    // provisional rather than settled.)
+    setup.source.failures.lock().unwrap().clear();
+    setup.at(NOW + Duration::hours(2));
+    let run = setup.import("2026-10", AiMonthMode::Changes).await;
+    assert_eq!(run.status, AiRunStatus::Succeeded, "{:?}", run.error);
+    let october = setup
+        .service
+        .reconciliation(month("2026-10"))
+        .await
+        .unwrap();
+    let ada = october
+        .reconciliation
+        .accounts
+        .iter()
+        .find(|account| account.login == "ada-lovelace")
+        .unwrap();
+    assert_eq!(ada.check.as_ref().unwrap().matches, Some(true));
+    let day = october
+        .reconciliation
+        .residual_days
+        .iter()
+        .find(|day| day.day == twelfth)
+        .unwrap();
+    assert_eq!(day.residual, 0);
+    assert_ne!(day.status, AiResidualStatus::Incomplete);
+    assert_eq!(
+        october.reconciliation.totals.unknown_account,
+        5 * 10_000_000
+    );
+}
+
+#[sqlx::test]
+async fn a_storage_error_leaves_the_month_it_cut_short_unconfirmed(pool: PgPool) {
+    let setup = setup(&pool, date!(2026 - 10 - 01));
+    october_fixture(&pool, &setup.source).await;
+    setup.import("2026-10", AiMonthMode::Changes).await;
+    let checks = || async {
+        setup
+            .repository
+            .checks(AiProvider::Copilot, month("2026-10"), None)
+            .await
+            .unwrap()
+    };
+
+    // A full refresh fails to store Ada's 5th, after her first days, while
+    // Grace is still fetching hers: neither keeps the check from 10:00,
+    // whether Grace finished or was cut short.
+    let later = NOW + Duration::hours(1);
+    setup.at(later);
+    setup.fail_write(Some("ada-lovelace"), date!(2026 - 10 - 05));
+    let run = setup.import("2026-10", AiMonthMode::Full).await;
+    assert_eq!(run.status, AiRunStatus::Partial, "{:?}", run.error);
+    assert!(run.error.as_deref().unwrap().contains("went away"));
+    let checks_after = checks().await;
+    let ada = checks_after
+        .iter()
+        .find(|check| check.account_id == AiProviderAccountId::new(1001))
+        .unwrap();
+    assert_eq!(ada.checked_at, later);
+    assert!(ada.interrupted);
+    assert!(
+        ada.error.as_deref().unwrap().contains("went away"),
+        "{ada:?}"
+    );
+    assert!(
+        checks_after.iter().all(|check| check.checked_at == later),
+        "{checks_after:?}"
+    );
+
+    // Then one fails to store the organization's 5th: the organization's
+    // check fails, and every account's, which the run never reached.
+    let latest = NOW + Duration::hours(2);
+    setup.at(latest);
+    setup.fail_write(None, date!(2026 - 10 - 05));
+    let run = setup.import("2026-10", AiMonthMode::Full).await;
+    assert_eq!(run.status, AiRunStatus::Failed, "{:?}", run.error);
+    let checks_after = checks().await;
+    assert_eq!(checks_after.len(), 4);
+    assert!(
+        checks_after
+            .iter()
+            .all(|check| check.checked_at == latest && check.interrupted),
+        "{checks_after:?}"
+    );
+    let org = checks_after
+        .iter()
+        .find(|check| check.account_id.is_none())
+        .unwrap();
+    assert!(
+        org.error.as_deref().unwrap().contains("went away"),
+        "{org:?}"
+    );
+}
+
+#[sqlx::test]
+async fn a_month_a_stop_cut_short_is_imported_again(pool: PgPool) {
+    let setup = setup(&pool, date!(2026 - 09 - 01));
+    october_fixture(&pool, &setup.source).await;
+    // Zed has no seat in September (seat history starts later) but used
+    // Copilot on the 3rd and the 20th, which the organization's credits hold.
+    insert_account(&pool, 1004, "zed-rehired", None).await;
+    let (third, twentieth) = (date!(2026 - 09 - 03), date!(2026 - 09 - 20));
+    for day in [third, twentieth] {
+        setup
+            .source
+            .set(Some("zed-rehired"), day, vec![credit("GPT-6.1 Sol", "7")]);
+        setup
+            .source
+            .set(None, day, vec![credit("GPT-6.1 Sol", "7")]);
+    }
+    let run = setup.import("2026-10", AiMonthMode::Changes).await;
+    assert_eq!(run.status, AiRunStatus::Succeeded, "{:?}", run.error);
+
+    // GitHub corrects Zed's 20th. A full refresh of September refreshes the
+    // organization, then GitHub rate-limits Zed's 10th, before his 20th.
+    setup.at(NOW + Duration::hours(1));
+    setup.source.set(
+        Some("zed-rehired"),
+        twentieth,
+        vec![credit("GPT-6.1 Sol", "9")],
+    );
+    setup
+        .source
+        .set(None, twentieth, vec![credit("GPT-6.1 Sol", "9")]);
+    setup.source.fail(
+        "credits zed-rehired 2026-09-10",
+        MeteredUsageSourceError::RateLimited { retry_after: None },
+    );
+    let run = setup.import("2026-09", AiMonthMode::Full).await;
+    assert_eq!(run.status, AiRunStatus::Partial, "{:?}", run.error);
+
+    // The stop is no answer of Zed's own, so his missing seat does not make
+    // it informational: he is flagged, the 20th is an import gap rather
+    // than unknown account, and the import is stale.
+    let september = setup
+        .service
+        .reconciliation(month("2026-09"))
+        .await
+        .unwrap();
+    let zed = september
+        .reconciliation
+        .accounts
+        .iter()
+        .find(|account| account.login == "zed-rehired")
+        .unwrap();
+    assert!(zed.check.as_ref().unwrap().interrupted, "{zed:?}");
+    assert!(zed.flags.contains(&AiReconciliationFlag::ImportFailed));
+    assert!(september
+        .reconciliation
+        .residual_days
+        .iter()
+        .all(|day| day.status == AiResidualStatus::Incomplete));
+    assert_eq!(september.reconciliation.totals.unknown_account, 0);
+    assert!(
+        matches!(
+            &september.import.freshness,
+            AiImportFreshness::Stale {
+                reason: AiStaleReason::AccountFailed { login, .. }
+            } if login.as_str() == "zed-rehired"
+        ),
+        "{:?}",
+        september.import.freshness
+    );
+    let error = &september.import.account_errors[0];
+    assert!(error.interrupted && !error.seated, "{error:?}");
+
+    // Though every September slice was fetched, the next run imports the
+    // month again and confirms it.
+    setup.source.failures.lock().unwrap().clear();
+    setup.at(NOW + Duration::hours(2));
+    let run = setup.import("2026-10", AiMonthMode::Changes).await;
+    assert_eq!(
+        run.months,
+        [
+            (month("2026-09"), AiMonthMode::Changes),
+            (month("2026-10"), AiMonthMode::Changes)
+        ]
+    );
+    assert_eq!(run.status, AiRunStatus::Succeeded, "{:?}", run.error);
+    let september = setup
+        .service
+        .reconciliation(month("2026-09"))
+        .await
+        .unwrap();
+    let zed = september
+        .reconciliation
+        .accounts
+        .iter()
+        .find(|account| account.login == "zed-rehired")
+        .unwrap();
+    assert_eq!(zed.check.as_ref().unwrap().matches, Some(true));
+    assert!(!zed.flags.contains(&AiReconciliationFlag::ImportFailed));
+    let day = september
+        .reconciliation
+        .residual_days
+        .iter()
+        .find(|day| day.day == twentieth)
+        .unwrap();
+    assert_eq!(day.residual, 0);
+    assert_ne!(day.status, AiResidualStatus::Incomplete);
+    assert_eq!(september.reconciliation.totals.unknown_account, 0);
+
+    // Done: the run after that is the current month's alone.
+    setup.at(NOW + Duration::hours(3));
+    let run = setup.import("2026-10", AiMonthMode::Changes).await;
+    assert_eq!(run.months, [(month("2026-10"), AiMonthMode::Changes)]);
+}
+
+#[sqlx::test]
+async fn an_interrupted_account_without_a_seat_is_still_expected(pool: PgPool) {
+    let setup = setup(&pool, date!(2026 - 09 - 01));
+    october_fixture(&pool, &setup.source).await;
+    insert_account(&pool, 1004, "zed-rehired", None).await;
+    setup.source.set(
+        Some("zed-rehired"),
+        date!(2026 - 09 - 20),
+        vec![credit("GPT-6.1 Sol", "7")],
+    );
+    let account_coverage = |run: &AiImportRun| {
+        run.sources
+            .iter()
+            .find(|source| source.source == AiMeteredSource::AccountCredits)
+            .unwrap()
+            .imported_through
+    };
+    // GitHub answers 404 for Zed's September, his own error without a seat
+    // that month: informational, so his days are not expected.
+    setup.source.fail(
+        "credits zed-rehired 2026-09",
+        MeteredUsageSourceError::NotFound("GitHub knows no Copilot usage".to_string()),
+    );
+    let run = setup.import("2026-10", AiMonthMode::Changes).await;
+    assert_eq!(account_coverage(&run), Some(date!(2026 - 10 - 24)));
+
+    // Then his month imports, until GitHub rate-limits his 10th: the stop
+    // is no answer of his own, so his days are expected again and hold the
+    // coverage back.
+    setup.source.failures.lock().unwrap().clear();
+    setup.source.fail(
+        "credits zed-rehired 2026-09-10",
+        MeteredUsageSourceError::RateLimited { retry_after: None },
+    );
+    setup.at(NOW + Duration::hours(1));
+    let run = setup.import("2026-09", AiMonthMode::Changes).await;
+    assert_eq!(run.status, AiRunStatus::Partial, "{:?}", run.error);
+    assert_eq!(account_coverage(&run), Some(date!(2026 - 09 - 09)));
+}
+
+#[sqlx::test]
+async fn a_run_whose_process_died_leaves_its_month_interrupted(pool: PgPool) {
+    let setup = setup(&pool, date!(2026 - 10 - 01));
+    october_fixture(&pool, &setup.source).await;
+    setup.import("2026-10", AiMonthMode::Changes).await;
+    let october = month("2026-10");
+
+    // GitHub posts a late correction on Ada's 12th. A run marks October,
+    // refreshes the organization's 12th and is still importing.
+    let later = NOW + Duration::hours(1);
+    setup.at(later);
+    let twelfth = date!(2026 - 10 - 12);
+    let corrected = vec![credit("GPT-6.1 Sol", "4")];
+    setup
+        .source
+        .set(Some("ada-lovelace"), twelfth, corrected.clone());
+    setup.source.set(None, twelfth, corrected.clone());
+    let lease = setup
+        .repository
+        .try_lock_import(AiProvider::Copilot)
+        .await
+        .unwrap()
+        .unwrap();
+    let plan = AiImportPlan {
+        kind: AiImportKind::Hourly,
+        months: vec![(october, AiMonthMode::Changes)],
+    };
+    let run_id = setup
+        .repository
+        .start_run(AiProvider::Copilot, &plan, later)
+        .await
+        .unwrap();
+    setup
+        .repository
+        .mark_checks_importing(AiProvider::Copilot, october, run_id)
+        .await
+        .unwrap();
+    setup
+        .repository
+        .replace_credit_days(
+            AiProvider::Copilot,
+            AiCreditStoreScope::Organization,
+            &[(twelfth, corrected)],
+            later,
+        )
+        .await
+        .unwrap();
+
+    // While it runs, its marks keep the checks they marked.
+    let running = setup.service.reconciliation(october).await.unwrap();
+    assert_eq!(running.import.running.as_ref().unwrap().id, run_id);
+    let ada = running
+        .reconciliation
+        .accounts
+        .iter()
+        .find(|account| account.login == "ada-lovelace")
+        .unwrap();
+    assert_eq!(ada.check.as_ref().unwrap().matches, Some(true));
+    assert!(!ada.flags.contains(&AiReconciliationFlag::ImportFailed));
+
+    // Its process dies, freeing the lock. Its marks are interrupted: the 12th
+    // is an import gap, not unknown account, and the import is stale.
+    lease.release().await.unwrap();
+    let died = setup.service.reconciliation(october).await.unwrap();
+    assert!(died.import.running.is_none());
+    let checks = setup
+        .repository
+        .checks(AiProvider::Copilot, october, None)
+        .await
+        .unwrap();
+    assert_eq!(checks.len(), 4);
+    assert!(
+        checks.iter().all(|check| check.interrupted
+            && check.checked_at == later
+            && check.error.as_deref()
+                == Some("the run stopped before finishing this month: interrupted")),
+        "{checks:?}"
+    );
+    let ada = died
+        .reconciliation
+        .accounts
+        .iter()
+        .find(|account| account.login == "ada-lovelace")
+        .unwrap();
+    assert!(ada.flags.contains(&AiReconciliationFlag::ImportFailed));
+    assert!(died
+        .reconciliation
+        .residual_days
+        .iter()
+        .all(|day| day.status == AiResidualStatus::Incomplete));
+    assert_eq!(died.reconciliation.totals.unknown_account, 0);
+    assert!(
+        matches!(
+            &died.import.freshness,
+            AiImportFreshness::Stale {
+                reason: AiStaleReason::AccountFailed { login, .. }
+            } if login.as_str() == "ada-lovelace"
+        ),
+        "{:?}",
+        died.import.freshness
+    );
+
+    // The next run marks the dead run interrupted, imports Ada's 12th and
+    // confirms the month again.
+    setup.at(NOW + Duration::hours(2));
+    let run = setup.import("2026-10", AiMonthMode::Changes).await;
+    assert_eq!(run.status, AiRunStatus::Succeeded, "{:?}", run.error);
+    let october = setup.service.reconciliation(october).await.unwrap();
+    assert_eq!(october.import.freshness, AiImportFreshness::Fresh);
+    assert!(october.reconciliation.accounts.iter().all(|account| account
+        .check
+        .as_ref()
+        .unwrap()
+        .matches
+        == Some(true)));
+    let day = october
+        .reconciliation
+        .residual_days
+        .iter()
+        .find(|day| day.day == twelfth)
+        .unwrap();
+    assert_eq!(day.residual, 0);
+}
+
+#[sqlx::test]
 async fn three_unavailable_answers_in_a_row_stop_the_run(pool: PgPool) {
     let setup = setup(&pool, date!(2026 - 10 - 01));
     insert_admin(&pool).await;
     for id in 1..=6 {
-        let login = format!("person-{id}");
-        insert_account(&pool, 2000 + id, &login, None).await;
+        insert_account(&pool, 2000 + id, &format!("person-{id}"), None).await;
+    }
+    // Every account's empty month is confirmed first.
+    setup.import("2026-10", AiMonthMode::Changes).await;
+    setup.at(NOW + Duration::hours(1));
+    setup.source.take_calls();
+    for id in 1..=6 {
         setup.source.fail(
-            &format!("credits {login} 2026-10"),
+            &format!("credits person-{id} 2026-10"),
             MeteredUsageSourceError::Unavailable("GitHub answered 502".to_string()),
         );
     }
@@ -787,6 +1281,23 @@ async fn three_unavailable_answers_in_a_row_stop_the_run(pool: PgPool) {
         .filter(|call| call.starts_with("credits person-"))
         .count();
     assert!(account_calls < 6, "{account_calls}");
+    // No month stays confirmed: two accounts failed on their own answers,
+    // and the stop left the others' checks interrupted.
+    let checks = setup
+        .repository
+        .checks(AiProvider::Copilot, month("2026-10"), None)
+        .await
+        .unwrap();
+    let accounts: Vec<&AiUsageCheck> = checks
+        .iter()
+        .filter(|check| check.account_id.is_some())
+        .collect();
+    assert_eq!(accounts.len(), 6, "{checks:?}");
+    assert!(accounts
+        .iter()
+        .all(|check| check.matches.is_none() && check.error.is_some()));
+    let interrupted = accounts.iter().filter(|check| check.interrupted).count();
+    assert_eq!(interrupted, 4, "{checks:?}");
 }
 
 #[sqlx::test]
@@ -805,7 +1316,7 @@ async fn an_account_error_stays_with_the_account(pool: PgPool) {
     assert_eq!(run.error, None);
     let checks = setup
         .repository
-        .checks(AiProvider::Copilot, month("2026-10"))
+        .checks(AiProvider::Copilot, month("2026-10"), None)
         .await
         .unwrap();
     let grace = checks
@@ -1201,7 +1712,7 @@ async fn reconciliation_equals_github_for_every_account(pool: PgPool) {
         tracked: Vec::new(),
         checks: setup
             .repository
-            .checks(AiProvider::Copilot, month("2026-10"))
+            .checks(AiProvider::Copilot, month("2026-10"), None)
             .await
             .unwrap(),
         coverage: reconciliation
@@ -1265,7 +1776,7 @@ async fn days_before_the_backfill_are_never_fetched(pool: PgPool) {
     // Ada's usage on the 3rd is in GitHub's month total but never imported.
     let checks = setup
         .repository
-        .checks(AiProvider::Copilot, month("2026-10"))
+        .checks(AiProvider::Copilot, month("2026-10"), None)
         .await
         .unwrap();
     let ada = checks
