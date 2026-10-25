@@ -79,3 +79,23 @@ _Avoid_: unused subscription
 **Uploaded day**:
 A local day for which a machine's syncs prove its stored usage of a provider is complete: the union of its logged sync intervals, each from the window start to the window end or the report time, whichever is earlier, spans the whole day. Billing a month waits until every machine active in it has uploaded every day for each provider it uses.
 _Avoid_: synced day (a sync can end mid-day)
+
+**Provider account**:
+An account at a metered payer that usage is billed to: for GitHub Copilot, a GitHub user, identified by GitHub's numeric id, which survives renames, and shown by its latest login. Toki keeps every account that ever held a seat, so usage on ended seats always has one.
+_Avoid_: GitHub user, seat, login (a login can change)
+
+**Seat**:
+One assignment of a paid seat to a provider account, from the payer's assignment instant until a complete listing of the organization's seats omits it. An account can hold several seats over time, one at a time.
+_Avoid_: license, subscription
+
+**Account disposition**:
+An admin's decision about whose usage a provider account's is, on UTC calendar days from a first through a last day (both included, open while ongoing): a Toki user's, or no Toki user's (an external account). One account's dispositions never share a day, nor do one user's for one payer.
+_Avoid_: binding, mapping, link (a link is only the user kind)
+
+**External account**:
+A provider account whose disposition says it is no Toki user's: its usage is Spinit overhead. It is a decision, not a gap.
+_Avoid_: unknown account, non-Toki user
+
+**Unlinked account**:
+A provider account without a disposition on some day it held a seat or used credits. Its usage on such days is nobody's yet, so it needs an admin's look.
+_Avoid_: unmapped account, orphan account

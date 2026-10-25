@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT last_attempt_at, last_success_at, last_error, seats_listed, seats_reported\n            FROM ai_provider_directory_status\n            WHERE provider = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_attempt_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_directory_status",
+            "name": "last_attempt_at"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "last_success_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_directory_status",
+            "name": "last_success_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_directory_status",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "seats_listed",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_directory_status",
+            "name": "seats_listed"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "seats_reported",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_directory_status",
+            "name": "seats_reported"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9224ce9a461f7574c5da77365505b5f975e4a267fc8b0386976f9e347a12bc3d"
+}

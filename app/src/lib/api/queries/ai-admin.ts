@@ -9,6 +9,7 @@ import {
   parseAiDeveloperMonth,
   parseAiUnmappedProjectKeys,
 } from "../contracts/ai-admin";
+import { parseProviderAccounts } from "../contracts/ai-provider-accounts";
 import { parseAiProjectMapping } from "../contracts/ai-usage-report";
 import {
   parseAiSubscriptionList,
@@ -32,6 +33,23 @@ export type {
   AiUnmappedProjectKey,
   AiUploadGap,
 } from "../contracts/ai-admin";
+export type {
+  AiAcceptedSuggestions,
+  AiAccountDirectory,
+  AiAccountDisposition,
+  AiAccountDispositionTerms,
+  AiAccountPeriod,
+  AiAccountSuggestion,
+  AiAccountTarget,
+  AiDirectoryRefresh,
+  AiMeteredActivity,
+  AiProviderAccount,
+  AiProviderAccounts,
+  AiProviderSeat,
+  AiSuggestionEvidence,
+  AiSuggestionSkipReason,
+  AiUnlinkedUser,
+} from "../contracts/ai-provider-accounts";
 export type { AiProjectMapping } from "../contracts/ai-usage-report";
 
 /** How often a bill whose exchange rates are still being fetched is reloaded. */
@@ -60,6 +78,7 @@ const keys = {
   unmappedKeys: [...AI_ADMIN_QUERY_KEY, "unmapped-keys"] as const,
   subscriptions: [...AI_ADMIN_QUERY_KEY, "subscriptions"] as const,
   mismatches: [...AI_ADMIN_QUERY_KEY, "subscription-mismatches"] as const,
+  providerAccounts: [...AI_ADMIN_QUERY_KEY, "provider-accounts"] as const,
 };
 
 /**
@@ -155,6 +174,18 @@ export const aiAdminQueries = {
               searchParams: { from, to },
             })
             .json<unknown>(),
+        ),
+    }),
+  /**
+   * The accounts holding seats at the metered payer (GitHub Copilot), with
+   * their seats, dispositions and suggestions, and what needs a look.
+   */
+  providerAccounts: () =>
+    queryOptions({
+      queryKey: keys.providerAccounts,
+      queryFn: async () =>
+        parseProviderAccounts(
+          await api.get("ai-usage/admin/provider-accounts").json<unknown>(),
         ),
     }),
   /** Everyone's undeclared-subscription evidence over the last 90 days. */

@@ -1,8 +1,11 @@
 mod absence;
+mod ai_account_overview;
+mod ai_account_suggestion;
 mod ai_billing;
 mod ai_display_rate;
 mod ai_exchange_rate;
 mod ai_project_mapping;
+mod ai_provider_account;
 mod ai_subscription;
 mod ai_usage;
 mod ai_usage_completeness;
@@ -18,10 +21,13 @@ mod timer;
 mod work_item;
 
 pub use absence::*;
+pub use ai_account_overview::*;
+pub use ai_account_suggestion::*;
 pub use ai_billing::*;
 pub use ai_display_rate::*;
 pub use ai_exchange_rate::*;
 pub use ai_project_mapping::*;
+pub use ai_provider_account::*;
 pub use ai_subscription::*;
 pub use ai_usage::*;
 pub use ai_usage_completeness::*;

@@ -33,6 +33,8 @@ Read `.docs/kleer.md` before Kleer-specific changes. It contains durable Kleer A
 
 Read `.docs/ai-usage-billing.md` before changing source/payer routing, sync versions,
 or subscription billing. It covers local proxy hints and the server-first rollout.
+Its "Provider accounts and dispositions" section covers GitHub Copilot seats, the
+GitHub App and its `TOKI_GITHUB__APP_PRIVATE_KEY`, and the admin GitHub logins page.
 
 ## MCP Notes
 
@@ -57,6 +59,7 @@ Read `.docs/mcp.md` before changing MCP tools, MCP authentication or Toki's OAut
 |--------|--------|-------|
 | **Time tracking** | Fully hexagonal | `TimeTrackingClient` + `TimeTrackingService` ports, `KleerAdapter` |
 | **Work items** | Fully hexagonal | `WorkItemProvider` + `WorkItemService` ports, `AzureDevOpsWorkItemAdapter` |
+| **AI provider accounts** | Fully hexagonal | `ProviderAccountDirectory` + `AiProviderAccountService` ports, `GithubAccountDirectory` (GitHub App) |
 | **Pull requests** | Not abstracted | `RepoDiffer` directly uses `az_devops::RepoClient` — needs refactoring |
 | **Notifications** | Not abstracted | Coupled to PR change events |
 

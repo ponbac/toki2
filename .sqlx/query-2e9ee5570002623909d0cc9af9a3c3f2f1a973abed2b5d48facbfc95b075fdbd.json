@@ -1,0 +1,142 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_provider_account_dispositions AS disposition\n            SET target = $3,\n                user_id = $4,\n                valid_from = $5,\n                valid_to = $6,\n                login = account.login,\n                updated_by = $7,\n                updated_at = now()\n            FROM ai_provider_accounts AS account\n            WHERE disposition.provider = $1\n              AND disposition.id = $2\n              AND account.provider = disposition.provider\n              AND account.account_id = disposition.account_id\n            RETURNING disposition.id, disposition.provider, disposition.account_id,\n                disposition.login, disposition.target, disposition.user_id,\n                disposition.valid_from, disposition.valid_to, disposition.updated_at,\n                disposition.updated_by\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "login",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "login"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "target",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "target"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "user_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "valid_from",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "valid_from"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "valid_to",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "valid_to"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_by",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "updated_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Text",
+        "Int4",
+        "Date",
+        "Date",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "2e9ee5570002623909d0cc9af9a3c3f2f1a973abed2b5d48facbfc95b075fdbd"
+}

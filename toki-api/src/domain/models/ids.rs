@@ -229,3 +229,17 @@ impl AiSubscriptionId {
         self.0
     }
 }
+
+/// A provider account disposition identifier (database SERIAL).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AiAccountDispositionId(i32);
+
+impl AiAccountDispositionId {
+    pub fn new(id: i32) -> Self {
+        Self(id)
+    }
+
+    pub fn as_i32(&self) -> i32 {
+        self.0
+    }
+}

@@ -12,6 +12,7 @@ import { queries } from "@/lib/api/queries/queries";
 import { useNavigate } from "@tanstack/react-router";
 import { AzureAvatar } from "./azure-avatar";
 import {
+  AtSign,
   BrainCircuit,
   DrumIcon,
   FolderGit2,
@@ -203,6 +204,12 @@ const PAGES = [
     title: "Admin: AI subscriptions",
     to: "/admin/ai-subscriptions",
     icon: WalletCards,
+    adminOnly: true,
+  },
+  {
+    title: "Admin: GitHub logins",
+    to: "/admin/github-logins",
+    icon: AtSign,
     adminOnly: true,
   },
 ] as const;

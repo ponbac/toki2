@@ -183,3 +183,136 @@ each kind gets the rounded running total through it, less the one before it.
 Unmapped key names are never returned. The HTTP lines carry `unassigned`
 (`unmapped`, `unattributed` or null), and the CSV has an `unassigned` column,
 last so the other columns keep their places.
+
+## Provider accounts and dispositions (GitHub Copilot)
+
+GitHub bills Copilot per seat and per credit to the GitHub account that used it,
+so Copilot's credits can only be billed through accounts. Toki keeps every
+account that ever held a Copilot seat in the organization, and an admin decides
+whose usage each one is. Nothing here changes a bill yet: the bill's Copilot
+lines will read these dispositions.
+
+**Accounts and seats.**
+
+- An account is a GitHub user at a metered payer, keyed by `(provider,
+  account_id)`: GitHub's numeric user id, which survives renames. Its login is
+  the latest one seen (`ai_provider_accounts`).
+- Toki reads the organization's seats and each account's public profile from a
+  GitHub App (`ProviderAccountDirectory`, `GithubAccountDirectory`). A refresh
+  runs once a UTC day in release builds (hourly checks that refresh only when no
+  refresh succeeded that UTC day and the last attempt is at least 55 minutes
+  old) and when an admin presses Refresh. Local debug builds never refresh
+  unattended, since their default database is a production copy.
+- `ai_provider_seats` holds one row per seat assignment, keyed by GitHub's own
+  assignment instant (`created_at`, compared as an instant whatever offset GitHub
+  renders it in). Each row records when Toki first and last saw it listed. A seat
+  ends (`unlisted_at`) only when a **complete** listing omits its account, or
+  when its account is listed with another assignment instant. A listing is
+  complete when pagination ended on a short page (an empty one included) and it
+  holds at least as many accounts as GitHub's `total_seats`; an incomplete one
+  ends nothing, and the admin page says so. A seat's last day is its pending
+  cancellation day when that lies between the day it was last listed and the
+  day it was found unlisted, else the day it was last listed. Accounts and seats
+  are never deleted, so credits on ended seats always have an account.
+- `ai_provider_directory_status` keeps the last attempt, the last success, the
+  last error and the listed and reported seat counts.
+
+**Dispositions** (`ai_provider_account_dispositions`) say whose an account's
+usage is on UTC calendar days (GitHub's billing days) from `valid_from` through
+`valid_to`, both inclusive, `valid_to` NULL while ongoing. The rules are those of
+AI subscription periods:
+
+- `user`: a Toki user's. `external`: no Toki user's, so Spinit overhead. An
+  External is an explicit decision, unlike having no disposition (an unlinked
+  account), and it can be dated, for example External until the person joins.
+- One account's dispositions never share a day, and neither do one user's for one
+  payer. Both are exclusion constraints, so they hold between concurrent requests;
+  Externals never conflict with each other. A deleted user's dispositions go with
+  them, leaving the account unlinked.
+- A change of owner is "set a last day, then create from the next day". Deleting
+  removes a disposition as if it never existed. Edits apply retroactively until
+  month close restricts them.
+- A new disposition defaults to the days that need one: every day the account
+  held a seat, and every day after today while it holds one. It starts the first
+  uncovered stretch of those days that reaches into the review window (below),
+  else the first, reaching back over earlier stretches that no disposition
+  separates from it, so without dispositions it starts on the first seat day. It
+  ends the day before the next disposition starts; when none follows, it is
+  ongoing while a seat is listed and ends on the last seated day once every seat
+  has ended. When every such day is covered there is nothing to set, and the
+  account gets no suggestions.
+
+**Suggestions** compare an account's public profile and login with Toki users
+(`domain/models/ai_account_suggestion.rs`). Names are folded first: lower case,
+ø → o, æ → ae, ß → ss, ł → l, đ → d, þ → th, œ → oe, accents dropped. Per family,
+in this order, the first matching rule is evidence:
+
+| Family | Evidence | Rule |
+|---|---|---|
+| email | `email` | the public email is the user's |
+| name | `name` | ≥ 2 name tokens, the user's in order or as the same multiset |
+| name | `nameFirstLast` | ≥ 2 tokens, the user's first and last |
+| name | `nameInitial` | ≥ 2 tokens, the user's first, then the last's initial |
+| name | `nameFirstOnly` | 1 token, a first name no other user has |
+| login | `loginFullName` | the login's core is first+last, last+first or every token |
+| login | `loginInitialSurname` | ≥ 6 characters: the first's initial, then a prefix of the last |
+| login | `loginFirstSurnamePrefix` | the first, then ≥ 2 leading characters of the last |
+| login | `loginFirstOnly` | a first name no other user has |
+
+A login's core drops digit runs and the organization's own words (`spinit` for
+Spinit-AB) and strips them once from either end. A candidate is **verified** only
+with `email` or `name` evidence, as the account's only such candidate, when no
+other account has such evidence for the same user; everything else, login
+evidence and usage activity included, is **probable**. Users already linked
+during the account's default period are left out. Candidates rank by confidence,
+then best evidence (email, name, nameFirstLast, loginFullName, nameInitial,
+loginInitialSurname, loginFirstSurnamePrefix, nameFirstOnly, loginFirstOnly), then
+the user's Copilot-paid cost, records and active days in the review window. "Accept
+all verified" links only accounts without dispositions whose top candidate is
+verified and still the picked user, from the default period; the server
+recomputes the suggestions and skips every other pick with a reason. Probable
+matches need a confirmation per row.
+
+The committed tests use invented people. To check the rules against real data,
+put `users.tsv` (id, full name and email, tab separated, exported with `BEGIN READ
+ONLY`), `profiles/*.json` (GitHub `GET /user/{id}` bodies) and `mapping.json`
+(`{ "<userId>": { "login", "status" } }`) in a local directory, never committed,
+and run:
+
+```bash
+TOKI_SUGGESTION_ORACLE_DIR=/path/to/oracle SQLX_OFFLINE=true \
+  cargo test -p toki-api -- --ignored --nocapture suggestions_reproduce_the_local_oracle
+```
+
+**What needs a look.** The review window runs from the first day of the previous
+UTC month through today. *Accounts without a disposition* held a seat on window
+days that no disposition covers. *Users with Copilot-paid usage but no link* have
+usage Copilot paid for (`COALESCE(billing_provider, provider) = 'copilot'`,
+personal keys included, Copilot routed to Codex excluded) on window days that none
+of their `user` dispositions covers.
+
+**The GitHub App.** "Spinit Toki Billing" (`spinit-toki-billing`, App ID 5459019,
+client ID `Iv23liEuEJDWE4ifGVp8`), installed on Spinit-AB as installation 174922684,
+with the organization permissions GitHub Copilot Business: read (seats) and
+Administration: read (billing usage, for the GitHub usage import). Config `github {
+organization, api_base, app_client_id, installation_id }` is in `base.yaml`; the
+private key comes only from `TOKI_GITHUB__APP_PRIVATE_KEY`, as PEM (PKCS#1 as GitHub
+generates it, or PKCS#8), multi-line or with literal `\n`. Without it the directory
+is off and Toki starts normally; a key that cannot be used marks it misconfigured,
+shown on the page, without stopping startup. Toki signs a 10-minute RS256 JWT with
+aws-lc-rs (never the `rsa` crate), exchanges it for an installation token and caches
+that until 5 minutes before it expires; a `401` drops the token and retries once.
+Rotate the key in the App's settings, update the secret, then delete the old key
+there. A refresh costs one seat page per 100 seats and one profile call per stored
+account, plus at most one token an hour: some 40 calls a day against the
+installation's limit of 5,000 or more an hour.
+
+**API.** The routes are browser-only under `/ai-usage/admin/provider-accounts`,
+behind admin power like the rest of admin billing, and off the agent OpenAPI
+document and MCP: `GET` (the overview), `POST /refresh`, `POST /dispositions`,
+`PUT|DELETE /dispositions/{id}` and `POST /accept-suggestions`. Overlaps are 409,
+a directory that is off or misconfigured 503, GitHub's rate limit 429 and other
+GitHub failures 502.
+
+The GitHub usage import will add each account's credits, accounts seen only in
+imported usage, and the list of accounts with credits but no seat.

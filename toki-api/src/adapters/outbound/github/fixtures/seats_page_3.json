@@ -1,0 +1,26 @@
+{
+  "total_seats": 5,
+  "seats": [
+    {
+      "created_at": "2026-10-16T09:00:00Z",
+      "assignee": {
+        "login": "alan-turing",
+        "id": 1004,
+        "node_id": "U_kgDO00001004",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1004?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/alan-turing",
+        "html_url": "https://github.com/alan-turing",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "pending_cancellation_date": null,
+      "plan_type": "business",
+      "last_authenticated_at": "2026-10-24T07:51:13Z",
+      "updated_at": "2026-10-16T09:00:00Z",
+      "last_activity_at": "2026-10-23T14:59:07+02:00",
+      "last_activity_editor": "vscode/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  ]
+}

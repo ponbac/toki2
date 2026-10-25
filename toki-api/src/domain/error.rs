@@ -212,3 +212,58 @@ impl ExchangeRateError {
         }
     }
 }
+
+/// Errors from a payer's account directory, such as GitHub's list of an
+/// organization's Copilot seats. Modeled on `ExchangeRateError`; messages never
+/// carry credentials.
+#[derive(Debug, Clone, Error)]
+pub enum ProviderAccountDirectoryError {
+    /// The directory rejected Toki's credentials.
+    #[error("the account directory rejected Toki's credentials: {0}")]
+    Unauthorized(String),
+    /// The directory refused, for example for a missing permission.
+    #[error("the account directory refused: {0}")]
+    Forbidden(String),
+    /// The organization or the installation does not exist.
+    #[error("the account directory has no such organization or installation: {0}")]
+    NotFound(String),
+    /// The directory refused because of its rate limit, possibly saying for
+    /// how long.
+    #[error("the account directory is rate limiting requests")]
+    RateLimited {
+        retry_after: Option<std::time::Duration>,
+    },
+    /// A timeout, a connection error or a server error.
+    #[error("the account directory is unavailable: {0}")]
+    Unavailable(String),
+    /// A response that could not be read.
+    #[error("unexpected account directory response: {0}")]
+    Response(String),
+}
+
+/// Errors of provider accounts, their seats and their dispositions.
+#[derive(Debug, Error)]
+pub enum AiProviderAccountError {
+    #[error("{0}")]
+    Invalid(String),
+    #[error("disposition not found")]
+    NotFound,
+    #[error("account not found")]
+    AccountNotFound,
+    #[error("user not found")]
+    UserNotFound,
+    /// The dates share a day with another disposition of the account.
+    #[error("the dates overlap another disposition of {login}")]
+    AccountOverlap { login: String },
+    /// The user is linked to another account (`login`) on some of the days.
+    #[error("the user is already linked to {login} on some of these days")]
+    UserOverlap { login: String },
+    #[error("no account directory is configured")]
+    DirectoryOff,
+    #[error("the account directory is misconfigured: {0}")]
+    DirectoryMisconfigured(String),
+    #[error(transparent)]
+    Directory(ProviderAccountDirectoryError),
+    #[error("ai provider account storage error: {0}")]
+    Storage(String),
+}

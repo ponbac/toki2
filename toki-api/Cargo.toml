@@ -72,6 +72,12 @@ axum-login = "0.18.0"
 thiserror.workspace = true
 oauth2 = { version = "5.0.0", default-features = false }
 reqwest = { workspace = true, features = ["json"] }
+# RS256 for the GitHub App JWT. Already built for rustls. Never sign with the rsa
+# crate (RUSTSEC-2023-0071, see .cargo/audit.toml).
+aws-lc-rs = { version = "1.18", default-features = false, features = ["aws-lc-sys"] }
+pem = "3"
+# Name folding for provider account suggestions.
+unicode-normalization = "0.1"
 async-trait = "0.1.92"
 crossbeam = { version = "0.8.5", features = ["crossbeam-channel"] }
 web-push = "0.11.0"

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT 1 AS \"locked!\"\n            FROM (SELECT pg_advisory_xact_lock(hashtextextended('ai_provider_seats:' || $1, 0)))\n                AS lock\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locked!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "346393100897bc9df41cb5a47a937e1701e7f63b0b9fa1df3fdc13bd34dd25f7"
+}

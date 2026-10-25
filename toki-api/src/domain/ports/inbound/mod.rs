@@ -1,6 +1,7 @@
 mod ai_billing;
 mod ai_display_rates;
 mod ai_project_mapping;
+mod ai_provider_accounts;
 mod ai_subscriptions;
 mod ai_usage;
 mod ai_usage_report;
@@ -13,6 +14,7 @@ mod work_items;
 pub use ai_billing::*;
 pub use ai_display_rates::*;
 pub use ai_project_mapping::*;
+pub use ai_provider_accounts::*;
 pub use ai_subscriptions::*;
 pub use ai_usage::*;
 pub use ai_usage_report::*;

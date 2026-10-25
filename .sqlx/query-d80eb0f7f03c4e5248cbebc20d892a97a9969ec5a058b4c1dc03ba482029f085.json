@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_provider_accounts AS account\n            SET login = profile.login,\n                profile_name = profile.name,\n                profile_email = profile.email,\n                profile_fetched_at = now(),\n                updated_at = now()\n            FROM UNNEST($2::int8[], $3::text[], $4::text[], $5::text[])\n                AS profile(account_id, login, name, email)\n            WHERE account.provider = $1\n              AND account.account_id = profile.account_id\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8Array",
+        "TextArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d80eb0f7f03c4e5248cbebc20d892a97a9969ec5a058b4c1dc03ba482029f085"
+}

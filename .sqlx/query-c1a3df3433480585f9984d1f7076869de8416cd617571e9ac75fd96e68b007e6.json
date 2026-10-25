@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_provider_seats (\n                provider, account_id, seat_created_at, pending_cancellation_on,\n                last_activity_at, last_activity_client, first_listed_at, last_listed_at\n            )\n            SELECT $1, listed.account_id, listed.created_at, listed.pending_on,\n                listed.activity_at, listed.client, now(), now()\n            FROM UNNEST($2::int8[], $3::timestamptz[], $4::date[], $5::timestamptz[], $6::text[])\n                AS listed(account_id, created_at, pending_on, activity_at, client)\n            ON CONFLICT (provider, account_id, seat_created_at) DO UPDATE\n            SET pending_cancellation_on = EXCLUDED.pending_cancellation_on,\n                last_activity_at = EXCLUDED.last_activity_at,\n                last_activity_client = EXCLUDED.last_activity_client,\n                last_listed_at = EXCLUDED.last_listed_at,\n                unlisted_at = NULL\n            RETURNING (xmax = 0) AS \"inserted!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inserted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8Array",
+        "TimestamptzArray",
+        "DateArray",
+        "TimestamptzArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c1a3df3433480585f9984d1f7076869de8416cd617571e9ac75fd96e68b007e6"
+}
