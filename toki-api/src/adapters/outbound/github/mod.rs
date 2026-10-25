@@ -48,6 +48,9 @@ use crate::domain::{
 use client::{GithubAppClient, GithubError};
 
 pub const DEFAULT_API_BASE: &str = "https://api.github.com";
+/// Where Copilot's repositories live, as token-ledger's project keys name them
+/// (`github.com/{owner}/{repo}`): repository mapping suggestions match it.
+pub const REPOSITORY_KEY_HOST: &str = "github.com";
 /// Seats per page, GitHub's maximum.
 const PAGE_SIZE: u32 = 100;
 /// The most pages a listing reads before it gives up.

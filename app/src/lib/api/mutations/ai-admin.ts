@@ -12,6 +12,7 @@ import {
   parseAccountDisposition,
   parseDirectoryRefresh,
 } from "../contracts/ai-provider-accounts";
+import { parseAiRepositoryMapping } from "../contracts/ai-repository-mappings";
 import { parseAiProjectMapping } from "../contracts/ai-usage-report";
 import { parseAiSubscription } from "../contracts/ai-usage";
 import {
@@ -23,6 +24,7 @@ import {
   type AiMeteredImportMode,
   type AiMeteredImportStarted,
   type AiProjectMapping,
+  type AiRepositoryMapping,
 } from "../queries/ai-admin";
 import type { AiSubscription, AiSubscriptionTerms } from "../queries/ai-usage";
 import type { DefaultMutationOptions } from "./mutations";
@@ -30,6 +32,13 @@ import type { DefaultMutationOptions } from "./mutations";
 /** Maps a project key to a time-tracking project, or changes its mapping. */
 export type SetProjectMappingVars = { projectKey: string; projectId: string };
 export type DeleteProjectMappingVars = { projectKey: string };
+/** Maps a repository the metered payer billed to a time-tracking project, or
+ * changes its mapping. The name is matched case-insensitively. */
+export type SetRepositoryMappingVars = {
+  repository: string;
+  projectId: string;
+};
+export type DeleteRepositoryMappingVars = { repository: string };
 /** Declares a subscription for any user. */
 export type AdminCreateSubscriptionVars = {
   userId: number;
@@ -79,6 +88,8 @@ const MAX_PICKS_PER_REQUEST = 100;
 export const aiAdminMutations = {
   useSetProjectMapping,
   useDeleteProjectMapping,
+  useSetRepositoryMapping,
+  useDeleteRepositoryMapping,
   useAdminCreateSubscription,
   useAdminUpdateSubscription,
   useAdminDeleteSubscription,
@@ -171,6 +182,54 @@ export function useDeleteProjectMapping(
     mutationKey: ["ai-admin", "project-mappings", "delete"],
     mutationFn: async (body: DeleteProjectMappingVars) =>
       api.delete("ai-usage/project-mappings", { json: body }),
+    ...options,
+    onSuccess: async (data, vars, ctx, mutationContext) => {
+      await invalidateAiQueries(queryClient);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
+    },
+  });
+}
+
+/**
+ * Maps a repository to an active time-tracking project, or changes its
+ * mapping. A new mapping needs a repository the payer billed (else 404); the
+ * mapping applies whenever a bill is read, so every AI read refreshes.
+ */
+export function useSetRepositoryMapping(
+  options?: DefaultMutationOptions<
+    SetRepositoryMappingVars,
+    AiRepositoryMapping
+  >,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "repository-mappings", "set"],
+    mutationFn: async (body: SetRepositoryMappingVars) =>
+      parseAiRepositoryMapping(
+        await api
+          .put("ai-usage/admin/repository-mappings", { json: body })
+          .json<unknown>(),
+      ),
+    ...options,
+    onSuccess: async (data, vars, ctx, mutationContext) => {
+      await invalidateAiQueries(queryClient);
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
+    },
+  });
+}
+
+/** Removes a repository's mapping: its credits bill as Unassigned, in past
+ * months' bills too. */
+export function useDeleteRepositoryMapping(
+  options?: DefaultMutationOptions<DeleteRepositoryMappingVars>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "repository-mappings", "delete"],
+    mutationFn: async (body: DeleteRepositoryMappingVars) =>
+      api.delete("ai-usage/admin/repository-mappings", { json: body }),
     ...options,
     onSuccess: async (data, vars, ctx, mutationContext) => {
       await invalidateAiQueries(queryClient);

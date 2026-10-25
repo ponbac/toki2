@@ -2,8 +2,10 @@ use time::macros::{date, datetime};
 
 use super::*;
 use crate::domain::models::{
-    ai_metered_fixtures::*, reconcile, split_group, AiAccountTarget, AiStoredProviderAccount,
-    AiTrackedModelDay, AiUsageCheck,
+    ai_metered_fixtures::*, reconcile, repository_overview, split_group, AiAccountTarget,
+    AiMappingResolver, AiRepositoryDayCredits, AiRepositoryMapping, AiRepositoryOverviewInput,
+    AiRepositoryResolver, AiStoredProviderAccount, AiTrackedModelDay, AiUsageCheck,
+    TimeTrackingCompany,
 };
 
 const WIDGET: &str = "Example Client - Widget API";
@@ -39,6 +41,9 @@ fn summary(allocation: &AiMeteredAllocation) -> Vec<LineSummary> {
             let target = match (&line.project, line.unassigned) {
                 (Some(project), _) => project.name.clone(),
                 (None, Some(AiUnassignedKind::Unmapped)) => "unmapped".to_string(),
+                (None, Some(AiUnassignedKind::UnmappedRepository)) => {
+                    "unmapped repository".to_string()
+                }
                 (None, Some(AiUnassignedKind::Unattributed)) => "unattributed".to_string(),
                 (None, None) => line.charge.sku.clone().unwrap_or_default(),
             };
@@ -52,7 +57,9 @@ fn summary(allocation: &AiMeteredAllocation) -> Vec<LineSummary> {
 /// less code review, rounded once; their nanodollars are its attributed
 /// (project and personal lines), untracked, unlinked and external credits,
 /// and their usage what it tracked; no project or personal line bills more
-/// than its tracked cost.
+/// than its tracked cost. Each repository line's nanodollars are the tab's
+/// repository credit rows of the repository, whatever their case, rounded
+/// once, to its mapped project or Unassigned (unmapped repository).
 fn allocate(input: &AiReconciliationInput) -> AiMeteredAllocation {
     use AiMeteredAccountReason::{External, Unlinked};
     use AiMeteredChargeKind::{Account, Personal, Project, Untracked};
@@ -117,6 +124,58 @@ fn allocate(input: &AiReconciliationInput) -> AiMeteredAllocation {
             "{}",
             account.login
         );
+    }
+    let mut repositories: BTreeMap<String, i64> = BTreeMap::new();
+    for usage in reconciliation
+        .repositories
+        .iter()
+        .filter(|usage| usage.kind == AiOrgChargeKind::RepositoryCredits)
+    {
+        *repositories
+            .entry(repository_key(&usage.repository))
+            .or_default() += usage.credit_usd.unwrap().nanos();
+    }
+    let repository_lines: Vec<&AiMeteredLine> = allocation
+        .lines
+        .iter()
+        .filter(|line| line.charge.kind == AiMeteredChargeKind::Repository)
+        .collect();
+    assert_eq!(
+        repository_lines
+            .iter()
+            .map(|line| match &line.subject {
+                AiBillingSubject::Repository { name, .. } => repository_key(name),
+                subject => panic!("a repository line of {subject:?}"),
+            })
+            .collect::<Vec<_>>(),
+        repositories
+            .iter()
+            .filter(|(_, nanos)| usd(**nanos).to_cents() > 0)
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>(),
+        "one line per repository with credits, by name"
+    );
+    for line in repository_lines {
+        let AiBillingSubject::Repository { name, .. } = &line.subject else {
+            unreachable!()
+        };
+        let nanos = repositories[&repository_key(name)];
+        assert_eq!(line.charge.allocated, usd(nanos), "{name}");
+        assert_eq!(line.charge.credits(), usd(nanos).to_cents(), "{name}");
+        assert_eq!(line.charge.account, None);
+        assert_eq!(line.usage, AiBillingUsage::default());
+        assert_eq!(
+            line.project.as_ref(),
+            input.repository_mappings.project(name),
+            "{name}"
+        );
+        assert_eq!(
+            line.unassigned,
+            line.project
+                .is_none()
+                .then_some(AiUnassignedKind::UnmappedRepository)
+        );
+        assert_eq!(line.charge.provisional, allocation.repository_provisional);
     }
     for line in &allocation.lines {
         assert_eq!(line.charge.amount.currency, AiCurrency::usd());
@@ -1020,4 +1079,366 @@ fn only_every_account_can_be_allocated() {
         allocate_metered_credits(&input),
         Err(AiMeteredUsageError::Invalid(_))
     ));
+}
+
+/// Client A's mapping of widget-api.
+fn widget_mapped() -> AiRepositoryResolver {
+    AiRepositoryResolver::new(
+        vec![repository_mapping("widget-api", company(), widget())],
+        Some(company()),
+    )
+}
+
+#[test]
+fn code_review_bills_once_by_repository() {
+    let day = date!(2026 - 10 - 09);
+    let mut input = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    input.account_credits = vec![
+        credits(1001, day, "GPT-6.1 Sol", "50"),
+        // The same 20 credits the organization's rows bill per repository.
+        row(
+            1001,
+            day,
+            CREDITS_SKU,
+            "Code Review model",
+            AiCreditKind::RepositoryBilled,
+            "20",
+        ),
+    ];
+    input.tracked = vec![tracked(ADA, day, "gpt-6.1-sol", 50 * CREDIT)];
+    input.org_charges = vec![
+        repository_credits(day, "widget-api", "12"),
+        repository_credits(day, "gadget-web", "8"),
+        // The IDE aggregate, the cloud agent and Actions never bill.
+        org_charge(
+            day,
+            "copilot",
+            CREDITS_SKU,
+            "AICredits",
+            "",
+            AiOrgChargeKind::AccountCreditsAggregate,
+            "70",
+        ),
+        org_charge(
+            day,
+            "copilot",
+            AGENT_SKU,
+            "AICredits",
+            "",
+            AiOrgChargeKind::UntrackableCredits,
+            "3",
+        ),
+        org_charge(
+            day,
+            "actions",
+            "Actions Linux",
+            "Minutes",
+            "widget-api",
+            AiOrgChargeKind::Compute,
+            "500",
+        ),
+    ];
+    input.repository_mappings = widget_mapped();
+    let allocation = allocate(&input);
+    assert_eq!(
+        summary(&allocation),
+        [
+            // Ada's lines are her gross less code review.
+            line("user 1", "project", WIDGET, 50),
+            line(
+                "repository gadget-web",
+                "repository",
+                "unmapped repository",
+                8
+            ),
+            line("repository widget-api", "repository", WIDGET, 12),
+        ]
+    );
+    let widget_line = &allocation.lines[2];
+    assert_eq!(widget_line.charge.sku.as_deref(), Some(CREDITS_SKU));
+    assert_eq!(
+        widget_line.subject,
+        AiBillingSubject::Repository {
+            provider: AiProvider::Copilot,
+            name: "widget-api".to_string(),
+        }
+    );
+    assert_eq!(allocation.unmapped_repositories(), ["gadget-web"]);
+    assert!(allocation.repository_provisional.is_empty());
+    assert!(!allocation.provisional);
+    // Billed once: Ada's 70 credits, 20 of them per repository.
+    let billed: i64 = allocation
+        .lines
+        .iter()
+        .map(|line| line.charge.credits())
+        .sum();
+    assert_eq!(billed, 70);
+}
+
+#[test]
+fn repository_credits_round_once_per_repository_and_month() {
+    let mut input = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    input.org_charges = vec![
+        repository_credits(date!(2026 - 10 - 02), "widget-api", "0.3"),
+        repository_credits(date!(2026 - 10 - 03), "widget-api", "0.3"),
+        // Rounds to no credit: no line, so nothing waits for a mapping.
+        repository_credits(date!(2026 - 10 - 04), "gadget-web", "0.4"),
+        // Another UTC month's rows are another bill's.
+        repository_credits(date!(2026 - 09 - 30), "widget-api", "40"),
+        repository_credits(date!(2026 - 11 - 01), "widget-api", "40"),
+    ];
+    input.repository_mappings = widget_mapped();
+    let allocation = allocate(&input);
+    assert_eq!(
+        summary(&allocation),
+        [line("repository widget-api", "repository", WIDGET, 1)]
+    );
+    assert_eq!(allocation.lines[0].charge.allocated, usd(6 * CREDIT / 10));
+    assert!(allocation.unmapped_repositories().is_empty());
+}
+
+#[test]
+fn the_mapping_overview_flags_exactly_the_repositories_the_bill_puts_on_unassigned() {
+    let mut input = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    input.org_charges = vec![
+        repository_credits(date!(2026 - 10 - 02), "widget-api", "3"),
+        // Half a credit once its days are summed: one credit, unmapped.
+        repository_credits(date!(2026 - 10 - 02), "gadget-web", "0.3"),
+        repository_credits(date!(2026 - 10 - 03), "Gadget-Web", "0.2"),
+        // Rounds to no credit: no line.
+        repository_credits(date!(2026 - 10 - 04), "tiny-tool", "0.4"),
+        // Before the cutover: no line, whatever its credits.
+        repository_credits(date!(2026 - 09 - 30), "legacy-api", "40"),
+    ];
+    input.repository_mappings = widget_mapped();
+    let allocation = allocate(&input);
+
+    let keys = AiMappingResolver::new(Vec::new(), Some(company()));
+    let overview = repository_overview(AiRepositoryOverviewInput {
+        payer: input.payer,
+        months: vec![october().previous().unwrap(), october()],
+        billed_from: Some(october()),
+        credits: input
+            .org_charges
+            .iter()
+            .map(|charge| AiRepositoryDayCredits {
+                repository: charge.repository.clone(),
+                day: charge.day,
+                credits: charge.credit_usd().unwrap(),
+            })
+            .collect(),
+        mappings: vec![AiRepositoryMapping {
+            payer: input.payer,
+            repository: "widget-api".to_string(),
+            company: company(),
+            project: widget(),
+            created_by: None,
+            created_at: datetime!(2026-10-20 08:00 UTC),
+            updated_by: None,
+            updated_at: datetime!(2026-10-20 08:00 UTC),
+        }],
+        configured: Some(&company()),
+        keys: &keys,
+        key_host: "github.com",
+    });
+    let flagged: Vec<&str> = overview
+        .repositories
+        .iter()
+        .filter(|row| row.needs_mapping())
+        .map(|row| row.repository.as_str())
+        .collect();
+    assert_eq!(flagged, ["Gadget-Web"]);
+    assert_eq!(flagged, allocation.unmapped_repositories());
+}
+
+#[test]
+fn repository_names_group_case_insensitively() {
+    let mut input = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    input.org_charges = vec![
+        repository_credits(date!(2026 - 10 - 02), "Widget-API", "5"),
+        repository_credits(date!(2026 - 10 - 09), "widget-api", "7"),
+        repository_credits(date!(2026 - 10 - 05), "WIDGET-API", "1"),
+        repository_credits(date!(2026 - 10 - 06), "Gadget-Web", "2"),
+    ];
+    input.repository_mappings = widget_mapped();
+    let allocation = allocate(&input);
+    // One line each, named by its latest spelling, in name order whatever
+    // the case.
+    assert_eq!(
+        summary(&allocation),
+        [
+            line(
+                "repository Gadget-Web",
+                "repository",
+                "unmapped repository",
+                2
+            ),
+            line("repository widget-api", "repository", WIDGET, 13),
+        ]
+    );
+}
+
+#[test]
+fn a_stale_or_unconfigured_repository_mapping_bills_unassigned_unmapped_repository() {
+    let mut input = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    input.org_charges = vec![repository_credits(
+        date!(2026 - 10 - 02),
+        "widget-api",
+        "12",
+    )];
+    let other_company = TimeTrackingCompany {
+        company_id: "company-2".to_string(),
+        ..company()
+    };
+    for resolver in [
+        AiRepositoryResolver::default(),
+        AiRepositoryResolver::new(
+            vec![repository_mapping(
+                "widget-api",
+                other_company.clone(),
+                widget(),
+            )],
+            Some(company()),
+        ),
+        AiRepositoryResolver::new(
+            vec![repository_mapping("widget-api", company(), widget())],
+            None,
+        ),
+    ] {
+        input.repository_mappings = resolver;
+        let allocation = allocate(&input);
+        assert_eq!(
+            summary(&allocation),
+            [line(
+                "repository widget-api",
+                "repository",
+                "unmapped repository",
+                12
+            )]
+        );
+        assert_eq!(allocation.unmapped_repositories(), ["widget-api"]);
+    }
+}
+
+#[test]
+fn repository_lines_are_provisional_while_org_usage_is_not_settled() {
+    use AiMeteredProvisional::{ImportIncomplete, MonthInProgress, NotSettled};
+    let mut closed = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    closed.org_charges = vec![repository_credits(
+        date!(2026 - 10 - 02),
+        "widget-api",
+        "12",
+    )];
+    let settled = allocate(&closed);
+    assert!(settled.lines[0].charge.provisional.is_empty());
+    assert!(!settled.provisional);
+
+    // A day of the organization's usage never fetched, or not after it ended.
+    for (fetched, complete) in [(false, false), (true, false)] {
+        let mut gap = closed.clone();
+        let cover = gap.coverage.get_mut(&date!(2026 - 10 - 20)).unwrap();
+        cover.org_usage_fetched = fetched;
+        cover.org_usage_complete = complete;
+        let allocation = allocate(&gap);
+        assert_eq!(allocation.lines[0].charge.provisional, [ImportIncomplete]);
+        assert_eq!(allocation.repository_provisional, [ImportIncomplete]);
+        assert!(allocation.provisional);
+
+        // Without a repository row the gap still keeps the month provisional:
+        // a missing slice is no settled zero.
+        gap.org_charges.clear();
+        let allocation = allocate(&gap);
+        assert!(allocation.lines.is_empty());
+        assert_eq!(allocation.repository_provisional, [ImportIncomplete]);
+        assert!(allocation.provisional);
+    }
+
+    // October in progress: the last days are within the settle days.
+    let mut current = input(vec![linked(1001, "ada-lovelace", ADA)]);
+    current.org_charges = closed.org_charges.clone();
+    let allocation = allocate(&current);
+    assert_eq!(
+        allocation.lines.last().unwrap().charge.provisional,
+        [MonthInProgress, ImportIncomplete, NotSettled]
+    );
+}
+
+#[test]
+fn an_unrecognized_row_naming_a_repository_leaves_repository_credits_provisional() {
+    use AiMeteredProvisional::Unrecognized;
+    let day = date!(2026 - 10 - 09);
+    let mut input = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    // Code review the accounts bill as usual, while the organization's rows
+    // moved to a SKU Toki does not know: they bill on no line.
+    input.account_credits = vec![row(
+        1001,
+        day,
+        CREDITS_SKU,
+        "Code Review model",
+        AiCreditKind::RepositoryBilled,
+        "20",
+    )];
+    let unrecognized = |repository: &str, day: Date| {
+        org_charge(
+            day,
+            "copilot",
+            "Copilot Code Review",
+            "AICredits",
+            repository,
+            AiOrgChargeKind::Unrecognized,
+            "20",
+        )
+    };
+    input.org_charges = vec![
+        repository_credits(day, "widget-api", "12"),
+        unrecognized("gadget-web", day),
+    ];
+    input.repository_mappings = widget_mapped();
+    let allocation = allocate(&input);
+    assert_eq!(
+        summary(&allocation),
+        [line("repository widget-api", "repository", WIDGET, 12)]
+    );
+    assert_eq!(allocation.lines[0].charge.provisional, [Unrecognized]);
+    assert_eq!(allocation.repository_provisional, [Unrecognized]);
+    assert!(allocation.provisional);
+
+    // Flagged without any repository line too: nothing is dropped silently.
+    input.org_charges = vec![unrecognized("gadget-web", day)];
+    let allocation = allocate(&input);
+    assert!(allocation.lines.is_empty());
+    assert_eq!(allocation.repository_provisional, [Unrecognized]);
+    assert!(allocation.provisional);
+
+    // Only a row naming a repository, in the bill's UTC month, counts.
+    input.org_charges = vec![
+        unrecognized("", day),
+        unrecognized("gadget-web", date!(2026 - 09 - 30)),
+        repository_credits(day, "widget-api", "12"),
+    ];
+    let allocation = allocate(&input);
+    assert!(allocation.repository_provisional.is_empty());
+    assert!(!allocation.provisional);
+}
+
+#[test]
+fn one_users_part_has_no_repository_lines() {
+    let day = date!(2026 - 10 - 09);
+    let mut input = closed_input(vec![linked(1001, "ada-lovelace", ADA)]);
+    input.account_credits = vec![credits(1001, day, "GPT-6.1 Sol", "10")];
+    input.tracked = vec![tracked(ADA, day, "gpt-6.1-sol", 10 * CREDIT)];
+    input.org_charges = vec![repository_credits(day, "gadget-web", "8")];
+    let mut gap = input.clone();
+    gap.coverage
+        .get_mut(&date!(2026 - 10 - 20))
+        .unwrap()
+        .org_usage_fetched = false;
+    let everyone = allocate(&gap);
+    assert_eq!(everyone.lines.len(), 2);
+    assert!(everyone.provisional);
+    let ada = for_user(everyone, ADA);
+    assert_eq!(summary(&ada), [line("user 1", "project", WIDGET, 10)]);
+    assert!(ada.repository_provisional.is_empty());
+    assert!(ada.unmapped_repositories().is_empty());
+    assert!(!ada.provisional);
 }

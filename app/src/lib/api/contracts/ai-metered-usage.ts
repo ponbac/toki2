@@ -355,6 +355,23 @@ const residualDaySchema = z
   })
   .strict();
 
+/** Code review on one reconciled UTC day, per account against per
+ * repository: the same credits, which the bill takes once, per repository. */
+const codeReviewDaySchema = z
+  .object({
+    day: utcDateSchema,
+    byAccounts: creditsSchema,
+    byRepositories: creditsSchema,
+    /** Repositories minus accounts, `0.00` when they agree. Negative is code
+     * review GitHub billed without a repository (inside the IDE aggregate),
+     * which bills on no line, or in an unrecognized row naming a
+     * repository. Positive is code review by accounts Toki does not import
+     * (unknown accounts), which bills once, through its repository line. */
+    difference: signedCreditsSchema,
+    status: z.enum(RESIDUAL_STATUSES),
+  })
+  .strict();
+
 const meteredMonthSchema = z
   .object({
     /** The metered payer, such as `copilot`. */
@@ -371,8 +388,15 @@ const meteredMonthSchema = z
     accounts: z.array(accountSchema),
     unlinkedTracked: z.array(unlinkedTrackedSchema),
     repositories: z.array(repositorySchema),
+    /** Code review per account against per repository, over the month's
+     * reconciled days; null without code review on either side. */
     codeReview: z
-      .object({ byAccounts: creditsSchema, byRepositories: creditsSchema })
+      .object({
+        byAccounts: creditsSchema,
+        byRepositories: creditsSchema,
+        /** Every reconciled UTC day with code review on either side. */
+        days: z.array(codeReviewDaySchema),
+      })
       .strict()
       .nullable(),
     residualDays: z.array(residualDaySchema),
@@ -409,6 +433,7 @@ export type AiMeteredUnlinkedTracked = Readonly<
 >;
 export type AiMeteredRepository = Readonly<z.infer<typeof repositorySchema>>;
 export type AiResidualDay = Readonly<z.infer<typeof residualDaySchema>>;
+export type AiCodeReviewDay = Readonly<z.infer<typeof codeReviewDaySchema>>;
 export type AiMeteredImportStarted = Readonly<
   z.infer<typeof importStartedSchema>
 >;

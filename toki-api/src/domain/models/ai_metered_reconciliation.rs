@@ -44,6 +44,19 @@
 //!   settles, and a failed check makes every day an import gap. Days with a
 //!   missing slice are an import gap too, and days that may still change are
 //!   provisional.
+//! - **Code review check.** Per UTC day, the code review credits billed per
+//!   repository (the organization's rows) minus those billed per account
+//!   (repository-billed groups): the same credits, which the bill takes once,
+//!   per repository. A day whose accounts exceed its repositories (a negative
+//!   difference) is code review the payer billed without a repository, inside
+//!   the IDE aggregate, which bills on no line, or in an unrecognized row
+//!   naming a repository (which makes repository lines provisional itself).
+//!   A day whose repositories exceed its accounts (a positive difference) is
+//!   code review by accounts Toki never listed (the unknown account), whose
+//!   per-account credits are never imported and stay out of the unknown
+//!   account's line, or, on an import gap, by an account whose slice is
+//!   missing: its repository rows bill it once, so the bill is right. The
+//!   check is informational: it never makes a line provisional.
 //!
 //! Amounts are nanodollars (a credit is 10^7). Signed figures (residuals) are
 //! plain `i64` nanodollars.
@@ -56,8 +69,8 @@ use super::{
     allocate_largest_remainder, metered_model_status, AiAccountTarget, AiBillingMonth,
     AiBillingProject, AiBillingUsage, AiCreditKind, AiDecimal, AiMeteredCredit,
     AiMeteredModelStatus, AiMeteredOrgCharge, AiMeteredSummaryLine, AiOrgChargeKind, AiProvider,
-    AiProviderAccountId, AiStoredProviderAccount, AiSummaryKind, AiTokenCounts, AiUnassignedKind,
-    AiUsageDateRange, AiUsdNanos, UserId,
+    AiProviderAccountId, AiRepositoryResolver, AiStoredProviderAccount, AiSummaryKind,
+    AiTokenCounts, AiUnassignedKind, AiUsageDateRange, AiUsdNanos, UserId,
 };
 use crate::domain::AiMeteredUsageError;
 
@@ -83,7 +96,8 @@ pub enum AiMeteredDestination {
 
 impl AiMeteredDestination {
     /// Bill order: mapped projects by name, then id; Unassigned unmapped,
-    /// then unattributed; personal last.
+    /// then unattributed; personal last. Tracked usage is never an unmapped
+    /// repository's (only repository credits are), which ranks between.
     pub fn order_key(&self) -> (u8, String, String) {
         match self {
             Self::Project(AiBillingProject::Mapped(project)) => {
@@ -92,10 +106,13 @@ impl AiMeteredDestination {
             Self::Project(AiBillingProject::Unassigned(AiUnassignedKind::Unmapped)) => {
                 (1, String::new(), String::new())
             }
-            Self::Project(AiBillingProject::Unassigned(AiUnassignedKind::Unattributed)) => {
+            Self::Project(AiBillingProject::Unassigned(AiUnassignedKind::UnmappedRepository)) => {
                 (2, String::new(), String::new())
             }
-            Self::Personal => (3, String::new(), String::new()),
+            Self::Project(AiBillingProject::Unassigned(AiUnassignedKind::Unattributed)) => {
+                (3, String::new(), String::new())
+            }
+            Self::Personal => (4, String::new(), String::new()),
         }
     }
 
@@ -179,8 +196,14 @@ pub struct AiUsageCheck {
 /// One day's import coverage.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AiDayCoverage {
+    /// The organization's credits slice was fetched.
     pub org_fetched: bool,
+    /// The organization's credits slice was fetched after the day ended.
     pub org_complete: bool,
+    /// The organization's usage rows (repositories) slice was fetched.
+    pub org_usage_fetched: bool,
+    /// The organization's usage rows slice was fetched after the day ended.
+    pub org_usage_complete: bool,
     /// Expected account slices never fetched.
     pub accounts_missing: u32,
     /// Fetched account slices not yet fetched after the day ended.
@@ -210,6 +233,10 @@ pub struct AiReconciliationInput {
     /// One user's view: only days the accounts are linked to them count, and
     /// no residual is computed.
     pub focus: Option<UserId>,
+    /// The payer's repository mappings against the configured company, which
+    /// the bill's repository lines resolve through; the default (none) in one
+    /// user's view.
+    pub repository_mappings: AiRepositoryResolver,
 }
 
 /// Why an account or group needs a look.
@@ -322,11 +349,31 @@ pub struct AiRepositoryUsage {
     pub days: u32,
 }
 
-/// Code review credits per account against those per repository.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Code review credits per account against those per repository, over the
+/// reconciled days.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiCodeReviewCheck {
     pub by_accounts: AiUsdNanos,
     pub by_repositories: AiUsdNanos,
+    /// Every reconciled day with code review on either side, by day.
+    pub days: Vec<AiCodeReviewDay>,
+}
+
+/// One UTC day of the code review check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiCodeReviewDay {
+    pub day: Date,
+    pub by_accounts: AiUsdNanos,
+    pub by_repositories: AiUsdNanos,
+    /// `by_repositories − by_accounts`, zero within
+    /// `RESIDUAL_TOLERANCE_NANOS`: negative for code review billed on no
+    /// line, positive for code review of accounts Toki does not import.
+    pub difference: i64,
+    /// How far the day's figures can be trusted: `Incomplete` when the
+    /// organization's usage slice or an account's slice is missing, or a
+    /// seated account's import failed; `Provisional` while a slice is not
+    /// complete or the day is within the settle days.
+    pub status: AiResidualStatus,
 }
 
 /// How far a residual day can be trusted.
@@ -1159,28 +1206,7 @@ pub fn reconcile(
         .filter(|charge| month.contains(charge.day))
         .collect();
     let repositories = repository_usage(&charges)?;
-    let day_set: HashSet<Date> = walk.days.iter().copied().collect();
-    let by_accounts: i128 = input
-        .account_credits
-        .iter()
-        .filter(|row| day_set.contains(&row.day))
-        .filter(|row| row.credit.kind == AiCreditKind::RepositoryBilled)
-        .map(|row| i128::from(row.gross_usd.nanos()))
-        .sum();
-    let by_repositories: i128 = charges
-        .iter()
-        .filter(|charge| charge.kind == AiOrgChargeKind::RepositoryCredits)
-        .filter_map(|charge| charge.credit_usd())
-        .map(|usd| i128::from(usd.nanos()))
-        .sum();
-    let code_review = (by_accounts > 0 || by_repositories > 0)
-        .then(|| {
-            Ok::<_, AiMeteredUsageError>(AiCodeReviewCheck {
-                by_accounts: nanos(by_accounts)?,
-                by_repositories: nanos(by_repositories)?,
-            })
-        })
-        .transpose()?;
+    let code_review = code_review_check(&walk, &input, &charges)?;
     let month_org_credits: Vec<AiStoredOrgCredit> = input
         .org_credits
         .iter()
@@ -1205,6 +1231,79 @@ pub fn reconcile(
         totals: result_totals,
         pool,
     })
+}
+
+/// The code review check over the reconciled days: per day, code review
+/// billed per account (repository-billed credits) and per repository (the
+/// organization's repository credits). `None` without code review on either
+/// side.
+fn code_review_check(
+    walk: &AiMeteredWalk<'_>,
+    input: &AiReconciliationInput,
+    charges: &[&AiMeteredOrgCharge],
+) -> Result<Option<AiCodeReviewCheck>, AiMeteredUsageError> {
+    let mut by_day: BTreeMap<Date, (i128, i128)> = walk
+        .days
+        .iter()
+        .map(|day| (*day, (0_i128, 0_i128)))
+        .collect();
+    for row in input
+        .account_credits
+        .iter()
+        .filter(|row| row.credit.kind == AiCreditKind::RepositoryBilled)
+    {
+        if let Some((accounts, _)) = by_day.get_mut(&row.day) {
+            *accounts += i128::from(row.gross_usd.nanos());
+        }
+    }
+    for charge in charges
+        .iter()
+        .filter(|charge| charge.kind == AiOrgChargeKind::RepositoryCredits)
+    {
+        if let Some((_, repositories)) = by_day.get_mut(&charge.day) {
+            *repositories += i128::from(charge.credit_usd().ok_or_else(out_of_range)?.nanos());
+        }
+    }
+    let (by_accounts, by_repositories) = by_day
+        .values()
+        .fold((0_i128, 0_i128), |(a, r), (accounts, repositories)| {
+            (a + accounts, r + repositories)
+        });
+    if by_accounts == 0 && by_repositories == 0 {
+        return Ok(None);
+    }
+    let tolerance = i128::from(RESIDUAL_TOLERANCE_NANOS);
+    let days = by_day
+        .into_iter()
+        .filter(|(_, (accounts, repositories))| *accounts > 0 || *repositories > 0)
+        .map(|(day, (accounts, repositories))| {
+            let raw = repositories - accounts;
+            let cover = input.coverage.get(&day).copied().unwrap_or_default();
+            let status =
+                if !cover.org_usage_fetched || cover.accounts_missing > 0 || walk.seated_errors {
+                    AiResidualStatus::Incomplete
+                } else if !cover.org_usage_complete
+                    || cover.accounts_incomplete > 0
+                    || day >= walk.settling_from
+                {
+                    AiResidualStatus::Provisional
+                } else {
+                    AiResidualStatus::Settled
+                };
+            Ok(AiCodeReviewDay {
+                day,
+                by_accounts: nanos(accounts)?,
+                by_repositories: nanos(repositories)?,
+                difference: signed(if raw.abs() <= tolerance { 0 } else { raw })?,
+                status,
+            })
+        })
+        .collect::<Result<Vec<_>, AiMeteredUsageError>>()?;
+    Ok(Some(AiCodeReviewCheck {
+        by_accounts: nanos(by_accounts)?,
+        by_repositories: nanos(by_repositories)?,
+        days,
+    }))
 }
 
 /// Adds one imported account day to its sums.

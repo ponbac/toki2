@@ -195,7 +195,26 @@ const month = {
       days: 2,
     },
   ],
-  codeReview: { byAccounts: "1200.00", byRepositories: "1200.00" },
+  codeReview: {
+    byAccounts: "1210.00",
+    byRepositories: "1200.00",
+    days: [
+      {
+        day: "2026-10-23",
+        byAccounts: "600.00",
+        byRepositories: "600.00",
+        difference: "0.00",
+        status: "settled",
+      },
+      {
+        day: "2026-10-24",
+        byAccounts: "610.00",
+        byRepositories: "600.00",
+        difference: "-10.00",
+        status: "provisional",
+      },
+    ],
+  },
   residualDays: [
     {
       day: "2026-10-24",
@@ -287,6 +306,30 @@ describe("metered usage contract", () => {
       parseMeteredMonth({
         ...month,
         accounts: [{ ...account, groups: [{ ...group, extra: 1 }] }],
+      }),
+    ).toThrow();
+  });
+
+  test("takes code review per day, signed only in its difference", () => {
+    const [settled] = month.codeReview.days;
+    for (const day of [
+      { ...settled, byAccounts: "-600.00" },
+      { ...settled, difference: "0" },
+      { ...settled, status: "late" },
+      { ...settled, extra: 1 },
+      { ...settled, day: "Oct 23" },
+    ]) {
+      expect(() =>
+        parseMeteredMonth({
+          ...month,
+          codeReview: { ...month.codeReview, days: [day] },
+        }),
+      ).toThrow();
+    }
+    expect(() =>
+      parseMeteredMonth({
+        ...month,
+        codeReview: { byAccounts: "0.00", byRepositories: "0.00" },
       }),
     ).toThrow();
   });

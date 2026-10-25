@@ -166,12 +166,17 @@ ignore the field, but have no repricing operations.
 ## Unassigned usage by kind
 
 Usage that no mapping to the configured company resolves bills to Unassigned. The
-bill shows it in two kinds, from `unattributed` and from every other key:
+bill shows it in three kinds, from `unattributed`, from every other key, and from
+a metered payer's repository credits:
 
 - **unmapped**: repositories nobody has mapped, and keys mapped to another
   company's project. Mapping them on Admin > Project mappings assigns them,
   as long as time tracking is configured. A key with surrounding whitespace
   cannot be mapped.
+- **unmapped repository**: code review credits GitHub billed to a repository
+  that no repository mapping to the configured company resolves (see
+  "Repository mappings"). Mapping the repository under Project mappings >
+  GitHub repositories assigns them; until then they will block month close.
 - **unattributed**: usage outside any repository, which no mapping can assign.
 
 Unassigned still bills as one project: a subscription fee is split over it and
@@ -188,8 +193,10 @@ $0.01 and $0.00, and at 10 SEK per USD, 0.05 SEK each.
 `daily_usage` keeps the kinds apart in SQL but rounds their costs as one group:
 each kind gets the rounded running total through it, less the one before it.
 Unmapped key names are never returned. The HTTP lines carry `unassigned`
-(`unmapped`, `unattributed` or null), and the CSV has an `unassigned` column
-after the original columns, so those keep their places. The metered columns
+(`unmapped`, `unmappedRepository`, `unattributed` or null), and the CSV has an
+`unassigned` column (`unmapped`, `unmapped_repository` or `unattributed`) after
+the original columns, so those keep their places. A metered line carries one
+kind, so its Unassigned part is the line itself. The metered columns
 follow it (see **CSV** under "GitHub Copilot lines in the bill").
 
 ## Provider accounts and dispositions (GitHub Copilot)
@@ -338,8 +345,8 @@ gets suggestions.
 Toki imports what GitHub billed for Copilot, per account, UTC day and model, and
 reconciles it with Toki's own Copilot-priced usage. From
 `ai_usage.metered_copilot_from` on, the bill's Copilot lines read these tables
-(below); repository mappings will map their repository rows, and month close will
-read their coverage.
+(below), repository mappings bill their repository rows (see "Repository
+mappings"), and month close will read their coverage.
 
 **Port and adapter.** The domain reads a `MeteredUsageSource` (credits of an
 account or the organization for a UTC month or day, the organization's usage rows,
@@ -512,8 +519,24 @@ browser's time zone. Account import errors are listed per account and month.
   a stored month that differs from GitHub's month total, and a failed import of an
   account that held a seat.
 - Repositories: the organization's rows summed per product, SKU, unit and
-  repository, with the IDE aggregate flagged and the code review check (code review
-  credits per account against those per repository).
+  repository, with the IDE aggregate flagged, and the code review check: per
+  reconciled UTC day, code review credits per repository (the organization's
+  repository credit rows) minus those per account (repository-billed groups),
+  zero within 100 nanodollars, with the month's totals (`codeReview: {
+  byAccounts, byRepositories, days: [{ day, byAccounts, byRepositories,
+  difference, status }] }`). A day's status is `incomplete` when the
+  organization's usage slice or an expected account slice is missing, or a
+  seated account's import failed; `provisional` while a slice is not complete
+  or the day is within the settle days; else `settled`. A negative difference
+  (accounts exceed repositories) is code review GitHub billed without a
+  repository, inside the IDE aggregate, which bills on no line, or code review
+  in an unrecognized row naming a repository (a SKU or unit Toki does not
+  know). A positive difference (repositories exceed accounts) is code review by
+  accounts Toki does not import (unknown accounts): their "Code Review model"
+  credits are never imported and stay out of the unknown account's line, but
+  their repository rows bill it once, so nothing is wrong with the bill. On an
+  `incomplete` day it may also be an account whose slice is missing. The check
+  is informational: it never makes a line provisional or blocks anything.
 - The per-day residual is the organization's credits minus every account's, per day
   and per (SKU, model), zero within 100 nanodollars: unknown account. It rests on
   the organization's stored days, so the organization's check counts: until its
@@ -603,8 +626,9 @@ No destination is ever charged more than its own T_d. A settled day-group with
 group used only through Auto sits at exactly 0.9.
 
 **Groups that never use Toki's weights.** Code review credits ("Code Review model",
-repository-billed) are left out of the account lines: GitHub bills them per
-repository too, and repository mappings will bill them from the organization's rows.
+repository-billed) are left out of the account lines: GitHub bills the same
+credits per repository too, and the bill takes them from the organization's rows,
+per repository (see "Repository mappings"), so they bill once.
 The cloud agent SKU and unrecognized credits have T = 0, so they bill as the user's
 untracked Copilot on their SKU. Credits on days without a disposition bill as the
 account's "unlinked account" line, and on External days as its "external account"
@@ -655,14 +679,16 @@ block is provisional when a line is, when tracked usage is not imported, when an
 account day is missing, or when the unknown account's residual is provisional even
 though it bills no line (`AiMeteredAllocation::unknown_account`): a failed
 organization check, or an organization slice that is missing, leaves its days out of
-the residual, and a residual not computed yet is no settled zero. A developer's
+the residual, and a residual not computed yet is no settled zero. The same holds for
+repository credits (`repository_provisional`, see "Repository mappings"). A developer's
 `metered` block leaves the unknown account out, as it is no developer's.
 
 **Subjects and charge kinds.** A billing line's subject is a user, a provider account
 (`{ provider, accountId, login }`: unlinked or external), the unknown account, or a
-repository (repository mappings add those lines). A metered line's kind is `project`,
+repository (`{ provider, name }`: code review). A metered line's kind is `project`,
 `personal`, `untracked`, `unlinkedAccount`, `externalAccount`, `unknownAccount` or
-`repository`.
+`repository`. Lines follow users, then provider accounts by login, the unknown
+account, and repositories by name, case-insensitively.
 
 **HTTP.** Lines carry `subject` (instead of `userId`), `billingMode` (`api`,
 `subscription` or `metered`) and `metered` (non-null exactly on metered lines: `kind`,
@@ -675,11 +701,14 @@ billed from credits; a developer's month has the developer's figures. The routes
 browser-only under `/ai-usage/admin`, off the agent OpenAPI document and MCP.
 
 **CSV.** These columns follow `unassigned`, in order: `source` (`estimate`,
-`subscription` or `github`), `credits`, `github_login`, `repository` (repository
-mappings fill it), `sku`, `period_basis` (`UTC` for metered rows, the configured zone
+`subscription` or `github`), `credits`, `github_login`, `repository` (a repository
+line's name), `sku`, `period_basis` (`UTC` for metered rows, the configured zone
 otherwise), `adjusts_month` and `snapshot_id` (month close fills them) and
 `provisional`. Spinit's metered rows name their project `Untracked Copilot`, `Personal
-/ internal Copilot`, `Unlinked account`, `External account` or `Unknown account`.
+/ internal Copilot`, `Unlinked account`, `External account` or `Unknown account`. A
+repository row has its project, or `Unassigned` with `unassigned =
+unmapped_repository` and the warning "repository without a project: map it under
+Project mappings > GitHub repositories".
 
 **The developer page** allocates every account and keeps the developer's lines
 (`for_user`), so it agrees with the overview to the cent. Its daily rows add
@@ -728,3 +757,122 @@ a note on what it waits for. "How billing works" and the GitHub Copilot tab read
 **For month close.** One user can have lines of two accounts in a month (an owner
 change), with the same subject, project, kind, currency and provider; a diff key must
 sum such lines or include the account.
+
+## Repository mappings (code review credits)
+
+GitHub bills Copilot code review twice: per account, under the model label "Code
+Review model", and per repository, in the organization's "Copilot AI Credits" rows.
+Both are the same credits. From the metered cutover on, the bill takes them once, per
+repository: the per-account groups stay out of the account lines and out of the
+unknown account's residual (above), and each repository's credits bill to the
+project its repository mapping names, or to Unassigned (unmapped repository).
+
+**Mappings** (`ai_provider_repository_mappings`,
+`20261029120000_add_ai_provider_repository_mappings.sql`): one per payer and
+repository, pointing directly at a time-tracking project, stored as project-key
+mappings store theirs (the project's time-tracking provider and company, its id, and
+its name when last saved) with their creator and last editor. So an admin can map a
+repository nobody mapped as a project key. Names are GitHub's bare repository names,
+1 to 200 characters, kept as GitHub spelled them and compared case-insensitively
+(a unique index on `(provider, lower(repository_name))`); the stored spelling is the
+payer's latest. Mappings have no validity dates: they resolve whenever a bill is read
+and are never written into usage, so a change applies retroactively, in past months'
+bills too, as key mappings do. Only mappings to the configured company resolve; a
+stale or unconfigured one bills as unmapped. GitHub names a repository without its
+owner, so two repositories of one name under different owners are one repository to
+its rows: one line and one mapping.
+
+**Suggestions** come only from project-key mappings that resolve
+(`AiMappingResolver::resolved_keys`): a key `{host}/{owner}/{name}`, exactly three
+segments with any non-empty owner, whose host is the GitHub adapter's
+`REPOSITORY_KEY_HOST` (`github.com`) and whose name is the repository, both compared
+case-insensitively, suggests its project. They never come from unmapped keys, which
+may name a private repository, nor from usage or personal marks: the only key data
+read is the stored mappings. Suggestions are grouped by project, most keys first,
+and left out once the repository's mapping resolves.
+
+**Lines** (`repository_lines` in `domain/models/ai_metered_billing.rs`):
+
+- Only the organization's rows classified as repository credits bill: "Copilot AI
+  Credits" at $0.01 a credit with a non-empty repository. The IDE aggregate (no
+  repository), the cloud agent's rows, Actions (compute, imported for
+  reconciliation only) and unrecognized rows never do. Code review GitHub billed
+  without a repository is inside the IDE aggregate and bills on no line; the daily
+  code review check shows it as accounts exceeding repositories. The other way
+  round, repositories exceeding accounts, is code review by accounts Toki does not
+  import: their per-account credits are never imported, and their repository rows
+  bill it once, here. An unrecognized row naming a repository may be code
+  review under a SKU or unit Toki does not know, so it is flagged, never dropped
+  silently: it makes repository credits provisional (`unrecognized`).
+- Per repository and UTC month (the month of GitHub's day), the rows' credits are
+  summed and rounded half up to cents once. A repository whose credits round to no
+  credit gets no line, so nothing waits for its mapping. The mapping overview marks
+  each month the same way (`AiRepositoryMonthCredits::billed`).
+- A line's subject is `repository` (`{ provider, name }`, the latest spelling), its
+  metered kind `repository`, its SKU the rows', with no account and no tracked
+  usage. It bills to the mapped project, or to Unassigned with `unassigned:
+  unmappedRepository`. On the bill it reads "Copilot code review · {name}".
+- Lines exist only from the cutover month on, where `allocate_metered_credits` runs.
+- Provisional reasons, shared by every repository line and kept without lines
+  (`AiMeteredAllocation::repository_provisional`): `monthInProgress`,
+  `importIncomplete` (a day without the organization's usage slice, or with one not
+  fetched after the day ended, or days before the backfill), `notSettled` (a day
+  within the settle days) and `unrecognized` (an organization row of the UTC month
+  naming a repository is unrecognized). A missing usage slice is no settled zero: it keeps the
+  bill's `metered` block provisional even without repository rows. One developer's
+  part has no repository lines.
+- `AiMeteredAllocation::unmapped_repositories()` names the repositories billing to
+  Unassigned: what month close will refuse. An empty repository name never blocks.
+
+**Port and adapter.** `AiRepositoryMappingService` (inbound) and
+`AiRepositoryMappingRepository` (outbound, `PostgresAiRepositoryMappingRepository`)
+manage mappings; the bill reads them through
+`AiMeteredUsageRepository::repository_mappings` and resolves them with
+`AiRepositoryResolver`, loaded by `AiMeteredMonths` with the rest of the month.
+
+**Routes**, browser-only under `/ai-usage/admin`, admin power, off the agent OpenAPI
+document and MCP:
+
+- `GET /repository-mappings`: `{ provider, billedFrom, months, repositories }`, the
+  previous and current UTC month, and a row for every repository GitHub ever billed
+  and every mapping: `{ repository, months: [{ month, credits, billed }],
+  lastBilledOn, mapping, suggestions: [{ project, projectKeys }] }`. `billed` says
+  whether the month's credits bill a line, as `repository_lines` decides: the month
+  is on or after the cutover (`billedFrom`) and its credits, rounded half up to
+  cents once, come to at least one credit. A mapping is `{ repository, project,
+  status (resolves | stale | unconfigured), createdBy, createdAt, updatedBy,
+  updatedAt }`. Rows with a billed month and no resolving mapping
+  (`AiRepositoryMappingRow::needs_mapping`, exactly the repositories
+  `unmapped_repositories()` names for that month) come first, then by name.
+  Credits before the cutover, or under one credit for the month, bill nothing and
+  never put a row first.
+- `PUT /repository-mappings` with `{ repository, projectId }`: creates or replaces
+  the mapping, matched case-insensitively. A new mapping needs a repository GitHub
+  billed at least once (else 404); an existing one can always be changed.
+- `DELETE /repository-mappings` with `{ repository }`: 204, or 404 without one.
+- An invalid name, an unknown field or an unknown project is 400; time tracking not
+  configured or its projects unavailable 503.
+
+**In the admin UI**, Project mappings has a "GitHub repositories" section
+(`#github-repositories`, `admin/-components/repository-mappings.tsx`, contract
+`app/src/lib/api/contracts/ai-repository-mappings.ts`, strict) with each repository's
+credits per month (greyed, with the reason as their title, where they bill no line:
+before the cutover or under one credit for the month), its project and status ("Not
+mapped" is a warning only while a billed month bills as Unassigned), suggestions to
+accept ("Map to {project}", titled with the mapped keys; only those of an active
+project, since a key mapping keeps its project once archived and a repository maps to
+active projects only) and a project picker; a link with that hash scrolls to it once
+the page has loaded. Repository lines read "Copilot code review · {name}" on the bill
+and link to the section; unmapped ones sit in the ledger's Unassigned entry
+"code review of unmapped repositories", between unmapped keys and usage outside any
+repository, with a "Map GitHub repositories" button, and the statement counts them as
+having no project yet, never as Spinit's. The ledger's People column counts people,
+accounts and repositories apart (`subjectsLabel`). The export's Projects check needs
+attention for them, as for unmapped keys. The GitHub Copilot tab's code review check
+reads "Code review adds up" when every day's difference is zero, else "Code review
+differs on N days" with those days, their status and a note for each direction
+present: a day where accounts exceed repositories is code review billed without a
+repository, or, when an unrecognized row names a repository, may be code review in
+those rows; a day where repositories exceed accounts is code review by accounts Toki
+does not import, which bills once, through its repository line. Only the first is a
+warning; days that differ only the second way are marked informational.

@@ -49,10 +49,17 @@ export const usageSchema = z
   })
   .strict();
 
-/** Why usage is Unassigned: repositories nobody mapped to a project (or
- * mapped outside the configured company), or usage outside any repository,
- * which no mapping can assign. */
-export const UNASSIGNED_KINDS = ["unmapped", "unattributed"] as const;
+/** Why usage is Unassigned, in bill order: repositories nobody mapped to a
+ * project (or mapped outside the configured company); a metered payer's code
+ * review credits on a repository without a repository mapping to the
+ * configured company, which mapping the repository assigns and which will
+ * hold back month close; or usage outside any repository, which no mapping
+ * can assign. */
+export const UNASSIGNED_KINDS = [
+  "unmapped",
+  "unmappedRepository",
+  "unattributed",
+] as const;
 export type UnassignedKind = (typeof UNASSIGNED_KINDS)[number];
 
 /** Whom a line charges for: a developer, or for a metered payer an account
@@ -230,6 +237,15 @@ const billingLineSchema = z
           ? !line.unallocatedOverhead
           : PROJECT_METERED_KINDS.has(line.metered.kind))),
     { message: "unassigned must be set exactly on Unassigned usage" },
+  )
+  .refine(
+    (line) =>
+      (line.unassigned === "unmappedRepository") ===
+      (line.metered?.kind === "repository" && line.project === null),
+    {
+      message:
+        "unmappedRepository must be set exactly on repository lines without a project",
+    },
   );
 
 const subscriptionMonthSchema = z

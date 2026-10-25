@@ -224,17 +224,25 @@ function worthOf(
 /**
  * Whether every repository the bill charges for is mapped to a project.
  * Usage of repositories nobody has mapped needs attention: mapping them on
- * Project mappings assigns it. Usage outside any repository has no key a
- * mapping could name, so it does not hold the bill back, though the summary
- * still says no customer is invoiced for it.
+ * Project mappings assigns it. So does a metered payer's code review of
+ * GitHub repositories nobody has mapped, which mapping them under Project
+ * mappings > GitHub repositories assigns, and which will hold back month
+ * close. Usage outside any repository has no key a mapping could name, so it
+ * does not hold the bill back, though the summary still says no customer is
+ * invoiced for it.
  */
 export function mappingsCheck(
   lines: readonly AiBillingLine[],
   billingCurrency: string,
 ): CheckResult {
   const unmapped = unassignedLines(lines, "unmapped");
+  const codeReview = unassignedLines(lines, "unmappedRepository");
   const unattributed = unassignedLines(lines, "unattributed");
-  if (unmapped.length === 0 && unattributed.length === 0) {
+  if (
+    unmapped.length === 0 &&
+    codeReview.length === 0 &&
+    unattributed.length === 0
+  ) {
     return {
       status: "passed",
       summary:
@@ -247,15 +255,28 @@ export function mappingsCheck(
     unattributed.length > 0
       ? `${worthOf(unattributed, billingCurrency)} is outside any repository, which no mapping can assign`
       : null;
-  if (unmapped.length === 0) {
+  if (unmapped.length === 0 && codeReview.length === 0) {
+    // Code review is named only on a bill that has it: from the metered
+    // cutover on, with a payer that bills repositories.
+    const reviewed = lines.some((line) => line.metered?.kind === "repository");
     return {
       status: "passed",
-      summary: `Every repository is mapped; ${outside}`,
+      summary: reviewed
+        ? `Every repository is mapped, GitHub's code review repositories too; ${outside}`
+        : `Every repository is mapped; ${outside}`,
     };
   }
-  const toMap = `${worthOf(unmapped, billingCurrency)} comes from repositories nobody has mapped, so no customer can be invoiced for it yet`;
+  const parts = [
+    unmapped.length > 0
+      ? `${worthOf(unmapped, billingCurrency)} comes from repositories nobody has mapped, so no customer can be invoiced for it yet`
+      : null,
+    codeReview.length > 0
+      ? `${worthOf(codeReview, billingCurrency)} of code review comes from GitHub repositories nobody has mapped (Project mappings > GitHub repositories)`
+      : null,
+    outside,
+  ];
   return {
     status: "attention",
-    summary: outside === null ? toMap : `${toMap}; ${outside}`,
+    summary: parts.filter((part) => part !== null).join("; "),
   };
 }

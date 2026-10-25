@@ -333,6 +333,12 @@ impl AiMeteredUsageRepository for Clocked {
             .tracked_usage(payer, dates, reprice_floor, mapping_company, user)
             .await
     }
+    async fn repository_mappings(
+        &self,
+        payer: AiProvider,
+    ) -> Result<Vec<AiStoredRepositoryMapping>, AiMeteredUsageError> {
+        self.inner.repository_mappings(payer).await
+    }
 }
 
 type Service = AiMeteredUsageServiceImpl<Clocked, PostgresAiProviderAccountRepository>;
@@ -1178,6 +1184,8 @@ async fn reconciliation_equals_github_for_every_account(pool: PgPool) {
                     AiDayCoverage {
                         org_fetched: true,
                         org_complete: day.day < date!(2026 - 10 - 25),
+                        org_usage_fetched: true,
+                        org_usage_complete: day.day < date!(2026 - 10 - 25),
                         accounts_missing: 0,
                         accounts_incomplete: u32::from(day.day == date!(2026 - 10 - 25)) * 3,
                     },
@@ -1197,6 +1205,7 @@ async fn reconciliation_equals_github_for_every_account(pool: PgPool) {
             .filter_map(|slice| Some(((slice.account_id?, slice.day), slice.is_complete())))
             .collect(),
         focus: None,
+        repository_mappings: AiRepositoryResolver::default(),
     })
     .unwrap();
     assert_eq!(&direct, reconciliation);

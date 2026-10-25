@@ -49,11 +49,13 @@ import {
   ledgerEntries,
   ledgerRowId,
   shareOf,
+  subjectsLabel,
   type BillableStep,
   type Ledger,
   type LedgerEntry,
   type LedgerPerson,
 } from "../../-lib/ledger";
+import { GITHUB_REPOSITORIES_ID } from "../../-components/repository-mappings";
 import { UNDECIDED_FILL } from "./allocation-strip";
 import { formatEstimateIn } from "../../-lib/estimates";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
@@ -220,7 +222,6 @@ function EntryRows({
     ? entry.people.filter((person) => !small.includes(person))
     : entry.people;
   const detailsId = `${ledgerRowId(entry.key)}-lines`;
-  const accounts = entry.people.every((person) => person.userId === null);
   const people = entry.people.map((person) =>
     subjectLabel(person.subject, names),
   );
@@ -266,6 +267,21 @@ function EntryRows({
                 <Link to="/admin/project-mappings">Map repositories</Link>
               </Button>
             )}
+            {entry.unassigned === "unmappedRepository" && (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="ml-auto hidden h-7 shrink-0 px-2 text-xs sm:inline-flex"
+              >
+                <Link
+                  to="/admin/project-mappings"
+                  hash={GITHUB_REPOSITORIES_ID}
+                >
+                  Map GitHub repositories
+                </Link>
+              </Button>
+            )}
           </div>
         </TableCell>
         <TableCell className="hidden max-w-40 truncate whitespace-nowrap text-muted-foreground md:table-cell">
@@ -273,9 +289,7 @@ function EntryRows({
             "—"
           ) : (
             <span title={people.join(", ")}>
-              {people.length === 1
-                ? people[0]
-                : `${formatCount(people.length)} ${accounts ? "accounts" : "people"}`}
+              {subjectsLabel(entry.people, names)}
             </span>
           )}
         </TableCell>
@@ -327,18 +341,35 @@ function EntryRows({
               onClick={() => setShowSmall(true)}
               className="rounded-sm text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
             >
-              Show{" "}
-              {plural(
-                small.length,
-                accounts ? "more account" : "more developer",
-              )}{" "}
-              under 1 {currency} each
+              Show {foldLabel(small)} under 1 {currency} each
             </button>
           </TableCell>
         </TableRow>
       )}
     </TableBody>
   );
+}
+
+/** The subjects folded away in an open row, counted with their noun:
+ * developers, repositories or accounts, or without one when they mix. */
+function foldLabel(small: readonly LedgerPerson[]): string {
+  const count = small.length;
+  if (small.every((person) => person.subject.kind === "user")) {
+    return plural(count, "more developer");
+  }
+  if (small.every((person) => person.subject.kind === "repository")) {
+    return `${formatCount(count)} more ${count === 1 ? "repository" : "repositories"}`;
+  }
+  if (
+    small.every(
+      (person) =>
+        person.subject.kind === "providerAccount" ||
+        person.subject.kind === "unknownAccount",
+    )
+  ) {
+    return plural(count, "more account");
+  }
+  return `${formatCount(count)} more`;
 }
 
 /**
@@ -634,8 +665,9 @@ function ToolLineRow({
 }
 
 /**
- * Whose lines a row holds: a developer, linking to their month, or an account
- * no developer owns, by login and why, linking to where accounts are linked.
+ * Whose lines a row holds: a developer, linking to their month; an account no
+ * developer owns, by login and why, linking to where accounts are linked; or
+ * a repository's code review, linking to where repositories are mapped.
  */
 function SubjectLink({
   line,
@@ -654,6 +686,17 @@ function SubjectLink({
         to="/admin/ai-billing/$userId"
         params={{ userId: String(userId) }}
         search={{ month }}
+        className="underline-offset-4 hover:underline"
+      >
+        {name}
+      </Link>
+    );
+  }
+  if (line.subject.kind === "repository") {
+    return (
+      <Link
+        to="/admin/project-mappings"
+        hash={GITHUB_REPOSITORIES_ID}
         className="underline-offset-4 hover:underline"
       >
         {name}

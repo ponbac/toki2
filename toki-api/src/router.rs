@@ -26,14 +26,15 @@ use crate::{
         },
         outbound::{
             cimd::CimdFetcher,
-            github::{GithubAccountDirectory, GithubApp, GithubMeteredUsageSource},
+            github::{self, GithubAccountDirectory, GithubApp, GithubMeteredUsageSource},
             media::WebpAvatarProcessor,
             postgres::{
                 PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
                 PostgresAiMeteredUsageRepository, PostgresAiProjectMappingRepository,
-                PostgresAiProviderAccountRepository, PostgresAiSubscriptionRepository,
-                PostgresAiUsageReportRepository, PostgresAiUsageRepository,
-                PostgresApiTokenRepository, PostgresAvatarRepository, PostgresOAuthRepository,
+                PostgresAiProviderAccountRepository, PostgresAiRepositoryMappingRepository,
+                PostgresAiSubscriptionRepository, PostgresAiUsageReportRepository,
+                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresOAuthRepository,
             },
             riksbank::RiksbankExchangeRateAdapter,
         },
@@ -49,9 +50,9 @@ use crate::{
         ports::{
             inbound::{
                 AiBillingService, AiDisplayRateService, AiMeteredUsageService,
-                AiProjectMappingService, AiProviderAccountService, AiSubscriptionService,
-                AiUsageReportService, AiUsageService, ApiTokenAuthenticator, ApiTokenService,
-                AvatarService, OAuthAccessTokenAuthenticator, OAuthService,
+                AiProjectMappingService, AiProviderAccountService, AiRepositoryMappingService,
+                AiSubscriptionService, AiUsageReportService, AiUsageService, ApiTokenAuthenticator,
+                ApiTokenService, AvatarService, OAuthAccessTokenAuthenticator, OAuthService,
             },
             outbound::TimeTrackingProjectCatalog,
         },
@@ -59,7 +60,8 @@ use crate::{
             AiAccountDirectoryState, AiBillingServiceImpl, AiDisplayRateServiceImpl,
             AiExchangeRateSettings, AiExchangeRates, AiMeteredImportSettings, AiMeteredMonths,
             AiMeteredReadSettings, AiMeteredSourceState, AiMeteredUsageServiceImpl,
-            AiProjectMappingServiceImpl, AiProviderAccountServiceImpl, AiSubscriptionServiceImpl,
+            AiProjectMappingServiceImpl, AiProviderAccountServiceImpl,
+            AiRepositoryMappingServiceImpl, AiRepositoryMappingSettings, AiSubscriptionServiceImpl,
             AiUsageReportServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
             OAuthServiceImpl,
         },
@@ -114,7 +116,8 @@ pub async fn create(
             "/ai-usage/admin",
             http::ai_billing::router()
                 .merge(http::ai_provider_accounts::router())
-                .merge(http::ai_metered_usage::router()),
+                .merge(http::ai_metered_usage::router())
+                .merge(http::ai_repository_mappings::router()),
         );
 
     let api_tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
@@ -194,7 +197,7 @@ pub async fn create(
     let ai_project_mapping_service: Arc<dyn AiProjectMappingService> =
         Arc::new(AiProjectMappingServiceImpl::new(
             Arc::new(PostgresAiProjectMappingRepository::new(db_pool.clone())),
-            project_catalog,
+            project_catalog.clone(),
             ai_usage_time_zone.clone(),
         ));
     let ai_usage_service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(
@@ -243,6 +246,18 @@ pub async fn create(
             );
         }
     }
+    // Copilot's code review credits bill per repository, to the project each
+    // repository is mapped to; suggestions match GitHub's project keys.
+    let ai_repository_mapping_service: Arc<dyn AiRepositoryMappingService> =
+        Arc::new(AiRepositoryMappingServiceImpl::new(
+            Arc::new(PostgresAiRepositoryMappingRepository::new(db_pool.clone())),
+            project_catalog,
+            AiProvider::Copilot,
+            AiRepositoryMappingSettings {
+                key_host: github::REPOSITORY_KEY_HOST.to_string(),
+                billed_from: metered_cutover.map(|cutover| cutover.from),
+            },
+        ));
     let ai_billing_service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::new(
         Arc::new(PostgresAiBillingRepository::new(db_pool.clone())),
         ai_subscription_repository.clone(),
@@ -343,6 +358,7 @@ pub async fn create(
         ai_display_rate_service,
         ai_provider_account_service.clone(),
         ai_metered_usage_service.clone(),
+        ai_repository_mapping_service,
     )
     .await;
 

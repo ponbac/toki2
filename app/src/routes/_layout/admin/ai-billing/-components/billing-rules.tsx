@@ -61,6 +61,8 @@ export function BillingRules({
           parts add up to it exactly. A part&apos;s amount may therefore differ
           by a cent from its own estimate rounded, and its SEK amount from its
           own amount converted.
+          {metered &&
+            ` From the cutover, ${metered}'s code review of a GitHub repository nobody has mapped is a third part, a line of its own: mapping the repository under Project mappings > GitHub repositories assigns it, and until then it will hold back month close.`}
         </li>
         <li>
           <span className="font-medium text-foreground">{PERSONAL_LABEL}.</span>{" "}
@@ -87,10 +89,17 @@ export function BillingRules({
             </span>
             , which is Spinit&apos;s. A project is never charged more than its
             own tracked usage. The cloud agent, accounts that are unlinked,
-            external or unknown, and personal Copilot usage are Spinit&apos;s;
-            code review is billed by repository instead. Each account&apos;s
-            credits are rounded to whole credits once and split over its lines,
-            so they sum to its GitHub gross. A line stays{" "}
+            external or unknown, and personal Copilot usage are Spinit&apos;s.{" "}
+            <span className="font-medium text-foreground">Code review</span>{" "}
+            bills per repository from GitHub&apos;s organization rows, to the
+            project the repository is mapped to under Project mappings, or to
+            Unassigned until it is; the per-account &ldquo;Code Review
+            model&rdquo; credits are the same credits and bill nowhere else.
+            Each account&apos;s credits, less code review, are rounded to whole
+            credits once and split over its lines, so they sum to its GitHub
+            gross less code review; each repository&apos;s month is rounded to
+            whole credits once, and one that rounds to none gets no line. A line
+            stays{" "}
             <span className="font-medium text-foreground">provisional</span>{" "}
             while its month is in progress, GitHub&apos;s usage is not imported
             or settled for its days, or its tracked usage is on an old pricing

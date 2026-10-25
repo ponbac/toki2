@@ -592,6 +592,55 @@ fn account_errors_name_their_month_and_stale_reasons_are_structured() {
 }
 
 #[test]
+fn the_code_review_check_lists_each_days_difference() {
+    use crate::domain::models::AiCodeReviewDay;
+    let credits = |credits: i64| AiUsdNanos::new(credits * 10_000_000).unwrap();
+    let check = AiCodeReviewCheck {
+        by_accounts: credits(30),
+        by_repositories: credits(20),
+        days: vec![
+            AiCodeReviewDay {
+                day: time::macros::date!(2026 - 10 - 05),
+                by_accounts: credits(20),
+                by_repositories: credits(20),
+                difference: 0,
+                status: AiResidualStatus::Settled,
+            },
+            AiCodeReviewDay {
+                day: time::macros::date!(2026 - 10 - 24),
+                by_accounts: credits(10),
+                by_repositories: AiUsdNanos::ZERO,
+                difference: -10 * 10_000_000,
+                status: AiResidualStatus::Provisional,
+            },
+        ],
+    };
+    assert_eq!(
+        serde_json::to_value(CodeReviewResponse::from(check)).unwrap(),
+        json!({
+            "byAccounts": "30.00",
+            "byRepositories": "20.00",
+            "days": [
+                {
+                    "day": "2026-10-05",
+                    "byAccounts": "20.00",
+                    "byRepositories": "20.00",
+                    "difference": "0.00",
+                    "status": "settled",
+                },
+                {
+                    "day": "2026-10-24",
+                    "byAccounts": "10.00",
+                    "byRepositories": "0.00",
+                    "difference": "-10.00",
+                    "status": "provisional",
+                },
+            ],
+        })
+    );
+}
+
+#[test]
 fn credits_are_hundredths_rounded_half_up_with_signs_only_where_allowed() {
     assert_eq!(credits(AiUsdNanos::new(123_456_789).unwrap()), "12.35");
     assert_eq!(credits(AiUsdNanos::new(49_999).unwrap()), "0.00");

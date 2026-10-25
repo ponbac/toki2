@@ -12,9 +12,11 @@ use super::{
     AiAccountDisposition, AiAccountDispositionId, AiAccountDispositionTerms, AiAccountPeriod,
     AiAccountTarget, AiBillingMonth, AiBillingProject, AiCreditKind, AiDayCoverage, AiDecimal,
     AiMappedProject, AiMeteredAmounts, AiMeteredCredit, AiMeteredDestination, AiMeteredModel,
-    AiProvider, AiProviderAccountId, AiProviderLogin, AiReconciliationInput, AiStoredAccountCredit,
-    AiStoredOrgCredit, AiStoredProviderAccount, AiStoredSeat, AiTokenCounts, AiTrackedModelDay,
-    AiUnassignedKind, AiUsageCheck, AiUsdNanos, ProjectId, UserId,
+    AiMeteredOrgCharge, AiOrgChargeKind, AiProvider, AiProviderAccountId, AiProviderLogin,
+    AiReconciliationInput, AiRepositoryResolver, AiStoredAccountCredit, AiStoredOrgCredit,
+    AiStoredProviderAccount, AiStoredRepositoryMapping, AiStoredSeat, AiTokenCounts,
+    AiTrackedModelDay, AiUnassignedKind, AiUsageCheck, AiUsdNanos, ProjectId, TimeTrackingCompany,
+    UserId,
 };
 
 pub const TODAY: Date = date!(2026 - 10 - 25);
@@ -243,6 +245,8 @@ pub fn full_coverage() -> BTreeMap<Date, AiDayCoverage> {
             AiDayCoverage {
                 org_fetched: true,
                 org_complete: day < TODAY,
+                org_usage_fetched: true,
+                org_usage_complete: day < TODAY,
                 accounts_missing: 0,
                 accounts_incomplete: u32::from(day == TODAY),
             },
@@ -296,6 +300,7 @@ pub fn input(accounts: Vec<AiStoredProviderAccount>) -> AiReconciliationInput {
         checks: vec![org_check()],
         coverage,
         focus: None,
+        repository_mappings: AiRepositoryResolver::default(),
     }
 }
 
@@ -337,6 +342,8 @@ pub fn closed_input(accounts: Vec<AiStoredProviderAccount>) -> AiReconciliationI
             AiDayCoverage {
                 org_fetched: true,
                 org_complete: true,
+                org_usage_fetched: true,
+                org_usage_complete: true,
                 accounts_missing: 0,
                 accounts_incomplete: 0,
             },
@@ -364,5 +371,66 @@ pub fn closed_input(accounts: Vec<AiStoredProviderAccount>) -> AiReconciliationI
         checks,
         coverage,
         ..input(accounts)
+    }
+}
+
+/// An organization usage row of `product`, `sku` and `unit` on `repository`,
+/// at $0.01 a unit.
+pub fn org_charge(
+    day: Date,
+    product: &str,
+    sku: &str,
+    unit: &str,
+    repository: &str,
+    kind: AiOrgChargeKind,
+    quantity: &str,
+) -> AiMeteredOrgCharge {
+    AiMeteredOrgCharge {
+        day,
+        product: product.to_string(),
+        sku: sku.to_string(),
+        unit: unit.to_string(),
+        repository: repository.to_string(),
+        kind,
+        unit_price: dec("0.01"),
+        quantity: dec(quantity),
+        gross_amount: dec(quantity),
+        discount_amount: AiDecimal::ZERO,
+        net_amount: dec(quantity),
+        reported_at: None,
+    }
+}
+
+/// Code review credits the organization's rows bill to `repository`.
+pub fn repository_credits(day: Date, repository: &str, quantity: &str) -> AiMeteredOrgCharge {
+    org_charge(
+        day,
+        "copilot",
+        CREDITS_SKU,
+        "AICredits",
+        repository,
+        AiOrgChargeKind::RepositoryCredits,
+        quantity,
+    )
+}
+
+/// The time-tracking company mappings resolve to.
+pub fn company() -> TimeTrackingCompany {
+    TimeTrackingCompany {
+        provider: "kleer".to_string(),
+        company_id: "company-1".to_string(),
+    }
+}
+
+/// A mapping of `repository` to `project` of `company`.
+pub fn repository_mapping(
+    repository: &str,
+    company: TimeTrackingCompany,
+    project: AiMappedProject,
+) -> AiStoredRepositoryMapping {
+    AiStoredRepositoryMapping {
+        repository: repository.to_string(),
+        company,
+        project,
     }
 }

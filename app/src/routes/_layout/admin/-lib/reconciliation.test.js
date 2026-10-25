@@ -5,6 +5,9 @@ import {
   accountsWithErrors,
   canImport,
   checkState,
+  codeReviewCheckTone,
+  codeReviewDifferences,
+  codeReviewDifferingDays,
   creditHundredths,
   creditsAsUsd,
   flagTone,
@@ -13,9 +16,11 @@ import {
   formatQuantity,
   formatRatio,
   formatShare,
+  formatSignedCreditNumber,
   formatUsdAmount,
   freshnessBadge,
   freshnessText,
+  hasUnrecognizedRepositoryRows,
   importedThrough,
   needsAttention,
   noDataReason,
@@ -104,6 +109,9 @@ describe("credits", () => {
     expect(formatCredits("1234.56")).toBe("1,234.56 credits");
     expect(formatCredits("1.00")).toBe("1.00 credit");
     expect(formatCredits("-0.05")).toBe("-0.05 credits");
+    expect(formatSignedCreditNumber("1234.50")).toBe("+1,234.50");
+    expect(formatSignedCreditNumber("-10.00")).toBe("-10.00");
+    expect(formatSignedCreditNumber("0.00")).toBe("0.00");
   });
 
   test("are worth $0.01 each, rounded to the cent half away from zero", () => {
@@ -363,5 +371,81 @@ describe("attention", () => {
       "2026-10-02",
       "2026-10-03",
     ]);
+  });
+
+  test("code review differs on days whose difference is not zero, settled or not", () => {
+    const day = (day, difference, status) => ({
+      day,
+      byAccounts: "10.00",
+      byRepositories: "10.00",
+      difference,
+      status,
+    });
+    const days = [
+      day("2026-10-01", "0.00", "settled"),
+      day("2026-10-02", "-10.00", "settled"),
+      day("2026-10-03", "0.00", "provisional"),
+      day("2026-10-04", "0.05", "incomplete"),
+    ];
+    expect(codeReviewDifferingDays(days).map((d) => d.day)).toEqual([
+      "2026-10-02",
+      "2026-10-04",
+    ]);
+  });
+
+  test("code review differences are told apart by their sign", () => {
+    const day = (difference) => ({
+      day: "2026-10-01",
+      byAccounts: "10.00",
+      byRepositories: "10.00",
+      difference,
+      status: "settled",
+    });
+    const adds = [day("0.00")];
+    // Repositories above accounts: unknown accounts' code review, billed
+    // once through its repository line.
+    const unknownAccounts = [day("0.00"), day("4.00")];
+    // Accounts above repositories: code review billed on no line.
+    const withoutRepository = [day("4.00"), day("-2.50")];
+
+    expect(codeReviewDifferences(adds)).toEqual({
+      accountsExceed: false,
+      repositoriesExceed: false,
+    });
+    expect(codeReviewDifferences(unknownAccounts)).toEqual({
+      accountsExceed: false,
+      repositoriesExceed: true,
+    });
+    expect(codeReviewDifferences(withoutRepository)).toEqual({
+      accountsExceed: true,
+      repositoriesExceed: true,
+    });
+    expect(codeReviewCheckTone(adds)).toBe("good");
+    expect(codeReviewCheckTone(unknownAccounts)).toBe("neutral");
+    expect(codeReviewCheckTone(withoutRepository)).toBe("warning");
+    expect(codeReviewCheckTone([day("-0.01")])).toBe("warning");
+  });
+});
+
+describe("hasUnrecognizedRepositoryRows", () => {
+  const row = (kind, repository) => ({ kind, repository });
+
+  test("flags an unrecognized row naming a repository", () => {
+    expect(
+      hasUnrecognizedRepositoryRows([
+        row("repositoryCredits", "widget-api"),
+        row("unrecognized", "gadget-web"),
+      ]),
+    ).toBe(true);
+  });
+
+  test("passes recognized rows and unrecognized ones without a repository", () => {
+    expect(
+      hasUnrecognizedRepositoryRows([
+        row("repositoryCredits", "widget-api"),
+        row("compute", "widget-api"),
+        row("unrecognized", ""),
+      ]),
+    ).toBe(false);
   });
 });

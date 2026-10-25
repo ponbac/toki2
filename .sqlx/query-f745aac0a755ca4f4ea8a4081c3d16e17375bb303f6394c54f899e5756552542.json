@@ -1,0 +1,160 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                mapping.provider,\n                mapping.repository_name,\n                mapping.time_tracking_provider,\n                mapping.provider_company_id,\n                mapping.project_id,\n                mapping.project_name,\n                mapping.created_by,\n                creator.full_name AS \"created_by_name?\",\n                mapping.created_at,\n                mapping.updated_by,\n                editor.full_name AS \"updated_by_name?\",\n                mapping.updated_at\n            FROM ai_provider_repository_mappings AS mapping\n            LEFT JOIN users AS creator ON creator.id = mapping.created_by\n            LEFT JOIN users AS editor ON editor.id = mapping.updated_by\n            WHERE mapping.provider = $1\n            ORDER BY lower(mapping.repository_name)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "repository_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "repository_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "time_tracking_provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "time_tracking_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_company_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "provider_company_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "project_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "project_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "project_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "project_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_by",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "created_by"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_by_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_by",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "updated_by"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_by_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f745aac0a755ca4f4ea8a4081c3d16e17375bb303f6394c54f899e5756552542"
+}

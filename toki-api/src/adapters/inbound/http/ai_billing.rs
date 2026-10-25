@@ -772,10 +772,14 @@ fn credits_decimal(credits: i64) -> String {
 
 /// Why a line's usage is Unassigned.
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum UnassignedKindResponse {
     /// Repositories without a mapping to a project of the configured company.
     Unmapped,
+    /// A metered payer's credits on a repository without a repository mapping
+    /// to a project of the configured company (code review): they block
+    /// month close until it is mapped.
+    UnmappedRepository,
     /// Usage outside any repository, which no mapping can assign.
     Unattributed,
 }
@@ -784,6 +788,7 @@ impl From<AiUnassignedKind> for UnassignedKindResponse {
     fn from(kind: AiUnassignedKind) -> Self {
         match kind {
             AiUnassignedKind::Unmapped => Self::Unmapped,
+            AiUnassignedKind::UnmappedRepository => Self::UnmappedRepository,
             AiUnassignedKind::Unattributed => Self::Unattributed,
         }
     }

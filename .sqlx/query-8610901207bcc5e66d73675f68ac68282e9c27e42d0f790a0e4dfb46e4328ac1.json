@@ -1,0 +1,166 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH saved AS (\n                INSERT INTO ai_provider_repository_mappings (\n                    provider, repository_name, time_tracking_provider, provider_company_id,\n                    project_id, project_name, created_by, updated_by\n                )\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $7)\n                ON CONFLICT (provider, lower(repository_name)) DO UPDATE\n                SET repository_name = EXCLUDED.repository_name,\n                    time_tracking_provider = EXCLUDED.time_tracking_provider,\n                    provider_company_id = EXCLUDED.provider_company_id,\n                    project_id = EXCLUDED.project_id,\n                    project_name = EXCLUDED.project_name,\n                    updated_by = EXCLUDED.updated_by,\n                    updated_at = now()\n                RETURNING *\n            )\n            SELECT\n                saved.provider AS \"provider!\",\n                saved.repository_name AS \"repository_name!\",\n                saved.time_tracking_provider AS \"time_tracking_provider!\",\n                saved.provider_company_id AS \"provider_company_id!\",\n                saved.project_id AS \"project_id!\",\n                saved.project_name AS \"project_name!\",\n                saved.created_by AS \"created_by?\",\n                creator.full_name AS \"created_by_name?\",\n                saved.created_at AS \"created_at!\",\n                saved.updated_by AS \"updated_by?\",\n                editor.full_name AS \"updated_by_name?\",\n                saved.updated_at AS \"updated_at!\"\n            FROM saved\n            LEFT JOIN users AS creator ON creator.id = saved.created_by\n            LEFT JOIN users AS editor ON editor.id = saved.updated_by\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "repository_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "repository_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "time_tracking_provider!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "time_tracking_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_company_id!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "provider_company_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "project_id!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "project_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "project_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "project_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_by?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "created_by"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_by_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_by?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "updated_by"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_by_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "8610901207bcc5e66d73675f68ac68282e9c27e42d0f790a0e4dfb46e4328ac1"
+}

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT repository_name, time_tracking_provider, provider_company_id, project_id,\n                project_name\n            FROM ai_provider_repository_mappings\n            WHERE provider = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "repository_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "repository_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "time_tracking_provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "time_tracking_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_company_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "provider_company_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "project_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "project_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "project_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_repository_mappings",
+            "name": "project_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f2127bfed9172f1a98f41e6df12cd58202e9ca5de0bc05828d76de14d60bf473"
+}

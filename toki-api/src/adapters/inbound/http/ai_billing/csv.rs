@@ -96,9 +96,11 @@ fn payer_name(payer: AiProvider) -> &'static str {
 /// Each row is one charge of one subject's use of one provider to one
 /// project. `billable_amount` is what to bill, in `billable_currency`, and is
 /// the same amount the overview shows. `Unassigned` usage has a row per kind,
-/// named in `unassigned`: `unmapped` for repositories without a mapping, and
-/// `unattributed` for usage outside any repository. They split one charge in
-/// each currency, as the overview does (`AiBillingLine::parts`).
+/// named in `unassigned`: `unmapped` for repositories without a mapping,
+/// `unmapped_repository` for a metered payer's credits on a repository without
+/// a repository mapping (code review), and `unattributed` for usage outside
+/// any repository. They split one charge in each currency, as the overview
+/// does (`AiBillingLine::parts`).
 ///
 /// - `subscription` rows bill their share of the pro-rated fee, exactly, in the
 ///   fee's currency. `api_equivalent_usd` is the estimate the share was weighed
@@ -110,13 +112,15 @@ fn payer_name(payer: AiProvider) -> &'static str {
 ///   Copilot`, `Personal / internal Copilot`, `Unlinked account`, `External
 ///   account`, `Unknown account`), with the account's `github_login`, the
 ///   `sku` and whether they are `provisional`. `api_equivalent_usd` and the
-///   tokens are the tracked usage the credits were split by.
+///   tokens are the tracked usage the credits were split by. A repository's
+///   code review credits name it in `repository`, with no developer or
+///   login and no tracked usage.
 ///
 /// `source` says where a row's numbers come from: `estimate` (API rows),
 /// `subscription` (fees and overhead) or the metered payer's billing system
-/// (`github`). `period_basis` is the time zone of the row's days. `repository`
-/// (code review), `adjusts_month` and `snapshot_id` (month close) are empty
-/// until those exist.
+/// (`github`). `period_basis` is the time zone of the row's days.
+/// `adjusts_month` and `snapshot_id` (month close) are empty until that
+/// exists.
 ///
 /// Summing `billable_amount` per `billable_currency` gives the overview's
 /// totals. `billable_sek` is the amount in the billing currency, converted at
@@ -126,10 +130,10 @@ fn payer_name(payer: AiProvider) -> &'static str {
 /// average of the days published so far. Without a rate, the four are empty
 /// and the warning says so. An estimate that is wholly unknown, because every
 /// record is unpriced, is empty rather than zero. Rows are ordered by project
-/// (Unassigned, unmapped before unattributed, then overhead, untracked,
-/// personal and account rows, last), developer, subject, provider and billing
-/// mode. Every cell is quoted and guarded against spreadsheet formula
-/// injection (`csv_cell`).
+/// (Unassigned, unmapped, then unmapped repositories, then unattributed, then
+/// overhead, untracked, personal and account rows, last), developer, subject,
+/// provider and billing mode. Every cell is quoted and guarded against
+/// spreadsheet formula injection (`csv_cell`).
 pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String, AiBillingError> {
     let bill: &AiMonthBill = &overview.bill;
     let names: HashMap<i32, &str> = overview
@@ -323,6 +327,7 @@ pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String,
                 warning(part, basis, &overview.converted.pending_rates),
                 match part.unassigned {
                     Some(AiUnassignedKind::Unmapped) => "unmapped",
+                    Some(AiUnassignedKind::UnmappedRepository) => "unmapped_repository",
                     Some(AiUnassignedKind::Unattributed) => "unattributed",
                     None => "",
                 }
@@ -414,6 +419,12 @@ fn warning(
     match (&line.charge, basis) {
         (AiBillingCharge::Metered(charge), _) => {
             warnings.extend(metered_warnings(charge, unpriced));
+            if part.unassigned == Some(AiUnassignedKind::UnmappedRepository) {
+                warnings.push(
+                    "repository without a project: map it under Project mappings > GitHub repositories"
+                        .to_string(),
+                );
+            }
         }
         (AiBillingCharge::UnallocatedOverhead { .. }, _) => {
             warnings.push("no usage on the days the subscription covers".to_string());

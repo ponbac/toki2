@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM ai_provider_repository_mappings\n            WHERE provider = $1 AND lower(repository_name) = lower($2)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a831e88b1d0d796353e746aab72b1c2cabcfae8daa510e757c4cc40ade70d490"
+}

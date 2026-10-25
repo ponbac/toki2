@@ -1,4 +1,5 @@
 import type {
+  AiCodeReviewDay,
   AiMeteredAccountError,
   AiMeteredCheck,
   AiMeteredChargeKind,
@@ -8,6 +9,7 @@ import type {
   AiMeteredMonth,
   AiMeteredOwner,
   AiMeteredPeriod,
+  AiMeteredRepository,
   AiMeteredSourceKind,
   AiMeteredStaleReason,
   AiResidualDay,
@@ -46,6 +48,13 @@ export function formatCreditNumber(credits: string): string {
   const magnitude = Math.abs(amount);
   const sign = amount < 0 ? "-" : "";
   return `${sign}${whole.format(Math.floor(magnitude / 100))}.${String(magnitude % 100).padStart(2, "0")}`;
+}
+
+/** A difference in credits with its sign: `+12.00`, `-0.05`, `0.00`. */
+export function formatSignedCreditNumber(credits: string): string {
+  return creditHundredths(credits) > 0
+    ? `+${formatCreditNumber(credits)}`
+    : formatCreditNumber(credits);
 }
 
 /** Credits with their unit: `1,234.56 credits`, `1.00 credit`. */
@@ -334,6 +343,68 @@ const RESIDUAL_STATUS_LABELS: Readonly<Record<AiResidualStatus, string>> = {
 
 export function residualStatusLabel(status: AiResidualStatus): string {
   return RESIDUAL_STATUS_LABELS[status];
+}
+
+/** How a day's status is marked: settled is good, still settling neutral,
+ * and an import gap a warning. */
+export const RESIDUAL_STATUS_TONES: Readonly<
+  Record<AiResidualStatus, "good" | "warning" | "neutral">
+> = {
+  settled: "good",
+  provisional: "neutral",
+  incomplete: "warning",
+};
+
+/** The days code review per account and per repository disagree on: on
+ * the others, the difference is zero. */
+export function codeReviewDifferingDays(
+  days: readonly AiCodeReviewDay[],
+): AiCodeReviewDay[] {
+  return days.filter((day) => creditHundredths(day.difference) !== 0);
+}
+
+/** Which ways code review per account and per repository differ, by the
+ * sign of `difference` (repositories minus accounts):
+ * - `accountsExceed`: code review GitHub billed without a repository (inside
+ *   the IDE aggregate) or in an unrecognized row: it bills on no line.
+ * - `repositoriesExceed`: code review by accounts Toki does not import
+ *   (unknown accounts), whose per-account credits are never imported, or on
+ *   an import gap by an account whose rows are missing. It bills once,
+ *   through its repository line, so the bill needs nothing. */
+export function codeReviewDifferences(days: readonly AiCodeReviewDay[]): {
+  accountsExceed: boolean;
+  repositoriesExceed: boolean;
+} {
+  const differences = days.map((day) => creditHundredths(day.difference));
+  return {
+    accountsExceed: differences.some((difference) => difference < 0),
+    repositoriesExceed: differences.some((difference) => difference > 0),
+  };
+}
+
+/** How the code review check is marked: good when every day adds up; a
+ * warning when accounts exceed repositories on a day, which leaves code
+ * review on no line; else neutral, since repositories exceeding accounts
+ * bill once, per repository. */
+export function codeReviewCheckTone(
+  days: readonly AiCodeReviewDay[],
+): "good" | "warning" | "neutral" {
+  const { accountsExceed, repositoriesExceed } = codeReviewDifferences(days);
+  if (accountsExceed) {
+    return "warning";
+  }
+  return repositoriesExceed ? "neutral" : "good";
+}
+
+/** Whether an organization row Toki does not recognize names a repository:
+ * it may be code review under a SKU or unit Toki does not know, which bills
+ * on no line and keeps repository lines provisional. */
+export function hasUnrecognizedRepositoryRows(
+  repositories: readonly AiMeteredRepository[],
+): boolean {
+  return repositories.some(
+    (row) => row.kind === "unrecognized" && row.repository !== "",
+  );
 }
 
 /** The days worth a row: a residual left, or not settled yet. */

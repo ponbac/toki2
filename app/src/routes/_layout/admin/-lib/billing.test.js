@@ -26,6 +26,11 @@ const CONTRACTOR = {
   login: "kj-contractor",
 };
 const UNKNOWN = { kind: "unknownAccount", provider: "copilot" };
+const WIDGET_API = {
+  kind: "repository",
+  provider: "copilot",
+  name: "widget-api",
+};
 
 /** A metered line of `kind` for `subject`, settled unless `metered` says. */
 function line(kind, subject, extra = {}) {
@@ -42,7 +47,7 @@ function line(kind, subject, extra = {}) {
       kind,
       credits: "1235.00",
       account:
-        subject.kind === "unknownAccount"
+        subject.kind === "unknownAccount" || subject.kind === "repository"
           ? null
           : { accountId: 1001, login: "ada-lovelace" },
       sku: "Copilot AI Credits",
@@ -103,6 +108,21 @@ describe("lineProject for a metered payer's lines", () => {
       line("unknownAccount", UNKNOWN),
       ["spinit:accounts", "spinit", null, "accounts"],
     ],
+    [
+      "a mapped repository's code review bills its project",
+      line("repository", WIDGET_API, { project }),
+      ["project:101", "project", null, null],
+    ],
+    [
+      "an unmapped repository's code review stays Unassigned on its own",
+      line("repository", WIDGET_API, { unassigned: "unmappedRepository" }),
+      [
+        "unassigned:unmappedRepository",
+        "unassigned",
+        "unmappedRepository",
+        null,
+      ],
+    ],
   ])("%s", (_, metered, expected) => {
     const { key, kind, unassigned, spinit } = lineProject(metered);
     expect([key, kind, unassigned, spinit]).toEqual(expected);
@@ -113,28 +133,19 @@ describe("subjects", () => {
   const names = new Map([[1, "Ada Lovelace"]]);
 
   test("keys are unique across kinds and labels name each", () => {
-    const subjects = [
-      ADA,
-      CONTRACTOR,
-      UNKNOWN,
-      {
-        kind: "repository",
-        provider: "copilot",
-        name: "example-org/widget-api",
-      },
-    ];
+    const subjects = [ADA, CONTRACTOR, UNKNOWN, WIDGET_API];
 
     expect(subjects.map(subjectKey)).toEqual([
       "user:1",
       "account:copilot:2002",
       "unknown:copilot",
-      "repository:copilot:example-org/widget-api",
+      "repository:copilot:widget-api",
     ]);
     expect(subjects.map((subject) => subjectLabel(subject, names))).toEqual([
       "Ada Lovelace",
       "kj-contractor",
       "Unknown accounts",
-      "example-org/widget-api",
+      "Copilot code review · widget-api",
     ]);
     expect(subjectLabel({ kind: "user", userId: 9 }, names)).toBe("User 9");
   });
@@ -144,9 +155,10 @@ describe("subjects", () => {
     expect(lineUserId(line("externalAccount", CONTRACTOR))).toBeNull();
   });
 
-  test("grouped by subject, developers come before accounts", () => {
+  test("grouped by subject, developers come before accounts and repositories", () => {
     const groups = groupLines(
       [
+        line("repository", WIDGET_API, { project }),
         line("externalAccount", CONTRACTOR),
         line("project", ADA, { project }),
         line("untracked", ADA),
@@ -157,6 +169,12 @@ describe("subjects", () => {
 
     expect(groups.map((g) => [g.key, g.kind, g.label, g.userId])).toEqual([
       ["subject:user:1", "developer", "Ada Lovelace", 1],
+      [
+        "subject:repository:copilot:widget-api",
+        "account",
+        "Copilot code review · widget-api",
+        undefined,
+      ],
       ["subject:account:copilot:2002", "account", "kj-contractor", undefined],
     ]);
   });
@@ -216,5 +234,14 @@ describe("metered wording", () => {
     expect(lineWarnings(line("project", ADA, { project }), undefined)).toEqual(
       [],
     );
+    expect(
+      lineWarnings(
+        line("repository", WIDGET_API, { unassigned: "unmappedRepository" }),
+        undefined,
+      ),
+    ).toEqual(["No project: map this repository under Project mappings."]);
+    expect(
+      lineWarnings(line("repository", WIDGET_API, { project }), undefined),
+    ).toEqual([]);
   });
 });

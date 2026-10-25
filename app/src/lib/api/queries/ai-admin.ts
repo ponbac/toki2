@@ -11,6 +11,7 @@ import {
 } from "../contracts/ai-admin";
 import { parseMeteredMonth } from "../contracts/ai-metered-usage";
 import { parseProviderAccounts } from "../contracts/ai-provider-accounts";
+import { parseAiRepositoryMappings } from "../contracts/ai-repository-mappings";
 import { parseAiProjectMapping } from "../contracts/ai-usage-report";
 import {
   parseAiSubscriptionList,
@@ -60,6 +61,7 @@ export type {
   AiMeteredStaleReason,
   AiMeteredTotals,
   AiMeteredUnlinkedTracked,
+  AiCodeReviewDay,
   AiResidualDay,
   AiResidualStatus,
 } from "../contracts/ai-metered-usage";
@@ -80,6 +82,14 @@ export type {
   AiSuggestionSkipReason,
   AiUnlinkedUser,
 } from "../contracts/ai-provider-accounts";
+export type {
+  AiRepositoryMapping,
+  AiRepositoryMappingRow,
+  AiRepositoryMappingStatus,
+  AiRepositoryMappings,
+  AiRepositoryMonthCredits,
+  AiRepositorySuggestion,
+} from "../contracts/ai-repository-mappings";
 export type { AiProjectMapping } from "../contracts/ai-usage-report";
 
 /** How often a bill whose exchange rates are still being fetched is reloaded. */
@@ -116,6 +126,7 @@ const keys = {
   developers: [...AI_ADMIN_QUERY_KEY, "developers"] as const,
   mappings: [...AI_ADMIN_QUERY_KEY, "project-mappings"] as const,
   unmappedKeys: [...AI_ADMIN_QUERY_KEY, "unmapped-keys"] as const,
+  repositoryMappings: [...AI_ADMIN_QUERY_KEY, "repository-mappings"] as const,
   subscriptions: [...AI_ADMIN_QUERY_KEY, "subscriptions"] as const,
   mismatches: [...AI_ADMIN_QUERY_KEY, "subscription-mismatches"] as const,
   providerAccounts: [...AI_ADMIN_QUERY_KEY, "provider-accounts"] as const,
@@ -197,6 +208,19 @@ export const aiAdminQueries = {
           await api
             .get("ai-usage/project-mappings/unmapped-keys")
             .json<unknown>(),
+        ),
+    }),
+  /**
+   * The repositories the metered payer (GitHub Copilot) billed code review
+   * credits to, and every repository mapping, with credits in the previous
+   * and current UTC month.
+   */
+  repositoryMappings: () =>
+    queryOptions({
+      queryKey: keys.repositoryMappings,
+      queryFn: async () =>
+        parseAiRepositoryMappings(
+          await api.get("ai-usage/admin/repository-mappings").json<unknown>(),
         ),
     }),
   /** Everyone's declared AI subscriptions. */

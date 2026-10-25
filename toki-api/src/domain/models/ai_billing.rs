@@ -319,6 +319,10 @@ pub enum AiUnassignedKind {
     /// resolves: unmapped repositories, and keys mapped to a project of another
     /// company. Mapping its keys assigns it.
     Unmapped,
+    /// A metered payer's credits on a repository that no repository mapping
+    /// to the configured company resolves (code review). Mapping the
+    /// repository assigns them; until then they block month close.
+    UnmappedRepository,
     /// `unattributed` usage: outside any repository, with no project metadata.
     /// No mapping can assign it.
     Unattributed,
@@ -406,7 +410,7 @@ impl AiBillingSubject {
     }
 
     /// Users by id, then provider accounts by lower-cased login and id, the
-    /// unknown account, and repositories by name.
+    /// unknown account, and repositories by name, case-insensitively.
     pub fn order_key(&self) -> (u8, i64, String, i64) {
         match self {
             Self::User(user_id) => (0, i64::from(user_id.as_i32()), String::new(), 0),
@@ -414,7 +418,7 @@ impl AiBillingSubject {
                 account_id, login, ..
             } => (1, 0, login.as_str().to_lowercase(), account_id.as_i64()),
             Self::UnknownAccount { .. } => (2, 0, String::new(), 0),
-            Self::Repository { name, .. } => (3, 0, name.clone(), 0),
+            Self::Repository { name, .. } => (3, 0, name.to_lowercase(), 0),
         }
     }
 }
@@ -619,8 +623,8 @@ pub struct AiMonthBill {
     /// counting under its subscription's provider (within them, subscription
     /// lines by subscription start and the provider used, then API lines, each
     /// by project name with Unassigned last), then their metered credit lines;
-    /// then provider accounts, the unknown account and repositories
-    /// (`AiBillingSubject::order_key`).
+    /// then provider accounts, the unknown account and repositories, by name
+    /// case-insensitively (`AiBillingSubject::order_key`).
     pub lines: Vec<AiBillingLine>,
     /// Subscriptions that cover days of the month, by user id, provider and start.
     pub subscriptions: Vec<AiSubscriptionMonth>,

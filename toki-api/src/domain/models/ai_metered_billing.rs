@@ -20,12 +20,17 @@
 //!   destination's `T_d`; `T < G` charges each its `T_d` and leaves `G − T` as
 //!   untracked Copilot; `G = 0` bills nothing; unpriced usage and free models
 //!   carry no weight. No destination is charged more than its `T_d`.
-//! - **Groups that never use Toki's weights.** Code review credits
-//!   (repository-billed) are left out: the payer bills them per repository.
-//!   The cloud agent and unrecognized credits have `T = 0`, so they are
-//!   untracked. Credits on days without a disposition bill to an "unlinked
-//!   account" line, on External days to an "external account" line, both
-//!   Spinit's.
+//! - **Groups that never use Toki's weights.** Code review credits per
+//!   account (repository-billed) are left out: the payer's organization rows
+//!   bill the same credits per repository (`repository_lines`), to the
+//!   repository's mapped project or to Unassigned (unmapped repository),
+//!   rounded once per repository and UTC month; a month that rounds to no
+//!   credit gets no line. Only repository credit rows bill this way: code
+//!   review the payer billed without a repository is inside the IDE
+//!   aggregate and bills on no line, like Actions. The cloud agent and
+//!   unrecognized credits have `T = 0`, so they are untracked. Credits on days
+//!   without a disposition bill to an "unlinked account" line, on External
+//!   days to an "external account" line, both Spinit's.
 //! - **Destinations.** A user's tracked usage goes to the project its key
 //!   resolves to, to Unassigned (unmapped or unattributed), or to
 //!   personal/internal (Spinit's line, with an amount).
@@ -48,7 +53,10 @@
 //!   while the unknown account's residual is (an organization slice missing
 //!   or incomplete, its month total failed or unconfirmed), even when the
 //!   residual bills no line: a residual that is not computed yet is no
-//!   settled zero.
+//!   settled zero. Likewise for repository credits, from the organization's
+//!   usage slices: a missing one is no settled zero either; and an
+//!   unrecognized organization row naming a repository, which may be code
+//!   review billed on no line, keeps them provisional.
 //!
 //! Amounts are nanodollars until rounding; a credit is $0.01, so a line's
 //! cents are its credits.
@@ -61,12 +69,12 @@ use super::ai_metered_reconciliation::{
     is_low_ratio, out_of_range, residual_days, walk, AccountWalk, AiMeteredWalk, ResidualTrust,
 };
 use super::{
-    allocate_largest_remainder, metered_model_status, AiAccountTarget, AiBillingMonth,
-    AiBillingProject, AiBillingSubject, AiBillingUsage, AiCreditKind, AiCurrency, AiFeeAmount,
-    AiGroupKind, AiMappedProject, AiMeteredDestination, AiMeteredModelStatus, AiProvider,
-    AiProviderAccountId, AiProviderLogin, AiReconciliationInput, AiResidualStatus,
-    AiStoredAccountCredit, AiStoredOrgCredit, AiUnassignedKind, AiUsdNanos, UserId,
-    NANOS_PER_CREDIT,
+    allocate_largest_remainder, metered_model_status, repository_key, AiAccountTarget,
+    AiBillingMonth, AiBillingProject, AiBillingSubject, AiBillingUsage, AiCreditKind, AiCurrency,
+    AiFeeAmount, AiGroupKind, AiMappedProject, AiMeteredDestination, AiMeteredModelStatus,
+    AiOrgChargeKind, AiProvider, AiProviderAccountId, AiProviderLogin, AiReconciliationInput,
+    AiResidualStatus, AiStoredAccountCredit, AiStoredOrgCredit, AiUnassignedKind, AiUsdNanos,
+    UserId, NANOS_PER_CREDIT,
 };
 use crate::domain::AiMeteredUsageError;
 
@@ -140,7 +148,9 @@ pub enum AiMeteredProvisional {
     /// A model the catalog marks provisional contributed.
     ProvisionalModel,
     /// A credits row priced otherwise than a credit at $0.01, or a model
-    /// outside the catalog, contributed.
+    /// outside the catalog, contributed; for repository credits, an
+    /// organization row naming a repository is of a kind Toki does not
+    /// recognize.
     Unrecognized,
 }
 
@@ -232,13 +242,17 @@ pub struct AiMeteredLine {
 pub struct AiMeteredAllocation {
     pub payer: AiProvider,
     pub month: AiBillingMonth,
-    /// By account (login, then id), then kind, destination and SKU; the
-    /// unknown account last.
+    /// By account (login, then id), then kind, destination and SKU; then the
+    /// unknown account, then repositories by name, case-insensitively.
     pub lines: Vec<AiMeteredLine>,
     /// Why the unknown account's residual may still change, sorted and
     /// unique; empty when it is settled. Kept whether or not the residual
     /// bills a line, and empty in one user's part, which has no such line.
     pub unknown_account: Vec<AiMeteredProvisional>,
+    /// Why repository credits may still change, sorted and unique; empty when
+    /// they are settled. Kept with or without repository lines, and empty in
+    /// one user's part, which has none.
+    pub repository_provisional: Vec<AiMeteredProvisional>,
     pub unbilled: AiMeteredUnbilled,
     pub unbilled_by_user: BTreeMap<i32, AiMeteredUnbilled>,
     pub days_not_imported: u32,
@@ -250,6 +264,21 @@ pub struct AiMeteredAllocation {
 }
 
 impl AiMeteredAllocation {
+    /// Repositories whose credits bill as Unassigned, without a resolving
+    /// repository mapping: what month close refuses. Month close, not built
+    /// yet, is its reader.
+    #[allow(dead_code)]
+    pub fn unmapped_repositories(&self) -> Vec<&str> {
+        self.lines
+            .iter()
+            .filter(|line| line.unassigned == Some(AiUnassignedKind::UnmappedRepository))
+            .filter_map(|line| match &line.subject {
+                AiBillingSubject::Repository { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub fn info(&self) -> AiMeteredBillInfo {
         AiMeteredBillInfo {
             payer: self.payer,
@@ -557,6 +586,9 @@ pub fn allocate_metered_credits(
 
     let unknown = unknown_account(input, &walk, month_in_progress, coverage_gap)?;
     lines.extend(unknown.line);
+    let (repository_lines, repository_provisional) =
+        repository_lines(input, &walk, month_in_progress, coverage_gap)?;
+    lines.extend(repository_lines);
 
     // Every tracked row of the month lands in exactly one place: a line's
     // usage, or one of the unbilled reasons.
@@ -595,12 +627,14 @@ pub fn allocate_metered_credits(
         || days_not_imported > 0
         || unbilled.not_imported != AiBillingUsage::default()
         || !unknown.provisional.is_empty()
+        || !repository_provisional.is_empty()
         || lines.iter().any(|line| !line.charge.provisional.is_empty());
     Ok(AiMeteredAllocation {
         payer,
         month: input.month,
         lines,
         unknown_account: unknown.provisional,
+        repository_provisional,
         unbilled,
         unbilled_by_user,
         days_not_imported,
@@ -833,9 +867,108 @@ fn unknown_account(
     })
 }
 
+/// The month's repository lines: per repository (by `repository_key`), the
+/// payer's repository credit rows of the UTC month summed and rounded half up
+/// to cents once, to the repository's mapped project or to Unassigned
+/// (unmapped repository); a repository whose credits round to none gets no
+/// line, as the mapping overview marks it (`AiRepositoryMonthCredits`). Only
+/// `RepositoryCredits` rows bill: the IDE aggregate, the cloud agent's rows,
+/// Actions and unrecognized rows never do. Also why repository credits may
+/// still change, line or not: the month in progress, a day without the
+/// organization's usage slice or with an incomplete one (or days before the
+/// backfill), days within the settle days, and an unrecognized row naming a
+/// repository (code review under a SKU or unit Toki does not know bills
+/// nowhere, so it is flagged, never dropped).
+fn repository_lines(
+    input: &AiReconciliationInput,
+    walk: &AiMeteredWalk<'_>,
+    month_in_progress: bool,
+    coverage_gap: bool,
+) -> Result<(Vec<AiMeteredLine>, Vec<AiMeteredProvisional>), AiMeteredUsageError> {
+    let mut reasons: BTreeSet<AiMeteredProvisional> = BTreeSet::new();
+    if month_in_progress {
+        reasons.insert(AiMeteredProvisional::MonthInProgress);
+    }
+    let missing_usage = walk.days.iter().any(|day| {
+        let cover = input.coverage.get(day).copied().unwrap_or_default();
+        !cover.org_usage_fetched || !cover.org_usage_complete
+    });
+    if coverage_gap || missing_usage {
+        reasons.insert(AiMeteredProvisional::ImportIncomplete);
+    }
+    if walk.days.iter().any(|day| *day >= walk.settling_from) {
+        reasons.insert(AiMeteredProvisional::NotSettled);
+    }
+    if input.org_charges.iter().any(|charge| {
+        charge.kind == AiOrgChargeKind::Unrecognized
+            && !charge.repository.is_empty()
+            && input.month.contains(charge.day)
+    }) {
+        reasons.insert(AiMeteredProvisional::Unrecognized);
+    }
+    let provisional: Vec<AiMeteredProvisional> = reasons.into_iter().collect();
+
+    /// A repository's month: its latest (day, spelling), smallest SKU and
+    /// credits in nanodollars.
+    struct Repository<'a> {
+        latest: (Date, &'a str),
+        sku: &'a str,
+        nanos: i128,
+    }
+    let mut repositories: BTreeMap<String, Repository<'_>> = BTreeMap::new();
+    for charge in input.org_charges.iter().filter(|charge| {
+        charge.kind == AiOrgChargeKind::RepositoryCredits && input.month.contains(charge.day)
+    }) {
+        let nanos = i128::from(charge.credit_usd().ok_or_else(out_of_range)?.nanos());
+        let latest = (charge.day, charge.repository.as_str());
+        let repository = repositories
+            .entry(repository_key(&charge.repository))
+            .or_insert(Repository {
+                latest,
+                sku: &charge.sku,
+                nanos: 0,
+            });
+        repository.latest = repository.latest.max(latest);
+        repository.sku = repository.sku.min(charge.sku.as_str());
+        repository.nanos += nanos;
+    }
+
+    let mut lines = Vec::new();
+    for repository in repositories.into_values() {
+        let allocated = nanos(repository.nanos)?;
+        let cents = allocated.to_cents();
+        if cents == 0 {
+            continue;
+        }
+        let name = repository.latest.1.to_string();
+        let project = input.repository_mappings.project(&name).cloned();
+        lines.push(AiMeteredLine {
+            subject: AiBillingSubject::Repository {
+                provider: input.payer,
+                name,
+            },
+            unassigned: project
+                .is_none()
+                .then_some(AiUnassignedKind::UnmappedRepository),
+            project,
+            charge: AiMeteredCharge {
+                kind: AiMeteredChargeKind::Repository,
+                account: None,
+                sku: Some(repository.sku.to_string()),
+                amount: usd_cents(cents),
+                allocated,
+                provisional: provisional.clone(),
+                low_ratio: false,
+            },
+            usage: AiBillingUsage::default(),
+        });
+    }
+    Ok((lines, provisional))
+}
+
 /// One user's part of an allocation: their lines, unbilled usage and
-/// counters. The unknown account is no user's, so its residual leaves their
-/// part settled.
+/// counters. The unknown account and repositories are no user's, so their
+/// credits leave their part settled.
 pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAllocation {
     let id = user.as_i32();
     let lines: Vec<AiMeteredLine> = allocation
@@ -861,6 +994,7 @@ pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAlloc
         month: allocation.month,
         lines,
         unknown_account: Vec::new(),
+        repository_provisional: Vec::new(),
         unbilled,
         unbilled_by_user: BTreeMap::from([(id, unbilled)]),
         days_not_imported,

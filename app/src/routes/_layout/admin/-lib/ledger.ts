@@ -21,10 +21,12 @@ import {
   lineProject,
   lineUserId,
   subjectKey,
+  subjectLabel,
   type BillableTotals,
   type ProjectKind,
   type SpinitKind,
 } from "./billing";
+import { formatCount } from "./format";
 
 /*
  * A month's bill arranged as a ledger: where its money goes, project by
@@ -93,6 +95,52 @@ function providersOf(lines: readonly AiBillingLine[]): AiProvider[] {
     lines.filter((line) => !line.unallocatedOverhead).map((l) => l.provider),
   );
   return AI_PROVIDERS.filter((provider) => used.has(provider));
+}
+
+/** How `subjectsLabel` counts subjects: people, accounts (the unknown
+ * account's included) and repositories, in that order. */
+type SubjectGroup = "people" | "accounts" | "repositories";
+
+const SUBJECT_GROUPS = {
+  user: "people",
+  providerAccount: "accounts",
+  unknownAccount: "accounts",
+  repository: "repositories",
+} as const satisfies Record<AiBillingSubject["kind"], SubjectGroup>;
+
+/** Each group's noun, singular and plural, in the order they are read. */
+const SUBJECT_GROUP_NOUNS: ReadonlyArray<
+  readonly [SubjectGroup, string, string]
+> = [
+  ["people", "person", "people"],
+  ["accounts", "account", "accounts"],
+  ["repositories", "repository", "repositories"],
+];
+
+/**
+ * Whose lines an entry holds, in a few words: the one subject by name, or
+ * people, accounts and repositories counted apart, such as `2 people, 1
+ * repository`.
+ */
+export function subjectsLabel(
+  people: readonly LedgerPerson[],
+  names: ReadonlyMap<number, string>,
+): string {
+  const [only, ...others] = people;
+  if (only !== undefined && others.length === 0) {
+    return subjectLabel(only.subject, names);
+  }
+  const counts = new Map<SubjectGroup, number>();
+  for (const person of people) {
+    const group = SUBJECT_GROUPS[person.subject.kind];
+    counts.set(group, (counts.get(group) ?? 0) + 1);
+  }
+  return SUBJECT_GROUP_NOUNS.flatMap(([group, one, many]) => {
+    const count = counts.get(group) ?? 0;
+    return count === 0
+      ? []
+      : [`${formatCount(count)} ${count === 1 ? one : many}`];
+  }).join(", ");
 }
 
 /** Whoever and whatever a set of lines bills. */
@@ -165,7 +213,8 @@ export type Ledger = Readonly<{
   /** Time-tracking projects, dearest first. */
   projects: readonly LedgerEntry[];
   /** Usage no project is charged for, by kind: repositories nobody mapped,
-   * then usage outside any repository. Empty when every line has a project. */
+   * code review of GitHub repositories nobody mapped, then usage outside any
+   * repository. Empty when every line has a project. */
   unassigned: readonly LedgerEntry[];
   /** Subscription fees nobody used; null without any. */
   overhead: LedgerEntry | null;

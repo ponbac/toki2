@@ -61,7 +61,7 @@ An exchange rate that is the average of the days published so far: that of a mon
 _Avoid_: estimated rate, temporary rate
 
 **Unassigned usage**:
-AI usage that counts for no time-tracking project and is not personal usage: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. An unmapped key may name a private repository, so only the developers who use it see its name and only they can map it: admins see its usage as Unassigned, unnamed, until one of them does. Billing charges it on its own line, and a mapping applies to past months too.
+AI usage that counts for no time-tracking project and is not personal usage: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. From the metered cutover on, so are code review credits of an unmapped repository. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. An unmapped key may name a private repository, so only the developers who use it see its name and only they can map it: admins see its usage as Unassigned, unnamed, until one of them does. Billing charges it on its own line, shown by kind (unmapped, unmapped repository, unattributed), and a mapping applies to past months too.
 _Avoid_: unmapped usage (it is only one of these cases)
 
 **Personal usage**:
@@ -141,7 +141,7 @@ How many days after a UTC day ended the payer still changed its numbers, as obse
 _Avoid_: delay
 
 **IDE aggregate**:
-The organization usage row of AI credits without a repository: the sum of every account's IDE credits. Shown, never added to per-account credits.
+The organization usage row of AI credits without a repository: the sum of every account's IDE credits. Shown, never added to per-account credits. Code review GitHub billed without a repository is inside it and bills on no line; it never blocks month close.
 _Avoid_: unassigned repository
 
 **Metered cutover**:
@@ -153,13 +153,25 @@ The month a Copilot line belongs to: the UTC month of the payer's billing day. I
 _Avoid_: GitHub month, calendar month (ambiguous)
 
 **Copilot line**:
-A bill line of credits a metered payer billed, at $0.01 a credit: a project's or Unassigned share by the T/G rule, or one of Spinit's (personal/internal, untracked Copilot, an unlinked, external or unknown account). Each account's lines sum exactly to its gross credits less code review.
+A bill line of credits a metered payer billed, at $0.01 a credit: a project's or Unassigned share by the T/G rule, one of Spinit's (personal/internal, untracked Copilot, an unlinked, external or unknown account), or a repository's code review, to its mapped project or Unassigned, rounded once per repository and UTC month. Each account's lines sum exactly to its gross credits less code review, which bills once, per repository.
 _Avoid_: GitHub line, credit line
 
 **Billing subject**:
 Whom a bill line charges for: a user, a provider account no user owns on the billed days, the unknown account, or a repository.
 _Avoid_: owner, payer
 
+**Repository mapping**:
+A team-wide mapping from a repository a metered payer bills credits to (GitHub's bare repository name, compared case-insensitively) to a time-tracking project, which its code review credits bill to. It points at the project directly, has no validity dates and applies retroactively, like a project-key mapping; only one to the configured company resolves. Suggestions come only from resolving project-key mappings `github.com/{owner}/{name}`, never from unmapped keys.
+_Avoid_: repository key (a project key names a repository too, but is another mapping)
+
+**Unmapped repository**:
+A repository with code review credits on the bill that no repository mapping to the configured company resolves. Its credits bill as Unassigned usage of their own kind and will block month close until it is mapped. Only credits that bill a line count: a month from the metered cutover on whose credits come to at least one credit once rounded. Credits before the cutover, or under one credit for the month, bill nothing and hold nothing back. Not the IDE aggregate, which has no repository.
+_Avoid_: unassigned repository, unmapped key
+
+**Code review check**:
+Per UTC day, the code review credits GitHub billed per repository minus those it billed per account: the same credits, which the bill takes once, per repository. A day whose accounts exceed its repositories (a negative difference) is code review billed without a repository, inside the IDE aggregate, or in an unrecognized row naming a repository: it bills on no line. A day whose repositories exceed its accounts (a positive difference) is code review by an unknown account, whose per-account credits Toki never imports: it bills once, through its repository line, and the bill needs nothing. Informational: it never blocks or makes a line provisional.
+_Avoid_: code review residual
+
 **Provisional Copilot line**:
-A Copilot line that may still change, with its reasons: the month is in progress, a day's import is missing or incomplete, a day may still change, contributing usage is on an old pricing basis, a provisional model contributed, or a row is unrecognized.
+A Copilot line that may still change, with its reasons: the month is in progress, a day's import is missing or incomplete, a day may still change, contributing usage is on an old pricing basis, a provisional model contributed, or a row is unrecognized (for a repository line, an organization row naming a repository).
 _Avoid_: draft line, estimate
