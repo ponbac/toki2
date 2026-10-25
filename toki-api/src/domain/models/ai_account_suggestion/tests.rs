@@ -37,11 +37,11 @@ fn staff() -> Vec<AiBillingDeveloper> {
         user(1, "Ada Lovelace", "ada.lovelace@example.com"),
         user(2, "Alan Turing", "alan.turing@example.com"),
         user(3, "Grace Brewster Hopper", "grace.hopper@example.com"),
-        user(4, "Kevin Hoang Dinh", "kevin.dinh@example.com"),
+        user(4, "Ingrid Maria Holm", "ingrid.holm@example.com"),
         user(5, "Erik Lindqvist", "erik.lindqvist@example.com"),
         user(6, "Erik Sjöberg", "erik.sjoberg@example.com"),
         user(7, "Hedy Lamarr", "hedy.lamarr@example.com"),
-        user(8, "Patrik Johansson", "patrik.johansson@example.com"),
+        user(8, "Viktor Lund", "viktor.lund@example.com"),
         user(9, "Åsa Ängström", "asa.angstrom@example.com"),
         user(10, "Oskar Nilsson", "oskar.nilsson@example.com"),
     ]
@@ -138,7 +138,7 @@ fn a_full_name_verifies_in_any_order_and_folded() {
 fn a_middle_name_on_either_side_is_only_probable() {
     // The profile drops the user's middle name.
     assert_eq!(
-        alone(account(1001, "kd9530", Some("Kevin Dinh"), None)),
+        alone(account(1001, "ih4711", Some("Ingrid Holm"), None)),
         [(4, Probable, vec![E::NameFirstLast])]
     );
     // The user has one the profile spells out.
@@ -204,8 +204,8 @@ fn logins_with_an_initial_or_a_surname_prefix_are_probable() {
 
 #[test]
 fn a_login_with_someone_elses_surname_suggests_no_one() {
-    // A Patrik exists, but not this one.
-    assert!(alone(account(1001, "patrikbergman", None, None)).is_empty());
+    // A Viktor exists, but not this one.
+    assert!(alone(account(1001, "viktorbergman", None, None)).is_empty());
 }
 
 #[test]
