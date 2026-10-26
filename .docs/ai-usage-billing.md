@@ -174,8 +174,23 @@ operations on the upload's bearer auth. Neither is an MCP tool:
 
 The floor is config `ai_usage.reprice_floor` (RFC 3339, `2026-10-01T00:00:00Z` in
 `base.yaml`): costs before it are never repriced, so already invoiced months keep
-theirs. Deploy Toki before a Token Ledger release that sends a basis: older servers
-ignore the field, but have no repricing operations.
+theirs. With month closes (see "Month close, snapshots and adjustments") the floor is
+the later of that and the start of the first open month: the earliest month without an
+active close, at or after the month the configured floor falls in (the earlier of its
+UTC and its `ai_usage.time_zone` month), from the earlier of its UTC and its local
+midnight (`open_from`), so that month stays repriceable in both bases from its first
+hour on. Every month from the configured floor's month up to it is closed. A closed
+month after the first open one stays repriceable: closing November while October is
+open leaves both open to repricing. A reprice of a closed month, like one of its last
+hours in its other basis or one that races its close, changes only its recompute, and
+the next open month after it nets the difference as an adjustment line, so each
+correction bills exactly once.
+Discovery reports that floor, repricings count buckets before it in `beforeFloor`, and
+the bill, reconciliation and close readiness (`pricing`) read the old pricing basis
+from it. A month that is never invoiced, such as October 2026 before the first close,
+holds the floor back until it is closed or the configured floor moves past it. Deploy
+Toki before a Token Ledger release that sends a basis: older servers ignore the field,
+but have no repricing operations.
 
 ## Unassigned usage by kind
 
@@ -190,7 +205,8 @@ a metered payer's repository credits:
 - **unmapped repository**: code review credits GitHub billed to a repository
   that no repository mapping to the configured company resolves (see
   "Repository mappings"). Mapping the repository under Project mappings >
-  GitHub repositories assigns them; until then they will block month close.
+  GitHub repositories assigns them; until then they block month close (readiness
+  `repositories`).
 - **unattributed**: usage outside any repository, which no mapping can assign.
 
 Unassigned still bills as one project: a subscription fee is split over it and
@@ -260,8 +276,9 @@ AI subscription periods:
   Externals never conflict with each other. A deleted user's dispositions go with
   them, leaving the account unlinked.
 - A change of owner is "set a last day, then create from the next day". Deleting
-  removes a disposition as if it never existed. Edits apply retroactively until
-  month close restricts them.
+  removes a disposition as if it never existed. Edits apply to every open month; a
+  closed month keeps its snapshot and gets adjustment lines on the next open month's
+  bill.
 - A new disposition defaults to the days that need one: every day the account
   held a seat, and every day after today while it holds one. It starts the first
   uncovered stretch of those days that reaches into the review window (below),
@@ -360,7 +377,7 @@ Toki imports what GitHub billed for Copilot, per account, UTC day and model, and
 reconciles it with Toki's own Copilot-priced usage. From
 `ai_usage.metered_copilot_from` on, the bill's Copilot lines read these tables
 (below), repository mappings bill their repository rows (see "Repository
-mappings"), and month close will read their coverage.
+mappings"), and month close reads their coverage (readiness `import`).
 
 **Port and adapter.** The domain reads a `MeteredUsageSource` (credits of an
 account or the organization for a UTC month or day, the organization's usage rows,
@@ -518,8 +535,10 @@ browser's time zone. Account import errors are listed per account and month.
   and neither do free models: whatever Toki priced them at is left out of T, the
   old pricing basis and tracked without a linked account, and their groups are
   listed with `T = 0`.
-- *On an old pricing basis* is the part of T from buckets at or after
-  `ai_usage.reprice_floor` whose basis is NULL or differs from their own machine's
+- *On an old pricing basis* is the part of T from buckets at or after the reprice
+  floor (`ai_usage.reprice_floor`, raised to the start of the first open month, as for
+  the bill and for discovery) whose basis is NULL or
+  differs from their own machine's
   current pricing basis (`ai_usage_machines.pricing_basis`, the latest non-null basis
   of its uploads and repricings in the order they were applied, over all of the
   machine's providers): what the reprice discovery with that basis would report as
@@ -527,8 +546,10 @@ browser's time zone. Account import errors are listed per account and month.
   upload without a basis leaves the machine's current basis alone, so it never turns
   repriced history old; only its own NULL-basis buckets count as old. A machine that
   never sent a basis has none, so all of its usage from the floor on reads as old. A
-  machine that never upgraded its rates is compared with its own current basis; a
-  fleet-wide basis requirement is left to month close.
+  machine that never upgraded its rates is compared with its own current basis.
+  Month close requires no contributing bucket on an old basis as read here, and no
+  billed estimate on one (readiness `pricing`); bases are opaque, so machines are not
+  compared with each other.
 - Per account, UTC day and group of (SKU, model) on linked days, `attributed =
   min(G, T)` and `untracked = G − attributed`. Untrackable and unrecognized credits
   have `T = 0`; code review credits are left out (repository-billed). Credits on days
@@ -737,8 +758,9 @@ browser-only under `/ai-usage/admin`, off the agent OpenAPI document and MCP.
 **CSV.** These columns follow `unassigned`, in order: `source` (`estimate`,
 `subscription` or `github`), `credits`, `github_login`, `repository` (a repository
 line's name), `sku`, `period_basis` (`UTC` for metered rows, the configured zone
-otherwise), `adjusts_month` and `snapshot_id` (month close fills them) and
-`provisional`. Spinit's metered rows name their project `Untracked Copilot`, `Personal
+otherwise), `adjusts_month` and `snapshot_id` (an adjustment row's corrected month
+and that month's close; a closed month's own rows carry its own close in
+`snapshot_id`; see "Month close, snapshots and adjustments") and `provisional`. Spinit's metered rows name their project `Untracked Copilot`, `Personal
 / internal Copilot`, `Unlinked account`, `External account` or `Unknown account`. A
 repository row has its project, or `Unassigned` with `unassigned =
 unmapped_repository` and the warning "repository without a project: map it under
@@ -789,8 +811,8 @@ a note on what it waits for. "How billing works" and the GitHub Copilot tab read
 `meteredPeriod`.
 
 **For month close.** One user can have lines of two accounts in a month (an owner
-change), with the same subject, project, kind, currency and provider; a diff key must
-sum such lines or include the account.
+change), with the same subject, project, kind, currency and provider. Month close's
+diff key sums such lines (see "Month close, snapshots and adjustments").
 
 ## Repository mappings (code review credits)
 
@@ -810,8 +832,9 @@ repository nobody mapped as a project key. Names are GitHub's bare repository na
 1 to 200 characters, kept as GitHub spelled them and compared case-insensitively
 (a unique index on `(provider, lower(repository_name))`); the stored spelling is the
 payer's latest. Mappings have no validity dates: they resolve whenever a bill is read
-and are never written into usage, so a change applies retroactively, in past months'
-bills too, as key mappings do. Only mappings to the configured company resolve; a
+and are never written into usage, so a change applies to every open month, as key
+mappings do; a closed month keeps its snapshot and gets adjustment lines on the next
+open month's bill. Only mappings to the configured company resolve; a
 stale or unconfigured one bills as unmapped. GitHub names a repository without its
 owner, so two repositories of one name under different owners are one repository to
 its rows: one line and one mapping.
@@ -856,7 +879,8 @@ and left out once the repository's mapping resolves.
   bill's `metered` block provisional even without repository rows. One developer's
   part has no repository lines.
 - `AiMeteredAllocation::unmapped_repositories()` names the repositories billing to
-  Unassigned: what month close will refuse. An empty repository name never blocks.
+  Unassigned, with their credits: what month close refuses (readiness
+  `repositories`). An empty repository name never blocks.
 
 **Port and adapter.** `AiRepositoryMappingService` (inbound) and
 `AiRepositoryMappingRepository` (outbound, `PostgresAiRepositoryMappingRepository`)
@@ -910,3 +934,251 @@ repository, or, when an unrecognized row names a repository, may be code review 
 those rows; a day where repositories exceed accounts is code review by accounts Toki
 does not import, which bills once, through its repository line. Only the first is a
 warning; days that differ only the second way are marked informational.
+
+## Month close, snapshots and adjustments
+
+An admin closes a month's **whole AI bill** (API lines, subscription fee shares and
+overhead, metered Copilot lines, and the adjustment lines posted on it) once the month
+is over, and from then on the month is served as it was invoiced. A later change to a
+closed month bills exactly once, as **adjustment lines** on the next open month.
+
+**Closes** (`ai_billing_month_closes`, `20261030120000_add_ai_billing_month_closes.sql`):
+one row per close with scope `ai_bill` (`AI_BILL_SCOPE`), who closed it and when, the
+readiness as evaluated (`readiness_json`, with each waiver's reason), the snapshot's
+JSON and CSV header, and `projection_version`. A month has at most one *active* close
+(a partial unique index). Re-opening keeps the row as history (`reopened_at`,
+`reopened_by`); every computation reads active closes only.
+
+- **Closable:** the month is over in UTC and in `ai_usage.time_zone`, by the store's
+  clock, and has no active close. Otherwise `409` (not over yet, with when it will be;
+  already closed). There is no order: any month that is over can close, and the
+  netting below stays exact whichever months are closed or re-opened.
+- **Re-open** is refused (`409`, `heldBy`) while an active close holds adjustments to
+  the month (`adjusts_month`). Re-opening a month whose snapshot froze adjustments to
+  earlier months makes those live again, on the new first open month after them.
+- One close or re-open runs at a time (an advisory lock); a second one meanwhile is
+  `409`.
+
+**Readiness** (`domain/models/ai_close_readiness.rs`), evaluated by the server in `GET`
+and again in `POST …/close`. Each check passes, fails, waits for nothing it does not
+apply to (`notApplicable`), or is waived: an admin waives a failed check with a reason
+(trimmed, 1 to 500 characters), kept in `readiness_json` with every check's problems.
+A waiver of a check that did not fail is dropped. Anything waived wrongly is still
+corrected later, by an adjustment.
+
+1. `import` (metered months): judged per account and month from the import's stored
+   slices and checks, never from a run's errors, which only describe that run. The
+   month's last day is before today less the settle days (`AiImportStatus::settle_days`,
+   the measured lag, at least 3); every day of the month is imported (days before the
+   backfill fail) with every account's, the organization's credits and the
+   organization's usage slices complete; and the latest check of every account that
+   held a seat, of every other account with credits or lines that is not excused (its
+   import failed without a seat), and of the organization is a success that matches
+   GitHub's month total, made on or after the day the month settled. Passing it means
+   no metered line, unknown account or repository line may still change for the
+   import's sake (`monthInProgress`, `importIncomplete`, `notSettled`).
+2. `dispositions` (metered): no credits bill to an unlinked account; problems summed per
+   account.
+3. `unknownAccount` (metered): the unknown account's residual is settled
+   (`AiMeteredAllocation::unknown_account` empty) and zero on every settled or
+   provisional day (`unknown_residual`, signed: a negative day is accounts above the
+   organization), code review left out on both sides as for the bill.
+4. `repositories` (metered): no repository bills to Unassigned
+   (`unmapped_repositories()`), and no organization row naming a repository is of a kind
+   Toki does not recognize (it may be code review on no line).
+5. `pricing`: no metered account's lines rest on an old pricing basis or a provisional
+   model (per account), and no bucket the local-day bill reads (the same days, metered
+   exclusion and personal keys as `daily_usage`) from the reprice floor in force on (the
+   configured one, raised to the start of the first open month) is on an old basis (per machine and
+   provider, with local days and its estimate): a bucket no reprice may change is taken
+   as it is. Closing
+   freezes the estimates API lines bill and fees are split by, which a later reprice no
+   longer reaches. Unrecognized models never block: GitHub's credits are its own number.
+6. `exchangeRates`: every currency the bill converts has a stored rate that is not
+   being fetched and is final (an admin's override is final), and every adjustment
+   line's corrected month has a final rate and a known SEK amount.
+7. `uploads`: every machine active in the month uploaded all of it (completeness), and
+   in metered months also the UTC hours of the month outside its local days (after the
+   local month east of UTC, before it west of UTC), for the machine and each expected
+   provider. Problems name the span, never when a machine synced. Inactive machines and
+   developers without machines never block.
+
+**Snapshot** (`ai_billing_snapshot_lines`): one row per line as its readers saw it (one
+per Unassigned kind, as `AiBillingLine::parts`), own lines first, then the adjustment
+lines posted on the month, each with its diff key (text columns), display names,
+`amount`, `sek_amount`, `rate`, `credits`, the line's JSON (`line_json`), its CSV cells
+(`csv_row`, raw, guarded when served) and CSV position. The close row adds the
+overview without lines, adjustment lines and close (`bill_json`, with `adjustedMonths`),
+each developer's bill part as the developer page shows it (`developer_json`:
+`subscriptions`, `totals`, `metered`, and their own `missingRates` and `pendingRates`,
+per user id, for every developer with lines, subscriptions, adjustment lines or metered
+usage on no line; any other developer is served an empty part, as the live page shows
+it), the CSV header and the readiness.
+The projection comes from the HTTP adapter through `AiBillProjector`, which the close
+handler passes to the service, so the domain never imports the adapter.
+
+- **Serving a closed month:** the overview is `bill_json` with the stored lines and
+  adjustment lines and a non-null `close` (`closeId`, `closedAt`, `closedBy`,
+  `adjustmentsPostOn`, `currentExchangeRates`: the month's rates as stored now, while
+  `exchangeRates` keeps the ones it closed with). The developer page takes period and
+  rates from `bill_json`, its bill part from `developer_json` (an empty one without
+  any), its own and adjustment lines from the snapshot, its personal usage from the
+  developer's entry of `bill_json`'s `personalUsage` (null without one), as the overview
+  serves it, and only its usage by day and machines live: a key marked personal after
+  close leaves the usage by day, while the bill and the personal usage stay as closed
+  and the change posts as an adjustment. The CSV is the stored header and rows. A closed
+  month serves the same JSON values (JSONB may reorder keys) and the same CSV bytes as
+  when it closed; its `pendingRates` are frozen, so the page need not poll.
+- **Versioning:** `projection_version` is `AI_BILL_PROJECTION_VERSION` (1) when stored.
+  A change to the served overview, line, adjustment line or developer JSON bumps it and
+  adds an upgrade step from the previous version in the adapter (`upgrade_snapshot`),
+  with a test, so the strict frontend contracts keep reading old closes. A stored
+  version newer than the code is a `500` that logs it.
+
+**Diff key** (`AiAdjustmentKey`): subject, project, kind, currency and payer.
+
+| Part | Text | From |
+|---|---|---|
+| subject | `user:{id}`, `account:{provider}:{accountId}`, `unknown:{provider}`, `repository:{provider}:{lower-cased name}` | the line's subject, by what survives renames |
+| project | `project:{id}`, `unassigned:{unmapped\|unmapped_repository\|unattributed}`, `none` | the part's project or Unassigned kind; `none` for overhead and Spinit's metered lines |
+| kind | `api`, `subscription`, `overhead`, `metered_project`, `metered_personal`, `metered_untracked`, `metered_unlinked_account`, `metered_external_account`, `metered_unknown_account`, `metered_repository` | the charge |
+| currency | ISO code | the billable currency (USD for API and metered lines) |
+| payer | the subscription for `subscription` and `overhead`, else the line's provider | "provider or subscription" |
+
+Lines and parts that share a key are summed: one user's lines from two accounts in a
+month (an owner change), a user's untracked lines of two SKUs, the Codex and Pi shares
+of one subscription (named after the subscription's provider).
+
+**Adjustments** (`domain/models/ai_month_close.rs`). For the open month M and each
+closed month K whose first open month after it is M, per key:
+
+`adjustment = R − S − F`
+
+where R is K's own bill recomputed now (the local-day bill plus metered lines from the
+cutover on, converted at K's current rates), S is K's snapshot (its own lines) and F the
+adjustments to K frozen in **every active close**. An unknown amount counts as zero. A
+line posts unless both its amount and its SEK difference are zero.
+
+- **SEK at K's rate:** an adjustment's SEK amount is `R.sek − S.sek − F.sek`, the
+  difference of what is invoiced in SEK, never its amount converted; it carries K's
+  current rate, bypassing `convert_bill`'s same-month filter. A rate change alone (an
+  admin's override on closed K) changes only `R.sek`: an SEK-only line, `billableAmount
+  "0.00"`, `sekOnly: true`. SEK can also move alone at an unchanged rate, as a key's SEK
+  is a sum of per-line conversions or a fee's own SEK split: `rateChanged` says whether
+  K's current rate differs from the one the key was last invoiced at (its latest frozen
+  adjustment's, else its snapshot's), and only then do the CSV and the page name a rate
+  change. A stored row without an SEK amount counts as nothing
+  invoiced in SEK; a recomputed part without a rate leaves the difference unknown
+  (`missingRate`), which readiness `exchangeRates` catches. SEK keys have no rate.
+- **Why every active close, not the plan's "closed months before M":** that wording
+  double-counts once a month between K and M is re-opened (K and K+1 closed, K+2 holding
+  A to K: re-opening K+1 makes it the first open month, and no close before it holds A).
+  What is invoiced for K is always `S + F + A_live = R`: closing M moves `A_live` into F
+  unchanged, and re-opening a month removes its rows from F, which reappear live. So
+  each correction bills exactly once, through any sequence of closes and re-opens.
+- **Display:** subject, project and provider come from the latest source (R, then S,
+  then F); a subscription's plan from the subscription while it exists. Adjustments
+  have no usage.
+- **Cost:** an open month's overview, CSV, developer page and close status recompute
+  every closed month that posts on it, sequentially (`ai_billing.adjustments` span);
+  normally one month.
+- **Config changes re-bill closed months:** changing `ai_usage.metered_copilot_from` or
+  `ai_usage.time_zone` after a close changes the recompute, so the difference posts as
+  adjustments on the next open month.
+
+**On the bill**, adjustment lines are kept apart from `lines` end to end:
+`AiMonthBill::adjustments`, JSON `adjustmentLines` (`adjustsMonth`, `snapshotId`,
+`subject`, `provider`, `project`, `unassigned`, `kind` of `api`, `subscription`,
+`overhead` or `metered` with `meteredKind`, `subscriptionId`, `plan`, signed
+`billableAmount` in `billableCurrency`, signed `convertedAmount` with `exchangeRate` and
+`missingRate`, signed `credits` for metered kinds, `sekOnly`, `rateChanged`), ordered by
+corrected month, then project as the CSV ranks them, project name, Unassigned kind,
+subject, provider, kind and payer. `adjustedMonths` lists the closed months posting on the month,
+with or without lines. `totals.adjustments` sums them per currency; `totals.converted`
+adds `adjustments` and `invoiced` (`billed` plus `adjustments`; null when either is).
+Every other total, and `billed`, stays the month's own lines. A developer's month
+carries the developer's adjustment lines.
+
+**CSV:** adjustment rows follow the month's own rows: `billing_mode = adjustment`,
+`source` as the corrected kind's (`estimate`, `subscription` or `github`), the project
+columns as for that kind, the carried plan, signed `billable_amount` and
+`billable_sek`, the corrected month's rate, zero usage columns, signed `credits` for
+metered kinds, the developer of a user subject, the `github_login` of an account subject
+and the repository of a repository subject, `period_basis` `UTC` for metered kinds,
+`adjusts_month` and `snapshot_id` (the corrected month's close), and a warning naming the
+corrected month, plus a missing rate, "SEK only" with why (the corrected month's rate
+changed, or its SEK amounts round differently at the same rate), or a rate that changed
+beside the amount. Own rows of a closed
+month carry its close in `snapshot_id`; an open month's own rows leave both empty. Own
+rows sum to the per-mode totals and adjustment rows to `totals.adjustments`;
+`billable_sek = billable × rate` need not hold for adjustments. A cell that is wholly a
+number, negative included (`-1.50`), is not formula-guarded; `-1+2` still is.
+
+**Signed amounts.** `AiFeeAmount` is the signed amount type: negative only on adjustment
+lines and their totals (the snapshot's checks refuse negative own rows). `to_decimal`
+formats the sign (`-1.50`, `-0.05`), `AiExchangeRateValue::convert` rounds half away from
+zero and is symmetric, and `allocate_largest_remainder` splits a negative total as the
+negation of its magnitude's split. `AiUsdNanos` stays non-negative: adjustments carry no
+usage or estimate. In the frontend, `signedDecimalSchema` (`-?\d+\.\d{2}`, never `-0.00`)
+is used only by adjustment lines and the adjustment totals, so a negative own line still
+fails the strict contract; `formatFee` shows the sign as a minus (`−1.50 USD`,
+`−1 234,05 SEK`), and `hundredths`, `decimal` and `formatLineCredits` are sign-aware.
+
+**On the admin page** (`/admin/ai-billing`): under the export checks, the month close panel
+shows when a month in progress can close, the server's checklist for a month that is
+over (each failed check with its problems, where to fix them and a waiver with its
+reason; closing asks to confirm), or, for a closed month, who closed it and when, the
+frozen readiness with its waivers, the re-open (disabled with the months in `heldBy`)
+and earlier closes. The close status reloads while readiness waits for a rate being
+fetched (`ratePending`). A closed month hides the export checks, says it is the bill as
+invoiced, and reads no rate as pending (its snapshot's pending rates never resolve; the
+query layer clears them, `withoutFrozenFetches`), and its exchange rates show the
+invoiced rate beside the current one, which an override edits; the override's toast says
+the month keeps its invoiced rate and the difference posts on the next open month.
+Developers with only adjustment lines are on the People tab, and adjustment lines link a
+developer to their page. The statement's headline is
+`converted.invoiced`, with an Adjustments figure; an Adjustments tab lists the lines by
+the project they correct (with `adjustedMonths` that have none), and a developer's page
+lists theirs under the bill.
+
+**Reprice floor:** the floor is the start of the first open month, never before the
+configured one (see "Pricing basis and reprice-only uploads"): closing the first open
+month moves it past every closed month that follows, and re-opening a month moves it
+back. Close readiness of an open month therefore always reads all of the month's usage
+from the configured floor on. A closed month after an open one stays repriceable; a
+reprice of it posts on the next open month after it as an adjustment line, through the
+same netting as any other change. The repricing discovery, the bill (and the recompute
+of a closed month), reconciliation and readiness all read one floor (`open_from`).
+
+**Routes**, browser-only under `/ai-usage/admin`, admin power, off the agent OpenAPI
+document and MCP:
+
+- `GET /billing/{month}/close`: `{ month, state (open | closed), timeZone, overAt,
+  readiness, adjusts, close, history }`. An open month that is not over has `overAt`;
+  one that is over has `readiness` (`{ evaluatedAt, ready, checks: [{ id, status
+  (passed | failed | waived | notApplicable), problems, waiver }] }`, problems tagged by
+  `kind`, credits as signed hundredths strings, instants RFC 3339, days `YYYY-MM-DD`)
+  and `adjusts`, the closed months posting on it. A closed month has `close` (`closeId`,
+  `closedAt`, `closedBy`, the frozen `readiness`, `adjustmentsPostOn`, `heldBy`).
+  `history` lists every close of the month, re-opened ones included, newest first.
+- `POST /billing/{month}/close` with `{ "waivers"?: [{ "check", "reason" }] }`: `201`
+  with the close status. `409` while not over, already closed or busy; `409` `{ error,
+  readiness }` when a failed check is not waived; `400` for an unknown or repeated
+  check, an empty or long reason, or an unknown field.
+- `DELETE /billing/{month}/close`: re-opens, `200` with the status; `409` `{ error,
+  heldBy }` while a close holds adjustments to it; `404` when it is not closed.
+
+**Ports and adapters.** `AiMonthCloseRepository` (outbound;
+`PostgresAiMonthCloseRepository`) stores closes and snapshots; `AiBillingRepository`
+adds `coverage_intervals` and `old_basis_usage` for readiness, and `open_from` (on
+`AiMonthCloseRepository`, `AiUsageRepository` and `AiMeteredUsageRepository`) gives the
+start of the first open month for the reprice floor (`reprice_floor`), which repricing,
+metered tracked usage on an old basis (the bill and reconciliation, through
+`AiMeteredMonths::load`) and readiness all apply. `AiBillingService` gains
+`close_status`, `close_month` and `reopen_month`; `month_overview` returns an open
+overview or a closed month (`AiMonthView`), and the developer month a live or a closed
+bill (`AiDeveloperBill`). Netting and readiness are pure.
+
+**Out of scope:** closing a month from an exported CSV, the plan's fallback for invoicing
+a month before month close existed; it is not needed now that close exists before the
+first month to close.

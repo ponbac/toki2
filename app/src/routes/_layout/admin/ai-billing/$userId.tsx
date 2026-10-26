@@ -1,7 +1,7 @@
 import * as React from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Lock } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +52,7 @@ import {
 import {
   MONTH_PATTERN,
   formatCount,
+  formatInstant,
   formatTokens,
   listOf,
   monthLabel,
@@ -60,6 +61,7 @@ import {
 } from "../-lib/format";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
 import { UNASSIGNED_LABEL, meteredName } from "../-lib/billing";
+import { DeveloperAdjustments } from "./-components/adjustments";
 import { CopilotCard } from "./-components/copilot-card";
 import { PersonalUsage } from "./-components/personal-usage";
 import { BillingTable } from "./-components/billing-table";
@@ -138,7 +140,11 @@ function DeveloperMonthPage() {
             That is not a developer.
           </p>
         ) : query.isPending ? (
-          <div className="flex flex-col gap-3" role="status" aria-label="Loading">
+          <div
+            className="flex flex-col gap-3"
+            role="status"
+            aria-label="Loading"
+          >
             <Skeleton className="h-32 w-full" />
             <Skeleton className="h-64 w-full" />
           </div>
@@ -214,6 +220,25 @@ function DeveloperMonthView({
   );
   const metered = data.meteredPeriod?.applies ? data.meteredPeriod : null;
 
+  const closed = data.close && (
+    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+      <Lock className="size-4" aria-hidden />
+      {monthLabel(month)} is closed: this bill is as invoiced on{" "}
+      {formatInstant(data.close.closedAt)} (snapshot #{data.close.closeId}).
+      Usage by day is live; changes post as adjustments on{" "}
+      {monthLabel(data.close.adjustmentsPostOn)}.
+    </p>
+  );
+
+  const adjustments = data.adjustmentLines.length > 0 && (
+    <DeveloperAdjustments
+      month={month}
+      lines={data.adjustmentLines}
+      names={new Map([[data.developer.userId, data.developer.fullName]])}
+      billingCurrency={data.billingCurrency}
+    />
+  );
+
   const personal = (
     <PersonalUsage
       usage={
@@ -234,15 +259,23 @@ function DeveloperMonthView({
   );
 
   if (data.lines.length === 0 && data.dailyUsage.length === 0) {
+    const adjustedOnly = data.adjustmentLines.length > 0;
     return (
       <>
+        {closed}
         <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
-          <p className="font-medium">Nothing to bill for {monthLabel(month)}</p>
+          <p className="font-medium">
+            {adjustedOnly
+              ? `Only adjustments bill for ${monthLabel(month)}`
+              : `Nothing to bill for ${monthLabel(month)}`}
+          </p>
           <p className="text-sm text-muted-foreground">
-            {data.developer.fullName} has no synced AI usage that bills and no
-            subscription in this month.
+            {adjustedOnly
+              ? `${data.developer.fullName} has no AI usage or subscription of their own in this month; only the adjustments to closed months below bill.`
+              : `${data.developer.fullName} has no synced AI usage that bills and no subscription in this month.`}
           </p>
         </div>
+        {adjustments}
         {personal}
         {copilot}
       </>
@@ -251,11 +284,13 @@ function DeveloperMonthView({
 
   return (
     <>
+      {closed}
       {data.lines.length === 0 ? (
         // Usage without lines: a metered payer's, waiting for its credits or
         // a linked account.
         <>
           <NothingBilledYet month={month} data={data} />
+          {adjustments}
           {personal}
         </>
       ) : (
@@ -294,6 +329,7 @@ function DeveloperMonthView({
               />
             </div>
           )}
+          {adjustments}
           {personal}
         </section>
       )}
@@ -365,6 +401,10 @@ function NothingBilledYet({
           : []),
       ]
     : [];
+  const adjusted =
+    data.adjustmentLines.length > 0
+      ? " Only the adjustments to closed months below bill on this month."
+      : "";
   return (
     <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
       <p className="font-medium">Nothing billed yet for {monthLabel(month)}</p>
@@ -372,6 +412,7 @@ function NothingBilledYet({
         {metered && waits.length > 0
           ? `${name}'s ${meteredName(metered.provider)} usage bills from GitHub's credits once ${listOf(waits, "conjunction")}. It is by day below.`
           : `${name}'s synced usage this month bills nothing. It is by day below.`}
+        {adjusted}
       </p>
     </div>
   );
@@ -651,7 +692,7 @@ function BreakdownTable({
             <TableCell className="text-right tabular-nums">
               {formatEstimateIn(item.usage, money)}
             </TableCell>
-            <TableCell className="text-right tabular-nums text-muted-foreground">
+            <TableCell className="text-right text-muted-foreground tabular-nums">
               {total.apiEquivalentUsd > 0
                 ? `${Math.round((item.usage.apiEquivalentUsd / total.apiEquivalentUsd) * 100)}%`
                 : "—"}

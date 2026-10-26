@@ -84,10 +84,11 @@ use crate::domain::AiBillingError;
 use time::{Date, Month};
 
 use super::{
-    resolve_billing_mode, AiBillingDeveloper, AiBillingMode, AiConvertedAmount, AiConvertedBill,
-    AiCurrency, AiMachineId, AiMappedProject, AiMeteredAllocation, AiMeteredBillInfo,
-    AiMeteredCharge, AiProvider, AiProviderAccountId, AiProviderLogin, AiSubscription,
-    AiSubscriptionId, AiTokenCounts, AiUsageDateRange, UserId, MAX_SAFE_COUNT,
+    resolve_billing_mode, AiAdjustedMonth, AiAdjustmentLine, AiBillingDeveloper, AiBillingMode,
+    AiConvertedAmount, AiConvertedBill, AiCurrency, AiDeveloperBill, AiMachineId, AiMappedProject,
+    AiMeteredAllocation, AiMeteredBillInfo, AiMeteredCharge, AiProvider, AiProviderAccountId,
+    AiProviderLogin, AiSubscription, AiSubscriptionId, AiTokenCounts, AiUsageDateRange, UserId,
+    MAX_SAFE_COUNT,
 };
 
 const NANOS_PER_USD: i64 = 1_000_000_000;
@@ -171,7 +172,8 @@ impl fmt::Display for AiBillingMonth {
 }
 
 /// An API-equivalent USD estimate in billionths of a dollar, so that sums are
-/// exact and splits deterministic.
+/// exact and splits deterministic. Never negative: adjustment lines, the only
+/// negative amounts (`AiFeeAmount`), carry no usage or estimate.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AiUsdNanos(i64);
 
@@ -225,7 +227,11 @@ impl AiUsdNanos {
     }
 }
 
-/// An amount in hundredths of a currency unit, such as an allocated fee.
+/// A signed amount in hundredths of a currency unit, such as an allocated
+/// fee. Only adjustment lines (`AiAdjustmentLine`) and their totals are ever
+/// negative: a month's own lines bill amounts of zero or more by
+/// construction, which the snapshot's checks enforce again when a month
+/// closes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AiFeeAmount {
     pub hundredths: i64,
@@ -233,16 +239,55 @@ pub struct AiFeeAmount {
 }
 
 impl AiFeeAmount {
-    fn zero(currency: AiCurrency) -> Self {
+    pub(crate) fn zero(currency: AiCurrency) -> Self {
         Self {
             hundredths: 0,
             currency,
         }
     }
 
-    /// The amount with two decimals, without the currency, such as `550.00`.
+    /// The amount with two decimals and its sign, without the currency, such
+    /// as `550.00` or `-1.50`. Zero has no sign.
     pub fn to_decimal(&self) -> String {
-        format!("{}.{:02}", self.hundredths / 100, self.hundredths % 100)
+        let sign = if self.hundredths < 0 { "-" } else { "" };
+        let magnitude = self.hundredths.unsigned_abs();
+        format!("{sign}{}.{:02}", magnitude / 100, magnitude % 100)
+    }
+
+    /// The sum of two amounts in one currency; a range error on overflow and
+    /// an invalid one for different currencies.
+    pub fn checked_add(&self, other: &Self) -> Result<Self, AiBillingError> {
+        self.same_currency(other)?;
+        Ok(Self {
+            hundredths: self
+                .hundredths
+                .checked_add(other.hundredths)
+                .ok_or(AiBillingError::NumericRange)?,
+            currency: self.currency.clone(),
+        })
+    }
+
+    /// `self − other` in one currency; errors as `checked_add`.
+    pub fn checked_sub(&self, other: &Self) -> Result<Self, AiBillingError> {
+        self.same_currency(other)?;
+        Ok(Self {
+            hundredths: self
+                .hundredths
+                .checked_sub(other.hundredths)
+                .ok_or(AiBillingError::NumericRange)?,
+            currency: self.currency.clone(),
+        })
+    }
+
+    fn same_currency(&self, other: &Self) -> Result<(), AiBillingError> {
+        if self.currency != other.currency {
+            return Err(AiBillingError::Invalid(format!(
+                "{} and {} amounts are never added together",
+                self.currency.as_str(),
+                other.currency.as_str()
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -631,6 +676,11 @@ pub struct AiMonthBill {
     /// The metered payer's lines as a whole, when the month bills them from
     /// credits; `None` before the cutover.
     pub metered: Option<AiMeteredBillInfo>,
+    /// Changes to closed months that post on this open month, kept apart
+    /// from `lines`: totals, conversion and every reader of `lines` see the
+    /// month's own lines only. Empty from `bill_month`; the billing service
+    /// sets them (`adjustment_lines`).
+    pub adjustments: Vec<AiAdjustmentLine>,
 }
 
 /// Month totals. Amounts in different currencies are never added together.
@@ -648,6 +698,9 @@ pub struct AiMonthTotals {
     /// All usage in the month, whichever way it was billed, with its
     /// unrounded API-equivalent estimate.
     pub usage: AiBillingUsage,
+    /// What the adjustment lines bill, signed, per currency in code order:
+    /// apart from every total above, which hold the month's own lines.
+    pub adjustments: Vec<AiFeeAmount>,
 }
 
 /// Fees in one currency.
@@ -669,6 +722,7 @@ impl AiMonthBill {
             api_unpriced_records: 0,
             metered_billed: AiFeeAmount::zero(AiCurrency::usd()),
             usage: AiBillingUsage::default(),
+            adjustments: Vec::new(),
         };
         for line in &self.lines {
             totals.usage.add(&line.usage)?;
@@ -717,6 +771,14 @@ impl AiMonthBill {
             }
         }
         totals.fees = fees.into_values().collect();
+        let mut adjustments: BTreeMap<String, AiFeeAmount> = BTreeMap::new();
+        for line in &self.adjustments {
+            let total = adjustments
+                .entry(line.amount.currency.as_str().to_string())
+                .or_insert_with(|| AiFeeAmount::zero(line.amount.currency.clone()));
+            *total = total.checked_add(&line.amount)?;
+        }
+        totals.adjustments = adjustments.into_values().collect();
 
         Ok(totals)
     }
@@ -743,14 +805,20 @@ pub fn prorate_fee(
 /// Splits `total` hundredths in proportion to `weights` by the largest-remainder
 /// method: each part first gets the floor of its exact share, then the
 /// hundredths left over go one each to the parts with the largest remainders,
-/// ties going to the earlier part. The parts sum to `total` exactly. `None`
-/// when the weights sum to zero or `total` is negative.
-/// Arithmetic outside the supported representation is a range error, never
-/// the absence of usage.
+/// ties going to the earlier part. The parts sum to `total` exactly. A
+/// negative total is split as the negation of its magnitude's split, so
+/// `(-7, [1, 1, 1])` gives `[-3, -2, -2]`. `None` when the weights sum to
+/// zero. Arithmetic outside the supported representation is a range error,
+/// never the absence of usage.
 pub fn allocate_largest_remainder(
     total: i64,
     weights: &[u128],
 ) -> Result<Option<Vec<i64>>, AiBillingError> {
+    if total < 0 {
+        let magnitude = total.checked_neg().ok_or(AiBillingError::NumericRange)?;
+        return Ok(allocate_largest_remainder(magnitude, weights)?
+            .map(|parts| parts.into_iter().map(|part| -part).collect()));
+    }
     let Ok(total_units) = u128::try_from(total) else {
         return Ok(None);
     };
@@ -1052,6 +1120,7 @@ pub fn bill_month(
         lines,
         subscriptions: subscription_months,
         metered: None,
+        adjustments: Vec::new(),
     };
     // Overview, CSV and drill-down must reject the same unsupported month.
     bill.totals()?;
@@ -1133,17 +1202,20 @@ pub struct AiPersonalUsage {
     pub usage: AiBillingUsage,
 }
 
-/// Everyone's bill for a month, with the people it names.
+/// Everyone's bill for an open month, with the people it names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiMonthOverview {
     pub bill: AiMonthBill,
-    /// The users the bill's lines, subscriptions and personal usage belong
-    /// to, by name.
+    /// The users the bill's lines, subscriptions, adjustment lines and
+    /// personal usage belong to, by name.
     pub developers: Vec<AiBillingDeveloper>,
     /// The bill in the billing currency, with the month's exchange rates.
     pub converted: AiConvertedBill,
     /// The usage the bill leaves out, by user.
     pub personal: Vec<AiPersonalUsage>,
+    /// The closed months whose adjustments post on this month, oldest first,
+    /// with or without adjustment lines.
+    pub adjusted: Vec<AiAdjustedMonth>,
 }
 
 /// How a developer's day usage bills.
@@ -1173,16 +1245,14 @@ pub struct AiMachineLabel {
 
 /// One developer's month: their bill and their usage per local day by
 /// provider, model, machine and project. Never finer than a day.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AiDeveloperMonth {
     pub developer: AiBillingDeveloper,
-    pub bill: AiMonthBill,
-    /// The bill in the billing currency, with the month's exchange rates.
-    pub converted: AiConvertedBill,
+    /// Their bill, with their personal usage: live in an open month, from the
+    /// snapshot in a closed one.
+    pub bill: AiDeveloperBill,
+    /// Live in a closed month too.
     pub usage: Vec<AiBilledDayUsage>,
-    /// The developer's usage of the keys they marked personal, which the bill
-    /// and `usage` leave out; `None` without any.
-    pub personal: Option<AiBillingUsage>,
     /// The developer's machines, including ones without usage in the month.
     pub machines: Vec<AiMachineLabel>,
 }

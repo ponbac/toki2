@@ -4,9 +4,10 @@
 //! Git remote normalised to `host/owner/repo`, `owner/repo` from Copilot, or
 //! `unattributed`. Each key maps to at most one time-tracking project, for
 //! everyone's usage. Mappings are resolved when usage is read and never written
-//! into usage rows, so a change applies retroactively. Only mappings to the
-//! configured provider company resolve; usage without one, including
-//! `unattributed` usage, is unassigned.
+//! into usage rows, so a change applies to every open month; a closed month
+//! keeps its snapshot and gets adjustment lines on the next open month's bill
+//! (`ai_month_close`). Only mappings to the configured provider company
+//! resolve; usage without one, including `unattributed` usage, is unassigned.
 //!
 //! A developer can instead mark an unmapped key in their own usage as personal:
 //! not client work. The mark is theirs alone and leaves their usage of the key

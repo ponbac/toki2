@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT bill_json, developer_json, readiness_json, csv_header, projection_version\n            FROM ai_billing_month_closes\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bill_json",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "bill_json"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "developer_json",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "developer_json"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "readiness_json",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "readiness_json"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "csv_header",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "csv_header"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "projection_version",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "projection_version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e67c1471e361c5364df82d466e7778d85d4ba070ce474b02e72875a58abb6873"
+}

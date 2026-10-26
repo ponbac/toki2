@@ -6,7 +6,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Download, Info } from "lucide-react";
+import { Download, Info, Lock } from "lucide-react";
 import { z } from "zod";
 import { AiProviderIcon } from "@/components/ai-provider-icon";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import {
 import {
   MONTH_PATTERN,
   formatCount,
+  formatInstant,
   monthLabel,
   previousMonth,
   shortDate,
@@ -53,10 +54,12 @@ import { monthDays } from "../-lib/coverage";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
 import { needsAttention } from "../-lib/reconciliation";
 import { monthUploads, type DeveloperUploads } from "../-lib/upload-health";
+import { AdjustmentsSection } from "./-components/adjustments";
 import { BillingRules } from "./-components/billing-rules";
 import { CopilotReconciliation } from "./-components/copilot-reconciliation";
 import { ExchangeRatesPanel } from "./-components/exchange-rates";
 import { ExportChecks, type ExportCheck } from "./-components/export-checks";
+import { MonthClosePanel } from "./-components/month-close";
 import { PeopleTable } from "./-components/people-table";
 import { ProjectLedger } from "./-components/project-ledger";
 import { Statement } from "./-components/statement";
@@ -74,6 +77,7 @@ const TABS = [
   "projects",
   "people",
   "subscriptions",
+  "adjustments",
   "copilot",
   "data",
   "rules",
@@ -97,7 +101,6 @@ const TAB_TRIGGER =
 function AiBillingPage() {
   const search = Route.useSearch();
   const month = search.month ?? previousMonth();
-  const tab = search.tab ?? "projects";
   const navigate = useNavigate({ from: Route.fullPath });
 
   const overviewQuery = useQuery({
@@ -149,6 +152,20 @@ function AiBillingPage() {
 
   // Only a bill that loaded: a failed reload shows its error, not old figures.
   const overview = overviewQuery.isSuccess ? overviewQuery.data : undefined;
+  // This month's close, once its own bill is in: a closed month is served as
+  // it was invoiced and has nothing left to check before export.
+  const close =
+    overviewQuery.isSuccess && !overviewQuery.isPlaceholderData
+      ? overviewQuery.data.close
+      : null;
+  const hasAdjustments =
+    overview !== undefined &&
+    (overview.adjustmentLines.length > 0 || overview.adjustedMonths.length > 0);
+  // The Adjustments tab is there only for a month adjustments post on.
+  const tab =
+    search.tab === "adjustments" && !hasAdjustments
+      ? "projects"
+      : (search.tab ?? "projects");
   // Estimates show in the bill's currency, at the rate of the bill on screen.
   const estimates = useBillEstimateMoney(overview);
   const completeness =
@@ -247,10 +264,15 @@ function AiBillingPage() {
       plans: () => setTab("subscriptions"),
     },
   });
-  const openChecks = checks.filter((c) => c.status === "attention").length;
-  const dataNeedsLook = checks.some(
-    (c) => (c.id === "uploads" || c.id === "rates") && c.status === "attention",
-  );
+  const openChecks =
+    close === null ? checks.filter((c) => c.status === "attention").length : 0;
+  // A closed month is served as invoiced: its export checks no longer apply.
+  const dataNeedsLook =
+    close === null &&
+    checks.some(
+      (c) =>
+        (c.id === "uploads" || c.id === "rates") && c.status === "attention",
+    );
   const mismatches = mismatchesQuery.isSuccess
     ? mismatchesQuery.data.mismatches
     : [];
@@ -274,6 +296,13 @@ function AiBillingPage() {
                 navigate({ search: (prev) => ({ ...prev, month: next }) })
               }
             />
+            {close !== null && (
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Lock className="size-4" aria-hidden />
+                Closed {formatInstant(close.closedAt)}: this is the bill as
+                invoiced (snapshot #{close.closeId}).
+              </p>
+            )}
             {completeness?.inProgress && (
               <p className="text-sm text-muted-foreground">
                 In progress
@@ -326,7 +355,8 @@ function AiBillingPage() {
                 stale,
               )}
             >
-              {overview.lines.length === 0 ? (
+              {overview.lines.length === 0 &&
+              overview.adjustmentLines.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
                   <p className="font-medium">
                     Nothing to bill for {monthLabel(overview.month)}
@@ -350,7 +380,14 @@ function AiBillingPage() {
           )
         )}
 
-        <ExportChecks checks={checks} />
+        {close === null && <ExportChecks checks={checks} />}
+        <MonthClosePanel
+          month={month}
+          onOpenTab={(next) => {
+            setFocusRow(null);
+            setTab(next);
+          }}
+        />
 
         {overview && ledger && (
           <Tabs
@@ -384,6 +421,12 @@ function AiBillingPage() {
                 <Count value={overview.subscriptions.length} />
                 {mismatches.length > 0 && <Dot label="plans nobody declared" />}
               </TabsTrigger>
+              {hasAdjustments && (
+                <TabsTrigger value="adjustments" className={TAB_TRIGGER}>
+                  Adjustments
+                  <Count value={overview.adjustmentLines.length} />
+                </TabsTrigger>
+              )}
               <TabsTrigger value="copilot" className={TAB_TRIGGER}>
                 <AiProviderIcon provider="copilot" className="size-4" plain />
                 GitHub Copilot
@@ -448,9 +491,25 @@ function AiBillingPage() {
                 />
               </div>
             </TabsContent>
+            {hasAdjustments && (
+              <TabsContent value="adjustments" className="mt-5">
+                <AdjustmentsSection
+                  month={overview.month}
+                  billingCurrency={overview.billingCurrency}
+                  lines={overview.adjustmentLines}
+                  adjustedMonths={overview.adjustedMonths}
+                  developers={overview.developers}
+                  totals={{
+                    amounts: overview.totals.adjustments,
+                    converted: overview.totals.converted.adjustments,
+                  }}
+                />
+              </TabsContent>
+            )}
             <TabsContent value="copilot" className="mt-5">
               <CopilotReconciliation
                 month={month}
+                closed={overview.close !== null}
                 meteredPeriod={overview.meteredPeriod}
                 onMonth={(next) =>
                   navigate({ search: (prev) => ({ ...prev, month: next }) })
@@ -474,9 +533,18 @@ function AiBillingPage() {
                   key={overview.month}
                   month={overview.month}
                   billingCurrency={overview.billingCurrency}
-                  rates={overview.exchangeRates}
+                  rates={
+                    overview.close?.currentExchangeRates ??
+                    overview.exchangeRates
+                  }
                   missingRates={overview.missingRates}
                   pendingRates={overview.pendingRates}
+                  closed={
+                    overview.close && {
+                      invoicedRates: overview.exchangeRates,
+                      adjustmentsPostOn: overview.close.adjustmentsPostOn,
+                    }
+                  }
                 />
               </section>
             </TabsContent>

@@ -61,7 +61,7 @@ An exchange rate that is the average of the days published so far: that of a mon
 _Avoid_: estimated rate, temporary rate
 
 **Unassigned usage**:
-AI usage that counts for no time-tracking project and is not personal usage: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. From the metered cutover on, so are code review credits of an unmapped repository. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. An unmapped key may name a private repository, so only the developers who use it see its name and only they can map it: admins see its usage as Unassigned, unnamed, until one of them does. Billing charges it on its own line, shown by kind (unmapped, unmapped repository, unattributed), and a mapping applies to past months too.
+AI usage that counts for no time-tracking project and is not personal usage: its project key is `unattributed`, has no mapping, or has a stale mapping to a project outside the configured company; and all usage while time tracking is not configured, when no mapping resolves. From the metered cutover on, so are code review credits of an unmapped repository. A developer can map an unmapped key in their own usage while time tracking is configured; only an admin can change a mapping. An unmapped key may name a private repository, so only the developers who use it see its name and only they can map it: admins see its usage as Unassigned, unnamed, until one of them does. Billing charges it on its own line, shown by kind (unmapped, unmapped repository, unattributed), and a mapping applies to every open month; a closed month gets an adjustment line on the next open month's bill.
 _Avoid_: unmapped usage (it is only one of these cases)
 
 **Personal usage**:
@@ -161,11 +161,11 @@ Whom a bill line charges for: a user, a provider account no user owns on the bil
 _Avoid_: owner, payer
 
 **Repository mapping**:
-A team-wide mapping from a repository a metered payer bills credits to (GitHub's bare repository name, compared case-insensitively) to a time-tracking project, which its code review credits bill to. It points at the project directly, has no validity dates and applies retroactively, like a project-key mapping; only one to the configured company resolves. Suggestions come only from resolving project-key mappings `github.com/{owner}/{name}`, never from unmapped keys.
+A team-wide mapping from a repository a metered payer bills credits to (GitHub's bare repository name, compared case-insensitively) to a time-tracking project, which its code review credits bill to. It points at the project directly, has no validity dates and applies to every open month, like a project-key mapping (a closed month gets adjustment lines on the next open month's bill); only one to the configured company resolves. Suggestions come only from resolving project-key mappings `github.com/{owner}/{name}`, never from unmapped keys.
 _Avoid_: repository key (a project key names a repository too, but is another mapping)
 
 **Unmapped repository**:
-A repository with code review credits on the bill that no repository mapping to the configured company resolves. Its credits bill as Unassigned usage of their own kind and will block month close until it is mapped. Only credits that bill a line count: a month from the metered cutover on whose credits come to at least one credit once rounded. Credits before the cutover, or under one credit for the month, bill nothing and hold nothing back. Not the IDE aggregate, which has no repository.
+A repository with code review credits on the bill that no repository mapping to the configured company resolves. Its credits bill as Unassigned usage of their own kind and block month close until it is mapped. Only credits that bill a line count: a month from the metered cutover on whose credits come to at least one credit once rounded. Credits before the cutover, or under one credit for the month, bill nothing and hold nothing back. Not the IDE aggregate, which has no repository.
 _Avoid_: unassigned repository, unmapped key
 
 **Code review check**:
@@ -175,3 +175,23 @@ _Avoid_: code review residual
 **Provisional Copilot line**:
 A Copilot line that may still change, with its reasons: the month is in progress, a day's import is missing or incomplete, a day may still change, contributing usage is on an old pricing basis, a provisional model contributed, or a row is unrecognized (for a repository line, an organization row naming a repository).
 _Avoid_: draft line, estimate
+
+**Month close**:
+An admin freezing a month's whole AI bill (API lines, subscription fee shares and overhead, Copilot lines, and the adjustment lines posted on it) once the month is over in UTC and the billing time zone and every close readiness check passes or is waived. A month has at most one active close; re-opening keeps it as history and is refused while a later close holds adjustments to the month. Closing the first open month moves the reprice floor to the next open month; a closed month after an open one stays repriceable, and its reprice posts as an adjustment line.
+_Avoid_: lock, finalize
+
+**Snapshot**:
+What a month close stores: every bill line as its JSON, its CSV cells and its diff key, plus the rest of the overview, each developer's bill part, the readiness and the CSV header. A closed month is served from it, with the same values and CSV bytes as when it closed.
+_Avoid_: archive, backup
+
+**Adjustment line**:
+A change to a closed month since it closed, billed on the first open month after it, per diff key (subject, project, kind, currency, and the provider or subscription): the month recomputed now, less its snapshot, less the adjustments to it frozen in active closes. Its SEK amount is the difference of the SEK amounts at the closed month's rate, so a rate change alone gives an SEK-only line. Each correction bills exactly once. Kept apart from the month's own lines, with signed amounts.
+_Avoid_: correction line, credit note
+
+**Close readiness**:
+The checks the server evaluates before a month closes: the metered import complete and settled, every account with credits disposed, the unknown account's residual zero, every repository mapped, no billed usage on an old pricing basis or a provisional model, final exchange rates, and complete uploads (in metered months including the UTC hours outside the local month).
+_Avoid_: preflight, checklist (the UI's word for showing it)
+
+**Waiver**:
+An admin's recorded reason to close a month although one readiness check failed. It applies to that check only, and the close keeps it with the check's problems; whatever it let through is corrected later by an adjustment line.
+_Avoid_: override, exception

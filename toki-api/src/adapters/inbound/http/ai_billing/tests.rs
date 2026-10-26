@@ -24,9 +24,9 @@ use async_trait::async_trait;
 use crate::{
     adapters::outbound::postgres::{
         PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
-        PostgresAiMeteredUsageRepository, PostgresAiProjectMappingRepository,
-        PostgresAiProviderAccountRepository, PostgresAiSubscriptionRepository,
-        PostgresAiUsageRepository, PostgresApiTokenRepository,
+        PostgresAiMeteredUsageRepository, PostgresAiMonthCloseRepository,
+        PostgresAiProjectMappingRepository, PostgresAiProviderAccountRepository,
+        PostgresAiSubscriptionRepository, PostgresAiUsageRepository, PostgresApiTokenRepository,
     },
     auth::{authenticate_bearer, require_authenticated, AuthBackend, AuthSession},
     domain::{
@@ -257,7 +257,7 @@ fn app_with(
             time_zone.clone(),
             settings,
         ),
-        time_zone,
+        time_zone.clone(),
         Some(company()),
         AiMeteredMonths::new(
             Arc::new(PostgresAiMeteredUsageRepository::new(db.clone())),
@@ -266,10 +266,13 @@ fn app_with(
             AiMeteredReadSettings {
                 backfill_from: date!(2026 - 08 - 01),
                 reprice_floor,
+                time_zone,
                 mapping_company: Some(company()),
             },
         ),
         cutover,
+        Arc::new(PostgresAiMonthCloseRepository::new(db.clone())),
+        reprice_floor,
     ));
     let tokens: Arc<dyn ApiTokenAuthenticator> = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db.clone()),
@@ -1097,6 +1100,8 @@ async fn the_overview_converts_every_amount_to_sek_at_the_months_rate(pool: PgPo
             "overhead": "2100.00",
             "api": "7.88",
             "metered": "0.00",
+            "adjustments": "0.00",
+            "invoiced": "2675.62",
         })
     );
     assert_eq!(overview["totals"]["apiBilledUsd"], "0.75");
@@ -1168,6 +1173,8 @@ async fn a_missing_rate_leaves_sek_empty_and_warns_never_zero(pool: PgPool) {
             "overhead": null,
             "api": null,
             "metered": "0.00",
+            "adjustments": "0.00",
+            "invoiced": null,
         })
     );
     // The original amounts are all still there.
@@ -2671,6 +2678,8 @@ async fn completeness_flags_machines_that_have_not_uploaded_the_whole_month(pool
     );
 }
 
+mod month_close;
+
 mod copilot {
     //! Copilot billed from GitHub's credits: August 2026, with the cutover
     //! from August and a usage import from 1 August.
@@ -3034,6 +3043,16 @@ mod copilot {
         ]
     }
 
+    /// Re-uploads Ada's August without the usage routed to Codex: only
+    /// GitHub's credits bill her.
+    pub(super) async fn upload_ada_copilot_only(pool: &PgPool, ada: UserId) {
+        let buckets = credit_day_usage()
+            .into_iter()
+            .filter(|bucket| bucket.billing_provider.is_none())
+            .collect();
+        upload_ada_august(pool, ada, buckets, None).await;
+    }
+
     /// Uploads `buckets` as Ada's laptop's August, priced on `basis`.
     async fn upload_ada_august(
         pool: &PgPool,
@@ -3261,6 +3280,8 @@ mod copilot {
                 "overhead": "0.00",
                 "api": "3.15",
                 "metered": "21.74",
+                "adjustments": "0.00",
+                "invoiced": "24.89",
             })
         );
         assert_eq!(

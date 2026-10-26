@@ -224,7 +224,7 @@ function AdminSubscriptionsPage() {
           onDelete={(subscription) => {
             if (
               window.confirm(
-                `Delete ${names.get(subscription.userId) ?? "this developer"}'s ${subscription.plan}? Its days bill as API usage again, in past months too. To record that it ended, set an end date instead.`,
+                `Delete ${names.get(subscription.userId) ?? "this developer"}'s ${subscription.plan}? Its days bill as API usage again in open months; closed months get an adjustment on the next open month's bill. To record that it ended, set an end date instead.`,
               )
             ) {
               remove.mutate({ subscriptionId: subscription.id });

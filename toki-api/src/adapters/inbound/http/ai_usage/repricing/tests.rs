@@ -346,3 +346,117 @@ async fn stored_usage_is_repriced_from_the_floor_on(pool: PgPool) {
         )
     );
 }
+
+#[sqlx::test]
+async fn closed_months_before_the_first_open_month_are_never_repriced(pool: PgPool) {
+    let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
+        PostgresApiTokenRepository::new(crate::db::DbPool::from(pool.clone())),
+    )));
+    let app = app(postgres_service(&pool), tokens.clone());
+    let id: i32 = sqlx::query_scalar(
+        "INSERT INTO users (email, full_name, picture, access_token)
+         VALUES ('owner@example.com', 'Test User', '', '')
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let owner = tokens
+        .create(&UserId::new(id), "token-ledger")
+        .await
+        .unwrap()
+        .secret
+        .as_str()
+        .to_string();
+    // September's two buckets, and one in October's first local hour
+    // (00:00 in Stockholm, 30 September 22:00 UTC).
+    let october_first_hour = |cost: f64| {
+        let mut bucket = bucket("09", 4, cost);
+        bucket["hourStart"] = json!("2026-09-30T22:00:00.000Z");
+        bucket
+    };
+    let mut upload = payload(0);
+    upload["version"] = json!(3);
+    upload["window"]["end"] = json!("2026-10-01T22:00:00.000Z");
+    upload["buckets"] = json!([
+        bucket("09", 2, 0.1),
+        bucket("10", 3, 0.1),
+        october_first_hour(0.1)
+    ]);
+    upload["providerHints"] = json!([]);
+    let (status, _) = put(app.clone(), MACHINE, Some(&owner), &upload).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // September's AI bill closed: its costs are frozen, and the floor moves
+    // to when October starts, the earlier of its UTC and Stockholm midnight:
+    // October's local days stay repriceable from their first hour on.
+    sqlx::query(
+        "INSERT INTO ai_billing_month_closes
+             (month, readiness_json, bill_json, developer_json, csv_header, projection_version)
+         VALUES ('2026-09-01', '{}', '{}', '{}', ARRAY['month'], 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, body) = discover(app.clone(), &owner, &format!("?basis={BASIS}")).await;
+    assert_eq!(
+        (status, body),
+        (
+            StatusCode::OK,
+            json!({
+                "floor": "2026-09-30T22:00:00Z",
+                "providers": [{
+                    "provider": "claude",
+                    "from": "2026-09-30T22:00:00Z",
+                    "staleBuckets": 1
+                }]
+            })
+        )
+    );
+    let (status, body) = reprice(
+        app.clone(),
+        &owner,
+        &repricing(vec![
+            bucket("09", 2, 0.5),
+            bucket("10", 3, 0.5),
+            october_first_hour(0.5),
+        ]),
+    )
+    .await;
+    assert_eq!(
+        (status, body),
+        (
+            StatusCode::OK,
+            json!({ "updated": 1, "unmatched": 0, "beforeFloor": 2 })
+        )
+    );
+    let costs: Vec<f64> = sqlx::query_scalar(
+        "SELECT estimated_cost_usd::float8 FROM ai_usage_buckets ORDER BY hour_start",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(costs, [0.1, 0.1, 0.5]);
+
+    // Re-opened, the configured floor applies again.
+    sqlx::query("UPDATE ai_billing_month_closes SET reopened_at = now()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, body) = discover(app.clone(), &owner, &format!("?basis={BASIS}")).await;
+    assert_eq!(body["floor"], "2026-09-22T09:00:00Z");
+
+    // October closes while September is open: September is the first open
+    // month, so both stay repriceable, and a reprice of October posts on
+    // November as an adjustment.
+    sqlx::query(
+        "INSERT INTO ai_billing_month_closes
+             (month, readiness_json, bill_json, developer_json, csv_header, projection_version)
+         VALUES ('2026-10-01', '{}', '{}', '{}', ARRAY['month'], 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, body) = discover(app.clone(), &owner, &format!("?basis={BASIS}")).await;
+    assert_eq!(body["floor"], "2026-09-22T09:00:00Z");
+}

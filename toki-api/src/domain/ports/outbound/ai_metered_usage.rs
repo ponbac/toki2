@@ -7,8 +7,8 @@ use crate::domain::{
         AiImportRunId, AiImportStatus, AiMeteredCredit, AiMeteredOrgCharge, AiMeteredPeriod,
         AiMeteredScope, AiMeteredSource, AiMeteredSummaryLine, AiProvider, AiProviderAccountId,
         AiSliceRecord, AiStoredAccountCredit, AiStoredOrgCredit, AiStoredRepositoryMapping,
-        AiStoredScope, AiTrackedModelDay, AiUsageCheck, AiUsageDateRange, TimeTrackingCompany,
-        UserId,
+        AiStoredScope, AiTrackedModelDay, AiUsageCheck, AiUsageDateRange, AiUsageTimeZone,
+        TimeTrackingCompany, UserId,
     },
     AiMeteredUsageError, MeteredUsageSourceError,
 };
@@ -51,6 +51,16 @@ pub trait AiImportLease: Send {
 pub trait AiMeteredUsageRepository: Send + Sync + 'static {
     /// The store's clock.
     async fn now(&self) -> Result<OffsetDateTime, AiMeteredUsageError>;
+
+    /// When the first open month of the AI bill at or after the configured
+    /// floor's month starts: the earlier of its UTC and its `time_zone`
+    /// midnight. As `AiMonthCloseRepository::open_from`, so reconciliation
+    /// reads the old pricing basis from the floor the bill reads it from.
+    async fn open_from(
+        &self,
+        time_zone: &AiUsageTimeZone,
+        configured_floor: OffsetDateTime,
+    ) -> Result<OffsetDateTime, AiMeteredUsageError>;
 
     /// Takes the payer's import lock for as long as the lease is held; `None`
     /// when another import holds it.

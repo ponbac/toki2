@@ -1,6 +1,7 @@
 mod ai_billing;
 mod ai_exchange_rates;
 mod ai_metered_usage;
+mod ai_month_close;
 mod ai_project_mapping;
 mod ai_provider_accounts;
 mod ai_repository_mapping;
@@ -16,6 +17,7 @@ mod timer_history;
 pub use ai_billing::PostgresAiBillingRepository;
 pub use ai_exchange_rates::PostgresAiExchangeRateRepository;
 pub use ai_metered_usage::PostgresAiMeteredUsageRepository;
+pub use ai_month_close::PostgresAiMonthCloseRepository;
 pub use ai_project_mapping::PostgresAiProjectMappingRepository;
 pub use ai_provider_accounts::PostgresAiProviderAccountRepository;
 /// The repository mappings' store with a pinned clock, for tests.

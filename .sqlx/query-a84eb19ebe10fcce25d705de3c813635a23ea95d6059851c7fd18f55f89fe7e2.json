@@ -1,0 +1,155 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                subject, subject_label, project, project_name, kind, currency, provider,\n                subscription_id, amount, sek_amount,\n                round(rate * 1000000)::int8 AS rate_millionths, credits\n            FROM ai_billing_snapshot_lines\n            WHERE close_id = $1 AND adjusts_month IS NULL\n            ORDER BY position\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "subject_label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "subject_label"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "project",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "project"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "project_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "project_name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "currency"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "subscription_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "subscription_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "amount",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "amount"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "sek_amount",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "sek_amount"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "rate_millionths",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "credits",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "credits"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "a84eb19ebe10fcce25d705de3c813635a23ea95d6059851c7fd18f55f89fe7e2"
+}

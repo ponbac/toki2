@@ -1,0 +1,156 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                line.subject, line.subject_label, line.project, line.project_name, line.kind,\n                line.currency, line.provider, line.subscription_id, line.amount,\n                line.sek_amount, round(line.rate * 1000000)::int8 AS rate_millionths,\n                line.credits\n            FROM ai_billing_snapshot_lines AS line\n            JOIN ai_billing_month_closes AS close ON close.id = line.close_id\n            WHERE line.adjusts_month = $1\n              AND close.scope = $2\n              AND close.reopened_at IS NULL\n            ORDER BY close.month, line.position\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "subject_label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "subject_label"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "project",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "project"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "project_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "project_name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "currency"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "subscription_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "subscription_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "amount",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "amount"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "sek_amount",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "sek_amount"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "rate_millionths",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "credits",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "credits"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "fcaeacd00468bf07420fe7ea464cb19eb68caa45e4b3c11df9b7031dedf1aef5"
+}

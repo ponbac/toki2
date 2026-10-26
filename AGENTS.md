@@ -62,6 +62,7 @@ Read `.docs/mcp.md` before changing MCP tools, MCP authentication or Toki's OAut
 | **AI provider accounts** | Fully hexagonal | `ProviderAccountDirectory` + `AiProviderAccountService` ports, `GithubAccountDirectory` (GitHub App) |
 | **AI metered usage** | Fully hexagonal | `MeteredUsageSource` + `AiMeteredUsageService` ports, `GithubMeteredUsageSource` (shares the GitHub App client with `GithubAccountDirectory`). The bill's Copilot lines read it through `AiMeteredMonths`; `allocate_metered_credits` is pure; repository credits bill per repository |
 | **AI repository mappings** | Fully hexagonal | `AiRepositoryMappingRepository` + `AiRepositoryMappingService` ports, `PostgresAiRepositoryMappingRepository`; suggestion host from `github::REPOSITORY_KEY_HOST`; the bill resolves them through `AiMeteredUsageRepository::repository_mappings` and `AiRepositoryResolver` |
+| **AI month close** | Fully hexagonal | `AiMonthCloseRepository` (outbound, `PostgresAiMonthCloseRepository`) + `AiBillingService::close_status`/`close_month`/`reopen_month`; netting (`adjustment_lines`) and readiness (`ai_close_readiness`) are pure; the HTTP adapter projects snapshots through the `AiBillProjector` port it implements; the reprice floor is the start of the first open month (`open_from` on the close, usage and metered usage repositories) |
 | **Pull requests** | Not abstracted | `RepoDiffer` directly uses `az_devops::RepoClient` — needs refactoring |
 | **Notifications** | Not abstracted | Coupled to PR change events |
 

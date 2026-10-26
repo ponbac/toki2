@@ -197,6 +197,13 @@ impl AiMeteredUsageRepository for Clocked {
     async fn now(&self) -> Result<OffsetDateTime, AiMeteredUsageError> {
         Ok(*self.now.lock().unwrap())
     }
+    async fn open_from(
+        &self,
+        time_zone: &AiUsageTimeZone,
+        configured_floor: OffsetDateTime,
+    ) -> Result<OffsetDateTime, AiMeteredUsageError> {
+        self.inner.open_from(time_zone, configured_floor).await
+    }
     async fn try_lock_import(
         &self,
         payer: AiProvider,
@@ -366,6 +373,7 @@ fn setup(pool: &PgPool, backfill_from: Date) -> Setup {
         AiMeteredImportSettings {
             backfill_from,
             reprice_floor: datetime!(2026-10-01 00:00 UTC),
+            time_zone: AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
             unattended: false,
         },
         None,

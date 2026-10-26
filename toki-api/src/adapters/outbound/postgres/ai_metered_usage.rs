@@ -35,7 +35,7 @@ use crate::{
             AiSourceOutcome, AiSourceState, AiSourceStatus, AiStoredAccountCredit,
             AiStoredAccountError, AiStoredOrgCredit, AiStoredRepositoryMapping, AiStoredScope,
             AiSummaryKind, AiTokenCounts, AiTrackedModelDay, AiUnassignedKind, AiUsageCheck,
-            AiUsageDateRange, AiUsdNanos, ProjectId, TimeTrackingCompany, UserId,
+            AiUsageDateRange, AiUsageTimeZone, AiUsdNanos, ProjectId, TimeTrackingCompany, UserId,
             UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::{AiImportLease, AiMeteredUsageRepository},
@@ -708,6 +708,16 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
     async fn now(&self) -> Result<OffsetDateTime, AiMeteredUsageError> {
         sqlx::query_scalar!(r#"SELECT now() AS "now!""#)
             .fetch_one(&self.pool)
+            .await
+            .map_err(storage_error)
+    }
+
+    async fn open_from(
+        &self,
+        time_zone: &AiUsageTimeZone,
+        configured_floor: OffsetDateTime,
+    ) -> Result<OffsetDateTime, AiMeteredUsageError> {
+        super::ai_month_close::open_from(&self.pool, time_zone, configured_floor)
             .await
             .map_err(storage_error)
     }

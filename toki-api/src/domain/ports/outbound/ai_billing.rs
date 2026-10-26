@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use time::Date;
+use time::{Date, OffsetDateTime};
 
 use crate::domain::{
     models::{
-        AiBillingDeveloper, AiBillingMachine, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay,
-        AiMeteredCutover, AiPersonalUsage, AiUsageDateRange, AiUsageTimeZone, TimeTrackingCompany,
-        UserId,
+        AiBillingDeveloper, AiBillingMachine, AiCoverageInterval, AiDailyUsage,
+        AiDeveloperDayUsage, AiLocalDay, AiMachineId, AiMeteredCutover, AiOldBasisUsage,
+        AiPersonalUsage, AiUsageDateRange, AiUsageTimeZone, TimeTrackingCompany, UserId,
     },
     AiBillingError,
 };
@@ -89,4 +89,25 @@ pub trait AiBillingRepository: Send + Sync + 'static {
 
     /// Today's date in `time_zone`, by the store's clock.
     async fn today(&self, time_zone: &AiUsageTimeZone) -> Result<Date, AiBillingError>;
+
+    /// Every machine's logged sync intervals that overlap `[from, until)`,
+    /// for every user.
+    async fn coverage_intervals(
+        &self,
+        from: OffsetDateTime,
+        until: OffsetDateTime,
+    ) -> Result<Vec<(AiMachineId, AiCoverageInterval)>, AiBillingError>;
+
+    /// The buckets `daily_usage` reads for `dates` (the same local days,
+    /// metered exclusion and personal keys left out), from `floor` on, whose
+    /// pricing basis is none or not their machine's current one, per user,
+    /// machine and provider, by user name, machine label and provider.
+    async fn old_basis_usage(
+        &self,
+        dates: AiUsageDateRange,
+        time_zone: &AiUsageTimeZone,
+        mapping_company: Option<&TimeTrackingCompany>,
+        metered: Option<&AiMeteredCutover>,
+        floor: OffsetDateTime,
+    ) -> Result<Vec<AiOldBasisUsage>, AiBillingError>;
 }

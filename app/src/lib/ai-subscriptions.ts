@@ -50,15 +50,23 @@ export const CURRENCIES: readonly string[] = ["SEK", "USD", "EUR"];
 const wholeUnits = new Intl.NumberFormat("en-US");
 const wholeKronor = new Intl.NumberFormat("sv-SE");
 
+/** The minus sign signed amounts are shown with. */
+export const MINUS = "−";
+
 /**
  * An exact amount such as `1100.00` in its currency: `1,100.00 USD`. Kronor
- * read the Swedish way, `1 100,00 SEK`.
+ * read the Swedish way, `1 100,00 SEK`. A negative amount, such as an
+ * adjustment's credit, keeps its sign as a minus: `−1.50 USD`; a zero is
+ * never signed.
  */
 export function formatFee(amount: string, currency: string): string {
-  const [units, cents] = amount.split(".");
+  const negative = amount.startsWith("-");
+  const magnitude = negative ? amount.slice(1) : amount;
+  const [units, cents] = magnitude.split(".");
+  const sign = negative && /[1-9]/.test(magnitude) ? MINUS : "";
   return currency === "SEK"
-    ? `${wholeKronor.format(Number(units))},${cents} ${currency}`
-    : `${wholeUnits.format(Number(units))}.${cents} ${currency}`;
+    ? `${sign}${wholeKronor.format(Number(units))},${cents} ${currency}`
+    : `${sign}${wholeUnits.format(Number(units))}.${cents} ${currency}`;
 }
 
 /** Form state as typed; the cost may use a decimal comma. */

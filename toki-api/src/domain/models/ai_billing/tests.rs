@@ -225,6 +225,67 @@ fn fees_pro_rate_by_covered_days_rounded_half_up() {
 }
 
 #[test]
+fn fee_amounts_format_their_sign() {
+    let usd = |hundredths: i64| AiFeeAmount {
+        hundredths,
+        currency: AiCurrency::usd(),
+    };
+    assert_eq!(usd(-150).to_decimal(), "-1.50");
+    assert_eq!(usd(-5).to_decimal(), "-0.05");
+    assert_eq!(usd(0).to_decimal(), "0.00");
+    assert_eq!(usd(150).to_decimal(), "1.50");
+    assert_eq!(usd(-100_000).to_decimal(), "-1000.00");
+    assert_eq!(usd(i64::MIN).to_decimal(), "-92233720368547758.08");
+    assert_eq!(usd(i64::MAX).to_decimal(), "92233720368547758.07");
+
+    assert_eq!(usd(150).checked_sub(&usd(200)).unwrap(), usd(-50));
+    assert_eq!(usd(-50).checked_add(&usd(50)).unwrap(), usd(0));
+    assert!(matches!(
+        usd(i64::MIN).checked_sub(&usd(1)),
+        Err(AiBillingError::NumericRange)
+    ));
+    let sek = AiFeeAmount {
+        hundredths: 1,
+        currency: AiCurrency::billing(),
+    };
+    assert!(matches!(
+        usd(1).checked_add(&sek),
+        Err(AiBillingError::Invalid(_))
+    ));
+}
+
+#[test]
+fn largest_remainder_splits_a_negative_total_symmetrically() {
+    assert_eq!(
+        allocate_largest_remainder(-7, &[1, 1, 1]).unwrap(),
+        Some(vec![-3, -2, -2])
+    );
+    for (total, weights) in [
+        (110_000, vec![3_000_u128, 1_000, 500]),
+        (10_000, vec![1, 1, 1]),
+        (1, vec![1, 1]),
+        (0, vec![2, 5]),
+    ] {
+        let positive = allocate_largest_remainder(total, &weights)
+            .unwrap()
+            .unwrap();
+        let negative = allocate_largest_remainder(-total, &weights)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            negative,
+            positive.iter().map(|part| -part).collect::<Vec<_>>(),
+            "{total}"
+        );
+        assert_eq!(negative.iter().sum::<i64>(), -total);
+    }
+    assert!(matches!(
+        allocate_largest_remainder(i64::MIN, &[1]),
+        Err(AiBillingError::NumericRange)
+    ));
+}
+
+#[test]
 fn largest_remainder_sums_exactly_and_breaks_ties_to_the_earlier_part() {
     assert_eq!(
         allocate_largest_remainder(10_000, &[1, 1, 1]).unwrap(),
@@ -246,7 +307,7 @@ fn largest_remainder_sums_exactly_and_breaks_ties_to_the_earlier_part() {
     );
     assert_eq!(allocate_largest_remainder(100, &[0, 0]).unwrap(), None);
     assert_eq!(allocate_largest_remainder(100, &[]).unwrap(), None);
-    assert_eq!(allocate_largest_remainder(-1, &[1]).unwrap(), None);
+    assert_eq!(allocate_largest_remainder(-1, &[0]).unwrap(), None);
 
     // Awkward weights and totals always sum exactly, and no part is off
     // its exact share by a hundredth or more.
@@ -1756,6 +1817,74 @@ fn metered_day_rows_bill_from_credits_whatever_covers_the_day() {
             AiDayBilling::Metered,
             AiDayBilling::Subscription(AiSubscriptionId::new(3)),
             AiDayBilling::Api,
+        ]
+    );
+}
+
+#[test]
+fn adjustments_total_apart_per_currency() {
+    use crate::domain::models::{
+        AiAdjustedKind, AiAdjustedMonth, AiAdjustmentKey, AiAdjustmentLine, AiConvertedAmount,
+        AiKeyPayer, AiKeyProject, AiKeySubject, AiMonthCloseId,
+    };
+    let day = date!(2026 - 10 - 05);
+    let mut bill = bill_month(
+        october(),
+        &[day_usage(
+            DEV,
+            AiProvider::Codex,
+            day,
+            client_a(),
+            priced(60, 1),
+        )],
+        &[],
+    )
+    .unwrap();
+    let own = bill.totals().unwrap();
+    let line = |currency: AiCurrency, hundredths: i64| AiAdjustmentLine {
+        adjusts: AiAdjustedMonth {
+            month: AiBillingMonth::parse("2026-09").unwrap(),
+            close_id: AiMonthCloseId::new(4),
+        },
+        key: AiAdjustmentKey {
+            subject: AiKeySubject::User(DEV),
+            project: AiKeyProject::None,
+            kind: AiAdjustedKind::Api,
+            currency: currency.clone(),
+            payer: AiKeyPayer::Provider(AiProvider::Codex),
+        },
+        subject: AiBillingSubject::User(DEV),
+        provider: AiProvider::Codex,
+        project: None,
+        unassigned: None,
+        plan: None,
+        amount: AiFeeAmount {
+            hundredths,
+            currency,
+        },
+        converted: AiConvertedAmount::UnknownAmount,
+        credits: None,
+        rate_changed: false,
+    };
+    bill.adjustments = vec![
+        line(AiCurrency::usd(), -150),
+        line(AiCurrency::billing(), 1_000),
+        line(AiCurrency::usd(), 25),
+    ];
+    let totals = bill.totals().unwrap();
+    // The month's own totals are unchanged.
+    assert_eq!(totals.api_billed, own.api_billed);
+    assert_eq!(totals.fees, own.fees);
+    assert_eq!(totals.usage, own.usage);
+    assert_eq!(
+        totals
+            .adjustments
+            .iter()
+            .map(|amount| (amount.currency.as_str().to_string(), amount.to_decimal()))
+            .collect::<Vec<_>>(),
+        [
+            ("SEK".to_string(), "10.00".to_string()),
+            ("USD".to_string(), "-1.25".to_string()),
         ]
     );
 }

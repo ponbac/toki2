@@ -521,6 +521,19 @@ fn the_unknown_account_bills_the_positive_residual_without_code_review() {
             AiMeteredProvisional::NotSettled,
         ]
     );
+    // Readiness reads the residual's settled and provisional days, signed;
+    // the import gap is left out of it.
+    assert_eq!(
+        allocation.unknown_residual,
+        [
+            (settled, 5 * CREDIT),
+            (over, -2 * CREDIT),
+            (settling, CREDIT)
+        ]
+    );
+    assert!(for_user(allocation.clone(), ADA)
+        .unknown_residual
+        .is_empty());
     // The reconciliation tab's unknown account includes the code review.
     assert_eq!(
         reconcile(input.clone()).unwrap().totals.unknown_account,
@@ -1163,7 +1176,7 @@ fn code_review_bills_once_by_repository() {
             name: "widget-api".to_string(),
         }
     );
-    assert_eq!(allocation.unmapped_repositories(), ["gadget-web"]);
+    assert_eq!(allocation.unmapped_repositories(), [("gadget-web", 8)]);
     assert!(allocation.repository_provisional.is_empty());
     assert!(!allocation.provisional);
     // Billed once: Ada's 70 credits, 20 of them per repository.
@@ -1248,7 +1261,14 @@ fn the_mapping_overview_flags_exactly_the_repositories_the_bill_puts_on_unassign
         .map(|row| row.repository.as_str())
         .collect();
     assert_eq!(flagged, ["Gadget-Web"]);
-    assert_eq!(flagged, allocation.unmapped_repositories());
+    assert_eq!(
+        flagged,
+        allocation
+            .unmapped_repositories()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -1316,7 +1336,7 @@ fn a_stale_or_unconfigured_repository_mapping_bills_unassigned_unmapped_reposito
                 12
             )]
         );
-        assert_eq!(allocation.unmapped_repositories(), ["widget-api"]);
+        assert_eq!(allocation.unmapped_repositories(), [("widget-api", 12)]);
     }
 }
 

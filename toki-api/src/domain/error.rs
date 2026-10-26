@@ -199,6 +199,46 @@ pub enum AiBillingError {
     Storage(String),
 }
 
+/// Errors of closing and re-opening a month's AI bill.
+#[derive(Debug, Error)]
+pub enum AiMonthCloseError {
+    #[error(transparent)]
+    Billing(#[from] AiBillingError),
+    #[error("{month} is not over yet in UTC and the billing time zone")]
+    MonthInProgress {
+        month: crate::domain::models::AiBillingMonth,
+        over_at: time::OffsetDateTime,
+    },
+    #[error("{month} is already closed")]
+    AlreadyClosed {
+        month: crate::domain::models::AiBillingMonth,
+    },
+    #[error("{month} is not closed")]
+    NotClosed {
+        month: crate::domain::models::AiBillingMonth,
+    },
+    #[error("another month is being closed or re-opened; try again")]
+    Busy,
+    #[error("{} is not ready to close", .0.month)]
+    NotReady(Box<crate::domain::models::AiCloseReadiness>),
+    #[error(
+        "adjustments to {month} are frozen in {}: re-open those first",
+        months(held_by)
+    )]
+    HeldByAdjustments {
+        month: crate::domain::models::AiBillingMonth,
+        held_by: Vec<crate::domain::models::AiBillingMonth>,
+    },
+}
+
+fn months(months: &[crate::domain::models::AiBillingMonth]) -> String {
+    months
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Errors from an exchange-rate provider. Billing treats them as a missing
 /// rate: it never guesses one.
 #[derive(Debug, Clone, Error)]

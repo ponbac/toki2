@@ -3,6 +3,11 @@ import { z } from "zod";
 import { api } from "../api";
 import { AI_ADMIN_QUERY_KEY } from "../ai-cache";
 import {
+  whileRatesArePending,
+  whileReadinessAwaitsRates,
+  withoutFrozenFetches,
+} from "../ai-billing-refresh";
+import {
   parseAiBillingCompleteness,
   parseAiBillingDevelopers,
   parseAiBillingOverview,
@@ -10,6 +15,7 @@ import {
   parseAiUnmappedProjectKeys,
 } from "../contracts/ai-admin";
 import { parseMeteredMonth } from "../contracts/ai-metered-usage";
+import { parseAiMonthCloseStatus } from "../contracts/ai-month-close";
 import { parseProviderAccounts } from "../contracts/ai-provider-accounts";
 import { parseAiRepositoryMappings } from "../contracts/ai-repository-mappings";
 import { parseAiProjectMapping } from "../contracts/ai-usage-report";
@@ -19,6 +25,9 @@ import {
 } from "../contracts/ai-usage";
 
 export type {
+  AiAdjustedKind,
+  AiAdjustedMonth,
+  AiAdjustmentLine,
   AiBillingCompleteness,
   AiBillingDeveloper,
   AiBillingLine,
@@ -37,6 +46,7 @@ export type {
   AiMeteredLineKind,
   AiMeteredPeriod,
   AiMeteredProvisionalReason,
+  AiMonthClose,
   AiSubscriptionMonth,
   AiUnmappedProjectKey,
   AiUploadGap,
@@ -90,19 +100,18 @@ export type {
   AiRepositoryMonthCredits,
   AiRepositorySuggestion,
 } from "../contracts/ai-repository-mappings";
+export type {
+  AiCloseCheck,
+  AiCloseCheckId,
+  AiCloseCheckStatus,
+  AiCloseConflict,
+  AiCloseHistoryEntry,
+  AiCloseProblem,
+  AiCloseProblemKind,
+  AiCloseReadiness,
+  AiMonthCloseStatus,
+} from "../contracts/ai-month-close";
 export type { AiProjectMapping } from "../contracts/ai-usage-report";
-
-/** How often a bill whose exchange rates are still being fetched is reloaded. */
-const PENDING_RATES_POLL_MS = 3_000;
-
-/** Reloads a bill until the server has fetched its pending rates. */
-function whileRatesArePending(query: {
-  state: { data?: { pendingRates: readonly string[] } };
-}): number | false {
-  return (query.state.data?.pendingRates.length ?? 0) > 0
-    ? PENDING_RATES_POLL_MS
-    : false;
-}
 
 /** How often a month whose import is running is reloaded. */
 const RUNNING_IMPORT_POLL_MS = 3_000;
@@ -119,6 +128,8 @@ export { AI_ADMIN_QUERY_KEY } from "../ai-cache";
 const keys = {
   billing: (month: string) =>
     [...AI_ADMIN_QUERY_KEY, "billing", month] as const,
+  monthClose: (month: string) =>
+    [...AI_ADMIN_QUERY_KEY, "billing", month, "close"] as const,
   completeness: (month: string) =>
     [...AI_ADMIN_QUERY_KEY, "completeness", month] as const,
   developerMonth: (month: string, userId: number) =>
@@ -152,10 +163,28 @@ export const aiAdminQueries = {
     queryOptions({
       queryKey: keys.billing(month),
       queryFn: async () =>
-        parseAiBillingOverview(
-          await api.get(`ai-usage/admin/billing/${month}`).json<unknown>(),
+        withoutFrozenFetches(
+          parseAiBillingOverview(
+            await api.get(`ai-usage/admin/billing/${month}`).json<unknown>(),
+          ),
         ),
       refetchInterval: whileRatesArePending,
+    }),
+  /**
+   * Where a month stands with close: in progress (and when it is over),
+   * open with the server's readiness checks, or closed, with its frozen
+   * readiness and the months that hold adjustments to it.
+   */
+  monthClose: (month: string) =>
+    queryOptions({
+      queryKey: keys.monthClose(month),
+      queryFn: async () =>
+        parseAiMonthCloseStatus(
+          await api
+            .get(`ai-usage/admin/billing/${month}/close`)
+            .json<unknown>(),
+        ),
+      refetchInterval: whileReadinessAwaitsRates,
     }),
   /** Whether each developer's machines uploaded all of a month's usage. */
   completeness: (month: string) =>
@@ -173,10 +202,12 @@ export const aiAdminQueries = {
     queryOptions({
       queryKey: keys.developerMonth(month, userId),
       queryFn: async () =>
-        parseAiDeveloperMonth(
-          await api
-            .get(`ai-usage/admin/billing/${month}/developers/${userId}`)
-            .json<unknown>(),
+        withoutFrozenFetches(
+          parseAiDeveloperMonth(
+            await api
+              .get(`ai-usage/admin/billing/${month}/developers/${userId}`)
+              .json<unknown>(),
+          ),
         ),
       refetchInterval: whileRatesArePending,
     }),

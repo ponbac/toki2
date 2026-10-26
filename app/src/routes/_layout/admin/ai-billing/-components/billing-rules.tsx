@@ -62,7 +62,7 @@ export function BillingRules({
           by a cent from its own estimate rounded, and its SEK amount from its
           own amount converted.
           {metered &&
-            ` From the cutover, ${metered}'s code review of a GitHub repository nobody has mapped is a third part, a line of its own: mapping the repository under Project mappings > GitHub repositories assigns it, and until then it will hold back month close.`}
+            ` From the cutover, ${metered}'s code review of a GitHub repository nobody has mapped is a third part, a line of its own: mapping the repository under Project mappings > GitHub repositories assigns it, and until then it holds back month close.`}
         </li>
         <li>
           <span className="font-medium text-foreground">{PERSONAL_LABEL}.</span>{" "}
@@ -106,6 +106,27 @@ export function BillingRules({
             basis or a provisional model.
           </li>
         )}
+        <li>
+          <span className="font-medium text-foreground">Month close.</span> Once
+          a month is over in UTC and {timeZone}, an admin closes its whole AI
+          bill: API lines, subscription fees and overhead, Copilot lines and the
+          adjustments posted on it. The server checks first that GitHub&apos;s
+          import is complete and settled, every account has a disposition and
+          the unknown account nothing left, every repository is mapped, no
+          estimate rests on an old pricing basis, the exchange rates are final
+          and every machine uploaded the month; a failed check can be waived
+          with a reason, kept with the close. Closing takes a{" "}
+          <span className="font-medium text-foreground">snapshot</span>: the
+          month, its developers&apos; pages and its CSV are then served as
+          invoiced. A later change to a closed month (a mapping, a subscription,
+          GitHub&apos;s credits, a rate) bills once, as{" "}
+          <span className="font-medium text-foreground">adjustment lines</span>{" "}
+          on the next open month: what the month comes to now, less what it
+          invoiced and the adjustments to it already closed, per subject,
+          project, kind, currency and payer, in SEK at the corrected
+          month&apos;s rate. A rate change alone adjusts only the SEK amount. A
+          month can be re-opened while no closed month holds adjustments to it.
+        </li>
         <li>
           <span className="font-medium text-foreground">Currencies.</span>{" "}
           Everything is billed in SEK at the Riksbank&apos;s average rate for

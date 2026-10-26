@@ -24,7 +24,8 @@ export const aiProjectMappingMutations = {
 /**
  * Maps an unmapped key in the user's usage to a time-tracking project. The
  * server refuses keys that are already mapped (changing one takes an admin)
- * and keys outside the user's usage. Mappings apply retroactively, so every
+ * and keys outside the user's usage. Mappings apply to every open month (a
+ * closed month gets an adjustment on the next open month's bill), so every
  * personal usage query refreshes once the request settles: a refusal, such as
  * someone else mapping the key first, refreshes them too.
  */
@@ -51,8 +52,9 @@ export function useMapAiProjectKey(
 
 /**
  * Marks an unmapped key in the user's usage as personal: not client work. The
- * user's usage of it is then left out of the bill, in past months too, so
- * every personal usage query refreshes once the request settles.
+ * user's usage of it is then left out of every open month's bill (a closed
+ * month gets an adjustment on the next open month's bill), so every personal
+ * usage query refreshes once the request settles.
  */
 export function useMarkAiProjectKeyPersonal(
   options?: DefaultMutationOptions<PersonalAiProjectKeyVars>,

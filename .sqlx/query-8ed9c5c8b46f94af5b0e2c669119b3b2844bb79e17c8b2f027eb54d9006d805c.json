@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT close.month\n            FROM ai_billing_snapshot_lines AS line\n            JOIN ai_billing_month_closes AS close ON close.id = line.close_id\n            WHERE line.adjusts_month = $1\n              AND close.scope = $2\n              AND close.reopened_at IS NULL\n            ORDER BY close.month\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "month",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "month"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8ed9c5c8b46f94af5b0e2c669119b3b2844bb79e17c8b2f027eb54d9006d805c"
+}

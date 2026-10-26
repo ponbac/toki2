@@ -44,8 +44,8 @@ use time::{Date, Duration, OffsetDateTime};
 use crate::domain::AiBillingError;
 
 use super::{
-    allocate_largest_remainder, AiBillingCharge, AiBillingLine, AiBillingMonth, AiCurrency,
-    AiFeeAmount, AiMonthBill,
+    allocate_largest_remainder, AiAdjustmentLine, AiBillingCharge, AiBillingLine, AiBillingMonth,
+    AiCurrency, AiFeeAmount, AiMeteredBillInfo, AiMonthBill, UserId,
 };
 
 /// The currency AI usage is billed in. Every billable amount is shown in it,
@@ -108,14 +108,20 @@ impl AiExchangeRateValue {
     }
 
     /// Converts `hundredths` of the rate's currency to hundredths of the
-    /// billing currency, rounded half up. `None` for a negative amount or on
-    /// overflow.
+    /// billing currency, rounded half away from zero: half up for the amounts
+    /// of a month's own lines, and symmetric for an adjustment's negative
+    /// ones (`convert(-x) == -convert(x)`). `None` only on overflow.
     pub fn convert(self, hundredths: i64) -> Option<i64> {
-        let hundredths = u128::try_from(hundredths).ok()?;
+        let magnitude = u128::from(hundredths.unsigned_abs());
         let rate = u128::try_from(self.0).ok()?;
         let millionths = u128::try_from(MILLIONTHS).ok()?;
-        let converted = (hundredths.checked_mul(rate)? + millionths / 2) / millionths;
-        i64::try_from(converted).ok()
+        let converted = (magnitude.checked_mul(rate)? + millionths / 2) / millionths;
+        let converted = i64::try_from(converted).ok()?;
+        Some(if hundredths < 0 {
+            -converted
+        } else {
+            converted
+        })
     }
 
     /// How many units of `other`'s currency one unit of this rate's currency
@@ -332,7 +338,8 @@ impl AiConvertedAmount {
 /// when a line it includes has no rate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiConvertedTotals {
-    /// Everything billed: fees, overhead, API usage and metered credits.
+    /// Everything the month's own lines bill: fees, overhead, API usage and
+    /// metered credits.
     pub billed: Option<AiFeeAmount>,
     /// Subscription fees, allocated shares and overhead together.
     pub fees: Option<AiFeeAmount>,
@@ -342,6 +349,11 @@ pub struct AiConvertedTotals {
     pub api: Option<AiFeeAmount>,
     /// Metered payers' credits.
     pub metered: Option<AiFeeAmount>,
+    /// The adjustment lines, signed: the sum of the amounts each carries,
+    /// at the rates of the months they correct. `None` when one's is unknown.
+    pub adjustments: Option<AiFeeAmount>,
+    /// What the month invoices: `billed` plus `adjustments`.
+    pub invoiced: Option<AiFeeAmount>,
 }
 
 /// A month's bill in the billing currency, beside the original amounts.
@@ -461,7 +473,7 @@ pub fn convert_bill(
         subscriptions.push(converted_fee);
     }
 
-    let totals = converted_totals(&bill.lines, &lines)?;
+    let totals = converted_totals(&bill.lines, &lines, &bill.adjustments)?;
     let mut missing_rates: BTreeMap<String, AiCurrency> = BTreeMap::new();
     for converted in lines.iter().chain(&subscriptions) {
         if let AiConvertedAmount::MissingRate { currency } = converted {
@@ -485,9 +497,11 @@ pub fn convert_bill(
     })
 }
 
-fn converted_totals(
+/// Totals of converted lines; adjustments carry their own converted amounts.
+pub(crate) fn converted_totals(
     lines: &[AiBillingLine],
     converted: &[AiConvertedAmount],
+    adjustments: &[AiAdjustmentLine],
 ) -> Result<AiConvertedTotals, AiBillingError> {
     /// A running sum that turns unknown once a line without a rate joins it.
     fn add(total: &mut Option<i64>, converted: &AiConvertedAmount) -> Result<(), AiBillingError> {
@@ -520,6 +534,18 @@ fn converted_totals(
             AiBillingCharge::Metered(_) => add(&mut metered, converted)?,
         }
     }
+    let mut adjusted = Some(0);
+    for line in adjustments {
+        add(&mut adjusted, &line.converted)?;
+    }
+    let invoiced = match (billed, adjusted) {
+        (Some(billed), Some(adjusted)) => Some(
+            billed
+                .checked_add(adjusted)
+                .ok_or(AiBillingError::NumericRange)?,
+        ),
+        _ => None,
+    };
     let amount = |hundredths: Option<i64>| {
         hundredths.map(|hundredths| AiFeeAmount {
             hundredths,
@@ -533,7 +559,72 @@ fn converted_totals(
         overhead: amount(overhead),
         api: amount(api),
         metered: amount(metered),
+        adjustments: amount(adjusted),
+        invoiced: amount(invoiced),
     })
+}
+
+impl AiConvertedBill {
+    /// One user's part of a bill and of its conversion: the user's lines,
+    /// subscriptions and adjustment lines, with totals, missing and pending
+    /// rates over them alone, and `metered` as the user's part of the
+    /// allocation says. It equals the user's own bill converted, since lines
+    /// convert one by one and a subscription's lines are all its user's.
+    pub fn user_part(
+        &self,
+        bill: &AiMonthBill,
+        user_id: UserId,
+        metered: Option<AiMeteredBillInfo>,
+    ) -> Result<(AiMonthBill, AiConvertedBill), AiBillingError> {
+        let mut lines = Vec::new();
+        let mut converted_lines = Vec::new();
+        for (line, converted) in bill.lines.iter().zip(&self.lines) {
+            if line.subject.user_id() == Some(user_id) {
+                lines.push(line.clone());
+                converted_lines.push(converted.clone());
+            }
+        }
+        let mut subscriptions = Vec::new();
+        let mut converted_subscriptions = Vec::new();
+        for (month, converted) in bill.subscriptions.iter().zip(&self.subscriptions) {
+            if month.subscription.user_id == user_id {
+                subscriptions.push(month.clone());
+                converted_subscriptions.push(converted.clone());
+            }
+        }
+        let part = AiMonthBill {
+            month: bill.month,
+            lines,
+            subscriptions,
+            metered,
+            adjustments: bill
+                .adjustments
+                .iter()
+                .filter(|line| line.subject.user_id() == Some(user_id))
+                .cloned()
+                .collect(),
+        };
+        let totals = converted_totals(&part.lines, &converted_lines, &part.adjustments)?;
+        let mut missing_rates: BTreeMap<String, AiCurrency> = BTreeMap::new();
+        for converted in converted_lines.iter().chain(&converted_subscriptions) {
+            if let AiConvertedAmount::MissingRate { currency } = converted {
+                missing_rates.insert(currency.as_str().to_string(), currency.clone());
+            }
+        }
+        let pending_rates = currencies_to_convert(&part)
+            .into_iter()
+            .filter(|currency| self.pending_rates.contains(currency))
+            .collect();
+        let converted = AiConvertedBill {
+            lines: converted_lines,
+            subscriptions: converted_subscriptions,
+            totals,
+            rates: self.rates.clone(),
+            missing_rates: missing_rates.into_values().collect(),
+            pending_rates,
+        };
+        Ok((part, converted))
+    }
 }
 
 #[cfg(test)]

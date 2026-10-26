@@ -30,11 +30,11 @@ use crate::{
             media::WebpAvatarProcessor,
             postgres::{
                 PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
-                PostgresAiMeteredUsageRepository, PostgresAiProjectMappingRepository,
-                PostgresAiProviderAccountRepository, PostgresAiRepositoryMappingRepository,
-                PostgresAiSubscriptionRepository, PostgresAiUsageReportRepository,
-                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
-                PostgresOAuthRepository,
+                PostgresAiMeteredUsageRepository, PostgresAiMonthCloseRepository,
+                PostgresAiProjectMappingRepository, PostgresAiProviderAccountRepository,
+                PostgresAiRepositoryMappingRepository, PostgresAiSubscriptionRepository,
+                PostgresAiUsageReportRepository, PostgresAiUsageRepository,
+                PostgresApiTokenRepository, PostgresAvatarRepository, PostgresOAuthRepository,
             },
             riksbank::RiksbankExchangeRateAdapter,
         },
@@ -203,6 +203,7 @@ pub async fn create(
     let ai_usage_service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(
         ai_usage_repository,
         config.ai_usage.reprice_floor,
+        ai_usage_time_zone.clone(),
     ));
     let ai_subscription_repository =
         Arc::new(PostgresAiSubscriptionRepository::new(db_pool.clone()));
@@ -271,10 +272,15 @@ pub async fn create(
             AiMeteredReadSettings {
                 backfill_from: config.ai_usage.metered_import.backfill_from,
                 reprice_floor: config.ai_usage.reprice_floor,
+                time_zone: ai_usage_time_zone.clone(),
                 mapping_company: mapping_company.clone(),
             },
         ),
         metered_cutover,
+        // Closed months are served from their snapshots; later changes post as
+        // adjustments on the next open month.
+        Arc::new(PostgresAiMonthCloseRepository::new(db_pool.clone())),
+        config.ai_usage.reprice_floor,
     ));
     // Personal usage reads: always the caller's own usage, admins included.
     let ai_usage_report_service: Arc<dyn AiUsageReportService> =
@@ -284,7 +290,7 @@ pub async fn create(
             mapping_company.clone(),
         ));
     let ai_subscription_service: Arc<dyn AiSubscriptionService> = Arc::new(
-        AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone),
+        AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone.clone()),
     );
     // A misconfigured GitHub App never stops startup: the admin pages report
     // it, as time tracking reports missing Kleer credentials. Every GitHub
@@ -335,6 +341,7 @@ pub async fn create(
             AiMeteredImportSettings {
                 backfill_from: config.ai_usage.metered_import.backfill_from,
                 reprice_floor: config.ai_usage.reprice_floor,
+                time_zone: ai_usage_time_zone,
                 unattended: cfg!(not(debug_assertions)),
             },
             mapping_company,

@@ -3,10 +3,11 @@
 use std::collections::HashMap;
 
 use crate::domain::models::{
-    AiAllocationBasis, AiBillingCharge, AiBillingLinePart, AiBillingSubject, AiConvertedAmount,
-    AiCurrency, AiExchangeRate, AiExchangeRateValue, AiFeeAmount, AiMeteredAccountReason,
-    AiMeteredCharge, AiMeteredChargeKind, AiMeteredProvisional, AiMonthBill, AiMonthOverview,
-    AiProvider, AiSubscriptionMonth, AiUnassignedKind, AiUsdNanos, BILLING_CURRENCY,
+    AiAdjustedKind, AiAdjustmentLine, AiAllocationBasis, AiBillingCharge, AiBillingLinePart,
+    AiBillingMonth, AiBillingSubject, AiConvertedAmount, AiCurrency, AiExchangeRate,
+    AiExchangeRateValue, AiFeeAmount, AiMeteredAccountReason, AiMeteredCharge, AiMeteredChargeKind,
+    AiMeteredProvisional, AiMonthBill, AiMonthCloseId, AiMonthOverview, AiProvider,
+    AiSubscriptionMonth, AiUnassignedKind, AiUsdNanos, BILLING_CURRENCY,
 };
 use crate::domain::AiBillingError;
 
@@ -55,7 +56,7 @@ const CSV_HEADER: [&str; 32] = [
 /// Replaced by `billable_` and the billing currency in lower case.
 const BILLABLE_CONVERTED_COLUMN: &str = "billable_{billing currency}";
 
-fn csv_header() -> impl Iterator<Item = String> {
+pub(super) fn csv_header() -> impl Iterator<Item = String> {
     CSV_HEADER.iter().map(|cell| {
         if *cell == BILLABLE_CONVERTED_COLUMN {
             format!("billable_{}", BILLING_CURRENCY.to_ascii_lowercase())
@@ -90,6 +91,17 @@ fn payer_name(payer: AiProvider) -> &'static str {
     }
 }
 
+/// A bill's CSV before rendering: the header, and the raw cells of every
+/// part's row then every adjustment line's, with the order to write them in.
+pub(super) struct CsvTable {
+    pub header: Vec<String>,
+    /// The parts' rows in the parts' order, then the adjustment lines' rows
+    /// in theirs.
+    pub rows: Vec<Vec<String>>,
+    /// Indices into `rows` in the CSV's row order.
+    pub order: Vec<usize>,
+}
+
 /// Renders a month's bill as RFC 4180 CSV with CRLF line ends and a UTF-8 byte
 /// order mark, so spreadsheet programs read names with accents correctly.
 ///
@@ -115,26 +127,74 @@ fn payer_name(payer: AiProvider) -> &'static str {
 ///   tokens are the tracked usage the credits were split by. A repository's
 ///   code review credits name it in `repository`, with no developer or
 ///   login and no tracked usage.
+/// - `adjustment` rows follow the month's own rows: changes to a closed month
+///   (`adjusts_month`, whose close is `snapshot_id`) since it closed, posted
+///   on this month, with signed amounts. Each names the project, subject
+///   (`developer`, an account's `github_login` or a `repository`) and
+///   provider of what changed, `source` as the changed kind's, and the rate
+///   of the month it corrects; usage columns are zero. The warning names the
+///   corrected month, and says when its rate changed since the key was last
+///   invoiced, or when only the SEK amounts rounded differently.
 ///
 /// `source` says where a row's numbers come from: `estimate` (API rows),
 /// `subscription` (fees and overhead) or the metered payer's billing system
-/// (`github`). `period_basis` is the time zone of the row's days.
-/// `adjusts_month` and `snapshot_id` (month close) are empty until that
-/// exists.
+/// (`github`). `period_basis` is the time zone of the row's days. A closed
+/// month's own rows carry its close in `snapshot_id`; an open month's own
+/// rows leave both close columns empty.
 ///
-/// Summing `billable_amount` per `billable_currency` gives the overview's
-/// totals. `billable_sek` is the amount in the billing currency, converted at
-/// `rate` (empty for amounts already in it) as the overview converts it, and
-/// sums to the overview's converted totals. `rate_source` is `riksbank` or
-/// `admin`, and `rate_provisional` says whether the rate is provisional: an
-/// average of the days published so far. Without a rate, the four are empty
-/// and the warning says so. An estimate that is wholly unknown, because every
-/// record is unpriced, is empty rather than zero. Rows are ordered by project
+/// Summing `billable_amount` of the own rows per `billable_currency` gives the
+/// overview's totals, and of the adjustment rows `totals.adjustments`.
+/// `billable_sek` is the amount in the billing currency, converted at `rate`
+/// (empty for amounts already in it) as the overview converts it, and sums to
+/// the overview's converted totals; an adjustment's is the difference of the
+/// amounts invoiced in the billing currency, so `billable_sek = billable ×
+/// rate` need not hold for it. `rate_source` is `riksbank` or `admin`, and
+/// `rate_provisional` says whether the rate is provisional: an average of the
+/// days published so far. Without a rate, the four are empty and the warning
+/// says so. An estimate that is wholly unknown, because every record is
+/// unpriced, is empty rather than zero. Own rows are ordered by project
 /// (Unassigned, unmapped, then unmapped repositories, then unattributed, then
 /// overhead, untracked, personal and account rows, last), developer, subject,
 /// provider and billing mode. Every cell is quoted and guarded against
-/// spreadsheet formula injection (`csv_cell`).
+/// spreadsheet formula injection (`csv_cell`); numbers, negative ones
+/// included, stay numbers.
 pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String, AiBillingError> {
+    let parts: Vec<AiBillingLinePart<'_>> = overview
+        .bill
+        .lines
+        .iter()
+        .zip(&overview.converted.lines)
+        .map(|(line, converted)| line.parts(converted))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    let table = table(overview, &parts, time_zone, None)?;
+    Ok(render(
+        &table.header,
+        table.order.iter().map(|index| &table.rows[*index]),
+    ))
+}
+
+/// The CSV text of `header` and `rows`, in order.
+pub(super) fn render<'a>(header: &[String], rows: impl Iterator<Item = &'a Vec<String>>) -> String {
+    let mut csv = String::from("\u{feff}");
+    push_row(&mut csv, header.iter().cloned());
+    for row in rows {
+        push_row(&mut csv, row.iter().cloned());
+    }
+    csv
+}
+
+/// The rows of a month's bill (see `render_csv`). `parts` are the bill's
+/// lines as parts; `close` is the month's close when the table is its
+/// snapshot, which its own rows then name.
+pub(super) fn table(
+    overview: &AiMonthOverview,
+    parts: &[AiBillingLinePart<'_>],
+    time_zone: &str,
+    close: Option<AiMonthCloseId>,
+) -> Result<CsvTable, AiBillingError> {
     let bill: &AiMonthBill = &overview.bill;
     let names: HashMap<i32, &str> = overview
         .developers
@@ -147,15 +207,6 @@ pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String,
         .map(|month| (month.subscription.id.as_i32(), month))
         .collect();
 
-    let mut parts: Vec<AiBillingLinePart<'_>> = bill
-        .lines
-        .iter()
-        .zip(&overview.converted.lines)
-        .map(|(line, converted)| line.parts(converted))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect();
     let project_rank = |part: &AiBillingLinePart| match (&part.line.charge, &part.line.project) {
         (AiBillingCharge::UnallocatedOverhead { .. }, _) => 2,
         (AiBillingCharge::Metered(charge), project) => match charge.kind {
@@ -169,14 +220,17 @@ pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String,
         (_, None) => 1,
         (_, Some(_)) => 0,
     };
-    let developer = |part: &AiBillingLinePart| {
-        part.line
-            .subject
+    let developer_of = |subject: &AiBillingSubject| -> String {
+        subject
             .user_id()
             .and_then(|user_id| names.get(&user_id.as_i32()).copied())
             .unwrap_or("")
+            .to_string()
     };
-    parts.sort_by(|a, b| {
+    let developer = |part: &AiBillingLinePart| developer_of(&part.line.subject);
+    let mut order: Vec<usize> = (0..parts.len()).collect();
+    order.sort_by(|a, b| {
+        let (a, b) = (&parts[*a], &parts[*b]);
         project_rank(a)
             .cmp(&project_rank(b))
             .then_with(|| {
@@ -189,7 +243,7 @@ pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String,
                 name(a).cmp(&name(b))
             })
             .then_with(|| a.unassigned.cmp(&b.unassigned))
-            .then_with(|| developer(a).cmp(developer(b)))
+            .then_with(|| developer(a).cmp(&developer(b)))
             .then_with(|| a.line.subject.order_key().cmp(&b.line.subject.order_key()))
             .then_with(|| a.line.provider.as_str().cmp(b.line.provider.as_str()))
             .then_with(|| {
@@ -216,9 +270,11 @@ pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String,
             })
     });
 
-    let mut csv = String::from("\u{feff}");
-    push_row(&mut csv, csv_header());
-    for part in &parts {
+    let snapshot_id = close
+        .map(|close| close.as_i64().to_string())
+        .unwrap_or_default();
+    let mut rows = Vec::with_capacity(parts.len() + bill.adjustments.len());
+    for part in parts {
         let line = part.line;
         let converted = &part.converted;
         let subscription = match &line.charge {
@@ -235,29 +291,9 @@ pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String,
             (AiBillingCharge::UnallocatedOverhead { .. }, _) => {
                 (String::new(), UNALLOCATED_OVERHEAD.to_string())
             }
-            (AiBillingCharge::Metered(charge), project) => match (charge.kind, project) {
-                (AiMeteredChargeKind::Project | AiMeteredChargeKind::Repository, Some(project)) => {
-                    (project.id.to_string(), project.name.clone())
-                }
-                (AiMeteredChargeKind::Project | AiMeteredChargeKind::Repository, None) => {
-                    (String::new(), UNASSIGNED.to_string())
-                }
-                (AiMeteredChargeKind::Untracked, _) => {
-                    (String::new(), format!("Untracked {payer}"))
-                }
-                (AiMeteredChargeKind::Personal, _) => {
-                    (String::new(), format!("Personal / internal {payer}"))
-                }
-                (AiMeteredChargeKind::Account(AiMeteredAccountReason::Unlinked), _) => {
-                    (String::new(), "Unlinked account".to_string())
-                }
-                (AiMeteredChargeKind::Account(AiMeteredAccountReason::External), _) => {
-                    (String::new(), "External account".to_string())
-                }
-                (AiMeteredChargeKind::Account(AiMeteredAccountReason::Unknown), _) => {
-                    (String::new(), "Unknown account".to_string())
-                }
-            },
+            (AiBillingCharge::Metered(charge), project) => {
+                metered_project(charge.kind, project.as_ref(), payer)
+            }
             (_, Some(project)) => (project.id.to_string(), project.name.clone()),
             (_, None) => (String::new(), UNASSIGNED.to_string()),
         };
@@ -280,89 +316,255 @@ pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String,
         let rate = converted.rate();
         let charge = metered(part);
 
-        push_row(
-            &mut csv,
-            [
-                bill.month.to_string(),
-                project_id,
-                project,
-                developer(part).to_string(),
-                line.provider.as_str().to_string(),
-                billing_mode.to_string(),
-                subscription
-                    .map(|month| month.subscription.terms.plan.as_str().to_string())
-                    .unwrap_or_default(),
-                billable_amount,
-                billable_currency,
-                converted
-                    .amount()
-                    .map(AiFeeAmount::to_decimal)
-                    .unwrap_or_default(),
-                rate.and_then(AiExchangeRate::rate)
-                    .map(AiExchangeRateValue::to_decimal)
-                    .unwrap_or_default(),
-                rate.map(|rate| rate.source().to_string())
-                    .unwrap_or_default(),
-                rate.map(|rate| rate.is_provisional().to_string())
-                    .unwrap_or_default(),
-                if unknown_cost {
-                    String::new()
-                } else {
-                    usage.priced_cost.to_decimal(4)
-                },
-                usage.unpriced_records.to_string(),
-                usage.tokens.input.to_string(),
-                usage.tokens.cache_read.to_string(),
-                usage.tokens.cache_write.to_string(),
-                usage.tokens.output.to_string(),
-                usage.total_tokens().to_string(),
-                match (&line.charge, basis) {
-                    (AiBillingCharge::Api | AiBillingCharge::Metered(_), _) => "",
-                    (_, Some(AiAllocationBasis::ApiCost)) => "api_cost",
-                    (_, Some(AiAllocationBasis::Tokens)) => "tokens",
-                    (_, Some(AiAllocationBasis::Records)) => "records",
-                    (_, None) => "none",
-                }
-                .to_string(),
-                warning(part, basis, &overview.converted.pending_rates),
-                match part.unassigned {
-                    Some(AiUnassignedKind::Unmapped) => "unmapped",
-                    Some(AiUnassignedKind::UnmappedRepository) => "unmapped_repository",
-                    Some(AiUnassignedKind::Unattributed) => "unattributed",
-                    None => "",
-                }
-                .to_string(),
-                source.to_string(),
-                charge
-                    .map(|charge| format!("{}.00", charge.credits()))
-                    .unwrap_or_default(),
-                charge
-                    .and_then(|charge| charge.account.as_ref())
-                    .map(|account| account.login.as_str().to_string())
-                    .unwrap_or_default(),
-                match &line.subject {
-                    AiBillingSubject::Repository { name, .. } => name.clone(),
-                    _ => String::new(),
-                },
-                charge
-                    .and_then(|charge| charge.sku.clone())
-                    .unwrap_or_default(),
-                if charge.is_some() {
-                    "UTC".to_string()
-                } else {
-                    time_zone.to_string()
-                },
-                // Month close fills these.
-                String::new(),
-                String::new(),
-                charge
-                    .map(|charge| (!charge.provisional.is_empty()).to_string())
-                    .unwrap_or_default(),
-            ],
-        );
+        rows.push(vec![
+            bill.month.to_string(),
+            project_id,
+            project,
+            developer(part),
+            line.provider.as_str().to_string(),
+            billing_mode.to_string(),
+            subscription
+                .map(|month| month.subscription.terms.plan.as_str().to_string())
+                .unwrap_or_default(),
+            billable_amount,
+            billable_currency,
+            converted
+                .amount()
+                .map(AiFeeAmount::to_decimal)
+                .unwrap_or_default(),
+            rate.and_then(AiExchangeRate::rate)
+                .map(AiExchangeRateValue::to_decimal)
+                .unwrap_or_default(),
+            rate.map(|rate| rate.source().to_string())
+                .unwrap_or_default(),
+            rate.map(|rate| rate.is_provisional().to_string())
+                .unwrap_or_default(),
+            if unknown_cost {
+                String::new()
+            } else {
+                usage.priced_cost.to_decimal(4)
+            },
+            usage.unpriced_records.to_string(),
+            usage.tokens.input.to_string(),
+            usage.tokens.cache_read.to_string(),
+            usage.tokens.cache_write.to_string(),
+            usage.tokens.output.to_string(),
+            usage.total_tokens().to_string(),
+            match (&line.charge, basis) {
+                (AiBillingCharge::Api | AiBillingCharge::Metered(_), _) => "",
+                (_, Some(AiAllocationBasis::ApiCost)) => "api_cost",
+                (_, Some(AiAllocationBasis::Tokens)) => "tokens",
+                (_, Some(AiAllocationBasis::Records)) => "records",
+                (_, None) => "none",
+            }
+            .to_string(),
+            warning(part, basis, &overview.converted.pending_rates),
+            unassigned_text(part.unassigned).to_string(),
+            source.to_string(),
+            charge
+                .map(|charge| format!("{}.00", charge.credits()))
+                .unwrap_or_default(),
+            charge
+                .and_then(|charge| charge.account.as_ref())
+                .map(|account| account.login.as_str().to_string())
+                .unwrap_or_default(),
+            repository_name(&line.subject),
+            charge
+                .and_then(|charge| charge.sku.clone())
+                .unwrap_or_default(),
+            if charge.is_some() {
+                "UTC".to_string()
+            } else {
+                time_zone.to_string()
+            },
+            String::new(),
+            snapshot_id.clone(),
+            charge
+                .map(|charge| (!charge.provisional.is_empty()).to_string())
+                .unwrap_or_default(),
+        ]);
     }
+    for line in &bill.adjustments {
+        rows.push(adjustment_row(
+            bill,
+            line,
+            developer_of(&line.subject),
+            time_zone,
+        ));
+    }
+    order.extend(parts.len()..rows.len());
 
-    Ok(csv)
+    Ok(CsvTable {
+        header: csv_header().collect(),
+        rows,
+        order,
+    })
+}
+
+fn unassigned_text(kind: Option<AiUnassignedKind>) -> &'static str {
+    match kind {
+        Some(AiUnassignedKind::Unmapped) => "unmapped",
+        Some(AiUnassignedKind::UnmappedRepository) => "unmapped_repository",
+        Some(AiUnassignedKind::Unattributed) => "unattributed",
+        None => "",
+    }
+}
+
+fn repository_name(subject: &AiBillingSubject) -> String {
+    match subject {
+        AiBillingSubject::Repository { name, .. } => name.clone(),
+        _ => String::new(),
+    }
+}
+
+/// An account subject's login, the `github_login` of its adjustment rows: a
+/// user's adjustment sums their accounts, so it names none.
+fn account_login(subject: &AiBillingSubject) -> String {
+    match subject {
+        AiBillingSubject::ProviderAccount { login, .. } => login.as_str().to_string(),
+        _ => String::new(),
+    }
+}
+
+/// A metered line's project columns: its project, Unassigned, or one of
+/// Spinit's labels.
+fn metered_project(
+    kind: AiMeteredChargeKind,
+    project: Option<&crate::domain::models::AiMappedProject>,
+    payer: &str,
+) -> (String, String) {
+    match (kind, project) {
+        (AiMeteredChargeKind::Project | AiMeteredChargeKind::Repository, Some(project)) => {
+            (project.id.to_string(), project.name.clone())
+        }
+        (AiMeteredChargeKind::Project | AiMeteredChargeKind::Repository, None) => {
+            (String::new(), UNASSIGNED.to_string())
+        }
+        (AiMeteredChargeKind::Untracked, _) => (String::new(), format!("Untracked {payer}")),
+        (AiMeteredChargeKind::Personal, _) => {
+            (String::new(), format!("Personal / internal {payer}"))
+        }
+        (AiMeteredChargeKind::Account(AiMeteredAccountReason::Unlinked), _) => {
+            (String::new(), "Unlinked account".to_string())
+        }
+        (AiMeteredChargeKind::Account(AiMeteredAccountReason::External), _) => {
+            (String::new(), "External account".to_string())
+        }
+        (AiMeteredChargeKind::Account(AiMeteredAccountReason::Unknown), _) => {
+            (String::new(), "Unknown account".to_string())
+        }
+    }
+}
+
+/// An adjustment line's row: signed amounts at the rate of the month it
+/// corrects, usage columns zero.
+fn adjustment_row(
+    bill: &AiMonthBill,
+    line: &AiAdjustmentLine,
+    developer: String,
+    time_zone: &str,
+) -> Vec<String> {
+    let payer = payer_name(line.provider);
+    let (project_id, project) = match line.key.kind {
+        AiAdjustedKind::Overhead => (String::new(), UNALLOCATED_OVERHEAD.to_string()),
+        AiAdjustedKind::Metered(kind) => metered_project(kind, line.project.as_ref(), payer),
+        AiAdjustedKind::Api | AiAdjustedKind::Subscription => match &line.project {
+            Some(project) => (project.id.to_string(), project.name.clone()),
+            None => (String::new(), UNASSIGNED.to_string()),
+        },
+    };
+    let source = match line.key.kind {
+        AiAdjustedKind::Api => "estimate",
+        AiAdjustedKind::Subscription | AiAdjustedKind::Overhead => "subscription",
+        AiAdjustedKind::Metered(_) => metered_source(line.provider),
+    };
+    let rate = line.converted.rate();
+    let adjusted = line.adjusts.month;
+    let snapshot = line.adjusts.close_id.as_i64();
+    let warning = adjustment_warning(
+        adjusted,
+        snapshot,
+        &line.converted,
+        line.sek_only(),
+        line.rate_changed,
+    );
+    vec![
+        bill.month.to_string(),
+        project_id,
+        project,
+        developer,
+        line.provider.as_str().to_string(),
+        "adjustment".to_string(),
+        line.plan.clone().unwrap_or_default(),
+        line.amount.to_decimal(),
+        line.amount.currency.as_str().to_string(),
+        line.converted
+            .amount()
+            .map(AiFeeAmount::to_decimal)
+            .unwrap_or_default(),
+        rate.and_then(AiExchangeRate::rate)
+            .map(AiExchangeRateValue::to_decimal)
+            .unwrap_or_default(),
+        rate.map(|rate| rate.source().to_string())
+            .unwrap_or_default(),
+        rate.map(|rate| rate.is_provisional().to_string())
+            .unwrap_or_default(),
+        AiUsdNanos::ZERO.to_decimal(4),
+        "0".to_string(),
+        "0".to_string(),
+        "0".to_string(),
+        "0".to_string(),
+        "0".to_string(),
+        "0".to_string(),
+        String::new(),
+        warning,
+        unassigned_text(line.unassigned).to_string(),
+        source.to_string(),
+        line.credits
+            .map(|credits| format!("{credits}.00"))
+            .unwrap_or_default(),
+        account_login(&line.subject),
+        repository_name(&line.subject),
+        String::new(),
+        if line.key.kind.is_metered() {
+            "UTC".to_string()
+        } else {
+            time_zone.to_string()
+        },
+        adjusted.to_string(),
+        snapshot.to_string(),
+        String::new(),
+    ]
+}
+
+/// An adjustment row's warning: the month it corrects and its close, and
+/// what changed in the billing currency. SEK alone moves when the corrected
+/// month's rate changed since the key was last invoiced (`rate_changed`), or
+/// when its SEK amounts round differently at the same rate.
+fn adjustment_warning(
+    adjusted: AiBillingMonth,
+    snapshot: i64,
+    converted: &AiConvertedAmount,
+    sek_only: bool,
+    rate_changed: bool,
+) -> String {
+    let mut warning =
+        format!("adjusts {adjusted}: its bill changed after it closed (snapshot {snapshot})");
+    match converted {
+        AiConvertedAmount::MissingRate { currency } => warning.push_str(&format!(
+            "; no {} exchange rate for {adjusted}",
+            currency.as_str()
+        )),
+        _ if sek_only && rate_changed => {
+            warning.push_str(&format!("; SEK only: {adjusted}'s exchange rate changed"))
+        }
+        _ if sek_only => {
+            warning.push_str("; SEK only: its SEK amounts round differently at the same rate")
+        }
+        _ if rate_changed => warning.push_str(&format!("; {adjusted}'s exchange rate changed too")),
+        _ => {}
+    }
+    warning
 }
 
 /// A metered line's provisional reason, as the warning says it.
@@ -482,9 +684,13 @@ const SEPARATORS: [char; 5] = [',', ';', '\t', '\r', '\n'];
 /// One CSV cell: always quoted, with quotes doubled, so no separator or line
 /// break inside a value splits it. A formula prefix at the start of the value,
 /// or right after a separator inside it, gets an apostrophe in front, so even
-/// a program that splits the value stays on text. Amounts and counts never
-/// start with one.
-fn csv_cell(value: &str) -> String {
+/// a program that splits the value stays on text. A value that is wholly a
+/// number (`-?\d+(\.\d+)?`), such as an adjustment's `-1.50`, is never a
+/// formula and stays a number; `-1+2` or `--1` are guarded.
+pub(super) fn csv_cell(value: &str) -> String {
+    if is_number(value) {
+        return format!("\"{value}\"");
+    }
     let mut guarded = String::with_capacity(value.len() + 3);
     let mut at_start = true;
     for character in value.chars() {
@@ -496,6 +702,19 @@ fn csv_cell(value: &str) -> String {
     }
 
     format!("\"{}\"", guarded.replace('"', "\"\""))
+}
+
+/// Whether `value` is a plain decimal number with an optional minus sign:
+/// `-?\d+(\.\d+)?`.
+fn is_number(value: &str) -> bool {
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    let (whole, fraction) = match digits.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (digits, None),
+    };
+    let all_digits =
+        |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    all_digits(whole) && fraction.is_none_or(all_digits)
 }
 
 #[cfg(test)]
@@ -513,7 +732,16 @@ mod tests {
             ("two\nlines", "\"two\nlines\""),
             ("=1+1", r#""'=1+1""#),
             ("+46 70", r#""'+46 70""#),
-            ("-5", r#""'-5""#),
+            // Numbers stay numbers, negative ones (adjustments) included.
+            ("-5", r#""-5""#),
+            ("-1.50", r#""-1.50""#),
+            ("-0.05", r#""-0.05""#),
+            ("-1+2", r#""'-1+2""#),
+            ("-5x", r#""'-5x""#),
+            ("--1", r#""'--1""#),
+            ("-", r#""'-""#),
+            ("-.5", r#""'-.5""#),
+            ("-1.", r#""'-1.""#),
             ("@SUM(A1)", r#""'@SUM(A1)""#),
             ("\tindented", "\"'\tindented\""),
             ("\rreturn", "\"'\rreturn\""),
@@ -529,5 +757,41 @@ mod tests {
         ] {
             assert_eq!(csv_cell(value), cell, "{value:?}");
         }
+    }
+
+    #[test]
+    fn an_adjustment_names_a_rate_change_only_when_the_rate_changed() {
+        let june = AiBillingMonth::parse("2026-06").unwrap();
+        let sek = AiConvertedAmount::Converted {
+            amount: AiFeeAmount {
+                hundredths: -1,
+                currency: AiCurrency::billing(),
+            },
+            rate: None,
+        };
+        let base = "adjusts 2026-06: its bill changed after it closed (snapshot 7)";
+        for (sek_only, rate_changed, rest) in [
+            (true, true, "; SEK only: 2026-06's exchange rate changed"),
+            (
+                true,
+                false,
+                "; SEK only: its SEK amounts round differently at the same rate",
+            ),
+            (false, true, "; 2026-06's exchange rate changed too"),
+            (false, false, ""),
+        ] {
+            assert_eq!(
+                adjustment_warning(june, 7, &sek, sek_only, rate_changed),
+                format!("{base}{rest}"),
+                "{sek_only} {rate_changed}"
+            );
+        }
+        let missing = AiConvertedAmount::MissingRate {
+            currency: AiCurrency::parse("EUR").unwrap(),
+        };
+        assert_eq!(
+            adjustment_warning(june, 7, &missing, false, false),
+            format!("{base}; no EUR exchange rate for 2026-06")
+        );
     }
 }

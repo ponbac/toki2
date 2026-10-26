@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT id\n                FROM ai_billing_month_closes\n                WHERE id = ANY($1) AND reopened_at IS NULL\n                FOR SHARE\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b63b326b701dd306dc0f72a1abe2b8bbefa759fd7264a34be348b1ceb1217851"
+}

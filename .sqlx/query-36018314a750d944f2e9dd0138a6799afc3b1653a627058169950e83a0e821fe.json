@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                close.id,\n                close.month,\n                close.closed_at,\n                closer.full_name AS \"closed_by?\",\n                close.reopened_at,\n                reopener.full_name AS \"reopened_by?\"\n            FROM ai_billing_month_closes AS close\n            LEFT JOIN users AS closer ON closer.id = close.closed_by\n            LEFT JOIN users AS reopener ON reopener.id = close.reopened_by\n            WHERE close.scope = $1 AND close.reopened_at IS NULL\n            ORDER BY close.month\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "month",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "month"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "closed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "closed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "closed_by?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "full_name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "reopened_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "reopened_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "reopened_by?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "full_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "36018314a750d944f2e9dd0138a6799afc3b1653a627058169950e83a0e821fe"
+}

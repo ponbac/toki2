@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT csv_position, adjusts_month, subject, line_json, csv_row\n            FROM ai_billing_snapshot_lines\n            WHERE close_id = $1\n            ORDER BY position\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "csv_position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "csv_position"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "adjusts_month",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "adjusts_month"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "line_json",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "line_json"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "csv_row",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_snapshot_lines",
+            "name": "csv_row"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "37b9fc721f187e1fc74d7766e8d15d26b9f2f98474570ad4bf3df2650f05c87a"
+}

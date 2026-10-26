@@ -32,6 +32,7 @@ use crate::{
         models::{
             merge_credits, utc_day, AiMeteredAmounts, AiMeteredCredit, AiMeteredModel,
             AiMeteredOrgCharge, AiMeteredPeriod, AiMeteredScope, AiMeteredSummaryLine, AiProvider,
+            AiUsageTimeZone,
         },
         ports::{
             inbound::{ApiTokenAuthenticator, ApiTokenService},
@@ -166,6 +167,7 @@ fn app(pool: &PgPool, source: AiMeteredSourceState) -> Router {
         AiMeteredImportSettings {
             backfill_from: this_month().first_day(),
             reprice_floor: time::macros::datetime!(2026-10-01 00:00 UTC),
+            time_zone: AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
             unattended: false,
         },
         None,
