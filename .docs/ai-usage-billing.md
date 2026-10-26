@@ -737,14 +737,21 @@ in a group with credits; G is GitHub's number, so a provisional rate only moves 
 split) and `unrecognized` (a credits row priced otherwise than $0.01 a credit, or a
 model outside the catalog). The unknown-account line is provisional while the month
 is in progress, a day is an import gap, or a day is provisional. The bill's `metered`
-block is provisional when a line is, when tracked usage is not imported, when an
-account day is missing, or when the unknown account's residual is provisional even
-though it bills no line (`AiMeteredAllocation::unknown_account`): a failed
-organization check, a failed seated or interrupted account check, or an organization
-slice that is missing, leaves its days out of the residual, and a residual not
-computed yet is no settled zero. The same holds for repository credits
-(`repository_provisional`, see "Repository mappings"). A developer's `metered` block
-leaves the unknown account out, as it is no developer's.
+block is provisional when a line is, when an account has reasons though it bills no
+line (a day never imported, a month total that differs, days before the backfill),
+when tracked usage is not imported, when an account day is missing, or when the
+unknown account's residual is provisional even though it bills no line
+(`AiMeteredAllocation::unknown_account`): a failed organization check, a failed
+seated or interrupted account check, or an organization slice that is missing,
+leaves its days out of the residual, and credits not imported or a residual not
+computed yet are no settled zero. The same holds for repository credits
+(`repository_provisional`, see "Repository mappings"). A developer's `metered` block leaves the unknown
+account out, as it is no developer's, and is provisional over what is theirs: a line
+of theirs, a day of theirs not imported, their tracked usage not imported, or an
+account linked to them on a day of the month that has reasons, whether or not they
+have a line of it (GitHub may still bill a linked account Toki tracked nothing for,
+such as the cloud agent's). So a developer's month is provisional only when the
+overview's is.
 
 **Subjects and charge kinds.** A billing line's subject is a user, a provider account
 (`{ provider, accountId, login }`: unlinked or external), the unknown account, or a

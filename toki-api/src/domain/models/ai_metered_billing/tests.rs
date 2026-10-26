@@ -679,6 +679,65 @@ fn one_users_part_keeps_their_lines_unbilled_usage_and_counters() {
 }
 
 #[test]
+fn an_account_that_may_still_change_keeps_its_users_part_provisional_without_a_line() {
+    // Ada's account has neither credits nor tracked usage yet; Grace's bills.
+    let day = date!(2026 - 10 - 12);
+    let mut input = closed_input(vec![
+        linked(1001, "ada-lovelace", ADA),
+        linked(1002, "grace-hopper", GRACE),
+    ]);
+    input.account_credits = vec![credits(1002, day, "GPT-6.1 Sol", "10")];
+    input.org_credits = vec![org(day, "GPT-6.1 Sol", "10")];
+    input.tracked = vec![tracked(GRACE, day, "gpt-6.1-sol", 10 * CREDIT)];
+    // (the whole bill, Ada's part, Grace's part) provisional.
+    let provisional = |input: &AiReconciliationInput| {
+        let allocation = allocate(input);
+        assert_eq!(
+            summary(&allocation),
+            [line("user 2", "project", WIDGET, 10)]
+        );
+        assert_eq!(for_user(allocation.clone(), ADA).lines, []);
+        (
+            allocation.provisional,
+            for_user(allocation.clone(), ADA).provisional,
+            for_user(allocation, GRACE).provisional,
+        )
+    };
+    assert_eq!(provisional(&input), (false, false, false));
+
+    // A day of Ada's account never imported: GitHub may still bill it, say
+    // for the cloud agent, which Toki never tracks.
+    let mut missing = input.clone();
+    let gap = date!(2026 - 10 - 20);
+    missing.account_slices.remove(&(account_id(1001), gap));
+    missing.coverage.get_mut(&gap).unwrap().accounts_missing = 1;
+    assert_eq!(for_user(allocate(&missing), ADA).days_not_imported, 1);
+    assert_eq!(provisional(&missing), (true, true, false));
+
+    // Her account's stored month differs from GitHub's month total.
+    let mut unconfirmed = input.clone();
+    for check in &mut unconfirmed.checks {
+        if check.account_id == Some(account_id(1001)) {
+            check.payer_gross = Some(dec("3"));
+            check.matches = Some(false);
+        }
+    }
+    assert_eq!(provisional(&unconfirmed), (true, true, false));
+
+    // Days before the import's backfill: imported for no account, so
+    // Grace's line is provisional too.
+    let mut before_backfill = input;
+    let backfill_from = date!(2026 - 10 - 10);
+    before_backfill
+        .coverage
+        .retain(|day, _| *day >= backfill_from);
+    before_backfill
+        .account_slices
+        .retain(|(_, day), _| *day >= backfill_from);
+    assert_eq!(provisional(&before_backfill), (true, true, true));
+}
+
+#[test]
 fn rounding_cents_never_charge_a_destination_above_its_tracked_cost() {
     let day = date!(2026 - 10 - 06);
     let mut input = closed_input(vec![
