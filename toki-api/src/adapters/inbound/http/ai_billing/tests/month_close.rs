@@ -482,6 +482,100 @@ async fn a_rate_override_on_a_closed_month_posts_only_the_sek_difference(pool: P
 }
 
 #[sqlx::test]
+async fn a_corrected_months_rate_still_being_fetched_is_pending_on_the_month_it_posts_on(
+    pool: PgPool,
+) {
+    // June closes on a provisional rate, its average not published yet.
+    let rates = Arc::new(FakeRates::default().daily("USD", "10.25"));
+    let app = app_with(
+        &pool,
+        rates.clone(),
+        AiExchangeRateSettings {
+            wait: std::time::Duration::from_millis(200),
+            ..AiExchangeRateSettings::default()
+        },
+        None,
+        REPRICE_FLOOR,
+    );
+    let June { admin, dev } = june(&app, &pool, THROUGH_SEPTEMBER).await;
+    let admin = Caller::Session(&admin.cookie);
+    let (status, body) = post_close(
+        &app,
+        &admin,
+        "2026-06",
+        json!([{ "check": "exchangeRates", "reason": "June's average comes on the 5th." }]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let june_close = body["close"]["closeId"].as_i64().unwrap();
+
+    // An hour later the average is out, but the provider is slow: refreshing
+    // June's rate outlasts July's requests, which have no rate of their own
+    // to wait for.
+    rates
+        .monthly
+        .lock()
+        .unwrap()
+        .insert(("2026-06".to_string(), "USD".to_string()), "10.5");
+    *rates.delay.lock().unwrap() = std::time::Duration::from_secs(2);
+    sqlx::query(
+        "UPDATE ai_billing_exchange_rates SET fetched_at = fetched_at - interval '61 minutes'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let june_usd = json!([{ "month": "2026-06", "currency": "USD" }]);
+    let july = overview(&app, &admin, "2026-07").await;
+    assert_eq!(july["pendingRates"], json!([]));
+    assert_eq!(july["adjustedPendingRates"], june_usd);
+    assert_eq!(july["adjustmentLines"], json!([]));
+    let page = format!("/ai-usage/admin/billing/2026-07/developers/{}", dev.id);
+    let developer = get_json(&app, &admin, &page).await;
+    assert_eq!(developer["adjustedPendingRates"], june_usd);
+    let status = get_json(&app, &admin, "/ai-usage/admin/billing/2026-07/close").await;
+    assert_eq!(
+        readiness_check(&status["readiness"], "exchangeRates"),
+        json!({
+            "id": "exchangeRates",
+            "status": "failed",
+            "problems": [{ "kind": "adjustedRatePending", "month": "2026-06", "currency": "USD" }],
+            "waiver": null,
+        })
+    );
+
+    // Once the fetch lands in the background, July carries its SEK-only
+    // difference: 12.50 USD at 10.50 is 131.25 SEK, 3.12 more than invoiced.
+    let mut july = overview(&app, &admin, "2026-07").await;
+    for _ in 0..50 {
+        if july["adjustedPendingRates"] == json!([]) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        july = overview(&app, &admin, "2026-07").await;
+    }
+    assert_eq!(july["adjustedPendingRates"], json!([]));
+    assert_eq!(
+        adjustments(&july),
+        [json!([
+            "2026-06", june_close, "Client A", "api", "0.00", "USD", "3.12", "10.50", true
+        ])]
+    );
+    let status = get_json(&app, &admin, "/ai-usage/admin/billing/2026-07/close").await;
+    assert_eq!(
+        readiness_check(&status["readiness"], "exchangeRates")["status"],
+        "passed"
+    );
+    assert_eq!(
+        rates
+            .requests()
+            .iter()
+            .filter(|request| *request == "monthly USD 2026-06")
+            .count(),
+        2
+    );
+}
+
+#[sqlx::test]
 async fn a_month_reopens_only_once_no_close_holds_adjustments_to_it(pool: PgPool) {
     let app = close_app(&pool, rates());
     let June { admin, .. } = june(&app, &pool, THROUGH_SEPTEMBER).await;

@@ -183,6 +183,7 @@ function overview(lines) {
     exchangeRates: [],
     missingRates: [],
     pendingRates: [],
+    adjustedPendingRates: [],
     metered: {
       provider: "copilot",
       provisional: true,
@@ -605,6 +606,7 @@ describe("adjustment lines and closes", () => {
         { month: "2026-08", snapshotId: 6 },
         { month: "2026-09", snapshotId: 7 },
       ],
+      adjustedPendingRates: [{ month: "2026-09", currency: "USD" }],
       totals: {
         ...base.totals,
         adjustments: [{ currency: "USD", amount: "-12.50" }],
@@ -619,6 +621,9 @@ describe("adjustment lines and closes", () => {
     expect(parseAiBillingOverview(input).totals.converted.invoiced).toBe(
       "-110.77",
     );
+    expect(parseAiBillingOverview(input).adjustedPendingRates).toEqual([
+      { month: "2026-09", currency: "USD" },
+    ]);
   });
 
   test.each([
@@ -748,6 +753,17 @@ describe("adjustment lines and closes", () => {
     {
       name: "an overview without its close",
       input: without(overview([apiLine]), "close"),
+    },
+    {
+      name: "a corrected month's pending rate without its month",
+      input: {
+        ...overview([apiLine]),
+        adjustedPendingRates: [{ currency: "USD" }],
+      },
+    },
+    {
+      name: "a bill that does not say which corrected months' rates are pending",
+      input: without(overview([apiLine]), "adjustedPendingRates"),
     },
   ])("rejects $name", ({ input }) => {
     expect(() => parseAiBillingOverview(input)).toThrow();

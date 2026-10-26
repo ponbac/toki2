@@ -58,8 +58,8 @@ use crate::{
             AiFeeAmount, AiMachineCompleteness, AiMappedProject, AiMeteredAccountReason,
             AiMeteredBillInfo, AiMeteredCharge, AiMeteredChargeKind, AiMeteredCutover,
             AiMeteredProvisional, AiMonthBill, AiMonthCompleteness, AiMonthOverview, AiMonthTotals,
-            AiMonthView, AiProviderCompleteness, AiSubscriptionMonth, AiUnassignedKind,
-            AiUsageDateRange, UserId, BILLING_CURRENCY, MACHINE_STALE_AFTER,
+            AiMonthView, AiPendingRate, AiProviderCompleteness, AiSubscriptionMonth,
+            AiUnassignedKind, AiUsageDateRange, UserId, BILLING_CURRENCY, MACHINE_STALE_AFTER,
         },
         ports::inbound::AiBillingService,
         AiBillingError,
@@ -380,6 +380,10 @@ struct BillResponse {
     /// including provisional rates being refreshed. A later request sees the
     /// fetched replacement once it arrives.
     pending_rates: Vec<String>,
+    /// The rates still being fetched of the closed months whose changes post
+    /// on this month, by month: once one arrives, `adjustmentLines` may
+    /// change, even for a month without lines yet.
+    adjusted_pending_rates: Vec<PendingRateResponse>,
     /// The metered payer's lines as a whole, or in a developer's month that
     /// developer's; null unless the month bills them from credits.
     metered: Option<MeteredBillResponse>,
@@ -388,6 +392,24 @@ struct BillResponse {
     /// a credit is negative. Totals other than `totals.adjustments` and the
     /// converted `adjustments` and `invoiced` leave them out.
     adjustment_lines: Vec<close::AdjustmentLineResponse>,
+}
+
+/// A month's rate whose fetch is still in progress.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingRateResponse {
+    /// `YYYY-MM`.
+    month: String,
+    currency: String,
+}
+
+impl From<&AiPendingRate> for PendingRateResponse {
+    fn from(rate: &AiPendingRate) -> Self {
+        Self {
+            month: rate.month.to_string(),
+            currency: rate.currency.as_str().to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -471,6 +493,11 @@ impl BillResponse {
             exchange_rates: converted.rates.iter().map(Into::into).collect(),
             missing_rates: codes(&converted.missing_rates),
             pending_rates: codes(&converted.pending_rates),
+            adjusted_pending_rates: converted
+                .adjusted_pending_rates
+                .iter()
+                .map(Into::into)
+                .collect(),
             metered: bill.metered.as_ref().map(Into::into),
             adjustment_lines: bill
                 .adjustments

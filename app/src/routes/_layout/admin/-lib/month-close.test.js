@@ -73,6 +73,10 @@ describe("readiness problems in words", () => {
       },
       "The USD exchange rate is provisional: an average of the days through Sep 29.",
     ],
+    [
+      { kind: "adjustedRatePending", month: "2026-07", currency: "USD" },
+      "July 2026's USD exchange rate is still being fetched, and this month's adjustments to it may change.",
+    ],
   ])("%#", (problem, text) => {
     expect(problemText(problem)).toBe(text);
   });

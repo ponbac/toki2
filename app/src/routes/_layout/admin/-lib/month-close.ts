@@ -131,6 +131,8 @@ export function problemText(problem: AiCloseProblem): string {
       return `The ${problem.currency} exchange rate is provisional: an average of the days through ${shortDate(problem.observedThrough)}.`;
     case "adjustedRateMissing":
       return `No ${problem.currency} exchange rate for ${monthLabel(problem.month)}, whose adjustments this month carries.`;
+    case "adjustedRatePending":
+      return `${monthLabel(problem.month)}'s ${problem.currency} exchange rate is still being fetched, and this month's adjustments to it may change.`;
     case "adjustedRateProvisional":
       return `${monthLabel(problem.month)}'s ${problem.currency} exchange rate is provisional, and this month's adjustments to it carry it.`;
     case "machineIncomplete": {

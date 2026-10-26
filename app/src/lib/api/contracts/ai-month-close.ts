@@ -192,6 +192,15 @@ const problemSchema = z.discriminatedUnion("kind", [
       currency: currencySchema,
     })
     .strict(),
+  /** A corrected month's rate is still being fetched: the adjustments to
+   * it may change once it arrives. */
+  z
+    .object({
+      kind: z.literal("adjustedRatePending"),
+      month: monthSchema,
+      currency: currencySchema,
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("adjustedRateProvisional"),

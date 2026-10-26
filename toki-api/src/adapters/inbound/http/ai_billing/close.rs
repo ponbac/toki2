@@ -275,13 +275,15 @@ const DEVELOPER_BILL_FIELDS: [&str; 7] = [
 
 /// The developer page's own bill part, as stored per developer: its missing
 /// and pending rates are the developer's own currencies', as the live page
-/// converts only the developer's bill.
-const DEVELOPER_PART_FIELDS: [&str; 5] = [
+/// converts only the developer's bill; the corrected months' pending rates
+/// are all of them, as on the live page.
+const DEVELOPER_PART_FIELDS: [&str; 6] = [
     "subscriptions",
     "totals",
     "metered",
     "missingRates",
     "pendingRates",
+    "adjustedPendingRates",
 ];
 
 /// A closed month's developer page: the overview's period and rates, the
@@ -600,6 +602,10 @@ enum ProblemResponse {
         month: String,
         currency: String,
     },
+    AdjustedRatePending {
+        month: String,
+        currency: String,
+    },
     AdjustedRateProvisional {
         month: String,
         currency: String,
@@ -760,6 +766,10 @@ impl From<&AiCloseProblem> for ProblemResponse {
                 observed_through: observed_through.to_string(),
             },
             AiCloseProblem::AdjustedRateMissing { month, currency } => Self::AdjustedRateMissing {
+                month: month.to_string(),
+                currency: currency.as_str().to_string(),
+            },
+            AiCloseProblem::AdjustedRatePending { month, currency } => Self::AdjustedRatePending {
                 month: month.to_string(),
                 currency: currency.as_str().to_string(),
             },

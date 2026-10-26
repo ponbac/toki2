@@ -371,6 +371,19 @@ pub struct AiConvertedBill {
     /// Currencies needed by the bill whose fetch is still in progress. A
     /// provisional stored rate remains usable while its replacement is pending.
     pub pending_rates: Vec<AiCurrency>,
+    /// The rates still being fetched of the closed months whose adjustment
+    /// lines post on the bill, by month: once one arrives, the adjustments
+    /// may change, even where that month has no line yet. `convert_bill`
+    /// knows only the bill's own month, so it leaves these empty; the
+    /// recompute of those months fills them in.
+    pub adjusted_pending_rates: Vec<AiPendingRate>,
+}
+
+/// A month's rate whose fetch is still in progress.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiPendingRate {
+    pub month: AiBillingMonth,
+    pub currency: AiCurrency,
 }
 
 /// Converts `amount` with the month's `rates`. Zero needs no rate.
@@ -494,6 +507,7 @@ pub fn convert_bill(
         rates,
         missing_rates,
         pending_rates,
+        adjusted_pending_rates: Vec::new(),
     })
 }
 
@@ -570,6 +584,8 @@ impl AiConvertedBill {
     /// rates over them alone, and `metered` as the user's part of the
     /// allocation says. It equals the user's own bill converted, since lines
     /// convert one by one and a subscription's lines are all its user's.
+    /// The corrected months' rates still being fetched are all kept, as on
+    /// the user's live page: any of them may change the user's adjustments.
     pub fn user_part(
         &self,
         bill: &AiMonthBill,
@@ -622,6 +638,7 @@ impl AiConvertedBill {
             rates: self.rates.clone(),
             missing_rates: missing_rates.into_values().collect(),
             pending_rates,
+            adjusted_pending_rates: self.adjusted_pending_rates.clone(),
         };
         Ok((part, converted))
     }

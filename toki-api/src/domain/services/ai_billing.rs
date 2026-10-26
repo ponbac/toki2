@@ -20,7 +20,7 @@ use crate::domain::{
         AiExchangeRate, AiExchangeRateValue, AiImportRun, AiKeySubject, AiMachineLabel,
         AiMeteredAllocation, AiMeteredCutover, AiMonthBill, AiMonthClose, AiMonthCloseState,
         AiMonthCloseStatus, AiMonthCompleteness, AiMonthOverview, AiMonthView, AiNewClose,
-        AiNewSnapshotLine, AiPersonalUsage, AiReconciliationInput, AiSubscription,
+        AiNewSnapshotLine, AiPendingRate, AiPersonalUsage, AiReconciliationInput, AiSubscription,
         AiSubscriptionId, AiSubscriptionScope, AiUsageTimeZone, TimeTrackingCompany, UserId,
     },
     ports::{
@@ -69,6 +69,16 @@ struct MeteredMonth {
     /// The payer's live import run, if any, which readiness refuses while
     /// it imports the month.
     running: Option<AiImportRun>,
+}
+
+/// What posts on an open month from the closed months it corrects.
+struct Adjustments {
+    lines: Vec<AiAdjustmentLine>,
+    /// The closed months posting on it, oldest first.
+    adjusted: Vec<AiAdjustedMonth>,
+    /// Their rates whose fetch, started by their recompute, is still in
+    /// progress (`AiConvertedBill::adjusted_pending_rates`).
+    pending_rates: Vec<AiPendingRate>,
 }
 
 /// An open month as the overview shows it, with what readiness reads.
@@ -289,15 +299,16 @@ where
         })
     }
 
-    /// The adjustment lines that post on open month `target`, and the closed
-    /// months they correct, oldest first: per closed month `K` posting on
-    /// it, `K` recomputed now less its snapshot less the adjustments to it
-    /// frozen in active closes (`adjustment_lines`).
+    /// The adjustment lines that post on open month `target`, the closed
+    /// months they correct, oldest first, and those months' rates still
+    /// being fetched: per closed month `K` posting on it, `K` recomputed now
+    /// less its snapshot less the adjustments to it frozen in active closes
+    /// (`adjustment_lines`).
     async fn adjustments_on(
         &self,
         target: AiBillingMonth,
         active: &[AiMonthClose],
-    ) -> Result<(Vec<AiAdjustmentLine>, Vec<AiAdjustedMonth>), AiBillingError> {
+    ) -> Result<Adjustments, AiBillingError> {
         let adjusted = posting_on(target, active);
         let span = tracing::info_span!(
             "ai_billing.adjustments",
@@ -306,9 +317,19 @@ where
         );
         async {
             let mut lines = Vec::new();
+            let mut pending_rates = Vec::new();
             for month in &adjusted {
                 let own = self.own_bill(month.month, None).await?;
                 let converted = self.convert(&own.bill).await?;
+                // A fetch that outlasts the wait carries on in the background
+                // and may change the lines once it lands: the bill reports it,
+                // so its readers reload.
+                pending_rates.extend(converted.pending_rates.iter().map(|currency| {
+                    AiPendingRate {
+                        month: month.month,
+                        currency: currency.clone(),
+                    }
+                }));
                 let recompute = bill_entries(&own.bill, &converted)?;
                 let snapshot = self.closes.own_entries(month.close_id).await?;
                 let frozen = self.closes.frozen_adjustments(month.month).await?;
@@ -331,7 +352,11 @@ where
                     &plans,
                 )?);
             }
-            Ok((lines, adjusted.clone()))
+            Ok(Adjustments {
+                lines,
+                adjusted: adjusted.clone(),
+                pending_rates,
+            })
         }
         .instrument(span)
         .await
@@ -345,11 +370,16 @@ where
         active: &[AiMonthClose],
     ) -> Result<OpenMonth, AiBillingError> {
         let own = self.own_bill(month, None).await?;
-        let (adjustments, adjusted) = self.adjustments_on(month, active).await?;
+        let Adjustments {
+            lines,
+            adjusted,
+            pending_rates,
+        } = self.adjustments_on(month, active).await?;
         let mut bill = own.bill;
-        bill.adjustments = adjustments;
+        bill.adjustments = lines;
         bill.totals()?;
-        let converted = self.convert(&bill).await?;
+        let mut converted = self.convert(&bill).await?;
+        converted.adjusted_pending_rates = pending_rates;
 
         let billed: HashSet<UserId> = bill
             .lines
@@ -780,14 +810,17 @@ where
             }
             None => {
                 let own = self.own_bill(month, Some(user_id)).await?;
-                let (adjustments, _) = self.adjustments_on(month, &active).await?;
+                let adjustments = self.adjustments_on(month, &active).await?;
                 let mut bill = own.bill;
                 bill.adjustments = adjustments
+                    .lines
                     .into_iter()
                     .filter(|line| line.subject.user_id() == Some(user_id))
                     .collect();
                 bill.totals()?;
-                let converted = self.convert(&bill).await?;
+                let mut converted = self.convert(&bill).await?;
+                // Any of them may change the developer's adjustments.
+                converted.adjusted_pending_rates = adjustments.pending_rates;
                 (
                     AiDeveloperBill::Live {
                         bill: Box::new(bill),

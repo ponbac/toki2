@@ -134,6 +134,7 @@ const checks = [
         observedThrough: "2026-09-29",
       },
       { kind: "adjustedRateMissing", month: "2026-08", currency: "EUR" },
+      { kind: "adjustedRatePending", month: "2026-07", currency: "GBP" },
       { kind: "adjustedRateProvisional", month: "2026-08", currency: "USD" },
     ],
     waiver: null,

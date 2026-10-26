@@ -15,8 +15,8 @@ use crate::domain::models::{
     AiDeveloperCompleteness, AiDeveloperReadiness, AiExchangeRate, AiExchangeRateOverride,
     AiExchangeRateValue, AiFeeAmount, AiFetchedExchangeRate, AiImportKind, AiImportRun,
     AiImportRunId, AiKeyPayer, AiKeyProject, AiKeySubject, AiMachineCompleteness, AiMonthCloseId,
-    AiMonthMode, AiOrgChargeKind, AiProviderCompleteness, AiRepositoryResolver, AiRunStatus,
-    AiUsageCheck,
+    AiMonthMode, AiOrgChargeKind, AiPendingRate, AiProviderCompleteness, AiRepositoryResolver,
+    AiRunStatus, AiUsageCheck,
 };
 
 /// October settled and checked after it settled (4 November).
@@ -731,6 +731,59 @@ fn the_rates_of_corrected_months_must_be_final_too() {
             },
             AiCloseProblem::AdjustedRateMissing {
                 month: september,
+                currency: usd(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_corrected_months_rate_being_fetched_waits_with_or_without_lines() {
+    let (july, august, september) = (
+        AiBillingMonth::parse("2026-07").unwrap(),
+        AiBillingMonth::parse("2026-08").unwrap(),
+        AiBillingMonth::parse("2026-09").unwrap(),
+    );
+    let mut bill = api_bill();
+    bill.adjustments = vec![
+        adjustment(
+            september,
+            AiConvertedAmount::Converted {
+                amount: AiFeeAmount {
+                    hundredths: -1_313,
+                    currency: AiCurrency::billing(),
+                },
+                rate: Some(fetched(september, "10.5", true)),
+            },
+        ),
+        adjustment(august, AiConvertedAmount::MissingRate { currency: usd() }),
+    ];
+    let mut converted = convert_bill(&bill, &[fetched(october(), "10.5", false)], &[]).unwrap();
+    // September's provisional rate is being refreshed, and so is July's,
+    // which no line carries yet.
+    converted.adjusted_pending_rates = vec![
+        AiPendingRate {
+            month: july,
+            currency: usd(),
+        },
+        AiPendingRate {
+            month: september,
+            currency: usd(),
+        },
+    ];
+    assert_eq!(
+        problems(&exchange_rate_check(&bill, &converted)),
+        [
+            AiCloseProblem::AdjustedRatePending {
+                month: july,
+                currency: usd(),
+            },
+            AiCloseProblem::AdjustedRatePending {
+                month: september,
+                currency: usd(),
+            },
+            AiCloseProblem::AdjustedRateMissing {
+                month: august,
                 currency: usd(),
             },
         ]

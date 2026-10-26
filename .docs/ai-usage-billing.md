@@ -1072,8 +1072,10 @@ sees a live run.
    freezes the estimates API lines bill and fees are split by, which a later reprice no
    longer reaches. Unrecognized models never block: GitHub's credits are its own number.
 6. `exchangeRates`: every currency the bill converts has a stored rate that is not
-   being fetched and is final (an admin's override is final), and every adjustment
-   line's corrected month has a final rate and a known SEK amount.
+   being fetched and is final (an admin's override is final), no corrected month's rate
+   is being fetched (`adjustedRatePending`, whether or not a line carries it yet: its
+   arrival may change the adjustments), and every adjustment line's corrected month has
+   a final rate and a known SEK amount.
 7. `uploads`: every machine active in the month uploaded all of it (completeness), and
    in metered months also the UTC hours of the month outside its local days (after the
    local month east of UTC, before it west of UTC), for the machine and each expected
@@ -1087,11 +1089,12 @@ lines posted on the month, each with its diff key (text columns), display names,
 (`csv_row`, raw, guarded when served) and CSV position. The close row adds the
 overview without lines, adjustment lines and close (`bill_json`, with `adjustedMonths`),
 each developer's bill part as the developer page shows it (`developer_json`:
-`subscriptions`, `totals`, `metered`, and their own `missingRates` and `pendingRates`,
-per user id, for every developer with lines, subscriptions, adjustment lines, metered
-usage on no line, or a metered part kept provisional by a linked account that may still
-change (`AiMeteredAllocation::user_ids`); any other developer is served an empty,
-settled part, as the live page shows it), the CSV header and the readiness.
+`subscriptions`, `totals`, `metered`, their own `missingRates` and `pendingRates`, and
+every `adjustedPendingRates` as on the live page, per user id, for every developer with
+lines, subscriptions, adjustment lines, metered usage on no line, or a metered part kept
+provisional by a linked account that may still change (`AiMeteredAllocation::user_ids`);
+any other developer is served an empty, settled part, as the live page shows it), the
+CSV header and the readiness.
 The projection comes from the HTTP adapter through `AiBillProjector`, which the close
 handler passes to the service, so the domain never imports the adapter.
 
@@ -1106,7 +1109,8 @@ handler passes to the service, so the domain never imports the adapter.
   close leaves the usage by day, while the bill and the personal usage stay as closed
   and the change posts as an adjustment. The CSV is the stored header and rows. A closed
   month serves the same JSON values (JSONB may reorder keys) and the same CSV bytes as
-  when it closed; its `pendingRates` are frozen, so the page need not poll.
+  when it closed; its `pendingRates` and `adjustedPendingRates` are frozen, so the page
+  need not poll.
 - **Versioning:** `projection_version` is `AI_BILL_PROJECTION_VERSION` (1) when stored.
   A change to the served overview, line, adjustment line or developer JSON bumps it and
   adds an upgrade step from the previous version in the adapter (`upgrade_snapshot`),
@@ -1160,6 +1164,12 @@ line posts unless both its amount and its SEK difference are zero.
 - **Cost:** an open month's overview, CSV, developer page and close status recompute
   every closed month that posts on it, sequentially (`ai_billing.adjustments` span);
   normally one month.
+- **Rates fetched by the recompute:** converting K at its current rates fetches a rate
+  of K that is missing or due (a provisional rate after a waived close is refreshed
+  hourly until final). A fetch that outlasts the request's wait carries on in the
+  background, and the open month reports it in `adjustedPendingRates` (month and
+  currency), apart from its own `pendingRates`, until it lands: the bill and the close
+  status reload meanwhile, as for the month's own rates.
 - **Config changes re-bill closed months:** changing `ai_usage.metered_copilot_from` or
   `ai_usage.time_zone` after a close changes the recompute, so the difference posts as
   adjustments on the next open month.
@@ -1175,7 +1185,9 @@ subject, provider, kind and payer. `adjustedMonths` lists the closed months post
 with or without lines. `totals.adjustments` sums them per currency; `totals.converted`
 adds `adjustments` and `invoiced` (`billed` plus `adjustments`; null when either is).
 Every other total, and `billed`, stays the month's own lines. A developer's month
-carries the developer's adjustment lines.
+carries the developer's adjustment lines. `adjustedPendingRates` lists the corrected
+months' rates still being fetched (`{ month, currency }`; every one, on a developer's
+month too).
 
 **CSV:** adjustment rows follow the month's own rows: `billing_mode = adjustment`,
 `source` as the corrected kind's (`estimate`, `subscription` or `github`), the project
@@ -1211,10 +1223,12 @@ and earlier closes. While the readiness holds `importRunning`, the import check 
 waiver switch ("A running import cannot be waived") and the close button is disabled,
 saying the import is running and to close the month once it finishes; a close refused
 while any import runs says to try again when it finishes (the server's message). The
-close status reloads while readiness waits for a rate being fetched (`ratePending`),
-and once a running import of the month finishes (with the bill). A closed month hides
-the export checks, says it is the bill as invoiced, and reads no rate as pending (its
-snapshot's pending rates never resolve; the query layer clears them,
+close status reloads while readiness waits for a rate being fetched (`ratePending`, or a
+corrected month's `adjustedRatePending`), and once a running import of the month
+finishes (with the bill). The bill and a developer's month reload while `pendingRates`
+or `adjustedPendingRates` is non-empty. A closed month hides the export checks, says it
+is the bill as invoiced, and reads no rate as pending (its snapshot's pending rates never
+resolve; the query layer clears them,
 `withoutFrozenFetches`), and its exchange rates show the invoiced rate beside the
 current one, which an override edits; the override's toast says the month keeps its
 invoiced rate and the difference posts on the next open month.

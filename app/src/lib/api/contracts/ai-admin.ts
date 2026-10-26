@@ -529,6 +529,12 @@ const billShape = {
   /** Currencies needed by the bill whose fetch is still in progress,
    * including usable provisional rates being refreshed. */
   pendingRates: z.array(currencySchema),
+  /** The rates still being fetched of the closed months whose changes post
+   * on this month, by month: once one arrives, `adjustmentLines` may change,
+   * even for a month without lines yet. */
+  adjustedPendingRates: z.array(
+    z.object({ month: monthSchema, currency: currencySchema }).strict(),
+  ),
   /** Null unless the month bills a metered payer's credits. */
   metered: meteredBillSchema.nullable(),
   /** Changes to closed months since they closed, posted on this month, apart

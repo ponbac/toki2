@@ -347,6 +347,12 @@ pub enum AiCloseProblem {
         month: AiBillingMonth,
         currency: AiCurrency,
     },
+    /// A corrected month's rate is still being fetched: once it arrives,
+    /// the adjustments to that month may change.
+    AdjustedRatePending {
+        month: AiBillingMonth,
+        currency: AiCurrency,
+    },
     AdjustedRateProvisional {
         month: AiBillingMonth,
         currency: AiCurrency,
@@ -712,9 +718,10 @@ pub fn pricing_check(
 }
 
 /// The `exchangeRates` check: every currency the bill converts has a stored
-/// rate that is not being fetched and is final; every adjustment line's
-/// corrected month has a final rate for its currency and a known amount in
-/// the billing currency. An admin's override is final.
+/// rate that is not being fetched and is final; no corrected month's rate is
+/// being fetched, line or not, and every adjustment line's corrected month
+/// has a final rate for its currency and a known amount in the billing
+/// currency. An admin's override is final.
 pub fn exchange_rate_check(bill: &AiMonthBill, converted: &AiConvertedBill) -> AiCloseCheck {
     let mut problems = Vec::new();
     for currency in currencies_to_convert(bill) {
@@ -736,6 +743,17 @@ pub fn exchange_rate_check(bill: &AiMonthBill, converted: &AiConvertedBill) -> A
             }
         } else {
             problems.push(AiCloseProblem::RateMissing { currency });
+        }
+    }
+    // A rate being fetched supersedes the one its lines carry, as for the
+    // bill's own currencies.
+    let mut pending: BTreeSet<(Date, String)> = BTreeSet::new();
+    for rate in &converted.adjusted_pending_rates {
+        if pending.insert((rate.month.first_day(), rate.currency.as_str().to_string())) {
+            problems.push(AiCloseProblem::AdjustedRatePending {
+                month: rate.month,
+                currency: rate.currency.clone(),
+            });
         }
     }
     let mut adjusted: BTreeSet<(Date, String, bool)> = BTreeSet::new();
@@ -761,8 +779,11 @@ pub fn exchange_rate_check(bill: &AiMonthBill, converted: &AiConvertedBill) -> A
             _ => None,
         };
         if let Some((currency, problem)) = problem {
+            let (first_day, code) = (month.first_day(), currency.as_str().to_string());
             let missing = matches!(problem, AiCloseProblem::AdjustedRateMissing { .. });
-            if adjusted.insert((month.first_day(), currency.as_str().to_string(), missing)) {
+            if !pending.contains(&(first_day, code.clone()))
+                && adjusted.insert((first_day, code, missing))
+            {
                 problems.push(problem);
             }
         }
