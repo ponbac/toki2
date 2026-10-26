@@ -1032,7 +1032,10 @@ fn no_waiver_lets_a_month_close_while_an_import_of_it_runs() {
     // stay waivable.
     let waived = running.waive(waivers.to_vec());
     assert!(!waived.ready());
-    assert_eq!(waived.import_running(), Some(started_at));
+    assert_eq!(
+        waived.checks[0].problems[0],
+        AiCloseProblem::ImportRunning { started_at }
+    );
     assert_eq!(waived.checks[0].status, AiCloseCheckStatus::Failed);
     assert_eq!(waived.checks[0].waiver, None);
     assert_eq!(waived.waived(), [AiCloseCheckId::ExchangeRates]);
@@ -1042,7 +1045,6 @@ fn no_waiver_lets_a_month_close_while_an_import_of_it_runs() {
     finished.checks[0].problems.remove(0);
     let finished = finished.waive(waivers.to_vec());
     assert!(finished.ready());
-    assert_eq!(finished.import_running(), None);
     assert_eq!(
         finished.waived(),
         [AiCloseCheckId::Import, AiCloseCheckId::ExchangeRates]

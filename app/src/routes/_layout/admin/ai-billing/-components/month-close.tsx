@@ -135,9 +135,7 @@ function OpenMonth({
       if (result.kind === "notReady") {
         setRefused(result.readiness);
         toast.warning(
-          importRunningSince(result.readiness) === null
-            ? `${monthLabel(month)} is not ready to close: a check failed when the server checked again.`
-            : `An import of ${monthLabel(month)} is running: try again when it finishes.`,
+          `${monthLabel(month)} is not ready to close: a check failed when the server checked again.`,
         );
         return;
       }

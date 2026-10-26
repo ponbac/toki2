@@ -4,6 +4,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use sqlx::{Connection, PgConnection};
+
 use super::copilot::{copilot_august, upload_ada_copilot_only, CopilotAugust};
 use super::*;
 use crate::{
@@ -823,16 +825,9 @@ async fn a_month_an_import_is_running_or_stopped_in_is_not_ready_on_import(pool:
     let running = json!([{ "kind": "importRunning", "startedAt": "2026-09-06T02:00:00Z" }]);
     assert_eq!(import(&status)["status"], "failed");
     assert_eq!(import(&status)["problems"], running);
-    let (code, body) = post_close(&app, &admin, "2026-08", json!([])).await;
-    assert_eq!(code, StatusCode::CONFLICT, "{body}");
-    assert_eq!(
-        readiness_check(&body["readiness"], "import")["problems"],
-        running
-    );
 
     // No waiver lets it through: with every failed check waived, the
-    // import's included, the close is refused until the run finishes, and
-    // the import keeps no waiver while the other checks keep theirs.
+    // import's included, the close is refused until the run finishes.
     let failed: Vec<Value> = status["readiness"]["checks"]
         .as_array()
         .unwrap()
@@ -845,26 +840,15 @@ async fn a_month_an_import_is_running_or_stopped_in_is_not_ready_on_import(pool:
         .iter()
         .map(|id| json!({ "check": id, "reason": "Closing August anyway." }))
         .collect();
-    let (code, body) = post_close(&app, &admin, "2026-08", Value::Array(waivers)).await;
-    assert_eq!(code, StatusCode::CONFLICT, "{body}");
-    assert_eq!(
-        body["error"],
-        "an import of 2026-08 is running: try again when it finishes"
-    );
-    assert_eq!(body["readiness"]["ready"], false);
-    let refused = readiness_check(&body["readiness"], "import");
-    assert_eq!(refused["status"], "failed");
-    assert_eq!(refused["waiver"], Value::Null);
-    assert_eq!(refused["problems"], running);
-    for id in failed.iter().filter(|id| **id != "import") {
-        let check = readiness_check(&body["readiness"], id.as_str().unwrap());
-        assert_eq!(check["status"], "waived", "{check}");
+    for waivers in [json!([]), Value::Array(waivers)] {
+        let (code, body) = post_close(&app, &admin, "2026-08", waivers).await;
+        assert_eq!(code, StatusCode::CONFLICT, "{body}");
+        assert_eq!(
+            body,
+            json!({ "error": "a usage import is running: try again when it finishes" })
+        );
     }
-    let closes: i64 = sqlx::query_scalar("SELECT count(*) FROM ai_billing_month_closes")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(closes, 0);
+    assert_eq!(close_count(&pool).await, 0);
 
     // Its process dies before finishing August: every check it left marked
     // is interrupted, the organization's included, and the close refuses.
@@ -885,6 +869,176 @@ async fn a_month_an_import_is_running_or_stopped_in_is_not_ready_on_import(pool:
     let (code, body) = post_close(&app, &admin, "2026-08", json!([])).await;
     assert_eq!(code, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["readiness"]["ready"], false);
+}
+
+/// The routes with Copilot billed from its credits from August 2026, Ada's
+/// August imported, and a waiver for every check August fails, none of them
+/// the import's.
+async fn copilot_august_closable(pool: &PgPool) -> (Router, TestUser, Value) {
+    let app = app_with(
+        pool,
+        FakeRates::august_usd(),
+        AiExchangeRateSettings::default(),
+        Some(AiMeteredCutover {
+            payer: AiProvider::Copilot,
+            from: AiBillingMonth::parse("2026-08").unwrap(),
+        }),
+        REPRICE_FLOOR,
+    );
+    let CopilotAugust { admin, .. } = copilot_august(&app, pool).await;
+    let status = get_json(
+        &app,
+        &Caller::Session(&admin.cookie),
+        "/ai-usage/admin/billing/2026-08/close",
+    )
+    .await;
+    assert_eq!(
+        readiness_check(&status["readiness"], "import")["status"],
+        "passed"
+    );
+    let waivers: Vec<Value> = status["readiness"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|check| check["status"] == "failed")
+        .map(|check| json!({ "check": check["id"], "reason": "Closing August anyway." }))
+        .collect();
+    (app, admin, Value::Array(waivers))
+}
+
+async fn close_count(pool: &PgPool) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM ai_billing_month_closes")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test]
+async fn a_close_is_refused_while_any_import_holds_the_import_lock(pool: PgPool) {
+    let (app, admin, waivers) = copilot_august_closable(&pool).await;
+    let admin = Caller::Session(&admin.cookie);
+
+    // An import holds the lock without a run importing August to show: it
+    // has not recorded its run yet, or it imports another month. Readiness
+    // sees nothing running, yet the import may replace the payer's days
+    // while the close reads them, so the close is refused whatever is
+    // waived.
+    let metered = PostgresAiMeteredUsageRepository::new(db(&pool));
+    let lease = metered
+        .try_lock_import(AiProvider::Copilot)
+        .await
+        .unwrap()
+        .unwrap();
+    let status = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08/close").await;
+    assert_eq!(
+        readiness_check(&status["readiness"], "import")["status"],
+        "passed"
+    );
+    let (code, body) = post_close(&app, &admin, "2026-08", waivers.clone()).await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
+    assert_eq!(
+        body,
+        json!({ "error": "a usage import is running: try again when it finishes" })
+    );
+    assert_eq!(close_count(&pool).await, 0);
+
+    // Once the import finishes, the same close goes through.
+    lease.release().await.unwrap();
+    let (code, body) = post_close(&app, &admin, "2026-08", waivers).await;
+    assert_eq!(code, StatusCode::CREATED, "{body}");
+    assert_eq!(close_count(&pool).await, 1);
+}
+
+#[sqlx::test]
+async fn no_import_starts_while_a_close_reads_and_stores_the_month(pool: PgPool) {
+    let (app, admin, waivers) = copilot_august_closable(&pool).await;
+
+    // Two other sessions keep the close waiting twice. First at its first
+    // read of the payer's usage, the import status its metered load starts
+    // with: reading the import runs conflicts with ACCESS EXCLUSIVE, and
+    // nothing the close does before its hold on imports reads them. Then at
+    // its store, after every read of the month: inserting the close needs a
+    // lock SHARE conflicts with, while reading closes does not.
+    let first_read = gate(
+        &pool,
+        "LOCK TABLE ai_provider_import_runs IN ACCESS EXCLUSIVE MODE",
+    )
+    .await;
+    let store = gate(&pool, "LOCK TABLE ai_billing_month_closes IN SHARE MODE").await;
+    let closing = tokio::spawn({
+        let app = app.clone();
+        let cookie = admin.cookie.clone();
+        async move { post_close(&app, &Caller::Session(&cookie), "2026-08", waivers).await }
+    });
+    let waiting_on = |table: &'static str| {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (
+                SELECT 1 FROM pg_locks
+                WHERE relation = $1::text::regclass
+                  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                  AND NOT granted
+            )",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+    };
+    let metered = PostgresAiMeteredUsageRepository::new(db(&pool));
+    for (gate, table, at) in [
+        (first_read, "ai_provider_import_runs", "its first read"),
+        (store, "ai_billing_month_closes", "its store"),
+    ] {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !waiting_on(table).await.unwrap() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the close never reached {at}"
+            );
+            assert!(!closing.is_finished(), "the close finished before {at}");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+
+        // Meanwhile no import can take the lock: an admin's Import now is
+        // refused, and an unattended run skips its tick.
+        assert!(
+            metered
+                .try_lock_import(AiProvider::Copilot)
+                .await
+                .unwrap()
+                .is_none(),
+            "an import took the lock while the close waited at {at}"
+        );
+        open(gate).await;
+    }
+
+    let (code, body) = closing.await.unwrap();
+    assert_eq!(code, StatusCode::CREATED, "{body}");
+    // The close lets imports go once it has stored the month.
+    assert!(metered
+        .try_lock_import(AiProvider::Copilot)
+        .await
+        .unwrap()
+        .is_some());
+}
+
+/// Another session holding `lock` in an open transaction until `open`, on a
+/// connection of its own: the close's leases and reads take most of the test
+/// pool's five.
+async fn gate(pool: &PgPool, lock: &'static str) -> PgConnection {
+    let mut connection = PgConnection::connect_with(&pool.connect_options())
+        .await
+        .unwrap();
+    sqlx::raw_sql("BEGIN")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sqlx::raw_sql(lock).execute(&mut connection).await.unwrap();
+    connection
+}
+
+/// Commits a `gate`, freeing its lock.
+async fn open(mut gate: PgConnection) {
+    sqlx::raw_sql("COMMIT").execute(&mut gate).await.unwrap();
+    gate.close().await.unwrap();
 }
 
 /// The readiness check of `id` in a close status or readiness.

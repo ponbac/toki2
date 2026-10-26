@@ -496,11 +496,18 @@ month therefore cannot match GitHub's month totals, and the checks show it.
   runs happen in release builds only; local debug builds, whose database is usually
   a production copy, never import on their own.
 - One run at a time: an in-process lock and a Postgres advisory lock
-  (`ai_provider_usage_import:copilot`). Holding the lock proves no other run is
-  alive, so starting a run marks leftover `running` runs interrupted. A run shows
-  as running only while some session holds the lock (read from `pg_locks`), so a
-  run whose process died mid-import (a deploy, a crash) neither shows a spinner
-  nor disables Import now; the next run marks it interrupted.
+  (`ai_provider_usage_import:copilot`, transaction-scoped: a lease is an open
+  transaction on its own pooled connection, and committing or dropping it frees
+  the lock). Holding the lock proves no other run is alive, so starting a run marks
+  leftover `running` runs interrupted. A run shows as running only while some
+  session holds the lock exclusively (read from `pg_locks`), so a run whose process
+  died mid-import (a deploy, a crash) neither shows a spinner nor disables Import
+  now; the next run marks it interrupted.
+- A month close holds imports off while it reads and stores a metered month
+  (`try_hold_imports`: the same key, shared, so it never shows as a running run).
+  Meanwhile Import now is `409` ("an import is already running, or a month close
+  is reading the usage") and an unattended run skips its tick; the next hourly
+  tick runs what is due.
 - A rate limit, rejected credentials, a refusal, any organization-scope error, a
   storage error, three `Unavailable` answers in a row or 4,000 requests stop a run,
   which records the reason. An account's other errors (not found, an unreadable
@@ -638,10 +645,11 @@ document and MCP: `GET /metered-usage/{month}` (the month, every account),
 residual, organization check, repositories or pool; 404 for an unknown user) and `POST
 /metered-usage/{month}/import` with `{ "mode": "changes" | "full" }`, which answers
 `202` with the run id and runs on its own task. A malformed month or body is 400, a
-month before the backfill's or after today's 400, a running import 409, a source that
-is off or misconfigured 503, GitHub's rate limit 429 and other GitHub failures 502.
-Credits are strings with two decimals (hundredths of a credit); only the residual
-and the unknown-account totals can be negative.
+month before the backfill's or after today's 400, a running import 409 (and so is a
+month close reading the usage), a source that is off or misconfigured 503, GitHub's
+rate limit 429 and other GitHub failures 502. Credits are strings with two decimals
+(hundredths of a credit); only the residual and the unknown-account totals can be
+negative.
 
 **Repository names** come from GitHub's billing, which admins see in GitHub; they are
 not Toki project keys, so the rule that unmapped project keys are never shown does
@@ -998,6 +1006,21 @@ JSON and CSV header, and `projection_version`. A month has at most one *active* 
   earlier months makes those live again, on the new first open month after them.
 - One close or re-open runs at a time (an advisory lock); a second one meanwhile is
   `409`.
+- A close of a metered month (on or after the cutover) holds the payer's imports off
+  from its first read of the month to the stored snapshot
+  (`AiMeteredUsageRepository::try_hold_imports`, the import lock taken shared), and
+  is refused (`409`, "a usage import is running: try again when it finishes",
+  whatever is waived) while any import of the payer holds the lock, whatever month
+  it imports: the month and the closed months posting on it all read the payer's
+  usage, and an import that started after the close's first read could otherwise
+  replace days between its reads, so readiness and the snapshot would judge and
+  freeze a half-replaced month. The hold is taken after the close lock and only
+  once the month can close (not over or already closed answer first). Both locks
+  are tried, never waited for, so no order can deadlock; a close holds two pooled
+  connections in open transactions (the two leases) besides its reads. Re-open
+  reads no usage, so it takes no hold, and nor does an open month's live bill or
+  its adjustment lines: nothing they read is kept, and the next read sees the
+  finished import.
 
 **Readiness** (`domain/models/ai_close_readiness.rs`), evaluated by the server in `GET`
 and again in `POST …/close`. Each check passes, fails, waits for nothing it does not
@@ -1006,15 +1029,12 @@ apply to (`notApplicable`), or is waived: an admin waives a failed check with a 
 A waiver of a check that did not fail is dropped. Anything waived wrongly is still
 corrected later, by an adjustment. The one problem no waiver covers is `importRunning`
 (`AiCloseProblem::waivable`): a waiver of an `import` check holding it is dropped, so
-the check stays failed and the close is refused (`409` with the readiness and the error
-"an import of {month} is running: try again when it finishes") until the run finishes,
-since a close meanwhile would freeze days the run may have half replaced. Every other
-check, and the `import` check once the run is over, stays waivable. Only a run whose
-plan holds the month itself blocks: a live re-import of a closed month whose
-adjustments post on the month (a gap month in a scheduled plan, or an admin's "Import
-now" of it) fails no check, so the close freezes those adjustment lines as they read
-then, and the next open month nets whatever the run changes after (its adjustments
-subtract the ones frozen in this close).
+the check stays failed until the run finishes, since a close meanwhile would freeze
+days the run may have half replaced. Every other check, and the `import` check once
+the run is over, stays waivable. `GET` shows it for a run whose plan holds the month;
+`POST` never gets that far while any import runs, since the close is refused before
+its first read (above), and the readiness it evaluates under its hold on imports never
+sees a live run.
 
 1. `import` (metered months): judged per account and month from the import's stored
    slices and checks, never from a run's errors, which only describe that run. No live
@@ -1190,14 +1210,14 @@ frozen readiness with its waivers, the re-open (disabled with the months in `hel
 and earlier closes. While the readiness holds `importRunning`, the import check has no
 waiver switch ("A running import cannot be waived") and the close button is disabled,
 saying the import is running and to close the month once it finishes; a close refused
-for it says to try again when the import finishes. The close status reloads while
-readiness waits for a rate being fetched (`ratePending`), and once a running import of
-the month finishes (with the bill). A closed month hides the export checks, says it is
-the bill as invoiced, and reads no rate as pending (its snapshot's pending rates never
-resolve; the query layer clears them, `withoutFrozenFetches`), and its exchange rates
-show the invoiced rate beside the current one, which an override edits; the override's
-toast says the month keeps its invoiced rate and the difference posts on the next open
-month.
+while any import runs says to try again when it finishes (the server's message). The
+close status reloads while readiness waits for a rate being fetched (`ratePending`),
+and once a running import of the month finishes (with the bill). A closed month hides
+the export checks, says it is the bill as invoiced, and reads no rate as pending (its
+snapshot's pending rates never resolve; the query layer clears them,
+`withoutFrozenFetches`), and its exchange rates show the invoiced rate beside the
+current one, which an override edits; the override's toast says the month keeps its
+invoiced rate and the difference posts on the next open month.
 Developers with only adjustment lines are on the People tab, and adjustment lines link a
 developer to their page. The statement's headline is
 `converted.invoiced`, with an Adjustments figure; an Adjustments tab lists the lines by
@@ -1225,9 +1245,9 @@ document and MCP:
   `closedAt`, `closedBy`, the frozen `readiness`, `adjustmentsPostOn`, `heldBy`).
   `history` lists every close of the month, re-opened ones included, newest first.
 - `POST /billing/{month}/close` with `{ "waivers"?: [{ "check", "reason" }] }`: `201`
-  with the close status. `409` while not over, already closed or busy; `409` `{ error,
-  readiness }` when a failed check is not waived, and while an import of the month is
-  running whatever is waived; `400` for an unknown or repeated
+  with the close status. `409` while not over, already closed or busy, and for a
+  metered month while any usage import runs, whatever is waived; `409` `{ error,
+  readiness }` when a failed check is not waived; `400` for an unknown or repeated
   check, an empty or long reason, or an unknown field.
 - `DELETE /billing/{month}/close`: re-opens, `200` with the status; `409` `{ error,
   heldBy }` while a close holds adjustments to it; `404` when it is not closed.

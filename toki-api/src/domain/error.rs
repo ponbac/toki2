@@ -219,9 +219,13 @@ pub enum AiMonthCloseError {
     },
     #[error("another month is being closed or re-opened; try again")]
     Busy,
-    /// A readiness check failed without a waiver, or an import of the month
-    /// is running, which no waiver covers.
-    #[error("{}", not_ready(.0))]
+    /// An import of the metered payer's usage holds the import lock, whatever
+    /// month it imports: a close reads the payer's usage under a hold on
+    /// imports, from the first read to the store, and no waiver covers it.
+    #[error("a usage import is running: try again when it finishes")]
+    ImportRunning,
+    /// A readiness check failed without a waiver.
+    #[error("{} is not ready to close", .0.month)]
     NotReady(Box<crate::domain::models::AiCloseReadiness>),
     #[error(
         "adjustments to {month} are frozen in {}: re-open those first",
@@ -231,16 +235,6 @@ pub enum AiMonthCloseError {
         month: crate::domain::models::AiBillingMonth,
         held_by: Vec<crate::domain::models::AiBillingMonth>,
     },
-}
-
-fn not_ready(readiness: &crate::domain::models::AiCloseReadiness) -> String {
-    match readiness.import_running() {
-        Some(_) => format!(
-            "an import of {} is running: try again when it finishes",
-            readiness.month
-        ),
-        None => format!("{} is not ready to close", readiness.month),
-    }
 }
 
 fn months(months: &[crate::domain::models::AiBillingMonth]) -> String {
@@ -374,7 +368,9 @@ pub enum MeteredUsageSourceError {
 pub enum AiMeteredUsageError {
     #[error("{0}")]
     Invalid(String),
-    #[error("an import is already running")]
+    /// Another import holds the import lock, or a month close holds imports
+    /// off while it reads the usage.
+    #[error("an import is already running, or a month close is reading the usage")]
     ImportRunning,
     #[error("no usage source is configured")]
     SourceOff,

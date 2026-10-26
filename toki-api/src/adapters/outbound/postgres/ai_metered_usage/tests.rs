@@ -651,6 +651,47 @@ async fn one_import_holds_the_lock_at_a_time(pool: PgPool) {
     assert!(repository.try_lock_import(COPILOT).await.unwrap().is_some());
 }
 
+#[sqlx::test]
+async fn a_hold_keeps_imports_off_without_counting_as_a_running_import(pool: PgPool) {
+    let repository = repository(&pool);
+    // A run whose process died left its row running.
+    let lease = repository.try_lock_import(COPILOT).await.unwrap().unwrap();
+    repository
+        .start_run(COPILOT, &plan(), FETCHED)
+        .await
+        .unwrap();
+    lease.release().await.unwrap();
+
+    // While a reader holds imports off, no import takes the lock, and the
+    // dead run still shows as not running. Holds do not exclude each other.
+    let hold = repository.try_hold_imports(COPILOT).await.unwrap().unwrap();
+    let second = repository.try_hold_imports(COPILOT).await.unwrap().unwrap();
+    assert!(repository.try_lock_import(COPILOT).await.unwrap().is_none());
+    assert!(repository
+        .import_status(COPILOT)
+        .await
+        .unwrap()
+        .running
+        .is_none());
+    second.release().await.unwrap();
+    assert!(repository.try_lock_import(COPILOT).await.unwrap().is_none());
+    hold.release().await.unwrap();
+
+    // While an import holds the lock, nothing holds imports off.
+    let lease = repository.try_lock_import(COPILOT).await.unwrap().unwrap();
+    assert!(repository
+        .try_hold_imports(COPILOT)
+        .await
+        .unwrap()
+        .is_none());
+    lease.release().await.unwrap();
+    assert!(repository
+        .try_hold_imports(COPILOT)
+        .await
+        .unwrap()
+        .is_some());
+}
+
 fn plan() -> AiImportPlan {
     AiImportPlan {
         kind: AiImportKind::Hourly,

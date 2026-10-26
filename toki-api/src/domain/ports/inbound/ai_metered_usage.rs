@@ -39,7 +39,8 @@ pub trait AiMeteredUsageService: Send + Sync + 'static {
     ) -> Result<AiMeteredMonth, AiMeteredUsageError>;
 
     /// Takes the locks and records a running run of `month` in `mode`, plus
-    /// months with gaps. `ImportRunning` when a lock is taken, `SourceOff` or
+    /// months with gaps. `ImportRunning` when a lock is taken (by another
+    /// import, or a month close holding imports off), `SourceOff` or
     /// `SourceMisconfigured` without a usable source, and `Invalid` for a
     /// month outside the imported range.
     async fn begin_import(
@@ -53,7 +54,8 @@ pub trait AiMeteredUsageService: Send + Sync + 'static {
     async fn run_import(&self, ticket: AiImportTicket) -> Result<AiImportRun, AiMeteredUsageError>;
 
     /// For the scheduler: begins and runs the plan due now. `None` when
-    /// nothing is due or another import holds a lock.
+    /// nothing is due or a lock is taken (another import, or a month close
+    /// holding imports off), which leaves the plan to the next tick.
     async fn import_if_due(&self) -> Result<Option<AiImportRun>, AiMeteredUsageError>;
 
     async fn freshness(&self) -> Result<AiImportFreshness, AiMeteredUsageError>;

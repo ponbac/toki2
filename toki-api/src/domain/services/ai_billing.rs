@@ -509,8 +509,52 @@ where
             }
             None => {}
         }
-        let open = self.open_month(month, &active).await?;
-        let readiness = self.readiness(&open, clock.now).await?.waive(waivers);
+        // A metered month, and the closed months posting on it, read the
+        // payer's usage. Imports are held off from the first read to the
+        // store, so readiness and the snapshot never read days an import is
+        // replacing; one running now refuses the close, whatever month it
+        // imports. Both locks are tried, never waited for, so neither order
+        // can deadlock.
+        let hold = if self
+            .cutover
+            .is_some_and(|cutover| cutover.applies_to(month))
+        {
+            Some(
+                self.metered
+                    .try_hold_imports()
+                    .await
+                    .map_err(AiBillingError::from)?
+                    .ok_or(AiMonthCloseError::ImportRunning)?,
+            )
+        } else {
+            None
+        };
+        let closed = self
+            .freeze(month, by, waivers, projector, &active, clock.now)
+            .await;
+        if let Some(hold) = hold {
+            // A failed release only logs, since the lease frees the hold
+            // when dropped.
+            if let Err(error) = hold.release().await {
+                tracing::warn!(%error, "Releasing the hold on usage imports failed");
+            }
+        }
+        closed
+    }
+
+    /// Stores `month`'s snapshot once its readiness, with `waivers`, is
+    /// ready, while the close lock and any hold on imports are held.
+    async fn freeze(
+        &self,
+        month: AiBillingMonth,
+        by: &UserId,
+        waivers: Vec<AiCloseWaiver>,
+        projector: &dyn AiBillProjector,
+        active: &[AiMonthClose],
+        now: OffsetDateTime,
+    ) -> Result<AiMonthClose, AiMonthCloseError> {
+        let open = self.open_month(month, active).await?;
+        let readiness = self.readiness(&open, now).await?.waive(waivers);
         if !readiness.ready() {
             return Err(AiMonthCloseError::NotReady(Box::new(readiness)));
         }

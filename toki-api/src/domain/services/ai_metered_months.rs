@@ -17,7 +17,7 @@ use crate::domain::{
         AiRepositoryResolver, AiSliceRecord, AiStoredProviderAccount, AiUsageCheck,
         AiUsageTimeZone, TimeTrackingCompany, UserId,
     },
-    ports::outbound::{AiMeteredUsageRepository, AiProviderAccountRepository},
+    ports::outbound::{AiImportLease, AiMeteredUsageRepository, AiProviderAccountRepository},
     AiMeteredUsageError,
 };
 
@@ -167,6 +167,16 @@ where
     R: AiMeteredUsageRepository,
     A: AiProviderAccountRepository,
 {
+    /// Holds the payer's imports off while the lease is held, so a reader
+    /// that keeps what it loads (a month close) reads no day an import is
+    /// replacing meanwhile (`AiMeteredUsageRepository::try_hold_imports`).
+    /// `None` while an import runs.
+    pub async fn try_hold_imports(
+        &self,
+    ) -> Result<Option<Box<dyn AiImportLease>>, AiMeteredUsageError> {
+        self.repository.try_hold_imports(self.payer).await
+    }
+
     /// The month of everyone, or of one user's linked days: the accounts in
     /// scope, their credits, checks and slices, the coverage of the month's
     /// imported days through today, the organization's credits, rows,

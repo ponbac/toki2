@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, kind, requested_by, months, full_months, started_at, finished_at, status,\n                requests, slices_fetched, slices_changed, account_errors, error\n            FROM ai_provider_import_runs\n            WHERE provider = $1\n              AND status = 'running'\n              AND EXISTS (\n                  SELECT 1\n                  FROM pg_locks\n                  WHERE locktype = 'advisory'\n                    AND granted\n                    AND objsubid = 1\n                    AND database = (SELECT oid FROM pg_database WHERE datname = current_database())\n                    AND classid = ((hashtextextended('ai_provider_usage_import:' || $1, 0) >> 32)\n                        & 4294967295)::oid\n                    AND objid = (hashtextextended('ai_provider_usage_import:' || $1, 0)\n                        & 4294967295)::oid\n              )\n            ORDER BY started_at DESC\n            LIMIT 1\n            ",
+  "query": "\n            SELECT id, kind, requested_by, months, full_months, started_at, finished_at, status,\n                requests, slices_fetched, slices_changed, account_errors, error\n            FROM ai_provider_import_runs\n            WHERE provider = $1\n              AND status = 'running'\n              AND EXISTS (\n                  SELECT 1\n                  FROM pg_locks\n                  WHERE locktype = 'advisory'\n                    AND granted\n                    AND mode = 'ExclusiveLock'\n                    AND objsubid = 1\n                    AND database = (SELECT oid FROM pg_database WHERE datname = current_database())\n                    AND classid = ((hashtextextended('ai_provider_usage_import:' || $1, 0) >> 32)\n                        & 4294967295)::oid\n                    AND objid = (hashtextextended('ai_provider_usage_import:' || $1, 0)\n                        & 4294967295)::oid\n              )\n            ORDER BY started_at DESC\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -168,5 +168,5 @@
       true
     ]
   },
-  "hash": "f048091f70264b47d71a141648156dc7fef234c92d9fd942a613ba872b978614"
+  "hash": "f08bad63dbbbb1894ffe54b161057a2f2b70f2a8d33a3997b91d04a1c72aaeb1"
 }

@@ -6,10 +6,10 @@ import { AI_PROVIDERS } from "./ai-usage";
  * Month close contracts (admin only). An admin closes a month's whole AI bill
  * once it is over in UTC and the billing time zone, and the server's readiness
  * checks pass or are waived with a reason. A live import of the month is the
- * one problem no waiver covers: the close is refused until it finishes. A
- * closed month is served from its snapshot; a later change to it posts on the
- * next open month as adjustment lines. A month can be re-opened while no
- * close holds adjustments to it.
+ * one problem no waiver covers, and the close itself is refused while any
+ * usage import runs. A closed month is served from its snapshot; a later
+ * change to it posts on the next open month as adjustment lines. A month can
+ * be re-opened while no close holds adjustments to it.
  */
 
 const providerSchema = z.enum(AI_PROVIDERS);
@@ -326,8 +326,8 @@ const statusSchema = z
   );
 
 /** Why a close was refused: not ready (with the readiness the server just
- * evaluated, which says when an import of the month is running), held by
- * adjustments (re-open), or another conflict. */
+ * evaluated), held by adjustments (re-open), or another conflict (not over,
+ * already closed, busy, or a usage import running). */
 const conflictSchema = z.union([
   z.object({ error: z.string(), readiness: readinessSchema }).strict(),
   z.object({ error: z.string(), heldBy: z.array(monthSchema) }).strict(),

@@ -1039,7 +1039,8 @@ impl IntoResponse for CloseError {
             AiMonthCloseError::NotClosed { .. } => ApiError::not_found(message).into_response(),
             AiMonthCloseError::MonthInProgress { .. }
             | AiMonthCloseError::AlreadyClosed { .. }
-            | AiMonthCloseError::Busy => ApiError::conflict(message).into_response(),
+            | AiMonthCloseError::Busy
+            | AiMonthCloseError::ImportRunning => ApiError::conflict(message).into_response(),
         }
     }
 }

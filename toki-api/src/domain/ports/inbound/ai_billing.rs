@@ -124,8 +124,9 @@ pub trait AiBillingService: Send + Sync + 'static {
     /// Closes a month's whole AI bill once it is over and every failed
     /// readiness check is waived: its snapshot, as `projector` renders it,
     /// is what it serves from then on. `NotReady` with the readiness
-    /// otherwise, and always while an import of the month is running, which
-    /// no waiver covers.
+    /// otherwise. A metered month holds the payer's imports off from its
+    /// first read to the store, and is refused (`ImportRunning`) while any
+    /// import of the payer runs, which no waiver covers.
     async fn close_month(
         &self,
         month: AiBillingMonth,

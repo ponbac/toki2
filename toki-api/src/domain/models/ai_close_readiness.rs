@@ -7,9 +7,11 @@
 //! check with a recorded reason, and the close keeps every check's problems
 //! and each waiver (`readiness_json`). Anything waived wrongly is still
 //! corrected later, by an adjustment. The one problem no waiver covers is a
-//! live import of the month: a close is refused until it finishes. A live
-//! re-import of a closed month whose adjustments post on the month blocks
-//! nothing: the next open month nets what it changes after the close.
+//! live import of the month, so the panel shows the month unclosable until it
+//! finishes. The close itself goes further: it holds the payer's imports off
+//! from its first read to the store and is refused while any import runs,
+//! whatever month (`AiMonthCloseError::ImportRunning`), so the readiness it
+//! keeps never sees a live run.
 //!
 //! 1. **`import`** (metered months): the payer's import is complete through
 //!    the month's end, judged per account and month from the stored slices
@@ -223,18 +225,6 @@ impl AiCloseReadiness {
             }
         }
         self
-    }
-
-    /// When the live import run importing the month started, while one is:
-    /// no waiver lets the month close until it finishes.
-    pub fn import_running(&self) -> Option<OffsetDateTime> {
-        self.checks
-            .iter()
-            .flat_map(|check| &check.problems)
-            .find_map(|problem| match problem {
-                AiCloseProblem::ImportRunning { started_at } => Some(*started_at),
-                _ => None,
-            })
     }
 
     /// The waived checks.

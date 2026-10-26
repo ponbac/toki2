@@ -193,5 +193,5 @@ The checks the server evaluates before a month closes: the metered import comple
 _Avoid_: preflight, checklist (the UI's word for showing it)
 
 **Waiver**:
-An admin's recorded reason to close a month although one readiness check failed. It applies to that check only, and the close keeps it with the check's problems; whatever it let through is corrected later by an adjustment line. A running import of the month cannot be waived: the close is refused until it finishes.
+An admin's recorded reason to close a month although one readiness check failed. It applies to that check only, and the close keeps it with the check's problems; whatever it let through is corrected later by an adjustment line. A running import cannot be waived: a close of a metered month is refused while any import of the payer runs, and holds imports off while it reads and stores the month.
 _Avoid_: override, exception

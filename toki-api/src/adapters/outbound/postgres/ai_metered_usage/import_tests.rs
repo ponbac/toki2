@@ -212,6 +212,12 @@ impl AiMeteredUsageRepository for Clocked {
     ) -> Result<Option<Box<dyn AiImportLease>>, AiMeteredUsageError> {
         self.inner.try_lock_import(payer).await
     }
+    async fn try_hold_imports(
+        &self,
+        payer: AiProvider,
+    ) -> Result<Option<Box<dyn AiImportLease>>, AiMeteredUsageError> {
+        self.inner.try_hold_imports(payer).await
+    }
     async fn slices(
         &self,
         payer: AiProvider,

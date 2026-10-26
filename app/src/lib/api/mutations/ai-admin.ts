@@ -498,8 +498,9 @@ export function useAcceptAccountSuggestions(
 /**
  * Starts importing a month of metered usage from the payer. The server answers
  * at once and runs the import on its own; the month reloads until it is done.
- * Resolves to null when an import is already running (409), which is no error:
- * the page shows that run.
+ * Resolves to null when an import is already running, or a month close holds
+ * imports off while it reads the usage (409), which is no error: the page shows
+ * that run.
  */
 export function useStartMeteredImport(
   options?: DefaultMutationOptions<
@@ -541,12 +542,12 @@ export function useStartMeteredImport(
 
 /**
  * Closes a month's whole AI bill. The server evaluates readiness again: a
- * month that is not ready (a check failed since the page loaded, a waiver no
- * longer covers it, or an import of the month is running, which no waiver
- * covers) resolves to `notReady` with that readiness, which is no error.
- * Every other refusal (not over, already closed, another close running)
- * rejects. Either way every admin AI query reloads: a closed month is served
- * from its snapshot, and the next open month adjusts it.
+ * month that is not ready (a check failed since the page loaded, or a waiver
+ * no longer covers it) resolves to `notReady` with that readiness, which is no
+ * error. Every other refusal (not over, already closed, another close
+ * running, or any usage import running, which no waiver covers) rejects.
+ * Either way every admin AI query reloads: a closed month is served from its
+ * snapshot, and the next open month adjusts it.
  */
 export function useCloseMonth(
   options?: DefaultMutationOptions<CloseMonthVars, CloseMonthResult>,
