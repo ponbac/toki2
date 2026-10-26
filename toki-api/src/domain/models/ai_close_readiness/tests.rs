@@ -1009,6 +1009,47 @@ fn a_waiver_applies_to_a_failed_check_only() {
 }
 
 #[test]
+fn no_waiver_lets_a_month_close_while_an_import_of_it_runs() {
+    let started_at = datetime!(2026-11-05 07:58 UTC);
+    let mut running = readiness();
+    running.checks[0]
+        .problems
+        .insert(0, AiCloseProblem::ImportRunning { started_at });
+    running.checks.push(AiCloseCheck::judged(
+        AiCloseCheckId::ExchangeRates,
+        vec![AiCloseProblem::RateMissing {
+            currency: AiCurrency::usd(),
+        }],
+    ));
+    let reason = AiWaiverReason::parse("Closing October anyway.").unwrap();
+    let waivers =
+        [AiCloseCheckId::Import, AiCloseCheckId::ExchangeRates].map(|check| AiCloseWaiver {
+            check,
+            reason: reason.clone(),
+        });
+
+    // The import keeps no waiver, whatever else it found; the other checks
+    // stay waivable.
+    let waived = running.waive(waivers.to_vec());
+    assert!(!waived.ready());
+    assert_eq!(waived.import_running(), Some(started_at));
+    assert_eq!(waived.checks[0].status, AiCloseCheckStatus::Failed);
+    assert_eq!(waived.checks[0].waiver, None);
+    assert_eq!(waived.waived(), [AiCloseCheckId::ExchangeRates]);
+
+    // Once the run finishes, the same waivers close the month.
+    let mut finished = waived;
+    finished.checks[0].problems.remove(0);
+    let finished = finished.waive(waivers.to_vec());
+    assert!(finished.ready());
+    assert_eq!(finished.import_running(), None);
+    assert_eq!(
+        finished.waived(),
+        [AiCloseCheckId::Import, AiCloseCheckId::ExchangeRates]
+    );
+}
+
+#[test]
 fn metered_checks_do_not_apply_before_the_cutover() {
     let checks = metered_not_applicable();
     assert!(checks

@@ -1004,26 +1004,36 @@ and again in `POST …/close`. Each check passes, fails, waits for nothing it do
 apply to (`notApplicable`), or is waived: an admin waives a failed check with a reason
 (trimmed, 1 to 500 characters), kept in `readiness_json` with every check's problems.
 A waiver of a check that did not fail is dropped. Anything waived wrongly is still
-corrected later, by an adjustment.
+corrected later, by an adjustment. The one problem no waiver covers is `importRunning`
+(`AiCloseProblem::waivable`): a waiver of an `import` check holding it is dropped, so
+the check stays failed and the close is refused (`409` with the readiness and the error
+"an import of {month} is running: try again when it finishes") until the run finishes,
+since a close meanwhile would freeze days the run may have half replaced. Every other
+check, and the `import` check once the run is over, stays waivable. Only a run whose
+plan holds the month itself blocks: a live re-import of a closed month whose
+adjustments post on the month (a gap month in a scheduled plan, or an admin's "Import
+now" of it) fails no check, so the close freezes those adjustment lines as they read
+then, and the next open month nets whatever the run changes after (its adjustments
+subtract the ones frozen in this close).
 
 1. `import` (metered months): judged per account and month from the import's stored
    slices and checks, never from a run's errors, which only describe that run. No live
    run is importing the month (`importRunning`: the running run's plan holds it, so it
-   may be replacing the month's days right now); the month's last day is before today
-   less the settle days (`AiImportStatus::settle_days`, the measured lag, at least 3);
-   every day of the month is imported (days before the backfill fail) with every
-   account's, the organization's credits and the organization's usage slices complete;
-   and the latest check of every account that held a seat, of every account a run left
-   interrupted (whatever its seat: its days may be half replaced, its credits
+   may be replacing the month's days right now; it cannot be waived); the month's last
+   day is before today less the settle days (`AiImportStatus::settle_days`, the measured
+   lag, at least 3); every day of the month is imported (days before the backfill fail)
+   with every account's, the organization's credits and the organization's usage slices
+   complete; and the latest check of every account that held a seat, of every account a
+   run left interrupted (whatever its seat: its days may be half replaced, its credits
    included), of every other account with credits or lines that is not excused (its own
    import failed without a seat), and of the organization is a success that matches
    GitHub's month total, made on or after the day the month settled. Checks are read as
    the bill reads them (`AiMeteredMonths::load` passes the live run to `checks`): a mark
-   of the live run keeps the check it marked, which `importRunning` fails instead,
-   while a mark a stopped or dead run left is an interrupted check (outcome
-   `interrupted`, with its error, beside the import's own `failed`). Passing it means
-   no metered line, unknown account or repository line may still change for the
-   import's sake (`monthInProgress`, `importIncomplete`, `notSettled`).
+   of the live run keeps the check it marked, which `importRunning` fails instead, while
+   a mark a stopped or dead run left is an interrupted check (outcome `interrupted`, with
+   its error, beside the import's own `failed`). Passing it means no metered line,
+   unknown account or repository line may still change for the import's sake
+   (`monthInProgress`, `importIncomplete`, `notSettled`).
 2. `dispositions` (metered): no credits bill to an unlinked account; problems summed per
    account.
 3. `unknownAccount` (metered): the unknown account's residual is settled
@@ -1177,12 +1187,17 @@ shows when a month in progress can close, the server's checklist for a month tha
 over (each failed check with its problems, where to fix them and a waiver with its
 reason; closing asks to confirm), or, for a closed month, who closed it and when, the
 frozen readiness with its waivers, the re-open (disabled with the months in `heldBy`)
-and earlier closes. The close status reloads while readiness waits for a rate being
-fetched (`ratePending`). A closed month hides the export checks, says it is the bill as
-invoiced, and reads no rate as pending (its snapshot's pending rates never resolve; the
-query layer clears them, `withoutFrozenFetches`), and its exchange rates show the
-invoiced rate beside the current one, which an override edits; the override's toast says
-the month keeps its invoiced rate and the difference posts on the next open month.
+and earlier closes. While the readiness holds `importRunning`, the import check has no
+waiver switch ("A running import cannot be waived") and the close button is disabled,
+saying the import is running and to close the month once it finishes; a close refused
+for it says to try again when the import finishes. The close status reloads while
+readiness waits for a rate being fetched (`ratePending`), and once a running import of
+the month finishes (with the bill). A closed month hides the export checks, says it is
+the bill as invoiced, and reads no rate as pending (its snapshot's pending rates never
+resolve; the query layer clears them, `withoutFrozenFetches`), and its exchange rates
+show the invoiced rate beside the current one, which an override edits; the override's
+toast says the month keeps its invoiced rate and the difference posts on the next open
+month.
 Developers with only adjustment lines are on the People tab, and adjustment lines link a
 developer to their page. The statement's headline is
 `converted.invoiced`, with an Adjustments figure; an Adjustments tab lists the lines by
@@ -1211,7 +1226,8 @@ document and MCP:
   `history` lists every close of the month, re-opened ones included, newest first.
 - `POST /billing/{month}/close` with `{ "waivers"?: [{ "check", "reason" }] }`: `201`
   with the close status. `409` while not over, already closed or busy; `409` `{ error,
-  readiness }` when a failed check is not waived; `400` for an unknown or repeated
+  readiness }` when a failed check is not waived, and while an import of the month is
+  running whatever is waived; `400` for an unknown or repeated
   check, an empty or long reason, or an unknown field.
 - `DELETE /billing/{month}/close`: re-opens, `200` with the status; `409` `{ error,
   heldBy }` while a close holds adjustments to it; `404` when it is not closed.

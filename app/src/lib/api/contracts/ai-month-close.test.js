@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   CLOSE_CHECKS,
+  checkWaivable,
+  importRunningSince,
   parseAiCloseConflict,
   parseAiMonthCloseStatus,
   waiverReasonProblem,
@@ -188,12 +190,20 @@ const open = {
   ],
 };
 
-/** The same checks, each failed one waived. */
+/** Every problem but a running import, which no waiver covers. */
+const withoutRunningImport = (check) => ({
+  ...check,
+  problems: check.problems.filter(
+    (problem) => problem.kind !== "importRunning",
+  ),
+});
+
+/** The same checks, each failed one waived (once the import finished). */
 const waived = {
   ...readiness,
   ready: true,
   checks: checks.map((check) => ({
-    ...check,
+    ...withoutRunningImport(check),
     status: "waived",
     waiver: { reason: "A retired machine that can never upload again." },
   })),
@@ -384,6 +394,26 @@ describe("refused closes", () => {
     expect(
       parseAiCloseConflict({ error: "x", readiness: { ready: true } }),
     ).toBeNull();
+  });
+});
+
+describe("what a waiver can let through", () => {
+  test("a running import cannot be waived, whatever else its check found", () => {
+    const [importCheck, ...others] = checks;
+
+    expect(importRunningSince(readiness)).toBe("2026-10-05T07:58:00Z");
+    expect(checkWaivable(importCheck)).toBe(false);
+    expect(others.every(checkWaivable)).toBe(true);
+  });
+
+  test("once the import finishes, its check can be waived", () => {
+    const finished = withoutRunningImport(checks[0]);
+
+    expect(checkWaivable(finished)).toBe(true);
+    expect(importRunningSince({ ...readiness, checks: [finished] })).toBe(null);
+    expect(checkWaivable({ ...finished, status: "passed", problems: [] })).toBe(
+      false,
+    );
   });
 });
 

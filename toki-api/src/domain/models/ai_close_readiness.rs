@@ -6,21 +6,25 @@
 //! Each check passes, fails, or does not apply; an admin can waive a failed
 //! check with a recorded reason, and the close keeps every check's problems
 //! and each waiver (`readiness_json`). Anything waived wrongly is still
-//! corrected later, by an adjustment.
+//! corrected later, by an adjustment. The one problem no waiver covers is a
+//! live import of the month: a close is refused until it finishes. A live
+//! re-import of a closed month whose adjustments post on the month blocks
+//! nothing: the next open month nets what it changes after the close.
 //!
 //! 1. **`import`** (metered months): the payer's import is complete through
 //!    the month's end, judged per account and month from the stored slices
-//!    and checks, never from a run's errors (they only describe that run).
-//!    No live run may be importing the month (its plan holds it), the month
-//!    must be settled (its last day is before today less the measured settle
-//!    days, at least 3), every day imported from every source, and the
-//!    latest check of every account that held a seat, of every account a run
-//!    left interrupted (whatever its seat), of every other account with
-//!    credits or lines, and of the organization a success that matches the
-//!    payer's month total, made once the month settled. Checks are read as
-//!    the bill reads them: a mark of the live run keeps the check it marked,
-//!    while one a stopped or dead run left is an interrupted check. Passing
-//!    it means no metered line may still change for the import's sake.
+//!    and checks, never from a run's errors (they only describe that run). No
+//!    live run may be importing the month (its plan holds it; this cannot be
+//!    waived), the month must be settled (its last day is before today less
+//!    the measured settle days, at least 3), every day imported from every
+//!    source, and the latest check of every account that held a seat, of
+//!    every account a run left interrupted (whatever its seat), of every
+//!    other account with credits or lines, and of the organization a success
+//!    that matches the payer's month total, made once the month settled.
+//!    Checks are read as the bill reads them: a mark of the live run keeps
+//!    the check it marked, while one a stopped or dead run left is an
+//!    interrupted check. Passing it means no metered line may still change
+//!    for the import's sake.
 //! 2. **`dispositions`** (metered): no credits bill to an unlinked account.
 //! 3. **`unknownAccount`** (metered): the per-day residual of accounts Toki
 //!    never listed is settled and zero on every day.
@@ -177,6 +181,13 @@ impl AiCloseCheck {
     pub fn is_waived(&self) -> bool {
         self.status == AiCloseCheckStatus::Failed && self.waiver.is_some()
     }
+
+    /// Failed, and a waiver can let the month close: none of its problems
+    /// is one no waiver covers (`AiCloseProblem::waivable`).
+    pub fn waivable(&self) -> bool {
+        self.status == AiCloseCheckStatus::Failed
+            && self.problems.iter().all(AiCloseProblem::waivable)
+    }
 }
 
 /// A month's readiness to close.
@@ -189,24 +200,41 @@ pub struct AiCloseReadiness {
 }
 
 impl AiCloseReadiness {
-    /// Every failed check is waived.
+    /// Every failed check is waived, and none holds a problem no waiver
+    /// covers (a live import of the month).
     pub fn ready(&self) -> bool {
-        self.checks
-            .iter()
-            .all(|check| check.status != AiCloseCheckStatus::Failed || check.waiver.is_some())
+        self.checks.iter().all(|check| {
+            check.status != AiCloseCheckStatus::Failed
+                || (check.waiver.is_some() && check.waivable())
+        })
     }
 
     /// Applies waivers to the checks that failed. A waiver of a check that
-    /// did not fail is dropped, so the record never shows one.
+    /// did not fail, or of one holding a problem no waiver covers, is
+    /// dropped, so the record never shows one.
     pub fn waive(mut self, waivers: Vec<AiCloseWaiver>) -> Self {
         for waiver in waivers {
-            if let Some(check) = self.checks.iter_mut().find(|check| {
-                check.id == waiver.check && check.status == AiCloseCheckStatus::Failed
-            }) {
+            if let Some(check) = self
+                .checks
+                .iter_mut()
+                .find(|check| check.id == waiver.check && check.waivable())
+            {
                 check.waiver = Some(waiver.reason);
             }
         }
         self
+    }
+
+    /// When the live import run importing the month started, while one is:
+    /// no waiver lets the month close until it finishes.
+    pub fn import_running(&self) -> Option<OffsetDateTime> {
+        self.checks
+            .iter()
+            .flat_map(|check| &check.problems)
+            .find_map(|problem| match problem {
+                AiCloseProblem::ImportRunning { started_at } => Some(*started_at),
+                _ => None,
+            })
     }
 
     /// The waived checks.
@@ -237,11 +265,13 @@ pub enum AiCheckOutcome {
     BeforeSettled { checked_at: OffsetDateTime },
 }
 
-/// What a failed check found.
+/// What a failed check found. Every problem but `ImportRunning` can be
+/// waived (`waivable`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiCloseProblem {
     /// A live import run, started at `started_at`, is importing the month:
-    /// its days may be half replaced until it finishes.
+    /// its days may be half replaced until it finishes, so no waiver lets the
+    /// month close meanwhile.
     ImportRunning {
         started_at: OffsetDateTime,
     },
@@ -350,6 +380,15 @@ pub enum AiCloseProblem {
         from: OffsetDateTime,
         until: OffsetDateTime,
     },
+}
+
+impl AiCloseProblem {
+    /// Whether a waiver of its check can let the month close. A live import
+    /// of the month cannot be waived: a close would freeze the days it may
+    /// be replacing right now, half replaced. Every other problem can.
+    pub fn waivable(&self) -> bool {
+        !matches!(self, Self::ImportRunning { .. })
+    }
 }
 
 /// A machine's buckets the local-day bill estimates that are on an old

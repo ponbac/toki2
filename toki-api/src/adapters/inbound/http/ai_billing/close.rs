@@ -519,6 +519,7 @@ struct ProviderGapsResponse {
 )]
 enum ProblemResponse {
     /// A live import run, started at `startedAt`, is importing the month.
+    /// No waiver covers it: its check stays failed until the run finishes.
     ImportRunning {
         #[serde(with = "time::serde::rfc3339")]
         started_at: OffsetDateTime,
@@ -1064,7 +1065,8 @@ pub(super) struct WaiverRequest {
     reason: String,
 }
 
-/// Closes a month, waiving the failed checks named.
+/// Closes a month, waiving the failed checks named. A waiver of a check
+/// that passed, or that holds a running import, is dropped.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct CloseRequest {

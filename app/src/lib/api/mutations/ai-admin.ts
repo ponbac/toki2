@@ -541,11 +541,12 @@ export function useStartMeteredImport(
 
 /**
  * Closes a month's whole AI bill. The server evaluates readiness again: a
- * month that is not ready (a check failed since the page loaded, or a waiver
- * no longer covers it) resolves to `notReady` with that readiness, which is no
- * error. Every other refusal (not over, already closed, another close
- * running) rejects. Either way every admin AI query reloads: a closed month
- * is served from its snapshot, and the next open month adjusts it.
+ * month that is not ready (a check failed since the page loaded, a waiver no
+ * longer covers it, or an import of the month is running, which no waiver
+ * covers) resolves to `notReady` with that readiness, which is no error.
+ * Every other refusal (not over, already closed, another close running)
+ * rejects. Either way every admin AI query reloads: a closed month is served
+ * from its snapshot, and the next open month adjusts it.
  */
 export function useCloseMonth(
   options?: DefaultMutationOptions<CloseMonthVars, CloseMonthResult>,

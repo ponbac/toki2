@@ -830,6 +830,42 @@ async fn a_month_an_import_is_running_or_stopped_in_is_not_ready_on_import(pool:
         running
     );
 
+    // No waiver lets it through: with every failed check waived, the
+    // import's included, the close is refused until the run finishes, and
+    // the import keeps no waiver while the other checks keep theirs.
+    let failed: Vec<Value> = status["readiness"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|check| check["status"] == "failed")
+        .map(|check| check["id"].clone())
+        .collect();
+    assert!(failed.contains(&json!("import")), "{failed:?}");
+    let waivers: Vec<Value> = failed
+        .iter()
+        .map(|id| json!({ "check": id, "reason": "Closing August anyway." }))
+        .collect();
+    let (code, body) = post_close(&app, &admin, "2026-08", Value::Array(waivers)).await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
+    assert_eq!(
+        body["error"],
+        "an import of 2026-08 is running: try again when it finishes"
+    );
+    assert_eq!(body["readiness"]["ready"], false);
+    let refused = readiness_check(&body["readiness"], "import");
+    assert_eq!(refused["status"], "failed");
+    assert_eq!(refused["waiver"], Value::Null);
+    assert_eq!(refused["problems"], running);
+    for id in failed.iter().filter(|id| **id != "import") {
+        let check = readiness_check(&body["readiness"], id.as_str().unwrap());
+        assert_eq!(check["status"], "waived", "{check}");
+    }
+    let closes: i64 = sqlx::query_scalar("SELECT count(*) FROM ai_billing_month_closes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(closes, 0);
+
     // Its process dies before finishing August: every check it left marked
     // is interrupted, the organization's included, and the close refuses.
     lease.release().await.unwrap();

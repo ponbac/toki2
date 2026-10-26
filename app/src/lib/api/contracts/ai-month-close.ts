@@ -5,9 +5,11 @@ import { AI_PROVIDERS } from "./ai-usage";
 /*
  * Month close contracts (admin only). An admin closes a month's whole AI bill
  * once it is over in UTC and the billing time zone, and the server's readiness
- * checks pass or are waived with a reason. A closed month is served from its
- * snapshot; a later change to it posts on the next open month as adjustment
- * lines. A month can be re-opened while no close holds adjustments to it.
+ * checks pass or are waived with a reason. A live import of the month is the
+ * one problem no waiver covers: the close is refused until it finishes. A
+ * closed month is served from its snapshot; a later change to it posts on the
+ * next open month as adjustment lines. A month can be re-opened while no
+ * close holds adjustments to it.
  */
 
 const providerSchema = z.enum(AI_PROVIDERS);
@@ -81,7 +83,8 @@ const machineShape = {
 
 /** What a failed check found, one kind per problem. */
 const problemSchema = z.discriminatedUnion("kind", [
-  /** A live import run, started at `startedAt`, is importing the month. */
+  /** A live import run, started at `startedAt`, is importing the month. No
+   * waiver covers it: its check stays failed until the run finishes. */
   z
     .object({ kind: z.literal("importRunning"), startedAt: instantSchema })
     .strict(),
@@ -241,7 +244,8 @@ const checkSchema = z
 const readinessSchema = z
   .object({
     evaluatedAt: instantSchema,
-    /** No check is failed without a waiver. */
+    /** No check is failed without a waiver (a check holding a running
+     * import stays failed whatever is waived). */
     ready: z.boolean(),
     /** In evaluation order. */
     checks: z.array(checkSchema),
@@ -322,7 +326,8 @@ const statusSchema = z
   );
 
 /** Why a close was refused: not ready (with the readiness the server just
- * evaluated), held by adjustments (re-open), or another conflict. */
+ * evaluated, which says when an import of the month is running), held by
+ * adjustments (re-open), or another conflict. */
 const conflictSchema = z.union([
   z.object({ error: z.string(), readiness: readinessSchema }).strict(),
   z.object({ error: z.string(), heldBy: z.array(monthSchema) }).strict(),
@@ -359,6 +364,31 @@ export function parseAiCloseConflict(input: unknown): AiCloseConflict | null {
     return { kind: "heldBy", error: body.error, heldBy: body.heldBy };
   }
   return { kind: "conflict", error: body.error };
+}
+
+/** Whether a waiver of its check can let the month close, as the server
+ * judges it: a live import of the month cannot be waived. */
+export function problemWaivable(problem: AiCloseProblem): boolean {
+  return problem.kind !== "importRunning";
+}
+
+/** A failed check a waiver can let through: the server drops a waiver of a
+ * check holding a problem no waiver covers, which keeps it failed. */
+export function checkWaivable(check: AiCloseCheck): boolean {
+  return check.status === "failed" && check.problems.every(problemWaivable);
+}
+
+/** When the live import importing the month started, while one is: the
+ * month cannot close, whatever is waived, until it finishes. */
+export function importRunningSince(readiness: AiCloseReadiness): string | null {
+  for (const check of readiness.checks) {
+    for (const problem of check.problems) {
+      if (problem.kind === "importRunning") {
+        return problem.startedAt;
+      }
+    }
+  }
+  return null;
 }
 
 /** A waiver's reason as the server takes it: trimmed, 1 to 500 characters,

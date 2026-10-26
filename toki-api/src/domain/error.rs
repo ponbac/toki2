@@ -219,7 +219,9 @@ pub enum AiMonthCloseError {
     },
     #[error("another month is being closed or re-opened; try again")]
     Busy,
-    #[error("{} is not ready to close", .0.month)]
+    /// A readiness check failed without a waiver, or an import of the month
+    /// is running, which no waiver covers.
+    #[error("{}", not_ready(.0))]
     NotReady(Box<crate::domain::models::AiCloseReadiness>),
     #[error(
         "adjustments to {month} are frozen in {}: re-open those first",
@@ -229,6 +231,16 @@ pub enum AiMonthCloseError {
         month: crate::domain::models::AiBillingMonth,
         held_by: Vec<crate::domain::models::AiBillingMonth>,
     },
+}
+
+fn not_ready(readiness: &crate::domain::models::AiCloseReadiness) -> String {
+    match readiness.import_running() {
+        Some(_) => format!(
+            "an import of {} is running: try again when it finishes",
+            readiness.month
+        ),
+        None => format!("{} is not ready to close", readiness.month),
+    }
 }
 
 fn months(months: &[crate::domain::models::AiBillingMonth]) -> String {

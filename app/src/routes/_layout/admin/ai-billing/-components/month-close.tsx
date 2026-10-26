@@ -18,6 +18,8 @@ import { apiErrorToast } from "@/lib/api/errors";
 import {
   CLOSE_CHECKS,
   MAX_WAIVER_REASON_CHARS,
+  checkWaivable,
+  importRunningSince,
   waiverReasonProblem,
 } from "@/lib/api/contracts/ai-month-close";
 import { aiAdminMutations } from "@/lib/api/mutations/ai-admin";
@@ -51,7 +53,8 @@ const PROBLEMS_SHOWN = 5;
  * Month close: in progress, the server's readiness checklist with waivers and
  * the close itself, or, once closed, the close with its frozen readiness, the
  * re-open and the history of earlier closes. The server evaluates every check;
- * a failed one is waived with a reason the close records.
+ * a failed one is waived with a reason the close records, except while an
+ * import of the month is running, which no waiver covers.
  */
 export function MonthClosePanel({
   month,
@@ -132,7 +135,9 @@ function OpenMonth({
       if (result.kind === "notReady") {
         setRefused(result.readiness);
         toast.warning(
-          `${monthLabel(month)} is not ready to close: a check failed when the server checked again.`,
+          importRunningSince(result.readiness) === null
+            ? `${monthLabel(month)} is not ready to close: a check failed when the server checked again.`
+            : `An import of ${monthLabel(month)} is running: try again when it finishes.`,
         );
         return;
       }
@@ -143,10 +148,16 @@ function OpenMonth({
     onError: apiErrorToast(`Failed to close ${monthLabel(month)}`),
   });
 
+  // A running import of the month blocks the close whatever is waived.
+  const importRunning = importRunningSince(readiness);
   const failed = readiness.checks.filter((check) => check.status === "failed");
   const unwaived = failed.filter((check) => {
     const waiver = waivers[check.id];
-    return !waiver?.on || waiverReasonProblem(waiver.reason) !== null;
+    return (
+      !checkWaivable(check) ||
+      !waiver?.on ||
+      waiverReasonProblem(waiver.reason) !== null
+    );
   });
   const setWaiver = (id: AiCloseCheckId, next: WaiverDraft) =>
     setWaivers((previous) => ({ ...previous, [id]: next }));
@@ -160,7 +171,7 @@ function OpenMonth({
     }
     close.mutate({
       month,
-      waivers: failed.flatMap((check) => {
+      waivers: failed.filter(checkWaivable).flatMap((check) => {
         const waiver = waivers[check.id];
         return waiver?.on ? [{ check: check.id, reason: waiver.reason }] : [];
       }),
@@ -186,21 +197,25 @@ function OpenMonth({
       <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
-          disabled={unwaived.length > 0 || close.isPending}
+          disabled={
+            importRunning !== null || unwaived.length > 0 || close.isPending
+          }
           onClick={submit}
         >
           <Lock className="size-4" />
           {close.isPending ? "Closing..." : `Close ${monthLabel(month)}`}
         </Button>
         <p className="text-sm text-muted-foreground" aria-live="polite">
-          {unwaived.length > 0
-            ? `Fix or waive ${unwaived.length === 1 ? "the failed check" : `the ${unwaived.length} failed checks`} to close: ${listOf(
-                unwaived.map((check) => CLOSE_CHECK_LABELS[check.id].label),
-                "conjunction",
-              )}.`
-            : failed.length > 0
-              ? `${plural(failed.length, "check")} waived; the reasons are kept with the close.`
-              : "Every check passes."}
+          {importRunning !== null
+            ? `An import of ${monthLabel(month)} is running (started ${formatInstant(importRunning)}). A running import cannot be waived: close the month once it finishes.`
+            : unwaived.length > 0
+              ? `Fix or waive ${unwaived.length === 1 ? "the failed check" : `the ${unwaived.length} failed checks`} to close: ${listOf(
+                  unwaived.map((check) => CLOSE_CHECK_LABELS[check.id].label),
+                  "conjunction",
+                )}.`
+              : failed.length > 0
+                ? `${plural(failed.length, "check")} waived; the reasons are kept with the close.`
+                : "Every check passes."}
         </p>
       </div>
       <CloseHistory history={status.history} />
@@ -288,10 +303,11 @@ function CheckRow({
   const hidden = check.problems.length - problems.length;
   const reasonId = `waiver-${check.id}`;
   const problemId = `${reasonId}-problem`;
+  // A check holding a running import keeps no waiver: the server drops it.
+  const waivable = checkWaivable(check);
+  const waiving = waivable && waiver?.on === true;
   const reasonProblem =
-    waiver?.on && waiver.reason !== ""
-      ? waiverReasonProblem(waiver.reason)
-      : null;
+    waiving && waiver.reason !== "" ? waiverReasonProblem(waiver.reason) : null;
   const failing = check.status === "failed" || check.status === "waived";
 
   return (
@@ -299,7 +315,7 @@ function CheckRow({
       className={cn(
         "flex flex-col gap-2 px-3.5 py-3",
         check.status === "failed" &&
-          !waiver?.on &&
+          !waiving &&
           "bg-[#c98500]/[0.06] dark:bg-[#fab219]/[0.06]",
       )}
     >
@@ -355,7 +371,7 @@ function CheckRow({
             checkTargets(check).map((target) => (
               <OpenLink key={target} target={target} onOpenTab={onOpenTab} />
             ))}
-          {check.status === "failed" && onWaiver && (
+          {waivable && onWaiver && (
             <label className="flex items-center gap-2 text-xs font-medium">
               <Switch
                 aria-label={`Waive ${label.label}`}
@@ -368,9 +384,14 @@ function CheckRow({
               Waive
             </label>
           )}
+          {check.status === "failed" && !waivable && onWaiver && (
+            <p className="text-xs text-muted-foreground">
+              A running import cannot be waived
+            </p>
+          )}
         </div>
       </div>
-      {check.status === "failed" && onWaiver && waiver?.on && (
+      {waiving && onWaiver && (
         <div className="flex flex-col gap-1 pl-7">
           <label htmlFor={reasonId} className="text-xs font-medium">
             Why the {label.label} check can be waived for this month
