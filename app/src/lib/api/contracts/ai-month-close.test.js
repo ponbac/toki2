@@ -20,6 +20,7 @@ const checks = [
     id: "import",
     status: "failed",
     problems: [
+      { kind: "importRunning", startedAt: "2026-10-05T07:58:00Z" },
       {
         kind: "notSettled",
         lastDay: "2026-09-30",
@@ -49,6 +50,15 @@ const checks = [
         accountId: 1002,
         login: "grace-hopper",
         outcome: { kind: "failed", error: "GitHub answered 502" },
+      },
+      {
+        kind: "accountCheck",
+        accountId: 1004,
+        login: "retired-account",
+        outcome: {
+          kind: "interrupted",
+          error: "the run stopped before finishing this month: interrupted",
+        },
       },
       {
         kind: "orgCheck",

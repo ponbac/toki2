@@ -45,18 +45,23 @@
 //!   minus every account's, code review left out) over settled and provisional
 //!   days bills as one "unknown account" line when it is positive.
 //! - **Provisional.** An account's lines are provisional while the month is
-//!   in progress, a day's import is missing or incomplete, a day may still
+//!   in progress, a day's import is missing or incomplete (a run stopping
+//!   before it finished the account's month included), a day may still
 //!   change (within the settle days, or the account's month total is not
 //!   confirmed), a contributing bucket is on an old pricing basis, a
 //!   provisional model contributed, or a row is unrecognized
 //!   (`AiMeteredProvisional`). The allocation as a whole is also provisional
-//!   while the unknown account's residual is (an organization slice missing
-//!   or incomplete, its month total failed or unconfirmed), even when the
-//!   residual bills no line: a residual that is not computed yet is no
-//!   settled zero. Likewise for repository credits, from the organization's
-//!   usage slices: a missing one is no settled zero either; and an
-//!   unrecognized organization row naming a repository, which may be code
-//!   review billed on no line, keeps them provisional.
+//!   while an account is, whether or not it bills a line, and while the
+//!   unknown account's residual is (an organization slice missing or
+//!   incomplete, its month total failed or unconfirmed, a seated account's
+//!   import failed or an account's was interrupted), even when the residual
+//!   bills no line: credits not imported or not computed yet are no settled
+//!   zero. One user's part is provisional while an account linked to them on
+//!   a day of the month is, whether or not they have a line of it; the
+//!   unknown account is no one's. Likewise for repository credits, from the
+//!   organization's usage slices: a missing one is no settled zero either;
+//!   and an unrecognized organization row naming a repository, which may be
+//!   code review billed on no line, keeps them provisional.
 //!
 //! Amounts are nanodollars until rounding; a credit is $0.01, so a line's
 //! cents are its credits.
@@ -137,8 +142,9 @@ pub enum AiMeteredChargeKind {
 pub enum AiMeteredProvisional {
     /// The UTC month has not ended.
     MonthInProgress,
-    /// A day's slice is missing or not yet complete, or days before the
-    /// import's backfill are not imported.
+    /// A day's slice is missing or not yet complete, a run stopped before
+    /// finishing the account's month, or days before the import's backfill
+    /// are not imported.
     ImportIncomplete,
     /// A day is within the settle days, or the stored month is not confirmed
     /// by the payer's month total (absent, failed or different).
@@ -214,7 +220,8 @@ enum Unbilled {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiMeteredBillInfo {
     pub payer: AiProvider,
-    /// Some line may still change, or tracked usage is not imported.
+    /// Some line or account may still change, line or not, or tracked usage
+    /// is not imported.
     pub provisional: bool,
     /// Account days without an imported slice (excused accounts aside).
     pub days_not_imported: u32,
@@ -266,18 +273,23 @@ pub struct AiMeteredAllocation {
     pub month_in_progress: bool,
     /// Per user: days not imported, low-ratio groups.
     user_counters: BTreeMap<i32, (u32, u32)>,
+    /// Users linked on a day of the month to an account that may still
+    /// change, whether or not they have a line of it.
+    provisional_users: BTreeSet<i32>,
 }
 
 impl AiMeteredAllocation {
     /// The ids of every user whose part (`for_user`) differs from an empty
-    /// one: those with lines, with tracked usage on no line, or with days not
-    /// imported or low-ratio groups.
+    /// one: those with lines, with tracked usage on no line, with days not
+    /// imported or low-ratio groups, or linked to an account that may still
+    /// change, which keeps their part provisional without a line.
     pub fn user_ids(&self) -> BTreeSet<i32> {
         self.lines
             .iter()
             .filter_map(|line| line.subject.user_id().map(|user| user.as_i32()))
             .chain(self.unbilled_by_user.keys().copied())
             .chain(self.user_counters.keys().copied())
+            .chain(self.provisional_users.iter().copied())
             .collect()
     }
 
@@ -415,6 +427,8 @@ pub fn allocate_metered_credits(
 
     let mut lines = Vec::new();
     let mut user_counters: BTreeMap<i32, (u32, u32)> = BTreeMap::new();
+    let mut provisional_users: BTreeSet<i32> = BTreeSet::new();
+    let mut provisional_accounts = false;
     let mut days_not_imported = 0_u32;
     let mut low_ratio_groups = 0_u32;
     // Whether the account linked to a user on a day has its slice.
@@ -443,6 +457,11 @@ pub fn allocate_metered_credits(
             if !confirmed {
                 reasons.insert(AiMeteredProvisional::NotSettled);
             }
+        }
+        // A run stopped before finishing the account's month: its days may be
+        // half replaced, whatever their slices say.
+        if account_walk.check.is_some_and(|check| check.interrupted) {
+            reasons.insert(AiMeteredProvisional::ImportIncomplete);
         }
 
         let mut sinks: HashMap<SinkKey, Sink> = HashMap::new();
@@ -583,6 +602,22 @@ pub fn allocate_metered_credits(
         let mut billed_sinks: Vec<(Sink, i64)> = ordered.into_iter().zip(shares).collect();
         cap_destination_sinks(&mut billed_sinks)?;
 
+        // The account's reasons hold for the whole bill and for every user
+        // linked to it on a day of the month (before the import's backfill
+        // included), as they do for its lines, whether or not it bills them
+        // one: credits neither imported nor tracked yet are no settled zero.
+        if !reasons.is_empty() {
+            provisional_accounts = true;
+            provisional_users.extend(account.dispositions.iter().filter_map(|disposition| {
+                let user = disposition.terms.target.user_id()?;
+                disposition
+                    .terms
+                    .period
+                    .to_date_range(input.month.dates())
+                    .map(|_| user.as_i32())
+            }));
+        }
+
         let account_ref = AiMeteredAccountRef {
             account_id: account.account_id,
             login: account.login.clone(),
@@ -644,6 +679,7 @@ pub fn allocate_metered_credits(
     let provisional = month_in_progress
         || days_not_imported > 0
         || unbilled.not_imported != AiBillingUsage::default()
+        || provisional_accounts
         || !unknown.provisional.is_empty()
         || !repository_provisional.is_empty()
         || lines.iter().any(|line| !line.charge.provisional.is_empty());
@@ -661,6 +697,7 @@ pub fn allocate_metered_credits(
         provisional,
         month_in_progress,
         user_counters,
+        provisional_users,
     })
 }
 
@@ -833,7 +870,7 @@ fn unknown_account(
         &accounts,
         ResidualTrust {
             settling_from: walk.settling_from,
-            seated_errors: walk.seated_errors,
+            import_failed: walk.import_failed,
             org_check: walk.org_check,
         },
     )?;
@@ -906,7 +943,11 @@ fn unknown_account(
 /// organization's usage slice or with an incomplete one (or days before the
 /// backfill), days within the settle days, and an unrecognized row naming a
 /// repository (code review under a SKU or unit Toki does not know bills
-/// nowhere, so it is flagged, never dropped).
+/// nowhere, so it is flagged, never dropped). They rest on the
+/// organization's usage slices alone, which a run replaces a month at a time,
+/// so no check, failed or interrupted, bears on them: a month a run stopped
+/// importing keeps the bill provisional through the unknown account's
+/// residual instead.
 fn repository_lines(
     input: &AiReconciliationInput,
     walk: &AiMeteredWalk<'_>,
@@ -995,8 +1036,11 @@ fn repository_lines(
 }
 
 /// One user's part of an allocation: their lines, unbilled usage and
-/// counters. The unknown account and repositories are no user's, so their
-/// credits leave their part settled.
+/// counters. It is provisional as the whole is, over what is theirs: a day of
+/// theirs not imported, their tracked usage not imported, or an account
+/// linked to them in the month that may still change, whether or not they
+/// have a line of it. The unknown account and repositories are no user's, so
+/// their credits leave their part settled.
 pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAllocation {
     let id = user.as_i32();
     let lines: Vec<AiMeteredLine> = allocation
@@ -1014,8 +1058,11 @@ pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAlloc
         .get(&id)
         .copied()
         .unwrap_or_default();
+    let account_provisional = allocation.provisional_users.contains(&id);
     let provisional = allocation.month_in_progress
+        || days_not_imported > 0
         || unbilled.not_imported != AiBillingUsage::default()
+        || account_provisional
         || lines.iter().any(|line| !line.charge.provisional.is_empty());
     AiMeteredAllocation {
         payer: allocation.payer,
@@ -1031,6 +1078,11 @@ pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAlloc
         provisional,
         month_in_progress: allocation.month_in_progress,
         user_counters: BTreeMap::from([(id, (days_not_imported, low_ratio_groups))]),
+        provisional_users: if account_provisional {
+            BTreeSet::from([id])
+        } else {
+            BTreeSet::new()
+        },
     }
 }
 

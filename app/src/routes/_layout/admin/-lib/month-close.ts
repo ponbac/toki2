@@ -74,6 +74,8 @@ function checkOutcome(
       return "never compared with GitHub's month total";
     case "failed":
       return `the comparison with GitHub failed: ${outcome.error}`;
+    case "interrupted":
+      return `${outcome.error}; the next run imports it again`;
     case "differs":
       return "the stored days differ from GitHub's month total";
     case "beforeSettled":
@@ -95,6 +97,8 @@ function machine(problem: { fullName: string; label: string }): string {
 /** One problem a check found, as a sentence. */
 export function problemText(problem: AiCloseProblem): string {
   switch (problem.kind) {
+    case "importRunning":
+      return `An import of the month is running (started ${formatInstant(problem.startedAt)}): wait for it to finish.`;
     case "notSettled":
       return `GitHub may still change the month's last days: it settles on ${shortDate(problem.settlesOn)} (${plural(problem.settleDays, "day")} after ${shortDate(problem.lastDay)}).`;
     case "daysBeforeBackfill":

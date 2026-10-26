@@ -17,11 +17,11 @@ use crate::domain::{
         AiAdjustedMonth, AiAdjustmentLine, AiBilledEntry, AiBillingDeveloper, AiBillingLinePart,
         AiBillingMonth, AiCloseBlocker, AiCloseReadiness, AiCloseWaiver, AiClosedDeveloperBill,
         AiClosedMonth, AiConvertedBill, AiCurrency, AiDeveloperBill, AiDeveloperMonth, AiEntrySek,
-        AiExchangeRate, AiExchangeRateValue, AiKeySubject, AiMachineLabel, AiMeteredAllocation,
-        AiMeteredCutover, AiMonthBill, AiMonthClose, AiMonthCloseState, AiMonthCloseStatus,
-        AiMonthCompleteness, AiMonthOverview, AiMonthView, AiNewClose, AiNewSnapshotLine,
-        AiPersonalUsage, AiReconciliationInput, AiSubscription, AiSubscriptionId,
-        AiSubscriptionScope, AiUsageTimeZone, TimeTrackingCompany, UserId,
+        AiExchangeRate, AiExchangeRateValue, AiImportRun, AiKeySubject, AiMachineLabel,
+        AiMeteredAllocation, AiMeteredCutover, AiMonthBill, AiMonthClose, AiMonthCloseState,
+        AiMonthCloseStatus, AiMonthCompleteness, AiMonthOverview, AiMonthView, AiNewClose,
+        AiNewSnapshotLine, AiPersonalUsage, AiReconciliationInput, AiSubscription,
+        AiSubscriptionId, AiSubscriptionScope, AiUsageTimeZone, TimeTrackingCompany, UserId,
     },
     ports::{
         inbound::{AiBillProjector, AiBillingService, AiProjectionInput},
@@ -57,13 +57,24 @@ struct OwnBill {
     subscriptions: Vec<AiSubscription>,
     /// The metered payer's loaded month and allocation (over every account),
     /// when the month bills from its credits.
-    metered: Option<(AiReconciliationInput, AiMeteredAllocation)>,
+    metered: Option<MeteredMonth>,
+}
+
+/// The metered payer's loaded month as the bill reads it: its input, read
+/// with the live run's marks keeping the checks they marked, and its
+/// allocation over every account.
+struct MeteredMonth {
+    input: AiReconciliationInput,
+    allocation: AiMeteredAllocation,
+    /// The payer's live import run, if any, which readiness refuses while
+    /// it imports the month.
+    running: Option<AiImportRun>,
 }
 
 /// An open month as the overview shows it, with what readiness reads.
 struct OpenMonth {
     overview: AiMonthOverview,
-    metered: Option<(AiReconciliationInput, AiMeteredAllocation)>,
+    metered: Option<MeteredMonth>,
 }
 
 /// The store's clock for close: today in UTC and in the billing time zone,
@@ -205,7 +216,7 @@ where
     async fn metered_month(
         &self,
         month: AiBillingMonth,
-    ) -> Result<Option<(AiReconciliationInput, AiMeteredAllocation)>, AiBillingError> {
+    ) -> Result<Option<MeteredMonth>, AiBillingError> {
         if !self
             .cutover
             .is_some_and(|cutover| cutover.applies_to(month))
@@ -214,7 +225,11 @@ where
         }
         let data = self.metered.load(month, None).await?;
         let allocation = allocate_metered_credits(&data.input)?;
-        Ok(Some((data.input, allocation)))
+        Ok(Some(MeteredMonth {
+            input: data.input,
+            allocation,
+            running: data.status.running,
+        }))
     }
 
     /// `month`'s own bill, of everyone or of `user_id`: what bills from the
@@ -259,7 +274,7 @@ where
         // Every account is allocated, as in the overview, and a developer's
         // lines taken from it: both agree to the cent.
         let metered = self.metered_month(month).await?;
-        if let Some((_, allocation)) = &metered {
+        if let Some(MeteredMonth { allocation, .. }) = &metered {
             let allocation = match user_id {
                 Some(user_id) => for_user(allocation.clone(), user_id),
                 None => allocation.clone(),
@@ -414,7 +429,11 @@ where
         let month = overview.bill.month;
         let metered = open.metered.as_ref();
         let [import, dispositions, unknown_account, repositories] = match metered {
-            Some((input, allocation)) => metered_checks(input, allocation),
+            Some(metered) => metered_checks(
+                &metered.input,
+                &metered.allocation,
+                metered.running.as_ref(),
+            ),
             None => metered_not_applicable(),
         };
         // From the floor a reprice can still change on: a bucket before it
@@ -429,7 +448,7 @@ where
                 self.reprice_floor_now().await?,
             )
             .await?;
-        let pricing = pricing_check(metered.map(|(_, allocation)| allocation), &old_basis);
+        let pricing = pricing_check(metered.map(|metered| &metered.allocation), &old_basis);
         let exchange_rates = exchange_rate_check(&overview.bill, &overview.converted);
         let completeness = self.completeness(month).await?;
         let days = self
@@ -509,8 +528,9 @@ where
             .flatten()
             .collect();
         // A part for every developer whose page shows more than an empty
-        // bill: lines, subscriptions or adjustments, or metered usage on no
-        // line. The rest are served an empty part, as the live page shows it.
+        // bill: lines, subscriptions or adjustments, metered usage on no
+        // line, or a metered part kept provisional by a linked account. The
+        // rest are served an empty part, as the live page shows it.
         let users: BTreeMap<i32, UserId> = bill
             .lines
             .iter()
@@ -528,7 +548,7 @@ where
             .chain(
                 open.metered
                     .iter()
-                    .flat_map(|(_, allocation)| allocation.user_ids())
+                    .flat_map(|metered| metered.allocation.user_ids())
                     .map(UserId::new),
             )
             .map(|user_id| (user_id.as_i32(), user_id))
@@ -539,7 +559,7 @@ where
                 let metered = open
                     .metered
                     .as_ref()
-                    .map(|(_, allocation)| for_user(allocation.clone(), user_id).info());
+                    .map(|metered| for_user(metered.allocation.clone(), user_id).info());
                 let (part, converted) = overview.converted.user_part(bill, user_id, metered)?;
                 Ok((user_id, part, converted))
             })

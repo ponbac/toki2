@@ -13,9 +13,10 @@ use crate::domain::models::{
     AiAdjustedMonth, AiAdjustmentKey, AiAdjustmentLine, AiBillingMachine, AiBillingProject,
     AiBillingSubject, AiBillingUsage, AiConvertedAmount, AiCurrency, AiDailyUsage,
     AiDeveloperCompleteness, AiDeveloperReadiness, AiExchangeRate, AiExchangeRateOverride,
-    AiExchangeRateValue, AiFeeAmount, AiFetchedExchangeRate, AiKeyPayer, AiKeyProject,
-    AiKeySubject, AiMachineCompleteness, AiMonthCloseId, AiOrgChargeKind, AiProviderCompleteness,
-    AiRepositoryResolver, AiUsageCheck,
+    AiExchangeRateValue, AiFeeAmount, AiFetchedExchangeRate, AiImportKind, AiImportRun,
+    AiImportRunId, AiKeyPayer, AiKeyProject, AiKeySubject, AiMachineCompleteness, AiMonthCloseId,
+    AiMonthMode, AiOrgChargeKind, AiProviderCompleteness, AiRepositoryResolver, AiRunStatus,
+    AiUsageCheck,
 };
 
 /// October settled and checked after it settled (4 November).
@@ -29,7 +30,7 @@ fn settled(accounts: Vec<crate::domain::models::AiStoredProviderAccount>) -> AiR
 
 fn checks_of(input: &AiReconciliationInput) -> [AiCloseCheck; 4] {
     let allocation = allocate_metered_credits(input).unwrap();
-    metered_checks(input, &allocation)
+    metered_checks(input, &allocation, None)
 }
 
 fn problems(check: &AiCloseCheck) -> &[AiCloseProblem] {
@@ -61,7 +62,7 @@ const IMPORT_REASONS: [AiMeteredProvisional; 3] = [
 fn a_settled_imported_and_checked_month_passes_every_metered_check() {
     let input = ada_october();
     let allocation = allocate_metered_credits(&input).unwrap();
-    let checks = metered_checks(&input, &allocation);
+    let checks = metered_checks(&input, &allocation, None);
     for check in &checks {
         assert_eq!(check.status, AiCloseCheckStatus::Passed, "{check:?}");
     }
@@ -211,7 +212,121 @@ fn failed(account: Option<i64>, error: &str) -> AiUsageCheck {
         stored_gross: crate::domain::models::AiDecimal::ZERO,
         matches: None,
         error: Some(error.to_string()),
+        interrupted: false,
     }
+}
+
+/// The check a run that stopped on 2 November left on `account`'s (or the
+/// organization's) month.
+fn interrupted(account: Option<i64>) -> AiUsageCheck {
+    AiUsageCheck::interrupted(
+        account.and_then(AiProviderAccountId::new),
+        datetime!(2026-11-02 02:00 UTC),
+        crate::domain::models::AiDecimal::ZERO,
+        "GitHub's rate limiting stopped the import",
+    )
+}
+
+const STOPPED: &str =
+    "the run stopped before finishing this month: GitHub's rate limiting stopped the import";
+
+#[test]
+fn a_month_a_stopped_run_left_interrupted_is_not_ready_on_import() {
+    let day = date!(2026 - 10 - 05);
+    let mut input = settled(vec![
+        linked(1001, "ada-lovelace", ADA),
+        // No seat and no credits stored: its own failure would be excused,
+        // but the run may have deleted its days before stopping.
+        account(1004, "retired-account", false, &[]),
+    ]);
+    input.account_credits = vec![credits(1001, day, "GPT-6.1 Sol", "10")];
+    input.org_credits = vec![org(day, "GPT-6.1 Sol", "10")];
+    input.tracked = vec![tracked(ADA, day, "gpt-6.1-sol", 10 * CREDIT)];
+    let set_check = |input: &mut AiReconciliationInput, check: AiUsageCheck| {
+        for stored in &mut input.checks {
+            if stored.account_id == check.account_id {
+                *stored = check.clone();
+            }
+        }
+    };
+    set_check(&mut input, failed(Some(1004), "GitHub answered 404"));
+    let [import, ..] = checks_of(&input);
+    assert_eq!(import.status, AiCloseCheckStatus::Passed);
+
+    set_check(&mut input, interrupted(Some(1004)));
+    let [import, ..] = checks_of(&input);
+    assert_eq!(
+        problems(&import),
+        [AiCloseProblem::AccountCheck {
+            account_id: AiProviderAccountId::new(1004).unwrap(),
+            login: AiProviderLogin::parse("retired-account").unwrap(),
+            outcome: AiCheckOutcome::Interrupted(STOPPED.to_string()),
+        }]
+    );
+
+    // Stopped on the organization's credits, before any account.
+    for check in &mut input.checks {
+        *check = interrupted(check.account_id.map(AiProviderAccountId::as_i64));
+    }
+    let [import, ..] = checks_of(&input);
+    let outcome = AiCheckOutcome::Interrupted(STOPPED.to_string());
+    assert_eq!(
+        problems(&import),
+        [
+            AiCloseProblem::AccountCheck {
+                account_id: AiProviderAccountId::new(1001).unwrap(),
+                login: AiProviderLogin::parse("ada-lovelace").unwrap(),
+                outcome: outcome.clone(),
+            },
+            AiCloseProblem::AccountCheck {
+                account_id: AiProviderAccountId::new(1004).unwrap(),
+                login: AiProviderLogin::parse("retired-account").unwrap(),
+                outcome: outcome.clone(),
+            },
+            AiCloseProblem::OrgCheck { outcome },
+        ]
+    );
+    assert!(!AiCloseReadiness {
+        month: input.month,
+        evaluated_at: datetime!(2026-11-05 07:00 UTC),
+        checks: vec![import],
+    }
+    .ready());
+}
+
+#[test]
+fn a_live_run_importing_the_month_fails_the_import() {
+    let input = ada_october();
+    let allocation = allocate_metered_credits(&input).unwrap();
+    let run = |months: &[&str]| AiImportRun {
+        id: AiImportRunId::new(7),
+        kind: AiImportKind::Hourly,
+        months: months
+            .iter()
+            .map(|month| (AiBillingMonth::parse(month).unwrap(), AiMonthMode::Changes))
+            .collect(),
+        started_at: datetime!(2026-11-05 07:00 UTC),
+        finished_at: None,
+        status: AiRunStatus::Running,
+        requests: 0,
+        slices_fetched: 0,
+        slices_changed: 0,
+        account_errors: 0,
+        error: None,
+        sources: Vec::new(),
+    };
+    // Its marks keep the checks they marked, which still match: the run is
+    // the problem, as it may be replacing October's days right now.
+    let [import, ..] = metered_checks(&input, &allocation, Some(&run(&["2026-10", "2026-11"])));
+    assert_eq!(
+        problems(&import),
+        [AiCloseProblem::ImportRunning {
+            started_at: datetime!(2026-11-05 07:00 UTC),
+        }]
+    );
+    // A run importing only November leaves October as it is.
+    let [import, ..] = metered_checks(&input, &allocation, Some(&run(&["2026-11"])));
+    assert_eq!(import.status, AiCloseCheckStatus::Passed);
 }
 
 #[test]

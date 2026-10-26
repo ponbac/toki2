@@ -468,7 +468,12 @@ impl AiBillProjector for HttpBillProjector {
 )]
 enum CheckOutcomeResponse {
     Missing,
+    /// The import's own error.
     Failed {
+        error: String,
+    },
+    /// A run stopped, or died, before finishing the month; `error` says why.
+    Interrupted {
         error: String,
     },
     Differs,
@@ -483,6 +488,9 @@ impl From<&AiCheckOutcome> for CheckOutcomeResponse {
         match outcome {
             AiCheckOutcome::Missing => Self::Missing,
             AiCheckOutcome::Failed(error) => Self::Failed {
+                error: error.clone(),
+            },
+            AiCheckOutcome::Interrupted(error) => Self::Interrupted {
                 error: error.clone(),
             },
             AiCheckOutcome::Differs => Self::Differs,
@@ -510,6 +518,11 @@ struct ProviderGapsResponse {
     rename_all_fields = "camelCase"
 )]
 enum ProblemResponse {
+    /// A live import run, started at `startedAt`, is importing the month.
+    ImportRunning {
+        #[serde(with = "time::serde::rfc3339")]
+        started_at: OffsetDateTime,
+    },
     /// The payer may still change the month's last days, until `settlesOn`.
     NotSettled {
         last_day: String,
@@ -640,6 +653,9 @@ impl From<&AiCloseProblem> for ProblemResponse {
             reasons.iter().map(|&reason| reason.into()).collect()
         };
         match problem {
+            AiCloseProblem::ImportRunning { started_at } => Self::ImportRunning {
+                started_at: *started_at,
+            },
             AiCloseProblem::NotSettled {
                 last_day,
                 settles_on,

@@ -145,8 +145,10 @@ const importSchema = z
         message: "the last run is finished",
       })
       .nullable(),
-    /** The latest run's account errors, one per account and UTC month;
-     * errors of accounts without a seat in that month are informational. */
+    /** The latest run's account errors, one per account and UTC month; an
+     * account's own errors without a seat in that month are informational,
+     * while a month a run stopped before finishing (`interrupted`) counts
+     * whatever the seat. */
     accountErrors: z.array(
       z
         .object({
@@ -154,6 +156,7 @@ const importSchema = z
           month: monthSchema,
           error: z.string(),
           seated: z.boolean(),
+          interrupted: z.boolean(),
         })
         .strict(),
     ),

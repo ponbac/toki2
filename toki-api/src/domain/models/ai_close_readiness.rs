@@ -11,13 +11,16 @@
 //! 1. **`import`** (metered months): the payer's import is complete through
 //!    the month's end, judged per account and month from the stored slices
 //!    and checks, never from a run's errors (they only describe that run).
-//!    The month must be settled (its last day is before today less the
-//!    measured settle days, at least 3), every day imported from every
-//!    source, and the latest check of every account that held a seat, of
-//!    every other account with credits or lines, and of the organization a
-//!    success that matches the payer's month total, made once the month
-//!    settled. Passing it means no metered line may still change for the
-//!    import's sake.
+//!    No live run may be importing the month (its plan holds it), the month
+//!    must be settled (its last day is before today less the measured settle
+//!    days, at least 3), every day imported from every source, and the
+//!    latest check of every account that held a seat, of every account a run
+//!    left interrupted (whatever its seat), of every other account with
+//!    credits or lines, and of the organization a success that matches the
+//!    payer's month total, made once the month settled. Checks are read as
+//!    the bill reads them: a mark of the live run keeps the check it marked,
+//!    while one a stopped or dead run left is an interrupted check. Passing
+//!    it means no metered line may still change for the import's sake.
 //! 2. **`dispositions`** (metered): no credits bill to an unlinked account.
 //! 3. **`unknownAccount`** (metered): the per-day residual of accounts Toki
 //!    never listed is settled and zero on every day.
@@ -42,7 +45,7 @@ use time::{Date, Duration, OffsetDateTime};
 
 use super::{
     currencies_to_convert, held_seat_in, AiBillingDeveloper, AiBillingMonth, AiConvertedAmount,
-    AiConvertedBill, AiCoverageInterval, AiCurrency, AiLocalDay, AiMachineId,
+    AiConvertedBill, AiCoverageInterval, AiCurrency, AiImportRun, AiLocalDay, AiMachineId,
     AiMeteredAccountReason, AiMeteredAllocation, AiMeteredChargeKind, AiMeteredProvisional,
     AiMeteredSource, AiMonthBill, AiMonthCompleteness, AiProvider, AiProviderAccountId,
     AiProviderLogin, AiReconciliationInput, AiUsageCheck, AiUsageDateRange, AiUsdNanos,
@@ -222,8 +225,12 @@ impl AiCloseReadiness {
 pub enum AiCheckOutcome {
     /// Never checked against the payer's month total.
     Missing,
-    /// The latest check failed.
+    /// The latest check failed: the import's own error.
     Failed(String),
+    /// A run stopped, or its process died, before finishing the month, so its
+    /// days may be half replaced (the check's error says why). It counts
+    /// whatever the account's seat.
+    Interrupted(String),
     /// The stored days differ from the payer's month total.
     Differs,
     /// Checked before the month settled: the payer may have changed it since.
@@ -233,6 +240,11 @@ pub enum AiCheckOutcome {
 /// What a failed check found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiCloseProblem {
+    /// A live import run, started at `started_at`, is importing the month:
+    /// its days may be half replaced until it finishes.
+    ImportRunning {
+        started_at: OffsetDateTime,
+    },
     /// The payer may still change the month's last days.
     NotSettled {
         last_day: Date,
@@ -357,13 +369,18 @@ pub struct AiOldBasisUsage {
 }
 
 /// The four metered checks (import, dispositions, unknown account and
-/// repositories) of a metered month, from its loaded input and allocation.
+/// repositories) of a metered month, from its loaded input and allocation,
+/// and the payer's live import run, if any (`AiImportStatus::running`).
 pub fn metered_checks(
     input: &AiReconciliationInput,
     allocation: &AiMeteredAllocation,
+    running: Option<&AiImportRun>,
 ) -> [AiCloseCheck; 4] {
     [
-        AiCloseCheck::judged(AiCloseCheckId::Import, import_problems(input, allocation)),
+        AiCloseCheck::judged(
+            AiCloseCheckId::Import,
+            import_problems(input, allocation, running),
+        ),
         AiCloseCheck::judged(
             AiCloseCheckId::Dispositions,
             disposition_problems(allocation),
@@ -398,9 +415,18 @@ pub fn settles_on(month: AiBillingMonth, settle_days: u32) -> Date {
 fn import_problems(
     input: &AiReconciliationInput,
     allocation: &AiMeteredAllocation,
+    running: Option<&AiImportRun>,
 ) -> Vec<AiCloseProblem> {
     let month = input.month;
     let mut problems = Vec::new();
+    // A live run's marks keep the checks they marked, as the bill reads
+    // them, so the run itself is the problem: it may be replacing the
+    // month's days right now.
+    if let Some(run) = running.filter(|run| run.months.iter().any(|(m, _)| *m == month)) {
+        problems.push(AiCloseProblem::ImportRunning {
+            started_at: run.started_at,
+        });
+    }
     let settles_on = settles_on(month, input.settle_days);
     if input.today < settles_on {
         problems.push(AiCloseProblem::NotSettled {
@@ -468,7 +494,11 @@ fn import_problems(
             return Some(AiCheckOutcome::Missing);
         };
         if let Some(error) = &check.error {
-            return Some(AiCheckOutcome::Failed(error.clone()));
+            return Some(if check.interrupted {
+                AiCheckOutcome::Interrupted(error.clone())
+            } else {
+                AiCheckOutcome::Failed(error.clone())
+            });
         }
         if check.matches != Some(true) {
             return Some(AiCheckOutcome::Differs);
@@ -499,10 +529,15 @@ fn import_problems(
             .iter()
             .find(|check| check.account_id == Some(account.account_id));
         let seated = held_seat_in(account, month, input.today);
-        // An import that failed without a seat in the month is not expected:
-        // its error is informational, as for the bill.
-        let excused = !seated && check.is_some_and(|check| check.error.is_some());
-        let expected = seated || (!excused && with_credits.contains(&account.account_id));
+        // A run that stopped before finishing the account's month gave no
+        // answer of the account's own: its days may be half replaced, its
+        // credits included, so it counts whatever the seat, as for the bill.
+        let interrupted = check.is_some_and(|check| check.interrupted);
+        // An import that failed on its own without a seat in the month is
+        // not expected: its error is informational, as for the bill.
+        let excused = !seated && !interrupted && check.is_some_and(|check| check.error.is_some());
+        let expected =
+            seated || interrupted || (!excused && with_credits.contains(&account.account_id));
         if !expected {
             continue;
         }

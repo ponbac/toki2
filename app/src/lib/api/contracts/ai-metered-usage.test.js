@@ -111,12 +111,14 @@ const month = {
         month: "2026-09",
         error: "not found",
         seated: false,
+        interrupted: false,
       },
       {
         login: "grace-hopper",
         month: "2026-10",
         error: "not found",
         seated: true,
+        interrupted: false,
       },
     ],
     sources: [

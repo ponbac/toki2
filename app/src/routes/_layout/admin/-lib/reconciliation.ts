@@ -133,7 +133,7 @@ export const FLAG_HINTS: Readonly<Record<AiMeteredFlag, string>> = {
   payerTotalMismatch:
     "The stored days don't add up to GitHub's month total at the last import.",
   importFailed:
-    "The last import couldn't read this account, which held a seat in the month.",
+    "The last import couldn't read this account, which held a seat in the month, or stopped before finishing its month.",
 };
 
 export type FlagTone = "critical" | "warning" | "neutral";
@@ -236,6 +236,13 @@ export function staleReasonText(reason: AiMeteredStaleReason): string {
     case "accountFailed":
       return `${reason.login} couldn't be imported for ${monthLabel(reason.month)}: ${withoutFullStop(reason.error)}`;
   }
+}
+
+/** Whether an account error makes the import stale: the account held a seat
+ * that month, or a run stopped before finishing its month. An account's own
+ * error without a seat is informational. */
+export function blocksImport(error: AiMeteredAccountError): boolean {
+  return error.seated || error.interrupted;
 }
 
 /** How many accounts the errors are of: one account can fail in several
@@ -369,8 +376,9 @@ export function codeReviewDifferingDays(
  *   the IDE aggregate) or in an unrecognized row: it bills on no line.
  * - `repositoriesExceed`: code review by accounts Toki does not import
  *   (unknown accounts), whose per-account credits are never imported, or on
- *   an import gap by an account whose rows are missing. It bills once,
- *   through its repository line, so the bill needs nothing. */
+ *   an import gap by an account whose rows are missing or only partly
+ *   imported. It bills once, through its repository line, so the bill needs
+ *   nothing. */
 export function codeReviewDifferences(days: readonly AiCodeReviewDay[]): {
   accountsExceed: boolean;
   repositoriesExceed: boolean;

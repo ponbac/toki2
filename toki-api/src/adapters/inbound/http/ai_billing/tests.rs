@@ -2690,10 +2690,10 @@ mod copilot {
         domain::{
             models::{
                 AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiCreditKind,
-                AiCreditStoreScope, AiDecimal, AiListedSeat, AiMappedProject, AiMeteredAmounts,
-                AiMeteredCredit, AiMeteredModel, AiMeteredOrgCharge, AiMeteredSource,
-                AiOrgChargeKind, AiPricingBasis, AiProviderAccountId, AiProviderLogin,
-                AiSeatListing, AiUsageCheck,
+                AiCreditStoreScope, AiDecimal, AiImportKind, AiImportPlan, AiListedSeat,
+                AiMappedProject, AiMeteredAmounts, AiMeteredCredit, AiMeteredModel,
+                AiMeteredOrgCharge, AiMeteredSource, AiMonthMode, AiOrgChargeKind, AiPricingBasis,
+                AiProviderAccountId, AiProviderLogin, AiSeatListing, AiUsageCheck,
             },
             ports::outbound::{
                 AiMeteredUsageRepository, AiProviderAccountRepository,
@@ -2811,6 +2811,7 @@ mod copilot {
             stored_gross: dec("1"),
             matches: Some(matches),
             error: None,
+            interrupted: false,
         }
     }
 
@@ -3668,6 +3669,94 @@ mod copilot {
             ]
         );
         assert_eq!(overview["metered"]["provisional"], true);
+    }
+
+    #[sqlx::test]
+    async fn an_import_that_stopped_partway_keeps_copilot_lines_provisional(pool: PgPool) {
+        let app = app_with_cutover(&pool, Some("2026-08"));
+        let CopilotAugust { admin, .. } = copilot_august(&app, &pool).await;
+        let admin = Caller::Session(&admin.cookie);
+        let metered_reasons = |bill: &Value| -> Vec<(Value, Value)> {
+            bill["lines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|line| line["billingMode"] == "metered")
+                .map(|line| {
+                    (
+                        line["metered"]["kind"].clone(),
+                        line["metered"]["provisionalReasons"].clone(),
+                    )
+                })
+                .collect()
+        };
+        let with = |kinds: &[&str], reasons: Value| -> Vec<(Value, Value)> {
+            kinds
+                .iter()
+                .map(|kind| (json!(kind), reasons.clone()))
+                .collect()
+        };
+
+        // A run marks August's checks before touching its days.
+        let metered = PostgresAiMeteredUsageRepository::new(db(&pool));
+        let lease = metered
+            .try_lock_import(AiProvider::Copilot)
+            .await
+            .unwrap()
+            .unwrap();
+        let plan = AiImportPlan {
+            kind: AiImportKind::Hourly,
+            months: vec![(august(), AiMonthMode::Changes)],
+        };
+        let run = metered
+            .start_run(AiProvider::Copilot, &plan, datetime!(2026-09-06 02:00 UTC))
+            .await
+            .unwrap();
+        metered
+            .mark_checks_importing(AiProvider::Copilot, august(), run)
+            .await
+            .unwrap();
+
+        // While it runs, its marks keep the checks they marked.
+        let running = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08").await;
+        assert_eq!(
+            metered_reasons(&running),
+            with(
+                &[
+                    "project",
+                    "project",
+                    "untracked",
+                    "untracked",
+                    "externalAccount",
+                    "unknownAccount",
+                    "repository",
+                    "repository",
+                ],
+                json!([]),
+            )
+        );
+        assert_eq!(running["metered"]["provisional"], false);
+
+        // Its process dies before finishing August: every account's days may
+        // be half replaced, so their lines are provisional, and the residual
+        // is an import gap rather than an unknown account. The repository
+        // lines rest on the organization's usage slices alone, which a run
+        // replaces a month at a time: they stand.
+        lease.release().await.unwrap();
+        let stopped = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08").await;
+        let mut expected = with(
+            &[
+                "project",
+                "project",
+                "untracked",
+                "untracked",
+                "externalAccount",
+            ],
+            json!(["importIncomplete", "notSettled"]),
+        );
+        expected.extend(with(&["repository", "repository"], json!([])));
+        assert_eq!(metered_reasons(&stopped), expected);
+        assert_eq!(stopped["metered"]["provisional"], true);
     }
 
     #[sqlx::test]

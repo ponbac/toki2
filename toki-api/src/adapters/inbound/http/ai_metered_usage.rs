@@ -471,9 +471,12 @@ struct AccountErrorResponse {
     /// The UTC month whose import failed: one entry per account and month.
     month: String,
     error: String,
-    /// Whether the account held a seat in that month; errors of accounts
-    /// without one are informational.
+    /// Whether the account held a seat in that month; its own errors without
+    /// one are informational.
     seated: bool,
+    /// Whether a run stopped before finishing the account's month: no
+    /// answer of its own, so it counts whatever the seat.
+    interrupted: bool,
 }
 
 impl From<AiAccountImportError> for AccountErrorResponse {
@@ -483,6 +486,7 @@ impl From<AiAccountImportError> for AccountErrorResponse {
             month: error.month.to_string(),
             error: error.error,
             seated: error.seated,
+            interrupted: error.interrupted,
         }
     }
 }

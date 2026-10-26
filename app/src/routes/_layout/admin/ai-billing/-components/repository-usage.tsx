@@ -230,11 +230,11 @@ function CodeReviewCheck({
             {repositoriesExceed && (
               <p>
                 A positive difference, where repositories exceed accounts, is
-                code review by accounts Toki does not import (unknown
-                accounts), or on an import gap by an account whose rows are
-                missing. Their “Code Review model” credits are not imported,
-                but the repository rows are: it bills once, through its
-                repository line, and the bill needs nothing.
+                code review by accounts Toki does not import (unknown accounts),
+                or on an import gap by an account whose rows are missing or only
+                partly imported. Their “Code Review model” credits are not
+                imported, but the repository rows are: it bills once, through
+                its repository line, and the bill needs nothing.
               </p>
             )}
           </div>

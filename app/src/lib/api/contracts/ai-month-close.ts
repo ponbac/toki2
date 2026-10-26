@@ -56,10 +56,13 @@ export type AiCloseCheckStatus = (typeof CLOSE_CHECK_STATUSES)[number];
  * them (code points, after trimming). */
 export const MAX_WAIVER_REASON_CHARS = 500;
 
-/** How an account's or the organization's latest check fails. */
+/** How an account's or the organization's latest check fails: `failed` is
+ * the import's own error, `interrupted` a run that stopped or died before
+ * finishing the month (its `error` says why), whatever the account's seat. */
 const outcomeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("missing") }).strict(),
   z.object({ kind: z.literal("failed"), error: z.string() }).strict(),
+  z.object({ kind: z.literal("interrupted"), error: z.string() }).strict(),
   z.object({ kind: z.literal("differs") }).strict(),
   z
     .object({ kind: z.literal("beforeSettled"), checkedAt: instantSchema })
@@ -78,6 +81,10 @@ const machineShape = {
 
 /** What a failed check found, one kind per problem. */
 const problemSchema = z.discriminatedUnion("kind", [
+  /** A live import run, started at `startedAt`, is importing the month. */
+  z
+    .object({ kind: z.literal("importRunning"), startedAt: instantSchema })
+    .strict(),
   /** The payer may still change the month's last days until `settlesOn`. */
   z
     .object({

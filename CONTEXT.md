@@ -129,11 +129,11 @@ The per-day residual: the organization's credits minus the sum over every provid
 _Avoid_: external account, unlinked account
 
 **Payer check**:
-The latest comparison of a provider account's, or the organization's, stored days with the payer's month total: equal, different, or failed. An account's mismatch flags the account; the organization's keeps every residual day from settling, and a failed one makes them an import gap.
+The latest comparison of a provider account's, or the organization's, stored days with the payer's month total: equal, different, or failed. An *interrupted* check is a failed one that a run left behind by stopping or dying before it finished that month; unlike the account's own error, it counts whatever the account's seat, and its month is imported again. An account's mismatch flags the account; the organization's keeps every residual day from settling, and a failed one makes them an import gap.
 _Avoid_: sync check
 
 **Import freshness**:
-Whether the metered usage import is recent and complete enough to trust: fresh, or stale with the first reason (a failed run, an old success, coverage behind, an old summary, a seated account that failed).
+Whether the metered usage import is recent and complete enough to trust: fresh, or stale with the first reason (a failed run, an old success, coverage behind, an old summary, a seated account that failed or an interrupted account).
 _Avoid_: sync status
 
 **Settle lag**:
@@ -173,7 +173,7 @@ Per UTC day, the code review credits GitHub billed per repository minus those it
 _Avoid_: code review residual
 
 **Provisional Copilot line**:
-A Copilot line that may still change, with its reasons: the month is in progress, a day's import is missing or incomplete, a day may still change, contributing usage is on an old pricing basis, a provisional model contributed, or a row is unrecognized (for a repository line, an organization row naming a repository).
+A Copilot line that may still change, with its reasons: the month is in progress, a day's import is missing or incomplete (or a run stopped before finishing the account's month), a day may still change, contributing usage is on an old pricing basis, a provisional model contributed, or a row is unrecognized (for a repository line, an organization row naming a repository).
 _Avoid_: draft line, estimate
 
 **Month close**:
@@ -189,7 +189,7 @@ A change to a closed month since it closed, billed on the first open month after
 _Avoid_: correction line, credit note
 
 **Close readiness**:
-The checks the server evaluates before a month closes: the metered import complete and settled, every account with credits disposed, the unknown account's residual zero, every repository mapped, no billed usage on an old pricing basis or a provisional model, final exchange rates, and complete uploads (in metered months including the UTC hours outside the local month).
+The checks the server evaluates before a month closes: the metered import complete and settled (no run importing the month, and no interrupted check), every account with credits disposed, the unknown account's residual zero, every repository mapped, no billed usage on an old pricing basis or a provisional model, final exchange rates, and complete uploads (in metered months including the UTC hours outside the local month).
 _Avoid_: preflight, checklist (the UI's word for showing it)
 
 **Waiver**:

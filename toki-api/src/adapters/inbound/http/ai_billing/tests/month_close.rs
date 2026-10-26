@@ -10,12 +10,15 @@ use crate::{
     adapters::outbound::postgres::PostgresAiRepositoryMappingRepository,
     domain::{
         models::{
-            following, AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiPricingBasis,
-            AiProviderAccountId, AiUsdNanos,
+            following, AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiImportKind,
+            AiImportPlan, AiMonthMode, AiPricingBasis, AiProviderAccountId, AiUsdNanos,
         },
         ports::{
             inbound::{AiMeteredUsageService, AiUsageService},
-            outbound::{AiProviderAccountRepository, AiRepositoryMappingRepository},
+            outbound::{
+                AiMeteredUsageRepository, AiProviderAccountRepository,
+                AiRepositoryMappingRepository,
+            },
         },
         services::{
             AiMeteredImportSettings, AiMeteredSourceState, AiMeteredUsageServiceImpl,
@@ -772,6 +775,80 @@ async fn a_repository_remapped_after_close_posts_on_the_next_month_once(pool: Pg
             { "month": "2026-09", "snapshotId": september_close },
         ])
     );
+}
+
+#[sqlx::test]
+async fn a_month_an_import_is_running_or_stopped_in_is_not_ready_on_import(pool: PgPool) {
+    let august = AiBillingMonth::parse("2026-08").unwrap();
+    let app = app_with(
+        &pool,
+        FakeRates::august_usd(),
+        AiExchangeRateSettings::default(),
+        Some(AiMeteredCutover {
+            payer: AiProvider::Copilot,
+            from: august,
+        }),
+        REPRICE_FLOOR,
+    );
+    let CopilotAugust { admin, .. } = copilot_august(&app, &pool).await;
+    let admin = Caller::Session(&admin.cookie);
+    let import = |status: &Value| readiness_check(&status["readiness"], "import");
+    let status = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08/close").await;
+    assert_eq!(import(&status)["status"], "passed");
+
+    // A run starts importing August, marking its checks first.
+    let metered = PostgresAiMeteredUsageRepository::new(db(&pool));
+    let lease = metered
+        .try_lock_import(AiProvider::Copilot)
+        .await
+        .unwrap()
+        .unwrap();
+    let plan = AiImportPlan {
+        kind: AiImportKind::Hourly,
+        months: vec![(august, AiMonthMode::Changes)],
+    };
+    let run = metered
+        .start_run(AiProvider::Copilot, &plan, datetime!(2026-09-06 02:00 UTC))
+        .await
+        .unwrap();
+    metered
+        .mark_checks_importing(AiProvider::Copilot, august, run)
+        .await
+        .unwrap();
+
+    // While it runs, its marks keep the checks they marked, as the bill
+    // reads them: the run itself fails the import, since it may be replacing
+    // August's days right now.
+    let status = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08/close").await;
+    let running = json!([{ "kind": "importRunning", "startedAt": "2026-09-06T02:00:00Z" }]);
+    assert_eq!(import(&status)["status"], "failed");
+    assert_eq!(import(&status)["problems"], running);
+    let (code, body) = post_close(&app, &admin, "2026-08", json!([])).await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
+    assert_eq!(
+        readiness_check(&body["readiness"], "import")["problems"],
+        running
+    );
+
+    // Its process dies before finishing August: every check it left marked
+    // is interrupted, the organization's included, and the close refuses.
+    lease.release().await.unwrap();
+    let status = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08/close").await;
+    let outcome = json!({
+        "kind": "interrupted",
+        "error": "the run stopped before finishing this month: interrupted",
+    });
+    assert_eq!(
+        import(&status)["problems"],
+        json!([
+            { "kind": "accountCheck", "accountId": 1001, "login": "ada-lovelace", "outcome": outcome },
+            { "kind": "accountCheck", "accountId": 1004, "login": "kj-contractor", "outcome": outcome },
+            { "kind": "orgCheck", "outcome": outcome },
+        ])
+    );
+    let (code, body) = post_close(&app, &admin, "2026-08", json!([])).await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["readiness"]["ready"], false);
 }
 
 /// The readiness check of `id` in a close status or readiness.

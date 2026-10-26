@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { formatInstant } from "./format.ts";
 import { checkTargets, latestReadiness, problemText } from "./month-close.ts";
 
 const machine = {
@@ -26,6 +27,22 @@ describe("readiness problems in words", () => {
         outcome: { kind: "differs" },
       },
       "ada-lovelace: the stored days differ from GitHub's month total.",
+    ],
+    [
+      {
+        kind: "accountCheck",
+        accountId: 1004,
+        login: "retired-account",
+        outcome: {
+          kind: "interrupted",
+          error: "the run stopped before finishing this month: interrupted",
+        },
+      },
+      "retired-account: the run stopped before finishing this month: interrupted; the next run imports it again.",
+    ],
+    [
+      { kind: "importRunning", startedAt: "2026-10-05T07:58:00Z" },
+      `An import of the month is running (started ${formatInstant("2026-10-05T07:58:00Z")}): wait for it to finish.`,
     ],
     [
       {
