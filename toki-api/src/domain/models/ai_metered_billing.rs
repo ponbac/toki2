@@ -46,11 +46,14 @@
 //!   confirmed), a contributing bucket is on an old pricing basis, a
 //!   provisional model contributed, or a row is unrecognized
 //!   (`AiMeteredProvisional`). The allocation as a whole is also provisional
-//!   while the unknown account's residual is (an organization slice missing
-//!   or incomplete, its month total failed or unconfirmed, a seated
-//!   account's import failed or an account's was interrupted), even when the
-//!   residual bills no line: a residual that is not computed yet is no
-//!   settled zero.
+//!   while an account is, whether or not it bills a line, and while the
+//!   unknown account's residual is (an organization slice missing or
+//!   incomplete, its month total failed or unconfirmed, a seated account's
+//!   import failed or an account's was interrupted), even when the residual
+//!   bills no line: credits not imported or not computed yet are no settled
+//!   zero. One user's part is provisional while an account linked to them on
+//!   a day of the month is, whether or not they have a line of it; the
+//!   unknown account is no one's.
 //!
 //! Amounts are nanodollars until rounding; a credit is $0.01, so a line's
 //! cents are its credits.
@@ -207,7 +210,8 @@ enum Unbilled {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiMeteredBillInfo {
     pub payer: AiProvider,
-    /// Some line may still change, or tracked usage is not imported.
+    /// Some line or account may still change, line or not, or tracked usage
+    /// is not imported.
     pub provisional: bool,
     /// Account days without an imported slice (excused accounts aside).
     pub days_not_imported: u32,
@@ -250,6 +254,9 @@ pub struct AiMeteredAllocation {
     pub month_in_progress: bool,
     /// Per user: days not imported, low-ratio groups.
     user_counters: BTreeMap<i32, (u32, u32)>,
+    /// Users linked on a day of the month to an account that may still
+    /// change, whether or not they have a line of it.
+    provisional_users: BTreeSet<i32>,
 }
 
 impl AiMeteredAllocation {
@@ -371,6 +378,8 @@ pub fn allocate_metered_credits(
 
     let mut lines = Vec::new();
     let mut user_counters: BTreeMap<i32, (u32, u32)> = BTreeMap::new();
+    let mut provisional_users: BTreeSet<i32> = BTreeSet::new();
+    let mut provisional_accounts = false;
     let mut days_not_imported = 0_u32;
     let mut low_ratio_groups = 0_u32;
     // Whether the account linked to a user on a day has its slice.
@@ -544,6 +553,22 @@ pub fn allocate_metered_credits(
         let mut billed_sinks: Vec<(Sink, i64)> = ordered.into_iter().zip(shares).collect();
         cap_destination_sinks(&mut billed_sinks)?;
 
+        // The account's reasons hold for the whole bill and for every user
+        // linked to it on a day of the month (before the import's backfill
+        // included), as they do for its lines, whether or not it bills them
+        // one: credits neither imported nor tracked yet are no settled zero.
+        if !reasons.is_empty() {
+            provisional_accounts = true;
+            provisional_users.extend(account.dispositions.iter().filter_map(|disposition| {
+                let user = disposition.terms.target.user_id()?;
+                disposition
+                    .terms
+                    .period
+                    .to_date_range(input.month.dates())
+                    .map(|_| user.as_i32())
+            }));
+        }
+
         let account_ref = AiMeteredAccountRef {
             account_id: account.account_id,
             login: account.login.clone(),
@@ -602,6 +627,7 @@ pub fn allocate_metered_credits(
     let provisional = month_in_progress
         || days_not_imported > 0
         || unbilled.not_imported != AiBillingUsage::default()
+        || provisional_accounts
         || !unknown.provisional.is_empty()
         || lines.iter().any(|line| !line.charge.provisional.is_empty());
     Ok(AiMeteredAllocation {
@@ -616,6 +642,7 @@ pub fn allocate_metered_credits(
         provisional,
         month_in_progress,
         user_counters,
+        provisional_users,
     })
 }
 
@@ -842,8 +869,11 @@ fn unknown_account(
 }
 
 /// One user's part of an allocation: their lines, unbilled usage and
-/// counters. The unknown account is no user's, so its residual leaves their
-/// part settled.
+/// counters. It is provisional as the whole is, over what is theirs: a day of
+/// theirs not imported, their tracked usage not imported, or an account
+/// linked to them in the month that may still change, whether or not they
+/// have a line of it. The unknown account is no user's, so its residual
+/// leaves their part settled.
 pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAllocation {
     let id = user.as_i32();
     let lines: Vec<AiMeteredLine> = allocation
@@ -861,8 +891,11 @@ pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAlloc
         .get(&id)
         .copied()
         .unwrap_or_default();
+    let account_provisional = allocation.provisional_users.contains(&id);
     let provisional = allocation.month_in_progress
+        || days_not_imported > 0
         || unbilled.not_imported != AiBillingUsage::default()
+        || account_provisional
         || lines.iter().any(|line| !line.charge.provisional.is_empty());
     AiMeteredAllocation {
         payer: allocation.payer,
@@ -876,6 +909,11 @@ pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAlloc
         provisional,
         month_in_progress: allocation.month_in_progress,
         user_counters: BTreeMap::from([(id, (days_not_imported, low_ratio_groups))]),
+        provisional_users: if account_provisional {
+            BTreeSet::from([id])
+        } else {
+            BTreeSet::new()
+        },
     }
 }
 
