@@ -1,3 +1,4 @@
+mod ai_adoption;
 mod ai_billing;
 mod ai_display_rates;
 mod ai_exchange_rates;
@@ -15,6 +16,7 @@ mod oauth;
 mod time_tracking;
 mod work_items;
 
+pub use ai_adoption::AiAdoptionServiceImpl;
 pub use ai_billing::AiBillingServiceImpl;
 pub use ai_display_rates::AiDisplayRateServiceImpl;
 pub use ai_exchange_rates::{AiExchangeRateSettings, AiExchangeRates};

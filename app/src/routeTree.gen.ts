@@ -23,6 +23,7 @@ import { Route as LayoutAiUsageIndexRouteImport } from "./routes/_layout/ai-usag
 import { Route as LayoutPrsPrIdRouteRouteImport } from "./routes/_layout/prs/$prId/route"
 import { Route as LayoutRepositoriesAddRouteRouteImport } from "./routes/_layout/repositories/add/route"
 import { Route as LayoutTimeTrackingIndexRouteImport } from "./routes/_layout/time-tracking/index"
+import { Route as LayoutAdminAdoptionIndexRouteImport } from "./routes/_layout/admin/adoption/index"
 import { Route as LayoutAdminAiBillingIndexRouteImport } from "./routes/_layout/admin/ai-billing/index"
 import { Route as LayoutAdminAiBillingUserIdRouteImport } from "./routes/_layout/admin/ai-billing/$userId"
 import { Route as LayoutAdminGithubLoginsIndexRouteImport } from "./routes/_layout/admin/github-logins/index"
@@ -100,6 +101,12 @@ const LayoutTimeTrackingIndexRoute = LayoutTimeTrackingIndexRouteImport.update({
   path: "/time-tracking/",
   getParentRoute: () => LayoutRouteRoute,
 } as any)
+const LayoutAdminAdoptionIndexRoute =
+  LayoutAdminAdoptionIndexRouteImport.update({
+    id: "/adoption/",
+    path: "/adoption/",
+    getParentRoute: () => LayoutAdminRouteRoute,
+  } as any)
 const LayoutAdminAiBillingIndexRoute =
   LayoutAdminAiBillingIndexRouteImport.update({
     id: "/ai-billing/",
@@ -141,6 +148,7 @@ export interface FileRoutesByFullPath {
   "/time-tracking/": typeof LayoutTimeTrackingIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
   "/admin/ai-billing/$userId": typeof LayoutAdminAiBillingUserIdRoute
+  "/admin/adoption/": typeof LayoutAdminAdoptionIndexRoute
   "/admin/ai-billing/": typeof LayoutAdminAiBillingIndexRoute
   "/admin/github-logins/": typeof LayoutAdminGithubLoginsIndexRoute
 }
@@ -159,6 +167,7 @@ export interface FileRoutesByTo {
   "/time-tracking": typeof LayoutTimeTrackingIndexRoute
   "/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
   "/admin/ai-billing/$userId": typeof LayoutAdminAiBillingUserIdRoute
+  "/admin/adoption": typeof LayoutAdminAdoptionIndexRoute
   "/admin/ai-billing": typeof LayoutAdminAiBillingIndexRoute
   "/admin/github-logins": typeof LayoutAdminGithubLoginsIndexRoute
 }
@@ -180,6 +189,7 @@ export interface FileRoutesById {
   "/_layout/time-tracking/": typeof LayoutTimeTrackingIndexRoute
   "/_layout/repositories/notifications/$repoId": typeof LayoutRepositoriesNotificationsRepoIdRouteRoute
   "/_layout/admin/ai-billing/$userId": typeof LayoutAdminAiBillingUserIdRoute
+  "/_layout/admin/adoption/": typeof LayoutAdminAdoptionIndexRoute
   "/_layout/admin/ai-billing/": typeof LayoutAdminAiBillingIndexRoute
   "/_layout/admin/github-logins/": typeof LayoutAdminGithubLoginsIndexRoute
 }
@@ -201,6 +211,7 @@ export interface FileRouteTypes {
     | "/time-tracking/"
     | "/repositories/notifications/$repoId"
     | "/admin/ai-billing/$userId"
+    | "/admin/adoption/"
     | "/admin/ai-billing/"
     | "/admin/github-logins/"
   fileRoutesByTo: FileRoutesByTo
@@ -219,6 +230,7 @@ export interface FileRouteTypes {
     | "/time-tracking"
     | "/repositories/notifications/$repoId"
     | "/admin/ai-billing/$userId"
+    | "/admin/adoption"
     | "/admin/ai-billing"
     | "/admin/github-logins"
   id:
@@ -239,6 +251,7 @@ export interface FileRouteTypes {
     | "/_layout/time-tracking/"
     | "/_layout/repositories/notifications/$repoId"
     | "/_layout/admin/ai-billing/$userId"
+    | "/_layout/admin/adoption/"
     | "/_layout/admin/ai-billing/"
     | "/_layout/admin/github-logins/"
   fileRoutesById: FileRoutesById
@@ -348,6 +361,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof LayoutTimeTrackingIndexRouteImport
       parentRoute: typeof LayoutRouteRoute
     }
+    "/_layout/admin/adoption/": {
+      id: "/_layout/admin/adoption/"
+      path: "/adoption"
+      fullPath: "/admin/adoption/"
+      preLoaderRoute: typeof LayoutAdminAdoptionIndexRouteImport
+      parentRoute: typeof LayoutAdminRouteRoute
+    }
     "/_layout/admin/ai-billing/": {
       id: "/_layout/admin/ai-billing/"
       path: "/ai-billing"
@@ -384,6 +404,7 @@ interface LayoutAdminRouteRouteChildren {
   LayoutAdminProjectMappingsRoute: typeof LayoutAdminProjectMappingsRoute
   LayoutAdminIndexRoute: typeof LayoutAdminIndexRoute
   LayoutAdminAiBillingUserIdRoute: typeof LayoutAdminAiBillingUserIdRoute
+  LayoutAdminAdoptionIndexRoute: typeof LayoutAdminAdoptionIndexRoute
   LayoutAdminAiBillingIndexRoute: typeof LayoutAdminAiBillingIndexRoute
   LayoutAdminGithubLoginsIndexRoute: typeof LayoutAdminGithubLoginsIndexRoute
 }
@@ -393,6 +414,7 @@ const LayoutAdminRouteRouteChildren: LayoutAdminRouteRouteChildren = {
   LayoutAdminProjectMappingsRoute: LayoutAdminProjectMappingsRoute,
   LayoutAdminIndexRoute: LayoutAdminIndexRoute,
   LayoutAdminAiBillingUserIdRoute: LayoutAdminAiBillingUserIdRoute,
+  LayoutAdminAdoptionIndexRoute: LayoutAdminAdoptionIndexRoute,
   LayoutAdminAiBillingIndexRoute: LayoutAdminAiBillingIndexRoute,
   LayoutAdminGithubLoginsIndexRoute: LayoutAdminGithubLoginsIndexRoute,
 }

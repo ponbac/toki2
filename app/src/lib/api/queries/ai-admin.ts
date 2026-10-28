@@ -14,6 +14,10 @@ import {
   parseAiDeveloperMonth,
   parseAiUnmappedProjectKeys,
 } from "../contracts/ai-admin";
+import {
+  parseAiAdoption,
+  parseAiAdoptionModels,
+} from "../contracts/ai-adoption";
 import { parseMeteredMonth } from "../contracts/ai-metered-usage";
 import { parseAiMonthCloseStatus } from "../contracts/ai-month-close";
 import { parseProviderAccounts } from "../contracts/ai-provider-accounts";
@@ -112,6 +116,13 @@ export type {
   AiMonthCloseStatus,
 } from "../contracts/ai-month-close";
 export type { AiProjectMapping } from "../contracts/ai-usage-report";
+export type {
+  AiAdoption,
+  AiAdoptionCompanyDay,
+  AiAdoptionDay,
+  AiAdoptionModels,
+  AiAdoptionPerson,
+} from "../contracts/ai-adoption";
 
 /** How often a month whose import is running is reloaded. */
 const RUNNING_IMPORT_POLL_MS = 3_000;
@@ -135,6 +146,9 @@ const keys = {
   developerMonth: (month: string, userId: number) =>
     [...AI_ADMIN_QUERY_KEY, "billing", month, "developer", userId] as const,
   developers: [...AI_ADMIN_QUERY_KEY, "developers"] as const,
+  adoption: [...AI_ADMIN_QUERY_KEY, "adoption"] as const,
+  adoptionModels: (userId: number, from: string, to: string) =>
+    [...AI_ADMIN_QUERY_KEY, "adoption", "models", userId, from, to] as const,
   mappings: [...AI_ADMIN_QUERY_KEY, "project-mappings"] as const,
   unmappedKeys: [...AI_ADMIN_QUERY_KEY, "unmapped-keys"] as const,
   repositoryMappings: [...AI_ADMIN_QUERY_KEY, "repository-mappings"] as const,
@@ -210,6 +224,31 @@ export const aiAdminQueries = {
           ),
         ),
       refetchInterval: whileRatesArePending,
+    }),
+  /**
+   * Everyone's AI use per local day and tool, from the first day of the month
+   * six months back through today, the server's today.
+   */
+  adoption: () =>
+    queryOptions({
+      queryKey: keys.adoption,
+      queryFn: async () =>
+        parseAiAdoption(
+          await api.get("ai-usage/admin/adoption").json<unknown>(),
+        ),
+    }),
+  /** One person's models from `from` through `to`, local days. */
+  adoptionModels: (userId: number, from: string, to: string) =>
+    queryOptions({
+      queryKey: keys.adoptionModels(userId, from, to),
+      queryFn: async () =>
+        parseAiAdoptionModels(
+          await api
+            .get(`ai-usage/admin/adoption/developers/${userId}/models`, {
+              searchParams: { from, to },
+            })
+            .json<unknown>(),
+        ),
     }),
   /** Every user, by name. */
   developers: () =>

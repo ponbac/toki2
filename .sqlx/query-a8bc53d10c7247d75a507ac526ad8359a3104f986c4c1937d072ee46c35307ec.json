@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH accounts AS (\n                SELECT\n                    disposition.account_id,\n                    COALESCE(\n                        MAX(slice.day) FILTER (WHERE slice.complete_at IS NOT NULL),\n                        $3::date - 1\n                    ) AS through\n                FROM ai_provider_account_dispositions AS disposition\n                LEFT JOIN ai_provider_usage_slices AS slice\n                    ON slice.provider = disposition.provider\n                    AND slice.source = 'account_credits'\n                    AND slice.account_id = disposition.account_id\n                WHERE disposition.provider = $1\n                  AND disposition.target = 'user'\n                  AND disposition.valid_from <= $2\n                  AND (disposition.valid_to IS NULL OR disposition.valid_to >= $2)\n                GROUP BY disposition.account_id\n            )\n            SELECT LEAST(\n                (\n                    SELECT MAX(day)\n                    FROM ai_provider_usage_slices\n                    WHERE provider = $1 AND source = 'org_credits' AND complete_at IS NOT NULL\n                ),\n                (SELECT MIN(through) FROM accounts)\n            )\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "least",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a8bc53d10c7247d75a507ac526ad8359a3104f986c4c1937d072ee46c35307ec"
+}

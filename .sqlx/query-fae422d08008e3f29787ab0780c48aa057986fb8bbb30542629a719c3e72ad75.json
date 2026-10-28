@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT day, SUM(gross_usd_nanos)::int8 AS \"amount!\"\n            FROM ai_provider_org_credits\n            WHERE provider = $1\n              AND day >= GREATEST($2::date, $4::date)\n              AND day < $3\n            GROUP BY day\n            ORDER BY day\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "amount!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "fae422d08008e3f29787ab0780c48aa057986fb8bbb30542629a719c3e72ad75"
+}

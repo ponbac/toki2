@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const aiProviderSchema = z.enum([
+export const aiProviderSchema = z.enum([
   "codex",
   "claude",
   "grok",

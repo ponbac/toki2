@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                users.id,\n                users.full_name,\n                EXISTS (\n                    SELECT 1 FROM time_tracking_user_links AS link\n                    WHERE link.user_id = users.id AND link.active\n                ) AS \"linked!\",\n                (\n                    SELECT MIN(machine.first_seen_at AT TIME ZONE $1)::date\n                    FROM ai_usage_machines AS machine\n                    WHERE machine.user_id = users.id\n                ) AS first_synced_on\n            FROM users\n            ORDER BY users.full_name, users.id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "full_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "linked!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "first_synced_on",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "75288f4735b319e4b7bb62c8e4bded86a0593df42062fe2263c0e02b2660fd42"
+}

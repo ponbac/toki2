@@ -29,12 +29,13 @@ use crate::{
             github::{self, GithubAccountDirectory, GithubApp, GithubMeteredUsageSource},
             media::WebpAvatarProcessor,
             postgres::{
-                PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
-                PostgresAiMeteredUsageRepository, PostgresAiMonthCloseRepository,
-                PostgresAiProjectMappingRepository, PostgresAiProviderAccountRepository,
-                PostgresAiRepositoryMappingRepository, PostgresAiSubscriptionRepository,
-                PostgresAiUsageReportRepository, PostgresAiUsageRepository,
-                PostgresApiTokenRepository, PostgresAvatarRepository, PostgresOAuthRepository,
+                PostgresAiAdoptionRepository, PostgresAiBillingRepository,
+                PostgresAiExchangeRateRepository, PostgresAiMeteredUsageRepository,
+                PostgresAiMonthCloseRepository, PostgresAiProjectMappingRepository,
+                PostgresAiProviderAccountRepository, PostgresAiRepositoryMappingRepository,
+                PostgresAiSubscriptionRepository, PostgresAiUsageReportRepository,
+                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresOAuthRepository,
             },
             riksbank::RiksbankExchangeRateAdapter,
         },
@@ -45,11 +46,12 @@ use crate::{
     db::DbPool,
     domain::{
         models::{
-            AiBillingMonth, AiImportFreshness, AiMeteredCutover, AiProvider, AiUsageTimeZone,
+            AiAdoptionCredits, AiBillingMonth, AiImportFreshness, AiMeteredCutover, AiProvider,
+            AiUsageTimeZone,
         },
         ports::{
             inbound::{
-                AiBillingService, AiDisplayRateService, AiMeteredUsageService,
+                AiAdoptionService, AiBillingService, AiDisplayRateService, AiMeteredUsageService,
                 AiProjectMappingService, AiProviderAccountService, AiRepositoryMappingService,
                 AiSubscriptionService, AiUsageReportService, AiUsageService, ApiTokenAuthenticator,
                 ApiTokenService, AvatarService, OAuthAccessTokenAuthenticator, OAuthService,
@@ -57,10 +59,10 @@ use crate::{
             outbound::TimeTrackingProjectCatalog,
         },
         services::{
-            AiAccountDirectoryState, AiBillingServiceImpl, AiDisplayRateServiceImpl,
-            AiExchangeRateSettings, AiExchangeRates, AiMeteredImportSettings, AiMeteredMonths,
-            AiMeteredReadSettings, AiMeteredSourceState, AiMeteredUsageServiceImpl,
-            AiProjectMappingServiceImpl, AiProviderAccountServiceImpl,
+            AiAccountDirectoryState, AiAdoptionServiceImpl, AiBillingServiceImpl,
+            AiDisplayRateServiceImpl, AiExchangeRateSettings, AiExchangeRates,
+            AiMeteredImportSettings, AiMeteredMonths, AiMeteredReadSettings, AiMeteredSourceState,
+            AiMeteredUsageServiceImpl, AiProjectMappingServiceImpl, AiProviderAccountServiceImpl,
             AiRepositoryMappingServiceImpl, AiRepositoryMappingSettings, AiSubscriptionServiceImpl,
             AiUsageReportServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
             OAuthServiceImpl,
@@ -115,6 +117,7 @@ pub async fn create(
         .nest(
             "/ai-usage/admin",
             http::ai_billing::router()
+                .merge(http::ai_adoption::router())
                 .merge(http::ai_provider_accounts::router())
                 .merge(http::ai_metered_usage::router())
                 .merge(http::ai_repository_mappings::router()),
@@ -259,6 +262,16 @@ pub async fn create(
                 billed_from: metered_cutover.map(|cutover| cutover.from),
             },
         ));
+    // Adoption measures Copilot by GitHub's own credits wherever they are
+    // imported: from the import's first day, not the bill's cutover month.
+    let ai_adoption_service: Arc<dyn AiAdoptionService> = Arc::new(AiAdoptionServiceImpl::new(
+        Arc::new(PostgresAiAdoptionRepository::new(db_pool.clone())),
+        ai_usage_time_zone.clone(),
+        metered_cutover.map(|cutover| AiAdoptionCredits {
+            payer: cutover.payer,
+            from: config.ai_usage.metered_import.backfill_from,
+        }),
+    ));
     let ai_billing_service: Arc<dyn AiBillingService> = Arc::new(AiBillingServiceImpl::new(
         Arc::new(PostgresAiBillingRepository::new(db_pool.clone())),
         ai_subscription_repository.clone(),
@@ -361,6 +374,7 @@ pub async fn create(
         ai_usage_report_service,
         ai_project_mapping_service,
         ai_subscription_service,
+        ai_adoption_service,
         ai_billing_service,
         ai_display_rate_service,
         ai_provider_account_service.clone(),
