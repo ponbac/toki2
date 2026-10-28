@@ -1,9 +1,8 @@
 import * as React from "react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useLocation } from "@tanstack/react-router";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Combobox } from "@/components/combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,11 +21,16 @@ import {
   type AiProjectMapping,
   type AiUnmappedProjectKey,
 } from "@/lib/api/queries/ai-admin";
+import { aiUsageReportQueries } from "@/lib/api/queries/ai-usage-report";
 import {
-  aiUsageReportQueries,
-  type AiUsageProject,
-} from "@/lib/api/queries/ai-usage-report";
+  ProjectPicker,
+  type ProjectsQuery,
+} from "./-components/project-picker";
 import { QueryError } from "./-components/query-error";
+import {
+  GITHUB_REPOSITORIES_ID,
+  RepositoryMappings,
+} from "./-components/repository-mappings";
 import { StatusBadge } from "./-components/status-badge";
 import { formatDateOf, shortDate } from "./-lib/format";
 
@@ -34,12 +38,25 @@ export const Route = createFileRoute("/_layout/admin/project-mappings")({
   component: ProjectMappingsPage,
 });
 
-type ProjectsQuery = UseQueryResult<readonly AiUsageProject[], Error>;
-
 function ProjectMappingsPage() {
   const mappingsQuery = useQuery(aiAdminQueries.projectMappings());
   const unmappedQuery = useQuery(aiAdminQueries.unmappedKeys());
   const projectsQuery = useQuery(aiUsageReportQueries.aiMappingProjects());
+  const repositoryMappingsQuery = useQuery(aiAdminQueries.repositoryMappings());
+  const hash = useLocation({ select: (location) => location.hash });
+  // The sections above grow as their data arrives, so a link to the GitHub
+  // repositories brings them into view once every section has loaded.
+  const loaded =
+    !mappingsQuery.isPending &&
+    !unmappedQuery.isPending &&
+    !repositoryMappingsQuery.isPending;
+  React.useEffect(() => {
+    if (loaded && hash === GITHUB_REPOSITORIES_ID) {
+      document
+        .getElementById(GITHUB_REPOSITORIES_ID)
+        ?.scrollIntoView({ block: "start" });
+    }
+  }, [loaded, hash]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -55,7 +72,17 @@ function ProjectMappingsPage() {
         A repository stays private to the developers who use it until one of
         them maps it from their AI usage page. Until then its name is not shown
         here or in billing, only its usage as Unassigned, and nobody else can
-        map it. You can change or delete any mapping below.
+        map it. You can change or delete any mapping below. GitHub repositories
+        are the exception: GitHub&apos;s billing names the repositories it bills
+        code review to, so they are listed and mapped on their own,{" "}
+        <Link
+          to="/admin/project-mappings"
+          hash={GITHUB_REPOSITORIES_ID}
+          className="underline underline-offset-4 hover:text-foreground"
+        >
+          below
+        </Link>
+        .
       </p>
 
       {projectsQuery.isError && (
@@ -87,40 +114,12 @@ function ProjectMappingsPage() {
         </div>
         <Mappings query={mappingsQuery} projects={projectsQuery} />
       </section>
+
+      <RepositoryMappings
+        query={repositoryMappingsQuery}
+        projects={projectsQuery}
+      />
     </div>
-  );
-}
-
-function projectItems(projects: ProjectsQuery) {
-  return (projects.data ?? []).map((project) => ({
-    value: project.projectId,
-    label: project.projectName,
-  }));
-}
-
-function ProjectPicker({
-  projects,
-  value,
-  onChange,
-  disabled,
-}: {
-  projects: ProjectsQuery;
-  value: string;
-  onChange: (projectId: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Combobox
-      items={projectItems(projects)}
-      placeholder="Choose project"
-      searchPlaceholder="Search projects..."
-      emptyMessage="No active project matches."
-      value={value}
-      onChange={onChange}
-      disabled={disabled || !projects.data}
-      isLoading={projects.isPending}
-      loadingMessage="Loading projects..."
-    />
   );
 }
 

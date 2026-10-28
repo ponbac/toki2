@@ -32,11 +32,11 @@ use crate::{
     domain::{
         models::{
             AiAccountImportError, AiAccountReconciliation, AiAccountTarget, AiBillingMonth,
-            AiCreditKind, AiDecimal, AiGroupKind, AiImportFreshness, AiImportKind, AiImportRun,
-            AiMeteredModelStatus, AiMeteredMonth, AiMeteredSource, AiMeteredSourceHealth,
-            AiMonthMode, AiOrgChargeKind, AiReconciliationFlag, AiReconciliationGroup,
-            AiResidualStatus, AiRunStatus, AiSourceState, AiStaleReason, AiUsageCheck, AiUsdNanos,
-            UserId, NANOS_PER_CREDIT,
+            AiCodeReviewCheck, AiCreditKind, AiDecimal, AiGroupKind, AiImportFreshness,
+            AiImportKind, AiImportRun, AiMeteredModelStatus, AiMeteredMonth, AiMeteredSource,
+            AiMeteredSourceHealth, AiMonthMode, AiOrgChargeKind, AiReconciliationFlag,
+            AiReconciliationGroup, AiResidualStatus, AiRunStatus, AiSourceState, AiStaleReason,
+            AiUsageCheck, AiUsdNanos, UserId, NANOS_PER_CREDIT,
         },
         ports::inbound::AiMeteredUsageService,
         AiMeteredUsageError, MeteredUsageSourceError,
@@ -298,10 +298,7 @@ impl From<AiMeteredMonth> for MeteredMonthResponse {
                     days: usage.days,
                 })
                 .collect(),
-            code_review: reconciliation.code_review.map(|check| CodeReviewResponse {
-                by_accounts: credits(check.by_accounts),
-                by_repositories: credits(check.by_repositories),
-            }),
+            code_review: reconciliation.code_review.map(Into::into),
             residual_days: reconciliation
                 .residual_days
                 .into_iter()
@@ -310,11 +307,7 @@ impl From<AiMeteredMonth> for MeteredMonthResponse {
                     org_gross: credits(day.org_gross),
                     accounts_gross: credits(day.accounts_gross),
                     residual: signed_credits(day.residual),
-                    status: match day.status {
-                        AiResidualStatus::Settled => ResidualStatusResponse::Settled,
-                        AiResidualStatus::Provisional => ResidualStatusResponse::Provisional,
-                        AiResidualStatus::Incomplete => ResidualStatusResponse::Incomplete,
-                    },
+                    status: day.status.into(),
                     accounts_exceed_org: day.accounts_exceed_org,
                     groups: day
                         .groups
@@ -928,11 +921,51 @@ struct RepositoryResponse {
     days: u32,
 }
 
+/// Code review billed per account against per repository: the same
+/// credits, which the bill takes once, per repository.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CodeReviewResponse {
     by_accounts: String,
     by_repositories: String,
+    /// Every reconciled UTC day with code review on either side.
+    days: Vec<CodeReviewDayResponse>,
+}
+
+impl From<AiCodeReviewCheck> for CodeReviewResponse {
+    fn from(check: AiCodeReviewCheck) -> Self {
+        Self {
+            by_accounts: credits(check.by_accounts),
+            by_repositories: credits(check.by_repositories),
+            days: check
+                .days
+                .into_iter()
+                .map(|day| CodeReviewDayResponse {
+                    day: day.day,
+                    by_accounts: credits(day.by_accounts),
+                    by_repositories: credits(day.by_repositories),
+                    difference: signed_credits(day.difference),
+                    status: day.status.into(),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodeReviewDayResponse {
+    #[serde(with = "iso_date")]
+    day: Date,
+    by_accounts: String,
+    by_repositories: String,
+    /// Repositories minus accounts, `"0.00"` when they agree: negative is
+    /// code review the payer billed without a repository (inside the IDE
+    /// aggregate) or in an unrecognized row, which bills on no line;
+    /// positive is code review by accounts Toki does not import, which bills
+    /// once, through its repository line.
+    difference: String,
+    status: ResidualStatusResponse,
 }
 
 #[derive(Debug, Serialize)]
@@ -941,6 +974,16 @@ enum ResidualStatusResponse {
     Settled,
     Provisional,
     Incomplete,
+}
+
+impl From<AiResidualStatus> for ResidualStatusResponse {
+    fn from(status: AiResidualStatus) -> Self {
+        match status {
+            AiResidualStatus::Settled => Self::Settled,
+            AiResidualStatus::Provisional => Self::Provisional,
+            AiResidualStatus::Incomplete => Self::Incomplete,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

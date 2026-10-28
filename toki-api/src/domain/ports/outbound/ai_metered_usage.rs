@@ -6,8 +6,9 @@ use crate::domain::{
         AiBillingMonth, AiCreditStoreScope, AiCreditTotal, AiImportPlan, AiImportRun,
         AiImportRunId, AiImportStatus, AiMeteredCredit, AiMeteredOrgCharge, AiMeteredPeriod,
         AiMeteredScope, AiMeteredSource, AiMeteredSummaryLine, AiProvider, AiProviderAccountId,
-        AiSliceRecord, AiStoredAccountCredit, AiStoredOrgCredit, AiStoredScope, AiTrackedModelDay,
-        AiUsageCheck, AiUsageDateRange, TimeTrackingCompany, UserId,
+        AiSliceRecord, AiStoredAccountCredit, AiStoredOrgCredit, AiStoredRepositoryMapping,
+        AiStoredScope, AiTrackedModelDay, AiUsageCheck, AiUsageDateRange, TimeTrackingCompany,
+        UserId,
     },
     AiMeteredUsageError, MeteredUsageSourceError,
 };
@@ -221,4 +222,11 @@ pub trait AiMeteredUsageRepository: Send + Sync + 'static {
         mapping_company: Option<&TimeTrackingCompany>,
         user: Option<UserId>,
     ) -> Result<Vec<AiTrackedModelDay>, AiMeteredUsageError>;
+
+    /// Every repository mapping of the payer: what the bill's repository
+    /// lines resolve through (`AiRepositoryResolver`).
+    async fn repository_mappings(
+        &self,
+        payer: AiProvider,
+    ) -> Result<Vec<AiStoredRepositoryMapping>, AiMeteredUsageError>;
 }

@@ -1436,9 +1436,10 @@ fn october() -> AiBillingMonth {
 
 fn metered_allocation() -> AiMeteredAllocation {
     use crate::domain::models::ai_metered_fixtures::{
-        account, closed_input, credits, linked, to_unassigned, tracked, tracked_to, CREDIT,
+        account, closed_input, company, credits, linked, repository_credits, repository_mapping,
+        to_unassigned, tracked, tracked_to, widget, CREDIT,
     };
-    use crate::domain::models::AiAccountTarget;
+    use crate::domain::models::{AiAccountTarget, AiRepositoryResolver};
     let day = date!(2026 - 10 - 05);
     let mut input = closed_input(vec![
         linked(1001, "ada-lovelace", UserId::new(1)),
@@ -1466,6 +1467,15 @@ fn metered_allocation() -> AiMeteredAllocation {
             20 * CREDIT,
         ),
     ];
+    // Code review per repository: one mapped, one not.
+    input.org_charges = vec![
+        repository_credits(day, "Widget-API", "12"),
+        repository_credits(day, "gadget-web", "8"),
+    ];
+    input.repository_mappings = AiRepositoryResolver::new(
+        vec![repository_mapping("widget-api", company(), widget())],
+        Some(company()),
+    );
     allocate_metered_credits(&input).unwrap()
 }
 
@@ -1542,6 +1552,27 @@ fn metered_lines_join_the_bill_after_each_subjects_other_lines() {
             (Some(7), "metered"),
             (Some(8), "api"),
             (None, "metered"),
+            // Repositories last, by name whatever the case.
+            (None, "metered"),
+            (None, "metered"),
+        ]
+    );
+    let repositories: Vec<(&str, Option<&str>)> = merged
+        .lines
+        .iter()
+        .filter_map(|line| match &line.subject {
+            AiBillingSubject::Repository { name, .. } => Some((
+                name.as_str(),
+                line.project.as_ref().map(|project| project.name.as_str()),
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        repositories,
+        [
+            ("gadget-web", None),
+            ("Widget-API", Some("Example Client - Widget API"))
         ]
     );
     assert_eq!(merged.metered, Some(info));
@@ -1574,12 +1605,13 @@ fn metered_lines_join_the_bill_after_each_subjects_other_lines() {
     assert_eq!(converted(&merged, &after), converted(&bill, &before));
     assert_eq!(
         after.totals.metered.unwrap().hundredths,
-        (10 + 100 + 7) * 10
+        (10 + 100 + 7 + 12 + 8) * 10
     );
 
-    // Totals count metered credits apart from API usage.
+    // Totals count metered credits apart from API usage, code review
+    // included.
     let totals = merged.totals().unwrap();
-    assert_eq!(totals.metered_billed.hundredths, 10 + 100 + 7);
+    assert_eq!(totals.metered_billed.hundredths, 10 + 100 + 7 + 12 + 8);
     assert_eq!(totals.api_billed, bill.totals().unwrap().api_billed);
 }
 
@@ -1612,6 +1644,33 @@ fn a_metered_unassigned_line_is_one_part_of_its_kind() {
     assert_eq!(parts[0].unassigned, Some(AiUnassignedKind::Unattributed));
     assert_eq!(parts[0].billable, Some(billable));
 
+    // An unmapped repository's code review is one part too, of its own kind.
+    let repository = merged
+        .lines
+        .iter()
+        .find(|line| {
+            line.unassigned.first().map(|part| part.kind)
+                == Some(AiUnassignedKind::UnmappedRepository)
+        })
+        .unwrap();
+    assert_eq!(
+        repository.subject,
+        AiBillingSubject::Repository {
+            provider: AiProvider::Copilot,
+            name: "gadget-web".to_string(),
+        }
+    );
+    let parts = repository.parts(&converted).unwrap();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(
+        parts[0].unassigned,
+        Some(AiUnassignedKind::UnmappedRepository)
+    );
+    assert_eq!(
+        parts[0].billable.as_ref().map(|amount| amount.hundredths),
+        Some(8)
+    );
+
     // Lines of another month never join.
     assert!(matches!(
         add_metered_lines(
@@ -1639,7 +1698,12 @@ fn subjects_order_users_then_accounts_then_the_unknown_account_and_repositories(
         },
         AiBillingSubject::Repository {
             provider: AiProvider::Copilot,
-            name: "widget-api".to_string(),
+            name: "gadget-web".to_string(),
+        },
+        // By name, whatever the case.
+        AiBillingSubject::Repository {
+            provider: AiProvider::Copilot,
+            name: "Widget-API".to_string(),
         },
     ];
     let keys: Vec<_> = subjects.iter().map(AiBillingSubject::order_key).collect();

@@ -279,7 +279,9 @@ function Explanation({
           <span className="font-medium text-foreground">Untracked</span> is the
           rest of G on linked days, Spinit overhead, never spread over
           customers. Cloud agent credits are always untracked; code review
-          credits are billed per repository instead.
+          credits are billed per repository instead, from GitHub&apos;s
+          organization rows, to the project each repository is mapped to under
+          Project mappings &gt; GitHub repositories, or Unassigned until it is.
         </li>
         <li>
           The flags comparing G with T (GitHub billed nothing, below 85%) count

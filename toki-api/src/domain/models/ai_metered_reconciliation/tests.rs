@@ -700,31 +700,6 @@ fn a_seated_account_that_failed_makes_every_day_an_import_gap() {
     assert_eq!(result.totals.incomplete_import, 15 * CREDIT);
 }
 
-fn charge(
-    day: Date,
-    product: &str,
-    sku: &str,
-    unit: &str,
-    repository: &str,
-    kind: AiOrgChargeKind,
-    quantity: &str,
-) -> AiMeteredOrgCharge {
-    AiMeteredOrgCharge {
-        day,
-        product: product.to_string(),
-        sku: sku.to_string(),
-        unit: unit.to_string(),
-        repository: repository.to_string(),
-        kind,
-        unit_price: dec("0.01"),
-        quantity: dec(quantity),
-        gross_amount: dec(quantity),
-        discount_amount: AiDecimal::ZERO,
-        net_amount: dec(quantity),
-        reported_at: None,
-    }
-}
-
 #[test]
 fn repositories_the_code_review_check_and_the_pool() {
     let mut input = input(vec![linked(1001, "ada-lovelace", ADA)]);
@@ -737,7 +712,7 @@ fn repositories_the_code_review_check_and_the_pool() {
         "100",
     )];
     input.org_charges = vec![
-        charge(
+        org_charge(
             date!(2026 - 10 - 02),
             "copilot",
             CREDITS_SKU,
@@ -746,7 +721,7 @@ fn repositories_the_code_review_check_and_the_pool() {
             AiOrgChargeKind::RepositoryCredits,
             "60",
         ),
-        charge(
+        org_charge(
             date!(2026 - 10 - 03),
             "copilot",
             CREDITS_SKU,
@@ -755,7 +730,7 @@ fn repositories_the_code_review_check_and_the_pool() {
             AiOrgChargeKind::RepositoryCredits,
             "40",
         ),
-        charge(
+        org_charge(
             date!(2026 - 10 - 02),
             "copilot",
             CREDITS_SKU,
@@ -764,7 +739,7 @@ fn repositories_the_code_review_check_and_the_pool() {
             AiOrgChargeKind::AccountCreditsAggregate,
             "900",
         ),
-        charge(
+        org_charge(
             date!(2026 - 10 - 02),
             "actions",
             "Actions Linux",
@@ -841,12 +816,31 @@ fn repositories_the_code_review_check_and_the_pool() {
     assert_eq!(actions.credit_usd, None);
     // The IDE aggregate is never added to accounts.
     assert_eq!(result.totals.gross, usd(100 * CREDIT));
+    // The month agrees; its days do not: GitHub put 40 of Ada's code
+    // review of the 2nd on the 3rd.
+    let code_review = result.code_review.unwrap();
     assert_eq!(
-        result.code_review,
-        Some(AiCodeReviewCheck {
-            by_accounts: usd(100 * CREDIT),
-            by_repositories: usd(100 * CREDIT),
-        })
+        (code_review.by_accounts, code_review.by_repositories),
+        (usd(100 * CREDIT), usd(100 * CREDIT))
+    );
+    assert_eq!(
+        code_review.days,
+        [
+            AiCodeReviewDay {
+                day: date!(2026 - 10 - 02),
+                by_accounts: usd(100 * CREDIT),
+                by_repositories: usd(60 * CREDIT),
+                difference: -40 * CREDIT,
+                status: AiResidualStatus::Settled,
+            },
+            AiCodeReviewDay {
+                day: date!(2026 - 10 - 03),
+                by_accounts: AiUsdNanos::ZERO,
+                by_repositories: usd(40 * CREDIT),
+                difference: 40 * CREDIT,
+                status: AiResidualStatus::Settled,
+            },
+        ]
     );
     let pool = result.pool.unwrap();
     assert_eq!(pool.exhausted_on, Some(date!(2026 - 10 - 03)));
@@ -906,4 +900,144 @@ fn destinations_of_one_model_reconcile_as_the_model() {
     assert_eq!(split, one);
     assert_eq!(split.attributed, usd(80 * CREDIT));
     assert_eq!(split.untracked, usd(20 * CREDIT));
+}
+
+#[test]
+fn the_code_review_check_compares_accounts_and_repositories_per_day() {
+    let (agrees, ide, missing, settling, incomplete) = (
+        date!(2026 - 10 - 05),
+        date!(2026 - 10 - 06),
+        date!(2026 - 10 - 07),
+        date!(2026 - 10 - 23),
+        date!(2026 - 10 - 08),
+    );
+    let code_review = |id: i64, day: Date, quantity: &str| {
+        row(
+            id,
+            day,
+            CREDITS_SKU,
+            "Code Review model",
+            AiCreditKind::RepositoryBilled,
+            quantity,
+        )
+    };
+    let mut input = input(vec![
+        linked(1001, "ada-lovelace", ADA),
+        linked(1002, "grace-hopper", GRACE),
+    ]);
+    input.account_credits = vec![
+        code_review(1001, agrees, "7"),
+        code_review(1002, agrees, "5"),
+        // Code review GitHub billed without a repository: in the IDE
+        // aggregate, never on a repository row.
+        code_review(1001, ide, "10"),
+        code_review(1001, missing, "3"),
+        code_review(1001, settling, "4"),
+        code_review(1001, incomplete, "2"),
+    ];
+    input.org_charges = vec![
+        repository_credits(agrees, "widget-api", "8"),
+        repository_credits(agrees, "Gadget-Web", "4"),
+        org_charge(
+            ide,
+            "copilot",
+            CREDITS_SKU,
+            "AICredits",
+            "",
+            AiOrgChargeKind::AccountCreditsAggregate,
+            "10",
+        ),
+        repository_credits(missing, "widget-api", "3"),
+        repository_credits(settling, "widget-api", "4"),
+        repository_credits(incomplete, "widget-api", "2"),
+        // Another month's rows are no part of October's check.
+        repository_credits(date!(2026 - 09 - 30), "widget-api", "50"),
+    ];
+    input.coverage.get_mut(&missing).unwrap().org_usage_fetched = false;
+    input
+        .coverage
+        .get_mut(&incomplete)
+        .unwrap()
+        .org_usage_complete = false;
+
+    let check = run(input.clone()).code_review.unwrap();
+    assert_eq!(check.by_accounts, usd(31 * CREDIT));
+    assert_eq!(check.by_repositories, usd(21 * CREDIT));
+    let days: Vec<(Date, i64, AiResidualStatus)> = check
+        .days
+        .iter()
+        .map(|day| (day.day, day.difference, day.status))
+        .collect();
+    assert_eq!(
+        days,
+        [
+            (agrees, 0, AiResidualStatus::Settled),
+            (ide, -10 * CREDIT, AiResidualStatus::Settled),
+            (missing, 0, AiResidualStatus::Incomplete),
+            (incomplete, 0, AiResidualStatus::Provisional),
+            (settling, 0, AiResidualStatus::Provisional),
+        ]
+    );
+
+    // An account slice not yet complete leaves the day provisional; a missing
+    // one, or a seated account's failed import, an import gap.
+    let mut unsettled = input.clone();
+    unsettled
+        .coverage
+        .get_mut(&agrees)
+        .unwrap()
+        .accounts_incomplete = 1;
+    unsettled.coverage.get_mut(&ide).unwrap().accounts_missing = 1;
+    let check = run(unsettled).code_review.unwrap();
+    assert_eq!(check.days[0].status, AiResidualStatus::Provisional);
+    assert_eq!(check.days[1].status, AiResidualStatus::Incomplete);
+    let mut failed = input.clone();
+    failed.checks.push(AiUsageCheck {
+        payer_gross: None,
+        matches: None,
+        error: Some("the usage source is unavailable".to_string()),
+        ..account_check(1002)
+    });
+    let check = run(failed).code_review.unwrap();
+    assert!(check
+        .days
+        .iter()
+        .all(|day| day.status == AiResidualStatus::Incomplete));
+
+    // So does a run that stopped before finishing an account's month, whatever
+    // its seat, as its repository-billed days may be half replaced; a departed
+    // account's own error is informational.
+    let mut departed = input.clone();
+    departed
+        .accounts
+        .push(account(1005, "former-member", false, &[]));
+    let mut own_error = departed.clone();
+    own_error.checks.push(AiUsageCheck {
+        payer_gross: None,
+        matches: None,
+        error: Some("GitHub knows no Copilot usage for former-member".to_string()),
+        ..account_check(1005)
+    });
+    assert_eq!(
+        run(own_error).code_review.unwrap().days,
+        run(input.clone()).code_review.unwrap().days
+    );
+    departed.checks.push(AiUsageCheck::interrupted(
+        Some(account_id(1005)),
+        datetime!(2026-10-25 06:00 UTC),
+        AiDecimal::ZERO,
+        "GitHub's rate limiting stopped the import",
+    ));
+    let check = run(departed).code_review.unwrap();
+    assert!(check
+        .days
+        .iter()
+        .all(|day| day.status == AiResidualStatus::Incomplete));
+
+    // Without code review on either side there is no check.
+    input.account_credits.clear();
+    input
+        .org_charges
+        .retain(|charge| charge.kind != AiOrgChargeKind::RepositoryCredits);
+    assert_eq!(run(input).code_review, None);
 }

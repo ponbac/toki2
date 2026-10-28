@@ -11,6 +11,7 @@ import {
   spinitShare,
   splitProjectName,
   statementUnassigned,
+  subjectsLabel,
 } from "./ledger.ts";
 
 const usage = {
@@ -615,6 +616,120 @@ describe("a metered payer's lines", () => {
 
     expect(share.untracked).toBeNull();
     expect(share.total).toBeNull();
+  });
+});
+
+/** A repository's code review credits, on `projectName` or, without one,
+ * Unassigned as an unmapped repository. */
+function review(name, projectName, sek) {
+  const project =
+    projectName === null ? null : { projectId: projectName, projectName };
+  return line(null, sek, {
+    subject: { kind: "repository", provider: "copilot", name },
+    provider: "copilot",
+    project,
+    unassigned: project === null ? "unmappedRepository" : null,
+    billingMode: "metered",
+    billableCurrency: "USD",
+    metered: {
+      kind: "repository",
+      credits: `${Math.round(Number(sek) * 10)}.00`,
+      account: null,
+      sku: "Copilot AI Credits",
+      provisional: false,
+      provisionalReasons: [],
+      lowRatio: false,
+    },
+    usage: { ...usage, records: 0, apiEquivalentUsd: 0 },
+  });
+}
+
+describe("code review of repositories", () => {
+  test("a mapped repository joins its project; an unmapped one is Unassigned of its own, in bill order", () => {
+    const ledger = ledgerOf([
+      line(null, "10.00", { unassigned: "unattributed" }),
+      review("gadget-web", null, "80.00"),
+      line("Big - B", "300.00"),
+      review("widget-api", "Big - B", "120.00"),
+      line(null, "20.00"),
+    ]);
+
+    expect(ledger.projects.map((e) => [e.label, e.totals.converted])).toEqual([
+      ["Big - B", 42000],
+    ]);
+    expect(
+      ledger.unassigned.map((e) => [e.key, e.label, e.totals.converted]),
+    ).toEqual([
+      ["unassigned:unmapped", "Unmapped repositories", 2000],
+      [
+        "unassigned:unmappedRepository",
+        "Code review: unmapped repositories",
+        8000,
+      ],
+      ["unassigned:unattributed", "No repository", 1000],
+    ]);
+  });
+
+  test("the statement and the strip count unmapped repositories as having no project, never as Spinit's", () => {
+    const ledger = ledgerOf([
+      line("Big - B", "300.00"),
+      review("gadget-web", null, "80.00"),
+    ]);
+
+    const { unassigned, outside } = statementUnassigned(ledger);
+    expect(unassigned.map((e) => e.unassigned)).toEqual(["unmappedRepository"]);
+    expect(outside).toBeNull();
+    expect(spinitShare(ledger).total).toBe(0);
+    expect(
+      allocationSegments(ledger).map((s) => [s.kind, s.short, s.amount]),
+    ).toEqual([
+      ["project", "Big", 30000],
+      ["unassigned", "Code review", 8000],
+    ]);
+  });
+});
+
+describe("subjectsLabel", () => {
+  const names = new Map([[1, "Ada Lovelace"]]);
+  const people = (lines) => ledgerOf(lines).unassigned[0]?.people ?? [];
+
+  test("names one subject, a repository by its code review", () => {
+    expect(subjectsLabel(people([line(null, "1.00")]), names)).toBe(
+      "Ada Lovelace",
+    );
+    expect(
+      subjectsLabel(people([review("gadget-web", null, "1.00")]), names),
+    ).toBe("Copilot code review · gadget-web");
+  });
+
+  test("counts people, accounts and repositories apart", () => {
+    const [entry] = ledgerOf([
+      review("widget-api", "Big - B", "3.00"),
+      review("gadget-web", "Big - B", "2.00"),
+      line("Big - B", "1.00"),
+      line("Big - B", "1.00", { userId: 2 }),
+      metered("project", "Big - B", "1.00", {
+        subject: {
+          kind: "providerAccount",
+          provider: "copilot",
+          accountId: 2002,
+          login: "grace-hopper",
+        },
+      }),
+    ]).projects;
+
+    expect(subjectsLabel(entry.people, names)).toBe(
+      "2 people, 1 account, 2 repositories",
+    );
+    expect(
+      subjectsLabel(
+        people([
+          review("widget-api", null, "1.00"),
+          review("gadget-web", null, "1.00"),
+        ]),
+        names,
+      ),
+    ).toBe("2 repositories");
   });
 });
 

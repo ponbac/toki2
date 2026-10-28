@@ -5,6 +5,7 @@ mod ai_metered_months;
 mod ai_metered_usage;
 mod ai_project_mapping;
 mod ai_provider_accounts;
+mod ai_repository_mapping;
 mod ai_subscriptions;
 mod ai_usage;
 mod ai_usage_report;
@@ -23,6 +24,7 @@ pub use ai_metered_usage::{
 };
 pub use ai_project_mapping::AiProjectMappingServiceImpl;
 pub use ai_provider_accounts::{AiAccountDirectoryState, AiProviderAccountServiceImpl};
+pub use ai_repository_mapping::{AiRepositoryMappingServiceImpl, AiRepositoryMappingSettings};
 pub use ai_subscriptions::AiSubscriptionServiceImpl;
 pub use ai_usage::AiUsageServiceImpl;
 pub use ai_usage_report::AiUsageReportServiceImpl;

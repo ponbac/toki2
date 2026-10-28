@@ -150,6 +150,27 @@ pub enum AiProjectMappingError {
     Storage(String),
 }
 
+/// Errors of the mappings from a metered payer's repositories to
+/// time-tracking projects.
+#[derive(Debug, Error)]
+pub enum AiRepositoryMappingError {
+    #[error("{0}")]
+    InvalidRepository(String),
+    /// A new mapping needs a repository the payer billed credits to.
+    #[error("no credits were ever billed to repository {0:?}")]
+    UnknownRepository(String),
+    #[error("time-tracking project {0} does not exist or is not active")]
+    UnknownProject(String),
+    #[error("no mapping exists for the repository")]
+    NotFound,
+    #[error("time tracking is not configured")]
+    NotConfigured,
+    #[error("time-tracking projects are unavailable: {0}")]
+    ProjectsUnavailable(String),
+    #[error("ai repository mapping storage error: {0}")]
+    Storage(String),
+}
+
 /// Errors that can occur while declaring or reading AI subscriptions.
 #[derive(Debug, Error)]
 pub enum AiSubscriptionError {

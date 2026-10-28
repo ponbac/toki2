@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT repository, day, sum(credit_usd_nanos)::int8 AS \"credits!\"\n            FROM ai_provider_org_usage\n            WHERE provider = $1 AND kind = 'repository_credits'\n            GROUP BY repository, day\n            ORDER BY day, repository\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "repository",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_usage",
+            "name": "repository"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "day",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_usage",
+            "name": "day"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "credits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "7e48c03613173b6b6f72bb87a70c510268b39d3517a4940202ac83d00cef51ea"
+}

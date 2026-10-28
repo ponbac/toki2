@@ -60,7 +60,8 @@ Read `.docs/mcp.md` before changing MCP tools, MCP authentication or Toki's OAut
 | **Time tracking** | Fully hexagonal | `TimeTrackingClient` + `TimeTrackingService` ports, `KleerAdapter` |
 | **Work items** | Fully hexagonal | `WorkItemProvider` + `WorkItemService` ports, `AzureDevOpsWorkItemAdapter` |
 | **AI provider accounts** | Fully hexagonal | `ProviderAccountDirectory` + `AiProviderAccountService` ports, `GithubAccountDirectory` (GitHub App) |
-| **AI metered usage** | Fully hexagonal | `MeteredUsageSource` + `AiMeteredUsageService` ports, `GithubMeteredUsageSource` (shares the GitHub App client with `GithubAccountDirectory`). The bill's Copilot lines read it through `AiMeteredMonths`; `allocate_metered_credits` is pure |
+| **AI metered usage** | Fully hexagonal | `MeteredUsageSource` + `AiMeteredUsageService` ports, `GithubMeteredUsageSource` (shares the GitHub App client with `GithubAccountDirectory`). The bill's Copilot lines read it through `AiMeteredMonths`; `allocate_metered_credits` is pure; repository credits bill per repository |
+| **AI repository mappings** | Fully hexagonal | `AiRepositoryMappingRepository` + `AiRepositoryMappingService` ports, `PostgresAiRepositoryMappingRepository`; suggestion host from `github::REPOSITORY_KEY_HOST`; the bill resolves them through `AiMeteredUsageRepository::repository_mappings` and `AiRepositoryResolver` |
 | **Pull requests** | Not abstracted | `RepoDiffer` directly uses `az_devops::RepoClient` — needs refactoring |
 | **Notifications** | Not abstracted | Coupled to PR change events |
 

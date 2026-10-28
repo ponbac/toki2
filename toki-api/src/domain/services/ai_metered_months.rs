@@ -1,6 +1,7 @@
 //! Loading a metered payer's UTC month: what reconciliation and the bill's
 //! metered lines are computed from. One loader, so the reconciliation tab and
-//! the bill read the same accounts, credits, coverage and tracked usage.
+//! the bill read the same accounts, credits, coverage, tracked usage and
+//! repository mappings.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -12,8 +13,9 @@ use time::{Date, OffsetDateTime};
 use crate::domain::{
     models::{
         held_seat_in, utc_day, AiAccountTarget, AiBillingMonth, AiDayCoverage, AiImportStatus,
-        AiMeteredSource, AiProvider, AiProviderAccountId, AiReconciliationInput, AiSliceRecord,
-        AiStoredProviderAccount, AiUsageCheck, TimeTrackingCompany, UserId,
+        AiMeteredSource, AiProvider, AiProviderAccountId, AiReconciliationInput,
+        AiRepositoryResolver, AiSliceRecord, AiStoredProviderAccount, AiUsageCheck,
+        TimeTrackingCompany, UserId,
     },
     ports::outbound::{AiMeteredUsageRepository, AiProviderAccountRepository},
     AiMeteredUsageError,
@@ -26,7 +28,8 @@ pub struct AiMeteredReadSettings {
     pub backfill_from: Date,
     /// Buckets before it are never repriced.
     pub reprice_floor: OffsetDateTime,
-    /// Only project mappings to this company resolve, as in the bill.
+    /// Only project and repository mappings to this company resolve, as in
+    /// the bill.
     pub mapping_company: Option<TimeTrackingCompany>,
 }
 
@@ -90,7 +93,10 @@ impl<R, A> AiMeteredMonths<R, A> {
     }
 
     /// The reconciled days of `month` and their coverage. `account_slices`
-    /// holds each fetched account slice and whether it is complete.
+    /// holds each fetched account slice and whether it is complete;
+    /// `org_slices` and `org_usage_slices` are the organization's credits and
+    /// usage rows slices.
+    #[allow(clippy::too_many_arguments)]
     fn coverage(
         &self,
         month: AiBillingMonth,
@@ -98,6 +104,7 @@ impl<R, A> AiMeteredMonths<R, A> {
         accounts: &[&AiStoredProviderAccount],
         account_slices: &HashMap<(AiProviderAccountId, Date), bool>,
         org_slices: &[AiSliceRecord],
+        org_usage_slices: &[AiSliceRecord],
         checks: &[AiUsageCheck],
     ) -> BTreeMap<Date, AiDayCoverage> {
         // An account whose own import failed without a seat in the month is
@@ -119,10 +126,14 @@ impl<R, A> AiMeteredMonths<R, A> {
             .map(|account| account.account_id)
             .filter(|account_id| !informational.contains(account_id))
             .collect();
-        let org_slices: HashMap<Date, bool> = org_slices
-            .iter()
-            .map(|slice| (slice.day, slice.is_complete()))
-            .collect();
+        let by_day = |slices: &[AiSliceRecord]| -> HashMap<Date, bool> {
+            slices
+                .iter()
+                .map(|slice| (slice.day, slice.is_complete()))
+                .collect()
+        };
+        let org_slices = by_day(org_slices);
+        let org_usage_slices = by_day(org_usage_slices);
 
         days_between(month, self.settings.backfill_from, today)
             .into_iter()
@@ -130,6 +141,8 @@ impl<R, A> AiMeteredMonths<R, A> {
                 let mut coverage = AiDayCoverage {
                     org_fetched: org_slices.contains_key(&day),
                     org_complete: org_slices.get(&day).copied().unwrap_or(false),
+                    org_usage_fetched: org_usage_slices.contains_key(&day),
+                    org_usage_complete: org_usage_slices.get(&day).copied().unwrap_or(false),
                     ..AiDayCoverage::default()
                 };
                 for account_id in &expected {
@@ -152,9 +165,9 @@ where
 {
     /// The month of everyone, or of one user's linked days: the accounts in
     /// scope, their credits, checks and slices, the coverage of the month's
-    /// imported days through today, the organization's credits, rows and
-    /// summary (not in one user's view) and the tracked usage per
-    /// destination.
+    /// imported days through today, the organization's credits, rows,
+    /// summary and repository mappings (not in one user's view) and the
+    /// tracked usage per destination.
     pub async fn load(
         &self,
         month: AiBillingMonth,
@@ -210,21 +223,35 @@ where
             .repository
             .slices(self.payer, AiMeteredSource::OrgCredits, dates)
             .await?;
+        let org_usage_slices = self
+            .repository
+            .slices(self.payer, AiMeteredSource::OrgUsage, dates)
+            .await?;
         let coverage = self.coverage(
             month,
             today,
             &in_scope,
             &account_slices,
             &org_slices,
+            &org_usage_slices,
             &checks,
         );
-        let (org_credits, org_charges, summary) = match focus {
+        let (org_credits, org_charges, summary, repository_mappings) = match focus {
             None => (
                 self.repository.org_credits(self.payer, dates).await?,
                 self.repository.org_charges(self.payer, dates).await?,
                 self.repository.summary(self.payer, month).await?,
+                AiRepositoryResolver::new(
+                    self.repository.repository_mappings(self.payer).await?,
+                    self.settings.mapping_company.clone(),
+                ),
             ),
-            Some(_) => (Vec::new(), Vec::new(), None),
+            Some(_) => (
+                Vec::new(),
+                Vec::new(),
+                None,
+                AiRepositoryResolver::default(),
+            ),
         };
         let tracked = self
             .repository
@@ -252,6 +279,7 @@ where
             coverage,
             account_slices,
             focus,
+            repository_mappings,
         };
         Ok(AiMeteredMonthData {
             now,

@@ -2676,14 +2676,21 @@ mod copilot {
     //! from August and a usage import from 1 August.
 
     use super::*;
-    use crate::domain::{
-        models::{
-            AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiCreditKind,
-            AiCreditStoreScope, AiDecimal, AiImportKind, AiImportPlan, AiListedSeat,
-            AiMeteredAmounts, AiMeteredCredit, AiMeteredModel, AiMeteredSource, AiMonthMode,
-            AiPricingBasis, AiProviderAccountId, AiProviderLogin, AiSeatListing, AiUsageCheck,
+    use crate::{
+        adapters::outbound::postgres::PostgresAiRepositoryMappingRepository,
+        domain::{
+            models::{
+                AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiCreditKind,
+                AiCreditStoreScope, AiDecimal, AiImportKind, AiImportPlan, AiListedSeat,
+                AiMappedProject, AiMeteredAmounts, AiMeteredCredit, AiMeteredModel,
+                AiMeteredOrgCharge, AiMeteredSource, AiMonthMode, AiOrgChargeKind, AiPricingBasis,
+                AiProviderAccountId, AiProviderLogin, AiSeatListing, AiUsageCheck,
+            },
+            ports::outbound::{
+                AiMeteredUsageRepository, AiProviderAccountRepository,
+                AiRepositoryMappingRepository,
+            },
         },
-        ports::outbound::{AiMeteredUsageRepository, AiProviderAccountRepository},
     };
 
     const ADA_ACCOUNT: i64 = 1001;
@@ -2804,11 +2811,39 @@ mod copilot {
         pub ada: TestUser,
     }
 
+    /// An organization usage row on the credit day.
+    fn org_row(
+        product: &str,
+        sku: &str,
+        unit: &str,
+        repository: &str,
+        kind: AiOrgChargeKind,
+        quantity: &str,
+    ) -> AiMeteredOrgCharge {
+        AiMeteredOrgCharge {
+            day: CREDIT_DAY,
+            product: product.to_string(),
+            sku: sku.to_string(),
+            unit: unit.to_string(),
+            repository: repository.to_string(),
+            kind,
+            unit_price: dec("0.01"),
+            quantity: dec(quantity),
+            gross_amount: dec(quantity),
+            discount_amount: AiDecimal::ZERO,
+            net_amount: dec(quantity),
+            reported_at: None,
+        }
+    }
+
     /// Ada's account and an external contractor's, imported for every day of
     /// August; on the credit day Ada used 100 credits of GPT-6.1 Sol, 12 of
     /// the cloud agent and 20 of code review, the contractor 70, and an
     /// account Toki never listed 5. Ada tracked 70 credits to Client A and
-    /// 20 unattributed, and 30 more Copilot routed to Codex.
+    /// 20 unattributed, and 30 more Copilot routed to Codex. The
+    /// organization's rows bill the code review to widget-api (12, mapped to
+    /// Client A) and gadget-web (8, unmapped), beside the IDE aggregate, the
+    /// cloud agent and Actions.
     pub(super) async fn copilot_august(app: &Router, pool: &PgPool) -> CopilotAugust {
         let admin = test_user(
             app,
@@ -2901,6 +2936,69 @@ mod copilot {
                 .await
                 .unwrap();
         }
+        metered
+            .replace_org_usage(
+                AiProvider::Copilot,
+                august().dates(),
+                &[
+                    org_row(
+                        "copilot",
+                        CREDITS_SKU,
+                        "AICredits",
+                        "widget-api",
+                        AiOrgChargeKind::RepositoryCredits,
+                        "12",
+                    ),
+                    org_row(
+                        "copilot",
+                        CREDITS_SKU,
+                        "AICredits",
+                        "gadget-web",
+                        AiOrgChargeKind::RepositoryCredits,
+                        "8",
+                    ),
+                    org_row(
+                        "copilot",
+                        CREDITS_SKU,
+                        "AICredits",
+                        "",
+                        AiOrgChargeKind::AccountCreditsAggregate,
+                        "100",
+                    ),
+                    org_row(
+                        "copilot",
+                        AGENT_SKU,
+                        "AICredits",
+                        "",
+                        AiOrgChargeKind::UntrackableCredits,
+                        "12",
+                    ),
+                    org_row(
+                        "actions",
+                        "Actions Linux",
+                        "Minutes",
+                        "gadget-web",
+                        AiOrgChargeKind::Compute,
+                        "300",
+                    ),
+                ],
+                fetched_at,
+            )
+            .await
+            .unwrap();
+        PostgresAiRepositoryMappingRepository::new(db(pool))
+            .upsert(
+                AiProvider::Copilot,
+                "widget-api",
+                &company(),
+                &AiMappedProject {
+                    id: ProjectId::new("101"),
+                    name: "Client A".to_string(),
+                },
+                &admin.id,
+            )
+            .await
+            .unwrap();
 
         upload_ada_august(pool, ada.id, credit_day_usage(), None).await;
 
@@ -3075,8 +3173,34 @@ mod copilot {
                     { "kind": "unknownAccount", "provider": "copilot" },
                     null, null, "unknownAccount", "5.00", "0.05", "0.53", null, null
                 ]),
+                // Code review, billed once: per repository, from the
+                // organization's rows.
+                json!([
+                    { "kind": "repository", "provider": "copilot", "name": "gadget-web" },
+                    null, "unmappedRepository", "repository", "8.00", "0.08", "0.84", null,
+                    CREDITS_SKU
+                ]),
+                json!([
+                    { "kind": "repository", "provider": "copilot", "name": "widget-api" },
+                    "Client A", null, "repository", "12.00", "0.12", "1.26", null, CREDITS_SKU
+                ]),
             ]
         );
+        // Ada's lines are her gross less code review.
+        let ada_credits: f64 = overview["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|line| line["subject"] == ada_subject && line["billingMode"] == "metered")
+            .map(|line| {
+                line["metered"]["credits"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<f64>()
+                    .unwrap()
+            })
+            .sum();
+        assert_eq!(ada_credits, 112.0);
         let client_a = overview["lines"]
             .as_array()
             .unwrap()
@@ -3128,16 +3252,16 @@ mod copilot {
             ])]
         );
         assert_eq!(overview["totals"]["apiBilledUsd"], "0.30");
-        assert_eq!(overview["totals"]["meteredBilledUsd"], "1.87");
+        assert_eq!(overview["totals"]["meteredBilledUsd"], "2.07");
         assert_eq!(
             overview["totals"]["converted"],
             json!({
                 "currency": "SEK",
-                "billed": "22.79",
+                "billed": "24.89",
                 "fees": "0.00",
                 "overhead": "0.00",
                 "api": "3.15",
-                "metered": "19.64",
+                "metered": "21.74",
             })
         );
         assert_eq!(
@@ -3209,12 +3333,12 @@ mod copilot {
                 )
             })
             .collect();
-        let metered_tail = |credits: &str, login: &str, sku: &str| {
+        let repository_tail = |credits: &str, login: &str, repository: &str, sku: &str| {
             vec![
                 "github".to_string(),
                 credits.to_string(),
                 login.to_string(),
-                String::new(),
+                repository.to_string(),
                 sku.to_string(),
                 "UTC".to_string(),
                 String::new(),
@@ -3222,6 +3346,8 @@ mod copilot {
                 "false".to_string(),
             ]
         };
+        let metered_tail =
+            |credits: &str, login: &str, sku: &str| repository_tail(credits, login, "", sku);
         let row = |project: &str, developer: &str, amount: &str, tail: Vec<String>| {
             (
                 project.to_string(),
@@ -3233,6 +3359,12 @@ mod copilot {
         assert_eq!(
             project_rows,
             [
+                row(
+                    "Client A",
+                    "",
+                    "0.12",
+                    repository_tail("12.00", "", "widget-api", CREDITS_SKU)
+                ),
                 row(
                     "Client A",
                     "Ada Lovelace",
@@ -3254,6 +3386,12 @@ mod copilot {
                     "Ada Lovelace",
                     "0.70",
                     metered_tail("70.00", "ada-lovelace", CREDITS_SKU)
+                ),
+                row(
+                    "Unassigned",
+                    "",
+                    "0.08",
+                    repository_tail("8.00", "", "gadget-web", CREDITS_SKU)
                 ),
                 row(
                     "Unassigned",
@@ -3288,13 +3426,30 @@ mod copilot {
                 .filter(|row| row[column("billing_mode")] == "metered")
                 .map(|row| row[column("billable_sek")].clone())
                 .collect::<Vec<_>>(),
-            ["7.35", "2.10", "1.05", "1.26", "7.35", "0.53"]
+            ["1.26", "7.35", "0.84", "2.10", "1.05", "1.26", "7.35", "0.53"]
         );
         let unknown = rows.last().unwrap();
         assert_eq!(
             unknown[column("warning")],
             "code review is billed by repository and left out"
         );
+        let unmapped = rows
+            .iter()
+            .find(|row| row[column("repository")] == "gadget-web")
+            .unwrap();
+        assert_eq!(unmapped[column("unassigned")], "unmapped_repository");
+        assert_eq!(unmapped[column("project_id")], "");
+        assert_eq!(
+            unmapped[column("warning")],
+            "repository without a project: map it under Project mappings > GitHub repositories"
+        );
+        let mapped = rows
+            .iter()
+            .find(|row| row[column("repository")] == "widget-api")
+            .unwrap();
+        assert_eq!(mapped[column("project_id")], "101");
+        assert_eq!(mapped[column("unassigned")], "");
+        assert_eq!(mapped[column("warning")], "");
     }
 
     #[sqlx::test]
@@ -3440,6 +3595,56 @@ mod copilot {
                 with("untracked", &settling),
                 with("externalAccount", &settled),
                 with("unknownAccount", &settled),
+                with("repository", &settled),
+                with("repository", &settled),
+            ]
+        );
+        assert_eq!(overview["metered"]["provisional"], true);
+    }
+
+    #[sqlx::test]
+    async fn repository_lines_wait_for_every_day_of_the_organizations_usage(pool: PgPool) {
+        let app = app_with_cutover(&pool, Some("2026-08"));
+        let CopilotAugust { admin, .. } = copilot_august(&app, &pool).await;
+        // One day of the organization's usage rows was never imported.
+        sqlx::query(
+            "DELETE FROM ai_provider_usage_slices
+             WHERE source = 'org_usage' AND day = '2026-08-15'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let overview = get_json(
+            &app,
+            &Caller::Session(&admin.cookie),
+            "/ai-usage/admin/billing/2026-08",
+        )
+        .await;
+        let reasons: Vec<(Value, Value)> = overview["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|line| line["billingMode"] == "metered")
+            .map(|line| {
+                (
+                    line["metered"]["kind"].clone(),
+                    line["metered"]["provisionalReasons"].clone(),
+                )
+            })
+            .collect();
+        let settled = json!([]);
+        let incomplete = json!(["importIncomplete"]);
+        assert_eq!(
+            reasons,
+            [
+                (json!("project"), settled.clone()),
+                (json!("project"), settled.clone()),
+                (json!("untracked"), settled.clone()),
+                (json!("untracked"), settled.clone()),
+                (json!("externalAccount"), settled.clone()),
+                (json!("unknownAccount"), settled),
+                (json!("repository"), incomplete.clone()),
+                (json!("repository"), incomplete),
             ]
         );
         assert_eq!(overview["metered"]["provisional"], true);
@@ -3503,6 +3708,8 @@ mod copilot {
                     "untracked",
                     "externalAccount",
                     "unknownAccount",
+                    "repository",
+                    "repository",
                 ],
                 json!([]),
             )
@@ -3511,22 +3718,23 @@ mod copilot {
 
         // Its process dies before finishing August: every account's days may
         // be half replaced, so their lines are provisional, and the residual
-        // is an import gap rather than an unknown account.
+        // is an import gap rather than an unknown account. The repository
+        // lines rest on the organization's usage slices alone, which a run
+        // replaces a month at a time: they stand.
         lease.release().await.unwrap();
         let stopped = get_json(&app, &admin, "/ai-usage/admin/billing/2026-08").await;
-        assert_eq!(
-            metered_reasons(&stopped),
-            with(
-                &[
-                    "project",
-                    "project",
-                    "untracked",
-                    "untracked",
-                    "externalAccount",
-                ],
-                json!(["importIncomplete", "notSettled"]),
-            )
+        let mut expected = with(
+            &[
+                "project",
+                "project",
+                "untracked",
+                "untracked",
+                "externalAccount",
+            ],
+            json!(["importIncomplete", "notSettled"]),
         );
+        expected.extend(with(&["repository", "repository"], json!([])));
+        assert_eq!(metered_reasons(&stopped), expected);
         assert_eq!(stopped["metered"]["provisional"], true);
     }
 

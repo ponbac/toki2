@@ -33,6 +33,11 @@ export const UNASSIGNED_KIND_LABELS = {
     short: "Unmapped",
     detail: "unmapped repositories",
   },
+  unmappedRepository: {
+    label: "Code review: unmapped repositories",
+    short: "Code review",
+    detail: "code review of unmapped repositories",
+  },
   unattributed: {
     label: "No repository",
     short: "No repo",
@@ -181,7 +186,8 @@ export function subjectKey(subject: AiBillingSubject): string {
 export const UNKNOWN_ACCOUNTS_LABEL = "Unknown accounts";
 
 /** What a subject is called: a developer by name, an account by login, a
- * repository by name. */
+ * repository's code review by its payer and name, such as `Copilot code
+ * review · widget-api`. */
 export function subjectLabel(
   subject: AiBillingSubject,
   names: ReadonlyMap<number, string>,
@@ -194,7 +200,7 @@ export function subjectLabel(
     case "unknownAccount":
       return UNKNOWN_ACCOUNTS_LABEL;
     case "repository":
-      return subject.name;
+      return `${AI_PROVIDER_LABELS[subject.provider]} code review · ${subject.name}`;
   }
 }
 
@@ -503,6 +509,9 @@ export function lineWarnings(
     }
     if (metered.kind === "unknownAccount") {
       warnings.push("Code review is billed by repository and left out.");
+    }
+    if (line.unassigned === "unmappedRepository") {
+      warnings.push("No project: map this repository under Project mappings.");
     }
     return warnings;
   }

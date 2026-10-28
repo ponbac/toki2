@@ -114,6 +114,29 @@ const untrackedLine = {
   },
 };
 
+/** A repository's code review credits, mapped to a project. */
+const repositoryLine = {
+  ...meteredLine,
+  subject: { kind: "repository", provider: "copilot", name: "widget-api" },
+  metered: {
+    ...meteredLine.metered,
+    kind: "repository",
+    credits: "12.00",
+    account: null,
+  },
+  billableAmount: "0.12",
+  convertedAmount: "1.26",
+  usage: nothing,
+};
+
+/** A repository's code review credits without a repository mapping. */
+const unmappedRepositoryLine = {
+  ...repositoryLine,
+  subject: { ...repositoryLine.subject, name: "gadget-web" },
+  project: null,
+  unassigned: "unmappedRepository",
+};
+
 const unbilled = {
   trackedUnlinked: nothing,
   notImported: usage,
@@ -177,6 +200,8 @@ describe("billing overview contract", () => {
       untrackedLine,
       externalLine,
       unknownLine,
+      repositoryLine,
+      unmappedRepositoryLine,
     ]);
 
     expect(parseAiBillingOverview(input)).toEqual(input);
@@ -291,6 +316,40 @@ describe("billing overview contract", () => {
     {
       name: "the old userId",
       line: { ...apiLine, userId: 3 },
+    },
+    {
+      name: "an unmapped repository's kind on a developer's line",
+      line: { ...unattributedLine, unassigned: "unmappedRepository" },
+    },
+    {
+      name: "an unmapped repository's kind on usage of an unmapped key",
+      line: { ...apiLine, project: null, unassigned: "unmappedRepository" },
+    },
+    {
+      name: "a repository without a project marked as an unmapped key",
+      line: { ...unmappedRepositoryLine, unassigned: "unmapped" },
+    },
+    {
+      name: "a repository without a project or an Unassigned kind",
+      line: { ...unmappedRepositoryLine, unassigned: null },
+    },
+    {
+      name: "a mapped repository marked Unassigned",
+      line: { ...repositoryLine, unassigned: "unmappedRepository" },
+    },
+    {
+      name: "a repository naming an account",
+      line: {
+        ...repositoryLine,
+        metered: {
+          ...repositoryLine.metered,
+          account: meteredLine.metered.account,
+        },
+      },
+    },
+    {
+      name: "the old lowercase kind",
+      line: { ...unmappedRepositoryLine, unassigned: "unmappedrepository" },
     },
   ])("rejects $name", ({ line }) => {
     expect(() => parseAiBillingOverview(overview([line]))).toThrow();

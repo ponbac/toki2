@@ -29,13 +29,14 @@ use crate::{
             interrupted_check_error, slice_end, AiBillingMonth, AiBillingProject, AiCreditKey,
             AiCreditKind, AiCreditStoreScope, AiCreditTotal, AiDecimal, AiImportHistory,
             AiImportKind, AiImportPlan, AiImportRun, AiImportRunId, AiImportStatus,
-            AiMappingResolver, AiMeteredAmounts, AiMeteredCredit, AiMeteredDestination,
-            AiMeteredModel, AiMeteredOrgCharge, AiMeteredSource, AiMeteredSummaryLine, AiMonthMode,
-            AiOrgChargeKind, AiProvider, AiProviderAccountId, AiRunStatus, AiSliceRecord,
-            AiSourceOutcome, AiSourceState, AiSourceStatus, AiStoredAccountCredit,
-            AiStoredAccountError, AiStoredOrgCredit, AiStoredScope, AiSummaryKind, AiTokenCounts,
+            AiMappedProject, AiMappingResolver, AiMeteredAmounts, AiMeteredCredit,
+            AiMeteredDestination, AiMeteredModel, AiMeteredOrgCharge, AiMeteredSource,
+            AiMeteredSummaryLine, AiMonthMode, AiOrgChargeKind, AiProvider, AiProviderAccountId,
+            AiRunStatus, AiSliceRecord, AiSourceOutcome, AiSourceState, AiSourceStatus,
+            AiStoredAccountCredit, AiStoredAccountError, AiStoredOrgCredit,
+            AiStoredRepositoryMapping, AiStoredScope, AiSummaryKind, AiTokenCounts,
             AiTrackedModelDay, AiUnassignedKind, AiUsageCheck, AiUsageDateRange, AiUsdNanos,
-            TimeTrackingCompany, UserId, UNATTRIBUTED_PROJECT_KEY,
+            ProjectId, TimeTrackingCompany, UserId, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::{AiImportLease, AiMeteredUsageRepository},
         AiMeteredUsageError,
@@ -2117,6 +2118,38 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
             })
         })
         .collect()
+    }
+
+    async fn repository_mappings(
+        &self,
+        payer: AiProvider,
+    ) -> Result<Vec<AiStoredRepositoryMapping>, AiMeteredUsageError> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT repository_name, time_tracking_provider, provider_company_id, project_id,
+                project_name
+            FROM ai_provider_repository_mappings
+            WHERE provider = $1
+            "#,
+            payer.as_str(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_error)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| AiStoredRepositoryMapping {
+                repository: row.repository_name,
+                company: TimeTrackingCompany {
+                    provider: row.time_tracking_provider,
+                    company_id: row.provider_company_id,
+                },
+                project: AiMappedProject {
+                    id: ProjectId::new(row.project_id),
+                    name: row.project_name,
+                },
+            })
+            .collect())
     }
 }
 

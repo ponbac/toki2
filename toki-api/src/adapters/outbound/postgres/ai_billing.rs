@@ -791,11 +791,14 @@ mod tests {
     const UNMAPPED_USAGE: AiBillingProject =
         AiBillingProject::Unassigned(AiUnassignedKind::Unmapped);
 
-    /// A project's name, or `unmapped` or `unattributed` for Unassigned usage.
+    /// A project's name, or the kind of Unassigned usage.
     fn billed_to(project: AiBillingProject) -> String {
         match project {
             AiBillingProject::Mapped(project) => project.name,
             AiBillingProject::Unassigned(AiUnassignedKind::Unmapped) => "unmapped".to_string(),
+            AiBillingProject::Unassigned(AiUnassignedKind::UnmappedRepository) => {
+                "unmapped repository".to_string()
+            }
             AiBillingProject::Unassigned(AiUnassignedKind::Unattributed) => {
                 "unattributed".to_string()
             }

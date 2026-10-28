@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "../../-components/status-badge";
 import { monthLabel, weekdayDate } from "../../-lib/format";
 import {
+  RESIDUAL_STATUS_TONES,
   checkState,
   creditHundredths,
   creditsAsUsd,
@@ -29,14 +30,6 @@ import {
 import { CheckLine } from "./check-line";
 
 const AMOUNT = "text-right tabular-nums whitespace-nowrap";
-
-const STATUS_TONES: Readonly<
-  Record<AiResidualStatus, "good" | "warning" | "neutral">
-> = {
-  settled: "good",
-  provisional: "neutral",
-  incomplete: "warning",
-};
 
 const STATUS_HINTS: Readonly<Record<AiResidualStatus, string>> = {
   settled:
@@ -181,7 +174,7 @@ export function ResidualDays({
                         <span className="flex flex-wrap gap-1">
                           <span title={STATUS_HINTS[day.status]}>
                             <StatusBadge
-                              tone={STATUS_TONES[day.status]}
+                              tone={RESIDUAL_STATUS_TONES[day.status]}
                               label={residualStatusLabel(day.status)}
                             />
                           </span>

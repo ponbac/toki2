@@ -53,6 +53,7 @@ describe("mappingsCheck", () => {
   });
 
   test("usage outside any repository alone passes: there is nothing to map", () => {
+    // A bill without code review, such as a month before the cutover.
     const check = mappingsCheck(
       [line(null, "10.00"), line("unattributed", "300.00")],
       "SEK",
@@ -61,6 +62,67 @@ describe("mappingsCheck", () => {
     expect(check.status).toBe("passed");
     expect(check.summary).toMatch(
       /^Every repository is mapped; 300,00\sSEK is outside any repository, which no mapping can assign$/,
+    );
+  });
+
+  test("names mapped code review only on a bill that has it", () => {
+    const check = mappingsCheck(
+      [
+        line(null, "8.00", {
+          subject: {
+            kind: "repository",
+            provider: "copilot",
+            name: "widget-api",
+          },
+          billingMode: "metered",
+          metered: { kind: "repository" },
+        }),
+        line("unattributed", "300.00"),
+      ],
+      "SEK",
+    );
+
+    expect(check.status).toBe("passed");
+    expect(check.summary).toMatch(
+      /^Every repository is mapped, GitHub's code review repositories too; 300,00\sSEK is outside any repository, which no mapping can assign$/,
+    );
+  });
+
+  test("code review of unmapped GitHub repositories needs attention", () => {
+    const check = mappingsCheck(
+      [
+        line(null, "10.00"),
+        line("unmappedRepository", "8.00", {
+          subject: {
+            kind: "repository",
+            provider: "copilot",
+            name: "gadget-web",
+          },
+          billingMode: "metered",
+        }),
+      ],
+      "SEK",
+    );
+
+    expect(check.status).toBe("attention");
+    expect(check.summary).toMatch(
+      /^8,00\sSEK of code review comes from GitHub repositories nobody has mapped \(Project mappings > GitHub repositories\)$/,
+    );
+  });
+
+  test("names every kind of Unassigned usage, in bill order", () => {
+    const check = mappingsCheck(
+      [
+        line("unattributed", "300.00"),
+        line("unmappedRepository", "8.00"),
+        line("unmapped", "20.00"),
+      ],
+      "SEK",
+    );
+
+    expect(check.status).toBe("attention");
+    expect(check.summary).toMatch(
+      /^20,00\sSEK comes from repositories nobody has mapped, so no customer can be invoiced for it yet; 8,00\sSEK of code review comes from GitHub repositories nobody has mapped \(Project mappings > GitHub repositories\); 300,00\sSEK is outside any repository, which no mapping can assign$/,
     );
   });
 

@@ -88,9 +88,10 @@ struct AiProjectMappingResponse {
     updated_at: OffsetDateTime,
 }
 
+/// How a mapping resolves; repository mappings report it too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum AiMappingStatusResponse {
+pub(crate) enum AiMappingStatusResponse {
     Resolves,
     Stale,
     Unconfigured,
@@ -106,9 +107,10 @@ impl From<AiMappingResolution> for AiMappingStatusResponse {
     }
 }
 
+/// Who created or last changed a mapping; repository mappings report it too.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AiProjectMappingEditorResponse {
+pub(crate) struct AiProjectMappingEditorResponse {
     user_id: i32,
     full_name: String,
 }

@@ -3,6 +3,7 @@ mod ai_exchange_rates;
 mod ai_metered_usage;
 mod ai_project_mapping;
 mod ai_provider_accounts;
+mod ai_repository_mapping;
 mod ai_subscriptions;
 mod ai_usage;
 mod ai_usage_reads;
@@ -17,6 +18,10 @@ pub use ai_exchange_rates::PostgresAiExchangeRateRepository;
 pub use ai_metered_usage::PostgresAiMeteredUsageRepository;
 pub use ai_project_mapping::PostgresAiProjectMappingRepository;
 pub use ai_provider_accounts::PostgresAiProviderAccountRepository;
+/// The repository mappings' store with a pinned clock, for tests.
+#[cfg(test)]
+pub(crate) use ai_repository_mapping::ClockedAiRepositoryMappingRepository;
+pub use ai_repository_mapping::PostgresAiRepositoryMappingRepository;
 pub use ai_subscriptions::PostgresAiSubscriptionRepository;
 pub use ai_usage::PostgresAiUsageRepository;
 /// Synthetic usage for tests of routes that read it.

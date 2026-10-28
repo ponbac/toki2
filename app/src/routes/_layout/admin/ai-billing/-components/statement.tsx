@@ -329,8 +329,15 @@ function AllocationSentence({
             <>: it {unassignedDetail(first.entry)}.</>
           ) : (
             <>
-              : {amount(first.amount ?? 0)} {unassignedDetail(first.entry)} and{" "}
-              {amount(second.amount ?? 0)} {unassignedDetail(second.entry)}.
+              :{" "}
+              {unassigned.map(({ entry, amount: part }, index) => (
+                <React.Fragment key={entry.key}>
+                  {index > 0 &&
+                    (index === unassigned.length - 1 ? " and " : ", ")}
+                  {amount(part ?? 0)} {unassignedDetail(entry)}
+                </React.Fragment>
+              ))}
+              .
             </>
           )}
         </>
@@ -373,9 +380,15 @@ function AllocationSentence({
 /** Where an Unassigned entry's usage comes from, and whether a mapping can
  * assign it. */
 function unassignedDetail(entry: LedgerEntry): string {
-  return entry.unassigned === "unattributed"
-    ? "is outside any repository, which no mapping can assign"
-    : "comes from repositories nobody has mapped";
+  switch (entry.unassigned) {
+    case "unattributed":
+      return "is outside any repository, which no mapping can assign";
+    case "unmappedRepository":
+      return "is code review of GitHub repositories nobody has mapped";
+    case "unmapped":
+    case null:
+      return "comes from repositories nobody has mapped";
+  }
 }
 
 /** One figure beside the headline, with a short note beneath. */

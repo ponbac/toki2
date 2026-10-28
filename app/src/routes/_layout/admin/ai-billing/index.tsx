@@ -238,8 +238,9 @@ function AiBillingPage() {
       uploads: () => setTab("data"),
       rates: () => setTab("data"),
       projects: () =>
-        // Repositories to map come first; usage outside any repository
-        // next, though no mapping can assign it.
+        // Repositories to map come first, then GitHub repositories whose
+        // code review needs a mapping; usage outside any repository last,
+        // though no mapping can assign it.
         ledger?.unassigned[0]
           ? showEntry(ledger.unassigned[0].key)
           : setTab("projects"),
