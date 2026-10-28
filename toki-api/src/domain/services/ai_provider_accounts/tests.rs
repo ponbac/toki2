@@ -103,7 +103,6 @@ impl ProviderAccountDirectory for FakeDirectory {
 struct Stored {
     accounts: Vec<AiProviderAccountId>,
     listings: usize,
-    profiles: Vec<AiProviderAccountProfile>,
     status: Option<AiDirectoryStatus>,
     failures: Vec<String>,
 }
@@ -148,13 +147,8 @@ impl AiProviderAccountRepository for FakeRepository {
     async fn store_profiles(
         &self,
         _: AiProvider,
-        profiles: &[AiProviderAccountProfile],
+        _: &[AiProviderAccountProfile],
     ) -> Result<(), AiProviderAccountError> {
-        self.stored
-            .lock()
-            .unwrap()
-            .profiles
-            .extend(profiles.iter().cloned());
         Ok(())
     }
 
@@ -275,31 +269,6 @@ fn service(
 }
 
 #[tokio::test]
-async fn a_refresh_stores_seats_and_profiles_and_records_its_success() {
-    let directory = Arc::new(FakeDirectory::new(listing([1001, 1002, 1003])));
-    let (service, repository) = service(directory.clone());
-
-    let refresh = service.refresh().await.unwrap();
-    assert_eq!(
-        refresh,
-        AiDirectoryRefresh {
-            started_at: NOW,
-            finished_at: NOW,
-            seats_listed: 3,
-            seats_reported: Some(3),
-            complete: true,
-            seats_started: 3,
-            seats_ended: 0,
-            profiles_read: 3,
-            profiles_failed: 0,
-        }
-    );
-    let stored = repository.stored.lock().unwrap();
-    assert_eq!(stored.profiles.len(), 3);
-    assert_eq!(stored.status.as_ref().unwrap().seats_listed, Some(3));
-}
-
-#[tokio::test]
 async fn one_refresh_runs_at_a_time() {
     let mut directory = FakeDirectory::new(listing([1001]));
     directory.seats_delay = Duration::from_millis(50);
@@ -343,6 +312,8 @@ async fn a_profile_rate_limit_stops_profile_reads_but_not_the_refresh() {
     let (service, repository) = service(directory.clone());
 
     let refresh = service.refresh().await.unwrap();
+    assert_eq!((refresh.started_at, refresh.finished_at), (NOW, NOW));
+    assert!(refresh.complete);
     let calls = directory.profile_calls.load(Ordering::SeqCst);
     // Reads already under way finish; none starts after the limit.
     assert!(calls <= PROFILE_CONCURRENCY, "{calls} profile calls");

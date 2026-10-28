@@ -241,11 +241,6 @@ async fn a_closed_month_keeps_its_bill_and_a_later_change_posts_once_on_the_next
     assert_eq!(closed["close"]["adjustmentsPostOn"], "2026-07");
     assert_eq!(closed["close"]["closedBy"], "Admin Example");
     // The snapshot serves the same values as the open month did.
-    let without_close = |bill: &Value| {
-        let mut bill = bill.clone();
-        bill.as_object_mut().unwrap().remove("close");
-        bill
-    };
     assert_eq!(without_close(&closed), without_close(&open));
     // Its CSV rows name the close.
     let closed_csv = csv(&app, &admin, "2026-06").await;
@@ -649,20 +644,14 @@ async fn close_refuses_until_every_failed_check_is_waived(pool: PgPool) {
     let (status, body) = post_close(&app, &admin, "2026-06", json!([])).await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["readiness"]["ready"], false);
-    let check = |body: &Value, id: &str| -> Value {
-        body["checks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|check| check["id"] == id)
-            .unwrap()
-            .clone()
-    };
-    let rates_check = check(&body["readiness"], "exchangeRates");
+    let rates_check = readiness_check(&body["readiness"], "exchangeRates");
     assert_eq!(rates_check["status"], "failed");
     assert_eq!(rates_check["problems"][0]["kind"], "rateProvisional");
     assert_eq!(rates_check["problems"][0]["currency"], "USD");
-    assert_eq!(check(&body["readiness"], "uploads")["status"], "passed");
+    assert_eq!(
+        readiness_check(&body["readiness"], "uploads")["status"],
+        "passed"
+    );
 
     for (waivers, why) in [
         (
@@ -702,13 +691,16 @@ async fn close_refuses_until_every_failed_check_is_waived(pool: PgPool) {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     let recorded = &body["close"]["readiness"];
     assert_eq!(recorded["ready"], true);
-    assert_eq!(check(recorded, "exchangeRates")["status"], "waived");
     assert_eq!(
-        check(recorded, "exchangeRates")["waiver"],
+        readiness_check(recorded, "exchangeRates")["status"],
+        "waived"
+    );
+    assert_eq!(
+        readiness_check(recorded, "exchangeRates")["waiver"],
         json!({ "reason": "Riksbank publishes June's average on the 5th." })
     );
-    assert_eq!(check(recorded, "pricing")["status"], "passed");
-    assert_eq!(check(recorded, "pricing")["waiver"], Value::Null);
+    assert_eq!(readiness_check(recorded, "pricing")["status"], "passed");
+    assert_eq!(readiness_check(recorded, "pricing")["waiver"], Value::Null);
 
     let (status, body) = post_close(&app, &admin, "2026-06", json!([])).await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -920,29 +912,8 @@ async fn a_month_an_import_is_running_or_stopped_in_is_not_ready_on_import(pool:
     assert_eq!(import(&status)["status"], "failed");
     assert_eq!(import(&status)["problems"], running);
 
-    // No waiver lets it through: with every failed check waived, the
-    // import's included, the close is refused until the run finishes.
-    let failed: Vec<Value> = status["readiness"]["checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|check| check["status"] == "failed")
-        .map(|check| check["id"].clone())
-        .collect();
-    assert!(failed.contains(&json!("import")), "{failed:?}");
-    let waivers: Vec<Value> = failed
-        .iter()
-        .map(|id| json!({ "check": id, "reason": "Closing August anyway." }))
-        .collect();
-    for waivers in [json!([]), Value::Array(waivers)] {
-        let (code, body) = post_close(&app, &admin, "2026-08", waivers).await;
-        assert_eq!(code, StatusCode::CONFLICT, "{body}");
-        assert_eq!(
-            body,
-            json!({ "error": "a usage import is running: try again when it finishes" })
-        );
-    }
-    assert_eq!(close_count(&pool).await, 0);
+    // No waiver lets a close through while the run holds the import lock
+    // (`a_close_is_refused_while_any_import_holds_the_import_lock`).
 
     // Its process dies before finishing August: every check it left marked
     // is interrupted, the organization's included, and the close refuses.

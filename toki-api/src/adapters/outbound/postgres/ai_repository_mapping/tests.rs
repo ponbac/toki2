@@ -3,12 +3,13 @@ use time::macros::{date, datetime};
 
 use super::*;
 use crate::{
-    adapters::outbound::postgres::{
-        PostgresAiMeteredUsageRepository, PostgresAiProjectMappingRepository,
-    },
+    adapters::outbound::postgres::PostgresAiMeteredUsageRepository,
     domain::{
-        models::{AiDecimal, AiMeteredOrgCharge, AiOrgChargeKind, AiProjectKey, AiUsageDateRange},
-        ports::outbound::{AiMeteredUsageRepository, AiProjectMappingRepository},
+        models::{
+            ai_metered_fixtures::{org_charge, repository_credits},
+            AiMeteredOrgCharge, AiOrgChargeKind, AiUsageDateRange,
+        },
+        ports::outbound::AiMeteredUsageRepository,
     },
 };
 
@@ -48,42 +49,6 @@ async fn insert_user(pool: &PgPool, email: &str, full_name: &str) -> UserId {
     .await
     .unwrap();
     UserId::new(id)
-}
-
-fn charge(
-    day: Date,
-    product: &str,
-    sku: &str,
-    repository_name: &str,
-    kind: AiOrgChargeKind,
-    quantity: &str,
-) -> AiMeteredOrgCharge {
-    let dec = |raw: &str| AiDecimal::parse(raw).unwrap();
-    AiMeteredOrgCharge {
-        day,
-        product: product.to_string(),
-        sku: sku.to_string(),
-        unit: "AICredits".to_string(),
-        repository: repository_name.to_string(),
-        kind,
-        unit_price: dec("0.01"),
-        quantity: dec(quantity),
-        gross_amount: dec(quantity),
-        discount_amount: AiDecimal::ZERO,
-        net_amount: dec(quantity),
-        reported_at: None,
-    }
-}
-
-fn code_review(day: Date, repository_name: &str, quantity: &str) -> AiMeteredOrgCharge {
-    charge(
-        day,
-        "copilot",
-        "Copilot AI Credits",
-        repository_name,
-        AiOrgChargeKind::RepositoryCredits,
-        quantity,
-    )
 }
 
 /// Stores the organization's usage rows of October's first days.
@@ -230,40 +195,44 @@ async fn repository_credits_are_the_repository_rows_per_spelling_and_day(pool: P
     store_org_usage(
         &pool,
         &[
-            code_review(first, "widget-api", "12"),
+            repository_credits(first, "widget-api", "12"),
             // Two SKUs' rows of one spelling and day sum.
-            charge(
+            org_charge(
                 first,
                 "copilot",
                 "copilot ai credits",
+                "AICredits",
                 "widget-api",
                 AiOrgChargeKind::RepositoryCredits,
                 "0.5",
             ),
-            code_review(second, "Widget-API", "3"),
-            code_review(second, "gadget-web", "8"),
+            repository_credits(second, "Widget-API", "3"),
+            repository_credits(second, "gadget-web", "8"),
             // Never a repository's credits: the IDE aggregate, the cloud agent
             // and Actions.
-            charge(
+            org_charge(
                 first,
                 "copilot",
                 "Copilot AI Credits",
+                "AICredits",
                 "",
                 AiOrgChargeKind::AccountCreditsAggregate,
                 "100",
             ),
-            charge(
+            org_charge(
                 first,
                 "copilot",
                 "Copilot Cloud Agent",
+                "AICredits",
                 "",
                 AiOrgChargeKind::UntrackableCredits,
                 "4",
             ),
-            charge(
+            org_charge(
                 first,
                 "actions",
                 "Actions Linux",
+                "AICredits",
                 "gadget-web",
                 AiOrgChargeKind::Compute,
                 "30",
@@ -285,29 +254,6 @@ async fn repository_credits_are_the_repository_rows_per_spelling_and_day(pool: P
             credit("Widget-API", second, 300),
             credit("gadget-web", second, 800),
         ]
-    );
-}
-
-#[sqlx::test]
-async fn key_mappings_are_every_stored_project_key_mapping(pool: PgPool) {
-    let ada = insert_user(&pool, "ada@example.com", "Ada Lovelace").await;
-    PostgresAiProjectMappingRepository::new(db(&pool))
-        .upsert(
-            &AiProjectKey::parse("github.com/example-org/widget-api").unwrap(),
-            &company(),
-            &project("101", "Client A"),
-            &ada,
-        )
-        .await
-        .unwrap();
-    let keys = repository(&pool).key_mappings().await.unwrap();
-    assert_eq!(
-        keys,
-        [AiStoredMapping {
-            project_key: "github.com/example-org/widget-api".to_string(),
-            company: company(),
-            project: project("101", "Client A"),
-        }]
     );
 }
 

@@ -30,8 +30,8 @@ use crate::{
     auth::{authenticate_bearer, require_authenticated, AuthBackend, AuthSession},
     domain::{
         models::{
-            AiBillingMonth, AiDecimal, AiMeteredOrgCharge, AiOrgChargeKind, AiProjectKey,
-            AiProvider, AiUsageDateRange, Project, TimeTrackingCompany, UserId,
+            ai_metered_fixtures::repository_credits, AiBillingMonth, AiMeteredOrgCharge,
+            AiProjectKey, AiProvider, AiUsageDateRange, Project, TimeTrackingCompany, UserId,
         },
         ports::{
             inbound::{ApiTokenAuthenticator, ApiTokenService},
@@ -215,24 +215,11 @@ async fn test_user(app: &Router, pool: &PgPool, email: &str, roles: &[&str]) -> 
 /// Code review the organization's rows bill to each repository on 2 and
 /// 20 October.
 async fn billed(pool: &PgPool, rows: &[(&str, &str)]) {
-    let dec = |raw: &str| AiDecimal::parse(raw).unwrap();
     let rows: Vec<AiMeteredOrgCharge> = rows
         .iter()
         .flat_map(|(repository, quantity)| {
-            [date!(2026 - 10 - 02), date!(2026 - 10 - 20)].map(|day| AiMeteredOrgCharge {
-                day,
-                product: "copilot".to_string(),
-                sku: "Copilot AI Credits".to_string(),
-                unit: "AICredits".to_string(),
-                repository: repository.to_string(),
-                kind: AiOrgChargeKind::RepositoryCredits,
-                unit_price: dec("0.01"),
-                quantity: dec(quantity),
-                gross_amount: dec(quantity),
-                discount_amount: AiDecimal::ZERO,
-                net_amount: dec(quantity),
-                reported_at: None,
-            })
+            [date!(2026 - 10 - 02), date!(2026 - 10 - 20)]
+                .map(|day| repository_credits(day, repository, quantity))
         })
         .collect();
     PostgresAiMeteredUsageRepository::new(db(pool))

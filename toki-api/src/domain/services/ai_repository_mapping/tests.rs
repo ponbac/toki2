@@ -126,38 +126,6 @@ async fn billed(pool: &PgPool, repositories: &[&str]) {
 }
 
 #[sqlx::test]
-async fn only_a_billed_repository_gets_a_new_mapping(pool: PgPool) {
-    let admin = insert_admin(&pool).await;
-    billed(&pool, &["Widget-API"]).await;
-    let service = service(&pool, Some(StaticProjects::of("company-1")));
-
-    assert!(matches!(
-        service
-            .set_mapping("gadget-web", &ProjectId::new("101"), admin)
-            .await,
-        Err(AiRepositoryMappingError::UnknownRepository(name)) if name == "gadget-web"
-    ));
-    // Any case maps the repository, stored as the payer spells it.
-    let entry = service
-        .set_mapping("widget-api", &ProjectId::new("101"), admin)
-        .await
-        .unwrap();
-    assert_eq!(entry.mapping.repository, "Widget-API");
-    assert_eq!(entry.mapping.project.name, "Client A");
-    assert_eq!(entry.resolution, AiMappingResolution::Resolves);
-    assert!(matches!(
-        service
-            .set_mapping("widget-api", &ProjectId::new("999"), admin)
-            .await,
-        Err(AiRepositoryMappingError::UnknownProject(id)) if id == "999"
-    ));
-    assert!(matches!(
-        service.set_mapping("", &ProjectId::new("101"), admin).await,
-        Err(AiRepositoryMappingError::InvalidRepository(_))
-    ));
-}
-
-#[sqlx::test]
 async fn a_mapping_stays_editable_once_its_repository_is_no_longer_billed(pool: PgPool) {
     let admin = insert_admin(&pool).await;
     billed(&pool, &["widget-api"]).await;

@@ -2689,11 +2689,11 @@ mod copilot {
         adapters::outbound::postgres::PostgresAiRepositoryMappingRepository,
         domain::{
             models::{
+                ai_metered_fixtures::{metered_credit, org_charge, repository_credits},
                 AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiCreditKind,
                 AiCreditStoreScope, AiDecimal, AiImportKind, AiImportPlan, AiListedSeat,
-                AiMappedProject, AiMeteredAmounts, AiMeteredCredit, AiMeteredModel,
-                AiMeteredOrgCharge, AiMeteredSource, AiMonthMode, AiOrgChargeKind, AiPricingBasis,
-                AiProviderAccountId, AiProviderLogin, AiSeatListing, AiUsageCheck,
+                AiMappedProject, AiMeteredCredit, AiMeteredSource, AiMonthMode, AiOrgChargeKind,
+                AiPricingBasis, AiProviderAccountId, AiProviderLogin, AiSeatListing, AiUsageCheck,
             },
             ports::outbound::{
                 AiMeteredUsageRepository, AiProviderAccountRepository,
@@ -2717,72 +2717,35 @@ mod copilot {
         AiDecimal::parse(raw).unwrap()
     }
 
-    fn credit(
-        sku: &str,
-        label: &str,
-        model: &str,
-        kind: AiCreditKind,
-        quantity: &str,
-    ) -> AiMeteredCredit {
-        AiMeteredCredit {
-            product: "Copilot".to_string(),
-            sku: sku.to_string(),
-            unit: "ai-credits".to_string(),
-            model: AiMeteredModel {
-                label: label.to_string(),
-                model: model.to_string(),
-                auto_routed: false,
-            },
-            kind,
-            amounts: AiMeteredAmounts {
-                unit_price: dec("0.01"),
-                gross_quantity: dec(quantity),
-                gross_amount: dec(quantity),
-                net_quantity: dec(quantity),
-                net_amount: dec(quantity),
-                ..AiMeteredAmounts::default()
-            },
-        }
-    }
-
     fn sol(quantity: &str) -> AiMeteredCredit {
-        credit(
+        metered_credit(
             CREDITS_SKU,
             "GPT-6.1 Sol",
-            "gpt-6.1-sol",
             AiCreditKind::Trackable,
             quantity,
         )
     }
 
     fn code_review(quantity: &str) -> AiMeteredCredit {
-        credit(
+        metered_credit(
             CREDITS_SKU,
             "Code Review model",
-            "code-review",
             AiCreditKind::RepositoryBilled,
             quantity,
         )
     }
 
     fn agent(quantity: &str) -> AiMeteredCredit {
-        credit(
+        metered_credit(
             AGENT_SKU,
             "GPT-6.1 Sol",
-            "gpt-6.1-sol",
             AiCreditKind::Untrackable,
             quantity,
         )
     }
 
     fn luna(quantity: &str) -> AiMeteredCredit {
-        credit(
-            CREDITS_SKU,
-            "GPT-5.4",
-            "gpt-5.4",
-            AiCreditKind::Trackable,
-            quantity,
-        )
+        metered_credit(CREDITS_SKU, "GPT-5.4", AiCreditKind::Trackable, quantity)
     }
 
     /// Every day of August, with `rows` on the credit day.
@@ -2818,31 +2781,6 @@ mod copilot {
     pub(super) struct CopilotAugust {
         pub admin: TestUser,
         pub ada: TestUser,
-    }
-
-    /// An organization usage row on the credit day.
-    fn org_row(
-        product: &str,
-        sku: &str,
-        unit: &str,
-        repository: &str,
-        kind: AiOrgChargeKind,
-        quantity: &str,
-    ) -> AiMeteredOrgCharge {
-        AiMeteredOrgCharge {
-            day: CREDIT_DAY,
-            product: product.to_string(),
-            sku: sku.to_string(),
-            unit: unit.to_string(),
-            repository: repository.to_string(),
-            kind,
-            unit_price: dec("0.01"),
-            quantity: dec(quantity),
-            gross_amount: dec(quantity),
-            discount_amount: AiDecimal::ZERO,
-            net_amount: dec(quantity),
-            reported_at: None,
-        }
     }
 
     /// Ada's account and an external contractor's, imported for every day of
@@ -2950,23 +2888,10 @@ mod copilot {
                 AiProvider::Copilot,
                 august().dates(),
                 &[
-                    org_row(
-                        "copilot",
-                        CREDITS_SKU,
-                        "AICredits",
-                        "widget-api",
-                        AiOrgChargeKind::RepositoryCredits,
-                        "12",
-                    ),
-                    org_row(
-                        "copilot",
-                        CREDITS_SKU,
-                        "AICredits",
-                        "gadget-web",
-                        AiOrgChargeKind::RepositoryCredits,
-                        "8",
-                    ),
-                    org_row(
+                    repository_credits(CREDIT_DAY, "widget-api", "12"),
+                    repository_credits(CREDIT_DAY, "gadget-web", "8"),
+                    org_charge(
+                        CREDIT_DAY,
                         "copilot",
                         CREDITS_SKU,
                         "AICredits",
@@ -2974,7 +2899,8 @@ mod copilot {
                         AiOrgChargeKind::AccountCreditsAggregate,
                         "100",
                     ),
-                    org_row(
+                    org_charge(
+                        CREDIT_DAY,
                         "copilot",
                         AGENT_SKU,
                         "AICredits",
@@ -2982,7 +2908,8 @@ mod copilot {
                         AiOrgChargeKind::UntrackableCredits,
                         "12",
                     ),
-                    org_row(
+                    org_charge(
+                        CREDIT_DAY,
                         "actions",
                         "Actions Linux",
                         "Minutes",

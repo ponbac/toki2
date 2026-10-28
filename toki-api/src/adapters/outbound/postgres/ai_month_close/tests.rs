@@ -426,84 +426,63 @@ async fn snapshot_rows_are_checked_by_the_store(pool: PgPool) {
             .as_database_error()
             .and_then(|error| error.constraint().map(str::to_string))
     };
-    // A negative own amount.
-    assert_eq!(
-        constraint(
-            raw_line(
-                &pool,
-                june,
-                "project:101",
-                Some("Client A"),
-                "api",
-                None,
-                Some(-1),
-                None
-            )
-            .await
-        )
-        .as_deref(),
-        Some("ai_billing_snapshot_lines_sign_check")
-    );
-    // A subscription on an API line.
-    assert_eq!(
-        constraint(
-            raw_line(
-                &pool,
-                june,
-                "project:101",
-                Some("Client A"),
-                "api",
-                Some(5),
-                Some(1),
-                None
-            )
-            .await
-        )
-        .as_deref(),
-        Some("ai_billing_snapshot_lines_subscription_check")
-    );
-    // Credits on an API line.
-    assert_eq!(
-        constraint(
-            raw_line(
-                &pool,
-                june,
-                "project:101",
-                Some("Client A"),
-                "api",
-                None,
-                Some(1),
-                Some(1)
-            )
-            .await
-        )
-        .as_deref(),
-        Some("ai_billing_snapshot_lines_credits_check")
-    );
-    // A project name without a project.
-    assert_eq!(
-        constraint(
-            raw_line(
-                &pool,
-                june,
-                "none",
-                Some("Client A"),
-                "api",
-                None,
-                Some(1),
-                None
-            )
-            .await
-        )
-        .as_deref(),
-        Some("ai_billing_snapshot_lines_project_check")
-    );
-    // An unknown kind.
-    assert_eq!(
-        constraint(raw_line(&pool, june, "none", None, "refund", None, Some(1), None).await)
-            .as_deref(),
-        Some("ai_billing_snapshot_lines_kind_check")
-    );
+    // (case, project key, project name, kind, subscription, own cents,
+    // credits, the constraint that refuses it)
+    for (case, key, name, kind, subscription, own, credits, expected) in [
+        (
+            "a negative own amount",
+            "project:101",
+            Some("Client A"),
+            "api",
+            None,
+            Some(-1),
+            None,
+            "ai_billing_snapshot_lines_sign_check",
+        ),
+        (
+            "a subscription on an API line",
+            "project:101",
+            Some("Client A"),
+            "api",
+            Some(5),
+            Some(1),
+            None,
+            "ai_billing_snapshot_lines_subscription_check",
+        ),
+        (
+            "credits on an API line",
+            "project:101",
+            Some("Client A"),
+            "api",
+            None,
+            Some(1),
+            Some(1),
+            "ai_billing_snapshot_lines_credits_check",
+        ),
+        (
+            "a project name without a project",
+            "none",
+            Some("Client A"),
+            "api",
+            None,
+            Some(1),
+            None,
+            "ai_billing_snapshot_lines_project_check",
+        ),
+        (
+            "an unknown kind",
+            "none",
+            None,
+            "refund",
+            None,
+            Some(1),
+            None,
+            "ai_billing_snapshot_lines_kind_check",
+        ),
+    ] {
+        let result = raw_line(&pool, june, key, name, kind, subscription, own, credits).await;
+        assert_eq!(constraint(result).as_deref(), Some(expected), "{case}");
+    }
     // A valid row is stored.
     raw_line(
         &pool,

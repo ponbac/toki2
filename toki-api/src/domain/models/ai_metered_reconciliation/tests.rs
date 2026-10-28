@@ -631,6 +631,19 @@ fn no_day_settles_until_the_org_total_equals_the_payers() {
     assert_eq!(focused.org_check, None);
 }
 
+/// An account's own failed check on the 25th, as an import records it.
+fn account_error(id: i64, error: &str) -> AiUsageCheck {
+    AiUsageCheck {
+        account_id: Some(account_id(id)),
+        checked_at: datetime!(2026-10-25 06:00 UTC),
+        payer_gross: None,
+        stored_gross: AiDecimal::ZERO,
+        matches: None,
+        error: Some(error.to_string()),
+        interrupted: false,
+    }
+}
+
 #[test]
 fn an_interrupted_account_counts_whatever_its_seat() {
     // A departed account, unseated in October, whose month a run stopped
@@ -664,15 +677,10 @@ fn an_interrupted_account_counts_whatever_its_seat() {
 
     // Its own error would have been informational.
     input.checks.pop();
-    input.checks.push(AiUsageCheck {
-        account_id: Some(account_id(1005)),
-        checked_at: datetime!(2026-10-25 06:00 UTC),
-        payer_gross: None,
-        stored_gross: AiDecimal::ZERO,
-        matches: None,
-        error: Some("GitHub knows no Copilot usage for former-member".to_string()),
-        interrupted: false,
-    });
+    input.checks.push(account_error(
+        1005,
+        "GitHub knows no Copilot usage for former-member",
+    ));
     let result = run(input);
     assert!(account_of(&result, "former-member").flags.is_empty());
     assert_eq!(result.totals.unknown_account, 15 * CREDIT);
@@ -682,15 +690,9 @@ fn an_interrupted_account_counts_whatever_its_seat() {
 fn a_seated_account_that_failed_makes_every_day_an_import_gap() {
     let mut input = input(vec![linked(1001, "ada-lovelace", ADA)]);
     input.org_credits = vec![org(date!(2026 - 10 - 02), "GPT-6.1 Sol", "15")];
-    input.checks.push(AiUsageCheck {
-        account_id: Some(account_id(1001)),
-        checked_at: datetime!(2026-10-25 06:00 UTC),
-        payer_gross: None,
-        stored_gross: AiDecimal::ZERO,
-        matches: None,
-        error: Some("the usage source is unavailable".to_string()),
-        interrupted: false,
-    });
+    input
+        .checks
+        .push(account_error(1001, "the usage source is unavailable"));
     let result = run(input);
     assert!(result
         .residual_days
