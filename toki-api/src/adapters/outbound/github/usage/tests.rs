@@ -5,9 +5,7 @@ use time::macros::{date, datetime};
 
 use super::*;
 use crate::{
-    adapters::outbound::github::{
-        client::MIN_REQUEST_INTERVAL, test_support::*, GithubAccountDirectory,
-    },
+    adapters::outbound::github::{test_support::*, GithubAccountDirectory},
     domain::{
         models::{
             credit_totals, credit_totals_match, AiCreditKind, AiOrgChargeKind, AiProviderAccountId,
@@ -438,16 +436,25 @@ async fn requests_start_at_most_ten_a_second() {
     let (api_base, github) = fake_github().await;
     github.answer(SUMMARY_PATH, SUMMARY);
     let source = source(&api_base);
-    let started = tokio::time::Instant::now();
-    for _ in 0..12 {
-        source.summary(october()).await.unwrap();
+
+    // Concurrent callers must queue: a slow server cannot space them out.
+    let requests = (0..12).map(|_| source.summary(october()));
+    for result in futures::future::join_all(requests).await {
+        result.unwrap();
     }
-    assert!(
-        started.elapsed() >= MIN_REQUEST_INTERVAL * 11,
-        "{:?}",
-        started.elapsed()
-    );
-    assert_eq!(github.paths().len(), 12);
+
+    let mut arrivals: Vec<_> = github
+        .received()
+        .into_iter()
+        .map(|received| received.arrived)
+        .collect();
+    arrivals.sort();
+    assert_eq!(arrivals.len(), 12);
+    // Any eleven consecutive arrivals span a second, less transport jitter.
+    for window in arrivals.windows(11) {
+        let span = window[10] - window[0];
+        assert!(span >= Duration::from_millis(950), "{span:?}");
+    }
 }
 
 /// Checks the parsing against GitHub responses saved in a local directory,

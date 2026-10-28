@@ -700,46 +700,11 @@ mod tests {
         provider: AiProvider,
         hints: &[(OffsetDateTime, &str)],
     ) {
-        let first = hints.iter().map(|&(hour, _)| hour).min().unwrap();
-        let last = hints.iter().map(|&(hour, _)| hour).max().unwrap();
-        let upload = AiUsageUpload::new(
-            AiMachine {
-                id: AiMachineId::parse(machine_id).unwrap(),
-                label: "laptop".to_string(),
-                client_version: "0.2.0".to_string(),
-                time_zone: "Europe/Stockholm".to_string(),
-            },
-            AiUsageWindow::new(first, last + time::Duration::HOUR).unwrap(),
-            AiPricing {
-                status: AiPricingStatus::Fresh,
-                fetched_at: None,
-                source: "https://example.com/prices.json".to_string(),
-            },
-            Vec::new(),
-            vec![AiProviderCoverage {
-                provider,
-                status: AiCoverageStatus::Ok,
-                files: 1,
-                unreadable: 0,
-                malformed_lines: 0,
-                skipped_records: 0,
-                duplicates: 0,
-            }],
-            hints
-                .iter()
-                .map(|&(hour_start, plan)| AiProviderHint {
-                    provider,
-                    hour_start,
-                    plan: plan.to_string(),
-                })
-                .collect(),
-            AiPartialBucketCost::PricedSubtotal,
-        )
-        .unwrap();
-        PostgresAiUsageRepository::new(db(pool))
-            .replace_window(user, &upload)
-            .await
-            .unwrap();
+        let hints: Vec<_> = hints
+            .iter()
+            .map(|&(hour, plan)| (hour, provider, plan))
+            .collect();
+        upload_usage(pool, user, machine_id, &[], &hints).await;
     }
 
     const LAPTOP: &str = "5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a";

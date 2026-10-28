@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use axum::http::StatusCode;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use time::macros::{date, datetime};
 
 use super::{app_auth::parse_private_key, test_support::*, *};
@@ -16,6 +17,20 @@ fn directory(api_base: &str, organization: &str) -> GithubAccountDirectory {
 
 fn account(id: i64) -> AiProviderAccountId {
     AiProviderAccountId::new(id).unwrap()
+}
+
+/// The fake's JWT check is the only proof that minted tokens are well formed,
+/// so a token it cannot decode must fail it rather than pass unchecked.
+#[test]
+fn the_fake_github_refuses_a_jwt_it_cannot_decode() {
+    let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","typ":"JWT"}"#);
+
+    for token in [
+        "Bearer !!!.e30.c2ln".to_string(),
+        format!("Bearer {header}.e30.!!!"),
+    ] {
+        assert!(check_jwt(&token).is_err(), "{token}");
+    }
 }
 
 #[tokio::test]

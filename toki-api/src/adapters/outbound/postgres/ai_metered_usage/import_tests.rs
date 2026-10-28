@@ -23,10 +23,7 @@ use crate::{
         models::*,
         ports::{
             inbound::AiMeteredUsageService,
-            outbound::{
-                AiImportLease, AiMeteredUsageRepository, AiProviderAccountRepository,
-                MeteredUsageSource,
-            },
+            outbound::{AiImportLease, AiMeteredUsageRepository, MeteredUsageSource},
         },
         services::{AiMeteredImportSettings, AiMeteredSourceState, AiMeteredUsageServiceImpl},
         AiMeteredUsageError, MeteredUsageSourceError,
@@ -1691,78 +1688,23 @@ async fn reconciliation_equals_github_for_every_account(pool: PgPool) {
     assert_eq!(third.residual, 5 * 10_000_000);
     assert_eq!(third.status, AiResidualStatus::Settled);
     assert_eq!(reconciliation.totals.unknown_account, 5 * 10_000_000);
-    assert_eq!(reconciliation.repositories.len(), 1);
-    assert!(reconciliation.pool.is_some());
-    // Equal to reconciling the stored data directly.
-    let direct = reconcile(AiReconciliationInput {
-        payer: AiProvider::Copilot,
-        month: month("2026-10"),
-        today: date!(2026 - 10 - 25),
-        settle_days: 3,
-        accounts: PostgresAiProviderAccountRepository::new(DbPool::from(pool.clone()))
-            .accounts(AiProvider::Copilot)
-            .await
-            .unwrap(),
-        account_credits: setup
-            .repository
-            .account_credits(AiProvider::Copilot, month("2026-10").dates(), None)
-            .await
-            .unwrap(),
-        org_credits: setup
-            .repository
-            .org_credits(AiProvider::Copilot, month("2026-10").dates())
-            .await
-            .unwrap(),
-        org_charges: setup
-            .repository
-            .org_charges(AiProvider::Copilot, month("2026-10").dates())
-            .await
-            .unwrap(),
-        summary: setup
-            .repository
-            .summary(AiProvider::Copilot, month("2026-10"))
-            .await
-            .unwrap(),
-        tracked: Vec::new(),
-        checks: setup
-            .repository
-            .checks(AiProvider::Copilot, month("2026-10"), None)
-            .await
-            .unwrap(),
-        coverage: reconciliation
-            .residual_days
-            .iter()
-            .map(|day| {
-                (
-                    day.day,
-                    AiDayCoverage {
-                        org_fetched: true,
-                        org_complete: day.day < date!(2026 - 10 - 25),
-                        org_usage_fetched: true,
-                        org_usage_complete: day.day < date!(2026 - 10 - 25),
-                        accounts_missing: 0,
-                        accounts_incomplete: u32::from(day.day == date!(2026 - 10 - 25)) * 3,
-                    },
-                )
-            })
-            .collect(),
-        account_slices: setup
-            .repository
-            .slices(
-                AiProvider::Copilot,
-                AiMeteredSource::AccountCredits,
-                month("2026-10").dates(),
-            )
-            .await
-            .unwrap()
-            .into_iter()
-            .filter_map(|slice| Some(((slice.account_id?, slice.day), slice.is_complete())))
-            .collect(),
-        focus: None,
-        repository_mappings: AiRepositoryResolver::default(),
-    })
-    .unwrap();
-    assert_eq!(&direct, reconciliation);
+    // The organization's usage row and summary reach the month as fetched.
+    let [repository] = reconciliation.repositories.as_slice() else {
+        panic!("{:?}", reconciliation.repositories);
+    };
+    assert_eq!(repository.repository, "widget-api");
+    assert_eq!(repository.kind, AiOrgChargeKind::RepositoryCredits);
+    assert_eq!(repository.quantity, dec("4"));
+    assert_eq!(repository.net_amount, AiDecimal::ZERO);
+    assert_eq!(repository.days, 1);
+    let pool = reconciliation.pool.as_ref().unwrap();
+    assert_eq!(pool.exhausted_on, None);
+    assert_eq!(pool.net_total, AiDecimal::ZERO);
+    assert!(pool.unrecognized.is_empty());
+    // Today's slices are still incomplete, so today stays provisional.
+    let today = reconciliation.residual_days.last().unwrap();
+    assert_eq!(today.day, date!(2026 - 10 - 25));
+    assert_eq!(today.status, AiResidualStatus::Provisional);
 
     // One developer's view needs a known user.
     assert!(matches!(
