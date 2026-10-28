@@ -11,7 +11,8 @@ kleer = { path = "../kleer" }
 dotenvy.workspace = true
 itertools = "0.15.0"
 serde.workspace = true
-serde_json.workspace = true
+# raw_value reads GitHub's billing numbers exactly; sqlx-core already enables it.
+serde_json = { workspace = true, features = ["raw_value"] }
 serde_with = "3.24.0"
 tokio.workspace = true
 time = { workspace = true, features = ["macros"] }

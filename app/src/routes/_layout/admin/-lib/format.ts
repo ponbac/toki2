@@ -122,4 +122,15 @@ export function formatDateOf(instant: string): string {
   });
 }
 
+/** An instant in the browser's time zone, such as `Oct 25, 10:04`. */
+export function formatInstant(instant: string): string {
+  return new Date(instant).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
 export const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;

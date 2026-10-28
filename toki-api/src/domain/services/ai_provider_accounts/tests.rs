@@ -248,6 +248,14 @@ impl AiProviderAccountRepository for FakeRepository {
     ) -> Result<Vec<AiMeteredUserDay>, AiProviderAccountError> {
         Ok(Vec::new())
     }
+
+    async fn account_credit_days(
+        &self,
+        _: AiProvider,
+        _: AiUsageDateRange,
+    ) -> Result<Vec<crate::domain::models::AiAccountCreditDay>, AiProviderAccountError> {
+        Ok(Vec::new())
+    }
 }
 
 fn service(

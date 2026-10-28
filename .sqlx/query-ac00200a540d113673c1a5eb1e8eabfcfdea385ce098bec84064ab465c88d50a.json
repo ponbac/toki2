@@ -1,0 +1,91 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT account_id, day, fetched_at, changed_at, complete_at, late_changed_at\n            FROM ai_provider_usage_slices\n            WHERE provider = $1 AND source = $2 AND day >= $3 AND day < $4\n            ORDER BY account_id, day\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_slices",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "day",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_slices",
+            "name": "day"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "fetched_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_slices",
+            "name": "fetched_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "changed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_slices",
+            "name": "changed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "complete_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_slices",
+            "name": "complete_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "late_changed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_usage_slices",
+            "name": "late_changed_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "ac00200a540d113673c1a5eb1e8eabfcfdea385ce098bec84064ab465c88d50a"
+}

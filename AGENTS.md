@@ -60,6 +60,7 @@ Read `.docs/mcp.md` before changing MCP tools, MCP authentication or Toki's OAut
 | **Time tracking** | Fully hexagonal | `TimeTrackingClient` + `TimeTrackingService` ports, `KleerAdapter` |
 | **Work items** | Fully hexagonal | `WorkItemProvider` + `WorkItemService` ports, `AzureDevOpsWorkItemAdapter` |
 | **AI provider accounts** | Fully hexagonal | `ProviderAccountDirectory` + `AiProviderAccountService` ports, `GithubAccountDirectory` (GitHub App) |
+| **AI metered usage** | Fully hexagonal | `MeteredUsageSource` + `AiMeteredUsageService` ports, `GithubMeteredUsageSource` (shares the GitHub App client with `GithubAccountDirectory`) |
 | **Pull requests** | Not abstracted | `RepoDiffer` directly uses `az_devops::RepoClient` — needs refactoring |
 | **Notifications** | Not abstracted | Coupled to PR change events |
 

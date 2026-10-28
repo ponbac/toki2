@@ -9,6 +9,7 @@ import {
   parseAiDeveloperMonth,
   parseAiUnmappedProjectKeys,
 } from "../contracts/ai-admin";
+import { parseMeteredMonth } from "../contracts/ai-metered-usage";
 import { parseProviderAccounts } from "../contracts/ai-provider-accounts";
 import { parseAiProjectMapping } from "../contracts/ai-usage-report";
 import {
@@ -33,6 +34,29 @@ export type {
   AiUnmappedProjectKey,
   AiUploadGap,
 } from "../contracts/ai-admin";
+export type {
+  AiMeteredAccount,
+  AiMeteredAccountError,
+  AiMeteredChargeKind,
+  AiMeteredCheck,
+  AiMeteredFlag,
+  AiMeteredGroup,
+  AiMeteredGroupKind,
+  AiMeteredImport,
+  AiMeteredImportMode,
+  AiMeteredImportStarted,
+  AiMeteredMonth,
+  AiMeteredOwner,
+  AiMeteredPool,
+  AiMeteredRepository,
+  AiMeteredRun,
+  AiMeteredSourceKind,
+  AiMeteredStaleReason,
+  AiMeteredTotals,
+  AiMeteredUnlinkedTracked,
+  AiResidualDay,
+  AiResidualStatus,
+} from "../contracts/ai-metered-usage";
 export type {
   AiAcceptedSuggestions,
   AiAccountDirectory,
@@ -64,6 +88,16 @@ function whileRatesArePending(query: {
     : false;
 }
 
+/** How often a month whose import is running is reloaded. */
+const RUNNING_IMPORT_POLL_MS = 3_000;
+
+/** Reloads a metered month until its running import has finished. */
+function whileImportRuns(query: {
+  state: { data?: { import: { running: unknown } } };
+}): number | false {
+  return query.state.data?.import.running ? RUNNING_IMPORT_POLL_MS : false;
+}
+
 export { AI_ADMIN_QUERY_KEY } from "../ai-cache";
 
 const keys = {
@@ -79,6 +113,16 @@ const keys = {
   subscriptions: [...AI_ADMIN_QUERY_KEY, "subscriptions"] as const,
   mismatches: [...AI_ADMIN_QUERY_KEY, "subscription-mismatches"] as const,
   providerAccounts: [...AI_ADMIN_QUERY_KEY, "provider-accounts"] as const,
+  meteredMonth: (month: string) =>
+    [...AI_ADMIN_QUERY_KEY, "metered-usage", month] as const,
+  meteredDeveloper: (month: string, userId: number) =>
+    [
+      ...AI_ADMIN_QUERY_KEY,
+      "metered-usage",
+      month,
+      "developer",
+      userId,
+    ] as const,
 };
 
 /**
@@ -187,6 +231,34 @@ export const aiAdminQueries = {
         parseProviderAccounts(
           await api.get("ai-usage/admin/provider-accounts").json<unknown>(),
         ),
+    }),
+  /**
+   * What the metered payer (GitHub Copilot) billed in a UTC month, `YYYY-MM`,
+   * reconciled with Toki's tracked usage, with the import's state. Reloads
+   * while an import runs.
+   */
+  meteredMonth: (month: string) =>
+    queryOptions({
+      queryKey: keys.meteredMonth(month),
+      queryFn: async () =>
+        parseMeteredMonth(
+          await api
+            .get(`ai-usage/admin/metered-usage/${month}`)
+            .json<unknown>(),
+        ),
+      refetchInterval: whileImportRuns,
+    }),
+  /** The same month, restricted to the accounts linked to one user. */
+  meteredDeveloper: (month: string, userId: number) =>
+    queryOptions({
+      queryKey: keys.meteredDeveloper(month, userId),
+      queryFn: async () =>
+        parseMeteredMonth(
+          await api
+            .get(`ai-usage/admin/metered-usage/${month}/developers/${userId}`)
+            .json<unknown>(),
+        ),
+      refetchInterval: whileImportRuns,
     }),
   /** Everyone's undeclared-subscription evidence over the last 90 days. */
   subscriptionMismatches: () =>

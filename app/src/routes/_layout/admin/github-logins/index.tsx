@@ -46,7 +46,7 @@ function GithubLoginsPage() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        GitHub accounts holding Copilot seats in{" "}
+        GitHub accounts holding Copilot seats or credits in{" "}
         {accountsQuery.data?.directory.namespace || "the organization"}, and
         whose usage each one is: a Toki user&apos;s, or not a Toki user&apos;s
         (Spinit overhead). Dates are UTC calendar days, as GitHub bills, and
@@ -288,6 +288,7 @@ function Accounts({
             activity={activity}
             today={today}
             reviewFrom={overview.reviewFrom}
+            creditsMonth={overview.creditsMonth}
             open={open}
             onToggle={(accountId) =>
               setOpen((current) => {

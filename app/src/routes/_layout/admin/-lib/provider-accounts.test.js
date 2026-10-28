@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   acceptAllPicks,
   clientLabel,
+  creditGaps,
   defaultEndDay,
   describeRanges,
   endDayProblem,
@@ -33,6 +34,9 @@ function account(accountId, { suggestions = [], dispositions = [] } = {}) {
     dispositions,
     currentDispositionId: null,
     uncoveredSeatDays: [],
+    creditsThisMonth: "0.00",
+    uncoveredCreditDays: [],
+    creditDaysWithoutSeat: 0,
     needsLook: dispositions.length === 0,
     suggestions,
     defaultPeriod: { validFrom: "2025-09-16", validTo: null },
@@ -217,5 +221,27 @@ describe("isStale", () => {
     expect(isStale(null, "2026-10-24")).toBe(false);
     expect(isStale("2026-10-22T23:30:00+02:00", "2026-10-24")).toBe(false);
     expect(isStale("2026-10-21T23:59:00Z", "2026-10-24")).toBe(true);
+  });
+});
+
+describe("creditGaps", () => {
+  test("is empty when every credit day has a disposition and a seat", () => {
+    expect(creditGaps(account(1))).toEqual([]);
+  });
+
+  test("names uncovered credit days and days outside every seat", () => {
+    expect(
+      creditGaps({
+        ...account(1),
+        uncoveredCreditDays: [
+          { from: "2026-10-03", through: "2026-10-04" },
+          { from: "2026-10-09", through: "2026-10-09" },
+        ],
+        creditDaysWithoutSeat: 1,
+      }),
+    ).toEqual([
+      "Credits without a disposition: Oct 3 – Oct 4, Oct 9 (3 days)",
+      "1 day with credits outside every seat",
+    ]);
   });
 });

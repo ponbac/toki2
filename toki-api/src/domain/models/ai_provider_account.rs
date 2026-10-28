@@ -25,7 +25,9 @@ use std::fmt;
 
 use time::{Date, Duration, OffsetDateTime, UtcOffset};
 
-use super::{AiAccountDispositionId, AiBillingUsage, AiProvider, AiUsageDateRange, UserId};
+use super::{
+    AiAccountDispositionId, AiBillingUsage, AiProvider, AiUsageDateRange, AiUsdNanos, UserId,
+};
 use crate::domain::AiProviderAccountError;
 
 /// The longest login, in characters.
@@ -409,6 +411,28 @@ impl AiStoredProviderAccount {
         AiAccountPeriod::new(valid_from, valid_to).ok()
     }
 
+    /// The period a new disposition defaults to for credit days alone:
+    /// `uncovered_credit_days` (days with credits no disposition covers,
+    /// sorted) from the first one through the day before the next disposition
+    /// starts, or through the last one when none follows. `None` without such
+    /// days.
+    pub fn credit_default_period(
+        &self,
+        uncovered_credit_days: &[AiUsageDateRange],
+    ) -> Option<AiAccountPeriod> {
+        let valid_from = uncovered_credit_days.first()?.start();
+        let next_start = self
+            .periods()
+            .map(|period| period.valid_from())
+            .filter(|start| *start > valid_from)
+            .min();
+        let valid_to = match next_start {
+            Some(start) => start.previous_day()?,
+            None => uncovered_credit_days.last()?.last_day(),
+        };
+        AiAccountPeriod::new(valid_from, Some(valid_to)).ok()
+    }
+
     /// The days the account needs a disposition on, as sorted, disjoint
     /// half-open ranges: the days it held a seat, and every day after today
     /// while a seat is listed (such a range ends at `Date::MAX`).
@@ -476,6 +500,24 @@ fn to_ranges(ranges: Vec<(Date, Date)>) -> Vec<AiUsageDateRange> {
         .into_iter()
         .filter_map(|(start, end)| AiUsageDateRange::new(start, end))
         .collect()
+}
+
+/// An account's gross credits (`G`) of every kind on one UTC day, as the
+/// payer's usage import stored them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiAccountCreditDay {
+    pub account_id: AiProviderAccountId,
+    pub day: Date,
+    pub gross: AiUsdNanos,
+}
+
+/// `days` as sorted, disjoint half-open ranges, consecutive days merged.
+pub fn day_ranges(days: impl IntoIterator<Item = Date>) -> Vec<AiUsageDateRange> {
+    let ranges = days
+        .into_iter()
+        .filter_map(|day| Some((day, day.next_day()?)))
+        .collect();
+    to_ranges(merge(ranges))
 }
 
 /// Usage a metered payer paid for, per user and UTC day, personal keys

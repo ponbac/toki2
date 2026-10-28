@@ -455,7 +455,8 @@ impl AiUsageUpload {
     }
 
     /// The pricing basis of every cost in the upload, stored on each bucket
-    /// it writes. Clients that do not report one leave it `None`.
+    /// it writes and as the machine's current pricing basis. Clients that do
+    /// not report one leave it `None`, which keeps the machine's.
     pub fn with_pricing_basis(self, pricing_basis: Option<AiPricingBasis>) -> Self {
         Self {
             pricing_basis,
@@ -527,11 +528,12 @@ pub struct AiUsageIngestReceipt {
 ///
 /// It changes only the cost, the unpriced record count and the pricing basis of
 /// stored buckets that it reproduces exactly: the same key, token counts and
-/// record count. It never inserts or deletes usage, so history the machine no
-/// longer has, or usage it now attributes differently, keeps its stored cost.
-/// Buckets pass the upload's validation, with version 3 costs, and their keys
-/// are unique. There is no window: any hour can be repriced, but the service
-/// skips hours before its reprice floor.
+/// record count, and records `basis` as the machine's current pricing basis,
+/// also when nothing matches. It never inserts or deletes usage, so history the
+/// machine no longer has, or usage it now attributes differently, keeps its
+/// stored cost. Buckets pass the upload's validation, with version 3 costs, and
+/// their keys are unique. There is no window: any hour can be repriced, but the
+/// service skips hours before its reprice floor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AiRepricing {
     machine_id: AiMachineId,

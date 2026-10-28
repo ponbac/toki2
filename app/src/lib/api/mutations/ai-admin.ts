@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { HTTPError } from "ky";
 import { api } from "../api";
 import { AI_ADMIN_QUERY_KEY, invalidateAiQueries } from "../ai-cache";
 import {
   parseAiExchangeRate,
   parseAiExchangeRateReset,
 } from "../contracts/ai-admin";
+import { parseMeteredImportStarted } from "../contracts/ai-metered-usage";
 import {
   parseAcceptedSuggestions,
   parseAccountDisposition,
@@ -18,6 +20,8 @@ import {
   type AiAccountDispositionTerms,
   type AiDirectoryRefresh,
   type AiExchangeRate,
+  type AiMeteredImportMode,
+  type AiMeteredImportStarted,
   type AiProjectMapping,
 } from "../queries/ai-admin";
 import type { AiSubscription, AiSubscriptionTerms } from "../queries/ai-usage";
@@ -61,6 +65,13 @@ export type AcceptAccountSuggestionsVars = {
   picks: readonly { accountId: number; userId: number }[];
 };
 
+/** Imports a UTC month of metered usage (plus months with gaps): its
+ * changed days, or every day. */
+export type StartMeteredImportVars = {
+  month: string;
+  mode: AiMeteredImportMode;
+};
+
 /** The most picks the server takes in one request. */
 const MAX_PICKS_PER_REQUEST = 100;
 
@@ -79,6 +90,7 @@ export const aiAdminMutations = {
   useUpdateAccountDisposition,
   useDeleteAccountDisposition,
   useAcceptAccountSuggestions,
+  useStartMeteredImport,
 };
 
 export function useOverrideExchangeRate(
@@ -397,6 +409,50 @@ export function useAcceptAccountSuggestions(
       // A later chunk can fail after earlier ones created dispositions.
       await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
       await options?.onSettled?.(data, error, vars, ctx, mutationContext);
+    },
+  });
+}
+
+/**
+ * Starts importing a month of metered usage from the payer. The server answers
+ * at once and runs the import on its own; the month reloads until it is done.
+ * Resolves to null when an import is already running (409), which is no error:
+ * the page shows that run.
+ */
+export function useStartMeteredImport(
+  options?: DefaultMutationOptions<
+    StartMeteredImportVars,
+    AiMeteredImportStarted | null
+  >,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "metered-usage", "import"],
+    mutationFn: async ({ month, mode }: StartMeteredImportVars) => {
+      try {
+        return parseMeteredImportStarted(
+          await api
+            .post(`ai-usage/admin/metered-usage/${month}/import`, {
+              json: { mode },
+            })
+            .json<unknown>(),
+        );
+      } catch (error) {
+        if (error instanceof HTTPError && error.response.status === 409) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    ...options,
+    onSuccess: async (data, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
+    },
+    onError: async (error, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onError?.(error, vars, ctx, mutationContext);
     },
   });
 }

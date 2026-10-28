@@ -7,6 +7,7 @@ import {
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Download, Info } from "lucide-react";
 import { z } from "zod";
+import { AiProviderIcon } from "@/components/ai-provider-icon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,8 +49,10 @@ import {
 } from "../-lib/ledger";
 import { monthDays } from "../-lib/coverage";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
+import { needsAttention } from "../-lib/reconciliation";
 import { monthUploads, type DeveloperUploads } from "../-lib/upload-health";
 import { BillingRules } from "./-components/billing-rules";
+import { CopilotReconciliation } from "./-components/copilot-reconciliation";
 import { ExchangeRatesPanel } from "./-components/exchange-rates";
 import { ExportChecks, type ExportCheck } from "./-components/export-checks";
 import { PeopleTable } from "./-components/people-table";
@@ -65,7 +68,14 @@ import {
 } from "../-lib/use-estimate-money";
 
 /** The parts of the month beneath its statement. */
-const TABS = ["projects", "people", "subscriptions", "data", "rules"] as const;
+const TABS = [
+  "projects",
+  "people",
+  "subscriptions",
+  "copilot",
+  "data",
+  "rules",
+] as const;
 type BillingTab = (typeof TABS)[number];
 
 const searchSchema = z.object({
@@ -105,6 +115,8 @@ function AiBillingPage() {
       days.at(-1) ?? month,
     ),
   );
+  // The GitHub Copilot tab's month, shared with the tab, for its mark.
+  const meteredQuery = useQuery(aiAdminQueries.meteredMonth(month));
   const download = aiAdminMutations.useDownloadBillingCsv({
     onError: apiErrorToast("Failed to export the billing CSV"),
   });
@@ -345,6 +357,14 @@ function AiBillingPage() {
                 <Count value={overview.subscriptions.length} />
                 {mismatches.length > 0 && <Dot label="plans nobody declared" />}
               </TabsTrigger>
+              <TabsTrigger value="copilot" className={TAB_TRIGGER}>
+                <AiProviderIcon provider="copilot" className="size-4" plain />
+                GitHub Copilot
+                {meteredQuery.isSuccess &&
+                  needsAttention(meteredQuery.data) && (
+                    <Dot label="needs attention" />
+                  )}
+              </TabsTrigger>
               <TabsTrigger value="data" className={TAB_TRIGGER}>
                 Uploads and rates
                 {dataNeedsLook && <Dot label="needs attention" />}
@@ -399,6 +419,14 @@ function AiBillingPage() {
                   developers={overview.developers}
                 />
               </div>
+            </TabsContent>
+            <TabsContent value="copilot" className="mt-5">
+              <CopilotReconciliation
+                month={month}
+                onMonth={(next) =>
+                  navigate({ search: (prev) => ({ ...prev, month: next }) })
+                }
+              />
             </TabsContent>
             <TabsContent value="data" className="mt-5 space-y-10">
               <DataChecks

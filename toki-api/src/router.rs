@@ -26,14 +26,14 @@ use crate::{
         },
         outbound::{
             cimd::CimdFetcher,
-            github::GithubAccountDirectory,
+            github::{GithubAccountDirectory, GithubApp, GithubMeteredUsageSource},
             media::WebpAvatarProcessor,
             postgres::{
                 PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
-                PostgresAiProjectMappingRepository, PostgresAiProviderAccountRepository,
-                PostgresAiSubscriptionRepository, PostgresAiUsageReportRepository,
-                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
-                PostgresOAuthRepository,
+                PostgresAiMeteredUsageRepository, PostgresAiProjectMappingRepository,
+                PostgresAiProviderAccountRepository, PostgresAiSubscriptionRepository,
+                PostgresAiUsageReportRepository, PostgresAiUsageRepository,
+                PostgresApiTokenRepository, PostgresAvatarRepository, PostgresOAuthRepository,
             },
             riksbank::RiksbankExchangeRateAdapter,
         },
@@ -43,21 +43,22 @@ use crate::{
     config::Settings,
     db::DbPool,
     domain::{
-        models::{AiProvider, AiUsageTimeZone},
+        models::{AiImportFreshness, AiProvider, AiUsageTimeZone},
         ports::{
             inbound::{
-                AiBillingService, AiDisplayRateService, AiProjectMappingService,
-                AiProviderAccountService, AiSubscriptionService, AiUsageReportService,
-                AiUsageService, ApiTokenAuthenticator, ApiTokenService, AvatarService,
-                OAuthAccessTokenAuthenticator, OAuthService,
+                AiBillingService, AiDisplayRateService, AiMeteredUsageService,
+                AiProjectMappingService, AiProviderAccountService, AiSubscriptionService,
+                AiUsageReportService, AiUsageService, ApiTokenAuthenticator, ApiTokenService,
+                AvatarService, OAuthAccessTokenAuthenticator, OAuthService,
             },
             outbound::TimeTrackingProjectCatalog,
         },
         services::{
             AiAccountDirectoryState, AiBillingServiceImpl, AiDisplayRateServiceImpl,
-            AiExchangeRateSettings, AiExchangeRates, AiProjectMappingServiceImpl,
-            AiProviderAccountServiceImpl, AiSubscriptionServiceImpl, AiUsageReportServiceImpl,
-            AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl, OAuthServiceImpl,
+            AiExchangeRateSettings, AiExchangeRates, AiMeteredImportSettings, AiMeteredSourceState,
+            AiMeteredUsageServiceImpl, AiProjectMappingServiceImpl, AiProviderAccountServiceImpl,
+            AiSubscriptionServiceImpl, AiUsageReportServiceImpl, AiUsageServiceImpl,
+            ApiTokenServiceImpl, AvatarServiceImpl, OAuthServiceImpl,
         },
         RepoConfig,
     },
@@ -108,7 +109,9 @@ pub async fn create(
         )
         .nest(
             "/ai-usage/admin",
-            http::ai_billing::router().merge(http::ai_provider_accounts::router()),
+            http::ai_billing::router()
+                .merge(http::ai_provider_accounts::router())
+                .merge(http::ai_metered_usage::router()),
         );
 
     let api_tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
@@ -231,37 +234,59 @@ pub async fn create(
     let ai_subscription_service: Arc<dyn AiSubscriptionService> = Arc::new(
         AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone),
     );
-    // A misconfigured GitHub App never stops startup: the admin page reports
-    // it, as time tracking reports missing Kleer credentials.
-    let account_directory = match config.github.app_credentials() {
-        Ok(None) => {
-            tracing::info!(
-                "GitHub account directory is off: TOKI_GITHUB__APP_PRIVATE_KEY is not set"
-            );
-            AiAccountDirectoryState::Disabled
+    // A misconfigured GitHub App never stops startup: the admin pages report
+    // it, as time tracking reports missing Kleer credentials. Every GitHub
+    // adapter shares one app: one client, token cache and pacer.
+    let github: Result<Option<GithubApp>, String> = config
+        .github
+        .app_credentials()
+        .and_then(|credentials| credentials.map(GithubApp::new).transpose());
+    match &github {
+        Ok(None) => tracing::info!(
+            "GitHub is off (seats and usage import): TOKI_GITHUB__APP_PRIVATE_KEY is not set"
+        ),
+        Err(message) => tracing::error!(%message, "GitHub is misconfigured"),
+        Ok(Some(_)) => {}
+    }
+    let account_directory = match &github {
+        Ok(Some(app)) => {
+            AiAccountDirectoryState::Ready(Arc::new(GithubAccountDirectory::new(app.clone())))
         }
-        Ok(Some(credentials)) => match GithubAccountDirectory::new(credentials) {
-            Ok(directory) => AiAccountDirectoryState::Ready(Arc::new(directory)),
-            Err(message) => {
-                tracing::error!(%message, "GitHub account directory is misconfigured");
-                AiAccountDirectoryState::Misconfigured(message)
-            }
-        },
-        Err(message) => {
-            tracing::error!(%message, "GitHub account directory is misconfigured");
-            AiAccountDirectoryState::Misconfigured(message)
+        Ok(None) => AiAccountDirectoryState::Disabled,
+        Err(message) => AiAccountDirectoryState::Misconfigured(message.clone()),
+    };
+    let usage_source = match &github {
+        Ok(Some(app)) => {
+            AiMeteredSourceState::Ready(Arc::new(GithubMeteredUsageSource::new(app.clone())))
         }
+        Ok(None) => AiMeteredSourceState::Disabled,
+        Err(message) => AiMeteredSourceState::Misconfigured(message.clone()),
     };
     #[cfg(not(debug_assertions))]
     let account_directory_ready = matches!(account_directory, AiAccountDirectoryState::Ready(_));
+    #[cfg(not(debug_assertions))]
+    let usage_source_ready = matches!(usage_source, AiMeteredSourceState::Ready(_));
     // GitHub bills Copilot per seat and credit: Copilot is the payer whose
-    // accounts these are.
+    // accounts and usage these are.
     let ai_provider_account_service: Arc<dyn AiProviderAccountService> =
         Arc::new(AiProviderAccountServiceImpl::new(
             Arc::new(PostgresAiProviderAccountRepository::new(db_pool.clone())),
             account_directory,
             AiProvider::Copilot,
             config.github.organization.clone().unwrap_or_default(),
+        ));
+    let ai_metered_usage_service: Arc<dyn AiMeteredUsageService> =
+        Arc::new(AiMeteredUsageServiceImpl::new(
+            Arc::new(PostgresAiMeteredUsageRepository::new(db_pool.clone())),
+            Arc::new(PostgresAiProviderAccountRepository::new(db_pool.clone())),
+            usage_source,
+            AiProvider::Copilot,
+            config.github.organization.clone().unwrap_or_default(),
+            AiMeteredImportSettings {
+                backfill_from: config.ai_usage.metered_import.backfill_from,
+                reprice_floor: config.ai_usage.reprice_floor,
+                unattended: cfg!(not(debug_assertions)),
+            },
         ));
 
     // Create app state
@@ -281,6 +306,7 @@ pub async fn create(
         ai_billing_service,
         ai_display_rate_service,
         ai_provider_account_service.clone(),
+        ai_metered_usage_service.clone(),
     )
     .await;
 
@@ -301,6 +327,13 @@ pub async fn create(
     #[cfg(not(debug_assertions))]
     if account_directory_ready {
         spawn_provider_account_refresh(ai_provider_account_service.clone());
+    }
+
+    // Import metered usage hourly and nightly (if in production), for the
+    // same reason; the admin Import now works in every build.
+    #[cfg(not(debug_assertions))]
+    if usage_source_ready {
+        spawn_metered_usage_import(ai_metered_usage_service.clone());
     }
 
     // Finally, wrap the app with tracing layer, state and CORS
@@ -388,6 +421,38 @@ fn spawn_provider_account_refresh(service: Arc<dyn AiProviderAccountService>) {
                 ),
                 Ok(None) => {}
                 Err(error) => tracing::warn!(%error, "provider account refresh failed"),
+            }
+        }
+    });
+}
+
+/// Imports metered usage when due: hourly change detection, nightly full
+/// refreshes. Each tick runs only what `scheduled_plan` says is due, so
+/// restarts add no calls. A stale import is logged as a warning, the
+/// freshness alert; nothing else is notified.
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn spawn_metered_usage_import(service: Arc<dyn AiMeteredUsageService>) {
+    tokio::spawn(async move {
+        let start = tokio::time::Instant::now() + std::time::Duration::from_secs(180);
+        let mut ticks = tokio::time::interval_at(start, std::time::Duration::from_secs(60 * 60));
+        ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticks.tick().await;
+            match service.import_if_due().await {
+                Ok(Some(run)) => tracing::info!(
+                    status = run.status.as_str(),
+                    requests = run.requests,
+                    "imported metered usage on schedule"
+                ),
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "metered usage import failed"),
+            }
+            match service.freshness().await {
+                Ok(AiImportFreshness::Stale { reason }) => {
+                    tracing::warn!(%reason, "the GitHub usage import is stale")
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "could not judge metered usage freshness"),
             }
         }
     });

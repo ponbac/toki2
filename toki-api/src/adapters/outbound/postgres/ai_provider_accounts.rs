@@ -7,9 +7,9 @@ use crate::{
     db::DbPool,
     domain::{
         models::{
-            AiAccountDisposition, AiAccountDispositionId, AiAccountDispositionTerms,
-            AiAccountPeriod, AiAccountTarget, AiBillingDeveloper, AiBillingUsage,
-            AiDirectoryStatus, AiMeteredUserDay, AiProvider, AiProviderAccountId,
+            AiAccountCreditDay, AiAccountDisposition, AiAccountDispositionId,
+            AiAccountDispositionTerms, AiAccountPeriod, AiAccountTarget, AiBillingDeveloper,
+            AiBillingUsage, AiDirectoryStatus, AiMeteredUserDay, AiProvider, AiProviderAccountId,
             AiProviderAccountProfile, AiProviderLogin, AiSeatListing, AiStoredProfile,
             AiStoredProviderAccount, AiStoredSeat, AiTokenCounts, AiUsageDateRange, AiUsdNanos,
             UserId,
@@ -771,6 +771,38 @@ impl AiProviderAccountRepository for PostgresAiProviderAccountRepository {
                 })
             })
             .collect()
+    }
+
+    async fn account_credit_days(
+        &self,
+        payer: AiProvider,
+        dates: AiUsageDateRange,
+    ) -> Result<Vec<AiAccountCreditDay>, AiProviderAccountError> {
+        sqlx::query!(
+            r#"
+            SELECT account_id, day, SUM(gross_usd_nanos)::int8 AS "gross!"
+            FROM ai_provider_account_usage
+            WHERE provider = $1 AND day >= $2 AND day < $3
+            GROUP BY account_id, day
+            ORDER BY account_id, day
+            "#,
+            payer.as_str(),
+            dates.start(),
+            dates.end(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_error)?
+        .into_iter()
+        .map(|row| {
+            Ok(AiAccountCreditDay {
+                account_id: account_id(row.account_id)?,
+                day: row.day,
+                gross: AiUsdNanos::new(row.gross)
+                    .ok_or_else(|| corrupt("a summed credit amount is negative"))?,
+            })
+        })
+        .collect()
     }
 }
 

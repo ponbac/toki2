@@ -1,0 +1,187 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT day, product, sku, model_label, model, auto_routed, kind, unit_type,\n                    unit_price::text AS \"unit_price!\", gross_quantity::text AS \"gross_quantity!\",\n                    gross_amount::text AS \"gross_amount!\",\n                    discount_quantity::text AS \"discount_quantity!\",\n                    discount_amount::text AS \"discount_amount!\",\n                    net_quantity::text AS \"net_quantity!\", net_amount::text AS \"net_amount!\",\n                    login, fetched_at\n                FROM ai_provider_account_usage\n                WHERE provider = $1 AND account_id = $2 AND day = ANY($3::date[])\n                FOR UPDATE\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "day"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "product",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "product"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "sku",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "sku"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "model_label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "model_label"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "auto_routed",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "auto_routed"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "unit_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "unit_type"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "unit_price!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "gross_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "gross_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "discount_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "discount_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "net_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "net_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "login",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "login"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "fetched_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "fetched_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "DateArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "d7cb241acfef6a60b6e31870caf66671d56122f4a57a3ced4c952b6623153631"
+}

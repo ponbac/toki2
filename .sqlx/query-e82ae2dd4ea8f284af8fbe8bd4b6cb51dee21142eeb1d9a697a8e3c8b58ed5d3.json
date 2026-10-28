@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_provider_import_runs\n            SET status = 'failed',\n                finished_at = GREATEST($2, started_at),\n                error = 'interrupted'\n            WHERE provider = $1 AND status = 'running'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e82ae2dd4ea8f284af8fbe8bd4b6cb51dee21142eeb1d9a697a8e3c8b58ed5d3"
+}

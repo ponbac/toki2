@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT account_id, day, SUM(gross_usd_nanos)::int8 AS \"gross!\"\n            FROM ai_provider_account_usage\n            WHERE provider = $1 AND day >= $2 AND day < $3\n            GROUP BY account_id, day\n            ORDER BY account_id, day\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "day",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "day"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "gross!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "d48f3aa55729eab091e546437c012cba88320b4f9126c7ef6b6ede9465b5fd3f"
+}

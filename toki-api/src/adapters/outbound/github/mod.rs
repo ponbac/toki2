@@ -3,20 +3,31 @@
 //! - The app ("Spinit Toki Billing") has the organization permissions GitHub
 //!   Copilot Business: read, for seats, and Administration: read, for billing
 //!   usage. It authenticates with a JWT signed by its private key and works
-//!   with a one-hour installation token (`app_auth`), shared by every GitHub
-//!   adapter through one `GithubAppClient`.
+//!   with a one-hour installation token (`app_auth`).
+//! - Every GitHub adapter shares one `GithubApp`: one HTTP client, one token
+//!   cache and one pacer, which starts at most 10 requests a second, under
+//!   GitHub's secondary limit of 900 points a minute for the whole REST API.
 //! - `GithubAccountDirectory` is the `ProviderAccountDirectory` of Copilot:
 //!   the organization's seats (`GET /orgs/{org}/copilot/billing/seats`, read
 //!   page by page by number, never by following `Link`) and public profiles by
 //!   numeric id (`GET /user/{id}`), which follows renames.
+//! - `GithubMeteredUsageSource` is the `MeteredUsageSource` of Copilot: the
+//!   organization's billing usage (`usage`), with GitHub's labels mapped to
+//!   Toki's model names in `labels`.
 //! - A `401` drops the token and retries once. A `403` or `429` with
 //!   `Retry-After` or no remaining requests is a rate limit with its wait.
-//! - A refresh costs about one seat page and one profile call per account,
-//!   plus at most one token an hour: some 40 calls a day against the
+//! - A seat refresh costs about one seat page and one profile call per
+//!   account, plus at most one token an hour: some 40 calls a day against the
 //!   installation's 5,000 or more an hour.
 
 mod app_auth;
 mod client;
+mod labels;
+#[cfg(test)]
+mod test_support;
+mod usage;
+
+pub use usage::GithubMeteredUsageSource;
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
@@ -68,14 +79,15 @@ impl fmt::Debug for GithubAppCredentials {
     }
 }
 
-/// The Copilot seats of a GitHub organization, as a `ProviderAccountDirectory`.
-pub struct GithubAccountDirectory {
+/// A GitHub App installation on an organization: the one client, token
+/// cache and pacer every GitHub adapter shares.
+#[derive(Clone)]
+pub struct GithubApp {
     client: Arc<GithubAppClient>,
     organization: String,
-    page_size: u32,
 }
 
-impl GithubAccountDirectory {
+impl GithubApp {
     /// Fails, with a message naming the setting, when the credentials cannot
     /// be used. Nothing is sent to GitHub yet.
     pub fn new(credentials: GithubAppCredentials) -> Result<Self, String> {
@@ -92,8 +104,24 @@ impl GithubAccountDirectory {
         Ok(Self {
             client: Arc::new(GithubAppClient::new(&credentials)?),
             organization,
-            page_size: PAGE_SIZE,
         })
+    }
+}
+
+/// The Copilot seats of a GitHub organization, as a `ProviderAccountDirectory`.
+pub struct GithubAccountDirectory {
+    client: Arc<GithubAppClient>,
+    organization: String,
+    page_size: u32,
+}
+
+impl GithubAccountDirectory {
+    pub fn new(app: GithubApp) -> Self {
+        Self {
+            client: app.client,
+            organization: app.organization,
+            page_size: PAGE_SIZE,
+        }
     }
 
     #[cfg(test)]

@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO ai_provider_usage_summaries (\n                    provider, month, product, sku, unit_type, kind, unit_price, gross_quantity,\n                    gross_amount, discount_quantity, discount_amount, net_quantity, net_amount,\n                    fetched_at\n                )\n                SELECT $1, $2, row.product, row.sku, row.unit, row.kind, row.unit_price::numeric,\n                    row.gross_quantity::numeric, row.gross_amount::numeric,\n                    row.discount_quantity::numeric, row.discount_amount::numeric,\n                    row.net_quantity::numeric, row.net_amount::numeric, $3\n                FROM UNNEST(\n                    $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],\n                    $10::text[], $11::text[], $12::text[], $13::text[], $14::text[]\n                ) AS row(\n                    product, sku, unit, kind, unit_price, gross_quantity, gross_amount,\n                    discount_quantity, discount_amount, net_quantity, net_amount\n                )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Timestamptz",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d7d89882ffe65261cc0a69f6e92bed12458556a306458220bbe7a489e247362"
+}

@@ -1,0 +1,175 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT day, product, sku, model_label, model, auto_routed, kind, unit_type,\n                unit_price::text AS \"unit_price!\", gross_quantity::text AS \"gross_quantity!\",\n                gross_amount::text AS \"gross_amount!\",\n                discount_quantity::text AS \"discount_quantity!\",\n                discount_amount::text AS \"discount_amount!\",\n                net_quantity::text AS \"net_quantity!\", net_amount::text AS \"net_amount!\",\n                gross_usd_nanos\n            FROM ai_provider_org_credits\n            WHERE provider = $1 AND day >= $2 AND day < $3\n            ORDER BY day, product, sku, model_label\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "day"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "product",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "product"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "sku",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "sku"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "model_label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "model_label"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "auto_routed",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "auto_routed"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "unit_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "unit_type"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "unit_price!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "gross_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "gross_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "discount_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "discount_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "net_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "net_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "gross_usd_nanos",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_org_credits",
+            "name": "gross_usd_nanos"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "9134da1cbeb13fca167627fab9dfc779add588d95a07ea811025053bc127499d"
+}

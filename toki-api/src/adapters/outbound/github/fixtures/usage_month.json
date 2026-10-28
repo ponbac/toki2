@@ -1,0 +1,108 @@
+{
+  "usageItems": [
+    {
+      "date": "2026-10-05T09:12:00Z",
+      "product": "copilot",
+      "sku": "Copilot AI Credits",
+      "quantity": 150.0,
+      "unitType": "AICredits",
+      "pricePerUnit": 0.01,
+      "grossAmount": 1.5,
+      "discountAmount": 1.5,
+      "netAmount": 0.0,
+      "organizationName": "example-org",
+      "repositoryName": "widget-api"
+    },
+    {
+      "date": "2026-10-05T15:40:00Z",
+      "product": "copilot",
+      "sku": "Copilot AI Credits",
+      "quantity": 50.0,
+      "unitType": "AICredits",
+      "pricePerUnit": 0.01,
+      "grossAmount": 0.5,
+      "discountAmount": 0.5,
+      "netAmount": 0.0,
+      "organizationName": "Example-Org",
+      "repositoryName": "widget-api"
+    },
+    {
+      "date": "2026-10-05T08:00:00Z",
+      "product": "copilot",
+      "sku": "Copilot AI Credits",
+      "quantity": 1600.0,
+      "unitType": "AICredits",
+      "pricePerUnit": 0.01,
+      "grossAmount": 16.0,
+      "discountAmount": 16.0,
+      "netAmount": 0.0,
+      "organizationName": "example-org",
+      "repositoryName": ""
+    },
+    {
+      "date": "2026-10-05T11:00:00Z",
+      "product": "copilot",
+      "sku": "Copilot Cloud Agent",
+      "quantity": 50.0,
+      "unitType": "AICredits",
+      "pricePerUnit": 0.01,
+      "grossAmount": 0.5,
+      "discountAmount": 0.5,
+      "netAmount": 0.0,
+      "organizationName": "example-org",
+      "repositoryName": ""
+    },
+    {
+      "date": "2026-10-05T07:02:41Z",
+      "product": "actions",
+      "sku": "Actions Linux",
+      "quantity": 120.0,
+      "unitType": "Minutes",
+      "pricePerUnit": 0.006,
+      "grossAmount": 0.72,
+      "discountAmount": 0.72,
+      "netAmount": 0.0,
+      "organizationName": "example-org",
+      "repositoryName": "gadget-web"
+    },
+    {
+      "date": "2026-10-06T00:00:00Z",
+      "product": "actions",
+      "sku": "Actions storage",
+      "quantity": 2.5,
+      "unitType": "GigabyteHours",
+      "pricePerUnit": 0.0004,
+      "grossAmount": 0.001,
+      "discountAmount": 0.001,
+      "netAmount": 0.0,
+      "organizationName": "example-org",
+      "repositoryName": "gadget-web"
+    },
+    {
+      "date": "2026-10-06T09:00:00Z",
+      "product": "copilot",
+      "sku": "Copilot Business",
+      "quantity": 0.5,
+      "unitType": "UserMonths",
+      "pricePerUnit": 19.0,
+      "grossAmount": 9.5,
+      "discountAmount": 0.0,
+      "netAmount": 9.5,
+      "organizationName": "example-org",
+      "repositoryName": ""
+    },
+    {
+      "date": "2026-10-06T10:00:00Z",
+      "product": "copilot",
+      "sku": "Copilot Spaces",
+      "quantity": 1.0,
+      "unitType": "Units",
+      "pricePerUnit": 1.0,
+      "grossAmount": 1.0,
+      "discountAmount": 0.0,
+      "netAmount": 1.0,
+      "organizationName": "example-org",
+      "repositoryName": ""
+    }
+  ]
+}

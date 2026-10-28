@@ -18,10 +18,16 @@ import type {
 import { cn } from "@/lib/utils";
 import { AttentionPill } from "../../-components/attention-pill";
 import { StatusBadge } from "../../-components/status-badge";
-import { formatDateOf, plural } from "../../-lib/format";
+import { formatDateOf, monthLabel, plural } from "../../-lib/format";
+import {
+  creditHundredths,
+  creditsAsUsd,
+  formatCreditNumber,
+} from "../../-lib/reconciliation";
 import {
   activityLabel,
   clientLabel,
+  creditGaps,
   daysIn,
   describeRanges,
   evidenceLabel,
@@ -33,7 +39,7 @@ import {
 } from "../../-lib/provider-accounts";
 
 /** Every column, so full-width rows span them all. */
-const COLUMNS = 7;
+const COLUMNS = 8;
 
 /** The DOM id of an account's row, for scrolling to it. */
 function accountRowId(accountId: number): string {
@@ -61,9 +67,9 @@ export type AccountActions = Readonly<{
 }>;
 
 /**
- * One row per account: its login, seat, last activity, whose usage it is
- * today and over which days, and the suggestion. A row opens to its seat
- * history and every disposition.
+ * One row per account: its login, seat, last activity, this month's credits,
+ * whose usage it is today and over which days, and the suggestion. A row
+ * opens to its seat history, credit gaps and every disposition.
  */
 export function AccountTable({
   accounts,
@@ -71,6 +77,7 @@ export function AccountTable({
   activity,
   today,
   reviewFrom,
+  creditsMonth,
   open,
   onToggle,
   editingAccountId,
@@ -85,6 +92,8 @@ export function AccountTable({
   activity: ReadonlyMap<number, AiMeteredActivity>;
   today: string;
   reviewFrom: string;
+  /** The UTC month of each account's credits, `YYYY-MM`. */
+  creditsMonth: string;
   open: ReadonlySet<number>;
   onToggle: (accountId: number) => void;
   /** The account whose editor is open, shown beneath its row. */
@@ -115,6 +124,13 @@ export function AccountTable({
             <TableHead className="hidden sm:table-cell">Seat</TableHead>
             <TableHead className="hidden whitespace-nowrap md:table-cell">
               Last activity
+            </TableHead>
+            <TableHead className="hidden text-right whitespace-nowrap md:table-cell">
+              <abbr
+                title={`Gross Copilot credits in ${monthLabel(creditsMonth)} (UTC), a credit being $0.01`}
+              >
+                Credits
+              </abbr>
             </TableHead>
             <TableHead>Whose usage</TableHead>
             <TableHead className="hidden sm:table-cell">Days</TableHead>
@@ -275,6 +291,16 @@ function AccountRows({
             </div>
           ) : (
             <span className="text-muted-foreground">None</span>
+          )}
+        </TableCell>
+        <TableCell
+          className="hidden py-2.5 text-right whitespace-nowrap tabular-nums md:table-cell"
+          title={creditsAsUsd(account.creditsThisMonth)}
+        >
+          {creditHundredths(account.creditsThisMonth) > 0 ? (
+            formatCreditNumber(account.creditsThisMonth)
+          ) : (
+            <span className="text-muted-foreground">0</span>
           )}
         </TableCell>
         <TableCell className="py-2.5">
@@ -558,6 +584,11 @@ function AccountDetails({
             {describeRanges(account.uncoveredSeatDays)}
           </p>
         )}
+        {creditGaps(account).map((gap) => (
+          <p key={gap} className="text-xs text-muted-foreground">
+            {gap} (since {reviewFrom})
+          </p>
+        ))}
         {account.profile && (
           <p className="text-xs text-muted-foreground">
             Public profile read {formatDateOf(account.profile.fetchedAt)}

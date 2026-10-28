@@ -267,3 +267,60 @@ pub enum AiProviderAccountError {
     #[error("ai provider account storage error: {0}")]
     Storage(String),
 }
+
+/// Errors from a metered payer's usage source, such as GitHub's billing usage
+/// API. Modeled on `ProviderAccountDirectoryError`; messages never carry
+/// credentials.
+#[derive(Debug, Clone, Error)]
+pub enum MeteredUsageSourceError {
+    /// The source rejected Toki's credentials.
+    #[error("the usage source rejected Toki's credentials: {0}")]
+    Unauthorized(String),
+    /// The source refused, for example for a missing permission.
+    #[error("the usage source refused: {0}")]
+    Forbidden(String),
+    /// The account or the organization does not exist.
+    #[error("the usage source has no such account or organization: {0}")]
+    NotFound(String),
+    /// The source refused because of its rate limit, possibly saying for how
+    /// long.
+    #[error("the usage source is rate limiting requests")]
+    RateLimited {
+        retry_after: Option<std::time::Duration>,
+    },
+    /// A timeout, a connection error or a server error.
+    #[error("the usage source is unavailable: {0}")]
+    Unavailable(String),
+    /// A response that could not be read or failed validation.
+    #[error("unexpected usage source response: {0}")]
+    Response(String),
+}
+
+/// Errors of the metered usage import and its reconciliation.
+#[derive(Debug, Error)]
+pub enum AiMeteredUsageError {
+    #[error("{0}")]
+    Invalid(String),
+    #[error("an import is already running")]
+    ImportRunning,
+    #[error("no usage source is configured")]
+    SourceOff,
+    #[error("the usage source is misconfigured: {0}")]
+    SourceMisconfigured(String),
+    #[error(transparent)]
+    Source(MeteredUsageSourceError),
+    #[error("user not found")]
+    UserNotFound,
+    #[error("ai metered usage storage error: {0}")]
+    Storage(String),
+}
+
+impl From<AiProviderAccountError> for AiMeteredUsageError {
+    fn from(error: AiProviderAccountError) -> Self {
+        match error {
+            AiProviderAccountError::Invalid(message) => Self::Invalid(message),
+            AiProviderAccountError::UserNotFound => Self::UserNotFound,
+            other => Self::Storage(other.to_string()),
+        }
+    }
+}

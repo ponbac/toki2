@@ -57,6 +57,9 @@ const overview = {
       dispositions: [disposition],
       currentDispositionId: 7,
       uncoveredSeatDays: [{ from: "2026-09-01", through: "2026-09-30" }],
+      creditsThisMonth: "1500.00",
+      uncoveredCreditDays: [{ from: "2026-09-01", through: "2026-09-02" }],
+      creditDaysWithoutSeat: 0,
       needsLook: true,
       suggestions: [],
       defaultPeriod: { validFrom: "2025-09-16", validTo: "2026-08-24" },
@@ -69,6 +72,9 @@ const overview = {
       dispositions: [],
       currentDispositionId: null,
       uncoveredSeatDays: [],
+      creditsThisMonth: "0.00",
+      uncoveredCreditDays: [],
+      creditDaysWithoutSeat: 0,
       needsLook: false,
       suggestions: [
         {
@@ -91,11 +97,24 @@ const overview = {
       suggestedAccountIds: [89738831],
     },
   ],
+  creditsMonth: "2026-10",
 };
 
 describe("provider-accounts contract", () => {
   test("accepts the overview the backend serializes", () => {
     expect(parseProviderAccounts(overview)).toEqual(overview);
+  });
+
+  test("refuses credits that aren't hundredths of a credit", () => {
+    const [first, second] = overview.accounts;
+    for (const creditsThisMonth of ["1500", "1500.5", "-1.00", "1e3"]) {
+      expect(() =>
+        parseProviderAccounts({
+          ...overview,
+          accounts: [{ ...first, creditsThisMonth }, second],
+        }),
+      ).toThrow();
+    }
   });
 
   test("refuses a current disposition the account doesn't have", () => {

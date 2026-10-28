@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM ai_provider_org_usage\n                WHERE provider = $1 AND day = ANY($2::date[])\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "DateArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c5b2080d133f8384db3dd3f574cfe01d977ecd706052845a0994fea8e3a2d44b"
+}

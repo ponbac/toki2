@@ -163,6 +163,31 @@ export function describeRanges(ranges: readonly DayRange[]): string {
   return `${spans} (${plural(days, "day")})`;
 }
 
+/**
+ * What an account's credits in the review window still lack, in words: days
+ * with credits that no disposition covers, and days with credits outside
+ * every seat. Empty when nothing is missing.
+ */
+export function creditGaps(
+  account: Pick<
+    AiProviderAccount,
+    "uncoveredCreditDays" | "creditDaysWithoutSeat"
+  >,
+): string[] {
+  const gaps: string[] = [];
+  if (account.uncoveredCreditDays.length > 0) {
+    gaps.push(
+      `Credits without a disposition: ${describeRanges(account.uncoveredCreditDays)}`,
+    );
+  }
+  if (account.creditDaysWithoutSeat > 0) {
+    gaps.push(
+      `${plural(account.creditDaysWithoutSeat, "day")} with credits outside every seat`,
+    );
+  }
+  return gaps;
+}
+
 /** An account to link to its verified top candidate. */
 export type SuggestionPick = Readonly<{ accountId: number; userId: number }>;
 

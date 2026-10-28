@@ -6,7 +6,7 @@ use time::{
 use super::*;
 use crate::domain::models::{
     AiAccountDisposition, AiAccountDispositionTerms, AiAccountTarget, AiProviderLogin,
-    AiStoredProfile, AiStoredSeat, AiUsdNanos,
+    AiStoredProfile, AiStoredSeat,
 };
 
 const TODAY: Date = date!(2026 - 10 - 24);
@@ -98,6 +98,14 @@ fn overview(
     accounts: Vec<AiStoredProviderAccount>,
     metered: Vec<AiMeteredUserDay>,
 ) -> AiAccountOverview {
+    overview_with_credits(accounts, metered, Vec::new())
+}
+
+fn overview_with_credits(
+    accounts: Vec<AiStoredProviderAccount>,
+    metered: Vec<AiMeteredUserDay>,
+    credits: Vec<AiAccountCreditDay>,
+) -> AiAccountOverview {
     account_overview(AiAccountOverviewInput {
         today: TODAY,
         review_from: review_from(TODAY),
@@ -105,8 +113,19 @@ fn overview(
         users: users(),
         metered,
         namespace: "Example-AB".to_string(),
+        credits,
+        credits_month: AiBillingMonth::containing(TODAY).unwrap(),
     })
     .unwrap()
+}
+
+/// `credits` whole credits of account `id` on `day`.
+fn credit_day(id: i64, day: Date, credits: i64) -> AiAccountCreditDay {
+    AiAccountCreditDay {
+        account_id: AiProviderAccountId::new(id).unwrap(),
+        day,
+        gross: AiUsdNanos::new(credits * 10_000_000).unwrap(),
+    }
 }
 
 fn row<'a>(overview: &'a AiAccountOverview, login: &str) -> &'a AiAccountRow {
@@ -335,4 +354,114 @@ fn accounts_are_ordered_by_need_then_activity_then_login() {
             .collect::<Vec<_>>(),
         [ALAN, GRACE]
     );
+}
+
+#[test]
+fn credits_on_days_without_a_disposition_need_a_look() {
+    // Ada holds a seat since September and is linked from October 10; Grace
+    // never held a seat but used credits; Alan is linked throughout.
+    let ada = account(
+        1001,
+        "ada-lovelace",
+        Some("Ada Lovelace"),
+        vec![seat(datetime!(2026-09-01 08:00 UTC), None)],
+        vec![(1, AiAccountTarget::User(ADA), date!(2026 - 10 - 10), None)],
+    );
+    let grace = account(1002, "grace-hopper", None, Vec::new(), Vec::new());
+    let alan = account(
+        1003,
+        "alan-turing",
+        None,
+        vec![seat(datetime!(2026-08-01 08:00 UTC), None)],
+        vec![(2, AiAccountTarget::User(ALAN), date!(2026 - 08 - 01), None)],
+    );
+    let overview = overview_with_credits(
+        vec![ada, grace, alan],
+        Vec::new(),
+        vec![
+            // Before the review window: never flagged, not this month.
+            credit_day(1001, date!(2026 - 08 - 20), 500),
+            credit_day(1001, date!(2026 - 10 - 08), 100),
+            credit_day(1001, date!(2026 - 10 - 09), 50),
+            credit_day(1001, date!(2026 - 10 - 12), 25),
+            credit_day(1002, date!(2026 - 09 - 30), 10),
+            credit_day(1002, date!(2026 - 10 - 01), 20),
+            credit_day(1003, date!(2026 - 10 - 02), 0),
+            credit_day(1003, date!(2026 - 10 - 03), 300),
+        ],
+    );
+    assert_eq!(overview.credits_month.to_string(), "2026-10");
+
+    let ada = row(&overview, "ada-lovelace");
+    assert_eq!(ada.credits_this_month.nanos(), 175 * 10_000_000);
+    let ranges: Vec<(Date, Date)> = ada
+        .uncovered_credit_days
+        .iter()
+        .map(|range| (range.start(), range.last_day()))
+        .collect();
+    assert_eq!(ranges, [(date!(2026 - 10 - 08), date!(2026 - 10 - 09))]);
+    assert_eq!(ada.credit_days_without_seat, 0);
+    assert!(ada.needs_look);
+
+    // Credits without any seat: every such day lacks a seat and needs a look.
+    let grace = row(&overview, "grace-hopper");
+    assert_eq!(grace.credits_this_month.nanos(), 20 * 10_000_000);
+    assert_eq!(grace.uncovered_credit_days.len(), 1);
+    assert_eq!(grace.credit_days_without_seat, 2);
+    assert!(grace.uncovered_seat_days.is_empty());
+    assert!(grace.needs_look);
+
+    let alan = row(&overview, "alan-turing");
+    assert_eq!(alan.credits_this_month.nanos(), 300 * 10_000_000);
+    assert!(alan.uncovered_credit_days.is_empty());
+    assert!(!alan.needs_look);
+}
+
+#[test]
+fn credit_days_alone_give_a_default_period() {
+    // Alan's seat, from October 1, is linked throughout, but he used credits
+    // in September under a seat Toki never listed. Grace never held a seat.
+    let alan = account(
+        1003,
+        "alan-turing",
+        Some("Alan Turing"),
+        vec![seat(datetime!(2026-10-01 08:00 UTC), None)],
+        vec![(2, AiAccountTarget::User(ALAN), date!(2026 - 10 - 01), None)],
+    );
+    let grace = account(
+        1002,
+        "grace-hopper",
+        Some("Grace Hopper"),
+        Vec::new(),
+        Vec::new(),
+    );
+    let overview = overview_with_credits(
+        vec![alan, grace],
+        Vec::new(),
+        vec![
+            credit_day(1003, date!(2026 - 09 - 20), 30),
+            credit_day(1003, date!(2026 - 09 - 22), 10),
+            credit_day(1002, date!(2026 - 09 - 30), 10),
+            credit_day(1002, date!(2026 - 10 - 01), 20),
+        ],
+    );
+    let period = |from: Date, to: Date| Some(AiAccountPeriod::new(from, Some(to)).unwrap());
+
+    // Through the day before his disposition, so it can be set or suggested.
+    let alan = row(&overview, "alan-turing");
+    assert!(alan.uncovered_seat_days.is_empty());
+    assert!(alan.needs_look);
+    assert_eq!(
+        alan.default_period,
+        period(date!(2026 - 09 - 20), date!(2026 - 09 - 30))
+    );
+    assert_eq!(alan.suggestions.first().map(|s| s.user_id), Some(ALAN));
+
+    // Without a seat: the credit days, not today onwards.
+    let grace = row(&overview, "grace-hopper");
+    assert_eq!(
+        grace.default_period,
+        period(date!(2026 - 09 - 30), date!(2026 - 10 - 01))
+    );
+    assert_eq!(grace.suggestions.first().map(|s| s.user_id), Some(GRACE));
 }

@@ -1,0 +1,43 @@
+{
+  "timePeriod": { "year": 2026, "month": 10 },
+  "organization": "example-org",
+  "product": "copilot",
+  "usageItems": [
+    {
+      "product": "copilot",
+      "sku": "copilot_ai_unit",
+      "unitType": "ai-units",
+      "pricePerUnit": 0.01,
+      "grossQuantity": 4000.0,
+      "discountQuantity": 3800.0,
+      "netQuantity": 200.0,
+      "grossAmount": 40.0,
+      "discountAmount": 38.0,
+      "netAmount": 2.0
+    },
+    {
+      "product": "copilot",
+      "sku": "coding_agent_ai_unit",
+      "unitType": "ai-units",
+      "pricePerUnit": 0.01,
+      "grossQuantity": 50.0,
+      "discountQuantity": 50.0,
+      "netQuantity": 0.0,
+      "grossAmount": 0.5,
+      "discountAmount": 0.5,
+      "netAmount": 0.0
+    },
+    {
+      "product": "copilot",
+      "sku": "copilot_for_business",
+      "unitType": "user-months",
+      "pricePerUnit": 19.0,
+      "grossQuantity": 2.0,
+      "discountQuantity": 0.0,
+      "netQuantity": 2.0,
+      "grossAmount": 38.0,
+      "discountAmount": 0.0,
+      "netAmount": 38.0
+    }
+  ]
+}

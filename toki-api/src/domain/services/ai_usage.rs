@@ -63,18 +63,17 @@ impl<R: AiUsageRepository> AiUsageService for AiUsageServiceImpl<R> {
         repricing: &AiRepricing,
     ) -> Result<AiRepricingReceipt, AiUsageError> {
         let (repriced, before_floor) = repricing.split_at_floor(self.reprice_floor);
-        let updated = if repriced.is_empty() {
-            0
-        } else {
-            self.repository
-                .reprice_buckets(
-                    user_id,
-                    &repricing.machine_id(),
-                    repricing.basis(),
-                    &repriced,
-                )
-                .await?
-        };
+        // Called even without buckets from the floor on: the repricing's basis
+        // becomes the machine's current one either way.
+        let updated = self
+            .repository
+            .reprice_buckets(
+                user_id,
+                &repricing.machine_id(),
+                repricing.basis(),
+                &repriced,
+            )
+            .await?;
         let receipt = AiRepricingReceipt {
             updated,
             unmatched: (repriced.len() as u64).saturating_sub(updated),

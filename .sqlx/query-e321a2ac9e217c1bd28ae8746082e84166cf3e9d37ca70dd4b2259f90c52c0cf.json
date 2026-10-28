@@ -1,0 +1,212 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT account_id, day, product, sku, model_label, model, auto_routed, kind, unit_type,\n                unit_price::text AS \"unit_price!\", gross_quantity::text AS \"gross_quantity!\",\n                gross_amount::text AS \"gross_amount!\",\n                discount_quantity::text AS \"discount_quantity!\",\n                discount_amount::text AS \"discount_amount!\",\n                net_quantity::text AS \"net_quantity!\", net_amount::text AS \"net_amount!\",\n                gross_usd_nanos, login, fetched_at\n            FROM ai_provider_account_usage\n            WHERE provider = $1 AND day >= $2 AND day < $3\n              AND ($4::int8[] IS NULL OR account_id = ANY($4))\n            ORDER BY account_id, day, product, sku, model_label\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "day",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "day"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "product",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "product"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sku",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "sku"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "model_label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "model_label"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "auto_routed",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "auto_routed"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "unit_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "unit_type"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "unit_price!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "gross_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "gross_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "discount_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "discount_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "net_quantity!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "net_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "gross_usd_nanos",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "gross_usd_nanos"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "login",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "login"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "fetched_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_usage",
+            "name": "fetched_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Date",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e321a2ac9e217c1bd28ae8746082e84166cf3e9d37ca70dd4b2259f90c52c0cf"
+}

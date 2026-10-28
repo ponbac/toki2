@@ -1,0 +1,172 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, kind, requested_by, months, full_months, started_at, finished_at, status,\n                requests, slices_fetched, slices_changed, account_errors, error\n            FROM ai_provider_import_runs\n            WHERE provider = $1 AND status <> 'running'\n            ORDER BY finished_at DESC, id DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "requested_by",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "requested_by"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "months",
+        "type_info": "DateArray",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "months"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "full_months",
+        "type_info": "DateArray",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "full_months"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "requests",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "requests"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "slices_fetched",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "slices_fetched"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "slices_changed",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "slices_changed"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "account_errors",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "account_errors"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_import_runs",
+            "name": "error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "3f84a5f2255b7db67d468037878a2da635aa9308e351401e99055fdf5ee6546e"
+}

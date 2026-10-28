@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use strum::{Display, EnumString};
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 
 #[derive(Deserialize, Clone)]
 pub struct Settings {
@@ -96,6 +96,9 @@ pub struct AiUsageSettings {
         with = "time::serde::rfc3339"
     )]
     pub reprice_floor: OffsetDateTime,
+    /// The metered usage import (GitHub Copilot's billing usage).
+    #[serde(default)]
+    pub metered_import: MeteredImportSettings,
 }
 
 impl Default for AiUsageSettings {
@@ -104,8 +107,32 @@ impl Default for AiUsageSettings {
             time_zone: default_ai_usage_time_zone(),
             exchange_rates: ExchangeRateSettings::default(),
             reprice_floor: default_ai_usage_reprice_floor(),
+            metered_import: MeteredImportSettings::default(),
         }
     }
+}
+
+time::serde::format_description!(utc_day_format, Date, "[year]-[month]-[day]");
+
+/// How the metered usage import runs.
+#[derive(Deserialize, Clone, Debug)]
+pub struct MeteredImportSettings {
+    /// The first UTC day the import covers (`YYYY-MM-DD`). Local runs can
+    /// shorten it with `TOKI_AI_USAGE__METERED_IMPORT__BACKFILL_FROM`.
+    #[serde(default = "default_metered_backfill_from", with = "utc_day_format")]
+    pub backfill_from: Date,
+}
+
+impl Default for MeteredImportSettings {
+    fn default() -> Self {
+        Self {
+            backfill_from: default_metered_backfill_from(),
+        }
+    }
+}
+
+fn default_metered_backfill_from() -> Date {
+    time::macros::date!(2026 - 09 - 01)
 }
 
 /// Where billing fetches exchange rates to the billing currency: the
@@ -341,6 +368,31 @@ mod tests {
             .add_source(config::File::from(base))
             .build()
             .unwrap()
+    }
+
+    #[test]
+    fn base_config_sets_the_metered_backfill() {
+        let ai_usage: AiUsageSettings = base_config().get("ai_usage").unwrap();
+        assert_eq!(
+            ai_usage.metered_import.backfill_from,
+            time::macros::date!(2026 - 09 - 01)
+        );
+
+        // An environment override, and the default without the block.
+        let settings = config::Config::builder()
+            .set_override("ai_usage.metered_import.backfill_from", "2026-10-24")
+            .unwrap()
+            .build()
+            .unwrap();
+        let ai_usage: AiUsageSettings = settings.get("ai_usage").unwrap();
+        assert_eq!(
+            ai_usage.metered_import.backfill_from,
+            time::macros::date!(2026 - 10 - 24)
+        );
+        assert_eq!(
+            AiUsageSettings::default().metered_import.backfill_from,
+            time::macros::date!(2026 - 09 - 01)
+        );
     }
 
     #[test]
