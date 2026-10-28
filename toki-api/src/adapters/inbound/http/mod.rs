@@ -1,6 +1,7 @@
 pub(crate) mod ai_billing;
 pub(crate) mod ai_display_rates;
 pub(crate) mod ai_project_mappings;
+pub(crate) mod ai_provider_accounts;
 pub(crate) mod ai_subscriptions;
 pub(crate) mod ai_usage;
 pub(crate) mod ai_usage_reports;

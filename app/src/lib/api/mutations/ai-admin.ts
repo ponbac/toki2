@@ -5,9 +5,18 @@ import {
   parseAiExchangeRate,
   parseAiExchangeRateReset,
 } from "../contracts/ai-admin";
+import {
+  parseAcceptedSuggestions,
+  parseAccountDisposition,
+  parseDirectoryRefresh,
+} from "../contracts/ai-provider-accounts";
 import { parseAiProjectMapping } from "../contracts/ai-usage-report";
 import { parseAiSubscription } from "../contracts/ai-usage";
 import {
+  type AiAcceptedSuggestions,
+  type AiAccountDisposition,
+  type AiAccountDispositionTerms,
+  type AiDirectoryRefresh,
   type AiExchangeRate,
   type AiProjectMapping,
 } from "../queries/ai-admin";
@@ -35,6 +44,25 @@ export type OverrideExchangeRateVars = {
   rate: string;
 };
 export type ResetExchangeRateVars = { month: string; currency: string };
+/** Gives a provider account a disposition. */
+export type CreateAccountDispositionVars = {
+  accountId: number;
+  terms: AiAccountDispositionTerms;
+};
+/** Replaces a disposition's target and days; ending one sets its last day. */
+export type UpdateAccountDispositionVars = {
+  dispositionId: number;
+  terms: AiAccountDispositionTerms;
+};
+export type DeleteAccountDispositionVars = { dispositionId: number };
+/** Accepts verified suggestions: each account's top candidate, as the page
+ * showed it. The server recomputes them and skips any that changed. */
+export type AcceptAccountSuggestionsVars = {
+  picks: readonly { accountId: number; userId: number }[];
+};
+
+/** The most picks the server takes in one request. */
+const MAX_PICKS_PER_REQUEST = 100;
 
 /** Admin mutations: mappings and subscriptions, which both change billing. */
 export const aiAdminMutations = {
@@ -46,6 +74,11 @@ export const aiAdminMutations = {
   useOverrideExchangeRate,
   useResetExchangeRate,
   useDownloadBillingCsv,
+  useRefreshProviderAccounts,
+  useCreateAccountDisposition,
+  useUpdateAccountDisposition,
+  useDeleteAccountDisposition,
+  useAcceptAccountSuggestions,
 };
 
 export function useOverrideExchangeRate(
@@ -221,5 +254,149 @@ export function useDownloadBillingCsv(
       URL.revokeObjectURL(url);
     },
     ...options,
+  });
+}
+
+/**
+ * Reads seats and profiles from the payer's account directory now. A failure
+ * is recorded on the server and shown on the page, so the page reloads either
+ * way.
+ */
+export function useRefreshProviderAccounts(
+  options?: DefaultMutationOptions<void, AiDirectoryRefresh>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "provider-accounts", "refresh"],
+    mutationFn: async () =>
+      parseDirectoryRefresh(
+        await api
+          .post("ai-usage/admin/provider-accounts/refresh", {
+            // GitHub can take a while: one seat page and a profile per account.
+            timeout: 120_000,
+          })
+          .json<unknown>(),
+      ),
+    ...options,
+    onSuccess: async (data, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
+    },
+    onError: async (error, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onError?.(error, vars, ctx, mutationContext);
+    },
+  });
+}
+
+export function useCreateAccountDisposition(
+  options?: DefaultMutationOptions<
+    CreateAccountDispositionVars,
+    AiAccountDisposition
+  >,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "provider-accounts", "dispositions", "create"],
+    mutationFn: async ({ accountId, terms }: CreateAccountDispositionVars) =>
+      parseAccountDisposition(
+        await api
+          .post("ai-usage/admin/provider-accounts/dispositions", {
+            json: { accountId, ...terms },
+          })
+          .json<unknown>(),
+      ),
+    ...options,
+    onSuccess: async (data, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
+    },
+  });
+}
+
+export function useUpdateAccountDisposition(
+  options?: DefaultMutationOptions<
+    UpdateAccountDispositionVars,
+    AiAccountDisposition
+  >,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "provider-accounts", "dispositions", "update"],
+    mutationFn: async ({
+      dispositionId,
+      terms,
+    }: UpdateAccountDispositionVars) =>
+      parseAccountDisposition(
+        await api
+          .put(
+            `ai-usage/admin/provider-accounts/dispositions/${dispositionId}`,
+            { json: terms },
+          )
+          .json<unknown>(),
+      ),
+    ...options,
+    onSuccess: async (data, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
+    },
+  });
+}
+
+export function useDeleteAccountDisposition(
+  options?: DefaultMutationOptions<DeleteAccountDispositionVars>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "provider-accounts", "dispositions", "delete"],
+    mutationFn: async ({ dispositionId }: DeleteAccountDispositionVars) =>
+      api.delete(
+        `ai-usage/admin/provider-accounts/dispositions/${dispositionId}`,
+      ),
+    ...options,
+    onSuccess: async (data, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSuccess?.(data, vars, ctx, mutationContext);
+    },
+  });
+}
+
+/** Accepts verified suggestions, at most a hundred picks per request. */
+export function useAcceptAccountSuggestions(
+  options?: DefaultMutationOptions<
+    AcceptAccountSuggestionsVars,
+    AiAcceptedSuggestions
+  >,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "provider-accounts", "accept-suggestions"],
+    mutationFn: async ({ picks }: AcceptAccountSuggestionsVars) => {
+      const created: AiAcceptedSuggestions["created"][number][] = [];
+      const skipped: AiAcceptedSuggestions["skipped"][number][] = [];
+      for (let at = 0; at < picks.length; at += MAX_PICKS_PER_REQUEST) {
+        const accepted = parseAcceptedSuggestions(
+          await api
+            .post("ai-usage/admin/provider-accounts/accept-suggestions", {
+              json: { picks: picks.slice(at, at + MAX_PICKS_PER_REQUEST) },
+            })
+            .json<unknown>(),
+        );
+        created.push(...accepted.created);
+        skipped.push(...accepted.skipped);
+      }
+      return { created, skipped };
+    },
+    ...options,
+    onSettled: async (data, error, vars, ctx, mutationContext) => {
+      // A later chunk can fail after earlier ones created dispositions.
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSettled?.(data, error, vars, ctx, mutationContext);
+    },
   });
 }

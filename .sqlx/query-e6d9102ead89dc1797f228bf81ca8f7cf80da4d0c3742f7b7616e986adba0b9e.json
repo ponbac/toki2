@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_provider_accounts (provider, account_id, login)\n            SELECT $1, listed.account_id, listed.login\n            FROM UNNEST($2::int8[], $3::text[]) AS listed(account_id, login)\n            ON CONFLICT (provider, account_id) DO UPDATE\n            SET login = EXCLUDED.login,\n                updated_at = now()\n            WHERE ai_provider_accounts.login IS DISTINCT FROM EXCLUDED.login\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8Array",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e6d9102ead89dc1797f228bf81ca8f7cf80da4d0c3742f7b7616e986adba0b9e"
+}

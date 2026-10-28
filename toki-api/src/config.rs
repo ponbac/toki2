@@ -16,6 +16,8 @@ pub struct Settings {
     pub observability: ObservabilitySettings,
     #[serde(default)]
     pub ai_usage: AiUsageSettings,
+    #[serde(default)]
+    pub github: GithubSettings,
 }
 
 #[serde_as]
@@ -125,6 +127,87 @@ impl Default for ExchangeRateSettings {
             subscription_key: None,
         }
     }
+}
+
+/// The GitHub organization whose Copilot seats Toki reads, through a GitHub App
+/// installed on it. Off unless the app's private key is set, through
+/// `TOKI_GITHUB__APP_PRIVATE_KEY`.
+#[serde_as]
+#[derive(Deserialize, Clone)]
+pub struct GithubSettings {
+    #[serde(default)]
+    pub organization: Option<String>,
+    #[serde(default = "default_github_api_base")]
+    pub api_base: String,
+    /// The GitHub App's client ID, the issuer of the JWTs it signs.
+    #[serde(default)]
+    pub app_client_id: Option<String>,
+    /// The app's installation on `organization`. A YAML integer and an
+    /// environment string both parse.
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
+    #[serde(default)]
+    pub installation_id: Option<u64>,
+    /// The app's private key in PEM, multi-line or with literal `\n`.
+    /// Provide it through the environment only.
+    #[serde(default)]
+    pub app_private_key: Option<String>,
+}
+
+impl Default for GithubSettings {
+    fn default() -> Self {
+        Self {
+            organization: None,
+            api_base: default_github_api_base(),
+            app_client_id: None,
+            installation_id: None,
+            app_private_key: None,
+        }
+    }
+}
+
+impl GithubSettings {
+    /// The GitHub App's credentials. `Ok(None)` without a private key: the
+    /// account directory is off. An error when a key is set but the
+    /// organization, client ID or installation ID is missing or blank. The
+    /// key itself is parsed by the adapter.
+    pub fn app_credentials(
+        &self,
+    ) -> Result<Option<crate::adapters::outbound::github::GithubAppCredentials>, String> {
+        let Some(private_key_pem) = self
+            .app_private_key
+            .as_deref()
+            .filter(|key| !key.trim().is_empty())
+        else {
+            return Ok(None);
+        };
+        let required = |value: &Option<String>, name: &str| {
+            value
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| format!("github.{name} must be set with the app's private key"))
+        };
+        let organization = required(&self.organization, "organization")?;
+        let client_id = required(&self.app_client_id, "app_client_id")?;
+        let installation_id = self.installation_id.ok_or_else(|| {
+            "github.installation_id must be set with the app's private key".to_string()
+        })?;
+
+        Ok(Some(
+            crate::adapters::outbound::github::GithubAppCredentials {
+                organization,
+                api_base: self.api_base.trim().to_string(),
+                client_id,
+                installation_id,
+                private_key_pem: private_key_pem.to_string(),
+            },
+        ))
+    }
+}
+
+fn default_github_api_base() -> String {
+    crate::adapters::outbound::github::DEFAULT_API_BASE.to_string()
 }
 
 fn default_exchange_rate_base_url() -> String {
@@ -250,5 +333,76 @@ mod tests {
         let ai_usage: AiUsageSettings = settings.get("ai_usage").unwrap();
 
         assert_eq!(ai_usage.reprice_floor, datetime!(2026-10-01 00:00 UTC));
+    }
+
+    fn base_config() -> config::Config {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/base.yaml");
+        config::Config::builder()
+            .add_source(config::File::from(base))
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn base_config_names_the_github_app_but_leaves_it_off_without_a_key() {
+        let github: GithubSettings = base_config().get("github").unwrap();
+
+        assert_eq!(github.organization.as_deref(), Some("Spinit-AB"));
+        assert_eq!(
+            github.app_client_id.as_deref(),
+            Some("Iv23liEuEJDWE4ifGVp8")
+        );
+        assert_eq!(github.installation_id, Some(174922684));
+        assert_eq!(github.app_credentials().unwrap(), None);
+    }
+
+    #[test]
+    fn a_github_key_needs_the_app_and_its_installation() {
+        let mut github: GithubSettings = base_config().get("github").unwrap();
+        github.app_private_key = Some("-----BEGIN RSA PRIVATE KEY-----".to_string());
+        let credentials = github.app_credentials().unwrap().unwrap();
+        assert_eq!(credentials.organization, "Spinit-AB");
+        assert_eq!(credentials.installation_id, 174922684);
+
+        let mut without_client = github.clone();
+        without_client.app_client_id = Some(" ".to_string());
+        assert!(without_client
+            .app_credentials()
+            .unwrap_err()
+            .contains("app_client_id"));
+        let mut without_installation = github.clone();
+        without_installation.installation_id = None;
+        assert!(without_installation
+            .app_credentials()
+            .unwrap_err()
+            .contains("installation_id"));
+        let mut without_organization = github;
+        without_organization.organization = None;
+        assert!(without_organization
+            .app_credentials()
+            .unwrap_err()
+            .contains("organization"));
+    }
+
+    #[test]
+    fn a_missing_github_block_defaults_to_the_public_api() {
+        let settings = config::Config::builder()
+            .set_override("github.installation_id", "42")
+            .unwrap()
+            .build()
+            .unwrap();
+        let github: GithubSettings = settings.get("github").unwrap();
+        assert_eq!(github.installation_id, Some(42));
+        assert_eq!(
+            github.api_base,
+            crate::adapters::outbound::github::DEFAULT_API_BASE
+        );
+
+        let default = GithubSettings::default();
+        assert_eq!(
+            default.api_base,
+            crate::adapters::outbound::github::DEFAULT_API_BASE
+        );
+        assert_eq!(default.app_credentials().unwrap(), None);
     }
 }

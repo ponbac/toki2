@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT login\n            FROM ai_provider_account_dispositions\n            WHERE provider = $1\n              AND user_id = $2\n              AND daterange(valid_from, valid_to, '[]') && daterange($3, $4, '[]')\n              AND ($5::int4 IS NULL OR id <> $5)\n            ORDER BY valid_from\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "login",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_provider_account_dispositions",
+            "name": "login"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Date",
+        "Date",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7f3c482e77baa4419c5e8a542e29a8e6a20c61ca887d8c9268e3d39386751c5c"
+}

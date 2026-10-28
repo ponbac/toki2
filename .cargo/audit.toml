@@ -5,8 +5,11 @@
 ignore = [
     # No patched stable rsa release is available for the Marvin Attack.
     # web-push -> jwt-simple's pure-rust backend -> superboring pulls in rsa,
-    # but Toki's web-push VAPID signatures use ES256 (P-256), not the RSA
-    # private-key/decryption operations affected by this timing side channel.
+    # but Toki's web-push VAPID signatures use ES256 (P-256), so the rsa crate
+    # never performs the private-key/decryption operations affected by this
+    # timing side channel. Toki does sign RS256 JWTs for its GitHub App
+    # (adapters/outbound/github), with aws-lc-rs, which is constant time; the
+    # rsa crate is still reached only through web-push and never signs.
     "RUSTSEC-2023-0071",
     # crypto-bigint timing leaks are only patched in 0.7.6, but the whole
     # RustCrypto 0.13 elliptic-curve line pins crypto-bigint 0.5. web-push ->

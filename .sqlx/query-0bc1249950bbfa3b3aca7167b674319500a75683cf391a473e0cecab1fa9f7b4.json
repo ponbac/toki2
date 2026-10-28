@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_provider_directory_status (provider, last_attempt_at, last_error)\n            VALUES ($1, now(), $2)\n            ON CONFLICT (provider) DO UPDATE\n            SET last_attempt_at = now(),\n                last_error = EXCLUDED.last_error\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0bc1249950bbfa3b3aca7167b674319500a75683cf391a473e0cecab1fa9f7b4"
+}

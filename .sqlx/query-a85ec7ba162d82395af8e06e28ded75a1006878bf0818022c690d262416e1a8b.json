@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_provider_seats AS seat\n            SET unlisted_at = now()\n            FROM UNNEST($2::int8[], $3::timestamptz[]) AS listed(account_id, created_at)\n            WHERE seat.provider = $1\n              AND seat.unlisted_at IS NULL\n              AND seat.account_id = listed.account_id\n              AND seat.seat_created_at <> listed.created_at\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8Array",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a85ec7ba162d82395af8e06e28ded75a1006878bf0818022c690d262416e1a8b"
+}

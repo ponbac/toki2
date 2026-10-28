@@ -29,7 +29,8 @@ const developerSchema = z
   .object({ userId: id, fullName: z.string(), email: z.string() })
   .strict();
 
-const usageSchema = z
+/** Summed usage; reused by the provider-account contracts. */
+export const usageSchema = z
   .object({
     apiEquivalentUsd: z.number().nonnegative(),
     unpricedRecords: count,

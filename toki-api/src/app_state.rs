@@ -21,8 +21,9 @@ use crate::{
     db::DbPool,
     domain::{
         ports::inbound::{
-            AiBillingService, AiDisplayRateService, AiProjectMappingService, AiSubscriptionService,
-            AiUsageReportService, AiUsageService, ApiTokenService, AvatarService,
+            AiBillingService, AiDisplayRateService, AiProjectMappingService,
+            AiProviderAccountService, AiSubscriptionService, AiUsageReportService, AiUsageService,
+            ApiTokenService, AvatarService,
         },
         CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
         RepoDifferMessage, RepoKey,
@@ -73,6 +74,7 @@ pub struct AppState {
     pub ai_subscription_service: Arc<dyn AiSubscriptionService>,
     pub ai_billing_service: Arc<dyn AiBillingService>,
     pub ai_display_rate_service: Arc<dyn AiDisplayRateService>,
+    pub ai_provider_account_service: Arc<dyn AiProviderAccountService>,
     pub work_item_factory: Arc<dyn WorkItemServiceFactory>,
     repo_clients: Arc<RwLock<HashMap<RepoKey, RepoClient>>>,
     differs: Arc<RwLock<HashMap<RepoKey, Arc<RepoDiffer>>>>,
@@ -123,6 +125,12 @@ impl FromRef<AppState> for Arc<dyn AiDisplayRateService> {
     }
 }
 
+impl FromRef<AppState> for Arc<dyn AiProviderAccountService> {
+    fn from_ref(state: &AppState) -> Self {
+        state.ai_provider_account_service.clone()
+    }
+}
+
 impl AppState {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
@@ -140,6 +148,7 @@ impl AppState {
         ai_subscription_service: Arc<dyn AiSubscriptionService>,
         ai_billing_service: Arc<dyn AiBillingService>,
         ai_display_rate_service: Arc<dyn AiDisplayRateService>,
+        ai_provider_account_service: Arc<dyn AiProviderAccountService>,
     ) -> Self {
         let client_futures = repo_configs
             .into_iter()
@@ -225,6 +234,7 @@ impl AppState {
             ai_subscription_service,
             ai_billing_service,
             ai_display_rate_service,
+            ai_provider_account_service,
             work_item_factory,
             repo_clients,
             differ_txs: Arc::new(Mutex::new(differ_txs)),

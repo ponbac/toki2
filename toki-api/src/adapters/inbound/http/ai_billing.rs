@@ -490,7 +490,7 @@ struct TokensResponse {
 /// `unpricedRecords` is positive, the full cost is unknown.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct UsageResponse {
+pub(crate) struct UsageResponse {
     api_equivalent_usd: f64,
     unpriced_records: i64,
     records: i64,

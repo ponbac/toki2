@@ -26,12 +26,14 @@ use crate::{
         },
         outbound::{
             cimd::CimdFetcher,
+            github::GithubAccountDirectory,
             media::WebpAvatarProcessor,
             postgres::{
                 PostgresAiBillingRepository, PostgresAiExchangeRateRepository,
-                PostgresAiProjectMappingRepository, PostgresAiSubscriptionRepository,
-                PostgresAiUsageReportRepository, PostgresAiUsageRepository,
-                PostgresApiTokenRepository, PostgresAvatarRepository, PostgresOAuthRepository,
+                PostgresAiProjectMappingRepository, PostgresAiProviderAccountRepository,
+                PostgresAiSubscriptionRepository, PostgresAiUsageReportRepository,
+                PostgresAiUsageRepository, PostgresApiTokenRepository, PostgresAvatarRepository,
+                PostgresOAuthRepository,
             },
             riksbank::RiksbankExchangeRateAdapter,
         },
@@ -41,20 +43,21 @@ use crate::{
     config::Settings,
     db::DbPool,
     domain::{
-        models::AiUsageTimeZone,
+        models::{AiProvider, AiUsageTimeZone},
         ports::{
             inbound::{
                 AiBillingService, AiDisplayRateService, AiProjectMappingService,
-                AiSubscriptionService, AiUsageReportService, AiUsageService, ApiTokenAuthenticator,
-                ApiTokenService, AvatarService, OAuthAccessTokenAuthenticator, OAuthService,
+                AiProviderAccountService, AiSubscriptionService, AiUsageReportService,
+                AiUsageService, ApiTokenAuthenticator, ApiTokenService, AvatarService,
+                OAuthAccessTokenAuthenticator, OAuthService,
             },
             outbound::TimeTrackingProjectCatalog,
         },
         services::{
-            AiBillingServiceImpl, AiDisplayRateServiceImpl, AiExchangeRateSettings,
-            AiExchangeRates, AiProjectMappingServiceImpl, AiSubscriptionServiceImpl,
-            AiUsageReportServiceImpl, AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl,
-            OAuthServiceImpl,
+            AiAccountDirectoryState, AiBillingServiceImpl, AiDisplayRateServiceImpl,
+            AiExchangeRateSettings, AiExchangeRates, AiProjectMappingServiceImpl,
+            AiProviderAccountServiceImpl, AiSubscriptionServiceImpl, AiUsageReportServiceImpl,
+            AiUsageServiceImpl, ApiTokenServiceImpl, AvatarServiceImpl, OAuthServiceImpl,
         },
         RepoConfig,
     },
@@ -103,7 +106,10 @@ pub async fn create(
             "/ai-usage/project-mappings",
             http::ai_project_mappings::router(),
         )
-        .nest("/ai-usage/admin", http::ai_billing::router());
+        .nest(
+            "/ai-usage/admin",
+            http::ai_billing::router().merge(http::ai_provider_accounts::router()),
+        );
 
     let api_tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db_pool.clone()),
@@ -225,6 +231,38 @@ pub async fn create(
     let ai_subscription_service: Arc<dyn AiSubscriptionService> = Arc::new(
         AiSubscriptionServiceImpl::new(ai_subscription_repository, ai_usage_time_zone),
     );
+    // A misconfigured GitHub App never stops startup: the admin page reports
+    // it, as time tracking reports missing Kleer credentials.
+    let account_directory = match config.github.app_credentials() {
+        Ok(None) => {
+            tracing::info!(
+                "GitHub account directory is off: TOKI_GITHUB__APP_PRIVATE_KEY is not set"
+            );
+            AiAccountDirectoryState::Disabled
+        }
+        Ok(Some(credentials)) => match GithubAccountDirectory::new(credentials) {
+            Ok(directory) => AiAccountDirectoryState::Ready(Arc::new(directory)),
+            Err(message) => {
+                tracing::error!(%message, "GitHub account directory is misconfigured");
+                AiAccountDirectoryState::Misconfigured(message)
+            }
+        },
+        Err(message) => {
+            tracing::error!(%message, "GitHub account directory is misconfigured");
+            AiAccountDirectoryState::Misconfigured(message)
+        }
+    };
+    #[cfg(not(debug_assertions))]
+    let account_directory_ready = matches!(account_directory, AiAccountDirectoryState::Ready(_));
+    // GitHub bills Copilot per seat and credit: Copilot is the payer whose
+    // accounts these are.
+    let ai_provider_account_service: Arc<dyn AiProviderAccountService> =
+        Arc::new(AiProviderAccountServiceImpl::new(
+            Arc::new(PostgresAiProviderAccountRepository::new(db_pool.clone())),
+            account_directory,
+            AiProvider::Copilot,
+            config.github.organization.clone().unwrap_or_default(),
+        ));
 
     // Create app state
     let app_state = AppState::new(
@@ -242,6 +280,7 @@ pub async fn create(
         ai_subscription_service,
         ai_billing_service,
         ai_display_rate_service,
+        ai_provider_account_service.clone(),
     )
     .await;
 
@@ -255,6 +294,14 @@ pub async fn create(
     // Start all the differ threads (if in production)
     #[cfg(not(debug_assertions))]
     app_state.start_all_differs().await;
+
+    // Refresh provider accounts daily (if in production). Local runs, whose
+    // default database is a production copy, never write seats unattended;
+    // the admin Refresh works in every build.
+    #[cfg(not(debug_assertions))]
+    if account_directory_ready {
+        spawn_provider_account_refresh(ai_provider_account_service.clone());
+    }
 
     // Finally, wrap the app with tracing layer, state and CORS
     let app_url = config.application.app_url.clone();
@@ -318,6 +365,29 @@ fn spawn_oauth_cleanup(oauth: Arc<dyn OAuthService>) {
             interval.tick().await;
             if let Err(error) = oauth.remove_expired().await {
                 tracing::error!(error = %error, "failed to delete expired OAuth records");
+            }
+        }
+    });
+}
+
+/// Reads seats and profiles once a UTC day. Each hourly tick refreshes only
+/// when due, so restarts add no calls and failures retry on the next tick.
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn spawn_provider_account_refresh(service: Arc<dyn AiProviderAccountService>) {
+    tokio::spawn(async move {
+        let start = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
+        let mut ticks = tokio::time::interval_at(start, std::time::Duration::from_secs(60 * 60));
+        ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticks.tick().await;
+            match service.refresh_if_due().await {
+                Ok(Some(refresh)) => tracing::info!(
+                    seats = refresh.seats_listed,
+                    ended = refresh.seats_ended,
+                    "refreshed provider accounts on schedule"
+                ),
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "provider account refresh failed"),
             }
         }
     });

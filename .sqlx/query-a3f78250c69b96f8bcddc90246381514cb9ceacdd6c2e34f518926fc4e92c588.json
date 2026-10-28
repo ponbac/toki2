@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE ai_provider_seats\n                SET unlisted_at = now()\n                WHERE provider = $1\n                  AND unlisted_at IS NULL\n                  AND NOT (account_id = ANY($2::int8[]))\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a3f78250c69b96f8bcddc90246381514cb9ceacdd6c2e34f518926fc4e92c588"
+}

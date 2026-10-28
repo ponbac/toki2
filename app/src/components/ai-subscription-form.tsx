@@ -190,7 +190,8 @@ export function SubscriptionForm({
   );
 }
 
-function SubscriptionDateInput({
+/** A calendar day typed as `YYYY-MM-DD` or picked from a calendar. */
+export function SubscriptionDateInput({
   id,
   label,
   value,

@@ -25,6 +25,8 @@ type ComboboxItem = {
 };
 
 type ComboboxProps = {
+  /** The trigger's id, so a label can name it. */
+  id?: string;
   items: ComboboxItem[];
   placeholder: string;
   searchPlaceholder?: string;
@@ -63,6 +65,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
       <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <Button
+            id={props.id}
             variant="outline"
             role="combobox"
             aria-expanded={open}

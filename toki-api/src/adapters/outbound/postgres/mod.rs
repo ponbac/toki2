@@ -1,6 +1,7 @@
 mod ai_billing;
 mod ai_exchange_rates;
 mod ai_project_mapping;
+mod ai_provider_accounts;
 mod ai_subscriptions;
 mod ai_usage;
 mod ai_usage_reads;
@@ -13,6 +14,7 @@ mod timer_history;
 pub use ai_billing::PostgresAiBillingRepository;
 pub use ai_exchange_rates::PostgresAiExchangeRateRepository;
 pub use ai_project_mapping::PostgresAiProjectMappingRepository;
+pub use ai_provider_accounts::PostgresAiProviderAccountRepository;
 pub use ai_subscriptions::PostgresAiSubscriptionRepository;
 pub use ai_usage::PostgresAiUsageRepository;
 /// Synthetic usage for tests of routes that read it.

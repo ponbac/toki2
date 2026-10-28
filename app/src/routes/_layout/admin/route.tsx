@@ -1,6 +1,12 @@
 import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { CreditCard, GitBranch, ReceiptText, ShieldAlert } from "lucide-react";
+import {
+  AtSign,
+  CreditCard,
+  GitBranch,
+  ReceiptText,
+  ShieldAlert,
+} from "lucide-react";
 import { userQueries } from "@/lib/api/queries/user";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +24,7 @@ const TABS = [
     label: "AI subscriptions",
     icon: CreditCard,
   },
+  { to: "/admin/github-logins", label: "GitHub logins", icon: AtSign },
 ] as const;
 
 function AdminLayout() {
