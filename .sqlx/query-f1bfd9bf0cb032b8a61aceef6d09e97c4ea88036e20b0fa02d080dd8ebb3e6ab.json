@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_usage_buckets (\n                user_id, machine_id, hour_start, session_key, project_key, provider, model,\n                input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,\n                records, estimated_cost_usd, unpriced_records, billing_provider, pricing_basis\n            )\n            SELECT\n                $1, $2, bucket.hour_start, bucket.session_key, bucket.project_key,\n                bucket.provider, bucket.model, bucket.input_tokens, bucket.cache_read_tokens,\n                bucket.cache_write_tokens, bucket.output_tokens, bucket.records,\n                bucket.estimated_cost_usd::numeric, bucket.unpriced_records, bucket.billing_provider,\n                $16::text\n            FROM UNNEST(\n                $3::timestamptz[], $4::text[], $5::text[], $6::text[], $7::text[],\n                $8::int8[], $9::int8[], $10::int8[], $11::int8[], $12::int8[],\n                $13::float8[], $14::int8[], $15::text[]\n            ) AS bucket (\n                hour_start, session_key, project_key, provider, model,\n                input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, records,\n                estimated_cost_usd, unpriced_records, billing_provider\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Uuid",
+        "TimestamptzArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Float8Array",
+        "Int8Array",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f1bfd9bf0cb032b8a61aceef6d09e97c4ea88036e20b0fa02d080dd8ebb3e6ab"
+}

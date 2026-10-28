@@ -86,12 +86,13 @@ where
 pub struct AiSubscriptionRequest {
     /// Not `pi`, which has no subscriptions of its own: a ChatGPT subscription,
     /// declared for `codex`, also pays for Pi usage through its ChatGPT sign-in.
-    /// Not `opencode` either: usage it routes through Copilot or a ChatGPT
-    /// sign-in is billed to that subscription, declared for `copilot` or
-    /// `codex`, and everything else at its estimated API cost.
+    /// Not `opencode` either: usage it routes through a ChatGPT sign-in is
+    /// billed to that subscription, declared for `codex`, and the rest at its
+    /// estimated cost. Not `copilot`: GitHub bills Copilot usage per credit, so
+    /// it, OpenCode's through Copilot included, bills at its estimated cost.
     provider: AiUsageProvider,
-    /// Free text, such as `Claude Max 5x`, `ChatGPT Pro` or `Copilot Business`.
-    /// At most 64 Unicode code points.
+    /// Free text, such as `Claude Max 5x` or `ChatGPT Pro`. At most 64 Unicode
+    /// code points.
     #[schema(min_length = 1, max_length = 64, example = "Claude Max 5x")]
     plan: String,
     /// The monthly fee as an exact decimal string with at most two decimals.
@@ -344,9 +345,10 @@ pub async fn list_subscriptions(
 /// A ChatGPT subscription is declared for `codex`. It also pays for your Pi
 /// usage on each of those days on which Pi reported its ChatGPT sign-in; Pi
 /// usage on other days bills as API usage, and `pi` takes no subscription.
-/// Nor does `opencode`: your subscriptions to `copilot` and `codex` pay for
-/// the OpenCode usage it routes through Copilot or a ChatGPT sign-in, and its
-/// other usage bills as API usage.
+/// Nor does `opencode`: your subscription to `codex` pays for the OpenCode
+/// usage it routes through a ChatGPT sign-in, and its other usage bills as API
+/// usage. Nor does `copilot`: GitHub bills Copilot usage per credit, so it,
+/// OpenCode's through Copilot included, bills at its estimated cost.
 #[utoipa::path(
     post,
     path = "/ai-usage/subscriptions",
@@ -373,7 +375,8 @@ pub async fn create_subscription(
 ///
 /// Replaces every term of one of your subscriptions, for example to end it by
 /// setting `validTo`. Periods of your subscriptions to one provider must not
-/// share a day.
+/// share a day. As when declaring one, `pi`, `opencode` and `copilot` take no
+/// subscription.
 #[utoipa::path(
     put,
     path = "/ai-usage/subscriptions/{subscription_id}",
@@ -446,7 +449,8 @@ pub async fn delete_subscription(
 /// between the same declared subscriptions form one entry. Only Codex reports
 /// plans today, a `free` plan is no evidence of a subscription, and a missing
 /// plan proves nothing. Pi reports its ChatGPT sign-in as the plan
-/// `openai-codex`, which a subscription to Codex pays for.
+/// `openai-codex`, which a subscription to Codex pays for. Usage Copilot pays
+/// for is never a mismatch, since no subscription to it can be declared.
 #[utoipa::path(
     get,
     path = "/ai-usage/subscription-mismatches",

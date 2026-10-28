@@ -375,8 +375,10 @@ pub struct OptionalDateRangeArgs {
 #[serde(rename_all = "camelCase")]
 pub struct AiSubscriptionArgs {
     /// Not `pi`: a ChatGPT subscription declared for `codex` also covers Pi.
-    /// Not `opencode`: usage it routes through Copilot or a ChatGPT sign-in is
-    /// billed to that subscription (`copilot` or `codex`), the rest at API cost.
+    /// Not `opencode`: usage it routes through a ChatGPT sign-in is billed to
+    /// that subscription (`codex`), the rest at its estimated cost.
+    /// Not `copilot`: GitHub bills Copilot usage per credit, so it, OpenCode's
+    /// through Copilot included, bills at its estimated cost.
     provider: AiProvider,
     /// Plan name, such as `Claude Max 5x`. At most 64 characters.
     plan: String,
@@ -947,7 +949,8 @@ impl TokiMcp {
         )
     }
 
-    /// Declares an AI subscription the user pays for.
+    /// Declares an AI subscription the user pays a monthly fee for. Not for `pi`,
+    /// `opencode` or `copilot`, which take none.
     #[tool(annotations(
         title = "Create AI subscription",
         read_only_hint = false,
@@ -971,7 +974,8 @@ impl TokiMcp {
         )
     }
 
-    /// Replaces an AI subscription's terms.
+    /// Replaces an AI subscription's terms. Its provider cannot become `pi`,
+    /// `opencode` or `copilot`, which take no subscription.
     #[tool(annotations(
         title = "Update AI subscription",
         read_only_hint = false,
@@ -1196,9 +1200,10 @@ mod tests {
         ("deleteAiSubscription", "delete_ai_subscription"),
     ];
 
-    /// Operations deliberately left out: machine usage uploads are a sync
-    /// protocol for usage collectors, not an agent action.
-    const OPERATIONS_WITHOUT_TOOLS: &[&str] = &["uploadAiUsage"];
+    /// Operations deliberately left out: machine usage uploads and repricing
+    /// are a sync protocol for usage collectors, not an agent action.
+    const OPERATIONS_WITHOUT_TOOLS: &[&str] =
+        &["uploadAiUsage", "getAiUsageRepricing", "repriceAiUsage"];
 
     /// Tools that ask the user to confirm before they run.
     const CONFIRMED_TOOLS: &[&str] = &[

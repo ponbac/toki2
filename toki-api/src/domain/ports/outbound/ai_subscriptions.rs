@@ -50,7 +50,9 @@ pub trait AiSubscriptionRepository: Send + Sync + 'static {
     /// `time_zone`: days on which a provider reported a plan other than those in
     /// `UNPAID_PLAN_HINTS`, but none of the user's subscriptions that pay for
     /// that provider's usage covers the day. Of Pi's hints only its ChatGPT
-    /// sign-in counts, against the user's subscriptions to Codex. An hourly hint
+    /// sign-in counts, against the user's subscriptions to Codex. Usage uploaded
+    /// with an explicit payer counts as a hint for that payer. Days whose payer
+    /// is one of the `METERED_PAYERS` are never mismatches. An hourly hint
     /// belongs to the local date its hour starts on. Ordered by user, provider
     /// and day.
     async fn plan_mismatch_days(

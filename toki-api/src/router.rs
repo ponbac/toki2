@@ -185,8 +185,10 @@ pub async fn create(
             project_catalog,
             ai_usage_time_zone.clone(),
         ));
-    let ai_usage_service: Arc<dyn AiUsageService> =
-        Arc::new(AiUsageServiceImpl::new(ai_usage_repository));
+    let ai_usage_service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(
+        ai_usage_repository,
+        config.ai_usage.reprice_floor,
+    ));
     let ai_subscription_repository =
         Arc::new(PostgresAiSubscriptionRepository::new(db_pool.clone()));
     let exchange_rate_provider = Arc::new(

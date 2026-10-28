@@ -1,4 +1,5 @@
-//! Uploads from `token-ledger sync`: hourly, per-session AI token usage per machine.
+//! Uploads from `token-ledger sync`: hourly, per-session AI token usage per machine,
+//! and reprice-only uploads that give stored usage new costs (`repricing`).
 
 use std::sync::Arc;
 
@@ -7,7 +8,7 @@ use axum::{
     extract::{DefaultBodyLimit, FromRef, Path, State},
     http::{header::CONTENT_TYPE, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::put,
+    routing::{get, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -21,13 +22,15 @@ use crate::{
     domain::{
         models::{
             AiCoverageStatus, AiMachine, AiMachineId, AiPartialBucketCost, AiPricing,
-            AiPricingStatus, AiProvider, AiProviderCoverage, AiProviderHint, AiTokenCounts,
-            AiUsageBucket, AiUsageUpload, AiUsageWindow,
+            AiPricingBasis, AiPricingStatus, AiProvider, AiProviderCoverage, AiProviderHint,
+            AiTokenCounts, AiUsageBucket, AiUsageUpload, AiUsageWindow, MAX_PRICING_BASIS_CHARS,
         },
         ports::inbound::AiUsageService,
     },
     routes::ApiError,
 };
+
+pub(super) mod repricing;
 
 /// A two-week upload is typically a few hundred kilobytes, but a long window can
 /// reach several megabytes, beyond Axum's 2 MB default.
@@ -39,10 +42,17 @@ where
     S: Clone + Send + Sync + 'static,
     Arc<dyn AiUsageService>: FromRef<S>,
 {
-    Router::new().route(
-        "/machines/{machine_id}/usage",
-        put(upload_usage).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
-    )
+    Router::new()
+        .route(
+            "/machines/{machine_id}/usage",
+            put(upload_usage).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
+        )
+        .route(
+            "/machines/{machine_id}/repricing",
+            get(repricing::get_repricing)
+                .post(repricing::reprice_usage)
+                .layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
+        )
 }
 
 /// Upload from `token-ledger sync`. All instants are RFC 3339 UTC.
@@ -114,7 +124,9 @@ pub enum AiUsageCurrency {
     Usd,
 }
 
-/// Costs are API-equivalent estimates, not subscription bills.
+/// Costs are estimates, not subscription bills. The name predates Copilot
+/// pricing: usage Copilot pays for is priced at Copilot's rates, other usage at
+/// API prices.
 #[derive(Debug, Deserialize, ToSchema)]
 pub enum AiUsageCostBasis {
     #[serde(rename = "api-equivalent")]
@@ -132,6 +144,13 @@ pub struct AiUsagePricingPayload {
     fetched_at: Option<OffsetDateTime>,
     #[schema(max_length = 512)]
     source: String,
+    /// Optional in every version: names the pricing method and the rates
+    /// behind every cost in the upload, opaque to Toki and compared only for
+    /// equality. Stored on each bucket the upload writes; absent or null stores
+    /// none. Compare it with stored usage through `getAiUsageRepricing`.
+    #[serde(default)]
+    #[schema(min_length = 1, max_length = 128)]
+    basis: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -177,10 +196,10 @@ pub struct AiUsageBucketPayload {
     tokens: AiUsageTokensPayload,
     #[schema(minimum = 1)]
     records: i64,
-    /// API-equivalent USD of the priced records. In versions `1` and `2`, null
-    /// exactly when `unpricedRecords` is positive. In version `3`, null exactly
-    /// when every record is unpriced, and otherwise the priced subtotal, which
-    /// excludes any unpriced records. Null is unknown, never zero.
+    /// Estimated USD of the priced records (see `costBasis`). In versions `1`
+    /// and `2`, null exactly when `unpricedRecords` is positive. In version `3`,
+    /// null exactly when every record is unpriced, and otherwise the priced
+    /// subtotal, which excludes any unpriced records. Null is unknown, never zero.
     #[serde(deserialize_with = "Option::deserialize")]
     #[schema(required = true, minimum = 0)]
     estimated_cost_usd: Option<f64>,
@@ -268,10 +287,11 @@ pub struct UnsupportedAiUsageVersionResponse {
 /// reports as `ok` or `partial`, the upload atomically replaces the machine's
 /// usage of that provider inside `window`; other providers keep their stored
 /// usage. Repeating an upload is harmless. An upload with a `snapshotAt` older
-/// than one already stored for the machine is refused with 409. Costs are
-/// API-equivalent USD estimates; null is unknown, never zero. From version 3,
-/// a bucket with unpriced records can still carry the cost of its priced
-/// records.
+/// than one already stored for the machine is refused with 409. Costs are USD
+/// estimates: at Copilot's rates for usage Copilot pays for, and otherwise at
+/// API prices, OpenAI's implicit cache writes included. Null is unknown, never
+/// zero. From version 3, a bucket with unpriced records can still carry the
+/// cost of its priced records.
 #[utoipa::path(
     put,
     path = "/ai-usage/machines/{machine_id}/usage",
@@ -460,37 +480,13 @@ impl AiUsageUploadRequest {
             time_zone: self.time_zone,
         };
         let window = AiUsageWindow::new(self.window.start, self.window.end)?;
+        let pricing_basis = self.pricing.basis.map(pricing_basis).transpose()?;
         let pricing = AiPricing {
-            status: match self.pricing.status {
-                AiUsagePricingStatus::Fresh => AiPricingStatus::Fresh,
-                AiUsagePricingStatus::Cached => AiPricingStatus::Cached,
-                AiUsagePricingStatus::Unavailable => AiPricingStatus::Unavailable,
-                AiUsagePricingStatus::Custom => AiPricingStatus::Custom,
-            },
+            status: self.pricing.status.into(),
             fetched_at: self.pricing.fetched_at,
             source: self.pricing.source,
         };
-        let buckets = self
-            .buckets
-            .into_iter()
-            .map(|bucket| AiUsageBucket {
-                billing_provider: bucket.billing_provider.map(Into::into),
-                hour_start: bucket.hour_start,
-                session_key: bucket.session_key,
-                project_key: bucket.project,
-                provider: bucket.provider.into(),
-                model: bucket.model,
-                tokens: AiTokenCounts {
-                    input: bucket.tokens.input,
-                    cache_read: bucket.tokens.cache_read,
-                    cache_write: bucket.tokens.cache_write,
-                    output: bucket.tokens.output,
-                },
-                records: bucket.records,
-                estimated_cost_usd: bucket.estimated_cost_usd,
-                unpriced_records: bucket.unpriced_records,
-            })
-            .collect();
+        let buckets = self.buckets.into_iter().map(Into::into).collect();
         let coverage = self
             .coverage
             .into_iter()
@@ -528,7 +524,50 @@ impl AiUsageUploadRequest {
             provider_hints,
             partial_cost,
         )?
+        .with_pricing_basis(pricing_basis)
         .with_snapshot_at(self.snapshot_at))
+    }
+}
+
+/// A `pricing.basis` from a request body.
+fn pricing_basis(raw: String) -> Result<AiPricingBasis, ApiError> {
+    AiPricingBasis::parse(raw).ok_or_else(|| {
+        ApiError::bad_request(format!(
+            "pricing.basis must be 1 to {MAX_PRICING_BASIS_CHARS} characters without NUL"
+        ))
+    })
+}
+
+impl From<AiUsageBucketPayload> for AiUsageBucket {
+    fn from(bucket: AiUsageBucketPayload) -> Self {
+        Self {
+            billing_provider: bucket.billing_provider.map(Into::into),
+            hour_start: bucket.hour_start,
+            session_key: bucket.session_key,
+            project_key: bucket.project,
+            provider: bucket.provider.into(),
+            model: bucket.model,
+            tokens: AiTokenCounts {
+                input: bucket.tokens.input,
+                cache_read: bucket.tokens.cache_read,
+                cache_write: bucket.tokens.cache_write,
+                output: bucket.tokens.output,
+            },
+            records: bucket.records,
+            estimated_cost_usd: bucket.estimated_cost_usd,
+            unpriced_records: bucket.unpriced_records,
+        }
+    }
+}
+
+impl From<AiUsagePricingStatus> for AiPricingStatus {
+    fn from(status: AiUsagePricingStatus) -> Self {
+        match status {
+            AiUsagePricingStatus::Fresh => Self::Fresh,
+            AiUsagePricingStatus::Cached => Self::Cached,
+            AiUsagePricingStatus::Unavailable => Self::Unavailable,
+            AiUsagePricingStatus::Custom => Self::Custom,
+        }
     }
 }
 
@@ -570,13 +609,17 @@ mod tests {
     };
     use serde_json::{json, Value};
     use sqlx::PgPool;
+    use time::macros::datetime;
     use tower::ServiceExt;
 
     use crate::{
         adapters::outbound::postgres::{PostgresAiUsageRepository, PostgresApiTokenRepository},
         auth::{authenticate_bearer, require_authenticated},
         domain::{
-            models::{AiUsageIngestReceipt, UserId},
+            models::{
+                AiMachineId, AiRepricing, AiRepricingReceipt, AiRepricingStatus,
+                AiUsageIngestReceipt, UserId,
+            },
             ports::inbound::{ApiTokenAuthenticator, ApiTokenService},
             services::{AiUsageServiceImpl, ApiTokenServiceImpl},
             AiUsageError, ApiTokenError, Role, UserPrincipal,
@@ -585,11 +628,15 @@ mod tests {
 
     use super::*;
 
-    const MACHINE: &str = "5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a";
+    pub(super) const MACHINE: &str = "5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a";
+    /// The reprice floor of `postgres_service`: inside `payload`'s window,
+    /// after the hour of its buckets.
+    pub(super) const REPRICE_FLOOR: OffsetDateTime = datetime!(2026-09-22 09:00 UTC);
 
     #[derive(Default)]
-    struct RecordingService {
-        uploads: Mutex<Vec<AiUsageUpload>>,
+    pub(super) struct RecordingService {
+        pub(super) uploads: Mutex<Vec<AiUsageUpload>>,
+        pub(super) reprices: Mutex<Vec<AiRepricing>>,
     }
 
     #[async_trait]
@@ -604,9 +651,46 @@ mod tests {
                 stored_buckets: upload.buckets().len() as u64,
             })
         }
+
+        async fn repricing_status(
+            &self,
+            _user_id: &UserId,
+            _machine_id: &AiMachineId,
+            _basis: &AiPricingBasis,
+        ) -> Result<AiRepricingStatus, AiUsageError> {
+            Ok(AiRepricingStatus {
+                floor: REPRICE_FLOOR,
+                providers: Vec::new(),
+            })
+        }
+
+        async fn reprice(
+            &self,
+            _user_id: &UserId,
+            repricing: &AiRepricing,
+        ) -> Result<AiRepricingReceipt, AiUsageError> {
+            let (repriced, before_floor) = repricing.split_at_floor(REPRICE_FLOOR);
+            let receipt = AiRepricingReceipt {
+                updated: repriced.len() as u64,
+                unmatched: 0,
+                before_floor,
+            };
+            self.reprices.lock().unwrap().push(repricing.clone());
+            Ok(receipt)
+        }
     }
 
-    struct AnyTokenAuthenticator;
+    /// The service over Postgres, with `REPRICE_FLOOR`.
+    pub(super) fn postgres_service(pool: &PgPool) -> Arc<dyn AiUsageService> {
+        Arc::new(AiUsageServiceImpl::new(
+            Arc::new(PostgresAiUsageRepository::new(crate::db::DbPool::from(
+                pool.clone(),
+            ))),
+            REPRICE_FLOOR,
+        ))
+    }
+
+    pub(super) struct AnyTokenAuthenticator;
 
     #[async_trait]
     impl ApiTokenAuthenticator for AnyTokenAuthenticator {
@@ -623,7 +707,7 @@ mod tests {
     }
 
     /// The route behind the same bearer authentication as protected routes.
-    fn app(
+    pub(super) fn app(
         service: Arc<dyn AiUsageService>,
         authenticator: Arc<dyn ApiTokenAuthenticator>,
     ) -> Router {
@@ -638,7 +722,7 @@ mod tests {
     }
 
     /// A synthetic payload with `buckets` distinct sessions in one hour.
-    fn payload(buckets: usize) -> Value {
+    pub(super) fn payload(buckets: usize) -> Value {
         json!({
             "version": 1,
             "machine": { "id": MACHINE, "label": "work-laptop" },
@@ -689,7 +773,7 @@ mod tests {
         })
     }
 
-    async fn put(
+    pub(super) async fn put(
         app: Router,
         machine_id: &str,
         token: Option<&str>,
@@ -858,6 +942,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pricing_basis_is_optional_and_1_to_128_characters() {
+        let service = Arc::new(RecordingService::default());
+        let app = app(service.clone(), Arc::new(AnyTokenAuthenticator));
+
+        for basis in [json!(""), json!("a".repeat(129))] {
+            let mut body = payload(1);
+            body["pricing"]["basis"] = basis;
+            let (status, body) = put(app.clone(), MACHINE, Some("toki_any"), &body).await;
+            assert_eq!(
+                (status, &body["error"]),
+                (
+                    StatusCode::BAD_REQUEST,
+                    &json!("pricing.basis must be 1 to 128 characters without NUL")
+                )
+            );
+        }
+        assert!(service.uploads.lock().unwrap().is_empty());
+
+        let mut null = payload(1);
+        null["pricing"]["basis"] = Value::Null;
+        let mut longest = payload(1);
+        longest["pricing"]["basis"] = json!("a".repeat(128));
+        for body in [payload(1), null, longest] {
+            let (status, _) = put(app.clone(), MACHINE, Some("toki_any"), &body).await;
+            assert_eq!(status, StatusCode::OK);
+        }
+
+        let bases: Vec<_> = service
+            .uploads
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|upload| upload.pricing_basis().map(|basis| basis.as_str().len()))
+            .collect();
+        assert_eq!(bases, [None, None, Some(128)]);
+    }
+
+    #[tokio::test]
     async fn snapshot_at_is_an_optional_utc_instant() {
         let service = Arc::new(RecordingService::default());
         let app = app(service.clone(), Arc::new(AnyTokenAuthenticator));
@@ -959,13 +1081,10 @@ mod tests {
 
     #[sqlx::test]
     async fn api_tokens_upload_and_another_users_upload_is_forbidden(pool: PgPool) {
-        let db = crate::db::DbPool::from(pool.clone());
         let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
-            PostgresApiTokenRepository::new(db.clone()),
+            PostgresApiTokenRepository::new(crate::db::DbPool::from(pool.clone())),
         )));
-        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(Arc::new(
-            PostgresAiUsageRepository::new(db),
-        )));
+        let service = postgres_service(&pool);
         let app = app(service, tokens.clone());
 
         let mut secrets = Vec::new();
@@ -999,13 +1118,10 @@ mod tests {
 
     #[sqlx::test]
     async fn an_upload_older_than_the_stored_snapshot_is_a_conflict(pool: PgPool) {
-        let db = crate::db::DbPool::from(pool.clone());
         let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
-            PostgresApiTokenRepository::new(db.clone()),
+            PostgresApiTokenRepository::new(crate::db::DbPool::from(pool.clone())),
         )));
-        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(Arc::new(
-            PostgresAiUsageRepository::new(db),
-        )));
+        let service = postgres_service(&pool);
         let app = app(service, tokens.clone());
         let id: i32 = sqlx::query_scalar(
             "INSERT INTO users (email, full_name, picture, access_token)
@@ -1050,13 +1166,10 @@ mod tests {
 
     #[sqlx::test]
     async fn pi_usage_is_stored_with_its_coverage_and_sign_in_hint(pool: PgPool) {
-        let db = crate::db::DbPool::from(pool.clone());
         let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
-            PostgresApiTokenRepository::new(db.clone()),
+            PostgresApiTokenRepository::new(crate::db::DbPool::from(pool.clone())),
         )));
-        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(Arc::new(
-            PostgresAiUsageRepository::new(db),
-        )));
+        let service = postgres_service(&pool);
         let app = app(service, tokens.clone());
         let id: i32 = sqlx::query_scalar(
             "INSERT INTO users (email, full_name, picture, access_token)
@@ -1129,13 +1242,10 @@ mod tests {
 
     #[sqlx::test]
     async fn opencode_usage_is_stored_with_its_payer_and_without_hints(pool: PgPool) {
-        let db = crate::db::DbPool::from(pool.clone());
         let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
-            PostgresApiTokenRepository::new(db.clone()),
+            PostgresApiTokenRepository::new(crate::db::DbPool::from(pool.clone())),
         )));
-        let service: Arc<dyn AiUsageService> = Arc::new(AiUsageServiceImpl::new(Arc::new(
-            PostgresAiUsageRepository::new(db),
-        )));
+        let service = postgres_service(&pool);
         let app = app(service, tokens.clone());
         let id: i32 = sqlx::query_scalar(
             "INSERT INTO users (email, full_name, picture, access_token)

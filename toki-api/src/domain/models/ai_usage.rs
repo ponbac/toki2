@@ -4,8 +4,13 @@
 //! UTC hours. For each provider whose history it read (`ok` or `partial`
 //! coverage), the upload replaces what that machine stored for the provider inside
 //! the window; other providers keep their stored usage, because missing data is
-//! not zero. Costs are API-equivalent USD estimates, not bills: an unknown cost
-//! is `None`, never zero.
+//! not zero. Costs are USD estimates, not bills: token-ledger prices usage that
+//! Copilot pays for at Copilot's rates and other usage at API prices. An unknown
+//! cost is `None`, never zero.
+//!
+//! Each bucket also keeps the pricing basis its cost was computed with. A
+//! reprice-only upload (`AiRepricing`) gives buckets Toki already stores new
+//! costs and a new basis, without replacing any usage.
 
 use std::{collections::HashSet, fmt};
 
@@ -22,6 +27,10 @@ pub(crate) const MAX_SAFE_COUNT: i64 = 9_007_199_254_740_991;
 const NOT_REPLACED: &str = "provider must be listed in coverage as ok or partial";
 /// The longest uploaded text, in characters; token-ledger truncates to fit.
 pub const MAX_TEXT_CHARS: usize = 512;
+/// The longest pricing basis, in characters.
+pub const MAX_PRICING_BASIS_CHARS: usize = 128;
+/// The most buckets one reprice-only upload may carry.
+pub const MAX_REPRICED_BUCKETS: usize = 20_000;
 
 /// A random, stable identifier created once per token-ledger installation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -181,6 +190,29 @@ pub struct AiPricing {
     pub source: String,
 }
 
+/// Names the pricing method and the rates a client priced costs with, such as
+/// its rate card versions. Opaque to Toki and compared only for equality: a
+/// stored cost whose basis differs from the client's current one was priced by
+/// an older method and can be repriced.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AiPricingBasis(String);
+
+impl AiPricingBasis {
+    /// Accepts 1 to `MAX_PRICING_BASIS_CHARS` characters without NUL, which
+    /// JSON strings can carry but Postgres text cannot.
+    pub fn parse(raw: impl Into<String>) -> Option<Self> {
+        let raw = raw.into();
+        let valid =
+            (1..=MAX_PRICING_BASIS_CHARS).contains(&raw.chars().count()) && !raw.contains('\0');
+
+        valid.then_some(Self(raw))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Disjoint token categories: `input` excludes cache reads and writes, and
 /// reasoning is inside `output`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -311,6 +343,7 @@ pub struct AiUsageUpload {
     machine: AiMachine,
     window: AiUsageWindow,
     pricing: AiPricing,
+    pricing_basis: Option<AiPricingBasis>,
     buckets: Vec<AiUsageBucket>,
     coverage: Vec<AiProviderCoverage>,
     provider_hints: Vec<AiProviderHint>,
@@ -372,31 +405,15 @@ impl AiUsageUpload {
             .map(|entry| entry.provider)
             .collect::<HashSet<_>>();
 
-        for (index, bucket) in buckets.iter_mut().enumerate() {
-            validate_bucket(bucket, &window, &replaced, partial_cost)
-                .map_err(|problem| invalid(format!("buckets[{index}]: {problem}")))?;
-            if bucket.is_included_at_no_cost() {
-                bucket.estimated_cost_usd = Some(0.0);
-                bucket.unpriced_records = 0;
+        validate_buckets(&mut buckets, partial_cost, |bucket| {
+            if !window.contains(bucket.hour_start) {
+                return Err("hourStart must be inside the window");
             }
-        }
-
-        let mut keys = HashSet::with_capacity(buckets.len());
-        for (index, bucket) in buckets.iter().enumerate() {
-            let key = (
-                bucket.hour_start,
-                bucket.session_key.as_str(),
-                bucket.project_key.as_str(),
-                bucket.provider,
-                bucket.model.as_str(),
-                bucket.billing_provider,
-            );
-            if !keys.insert(key) {
-                return Err(invalid(format!(
-                    "buckets[{index}]: duplicate key (hourStart, sessionKey, project, provider, model, billingProvider)"
-                )));
+            if !replaced.contains(&bucket.provider) {
+                return Err(NOT_REPLACED);
             }
-        }
+            Ok(())
+        })?;
 
         let mut seen = HashSet::with_capacity(provider_hints.len());
         for (index, hint) in provider_hints.iter_mut().enumerate() {
@@ -429,11 +446,21 @@ impl AiUsageUpload {
             machine,
             window,
             pricing,
+            pricing_basis: None,
             buckets,
             coverage,
             provider_hints,
             snapshot_at: None,
         })
+    }
+
+    /// The pricing basis of every cost in the upload, stored on each bucket
+    /// it writes. Clients that do not report one leave it `None`.
+    pub fn with_pricing_basis(self, pricing_basis: Option<AiPricingBasis>) -> Self {
+        Self {
+            pricing_basis,
+            ..self
+        }
     }
 
     /// When the client started reading the history in this upload: every record
@@ -468,6 +495,10 @@ impl AiUsageUpload {
         &self.pricing
     }
 
+    pub fn pricing_basis(&self) -> Option<&AiPricingBasis> {
+        self.pricing_basis.as_ref()
+    }
+
     pub fn buckets(&self) -> &[AiUsageBucket] {
         &self.buckets
     }
@@ -489,6 +520,127 @@ impl AiUsageUpload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AiUsageIngestReceipt {
     pub stored_buckets: u64,
+}
+
+/// A validated reprice-only upload from one machine: new costs, priced with
+/// `basis`, for buckets Toki already stores.
+///
+/// It changes only the cost, the unpriced record count and the pricing basis of
+/// stored buckets that it reproduces exactly: the same key, token counts and
+/// record count. It never inserts or deletes usage, so history the machine no
+/// longer has, or usage it now attributes differently, keeps its stored cost.
+/// Buckets pass the upload's validation, with version 3 costs, and their keys
+/// are unique. There is no window: any hour can be repriced, but the service
+/// skips hours before its reprice floor.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiRepricing {
+    machine_id: AiMachineId,
+    client_version: String,
+    pricing: AiPricing,
+    basis: AiPricingBasis,
+    buckets: Vec<AiUsageBucket>,
+}
+
+impl AiRepricing {
+    pub fn new(
+        machine_id: AiMachineId,
+        client_version: String,
+        pricing: AiPricing,
+        basis: AiPricingBasis,
+        mut buckets: Vec<AiUsageBucket>,
+    ) -> Result<Self, AiUsageError> {
+        for (field, value, required) in [
+            ("clientVersion", &client_version, true),
+            ("pricing.source", &pricing.source, false),
+        ] {
+            if let Some(problem) = text_problem(field, value, required) {
+                return Err(invalid(problem));
+            }
+        }
+        if buckets.len() > MAX_REPRICED_BUCKETS {
+            return Err(invalid(format!(
+                "buckets: at most {MAX_REPRICED_BUCKETS} buckets can be repriced at once"
+            )));
+        }
+        validate_buckets(
+            &mut buckets,
+            AiPartialBucketCost::PricedSubtotal,
+            |_| Ok(()),
+        )?;
+
+        Ok(Self {
+            machine_id,
+            client_version,
+            pricing,
+            basis,
+            buckets,
+        })
+    }
+
+    pub fn machine_id(&self) -> AiMachineId {
+        self.machine_id
+    }
+
+    /// The token-ledger version, for diagnostics.
+    pub fn client_version(&self) -> &str {
+        &self.client_version
+    }
+
+    /// Provenance of the rates behind the new costs, for diagnostics.
+    pub fn pricing(&self) -> &AiPricing {
+        &self.pricing
+    }
+
+    pub fn basis(&self) -> &AiPricingBasis {
+        &self.basis
+    }
+
+    /// The buckets from `floor` on, which may be repriced, and how many
+    /// buckets lie before it.
+    pub fn split_at_floor(&self, floor: OffsetDateTime) -> (Vec<&AiUsageBucket>, u64) {
+        let (repriced, before): (Vec<_>, Vec<_>) = self
+            .buckets
+            .iter()
+            .partition(|bucket| bucket.hour_start >= floor);
+
+        (repriced, before.len() as u64)
+    }
+}
+
+/// The outcome of a reprice-only upload. Every bucket of the upload is counted
+/// once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiRepricingReceipt {
+    /// Stored buckets that took the new cost and basis, also when they were
+    /// equal already.
+    pub updated: u64,
+    /// Buckets from the floor on that no stored bucket of the user's machine
+    /// matches exactly; nothing changed for them.
+    pub unmatched: u64,
+    /// Buckets before the reprice floor, which are never repriced.
+    pub before_floor: u64,
+}
+
+/// How much of a machine's stored usage, from the reprice floor on, was priced
+/// with another basis than the client's current one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiRepricingStatus {
+    /// The earliest hour that can be repriced.
+    pub floor: OffsetDateTime,
+    /// One entry per provider with stored usage on the machine, by provider
+    /// name.
+    pub providers: Vec<AiProviderRepricing>,
+}
+
+/// One provider's stored usage on a machine that another pricing basis priced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiProviderRepricing {
+    pub provider: AiProvider,
+    /// The earliest such hour from the floor on, or `None` when none is.
+    pub from: Option<OffsetDateTime>,
+    /// How many buckets from the floor on another basis priced. A bucket
+    /// without a basis counts.
+    pub stale_buckets: u64,
 }
 
 /// An IANA time zone, such as `Europe/Stockholm`, for usage days and billing months.
@@ -570,20 +722,51 @@ impl AiUsageTotals {
     }
 }
 
+/// Validates every bucket, stores Copilot's next edit suggestions at no cost,
+/// and refuses a repeated bucket key. `placement` checks where a bucket may
+/// lie, once its hour is known to be whole and in UTC.
+fn validate_buckets(
+    buckets: &mut [AiUsageBucket],
+    partial_cost: AiPartialBucketCost,
+    placement: impl Fn(&AiUsageBucket) -> Result<(), &'static str>,
+) -> Result<(), AiUsageError> {
+    for (index, bucket) in buckets.iter_mut().enumerate() {
+        validate_bucket(bucket, partial_cost, &placement)
+            .map_err(|problem| invalid(format!("buckets[{index}]: {problem}")))?;
+        if bucket.is_included_at_no_cost() {
+            bucket.estimated_cost_usd = Some(0.0);
+            bucket.unpriced_records = 0;
+        }
+    }
+
+    let mut keys = HashSet::with_capacity(buckets.len());
+    for (index, bucket) in buckets.iter().enumerate() {
+        let key = (
+            bucket.hour_start,
+            bucket.session_key.as_str(),
+            bucket.project_key.as_str(),
+            bucket.provider,
+            bucket.model.as_str(),
+            bucket.billing_provider,
+        );
+        if !keys.insert(key) {
+            return Err(invalid(format!(
+                "buckets[{index}]: duplicate key (hourStart, sessionKey, project, provider, model, billingProvider)"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_bucket(
     bucket: &mut AiUsageBucket,
-    window: &AiUsageWindow,
-    replaced: &HashSet<AiProvider>,
     partial_cost: AiPartialBucketCost,
+    placement: &impl Fn(&AiUsageBucket) -> Result<(), &'static str>,
 ) -> Result<(), String> {
     bucket.hour_start =
         whole_utc_hour(bucket.hour_start).ok_or("hourStart must be a whole UTC hour")?;
-    if !window.contains(bucket.hour_start) {
-        return Err("hourStart must be inside the window".to_string());
-    }
-    if !replaced.contains(&bucket.provider) {
-        return Err(NOT_REPLACED.to_string());
-    }
+    placement(bucket)?;
     if let Some(payer) = bucket.billing_provider {
         if payer == bucket.provider || !payer.supports_subscription() {
             return Err("billingProvider must be a different subscription provider".to_string());

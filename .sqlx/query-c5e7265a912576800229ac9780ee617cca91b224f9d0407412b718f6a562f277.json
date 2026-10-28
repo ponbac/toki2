@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH observed_hints AS (\n                SELECT user_id, provider, hour_start, plan\n                FROM ai_usage_provider_hints\n                UNION ALL\n                -- Report the missing payer so the warning offers the correct subscription.\n                SELECT user_id, billing_provider AS provider, hour_start,\n                    'routed from ' || provider AS plan\n                FROM ai_usage_buckets\n                WHERE billing_provider IS NOT NULL\n            ), hint_days AS (\n                SELECT hints.user_id, hints.provider, local.day,\n                    CASE WHEN hints.provider = $6 THEN $8 ELSE hints.provider END\n                        AS subscription_provider,\n                    array_agg(DISTINCT hints.plan ORDER BY hints.plan) AS plans\n                FROM observed_hints AS hints\n                CROSS JOIN LATERAL (\n                    SELECT (hints.hour_start AT TIME ZONE $4)::date AS day\n                ) AS local\n                WHERE ($1::int4 IS NULL OR hints.user_id = $1)\n                  AND hints.hour_start >= ($2::date::timestamp AT TIME ZONE $4)\n                  AND hints.hour_start < ($3::date::timestamp AT TIME ZONE $4)\n                  AND lower(btrim(hints.plan)) <> ALL($5::text[])\n                  AND (hints.provider <> $6 OR hints.plan = $7)\n                GROUP BY hints.user_id, hints.provider, local.day\n            )\n            SELECT\n                hint_days.user_id AS \"user_id!\",\n                hint_days.provider AS \"provider!\",\n                hint_days.day AS \"day!\",\n                hint_days.plans AS \"plans!\",\n                (\n                    SELECT min(later.valid_from)\n                    FROM ai_subscriptions AS later\n                    WHERE later.user_id = hint_days.user_id\n                      AND later.provider = hint_days.subscription_provider\n                      AND later.valid_from > hint_days.day\n                ) AS next_subscription_from\n            FROM hint_days\n            WHERE hint_days.subscription_provider <> ALL($9::text[])\n              AND NOT EXISTS (\n                SELECT 1\n                FROM ai_subscriptions AS covering\n                WHERE covering.user_id = hint_days.user_id\n                  AND covering.provider = hint_days.subscription_provider\n                  AND daterange(covering.valid_from, covering.valid_to, '[]') @> hint_days.day\n            )\n            ORDER BY hint_days.user_id, hint_days.provider, hint_days.day\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "day!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "plans!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "next_subscription_from",
+        "type_info": "Date",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Date",
+        "Date",
+        "Text",
+        "TextArray",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "c5e7265a912576800229ac9780ee617cca91b224f9d0407412b718f6a562f277"
+}

@@ -1,9 +1,13 @@
 use async_trait::async_trait;
+use time::OffsetDateTime;
 
 use crate::{
     db::DbPool,
     domain::{
-        models::{AiUsageTimeZone, AiUsageUpload, UserId},
+        models::{
+            AiMachineId, AiPricingBasis, AiProvider, AiProviderRepricing, AiUsageBucket,
+            AiUsageTimeZone, AiUsageUpload, UserId,
+        },
         ports::outbound::AiUsageRepository,
         AiUsageError,
     },
@@ -220,13 +224,14 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             INSERT INTO ai_usage_buckets (
                 user_id, machine_id, hour_start, session_key, project_key, provider, model,
                 input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
-                records, estimated_cost_usd, unpriced_records, billing_provider
+                records, estimated_cost_usd, unpriced_records, billing_provider, pricing_basis
             )
             SELECT
                 $1, $2, bucket.hour_start, bucket.session_key, bucket.project_key,
                 bucket.provider, bucket.model, bucket.input_tokens, bucket.cache_read_tokens,
                 bucket.cache_write_tokens, bucket.output_tokens, bucket.records,
-                bucket.estimated_cost_usd::numeric, bucket.unpriced_records, bucket.billing_provider
+                bucket.estimated_cost_usd::numeric, bucket.unpriced_records, bucket.billing_provider,
+                $16::text
             FROM UNNEST(
                 $3::timestamptz[], $4::text[], $5::text[], $6::text[], $7::text[],
                 $8::int8[], $9::int8[], $10::int8[], $11::int8[], $12::int8[],
@@ -253,6 +258,7 @@ impl AiUsageRepository for PostgresAiUsageRepository {
             &column(buckets, |b| b.unpriced_records),
             &column(buckets, |b| b.billing_provider.map(|payer| payer.as_str()))
                 as &[Option<&str>],
+            upload.pricing_basis().map(AiPricingBasis::as_str),
         )
         .execute(&mut transaction.executor())
         .await
@@ -296,6 +302,143 @@ impl AiUsageRepository for PostgresAiUsageRepository {
         transaction.commit().await.map_err(storage_error)?;
 
         Ok(inserted.rows_affected())
+    }
+
+    async fn stale_pricing(
+        &self,
+        user_id: &UserId,
+        machine_id: &AiMachineId,
+        basis: &AiPricingBasis,
+        floor: OffsetDateTime,
+    ) -> Result<Vec<AiProviderRepricing>, AiUsageError> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                provider AS "provider!",
+                min(hour_start) FILTER (
+                    WHERE hour_start >= $3 AND pricing_basis IS DISTINCT FROM $4
+                ) AS stale_from,
+                count(*) FILTER (
+                    WHERE hour_start >= $3 AND pricing_basis IS DISTINCT FROM $4
+                ) AS "stale_buckets!"
+            FROM ai_usage_buckets
+            WHERE machine_id = $2
+              AND user_id = $1
+            GROUP BY provider
+            ORDER BY provider COLLATE "C"
+            "#,
+            user_id.as_i32(),
+            machine_id.as_uuid(),
+            floor,
+            basis.as_str(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_error)?;
+
+        rows.into_iter()
+            .map(|row| {
+                Ok(AiProviderRepricing {
+                    provider: AiProvider::parse(&row.provider).ok_or_else(|| {
+                        AiUsageError::Storage(format!("unknown stored provider {:?}", row.provider))
+                    })?,
+                    from: row.stale_from,
+                    stale_buckets: u64::try_from(row.stale_buckets)
+                        .map_err(|_| AiUsageError::NumericRange)?,
+                })
+            })
+            .collect()
+    }
+
+    async fn reprice_buckets(
+        &self,
+        user_id: &UserId,
+        machine_id: &AiMachineId,
+        basis: &AiPricingBasis,
+        buckets: &[&AiUsageBucket],
+    ) -> Result<u64, AiUsageError> {
+        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
+
+        // Takes the lock an upload takes on its machine, so a repricing and an
+        // upload from one machine apply one after the other. Another user's
+        // machine, or one never uploaded, has no bucket to match.
+        let owned = sqlx::query_scalar!(
+            r#"
+            SELECT id FROM ai_usage_machines
+            WHERE id = $1
+              AND user_id = $2
+            FOR NO KEY UPDATE
+            "#,
+            machine_id.as_uuid(),
+            user_id.as_i32(),
+        )
+        .fetch_optional(&mut transaction.executor())
+        .await
+        .map_err(storage_error)?;
+        if owned.is_none() {
+            return Ok(0);
+        }
+
+        // The key is compared as the unique key index spells it, the payer
+        // included as '' when it is NULL (stored payers are never empty), so
+        // each bucket is one index lookup. Project and model are compared in
+        // full as well, since the index holds only their digests.
+        let updated = sqlx::query!(
+            r#"
+            UPDATE ai_usage_buckets AS stored
+            SET estimated_cost_usd = priced.estimated_cost_usd::numeric,
+                unpriced_records = priced.unpriced_records,
+                pricing_basis = $3
+            FROM UNNEST(
+                $4::timestamptz[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],
+                $10::int8[], $11::int8[], $12::int8[], $13::int8[], $14::int8[],
+                $15::float8[], $16::int8[]
+            ) AS priced (
+                hour_start, session_key, project_key, provider, model, billing_provider,
+                input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, records,
+                estimated_cost_usd, unpriced_records
+            )
+            WHERE stored.machine_id = $2
+              AND stored.hour_start = priced.hour_start
+              AND stored.provider = priced.provider
+              AND stored.session_key = priced.session_key
+              AND md5(stored.project_key) = md5(priced.project_key)
+              AND md5(stored.model) = md5(priced.model)
+              AND COALESCE(stored.billing_provider, '') = COALESCE(priced.billing_provider, '')
+              AND stored.project_key = priced.project_key
+              AND stored.model = priced.model
+              AND stored.user_id = $1
+              AND stored.input_tokens = priced.input_tokens
+              AND stored.cache_read_tokens = priced.cache_read_tokens
+              AND stored.cache_write_tokens = priced.cache_write_tokens
+              AND stored.output_tokens = priced.output_tokens
+              AND stored.records = priced.records
+            "#,
+            user_id.as_i32(),
+            machine_id.as_uuid(),
+            basis.as_str(),
+            &column(buckets, |b| b.hour_start),
+            &column(buckets, |b| b.session_key.as_str()) as &[&str],
+            &column(buckets, |b| b.project_key.as_str()) as &[&str],
+            &column(buckets, |b| b.provider.as_str()) as &[&str],
+            &column(buckets, |b| b.model.as_str()) as &[&str],
+            &column(buckets, |b| b.billing_provider.map(|payer| payer.as_str()))
+                as &[Option<&str>],
+            &column(buckets, |b| b.tokens.input),
+            &column(buckets, |b| b.tokens.cache_read),
+            &column(buckets, |b| b.tokens.cache_write),
+            &column(buckets, |b| b.tokens.output),
+            &column(buckets, |b| b.records),
+            &column(buckets, |b| b.estimated_cost_usd) as &[Option<f64>],
+            &column(buckets, |b| b.unpriced_records),
+        )
+        .execute(&mut transaction.executor())
+        .await
+        .map_err(storage_error)?;
+
+        transaction.commit().await.map_err(storage_error)?;
+
+        Ok(updated.rows_affected())
     }
 }
 
