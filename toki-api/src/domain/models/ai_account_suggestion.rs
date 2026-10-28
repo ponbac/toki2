@@ -174,40 +174,14 @@ pub fn namespace_noise(namespace: &str) -> Vec<String> {
     noise
 }
 
-/// A login without its digits and namespace words: the folded login split on
-/// other characters and between letters and digits, without pure-digit and
-/// noise tokens, joined; then each noise word is stripped once from the end
-/// and once from the start while more remains (`hedy02spinit` → `hedy`).
+/// A login without its digits and namespace words: the folded login's runs of
+/// letters, without noise tokens, joined; then each noise word is stripped
+/// once from the end and once from the start while more remains
+/// (`hedy02spinit` → `hedy`).
 pub fn login_core(login: &str, noise: &[String]) -> String {
-    let mut tokens: Vec<String> = Vec::new();
-    let mut current = String::new();
-    let mut previous_is_digit = None;
-    for ch in fold_name(login).chars() {
-        let is_digit = if ch.is_ascii_lowercase() {
-            Some(false)
-        } else if ch.is_ascii_digit() {
-            Some(true)
-        } else {
-            None
-        };
-        let boundary =
-            is_digit.is_none() || (previous_is_digit.is_some() && previous_is_digit != is_digit);
-        if boundary && !current.is_empty() {
-            tokens.push(std::mem::take(&mut current));
-        }
-        if is_digit.is_some() {
-            current.push(ch);
-        }
-        previous_is_digit = is_digit;
-    }
-    if !current.is_empty() {
-        tokens.push(current);
-    }
-
-    let mut core: String = tokens
-        .into_iter()
-        .filter(|token| !token.bytes().all(|byte| byte.is_ascii_digit()))
-        .filter(|token| !noise.contains(token))
+    let mut core: String = fold_name(login)
+        .split(|ch: char| !ch.is_ascii_lowercase())
+        .filter(|token| !token.is_empty() && !noise.iter().any(|word| word == token))
         .collect();
     for word in noise {
         if core.len() > word.len() && core.ends_with(word.as_str()) {

@@ -1013,7 +1013,8 @@ pub fn reconcile(
     let window = walk.window;
     let org_check = walk.org_check.cloned();
 
-    let mut reconciled: Vec<(AiAccountReconciliation, bool)> = Vec::new();
+    // Every account counts toward the totals; only listed ones get a row.
+    let mut account_rows: Vec<AiAccountReconciliation> = Vec::new();
     let mut totals = AccountSum::default();
 
     for account_walk in &walk.accounts {
@@ -1143,13 +1144,11 @@ pub fn reconcile(
         totals.untracked += sum.untracked;
         totals.unlinked += sum.unlinked;
         totals.external += sum.external;
-        reconciled.push((row, listed));
+        if listed {
+            account_rows.push(row);
+        }
     }
 
-    let mut account_rows: Vec<AiAccountReconciliation> = reconciled
-        .into_iter()
-        .filter_map(|(row, listed)| listed.then_some(row))
-        .collect();
     account_rows.sort_by_cached_key(|row| {
         (
             row.flags.is_empty(),

@@ -85,24 +85,6 @@ enum AdjustedKindResponse {
     Metered,
 }
 
-fn metered_kind(kind: AiMeteredChargeKind) -> MeteredKindResponse {
-    match kind {
-        AiMeteredChargeKind::Project => MeteredKindResponse::Project,
-        AiMeteredChargeKind::Personal => MeteredKindResponse::Personal,
-        AiMeteredChargeKind::Untracked => MeteredKindResponse::Untracked,
-        AiMeteredChargeKind::Account(AiMeteredAccountReason::Unlinked) => {
-            MeteredKindResponse::UnlinkedAccount
-        }
-        AiMeteredChargeKind::Account(AiMeteredAccountReason::External) => {
-            MeteredKindResponse::ExternalAccount
-        }
-        AiMeteredChargeKind::Account(AiMeteredAccountReason::Unknown) => {
-            MeteredKindResponse::UnknownAccount
-        }
-        AiMeteredChargeKind::Repository => MeteredKindResponse::Repository,
-    }
-}
-
 /// A change to a closed month since it closed, for one subject, project,
 /// kind, currency and payer, posted on an open month. Amounts are signed
 /// exact decimals: a credit is negative.
@@ -154,9 +136,7 @@ impl AdjustmentLineResponse {
             AiAdjustedKind::Api => (AdjustedKindResponse::Api, None),
             AiAdjustedKind::Subscription => (AdjustedKindResponse::Subscription, None),
             AiAdjustedKind::Overhead => (AdjustedKindResponse::Overhead, None),
-            AiAdjustedKind::Metered(kind) => {
-                (AdjustedKindResponse::Metered, Some(metered_kind(kind)))
-            }
+            AiAdjustedKind::Metered(kind) => (AdjustedKindResponse::Metered, Some(kind.into())),
         };
         Self {
             adjusts_month: line.adjusts.month.to_string(),

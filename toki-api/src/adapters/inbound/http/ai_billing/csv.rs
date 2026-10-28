@@ -159,16 +159,7 @@ pub(super) struct CsvTable {
 /// spreadsheet formula injection (`csv_cell`); numbers, negative ones
 /// included, stay numbers.
 pub fn render_csv(overview: &AiMonthOverview, time_zone: &str) -> Result<String, AiBillingError> {
-    let parts: Vec<AiBillingLinePart<'_>> = overview
-        .bill
-        .lines
-        .iter()
-        .zip(&overview.converted.lines)
-        .map(|(line, converted)| line.parts(converted))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect();
+    let parts = overview.bill.parts(&overview.converted)?;
     let table = table(overview, &parts, time_zone, None)?;
     Ok(render(
         &table.header,

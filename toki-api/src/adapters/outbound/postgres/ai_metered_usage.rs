@@ -226,6 +226,33 @@ struct StoredCredit {
     fetched_at: OffsetDateTime,
 }
 
+/// `stored_credit` of a query row that selects the credit columns: `day`,
+/// `product`, `sku`, `model_label`, `model`, `auto_routed`, `kind`,
+/// `unit_type` and the seven amounts as text. Moves only those fields out.
+macro_rules! stored_credit {
+    ($row:ident) => {
+        stored_credit(
+            $row.day,
+            $row.product,
+            $row.sku,
+            $row.model_label,
+            $row.model,
+            $row.auto_routed,
+            &$row.kind,
+            $row.unit_type,
+            [
+                &$row.unit_price,
+                &$row.gross_quantity,
+                &$row.gross_amount,
+                &$row.discount_quantity,
+                &$row.discount_amount,
+                &$row.net_quantity,
+                &$row.net_amount,
+            ],
+        )
+    };
+}
+
 #[allow(clippy::too_many_arguments)]
 fn stored_credit(
     day: Date,
@@ -537,25 +564,7 @@ impl PostgresAiMeteredUsageRepository {
             .map(|row| {
                 Ok(StoredCredit {
                     day: row.day,
-                    credit: stored_credit(
-                        row.day,
-                        row.product,
-                        row.sku,
-                        row.model_label,
-                        row.model,
-                        row.auto_routed,
-                        &row.kind,
-                        row.unit_type,
-                        [
-                            &row.unit_price,
-                            &row.gross_quantity,
-                            &row.gross_amount,
-                            &row.discount_quantity,
-                            &row.discount_amount,
-                            &row.net_quantity,
-                            &row.net_amount,
-                        ],
-                    )?,
+                    credit: stored_credit!(row)?,
                     login: row.login,
                     fetched_at: row.fetched_at,
                 })
@@ -584,25 +593,7 @@ impl PostgresAiMeteredUsageRepository {
             .map(|row| {
                 Ok(StoredCredit {
                     day: row.day,
-                    credit: stored_credit(
-                        row.day,
-                        row.product,
-                        row.sku,
-                        row.model_label,
-                        row.model,
-                        row.auto_routed,
-                        &row.kind,
-                        row.unit_type,
-                        [
-                            &row.unit_price,
-                            &row.gross_quantity,
-                            &row.gross_amount,
-                            &row.discount_quantity,
-                            &row.discount_amount,
-                            &row.net_quantity,
-                            &row.net_amount,
-                        ],
-                    )?,
+                    credit: stored_credit!(row)?,
                     login: String::new(),
                     fetched_at: row.fetched_at,
                 })
@@ -1805,25 +1796,7 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
             Ok(AiStoredAccountCredit {
                 account_id: account_id(row.account_id)?,
                 day: row.day,
-                credit: stored_credit(
-                    row.day,
-                    row.product,
-                    row.sku,
-                    row.model_label,
-                    row.model,
-                    row.auto_routed,
-                    &row.kind,
-                    row.unit_type,
-                    [
-                        &row.unit_price,
-                        &row.gross_quantity,
-                        &row.gross_amount,
-                        &row.discount_quantity,
-                        &row.discount_amount,
-                        &row.net_quantity,
-                        &row.net_amount,
-                    ],
-                )?,
+                credit: stored_credit!(row)?,
                 login: row.login,
                 gross_usd: nanos(row.gross_usd_nanos)?,
                 fetched_at: row.fetched_at,
@@ -1861,25 +1834,7 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         .map(|row| {
             Ok(AiStoredOrgCredit {
                 day: row.day,
-                credit: stored_credit(
-                    row.day,
-                    row.product,
-                    row.sku,
-                    row.model_label,
-                    row.model,
-                    row.auto_routed,
-                    &row.kind,
-                    row.unit_type,
-                    [
-                        &row.unit_price,
-                        &row.gross_quantity,
-                        &row.gross_amount,
-                        &row.discount_quantity,
-                        &row.discount_amount,
-                        &row.net_quantity,
-                        &row.net_amount,
-                    ],
-                )?,
+                credit: stored_credit!(row)?,
                 gross_usd: nanos(row.gross_usd_nanos)?,
             })
         })

@@ -14,14 +14,14 @@ use crate::domain::{
         bill_month, billed_day_usage, close_blocker, convert_bill, currencies_to_convert,
         exchange_rate_check, for_user, metered_checks, metered_not_applicable, next_open,
         posting_on, pricing_check, reprice_floor, uploads_check, utc_day, utc_spans_outside,
-        AiAdjustedMonth, AiAdjustmentLine, AiBilledEntry, AiBillingDeveloper, AiBillingLinePart,
-        AiBillingMonth, AiCloseBlocker, AiCloseReadiness, AiCloseWaiver, AiClosedDeveloperBill,
-        AiClosedMonth, AiConvertedBill, AiCurrency, AiDeveloperBill, AiDeveloperMonth, AiEntrySek,
-        AiExchangeRate, AiExchangeRateValue, AiImportRun, AiKeySubject, AiMachineLabel,
-        AiMeteredAllocation, AiMeteredCutover, AiMonthBill, AiMonthClose, AiMonthCloseState,
-        AiMonthCloseStatus, AiMonthCompleteness, AiMonthOverview, AiMonthView, AiNewClose,
-        AiNewSnapshotLine, AiPendingRate, AiPersonalUsage, AiReconciliationInput, AiSubscription,
-        AiSubscriptionId, AiSubscriptionScope, AiUsageTimeZone, TimeTrackingCompany, UserId,
+        AiAdjustedMonth, AiAdjustmentLine, AiBilledEntry, AiBillingDeveloper, AiBillingMonth,
+        AiCloseBlocker, AiCloseReadiness, AiCloseWaiver, AiClosedDeveloperBill, AiClosedMonth,
+        AiConvertedBill, AiCurrency, AiDeveloperBill, AiDeveloperMonth, AiEntrySek, AiExchangeRate,
+        AiExchangeRateValue, AiImportRun, AiKeySubject, AiMachineLabel, AiMeteredAllocation,
+        AiMeteredCutover, AiMonthBill, AiMonthClose, AiMonthCloseState, AiMonthCloseStatus,
+        AiMonthCompleteness, AiMonthOverview, AiMonthView, AiNewClose, AiNewSnapshotLine,
+        AiPendingRate, AiPersonalUsage, AiReconciliationInput, AiSubscription, AiSubscriptionId,
+        AiSubscriptionScope, AiUsageTimeZone, TimeTrackingCompany, UserId,
     },
     ports::{
         inbound::{AiBillProjector, AiBillingService, AiProjectionInput},
@@ -592,15 +592,7 @@ where
         let id = self.closes.reserve_id().await?;
         let overview = &open.overview;
         let bill = &overview.bill;
-        let parts: Vec<AiBillingLinePart<'_>> = bill
-            .lines
-            .iter()
-            .zip(&overview.converted.lines)
-            .map(|(line, converted)| line.parts(converted))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .collect();
+        let parts = bill.parts(&overview.converted)?;
         // A part for every developer whose page shows more than an empty
         // bill: lines, subscriptions or adjustments, metered usage on no
         // line, or a metered part kept provisional by a linked account. The

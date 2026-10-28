@@ -33,10 +33,10 @@ use crate::{
         models::{
             AiAccountImportError, AiAccountReconciliation, AiAccountTarget, AiBillingMonth,
             AiCodeReviewCheck, AiCreditKind, AiDecimal, AiGroupKind, AiImportFreshness,
-            AiImportKind, AiImportRun, AiMeteredModelStatus, AiMeteredMonth, AiMeteredSource,
+            AiImportRun, AiMeteredModelStatus, AiMeteredMonth, AiMeteredSource,
             AiMeteredSourceHealth, AiMonthMode, AiOrgChargeKind, AiReconciliationFlag,
-            AiReconciliationGroup, AiResidualStatus, AiRunStatus, AiSourceState, AiStaleReason,
-            AiUsageCheck, AiUsdNanos, UserId, NANOS_PER_CREDIT,
+            AiReconciliationGroup, AiResidualStatus, AiSourceState, AiStaleReason, AiUsageCheck,
+            AiUsdNanos, UserId, NANOS_PER_CREDIT,
         },
         ports::inbound::AiMeteredUsageService,
         AiMeteredUsageError, MeteredUsageSourceError,
@@ -536,33 +536,18 @@ impl From<AiSourceState> for SourceResponse {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum RunKindResponse {
-    Hourly,
-    Nightly,
-    Admin,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum RunStatusResponse {
-    Running,
-    Succeeded,
-    Partial,
-    Failed,
-}
-
-#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunResponse {
     run_id: i64,
-    kind: RunKindResponse,
+    /// `hourly`, `nightly` or `admin`.
+    kind: &'static str,
     months: Vec<String>,
     #[serde(with = "time::serde::rfc3339")]
     started_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     finished_at: Option<OffsetDateTime>,
-    status: RunStatusResponse,
+    /// `running`, `succeeded`, `partial` or `failed`.
+    status: &'static str,
     requests: u32,
     slices_fetched: u32,
     slices_changed: u32,
@@ -574,11 +559,7 @@ impl From<AiImportRun> for RunResponse {
     fn from(run: AiImportRun) -> Self {
         Self {
             run_id: run.id.as_i64(),
-            kind: match run.kind {
-                AiImportKind::Hourly => RunKindResponse::Hourly,
-                AiImportKind::Nightly => RunKindResponse::Nightly,
-                AiImportKind::Admin(_) => RunKindResponse::Admin,
-            },
+            kind: run.kind.as_str(),
             months: run
                 .months
                 .iter()
@@ -586,12 +567,7 @@ impl From<AiImportRun> for RunResponse {
                 .collect(),
             started_at: run.started_at,
             finished_at: run.finished_at,
-            status: match run.status {
-                AiRunStatus::Running => RunStatusResponse::Running,
-                AiRunStatus::Succeeded => RunStatusResponse::Succeeded,
-                AiRunStatus::Partial => RunStatusResponse::Partial,
-                AiRunStatus::Failed => RunStatusResponse::Failed,
-            },
+            status: run.status.as_str(),
             requests: run.requests,
             slices_fetched: run.slices_fetched,
             slices_changed: run.slices_changed,
@@ -745,21 +721,14 @@ enum GroupKindResponse {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum ModelStatusResponse {
-    Confirmed,
-    Provisional,
-    Free,
-}
-
-#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct GroupResponse {
     sku: Option<String>,
     model: String,
     labels: Vec<String>,
     kind: GroupKindResponse,
-    status: Option<ModelStatusResponse>,
+    /// `confirmed`, `provisional` or `free`.
+    status: Option<&'static str>,
     gross: String,
     auto_gross: String,
     tracked: String,
@@ -785,11 +754,7 @@ impl From<AiReconciliationGroup> for GroupResponse {
                 AiGroupKind::Credits(AiCreditKind::Unrecognized) => GroupKindResponse::Unrecognized,
                 AiGroupKind::TrackedOnly => GroupKindResponse::TrackedOnly,
             },
-            status: group.status.map(|status| match status {
-                AiMeteredModelStatus::Confirmed => ModelStatusResponse::Confirmed,
-                AiMeteredModelStatus::Provisional => ModelStatusResponse::Provisional,
-                AiMeteredModelStatus::Free => ModelStatusResponse::Free,
-            }),
+            status: group.status.map(AiMeteredModelStatus::as_str),
             gross: credits(group.gross),
             auto_gross: credits(group.auto_gross),
             tracked: credits(group.tracked),
