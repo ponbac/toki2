@@ -76,7 +76,9 @@ export function MeteredImportStatus({
   const start = aiAdminMutations.useStartMeteredImport({
     onSuccess: (started) => {
       if (started === null) {
-        toast.info("An import is already running.");
+        toast.info(
+          "An import is already running, or a month close is reading the usage.",
+        );
         return;
       }
       toast.success(

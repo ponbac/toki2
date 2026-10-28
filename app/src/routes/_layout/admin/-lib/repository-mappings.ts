@@ -25,8 +25,8 @@ export function repositoryStatus(
 }
 
 /** Whether a repository needs a look: a shown month whose credits bill a
- * line (`billed`, as the server rounds them) as Unassigned, which will hold
- * back month close. Credits before the cutover or under one credit for the
+ * line (`billed`, as the server rounds them) as Unassigned, which holds back
+ * month close. Credits before the cutover or under one credit for the
  * month bill no line, so they never do. */
 export function repositoryNeedsLook(row: AiRepositoryMappingRow): boolean {
   return (

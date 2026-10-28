@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT nextval(pg_get_serial_sequence('ai_billing_month_closes', 'id')) AS \"id!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5aed3e1063af1d26e9bc35694eda069bc3896c49ff6e8232b07c99f7a8f3d9c4"
+}

@@ -617,12 +617,15 @@ export type PersonRow = Readonly<{
   /** Their metered payer's credits, when they have any: the untracked part,
    * which stays with Spinit; null without metered lines. */
   metered: Readonly<{ untracked: BillableTotals }> | null;
+  /** Whether the month carries adjustments to closed months of theirs. */
+  adjusted: boolean;
 }>;
 
 /**
- * Everyone on the month's bill, and everyone else named in `others` (such as
- * developers whose machines synced but billed nothing), dearest first. Lines
- * of accounts no developer owns are no one's here.
+ * Everyone on the month's bill, adjustments to closed months included, and
+ * everyone else named in `others` (such as developers whose machines synced
+ * but billed nothing), dearest first. Lines of accounts no developer owns are
+ * no one's here.
  */
 export function peopleOf(
   overview: AiBillingOverview,
@@ -632,10 +635,16 @@ export function peopleOf(
   for (const developer of [...others, ...overview.developers]) {
     names.set(developer.userId, developer.fullName);
   }
+  const adjustedIds = new Set(
+    overview.adjustmentLines.flatMap((line) =>
+      line.subject.kind === "user" ? [line.subject.userId] : [],
+    ),
+  );
   const ids = new Set<number>([
     ...overview.lines.flatMap((line) => lineUserId(line) ?? []),
     ...overview.subscriptions.map((s) => s.userId),
     ...overview.personalUsage.map((p) => p.userId),
+    ...adjustedIds,
     ...others.map((developer) => developer.userId),
   ]);
   const rows = [...ids].map((userId): PersonRow => {
@@ -660,6 +669,7 @@ export function peopleOf(
               ),
             }
           : null,
+      adjusted: adjustedIds.has(userId),
     };
   });
   return rows.sort(

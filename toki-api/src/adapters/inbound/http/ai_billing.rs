@@ -18,6 +18,15 @@
 //! `domain::models::ai_exchange_rate`. Completeness reports days, never times
 //! of day: a machine's last sync is its local date, and a rate's fetch its
 //! local date.
+//!
+//! Month close (`close`): an admin closes a month that is over once its
+//! readiness checks pass or are waived, and from then on the month is served
+//! from its snapshot (`close` is non-null). Changes to a closed month post on
+//! the next open month as `adjustmentLines`, apart from `lines`, with signed
+//! amounts; `totals.adjustments` and `totals.converted.adjustments` add them
+//! up, and `totals.converted.invoiced` is `billed` plus them. The close
+//! routes are browser-only like every route here, and off the agent surface
+//! (OpenAPI and MCP).
 
 use std::sync::Arc;
 
@@ -34,21 +43,23 @@ use axum::{
 };
 use axum_extra::extract::WithRejection;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{
     adapters::inbound::http::{ai_usage::AiUsageProvider, ProjectResponse},
     auth::{require_admin_power, AuthUser},
     domain::{
         models::{
-            AiAllocationBasis, AiBilledDayUsage, AiBillingCharge, AiBillingDeveloper,
-            AiBillingLinePart, AiBillingMonth, AiBillingSubject, AiBillingUsage, AiConvertedAmount,
-            AiConvertedBill, AiConvertedTotals, AiCurrency, AiDayBilling, AiDeveloperCompleteness,
+            AiAdjustedKind, AiAdjustedMonth, AiAdjustmentLine, AiAllocationBasis, AiBilledDayUsage,
+            AiBillingCharge, AiBillingDeveloper, AiBillingLinePart, AiBillingMonth,
+            AiBillingSubject, AiBillingUsage, AiConvertedAmount, AiConvertedBill,
+            AiConvertedTotals, AiCurrency, AiDayBilling, AiDeveloperBill, AiDeveloperCompleteness,
             AiDeveloperMonth, AiDeveloperReadiness, AiExchangeRate, AiExchangeRateValue,
             AiFeeAmount, AiMachineCompleteness, AiMappedProject, AiMeteredAccountReason,
             AiMeteredBillInfo, AiMeteredCharge, AiMeteredChargeKind, AiMeteredCutover,
-            AiMeteredProvisional, AiMonthBill, AiMonthCompleteness, AiMonthTotals,
-            AiProviderCompleteness, AiSubscriptionMonth, AiUnassignedKind, AiUsageDateRange,
-            UserId, BILLING_CURRENCY, MACHINE_STALE_AFTER,
+            AiMeteredProvisional, AiMonthBill, AiMonthCompleteness, AiMonthOverview, AiMonthTotals,
+            AiMonthView, AiPendingRate, AiProviderCompleteness, AiSubscriptionMonth,
+            AiUnassignedKind, AiUsageDateRange, UserId, BILLING_CURRENCY, MACHINE_STALE_AFTER,
         },
         ports::inbound::AiBillingService,
         AiBillingError,
@@ -61,6 +72,7 @@ type PathParam<T> = WithRejection<Path<T>, ApiError>;
 /// A JSON body whose rejection is a `400` JSON error.
 type JsonBody<T> = WithRejection<Json<T>, ApiError>;
 
+mod close;
 mod csv;
 
 pub use csv::render_csv;
@@ -78,6 +90,12 @@ where
             get(developer_month),
         )
         .route("/billing/{month}/export.csv", get(export_csv))
+        .route(
+            "/billing/{month}/close",
+            get(close::close_status)
+                .post(close::close_month)
+                .delete(close::reopen_month),
+        )
         .route(
             "/billing/{month}/exchange-rates/{currency}",
             put(override_exchange_rate).delete(reset_exchange_rate),
@@ -108,68 +126,81 @@ fn parse_month(raw: &str) -> Result<AiBillingMonth, ApiError> {
         .ok_or_else(|| ApiError::bad_request(format!("expected a month as YYYY-MM, got {raw:?}")))
 }
 
-/// Everyone's bill for a month in the configured time zone.
+/// Everyone's bill for a month in the configured time zone: live while the
+/// month is open, its snapshot once it closed.
 async fn month_overview(
     State(service): State<Arc<dyn AiBillingService>>,
     WithRejection(Path(month), _): PathParam<String>,
-) -> Result<Json<MonthOverviewResponse>, ApiError> {
+) -> Result<Response, ApiError> {
     let month = parse_month(&month)?;
-    let overview = service.month_overview(month).await?;
-    let bill = BillResponse::new(&overview.bill, &overview.converted)?;
-
-    Ok(Json(MonthOverviewResponse {
-        period: PeriodResponse::new(
-            month,
-            service.time_zone().as_str(),
-            service.metered_cutover(),
-        ),
-        developers: overview.developers.iter().map(Into::into).collect(),
-        bill,
-        personal_usage: overview
-            .personal
-            .iter()
-            .map(|personal| PersonalUsageResponse {
-                user_id: personal.user_id.as_i32(),
-                usage: (&personal.usage).into(),
-            })
-            .collect(),
-    }))
+    match service.month_overview(month).await? {
+        AiMonthView::Open(overview) => {
+            let parts = bill_parts(&overview.bill, &overview.converted)?;
+            Ok(Json(MonthOverviewResponse::new(
+                &overview,
+                &parts,
+                service.time_zone().as_str(),
+                service.metered_cutover(),
+            )?)
+            .into_response())
+        }
+        AiMonthView::Closed(closed) => Ok(Json(close::closed_overview(&closed)?).into_response()),
+    }
 }
 
 /// One developer's month: their bill and their usage per local day by
-/// provider, model, machine and project.
+/// provider, model, machine and project. A closed month's bill comes from
+/// its snapshot.
 async fn developer_month(
     State(service): State<Arc<dyn AiBillingService>>,
     WithRejection(Path((month, user_id)), _): PathParam<(String, i32)>,
-) -> Result<Json<DeveloperMonthResponse>, ApiError> {
+) -> Result<Response, ApiError> {
     let month = parse_month(&month)?;
     let AiDeveloperMonth {
         developer,
         bill,
-        converted,
         usage,
-        personal,
         machines,
     } = service.developer_month(month, UserId::new(user_id)).await?;
+    let machines: Vec<MachineLabelResponse> = machines
+        .into_iter()
+        .map(|machine| MachineLabelResponse {
+            machine_id: machine.machine_id.to_string(),
+            label: machine.label,
+        })
+        .collect();
+    let daily_usage: Vec<DayUsageResponse> = usage.into_iter().map(Into::into).collect();
 
-    Ok(Json(DeveloperMonthResponse {
-        period: PeriodResponse::new(
-            month,
-            service.time_zone().as_str(),
+    match bill {
+        AiDeveloperBill::Live {
+            bill,
+            converted,
+            personal,
+        } => Ok(Json(DeveloperMonthResponse {
+            period: PeriodResponse::new(
+                month,
+                service.time_zone().as_str(),
+                service.metered_cutover(),
+            ),
+            developer: (&developer).into(),
+            bill: BillResponse::new(&bill, &converted)?,
+            machines,
+            daily_usage,
+            personal_usage: personal.as_ref().map(Into::into),
+            close: None,
+        })
+        .into_response()),
+        AiDeveloperBill::Closed(closed) => Ok(Json(close::closed_developer_month(
+            *closed,
             service.metered_cutover(),
-        ),
-        developer: (&developer).into(),
-        bill: BillResponse::new(&bill, &converted)?,
-        machines: machines
-            .into_iter()
-            .map(|machine| MachineLabelResponse {
-                machine_id: machine.machine_id.to_string(),
-                label: machine.label,
-            })
-            .collect(),
-        daily_usage: usage.into_iter().map(Into::into).collect(),
-        personal_usage: personal.as_ref().map(Into::into),
-    }))
+            close::LiveDeveloper {
+                developer: (&developer).into(),
+                machines,
+                daily_usage,
+            },
+        )?)
+        .into_response()),
+    }
 }
 
 /// Whether each developer's machines have uploaded all of a month's usage.
@@ -183,13 +214,17 @@ async fn month_completeness(
     Ok(Json(completeness.into()))
 }
 /// The month's bill as CSV, one row per project (Unassigned per kind),
-/// subject, provider and charge.
+/// subject, provider and charge, then one per adjustment line. A closed
+/// month's is its snapshot's: the same bytes as when it closed.
 async fn export_csv(
     State(service): State<Arc<dyn AiBillingService>>,
     WithRejection(Path(month), _): PathParam<String>,
 ) -> Result<Response, ApiError> {
     let month = parse_month(&month)?;
-    let overview = service.month_overview(month).await?;
+    let csv = match service.month_overview(month).await? {
+        AiMonthView::Open(overview) => render_csv(&overview, service.time_zone().as_str())?,
+        AiMonthView::Closed(closed) => close::closed_csv(&closed)?,
+    };
     let disposition = format!("attachment; filename=\"ai-usage-billing-{month}.csv\"");
 
     Ok((
@@ -204,7 +239,7 @@ async fn export_csv(
                     .map_err(|_| ApiError::internal("invalid export file name"))?,
             ),
         ],
-        render_csv(&overview, service.time_zone().as_str())?,
+        csv,
     )
         .into_response())
 }
@@ -345,9 +380,36 @@ struct BillResponse {
     /// including provisional rates being refreshed. A later request sees the
     /// fetched replacement once it arrives.
     pending_rates: Vec<String>,
+    /// The rates still being fetched of the closed months whose changes post
+    /// on this month, by month: once one arrives, `adjustmentLines` may
+    /// change, even for a month without lines yet.
+    adjusted_pending_rates: Vec<PendingRateResponse>,
     /// The metered payer's lines as a whole, or in a developer's month that
     /// developer's; null unless the month bills them from credits.
     metered: Option<MeteredBillResponse>,
+    /// Changes to closed months since they closed, posted on this month,
+    /// apart from `lines` (in a developer's month, that developer's). Signed:
+    /// a credit is negative. Totals other than `totals.adjustments` and the
+    /// converted `adjustments` and `invoiced` leave them out.
+    adjustment_lines: Vec<close::AdjustmentLineResponse>,
+}
+
+/// A month's rate whose fetch is still in progress.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingRateResponse {
+    /// `YYYY-MM`.
+    month: String,
+    currency: String,
+}
+
+impl From<&AiPendingRate> for PendingRateResponse {
+    fn from(rate: &AiPendingRate) -> Self {
+        Self {
+            month: rate.month.to_string(),
+            currency: rate.currency.as_str().to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -391,20 +453,36 @@ impl From<&AiMeteredBillInfo> for MeteredBillResponse {
     }
 }
 
+/// A bill's lines as the bill shows them (`AiBillingLine::parts`).
+fn bill_parts<'a>(
+    bill: &'a AiMonthBill,
+    converted: &AiConvertedBill,
+) -> Result<Vec<AiBillingLinePart<'a>>, AiBillingError> {
+    Ok(bill
+        .lines
+        .iter()
+        .zip(&converted.lines)
+        .map(|(line, converted)| line.parts(converted))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect())
+}
+
 impl BillResponse {
     fn new(bill: &AiMonthBill, converted: &AiConvertedBill) -> Result<Self, AiBillingError> {
+        Self::with_parts(bill, converted, &bill_parts(bill, converted)?)
+    }
+
+    /// The bill with its lines' parts computed already.
+    fn with_parts(
+        bill: &AiMonthBill,
+        converted: &AiConvertedBill,
+        parts: &[AiBillingLinePart<'_>],
+    ) -> Result<Self, AiBillingError> {
         Ok(Self {
             billing_currency: BILLING_CURRENCY,
-            lines: bill
-                .lines
-                .iter()
-                .zip(&converted.lines)
-                .map(|(line, converted)| line.parts(converted))
-                .collect::<Result<Vec<_>, _>>()?
-                .iter()
-                .flatten()
-                .map(BillingLineResponse::new)
-                .collect(),
+            lines: parts.iter().map(BillingLineResponse::new).collect(),
             subscriptions: bill
                 .subscriptions
                 .iter()
@@ -415,7 +493,17 @@ impl BillResponse {
             exchange_rates: converted.rates.iter().map(Into::into).collect(),
             missing_rates: codes(&converted.missing_rates),
             pending_rates: codes(&converted.pending_rates),
+            adjusted_pending_rates: converted
+                .adjusted_pending_rates
+                .iter()
+                .map(Into::into)
+                .collect(),
             metered: bill.metered.as_ref().map(Into::into),
+            adjustment_lines: bill
+                .adjustments
+                .iter()
+                .map(close::AdjustmentLineResponse::new)
+                .collect(),
         })
     }
 }
@@ -513,6 +601,42 @@ struct MonthOverviewResponse {
     /// internal. The bill leaves it out; this is its estimate only. Developers
     /// without any are absent.
     personal_usage: Vec<PersonalUsageResponse>,
+    /// The closed months whose changes post on this month, oldest first, with
+    /// or without adjustment lines: each with its close (`snapshotId`).
+    adjusted_months: Vec<close::AdjustedMonthResponse>,
+    /// The month's close; null while it is open. A closed month is served
+    /// from its snapshot.
+    close: Option<close::OverviewCloseResponse>,
+}
+
+impl MonthOverviewResponse {
+    /// An open month's overview.
+    fn new(
+        overview: &AiMonthOverview,
+        parts: &[AiBillingLinePart<'_>],
+        time_zone: &str,
+        cutover: Option<AiMeteredCutover>,
+    ) -> Result<Self, AiBillingError> {
+        Ok(Self {
+            period: PeriodResponse::new(overview.bill.month, time_zone, cutover),
+            developers: overview.developers.iter().map(Into::into).collect(),
+            bill: BillResponse::with_parts(&overview.bill, &overview.converted, parts)?,
+            personal_usage: overview
+                .personal
+                .iter()
+                .map(|personal| PersonalUsageResponse {
+                    user_id: personal.user_id.as_i32(),
+                    usage: (&personal.usage).into(),
+                })
+                .collect(),
+            adjusted_months: overview
+                .adjusted
+                .iter()
+                .map(close::AdjustedMonthResponse::from)
+                .collect(),
+            close: None,
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -533,9 +657,14 @@ struct DeveloperMonthResponse {
     machines: Vec<MachineLabelResponse>,
     /// Usage per local day, provider, model, machine and project key. Usage of
     /// the repositories the developer marked personal or internal is left out.
+    /// Live in a closed month too.
     daily_usage: Vec<DayUsageResponse>,
-    /// That left-out usage, as an estimate only; null without any.
+    /// That left-out usage, as an estimate only; null without any. A closed
+    /// month's is the developer's entry of the overview's `personalUsage` as
+    /// it closed.
     personal_usage: Option<UsageResponse>,
+    /// The month's close; null while it is open.
+    close: Option<close::OverviewCloseResponse>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1006,8 +1135,19 @@ struct TotalsResponse {
     metered_billed_usd: String,
     /// All usage, however it bills, with its unrounded API-equivalent estimate.
     usage: UsageResponse,
+    /// What the adjustment lines bill per currency, signed exact decimals,
+    /// apart from the totals above.
+    adjustments: Vec<AmountResponse>,
     /// Totals in the billing currency: sums of the converted lines.
     converted: ConvertedTotalsResponse,
+}
+
+/// An amount in a currency, a signed exact decimal.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AmountResponse {
+    currency: String,
+    amount: String,
 }
 
 /// Totals in the billing currency, exact decimals. Each is null when a line
@@ -1026,6 +1166,11 @@ struct ConvertedTotalsResponse {
     api: Option<String>,
     /// Metered payers' credits.
     metered: Option<String>,
+    /// The adjustment lines, signed, each at the rate of the month it
+    /// corrects; null when one has no rate.
+    adjustments: Option<String>,
+    /// What the month invoices: `billed` plus `adjustments`.
+    invoiced: Option<String>,
 }
 
 impl TotalsResponse {
@@ -1039,6 +1184,8 @@ impl TotalsResponse {
                 overhead: decimal(&converted.overhead),
                 api: decimal(&converted.api),
                 metered: decimal(&converted.metered),
+                adjustments: decimal(&converted.adjustments),
+                invoiced: decimal(&converted.invoiced),
             },
             fees: totals
                 .fees
@@ -1053,6 +1200,14 @@ impl TotalsResponse {
             api_unpriced_records: totals.api_unpriced_records,
             metered_billed_usd: totals.metered_billed.to_decimal(),
             usage: (&totals.usage).into(),
+            adjustments: totals
+                .adjustments
+                .iter()
+                .map(|amount| AmountResponse {
+                    currency: amount.currency.as_str().to_string(),
+                    amount: amount.to_decimal(),
+                })
+                .collect(),
         }
     }
 }

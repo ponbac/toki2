@@ -9,7 +9,8 @@
 //! - A mapping points at a time-tracking project directly, so an admin can map
 //!   a repository nobody mapped as a project key. It has no validity dates: it
 //!   is resolved whenever a bill is read and never written into usage, so a
-//!   change applies retroactively, as key mappings do.
+//!   change applies to every open month, as key mappings do; a closed month
+//!   gets adjustment lines on the next open month's bill.
 //! - Repository names are the payer's bare names, compared case-insensitively
 //!   (`repository_key`). Two repositories with the same name under different
 //!   owners are one repository to the payer's rows, so they share a mapping.
@@ -279,7 +280,7 @@ pub struct AiRepositoryMappingRow {
 
 impl AiRepositoryMappingRow {
     /// A line of a shown month bills as Unassigned (unmapped repository):
-    /// what needs a look, and what month close will refuse
+    /// what needs a look, and what month close refuses
     /// (`AiMeteredAllocation::unmapped_repositories`). Credits that bill no
     /// line (before the cutover, or under one credit for the month) never
     /// do.

@@ -7,8 +7,8 @@ use crate::domain::{
         AiImportRunId, AiImportStatus, AiMeteredCredit, AiMeteredOrgCharge, AiMeteredPeriod,
         AiMeteredScope, AiMeteredSource, AiMeteredSummaryLine, AiProvider, AiProviderAccountId,
         AiSliceRecord, AiStoredAccountCredit, AiStoredOrgCredit, AiStoredRepositoryMapping,
-        AiStoredScope, AiTrackedModelDay, AiUsageCheck, AiUsageDateRange, TimeTrackingCompany,
-        UserId,
+        AiStoredScope, AiTrackedModelDay, AiUsageCheck, AiUsageDateRange, AiUsageTimeZone,
+        TimeTrackingCompany, UserId,
     },
     AiMeteredUsageError, MeteredUsageSourceError,
 };
@@ -52,9 +52,31 @@ pub trait AiMeteredUsageRepository: Send + Sync + 'static {
     /// The store's clock.
     async fn now(&self) -> Result<OffsetDateTime, AiMeteredUsageError>;
 
+    /// When the first open month of the AI bill at or after the configured
+    /// floor's month starts: the earlier of its UTC and its `time_zone`
+    /// midnight. As `AiMonthCloseRepository::open_from`, so reconciliation
+    /// reads the old pricing basis from the floor the bill reads it from.
+    async fn open_from(
+        &self,
+        time_zone: &AiUsageTimeZone,
+        configured_floor: OffsetDateTime,
+    ) -> Result<OffsetDateTime, AiMeteredUsageError>;
+
     /// Takes the payer's import lock for as long as the lease is held; `None`
-    /// when another import holds it.
+    /// when another import holds it, or a reader holds imports off
+    /// (`try_hold_imports`).
     async fn try_lock_import(
+        &self,
+        payer: AiProvider,
+    ) -> Result<Option<Box<dyn AiImportLease>>, AiMeteredUsageError>;
+
+    /// Holds the payer's imports off for as long as the lease is held, so
+    /// nothing a reader reads of the payer's usage meanwhile changes: no
+    /// import can take its lock (`try_lock_import`), and the hold never
+    /// counts as a running import (`import_status`). Holds by different
+    /// readers do not exclude each other. `None` while an import holds the
+    /// lock.
+    async fn try_hold_imports(
         &self,
         payer: AiProvider,
     ) -> Result<Option<Box<dyn AiImportLease>>, AiMeteredUsageError>;
@@ -151,9 +173,9 @@ pub trait AiMeteredUsageRepository: Send + Sync + 'static {
         run: &AiImportRun,
     ) -> Result<(), AiMeteredUsageError>;
 
-    /// The runs' history, the run running now (a `running` run while the
-    /// import lock is held), the latest finished run with its account errors,
-    /// and each source's coverage.
+    /// The runs' history, the run running now (a `running` run while an
+    /// import holds the import lock; a hold on imports is none), the latest
+    /// finished run with its account errors, and each source's coverage.
     async fn import_status(&self, payer: AiProvider)
         -> Result<AiImportStatus, AiMeteredUsageError>;
 

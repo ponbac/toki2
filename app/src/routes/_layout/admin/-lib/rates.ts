@@ -37,3 +37,37 @@ export function parseRateInput(
     rate: decimals ? `${Number(units)}.${decimals}` : String(Number(units)),
   };
 }
+
+/**
+ * What saving or resetting a month's rate did. An open month bills at the
+ * new rate; a closed month keeps the rate it was invoiced at, and the
+ * difference in the billing currency posts as an adjustment on
+ * `adjustmentsPostOn`, the next open month.
+ */
+export function rateChangeMessage({
+  monthLabel,
+  currency,
+  rate,
+  billingCurrency,
+  reset,
+  adjustmentsPostOn,
+}: {
+  /** The month the rate is for, in words. */
+  monthLabel: string;
+  currency: string;
+  /** The rate that applies now. */
+  rate: string;
+  billingCurrency: string;
+  /** Back at the fetched rate rather than overridden. */
+  reset: boolean;
+  /** A closed month: where its adjustments post, in words. */
+  adjustmentsPostOn: string | null;
+}): string {
+  const source = reset ? "the Riksbank rate, " : "";
+  if (adjustmentsPostOn === null) {
+    return reset
+      ? `${currency} is back at ${source}${rate} ${billingCurrency}`
+      : `${monthLabel} bills ${currency} at ${rate} ${billingCurrency}`;
+  }
+  return `${monthLabel} keeps the rate it was invoiced at. ${currency} at ${source}${rate} ${billingCurrency} posts any ${billingCurrency} difference as an adjustment on ${adjustmentsPostOn}`;
+}

@@ -160,10 +160,30 @@ fn conversion_rounds_half_up_to_hundredths() {
     assert_eq!(rate.convert(1), Some(10));
     assert_eq!(rate.convert(3), Some(29));
     assert_eq!(rate.convert(0), Some(0));
-    assert_eq!(rate.convert(-1), None);
+    // Negative amounts (adjustments) round half away from zero.
+    assert_eq!(rate.convert(-1), Some(-10));
     let rate = AiExchangeRateValue::parse("9.50843").unwrap();
     // 199.00 USD × 9.50843 = 1892.17757 → 1892.18.
     assert_eq!(rate.convert(19_900), Some(189_218));
+}
+
+#[test]
+fn negative_amounts_convert_symmetrically() {
+    let rate = AiExchangeRateValue::parse("10.5").unwrap();
+    // -0.01 × 10.50 = -0.105 → -0.11; -1.50 × 10.50 = -15.75.
+    assert_eq!(rate.convert(-1), Some(-11));
+    assert_eq!(rate.convert(-150), Some(-1_575));
+    for hundredths in [1, 3, 7, 150, 19_900, 123_457] {
+        assert_eq!(
+            rate.convert(-hundredths),
+            rate.convert(hundredths).map(|converted| -converted),
+            "{hundredths}"
+        );
+    }
+    // The magnitude of the most negative amount still converts or overflows.
+    assert_eq!(rate.convert(i64::MIN), None);
+    let one = AiExchangeRateValue::parse("1").unwrap();
+    assert_eq!(one.convert(i64::MIN + 1), Some(i64::MIN + 1));
 }
 
 #[test]
@@ -722,4 +742,130 @@ fn metered_lines_convert_their_credits_like_api_lines() {
     let missing = convert_bill(&bill, &[], &[]).unwrap();
     assert_eq!(missing.totals.metered, None);
     assert_eq!(missing.missing_rates, [AiCurrency::usd()]);
+}
+
+/// An adjustment of Ada's API line in September: `-1.50` USD, its SEK as
+/// given.
+fn adjustment(converted: AiConvertedAmount) -> crate::domain::models::AiAdjustmentLine {
+    use crate::domain::models::{
+        AiAdjustedKind, AiAdjustedMonth, AiAdjustmentKey, AiKeyPayer, AiKeyProject, AiKeySubject,
+        AiMonthCloseId,
+    };
+    crate::domain::models::AiAdjustmentLine {
+        adjusts: AiAdjustedMonth {
+            month: AiBillingMonth::parse("2026-08").unwrap(),
+            close_id: AiMonthCloseId::new(1),
+        },
+        key: AiAdjustmentKey {
+            subject: AiKeySubject::User(DEV),
+            project: AiKeyProject::Project(ProjectId::new("101")),
+            kind: AiAdjustedKind::Api,
+            currency: AiCurrency::usd(),
+            payer: AiKeyPayer::Provider(AiProvider::Codex),
+        },
+        subject: AiBillingSubject::User(DEV),
+        provider: AiProvider::Codex,
+        project: project("101", "Client A"),
+        unassigned: None,
+        plan: None,
+        amount: AiFeeAmount {
+            hundredths: -150,
+            currency: AiCurrency::usd(),
+        },
+        converted,
+        credits: None,
+        rate_changed: false,
+    }
+}
+
+#[test]
+fn adjustments_carry_their_months_rate() {
+    let month = september();
+    let mut bill = bill_month(
+        month,
+        &[usage(
+            AiProvider::Codex,
+            date!(2026 - 09 - 02),
+            project("101", "Client A"),
+            300,
+        )],
+        &[],
+    )
+    .unwrap();
+    // August's rate was 10.50; September's is 9.50. The adjustment keeps
+    // the SEK amount it carries and needs no September rate of its own.
+    bill.adjustments = vec![adjustment(AiConvertedAmount::Converted {
+        amount: AiFeeAmount {
+            hundredths: -1_575,
+            currency: AiCurrency::billing(),
+        },
+        rate: None,
+    })];
+    let converted = convert_bill(&bill, &[rate("USD", "9.5")], &[]).unwrap();
+    assert_eq!(
+        converted.totals.billed.as_ref().unwrap().to_decimal(),
+        "28.50"
+    );
+    assert_eq!(
+        converted.totals.adjustments.as_ref().unwrap().to_decimal(),
+        "-15.75"
+    );
+    assert_eq!(
+        converted.totals.invoiced.as_ref().unwrap().to_decimal(),
+        "12.75"
+    );
+    // Adjustments never ask for a rate.
+    assert_eq!(currencies_to_convert(&bill), [AiCurrency::usd()]);
+    bill.lines.clear();
+    assert!(currencies_to_convert(&bill).is_empty());
+
+    // An adjustment without a known SEK amount leaves both unknown.
+    let mut bill = bill_month(month, &[], &[]).unwrap();
+    bill.adjustments = vec![adjustment(AiConvertedAmount::MissingRate {
+        currency: AiCurrency::usd(),
+    })];
+    let converted = convert_bill(&bill, &[], &[]).unwrap();
+    assert_eq!(converted.totals.billed.unwrap().to_decimal(), "0.00");
+    assert_eq!(converted.totals.adjustments, None);
+    assert_eq!(converted.totals.invoiced, None);
+    // A bill without adjustments invoices what it bills.
+    let bill = bill_month(month, &[], &[]).unwrap();
+    let converted = convert_bill(&bill, &[], &[]).unwrap();
+    assert_eq!(converted.totals.adjustments.unwrap().to_decimal(), "0.00");
+    assert_eq!(converted.totals.invoiced.unwrap().to_decimal(), "0.00");
+}
+
+#[test]
+fn a_users_part_converts_as_their_own_bill() {
+    let month = september();
+    let other = UserId::new(8);
+    let mut rows = vec![usage(
+        AiProvider::Codex,
+        date!(2026 - 09 - 02),
+        project("101", "Client A"),
+        300,
+    )];
+    rows.push(AiDailyUsage {
+        user_id: other,
+        ..usage(AiProvider::Codex, date!(2026 - 09 - 03), None, 500)
+    });
+    let mut bill = bill_month(month, &rows, &[subscription(1, "100", "USD")]).unwrap();
+    bill.adjustments = vec![adjustment(AiConvertedAmount::MissingRate {
+        currency: AiCurrency::usd(),
+    })];
+    let converted = convert_bill(&bill, &[rate("USD", "10")], &[]).unwrap();
+    let (part, part_converted) = converted.user_part(&bill, DEV, None).unwrap();
+    assert!(part
+        .lines
+        .iter()
+        .all(|line| line.subject == AiBillingSubject::User(DEV)));
+    assert_eq!(part.subscriptions.len(), 1);
+    assert_eq!(part.adjustments.len(), 1);
+    let own = bill_month(month, &rows[..1], &[subscription(1, "100", "USD")]).unwrap();
+    let own_converted = convert_bill(&own, &[rate("USD", "10")], &[]).unwrap();
+    assert_eq!(part.lines, own.lines);
+    assert_eq!(part_converted.lines, own_converted.lines);
+    assert_eq!(part_converted.subscriptions, own_converted.subscriptions);
+    assert_eq!(part_converted.totals.billed, own_converted.totals.billed);
+    assert_eq!(part_converted.totals.invoiced, None);
 }

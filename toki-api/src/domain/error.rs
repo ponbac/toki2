@@ -199,6 +199,52 @@ pub enum AiBillingError {
     Storage(String),
 }
 
+/// Errors of closing and re-opening a month's AI bill.
+#[derive(Debug, Error)]
+pub enum AiMonthCloseError {
+    #[error(transparent)]
+    Billing(#[from] AiBillingError),
+    #[error("{month} is not over yet in UTC and the billing time zone")]
+    MonthInProgress {
+        month: crate::domain::models::AiBillingMonth,
+        over_at: time::OffsetDateTime,
+    },
+    #[error("{month} is already closed")]
+    AlreadyClosed {
+        month: crate::domain::models::AiBillingMonth,
+    },
+    #[error("{month} is not closed")]
+    NotClosed {
+        month: crate::domain::models::AiBillingMonth,
+    },
+    #[error("another month is being closed or re-opened; try again")]
+    Busy,
+    /// An import of the metered payer's usage holds the import lock, whatever
+    /// month it imports: a close reads the payer's usage under a hold on
+    /// imports, from the first read to the store, and no waiver covers it.
+    #[error("a usage import is running: try again when it finishes")]
+    ImportRunning,
+    /// A readiness check failed without a waiver.
+    #[error("{} is not ready to close", .0.month)]
+    NotReady(Box<crate::domain::models::AiCloseReadiness>),
+    #[error(
+        "adjustments to {month} are frozen in {}: re-open those first",
+        months(held_by)
+    )]
+    HeldByAdjustments {
+        month: crate::domain::models::AiBillingMonth,
+        held_by: Vec<crate::domain::models::AiBillingMonth>,
+    },
+}
+
+fn months(months: &[crate::domain::models::AiBillingMonth]) -> String {
+    months
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Errors from an exchange-rate provider. Billing treats them as a missing
 /// rate: it never guesses one.
 #[derive(Debug, Clone, Error)]
@@ -322,7 +368,9 @@ pub enum MeteredUsageSourceError {
 pub enum AiMeteredUsageError {
     #[error("{0}")]
     Invalid(String),
-    #[error("an import is already running")]
+    /// Another import holds the import lock, or a month close holds imports
+    /// off while it reads the usage.
+    #[error("an import is already running, or a month close is reading the usage")]
     ImportRunning,
     #[error("no usage source is configured")]
     SourceOff,

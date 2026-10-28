@@ -1,13 +1,15 @@
 import type {
+  AiAdjustmentLine,
   AiBillingDeveloper,
   AiBillingLine,
   AiBillingSubject,
   AiBillingUsage,
+  AiMeteredLineKind,
   AiMeteredProvisionalReason,
   AiSubscriptionMonth,
 } from "@/lib/api/queries/ai-admin";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
-import { formatFee } from "@/lib/ai-subscriptions";
+import { MINUS, formatFee } from "@/lib/ai-subscriptions";
 import type { UnassignedKind } from "@/lib/api/contracts/ai-admin";
 import type { AiProvider } from "@/lib/api/contracts/ai-usage";
 
@@ -85,6 +87,17 @@ export const SPINIT_LABEL = "Spinit";
 
 export type ProjectKind = "project" | "unassigned" | "overhead" | "spinit";
 
+/** The billing project a line or an adjustment line charges. */
+export type BillingProject = {
+  key: string;
+  label: string;
+  kind: ProjectKind;
+  /** The kind of Unassigned usage; null for every other kind. */
+  unassigned: UnassignedKind | null;
+  /** The kind of Spinit's credits; null for every other kind. */
+  spinit: SpinitKind | null;
+};
+
 /** What a metered payer's lines are called: its billing system's name. */
 export function meteredName(provider: AiProvider): string {
   return provider === "copilot"
@@ -95,16 +108,33 @@ export function meteredName(provider: AiProvider): string {
 /** The billing project a line charges: a time-tracking project, one kind of
  * Unassigned usage, a subscription fee without usage, or one kind of a
  * metered payer's credits that stay with Spinit. */
-export function lineProject(line: AiBillingLine): {
-  key: string;
-  label: string;
-  kind: ProjectKind;
-  /** The kind of Unassigned usage; null for every other kind. */
-  unassigned: UnassignedKind | null;
-  /** The kind of Spinit's credits; null for every other kind. */
-  spinit: SpinitKind | null;
-} {
-  const spinit = spinitKind(line);
+export function lineProject(line: AiBillingLine): BillingProject {
+  return billingProject(
+    spinitKind(line.metered?.kind),
+    line.unallocatedOverhead,
+    line.project,
+    line.unassigned,
+  );
+}
+
+/** The billing project an adjustment line corrects, named as `lineProject`
+ * names the lines it adjusts: a metered payer's personal credits are Spinit's
+ * personal ones, overhead is overhead. */
+export function adjustmentProject(line: AiAdjustmentLine): BillingProject {
+  return billingProject(
+    spinitKind(line.meteredKind ?? undefined),
+    line.kind === "overhead",
+    line.project,
+    line.unassigned,
+  );
+}
+
+function billingProject(
+  spinit: SpinitKind | null,
+  overhead: boolean,
+  project: AiBillingLine["project"],
+  unassignedKind: UnassignedKind | null,
+): BillingProject {
   if (spinit !== null) {
     return {
       key: `spinit:${spinit}`,
@@ -114,7 +144,7 @@ export function lineProject(line: AiBillingLine): {
       spinit,
     };
   }
-  if (line.unallocatedOverhead) {
+  if (overhead) {
     return {
       key: "overhead",
       label: OVERHEAD_LABEL,
@@ -123,17 +153,17 @@ export function lineProject(line: AiBillingLine): {
       spinit: null,
     };
   }
-  if (line.project) {
+  if (project) {
     return {
-      key: `project:${line.project.projectId}`,
-      label: line.project.projectName,
+      key: `project:${project.projectId}`,
+      label: project.projectName,
       kind: "project",
       unassigned: null,
       spinit: null,
     };
   }
   // The contract sets a kind on every line without a project that bills one.
-  const unassigned = line.unassigned ?? "unmapped";
+  const unassigned = unassignedKind ?? "unmapped";
   return {
     key: `unassigned:${unassigned}`,
     label: UNASSIGNED_KIND_LABELS[unassigned].label,
@@ -143,10 +173,10 @@ export function lineProject(line: AiBillingLine): {
   };
 }
 
-/** Which of Spinit's credits a metered line is; null for a line that bills a
- * project or Unassigned, and for every other line. */
-function spinitKind(line: AiBillingLine): SpinitKind | null {
-  switch (line.metered?.kind) {
+/** Which of Spinit's credits a metered kind is; null for a kind that bills a
+ * project or Unassigned, and for every line that is not metered. */
+function spinitKind(kind: AiMeteredLineKind | undefined): SpinitKind | null {
+  switch (kind) {
     case "untracked":
       return "untracked";
     case "personal":
@@ -219,16 +249,17 @@ export function meteredAccountDetail(line: AiBillingLine): string | null {
 }
 
 /** A metered line's credits, whole as the server bills them: `1,235
- * credits`, `1 credit`. */
+ * credits`, `1 credit`; an adjustment's signed, `−1,250 credits`. */
 export function formatLineCredits(credits: string): string {
   const amount = hundredths(credits);
-  const whole = Math.floor(amount / 100);
-  const rest = amount % 100;
+  const magnitude = Math.abs(amount);
+  const whole = Math.floor(magnitude / 100);
+  const rest = magnitude % 100;
   const number =
     rest === 0
       ? WHOLE.format(whole)
       : `${WHOLE.format(whole)}.${String(rest).padStart(2, "0")}`;
-  return `${number} ${amount === 100 ? "credit" : "credits"}`;
+  return `${amount < 0 ? MINUS : ""}${number} ${magnitude === 100 ? "credit" : "credits"}`;
 }
 
 const WHOLE = new Intl.NumberFormat("en-US");
@@ -315,14 +346,19 @@ export function unassignedLines(
   });
 }
 
-/** Exact decimal amount to hundredths. */
+/** An exact decimal amount, signed on adjustments (`-1.50`), to hundredths. */
 export function hundredths(amount: string): number {
-  const [units, cents] = amount.split(".");
-  return Number(units) * 100 + Number(cents);
+  const negative = amount.startsWith("-");
+  const [units, cents] = (negative ? amount.slice(1) : amount).split(".");
+  const magnitude = Number(units) * 100 + Number(cents);
+  return negative && magnitude !== 0 ? -magnitude : magnitude;
 }
 
-function decimal(hundredthsAmount: number): string {
-  return `${Math.floor(hundredthsAmount / 100)}.${String(hundredthsAmount % 100).padStart(2, "0")}`;
+/** Exact hundredths as a decimal, signed when negative: `-150` as `-1.50`. */
+export function decimal(hundredthsAmount: number): string {
+  const magnitude = Math.abs(hundredthsAmount);
+  const sign = hundredthsAmount < 0 ? "-" : "";
+  return `${sign}${Math.floor(magnitude / 100)}.${String(magnitude % 100).padStart(2, "0")}`;
 }
 
 /** Exact hundredths as an amount in `currency`, such as `6 454,93 SEK`. */
@@ -613,4 +649,144 @@ export function allocationLabel(
     case "unallocated":
       return "Unallocated overhead (no usage)";
   }
+}
+
+/** What an adjustment line corrects, in words: `API usage`, `Subscription
+ * fee`, `GitHub Copilot · project`, `Spinit: untracked Copilot`. */
+export function adjustmentKindLabel(line: AiAdjustmentLine): string {
+  switch (line.kind) {
+    case "api":
+      return "API usage";
+    case "subscription":
+      return "Subscription fee";
+    case "overhead":
+      return OVERHEAD_LABEL;
+    case "metered":
+      return meteredKindLabel(line.meteredKind ?? "project", line.provider);
+  }
+}
+
+/** Why only an adjustment's amount in the billing currency changed: the
+ * corrected month's rate did, or its amounts in the billing currency round
+ * differently at the same rate. Null when its amount changed too. */
+export function sekOnlyReason(
+  line: AiAdjustmentLine,
+  billingCurrency: string,
+  correctedMonth: string,
+): string | null {
+  if (!line.sekOnly) {
+    return null;
+  }
+  return line.rateChanged
+    ? `Only the ${billingCurrency} amount changed: ${correctedMonth}'s exchange rate did.`
+    : `Only the ${billingCurrency} amount changed: its ${billingCurrency} shares round differently at the same rate.`;
+}
+
+function meteredKindLabel(kind: AiMeteredLineKind, provider: AiProvider) {
+  switch (kind) {
+    case "project":
+      return `${meteredName(provider)} · project`;
+    case "repository":
+      return `${meteredName(provider)} · code review`;
+    case "personal":
+      return SPINIT_KIND_LABELS.personal.label;
+    case "untracked":
+      return SPINIT_KIND_LABELS.untracked.label;
+    case "unlinkedAccount":
+      return `${SPINIT_LABEL}: unlinked account`;
+    case "externalAccount":
+      return `${SPINIT_LABEL}: external account`;
+    case "unknownAccount":
+      return `${SPINIT_LABEL}: unknown accounts`;
+  }
+}
+
+/** The months adjustment lines correct, oldest first. */
+export function adjustedMonthsOf(lines: readonly AiAdjustmentLine[]): string[] {
+  return [...new Set(lines.map((line) => line.adjustsMonth))].sort();
+}
+
+/** Adjustment lines of one billing project, with what they add up to. */
+export type AdjustmentGroup = {
+  key: string;
+  label: string;
+  kind: ProjectKind;
+  lines: AiAdjustmentLine[];
+  /** Signed hundredths per currency, never added across currencies. */
+  amounts: ReadonlyMap<string, number>;
+  /** Signed hundredths of the billing currency, each line at the rate of the
+   * month it corrects; null when a line has no rate. */
+  converted: number | null;
+  /** The currencies of lines without a rate. */
+  missingCurrencies: ReadonlySet<string>;
+};
+
+/** Adjustment lines grouped by the project they correct, as an invoice
+ * needs them: projects first, then Unassigned, overhead and Spinit's. The
+ * lines keep the server's order within a group. */
+export function groupAdjustments(
+  lines: readonly AiAdjustmentLine[],
+): AdjustmentGroup[] {
+  const groups = new Map<string, AdjustmentGroup>();
+  for (const line of lines) {
+    const project = adjustmentProject(line);
+    const group = groups.get(project.key) ?? {
+      key: project.key,
+      label: project.label,
+      kind: project.kind,
+      lines: [],
+      amounts: new Map<string, number>(),
+      converted: 0,
+      missingCurrencies: new Set<string>(),
+    };
+    group.lines.push(line);
+    groups.set(project.key, group);
+  }
+  const kindRank: Record<ProjectKind, number> = {
+    project: 0,
+    unassigned: 1,
+    overhead: 2,
+    spinit: 3,
+  };
+  return [...groups.values()]
+    .map((group) => ({ ...group, ...adjustmentTotals(group.lines) }))
+    .sort(
+      (a, b) =>
+        kindRank[a.kind] - kindRank[b.kind] || a.label.localeCompare(b.label),
+    );
+}
+
+/** What adjustment lines add up to, per currency and in the billing
+ * currency. */
+export function adjustmentTotals(
+  lines: readonly AiAdjustmentLine[],
+): Pick<AdjustmentGroup, "amounts" | "converted" | "missingCurrencies"> {
+  const amounts = new Map<string, number>();
+  let converted: number | null = 0;
+  const missingCurrencies = new Set<string>();
+  for (const line of lines) {
+    amounts.set(
+      line.billableCurrency,
+      (amounts.get(line.billableCurrency) ?? 0) +
+        hundredths(line.billableAmount),
+    );
+    if (line.convertedAmount === null) {
+      converted = null;
+      missingCurrencies.add(line.billableCurrency);
+    } else if (converted !== null) {
+      converted += hundredths(line.convertedAmount);
+    }
+  }
+  return { amounts, converted, missingCurrencies };
+}
+
+/** Signed hundredths with an explicit sign, such as `+12,50 SEK` or
+ * `−12,50 SEK`; a zero without one. */
+export function formatSignedHundredths(
+  amount: number,
+  currency: string,
+): string {
+  return amount > 0
+    ? `+${formatHundredths(amount, currency)}`
+    : formatHundredths(amount, currency);
 }

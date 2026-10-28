@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                log.machine_id::text AS \"machine_id!\",\n                log.provider,\n                log.window_start,\n                log.covered_until\n            FROM ai_usage_coverage_log AS log\n            WHERE log.covered_until > $1 AND log.window_start < $2\n            ORDER BY log.machine_id, log.provider, log.window_start\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "machine_id!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_coverage_log",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "window_start",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_coverage_log",
+            "name": "window_start"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "covered_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_coverage_log",
+            "name": "covered_until"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3fe967f213219d6a1a0563d62e4f7a4d7f4d4c488d3c48588ed4450df1b0ea64"
+}

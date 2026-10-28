@@ -65,10 +65,10 @@ export function RepositoryMappings({
         Repository names come from GitHub&apos;s billing, which admins see;
         project keys stay private until a developer maps them, and suggestions
         only come from mapped keys. A repository without a project bills as
-        Unassigned and will hold back month close once its credits bill a line;
+        Unassigned and holds back month close once its credits bill a line;
         greyed credits (before the cutover, or under one credit for the month)
-        bill none. A mapping applies whenever a bill is read, in past
-        months&apos; bills too.
+        bill none. A mapping applies to every open month&apos;s bill; a closed
+        month gets an adjustment on the next open month&apos;s bill.
       </p>
       <RepositoryTable query={query} projects={projects} />
     </section>
@@ -287,7 +287,7 @@ function RepositoryRow({
                 onClick={() => {
                   if (
                     window.confirm(
-                      `Unmap ${row.repository}? Its code review credits will bill as Unassigned, in past months' bills too.`,
+                      `Unmap ${row.repository}? Its code review credits will bill as Unassigned in open months; closed months get an adjustment on the next open month's bill.`,
                     )
                   ) {
                     deleteMapping.mutate({ repository: row.repository });

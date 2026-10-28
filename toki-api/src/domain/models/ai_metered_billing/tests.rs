@@ -521,6 +521,19 @@ fn the_unknown_account_bills_the_positive_residual_without_code_review() {
             AiMeteredProvisional::NotSettled,
         ]
     );
+    // Readiness reads the residual's settled and provisional days, signed;
+    // the import gap is left out of it.
+    assert_eq!(
+        allocation.unknown_residual,
+        [
+            (settled, 5 * CREDIT),
+            (over, -2 * CREDIT),
+            (settling, CREDIT)
+        ]
+    );
+    assert!(for_user(allocation.clone(), ADA)
+        .unknown_residual
+        .is_empty());
     // The reconciliation tab's unknown account includes the code review.
     assert_eq!(
         reconcile(input.clone()).unwrap().totals.unknown_account,
@@ -735,6 +748,45 @@ fn an_account_that_may_still_change_keeps_its_users_part_provisional_without_a_l
         .account_slices
         .retain(|(_, day), _| *day >= backfill_from);
     assert_eq!(provisional(&before_backfill), (true, true, true));
+}
+
+#[test]
+fn a_user_kept_provisional_by_an_account_without_a_line_has_a_part() {
+    // Ada's account has neither credits nor tracked usage; Grace's bills.
+    let day = date!(2026 - 10 - 12);
+    let mut input = closed_input(vec![
+        linked(1001, "ada-lovelace", ADA),
+        linked(1002, "grace-hopper", GRACE),
+    ]);
+    input.account_credits = vec![credits(1002, day, "GPT-6.1 Sol", "10")];
+    input.org_credits = vec![org(day, "GPT-6.1 Sol", "10")];
+    input.tracked = vec![tracked(GRACE, day, "gpt-6.1-sol", 10 * CREDIT)];
+    let settled = allocate(&input);
+    assert_eq!(settled.user_ids(), BTreeSet::from([GRACE.as_i32()]));
+
+    // A run stopped before finishing her account's month: her part is
+    // provisional with no line, no usage and no day not imported, so a
+    // close keeps it rather than serving her an empty, settled part.
+    for check in &mut input.checks {
+        if check.account_id == Some(account_id(1001)) {
+            *check = AiUsageCheck::interrupted(
+                check.account_id,
+                datetime!(2026-11-02 02:00 UTC),
+                dec("0"),
+                "GitHub's rate limiting stopped the import",
+            );
+        }
+    }
+    let allocation = allocate(&input);
+    let ada = for_user(allocation.clone(), ADA);
+    assert_eq!(
+        (ada.lines.len(), ada.days_not_imported, ada.provisional),
+        (0, 0, true)
+    );
+    assert_eq!(
+        allocation.user_ids(),
+        BTreeSet::from([ADA.as_i32(), GRACE.as_i32()])
+    );
 }
 
 #[test]
@@ -1318,7 +1370,7 @@ fn code_review_bills_once_by_repository() {
             name: "widget-api".to_string(),
         }
     );
-    assert_eq!(allocation.unmapped_repositories(), ["gadget-web"]);
+    assert_eq!(allocation.unmapped_repositories(), [("gadget-web", 8)]);
     assert!(allocation.repository_provisional.is_empty());
     assert!(!allocation.provisional);
     // Billed once: Ada's 70 credits, 20 of them per repository.
@@ -1403,7 +1455,14 @@ fn the_mapping_overview_flags_exactly_the_repositories_the_bill_puts_on_unassign
         .map(|row| row.repository.as_str())
         .collect();
     assert_eq!(flagged, ["Gadget-Web"]);
-    assert_eq!(flagged, allocation.unmapped_repositories());
+    assert_eq!(
+        flagged,
+        allocation
+            .unmapped_repositories()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -1471,7 +1530,7 @@ fn a_stale_or_unconfigured_repository_mapping_bills_unassigned_unmapped_reposito
                 12
             )]
         );
-        assert_eq!(allocation.unmapped_repositories(), ["widget-api"]);
+        assert_eq!(allocation.unmapped_repositories(), [("widget-api", 12)]);
     }
 }
 

@@ -9,7 +9,7 @@ import { aiAdminMutations } from "@/lib/api/mutations/ai-admin";
 import type { AiExchangeRate } from "@/lib/api/queries/ai-admin";
 import { StatusBadge } from "../../-components/status-badge";
 import { listOf, monthLabel, shortDate } from "../../-lib/format";
-import { parseRateInput } from "../../-lib/rates";
+import { parseRateInput, rateChangeMessage } from "../../-lib/rates";
 
 function providerLabel(source: string): string {
   return source === "riksbank" ? "Riksbank" : source;
@@ -75,7 +75,8 @@ export function MissingRatesAlert({
  * The month's exchange rates to the billing currency, each with its source,
  * whether it is provisional, the fetched rate kept beneath an override, and
  * an admin override: what the Exchange rates check opens to. It says first
- * what a missing or pending rate leaves unconverted.
+ * what a missing or pending rate leaves unconverted. A closed month shows its
+ * current rates, which an override edits, beside the ones it was invoiced at.
  */
 export function ExchangeRatesPanel({
   month,
@@ -83,24 +84,44 @@ export function ExchangeRatesPanel({
   rates,
   missingRates,
   pendingRates,
+  closed = null,
   disabled = false,
 }: {
   month: string;
   billingCurrency: string;
+  /** The rates an override edits: a closed month's current ones. */
   rates: readonly AiExchangeRate[];
   missingRates: readonly string[];
   pendingRates: readonly string[];
+  /** A closed month: the rates its bill keeps, and where a changed rate's
+   * SEK difference posts. */
+  closed?: Readonly<{
+    invoicedRates: readonly AiExchangeRate[];
+    adjustmentsPostOn: string;
+  }> | null;
   disabled?: boolean;
 }) {
   const byCurrency = new Map(rates.map((rate) => [rate.currency, rate]));
+  const invoiced = new Map(
+    (closed?.invoicedRates ?? []).map((rate) => [rate.currency, rate]),
+  );
   const currencies = [
-    ...new Set([...byCurrency.keys(), ...missingRates]),
+    ...new Set([...byCurrency.keys(), ...invoiced.keys(), ...missingRates]),
   ].sort();
-  const missing = missingRates.filter((code) => !pendingRates.includes(code));
+  const missing = missingRates.filter(
+    (code) => !pendingRates.includes(code) && !byCurrency.has(code),
+  );
 
   return (
     <div className="flex flex-col gap-3">
-      {missing.length > 0 && (
+      {closed && (
+        <p className="text-sm">
+          {monthLabel(month)} is closed: its bill keeps the rate it closed with.
+          A new rate posts the {billingCurrency} difference as an adjustment on{" "}
+          {monthLabel(closed.adjustmentsPostOn)}.
+        </p>
+      )}
+      {!closed && missing.length > 0 && (
         <p className="text-sm">
           Amounts in {listOf(missing, "conjunction")} are not converted to{" "}
           {billingCurrency}: their {billingCurrency} figures and the totals that
@@ -136,6 +157,8 @@ export function ExchangeRatesPanel({
                 currency={currency}
                 billingCurrency={billingCurrency}
                 rate={byCurrency.get(currency)}
+                invoiced={closed ? (invoiced.get(currency) ?? null) : undefined}
+                adjustmentsPostOn={closed?.adjustmentsPostOn ?? null}
                 pending={pendingRates.includes(currency)}
                 disabled={disabled}
               />
@@ -152,6 +175,8 @@ function RateRow({
   currency,
   billingCurrency,
   rate,
+  invoiced,
+  adjustmentsPostOn,
   pending,
   disabled,
 }: {
@@ -159,16 +184,29 @@ function RateRow({
   currency: string;
   billingCurrency: string;
   rate: AiExchangeRate | undefined;
+  /** A closed month's rate as invoiced (null: invoiced without one);
+   * undefined for an open month. */
+  invoiced?: AiExchangeRate | null;
+  /** A closed month: where a changed rate's difference posts. */
+  adjustmentsPostOn: string | null;
   pending: boolean;
   disabled: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
   const [input, setInput] = React.useState(rate?.rate ?? "");
+  const message = (applied: string, reset: boolean) =>
+    rateChangeMessage({
+      monthLabel: monthLabel(month),
+      currency,
+      rate: applied,
+      billingCurrency,
+      reset,
+      adjustmentsPostOn:
+        adjustmentsPostOn === null ? null : monthLabel(adjustmentsPostOn),
+    });
   const override = aiAdminMutations.useOverrideExchangeRate({
     onSuccess: (saved) => {
-      toast.success(
-        `${monthLabel(month)} bills ${currency} at ${saved.rate} ${billingCurrency}`,
-      );
+      toast.success(message(saved.rate, false));
       setEditing(false);
     },
     onError: apiErrorToast(`Failed to set the ${currency} rate`),
@@ -176,9 +214,7 @@ function RateRow({
   const reset = aiAdminMutations.useResetExchangeRate({
     onSuccess: (fetched) =>
       fetched
-        ? toast.success(
-            `${currency} is back at the Riksbank rate, ${fetched.rate} ${billingCurrency}`,
-          )
+        ? toast.success(message(fetched.rate, true))
         : toast.warning(
             `Override removed; no Riksbank ${currency} rate is available yet`,
           ),
@@ -238,6 +274,24 @@ function RateRow({
             "Not published, or the Riksbank could not be reached"
           )}
         </p>
+        {invoiced !== undefined && (
+          <p className="mt-0.5 text-xs tabular-nums">
+            {invoiced === null ? (
+              "Invoiced without a rate."
+            ) : (
+              <>
+                Invoiced at{" "}
+                <span className="font-semibold">{invoiced.rate}</span>
+                {rate && rate.rate !== invoiced.rate && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · now {rate.rate}: the difference posts as an adjustment
+                  </span>
+                )}
+              </>
+            )}
+          </p>
+        )}
       </div>
       <div className="ml-auto">
         {editing ? (

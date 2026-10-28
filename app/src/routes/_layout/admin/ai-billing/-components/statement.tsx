@@ -5,14 +5,16 @@ import type { AiBillingOverview } from "@/lib/api/queries/ai-admin";
 import { cn } from "@/lib/utils";
 import {
   PENDING_RATE_LABEL,
+  adjustedMonthsOf,
   allPending,
   formatHundredths,
+  formatSignedHundredths,
   hundredths,
   meteredName,
   usdAsCredits,
 } from "../../-lib/billing";
 import { addUsage, emptyUsage } from "../../-lib/daily";
-import { formatShare, monthLabel, plural } from "../../-lib/format";
+import { formatShare, listOf, monthLabel, plural } from "../../-lib/format";
 import {
   spinitShare,
   statementUnassigned,
@@ -45,10 +47,11 @@ function Headline({ amount }: { amount: string }) {
 }
 
 /**
- * The month's bill as a statement: what it comes to, how much of it goes to
- * projects that can be invoiced, how much has no project yet and how much
+ * The month's bill as a statement: what it invoices (its own lines plus the
+ * adjustments to closed months posted on it), how much of its own lines goes
+ * to projects that can be invoiced, how much has no project yet and how much
  * stays with Spinit, drawn as one strip, with the bill split into API usage,
- * subscription fees and a metered payer's credits beside it.
+ * subscription fees, a metered payer's credits and adjustments beside it.
  */
 export function Statement({
   overview,
@@ -87,6 +90,17 @@ export function Statement({
     money.kind === "converted" ? money.perUsd : currency === "USD" ? 1 : null;
   const rateNote = estimateRateNote(money);
   const billed = converted.billed;
+  // What the month invoices: its own lines and its adjustments.
+  const invoiced = converted.invoiced;
+  const adjustmentLines = overview.adjustmentLines;
+  const adjustedMonths = adjustedMonthsOf(adjustmentLines).map(monthLabel);
+  const adjustmentMissing = [
+    ...new Set(
+      adjustmentLines
+        .filter((line) => line.missingRate)
+        .map((line) => line.billableCurrency),
+    ),
+  ];
   const billShare =
     billed !== null &&
     usdRate !== null &&
@@ -123,12 +137,39 @@ export function Statement({
           >
             AI bill for {monthLabel(overview.month)}
           </h2>
-          {billed === null ? (
+          {invoiced === null ? (
             <p className="text-3xl font-semibold">
-              {unconverted(overview.missingRates)}
+              {unconverted([...overview.missingRates, ...adjustmentMissing])}
             </p>
           ) : (
-            <Headline amount={formatFee(billed, currency)} />
+            <Headline amount={formatFee(invoiced, currency)} />
+          )}
+          {adjustmentLines.length > 0 && (
+            <p className="max-w-[48ch] text-sm text-muted-foreground">
+              {converted.adjustments === null ? (
+                <>
+                  Includes adjustments to{" "}
+                  {listOf(adjustedMonths, "conjunction")}, one of them without
+                  an exchange rate.
+                </>
+              ) : hundredths(converted.adjustments) !== 0 ? (
+                <>
+                  Includes{" "}
+                  <span className="font-semibold text-foreground tabular-nums">
+                    {formatSignedHundredths(
+                      hundredths(converted.adjustments),
+                      currency,
+                    )}
+                  </span>{" "}
+                  of adjustments to {listOf(adjustedMonths, "conjunction")}.
+                </>
+              ) : (
+                <>
+                  Adjustments to {listOf(adjustedMonths, "conjunction")} net to
+                  nothing in {currency}.
+                </>
+              )}
+            </p>
           )}
           <p className="max-w-[48ch] text-sm text-muted-foreground">
             <AllocationSentence ledger={ledger} currency={currency} />
@@ -137,7 +178,8 @@ export function Statement({
         <dl
           className={cn(
             "grid grid-cols-2 gap-x-7 gap-y-4 sm:grid-cols-3",
-            metered && "lg:grid-cols-4",
+            (metered || adjustmentLines.length > 0) && "lg:grid-cols-4",
+            metered && adjustmentLines.length > 0 && "xl:grid-cols-5",
           )}
         >
           <Figure
@@ -192,6 +234,20 @@ export function Statement({
                 : plural(overview.subscriptions.length, "plan")
             }
           />
+          {adjustmentLines.length > 0 && (
+            <Figure
+              label="Adjustments"
+              value={
+                converted.adjustments === null
+                  ? unconverted(adjustmentMissing)
+                  : formatSignedHundredths(
+                      hundredths(converted.adjustments),
+                      currency,
+                    )
+              }
+              note={`${plural(adjustmentLines.length, "line")} to ${listOf(adjustedMonths, "conjunction")}`}
+            />
+          )}
           <Figure
             label="At API prices"
             value={formatEstimateIn(totals.usage, money)}

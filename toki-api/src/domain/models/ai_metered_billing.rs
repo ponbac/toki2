@@ -256,6 +256,11 @@ pub struct AiMeteredAllocation {
     /// unique; empty when it is settled. Kept whether or not the residual
     /// bills a line, and empty in one user's part, which has no such line.
     pub unknown_account: Vec<AiMeteredProvisional>,
+    /// The residual's settled and provisional days that are not zero, code
+    /// review left out on both sides, by day, signed: what the unknown
+    /// account bills (positive), or accounts above the organization
+    /// (negative). Empty in one user's part.
+    pub unknown_residual: Vec<(Date, i64)>,
     /// Why repository credits may still change, sorted and unique; empty when
     /// they are settled. Kept with or without repository lines, and empty in
     /// one user's part, which has none.
@@ -274,16 +279,31 @@ pub struct AiMeteredAllocation {
 }
 
 impl AiMeteredAllocation {
+    /// The ids of every user whose part (`for_user`) differs from an empty
+    /// one: those with lines, with tracked usage on no line, with days not
+    /// imported or low-ratio groups, or linked to an account that may still
+    /// change, which keeps their part provisional without a line.
+    pub fn user_ids(&self) -> BTreeSet<i32> {
+        self.lines
+            .iter()
+            .filter_map(|line| line.subject.user_id().map(|user| user.as_i32()))
+            .chain(self.unbilled_by_user.keys().copied())
+            .chain(self.user_counters.keys().copied())
+            .chain(self.provisional_users.iter().copied())
+            .collect()
+    }
+
     /// Repositories whose credits bill as Unassigned, without a resolving
-    /// repository mapping: what month close refuses. Month close, not built
-    /// yet, is its reader.
-    #[allow(dead_code)]
-    pub fn unmapped_repositories(&self) -> Vec<&str> {
+    /// repository mapping, with their credits: the readiness check
+    /// `repositories` refuses them.
+    pub fn unmapped_repositories(&self) -> Vec<(&str, i64)> {
         self.lines
             .iter()
             .filter(|line| line.unassigned == Some(AiUnassignedKind::UnmappedRepository))
             .filter_map(|line| match &line.subject {
-                AiBillingSubject::Repository { name, .. } => Some(name.as_str()),
+                AiBillingSubject::Repository { name, .. } => {
+                    Some((name.as_str(), line.charge.credits()))
+                }
                 _ => None,
             })
             .collect()
@@ -668,6 +688,7 @@ pub fn allocate_metered_credits(
         month: input.month,
         lines,
         unknown_account: unknown.provisional,
+        unknown_residual: unknown.residual_days,
         repository_provisional,
         unbilled,
         unbilled_by_user,
@@ -814,6 +835,8 @@ struct UnknownAccount {
     line: Option<AiMeteredLine>,
     /// Sorted, unique; empty when settled.
     provisional: Vec<AiMeteredProvisional>,
+    /// Settled and provisional days with a residual, signed.
+    residual_days: Vec<(Date, i64)>,
 }
 
 /// The month's residual of non-repository credits over settled and
@@ -859,6 +882,7 @@ fn unknown_account(
     if coverage_gap {
         reasons.insert(AiMeteredProvisional::ImportIncomplete);
     }
+    let mut residual_days = Vec::new();
     for day in &days {
         match day.status {
             AiResidualStatus::Settled => residual += i128::from(day.residual),
@@ -868,7 +892,11 @@ fn unknown_account(
             }
             AiResidualStatus::Incomplete => {
                 reasons.insert(AiMeteredProvisional::ImportIncomplete);
+                continue;
             }
+        }
+        if day.residual != 0 {
+            residual_days.push((day.day, day.residual));
         }
     }
     let provisional: Vec<AiMeteredProvisional> = reasons.into_iter().collect();
@@ -876,6 +904,7 @@ fn unknown_account(
         return Ok(UnknownAccount {
             line: None,
             provisional,
+            residual_days,
         });
     }
     let allocated = nanos(residual)?;
@@ -899,6 +928,7 @@ fn unknown_account(
     Ok(UnknownAccount {
         line: Some(line),
         provisional,
+        residual_days,
     })
 }
 
@@ -1039,6 +1069,7 @@ pub fn for_user(allocation: AiMeteredAllocation, user: UserId) -> AiMeteredAlloc
         month: allocation.month,
         lines,
         unknown_account: Vec::new(),
+        unknown_residual: Vec::new(),
         repository_provisional: Vec::new(),
         unbilled,
         unbilled_by_user: BTreeMap::from([(id, unbilled)]),

@@ -50,7 +50,7 @@ use crate::domain::{
         AiMeteredCredit, AiMeteredMonth, AiMeteredPeriod, AiMeteredScope, AiMeteredSource,
         AiMeteredSourceHealth, AiMonthMode, AiProvider, AiProviderAccountId, AiProviderLogin,
         AiRunStatus, AiSliceRecord, AiSliceSet, AiSourceOutcome, AiSourceStatus,
-        AiStoredProviderAccount, AiStoredScope, AiUsageCheck, AiUsageDateRange,
+        AiStoredProviderAccount, AiStoredScope, AiUsageCheck, AiUsageDateRange, AiUsageTimeZone,
         TimeTrackingCompany, UserId, MAX_REQUESTS_PER_RUN, SETTLE_LAG_WINDOW_DAYS,
     },
     ports::{
@@ -79,13 +79,17 @@ pub enum AiMeteredSourceState {
     Misconfigured(String),
 }
 
-/// How imports run.
-#[derive(Debug, Clone, Copy)]
+/// How imports run and months are read.
+#[derive(Debug, Clone)]
 pub struct AiMeteredImportSettings {
     /// The first UTC day imports cover.
     pub backfill_from: Date,
-    /// Buckets before it are never repriced.
+    /// The configured reprice floor: buckets before it are never repriced.
+    /// Closing the first open month raises it, for reconciliation as for the
+    /// bill.
     pub reprice_floor: OffsetDateTime,
+    /// The time zone billing months follow.
+    pub time_zone: AiUsageTimeZone,
     /// Whether scheduled runs happen in this build (release builds only).
     pub unattended: bool,
 }
@@ -123,6 +127,7 @@ impl<R, A> AiMeteredUsageServiceImpl<R, A> {
             AiMeteredReadSettings {
                 backfill_from: settings.backfill_from,
                 reprice_floor: settings.reprice_floor,
+                time_zone: settings.time_zone.clone(),
                 mapping_company,
             },
         );

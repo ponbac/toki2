@@ -502,13 +502,13 @@ describe("a metered payer's lines", () => {
       ["spinit:untracked", "Untracked", 15000],
       [SPINIT_OTHER_KEY, "Other", 8700],
     ]);
-    expect(segments[3].entries.map((e) => [e.label, e.totals.converted])).toEqual(
-      [
-        ["Spinit: personal / internal Copilot", 2500],
-        ["Spinit: unlinked, external and unknown accounts", 2200],
-        ["Spinit: Copilot outside any repository", 4000],
-      ],
-    );
+    expect(
+      segments[3].entries.map((e) => [e.label, e.totals.converted]),
+    ).toEqual([
+      ["Spinit: personal / internal Copilot", 2500],
+      ["Spinit: unlinked, external and unknown accounts", 2200],
+      ["Spinit: Copilot outside any repository", 4000],
+    ]);
     const keys = segmentKeys(segments);
     expect(keys.get("spinit:personal")).toEqual([SPINIT_OTHER_KEY]);
     expect(keys.get("spinit:accounts")).toEqual([SPINIT_OTHER_KEY]);
@@ -742,6 +742,7 @@ describe("peopleOf with a metered payer", () => {
     lines: meteredMonth(),
     subscriptions: [],
     personalUsage: [],
+    adjustmentLines: [],
   };
 
   test("lists developers only, with their untracked credits apart", () => {
@@ -770,6 +771,34 @@ describe("peopleOf with a metered payer", () => {
 
     expect(person.metered).toBeNull();
     expect(person.api).toBe(true);
+  });
+
+  test("a developer with only adjustments to closed months is listed", () => {
+    const people = peopleOf({
+      ...overview,
+      developers: [
+        ...overview.developers,
+        { userId: 3, fullName: "Alan Turing", email: "alan@example.com" },
+      ],
+      adjustmentLines: [
+        { subject: { kind: "user", userId: 3 } },
+        {
+          subject: {
+            kind: "repository",
+            provider: "copilot",
+            name: "widget-api",
+          },
+        },
+      ],
+    });
+
+    expect(people.map((p) => [p.userId, p.name, p.totals, p.adjusted])).toEqual(
+      [
+        [1, "Ada Lovelace", people[0].totals, false],
+        [2, "Grace Hopper", people[1].totals, false],
+        [3, "Alan Turing", null, true],
+      ],
+    );
   });
 });
 

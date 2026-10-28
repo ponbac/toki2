@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO ai_billing_snapshot_lines (\n                    close_id, position, csv_position, adjusts_month, adjusts_close_id,\n                    subject, subject_label, project, project_name, kind, currency, provider,\n                    subscription_id, amount, sek_amount, rate, credits, line_json, csv_row\n                )\n                VALUES (\n                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,\n                    $16::text::numeric, $17, $18, $19\n                )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int4",
+        "Date",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8",
+        "Jsonb",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "07e27c1faa0093409da4a9d9cbf660e62c91583345c6ad6dd8877cd0d1bdc7a6"
+}

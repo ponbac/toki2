@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ai_billing_month_closes\n            SET reopened_at = GREATEST(now(), closed_at), reopened_by = $3\n            WHERE scope = $1 AND month = $2 AND reopened_at IS NULL\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "ai_billing_month_closes",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e92b407b91a80da2897720f7c88e27b07c751779d7d0276a1781ace0d33fe86d"
+}

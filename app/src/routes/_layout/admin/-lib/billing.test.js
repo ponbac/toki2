@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import {
+  adjustedMonthsOf,
+  adjustmentKindLabel,
+  adjustmentProject,
+  adjustmentTotals,
+  decimal,
+  formatHundredths,
   formatLineCredits,
+  formatSignedHundredths,
+  groupAdjustments,
   groupLines,
+  hundredths,
   lineProject,
   lineUserId,
   lineWarnings,
   meteredLineLabel,
+  sekOnlyReason,
   subjectKey,
   subjectLabel,
   trackedSkus,
@@ -243,5 +253,194 @@ describe("metered wording", () => {
     expect(
       lineWarnings(line("repository", WIDGET_API, { project }), undefined),
     ).toEqual([]);
+  });
+});
+
+describe("signed amounts", () => {
+  test.each([
+    ["1.50", 150],
+    ["-1.50", -150],
+    ["-0.05", -5],
+    ["0.00", 0],
+    ["-1234.05", -123405],
+  ])("%s is %d hundredths and back", (amount, value) => {
+    expect(hundredths(amount)).toBe(value);
+    expect(decimal(value)).toBe(amount);
+  });
+
+  test("a signed zero is zero", () => {
+    expect(Object.is(hundredths("-0.00"), 0)).toBe(true);
+  });
+
+  test("sums format with their sign", () => {
+    expect(formatHundredths(-123405, "SEK")).toBe("\u22121\u00a0234,05 SEK");
+    expect(formatHundredths(-5, "USD")).toBe("\u22120.05 USD");
+    expect(formatSignedHundredths(1250, "USD")).toBe("+12.50 USD");
+    expect(formatSignedHundredths(-1250, "USD")).toBe("\u221212.50 USD");
+    expect(formatSignedHundredths(0, "USD")).toBe("0.00 USD");
+  });
+
+  test("an adjustment's credits are signed", () => {
+    expect(formatLineCredits("-1250.00")).toBe("\u22121,250 credits");
+    expect(formatLineCredits("-1.00")).toBe("\u22121 credit");
+    expect(formatLineCredits("-0.50")).toBe("\u22120.50 credits");
+  });
+});
+
+describe("adjustment lines", () => {
+  const WIDGET = {
+    projectId: "101",
+    projectName: "Example Client - Widget API",
+  };
+  const GADGET = {
+    projectId: "102",
+    projectName: "Example Client - Gadget Web",
+  };
+  const base = {
+    adjustsMonth: "2026-09",
+    snapshotId: 7,
+    subject: ADA,
+    provider: "claude",
+    project: WIDGET,
+    unassigned: null,
+    kind: "api",
+    meteredKind: null,
+    subscriptionId: null,
+    plan: null,
+    billableAmount: "-12.50",
+    billableCurrency: "USD",
+    convertedAmount: "-131.25",
+    exchangeRate: "10.50",
+    missingRate: false,
+    credits: null,
+    sekOnly: false,
+    rateChanged: false,
+  };
+  const metered = (meteredKind, extra = {}) => ({
+    ...base,
+    provider: "copilot",
+    project: null,
+    kind: "metered",
+    meteredKind,
+    credits: "-1250.00",
+    ...extra,
+  });
+
+  test("each is named by the project it corrects, as the lines it adjusts", () => {
+    expect(adjustmentProject(base)).toMatchObject({
+      key: "project:101",
+      kind: "project",
+    });
+    expect(adjustmentProject(metered("personal"))).toMatchObject({
+      key: "spinit:personal",
+      label: "Spinit: personal / internal Copilot",
+      kind: "spinit",
+    });
+    expect(
+      adjustmentProject(metered("unknownAccount", { subject: UNKNOWN })),
+    ).toMatchObject({ key: "spinit:accounts", kind: "spinit" });
+    expect(
+      adjustmentProject(
+        metered("repository", {
+          subject: WIDGET_API,
+          unassigned: "unmappedRepository",
+        }),
+      ),
+    ).toMatchObject({
+      key: "unassigned:unmappedRepository",
+      unassigned: "unmappedRepository",
+    });
+    expect(
+      adjustmentProject({
+        ...base,
+        kind: "overhead",
+        project: null,
+        subscriptionId: 4,
+      }),
+    ).toMatchObject({ key: "overhead", kind: "overhead" });
+  });
+
+  test.each([
+    [base, "API usage"],
+    [{ ...base, kind: "subscription", subscriptionId: 4 }, "Subscription fee"],
+    [
+      { ...base, kind: "overhead", project: null, subscriptionId: 4 },
+      "Unallocated overhead",
+    ],
+    [metered("project", { project: WIDGET }), "GitHub Copilot · project"],
+    [
+      metered("repository", { subject: WIDGET_API }),
+      "GitHub Copilot · code review",
+    ],
+    [metered("untracked"), "Spinit: untracked Copilot"],
+    [
+      metered("externalAccount", { subject: CONTRACTOR }),
+      "Spinit: external account",
+    ],
+  ])("%#: its kind reads %s", (line, label) => {
+    expect(adjustmentKindLabel(line)).toBe(label);
+  });
+
+  test("an SEK-only line names a rate change only when the rate changed", () => {
+    const sekOnly = {
+      ...base,
+      billableAmount: "0.00",
+      convertedAmount: "6.25",
+      sekOnly: true,
+    };
+    expect(sekOnlyReason(base, "SEK", "September")).toBeNull();
+    expect(
+      sekOnlyReason({ ...sekOnly, rateChanged: true }, "SEK", "September"),
+    ).toBe("Only the SEK amount changed: September's exchange rate did.");
+    expect(sekOnlyReason(sekOnly, "SEK", "September")).toBe(
+      "Only the SEK amount changed: its SEK shares round differently at the same rate.",
+    );
+  });
+
+  test("a moved mapping nets to nothing per currency, apart per project", () => {
+    const debit = {
+      ...base,
+      project: GADGET,
+      billableAmount: "12.50",
+      convertedAmount: "131.25",
+    };
+    const sekOnly = {
+      ...base,
+      adjustsMonth: "2026-08",
+      billableAmount: "0.00",
+      convertedAmount: "6.25",
+      exchangeRate: "11.00",
+      sekOnly: true,
+      rateChanged: true,
+    };
+    const groups = groupAdjustments([base, debit, sekOnly]);
+
+    expect(
+      groups.map((group) => [
+        group.label,
+        Object.fromEntries(group.amounts),
+        group.converted,
+      ]),
+    ).toEqual([
+      ["Example Client - Gadget Web", { USD: 1250 }, 13125],
+      ["Example Client - Widget API", { USD: -1250 }, -13125 + 625],
+    ]);
+    expect(adjustedMonthsOf([base, debit, sekOnly])).toEqual([
+      "2026-08",
+      "2026-09",
+    ]);
+    const totals = adjustmentTotals([base, debit, sekOnly]);
+    expect(Object.fromEntries(totals.amounts)).toEqual({ USD: 0 });
+    expect(totals.converted).toBe(625);
+  });
+
+  test("a line without a rate leaves the SEK sum unknown", () => {
+    const totals = adjustmentTotals([
+      base,
+      { ...base, convertedAmount: null, exchangeRate: null, missingRate: true },
+    ]);
+
+    expect(totals.converted).toBeNull();
+    expect([...totals.missingCurrencies]).toEqual(["USD"]);
   });
 });

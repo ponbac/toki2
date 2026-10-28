@@ -65,8 +65,10 @@ function ProjectMappingsPage() {
         <code className="text-foreground">github.com/org/repo</code>, to
         time-tracking projects. Mappings are team-wide and resolved whenever
         usage is read, so a change re-attributes everyone&apos;s usage of the
-        key, in past months&apos; bills too. Usage of an unmapped, stale or
-        unattributed key bills as Unassigned.
+        key in every open month&apos;s bill; a closed month keeps its snapshot
+        and the change shows as an adjustment on the next open month&apos;s
+        bill. Usage of an unmapped, stale or unattributed key bills as
+        Unassigned.
       </p>
       <p className="text-sm text-muted-foreground">
         A repository stays private to the developers who use it until one of
@@ -395,7 +397,7 @@ function MappingRow({
             onClick={() => {
               if (
                 window.confirm(
-                  `Unmap ${mapping.projectKey}? Its usage will bill as Unassigned, in past months too.`,
+                  `Unmap ${mapping.projectKey}? Its usage will bill as Unassigned in open months; closed months get an adjustment on the next open month's bill.`,
                 )
               ) {
                 deleteMapping.mutate({ projectKey: mapping.projectKey });

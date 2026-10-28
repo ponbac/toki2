@@ -182,7 +182,12 @@ function projectsLine(person: PersonRow): string {
     ...(person.hasUnassigned ? [UNASSIGNED_LABEL.toLowerCase()] : []),
   ];
   if (parts.length === 0) {
-    return person.totals === null ? "Nothing billed" : "No project";
+    if (person.totals !== null) {
+      return "No project";
+    }
+    return person.adjusted
+      ? "Only adjustments to closed months"
+      : "Nothing billed";
   }
   return parts.join(", ");
 }

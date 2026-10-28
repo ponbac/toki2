@@ -3,7 +3,8 @@ use time::OffsetDateTime;
 
 use crate::domain::{
     models::{
-        AiMachineId, AiPricingBasis, AiProviderRepricing, AiUsageBucket, AiUsageUpload, UserId,
+        AiMachineId, AiPricingBasis, AiProviderRepricing, AiUsageBucket, AiUsageTimeZone,
+        AiUsageUpload, UserId,
     },
     AiUsageError,
 };
@@ -59,4 +60,13 @@ pub trait AiUsageRepository: Send + Sync + 'static {
         basis: &AiPricingBasis,
         buckets: &[&AiUsageBucket],
     ) -> Result<u64, AiUsageError>;
+
+    /// When the first open month of the AI bill at or after the configured
+    /// floor's month starts: the earlier of its UTC and its `time_zone`
+    /// midnight. As `AiMonthCloseRepository::open_from`.
+    async fn open_from(
+        &self,
+        time_zone: &AiUsageTimeZone,
+        configured_floor: OffsetDateTime,
+    ) -> Result<OffsetDateTime, AiUsageError>;
 }

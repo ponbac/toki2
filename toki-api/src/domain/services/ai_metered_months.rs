@@ -12,12 +12,12 @@ use time::{Date, OffsetDateTime};
 
 use crate::domain::{
     models::{
-        held_seat_in, utc_day, AiAccountTarget, AiBillingMonth, AiDayCoverage, AiImportStatus,
-        AiMeteredSource, AiProvider, AiProviderAccountId, AiReconciliationInput,
+        held_seat_in, reprice_floor, utc_day, AiAccountTarget, AiBillingMonth, AiDayCoverage,
+        AiImportStatus, AiMeteredSource, AiProvider, AiProviderAccountId, AiReconciliationInput,
         AiRepositoryResolver, AiSliceRecord, AiStoredProviderAccount, AiUsageCheck,
-        TimeTrackingCompany, UserId,
+        AiUsageTimeZone, TimeTrackingCompany, UserId,
     },
-    ports::outbound::{AiMeteredUsageRepository, AiProviderAccountRepository},
+    ports::outbound::{AiImportLease, AiMeteredUsageRepository, AiProviderAccountRepository},
     AiMeteredUsageError,
 };
 
@@ -26,8 +26,12 @@ use crate::domain::{
 pub struct AiMeteredReadSettings {
     /// The first UTC day imports cover: earlier days are not imported.
     pub backfill_from: Date,
-    /// Buckets before it are never repriced.
+    /// The configured reprice floor: buckets before it are never repriced.
+    /// Closing the first open month raises it (`reprice_floor`).
     pub reprice_floor: OffsetDateTime,
+    /// The time zone billing months follow, which the raised floor's local
+    /// midnight is in.
+    pub time_zone: AiUsageTimeZone,
     /// Only project and repository mappings to this company resolve, as in
     /// the bill.
     pub mapping_company: Option<TimeTrackingCompany>,
@@ -163,16 +167,35 @@ where
     R: AiMeteredUsageRepository,
     A: AiProviderAccountRepository,
 {
+    /// Holds the payer's imports off while the lease is held, so a reader
+    /// that keeps what it loads (a month close) reads no day an import is
+    /// replacing meanwhile (`AiMeteredUsageRepository::try_hold_imports`).
+    /// `None` while an import runs.
+    pub async fn try_hold_imports(
+        &self,
+    ) -> Result<Option<Box<dyn AiImportLease>>, AiMeteredUsageError> {
+        self.repository.try_hold_imports(self.payer).await
+    }
+
     /// The month of everyone, or of one user's linked days: the accounts in
     /// scope, their credits, checks and slices, the coverage of the month's
     /// imported days through today, the organization's credits, rows,
     /// summary and repository mappings (not in one user's view) and the
-    /// tracked usage per destination.
+    /// tracked usage per destination, on an old pricing basis from the
+    /// reprice floor in force on (the configured one, raised to the start of
+    /// the first open month): buckets before it are never repriced, so the
+    /// bill and reconciliation take them as they are.
     pub async fn load(
         &self,
         month: AiBillingMonth,
         focus: Option<UserId>,
     ) -> Result<AiMeteredMonthData, AiMeteredUsageError> {
+        let configured = self.settings.reprice_floor;
+        let open_from = self
+            .repository
+            .open_from(&self.settings.time_zone, configured)
+            .await?;
+        let reprice_floor = reprice_floor(configured, open_from);
         let now = self.repository.now().await?;
         let today = utc_day(now);
         let accounts = self.accounts.accounts(self.payer).await?;
@@ -258,7 +281,7 @@ where
             .tracked_usage(
                 self.payer,
                 dates,
-                self.settings.reprice_floor,
+                reprice_floor,
                 self.settings.mapping_company.as_ref(),
                 focus,
             )

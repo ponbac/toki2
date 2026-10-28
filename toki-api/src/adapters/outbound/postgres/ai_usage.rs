@@ -39,6 +39,16 @@ impl PostgresAiUsageRepository {
 
 #[async_trait]
 impl AiUsageRepository for PostgresAiUsageRepository {
+    async fn open_from(
+        &self,
+        time_zone: &AiUsageTimeZone,
+        configured_floor: OffsetDateTime,
+    ) -> Result<OffsetDateTime, AiUsageError> {
+        super::ai_month_close::open_from(&self.pool, time_zone, configured_floor)
+            .await
+            .map_err(storage_error)
+    }
+
     async fn replace_window(
         &self,
         user_id: &UserId,

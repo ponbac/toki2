@@ -29,11 +29,14 @@ import { ResidualDays } from "./residual-days";
  */
 export function CopilotReconciliation({
   month,
+  closed = false,
   meteredPeriod,
   onMonth,
 }: {
   /** The UTC month, `YYYY-MM`. */
   month: string;
+  /** Whether the month's bill is closed: this tab stays live. */
+  closed?: boolean;
   /** The bill's metered cutover; null when none is configured. */
   meteredPeriod: AiMeteredPeriod | null;
   onMonth: (month: string) => void;
@@ -82,6 +85,12 @@ export function CopilotReconciliation({
       )}
     >
       <div className="flex flex-col gap-3">
+        {closed && (
+          <p className="text-sm text-muted-foreground">
+            GitHub&apos;s live numbers; the bill is closed. A change here posts
+            on the next open month&apos;s bill as an adjustment.
+          </p>
+        )}
         <MeteredImportStatus data={data} month={month} />
         <MonthChips months={data.months} month={month} onMonth={onMonth} />
       </div>

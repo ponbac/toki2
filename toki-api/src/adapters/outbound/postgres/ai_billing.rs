@@ -10,10 +10,10 @@ use crate::{
         models::{
             AiBillingDeveloper, AiBillingMachine, AiBillingProject, AiBillingUsage,
             AiCoverageInterval, AiCoverageStatus, AiDailyUsage, AiDeveloperDayUsage, AiLocalDay,
-            AiMachineId, AiMappingResolver, AiMeteredCutover, AiPersonalUsage, AiPricingStatus,
-            AiProvider, AiProviderReport, AiTokenCounts, AiUnassignedKind, AiUsageDateRange,
-            AiUsageTimeZone, AiUsdNanos, TimeTrackingCompany, UserId, PI_CHATGPT_SIGN_IN_HINT,
-            UNATTRIBUTED_PROJECT_KEY,
+            AiMachineId, AiMappingResolver, AiMeteredCutover, AiOldBasisUsage, AiPersonalUsage,
+            AiPricingStatus, AiProvider, AiProviderReport, AiTokenCounts, AiUnassignedKind,
+            AiUsageDateRange, AiUsageTimeZone, AiUsdNanos, TimeTrackingCompany, UserId,
+            PI_CHATGPT_SIGN_IN_HINT, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::AiBillingRepository,
         AiBillingError,
@@ -688,6 +688,126 @@ impl AiBillingRepository for PostgresAiBillingRepository {
         local_today(&self.pool, time_zone)
             .await
             .map_err(storage_error)
+    }
+
+    async fn coverage_intervals(
+        &self,
+        from: OffsetDateTime,
+        until: OffsetDateTime,
+    ) -> Result<Vec<(AiMachineId, AiCoverageInterval)>, AiBillingError> {
+        sqlx::query!(
+            r#"
+            SELECT
+                log.machine_id::text AS "machine_id!",
+                log.provider,
+                log.window_start,
+                log.covered_until
+            FROM ai_usage_coverage_log AS log
+            WHERE log.covered_until > $1 AND log.window_start < $2
+            ORDER BY log.machine_id, log.provider, log.window_start
+            "#,
+            from,
+            until,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_error)?
+        .into_iter()
+        .map(|row| {
+            Ok((
+                machine_id(&row.machine_id)?,
+                AiCoverageInterval {
+                    provider: provider(&row.provider)?,
+                    start: row.window_start,
+                    end: row.covered_until,
+                },
+            ))
+        })
+        .collect()
+    }
+
+    async fn old_basis_usage(
+        &self,
+        dates: AiUsageDateRange,
+        time_zone: &AiUsageTimeZone,
+        mapping_company: Option<&TimeTrackingCompany>,
+        metered: Option<&AiMeteredCutover>,
+        floor: OffsetDateTime,
+    ) -> Result<Vec<AiOldBasisUsage>, AiBillingError> {
+        // The buckets `daily_usage` reads (its local days, its metered
+        // exclusion, personal keys left out), from the floor on, on an old
+        // basis: none, or another than their machine's current one.
+        let resolver = self.resolver(mapping_company).await?;
+        let (personal_users, personal_keys) = self.personal_marks(&resolver, None).await?;
+        let (metered_payer, metered_from) = metered_bounds(metered);
+        let rows = sqlx::query!(
+            r#"
+            WITH personal_keys AS (
+                SELECT user_id, project_key
+                FROM UNNEST($4::int4[], $5::text[]) AS mark(user_id, project_key)
+            )
+            SELECT
+                bucket.user_id,
+                person.full_name,
+                person.email,
+                machine.id::text AS "machine_id!",
+                machine.label,
+                bucket.provider,
+                count(*)::int8 AS "buckets!",
+                (MIN(bucket.hour_start) AT TIME ZONE $3)::date AS "first_day!",
+                (MAX(bucket.hour_start) AT TIME ZONE $3)::date AS "last_day!",
+                round(COALESCE(SUM(bucket.estimated_cost_usd), 0) * 1000000000)::int8
+                    AS "estimate_nanos!"
+            FROM ai_usage_buckets AS bucket
+            JOIN ai_usage_machines AS machine ON machine.id = bucket.machine_id
+            JOIN users AS person ON person.id = bucket.user_id
+            LEFT JOIN personal_keys AS personal
+                ON personal.user_id = bucket.user_id
+                AND personal.project_key = bucket.project_key
+            WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)
+              AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)
+              AND personal.project_key IS NULL
+              AND ($6::text IS NULL
+                   OR COALESCE(bucket.billing_provider, bucket.provider) <> $6
+                   OR bucket.hour_start < $7::timestamptz)
+              AND bucket.hour_start >= $8
+              AND (bucket.pricing_basis IS NULL
+                   OR bucket.pricing_basis IS DISTINCT FROM machine.pricing_basis)
+            GROUP BY bucket.user_id, person.full_name, person.email, machine.id, machine.label,
+                bucket.provider
+            ORDER BY person.full_name, bucket.user_id, machine.label, machine.id, bucket.provider
+            "#,
+            dates.start(),
+            dates.end(),
+            time_zone.as_str(),
+            &personal_users,
+            &personal_keys,
+            metered_payer,
+            metered_from,
+            floor,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_error)?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(AiOldBasisUsage {
+                    developer: AiBillingDeveloper {
+                        user_id: UserId::new(row.user_id),
+                        full_name: row.full_name,
+                        email: row.email,
+                    },
+                    machine_id: machine_id(&row.machine_id)?,
+                    label: row.label,
+                    provider: provider(&row.provider)?,
+                    buckets: row.buckets,
+                    first_day: row.first_day,
+                    last_day: row.last_day,
+                    estimate: AiUsdNanos::new(row.estimate_nanos)
+                        .ok_or_else(|| corrupt("a summed cost is negative"))?,
+                })
+            })
+            .collect()
     }
 }
 

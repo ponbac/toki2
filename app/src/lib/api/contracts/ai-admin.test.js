@@ -175,11 +175,15 @@ function overview(lines) {
         overhead: "0.00",
         api: "3.15",
         metered: "17.33",
+        adjustments: "0.00",
+        invoiced: "20.48",
       },
+      adjustments: [],
     },
     exchangeRates: [],
     missingRates: [],
     pendingRates: [],
+    adjustedPendingRates: [],
     metered: {
       provider: "copilot",
       provisional: true,
@@ -187,7 +191,10 @@ function overview(lines) {
       lowRatioGroups: 1,
       unbilled,
     },
+    adjustmentLines: [],
     personalUsage: [],
+    adjustedMonths: [],
+    close: null,
   };
 }
 
@@ -404,7 +411,12 @@ describe("developer month contract", () => {
     subscriptionId: null,
     usage,
   };
-  const rest = without(overview([meteredLine]), "developers", "personalUsage");
+  const rest = without(
+    overview([meteredLine]),
+    "developers",
+    "personalUsage",
+    "adjustedMonths",
+  );
   const month = (dailyUsage) => ({
     ...rest,
     developer: {
@@ -441,5 +453,344 @@ describe("developer month contract", () => {
     },
   ])("rejects $name", ({ day }) => {
     expect(() => parseAiDeveloperMonth(month([day]))).toThrow();
+  });
+});
+
+describe("adjustment lines and closes", () => {
+  const clientB = {
+    projectId: "102",
+    projectName: "Example Client - Gadget Web",
+  };
+  /** September's API line moved off Widget API after September closed. */
+  const credit = {
+    adjustsMonth: "2026-09",
+    snapshotId: 7,
+    subject: ada,
+    provider: "claude",
+    project: apiLine.project,
+    unassigned: null,
+    kind: "api",
+    meteredKind: null,
+    subscriptionId: null,
+    plan: null,
+    billableAmount: "-12.50",
+    billableCurrency: "USD",
+    convertedAmount: "-131.25",
+    exchangeRate: "10.50",
+    missingRate: false,
+    credits: null,
+    sekOnly: false,
+    rateChanged: false,
+  };
+  const debit = {
+    ...credit,
+    project: clientB,
+    billableAmount: "12.50",
+    convertedAmount: "131.25",
+  };
+  /** September's USD rate overridden after it closed. */
+  const sekOnly = {
+    ...credit,
+    billableAmount: "0.00",
+    convertedAmount: "6.25",
+    exchangeRate: "11.00",
+    sekOnly: true,
+    rateChanged: true,
+  };
+  /** SEK rounding moved at the same rate: no rate change. */
+  const rounding = {
+    ...credit,
+    billableAmount: "0.00",
+    convertedAmount: "-0.01",
+    sekOnly: true,
+  };
+  const repository = {
+    ...credit,
+    subject: { kind: "repository", provider: "copilot", name: "widget-api" },
+    provider: "copilot",
+    kind: "metered",
+    meteredKind: "repository",
+    billableAmount: "-0.12",
+    convertedAmount: "-1.26",
+    credits: "-12.00",
+  };
+  const personal = {
+    ...credit,
+    provider: "copilot",
+    project: null,
+    kind: "metered",
+    meteredKind: "personal",
+    billableAmount: "0.05",
+    convertedAmount: "0.53",
+    credits: "5.00",
+  };
+  const share = {
+    ...credit,
+    provider: "codex",
+    kind: "subscription",
+    subscriptionId: 4,
+    plan: "ChatGPT Pro",
+    billableAmount: "-50.00",
+    billableCurrency: "SEK",
+    convertedAmount: "-50.00",
+    exchangeRate: null,
+  };
+  const overhead = {
+    ...share,
+    kind: "overhead",
+    project: null,
+    billableAmount: "50.00",
+    convertedAmount: "50.00",
+  };
+  const noRate = {
+    ...credit,
+    billableCurrency: "EUR",
+    convertedAmount: null,
+    exchangeRate: null,
+    missingRate: true,
+  };
+  const close = {
+    closeId: 9,
+    closedAt: "2026-11-03T09:15:00.123456Z",
+    closedBy: "Grace Hopper",
+    adjustmentsPostOn: "2026-11",
+    currentExchangeRates: [],
+  };
+
+  /** October, closed, with the adjustments to September it froze. */
+  function closedOctober(adjustmentLines) {
+    const base = overview([apiLine]);
+    return {
+      ...base,
+      adjustmentLines,
+      adjustedMonths: [{ month: "2026-09", snapshotId: 7 }],
+      totals: {
+        ...base.totals,
+        adjustments: [
+          { currency: "EUR", amount: "-12.50" },
+          { currency: "SEK", amount: "0.00" },
+          { currency: "USD", amount: "-0.07" },
+        ],
+        converted: {
+          ...base.totals.converted,
+          adjustments: null,
+          invoiced: null,
+        },
+      },
+      close,
+    };
+  }
+
+  test("parses signed adjustment lines of every kind beside the month's own lines", () => {
+    const input = closedOctober([
+      credit,
+      debit,
+      sekOnly,
+      rounding,
+      repository,
+      personal,
+      share,
+      overhead,
+      noRate,
+    ]);
+
+    expect(parseAiBillingOverview(input)).toEqual(input);
+  });
+
+  test("parses an open month's negative invoiced total and adjusted months without lines", () => {
+    const base = overview([apiLine]);
+    const input = {
+      ...base,
+      adjustmentLines: [credit],
+      adjustedMonths: [
+        { month: "2026-08", snapshotId: 6 },
+        { month: "2026-09", snapshotId: 7 },
+      ],
+      adjustedPendingRates: [{ month: "2026-09", currency: "USD" }],
+      totals: {
+        ...base.totals,
+        adjustments: [{ currency: "USD", amount: "-12.50" }],
+        converted: {
+          ...base.totals.converted,
+          adjustments: "-131.25",
+          invoiced: "-110.77",
+        },
+      },
+    };
+
+    expect(parseAiBillingOverview(input).totals.converted.invoiced).toBe(
+      "-110.77",
+    );
+    expect(parseAiBillingOverview(input).adjustedPendingRates).toEqual([
+      { month: "2026-09", currency: "USD" },
+    ]);
+  });
+
+  test.each([
+    {
+      name: "a negative amount on the month's own line",
+      input: overview([{ ...apiLine, billableAmount: "-0.30" }]),
+    },
+    {
+      name: "a negative converted amount on the month's own line",
+      input: overview([{ ...apiLine, convertedAmount: "-3.15" }]),
+    },
+    {
+      name: "a signed zero",
+      input: closedOctober([{ ...credit, billableAmount: "-0.00" }]),
+    },
+    {
+      name: "a metered kind on an API adjustment",
+      input: closedOctober([{ ...credit, meteredKind: "project" }]),
+    },
+    {
+      name: "a metered adjustment without its kind",
+      input: closedOctober([{ ...repository, meteredKind: null }]),
+    },
+    {
+      name: "a metered adjustment without credits",
+      input: closedOctober([{ ...repository, credits: null }]),
+    },
+    {
+      name: "credits on an API adjustment",
+      input: closedOctober([{ ...credit, credits: "-12.00" }]),
+    },
+    {
+      name: "a subscription adjustment without its subscription",
+      input: closedOctober([{ ...share, subscriptionId: null }]),
+    },
+    {
+      name: "a subscription on an API adjustment",
+      input: closedOctober([{ ...credit, subscriptionId: 4 }]),
+    },
+    {
+      name: "a plan on an API adjustment",
+      input: closedOctober([{ ...credit, plan: "ChatGPT Pro" }]),
+    },
+    {
+      name: "overhead with a project",
+      input: closedOctober([{ ...overhead, project: apiLine.project }]),
+    },
+    {
+      name: "Spinit's credits with a project",
+      input: closedOctober([{ ...personal, project: apiLine.project }]),
+    },
+    {
+      name: "an API adjustment without a project or an Unassigned kind",
+      input: closedOctober([{ ...credit, project: null }]),
+    },
+    {
+      name: "a repository without a project marked as an unmapped key",
+      input: closedOctober([
+        { ...repository, project: null, unassigned: "unmapped" },
+      ]),
+    },
+    {
+      name: "an account's subject on an API adjustment",
+      input: closedOctober([{ ...credit, subject: externalLine.subject }]),
+    },
+    {
+      name: "a developer's subject on a repository adjustment",
+      input: closedOctober([{ ...repository, subject: ada }]),
+    },
+    {
+      name: "only SEK changed without saying so",
+      input: closedOctober([{ ...sekOnly, sekOnly: false }]),
+    },
+    {
+      name: "SEK only while the amount changed",
+      input: closedOctober([{ ...credit, sekOnly: true }]),
+    },
+    {
+      name: "a changed rate on an adjustment without one",
+      input: closedOctober([{ ...noRate, rateChanged: true }]),
+    },
+    {
+      name: "an adjustment that does not say whether its rate changed",
+      input: closedOctober([
+        Object.fromEntries(
+          Object.entries(credit).filter(([key]) => key !== "rateChanged"),
+        ),
+      ]),
+    },
+    {
+      name: "a converted amount without a rate",
+      input: closedOctober([{ ...noRate, convertedAmount: "-131.25" }]),
+    },
+    {
+      name: "a missing converted amount with a rate",
+      input: closedOctober([{ ...noRate, missingRate: false }]),
+    },
+    {
+      name: "an unknown key on an adjustment",
+      input: closedOctober([{ ...credit, usage }]),
+    },
+    {
+      name: "an adjustment without its snapshot",
+      input: closedOctober([without(credit, "snapshotId")]),
+    },
+    {
+      name: "totals without what the month invoices",
+      input: {
+        ...closedOctober([]),
+        totals: {
+          ...closedOctober([]).totals,
+          converted: without(closedOctober([]).totals.converted, "invoiced"),
+        },
+      },
+    },
+    {
+      name: "a close without its current rates",
+      input: {
+        ...closedOctober([]),
+        close: without(close, "currentExchangeRates"),
+      },
+    },
+    {
+      name: "an adjusted month without its snapshot",
+      input: { ...closedOctober([]), adjustedMonths: [{ month: "2026-09" }] },
+    },
+    {
+      name: "an overview without its close",
+      input: without(overview([apiLine]), "close"),
+    },
+    {
+      name: "a corrected month's pending rate without its month",
+      input: {
+        ...overview([apiLine]),
+        adjustedPendingRates: [{ currency: "USD" }],
+      },
+    },
+    {
+      name: "a bill that does not say which corrected months' rates are pending",
+      input: without(overview([apiLine]), "adjustedPendingRates"),
+    },
+  ])("rejects $name", ({ input }) => {
+    expect(() => parseAiBillingOverview(input)).toThrow();
+  });
+
+  test("a closed developer month carries the developer's adjustment lines", () => {
+    const rest = without(
+      closedOctober([credit, debit]),
+      "developers",
+      "personalUsage",
+      "adjustedMonths",
+    );
+    const input = {
+      ...rest,
+      developer: {
+        userId: 3,
+        fullName: "Ada Lovelace",
+        email: "ada@example.com",
+      },
+      machines: [],
+      dailyUsage: [],
+      personalUsage: null,
+    };
+
+    expect(parseAiDeveloperMonth(input)).toEqual(input);
+    expect(() =>
+      parseAiDeveloperMonth({ ...input, adjustedMonths: [] }),
+    ).toThrow();
   });
 });

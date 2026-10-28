@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH active AS (\n            SELECT month\n            FROM ai_billing_month_closes\n            WHERE scope = $1 AND reopened_at IS NULL\n        ), floor_month AS (\n            SELECT LEAST(\n                date_trunc('month', $3::timestamptz AT TIME ZONE 'UTC'),\n                date_trunc('month', $3::timestamptz AT TIME ZONE $2::text)\n            )::date AS month\n        ), first_open AS (\n            SELECT MIN(candidate.month) AS month\n            FROM (\n                SELECT month FROM floor_month\n                UNION ALL\n                SELECT (active.month + INTERVAL '1 month')::date\n                FROM active, floor_month\n                WHERE active.month >= floor_month.month\n            ) AS candidate\n            WHERE candidate.month NOT IN (SELECT month FROM active)\n        )\n        SELECT LEAST(\n            first_open.month::timestamp AT TIME ZONE 'UTC',\n            first_open.month::timestamp AT TIME ZONE $2::text\n        ) AS \"at!\"\n        FROM first_open\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0a3cad72c345414cc857dde9844e842cd79c10e4d96ea5e223b70031821aa7d0"
+}

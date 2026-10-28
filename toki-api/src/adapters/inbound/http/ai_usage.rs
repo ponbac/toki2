@@ -689,6 +689,7 @@ mod tests {
                 pool.clone(),
             ))),
             REPRICE_FLOOR,
+            crate::domain::models::AiUsageTimeZone::parse("Europe/Stockholm").unwrap(),
         ))
     }
 

@@ -226,7 +226,7 @@ function worthOf(
  * Usage of repositories nobody has mapped needs attention: mapping them on
  * Project mappings assigns it. So does a metered payer's code review of
  * GitHub repositories nobody has mapped, which mapping them under Project
- * mappings > GitHub repositories assigns, and which will hold back month
+ * mappings > GitHub repositories assigns, and which holds back month
  * close. Usage outside any repository has no key a mapping could name, so it
  * does not hold the bill back, though the summary still says no customer is
  * invoiced for it.

@@ -8,6 +8,10 @@ import {
 } from "../contracts/ai-admin";
 import { parseMeteredImportStarted } from "../contracts/ai-metered-usage";
 import {
+  parseAiCloseConflict,
+  parseAiMonthCloseStatus,
+} from "../contracts/ai-month-close";
+import {
   parseAcceptedSuggestions,
   parseAccountDisposition,
   parseDirectoryRefresh,
@@ -19,10 +23,13 @@ import {
   type AiAcceptedSuggestions,
   type AiAccountDisposition,
   type AiAccountDispositionTerms,
+  type AiCloseCheckId,
+  type AiCloseReadiness,
   type AiDirectoryRefresh,
   type AiExchangeRate,
   type AiMeteredImportMode,
   type AiMeteredImportStarted,
+  type AiMonthCloseStatus,
   type AiProjectMapping,
   type AiRepositoryMapping,
 } from "../queries/ai-admin";
@@ -81,6 +88,19 @@ export type StartMeteredImportVars = {
   mode: AiMeteredImportMode;
 };
 
+/** Closes a month, `YYYY-MM`, waiving the failed checks named with a reason
+ * each. */
+export type CloseMonthVars = {
+  month: string;
+  waivers: readonly { check: AiCloseCheckId; reason: string }[];
+};
+/** What closing a month came to: closed, or refused as not ready with the
+ * readiness the server evaluated just then. */
+export type CloseMonthResult =
+  | Readonly<{ kind: "closed"; status: AiMonthCloseStatus }>
+  | Readonly<{ kind: "notReady"; error: string; readiness: AiCloseReadiness }>;
+export type ReopenMonthVars = { month: string };
+
 /** The most picks the server takes in one request. */
 const MAX_PICKS_PER_REQUEST = 100;
 
@@ -102,6 +122,8 @@ export const aiAdminMutations = {
   useDeleteAccountDisposition,
   useAcceptAccountSuggestions,
   useStartMeteredImport,
+  useCloseMonth,
+  useReopenMonth,
 };
 
 export function useOverrideExchangeRate(
@@ -193,7 +215,8 @@ export function useDeleteProjectMapping(
 /**
  * Maps a repository to an active time-tracking project, or changes its
  * mapping. A new mapping needs a repository the payer billed (else 404); the
- * mapping applies whenever a bill is read, so every AI read refreshes.
+ * mapping applies whenever an open month's bill is read (a closed month gets
+ * an adjustment on the next open month's), so every AI read refreshes.
  */
 export function useSetRepositoryMapping(
   options?: DefaultMutationOptions<
@@ -219,8 +242,8 @@ export function useSetRepositoryMapping(
   });
 }
 
-/** Removes a repository's mapping: its credits bill as Unassigned, in past
- * months' bills too. */
+/** Removes a repository's mapping: its credits bill as Unassigned in open
+ * months; a closed month gets an adjustment on the next open month's bill. */
 export function useDeleteRepositoryMapping(
   options?: DefaultMutationOptions<DeleteRepositoryMappingVars>,
 ) {
@@ -475,8 +498,9 @@ export function useAcceptAccountSuggestions(
 /**
  * Starts importing a month of metered usage from the payer. The server answers
  * at once and runs the import on its own; the month reloads until it is done.
- * Resolves to null when an import is already running (409), which is no error:
- * the page shows that run.
+ * Resolves to null when an import is already running, or a month close holds
+ * imports off while it reads the usage (409), which is no error: the page shows
+ * that run.
  */
 export function useStartMeteredImport(
   options?: DefaultMutationOptions<
@@ -512,6 +536,83 @@ export function useStartMeteredImport(
     onError: async (error, vars, ctx, mutationContext) => {
       await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
       await options?.onError?.(error, vars, ctx, mutationContext);
+    },
+  });
+}
+
+/**
+ * Closes a month's whole AI bill. The server evaluates readiness again: a
+ * month that is not ready (a check failed since the page loaded, or a waiver
+ * no longer covers it) resolves to `notReady` with that readiness, which is no
+ * error. Every other refusal (not over, already closed, another close
+ * running, or any usage import running, which no waiver covers) rejects.
+ * Either way every admin AI query reloads: a closed month is served from its
+ * snapshot, and the next open month adjusts it.
+ */
+export function useCloseMonth(
+  options?: DefaultMutationOptions<CloseMonthVars, CloseMonthResult>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "billing", "close"],
+    mutationFn: async ({
+      month,
+      waivers,
+    }: CloseMonthVars): Promise<CloseMonthResult> => {
+      try {
+        return {
+          kind: "closed",
+          status: parseAiMonthCloseStatus(
+            await api
+              .post(`ai-usage/admin/billing/${month}/close`, {
+                json: { waivers },
+                // Closing recomputes the month and every closed month posting
+                // on it, and stores each line.
+                timeout: 120_000,
+              })
+              .json<unknown>(),
+          ),
+        };
+      } catch (error) {
+        if (error instanceof HTTPError && error.response.status === 409) {
+          const conflict = parseAiCloseConflict(error.data);
+          if (conflict?.kind === "notReady") {
+            return conflict;
+          }
+        }
+        throw error;
+      }
+    },
+    ...options,
+    onSettled: async (data, error, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSettled?.(data, error, vars, ctx, mutationContext);
+    },
+  });
+}
+
+/**
+ * Re-opens a closed month, so its bill is computed live again. The server
+ * refuses (`409`, `heldBy`) while a close holds adjustments to the month.
+ */
+export function useReopenMonth(
+  options?: DefaultMutationOptions<ReopenMonthVars, AiMonthCloseStatus>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ["ai-admin", "billing", "reopen"],
+    mutationFn: async ({ month }: ReopenMonthVars) =>
+      parseAiMonthCloseStatus(
+        await api
+          .delete(`ai-usage/admin/billing/${month}/close`, { timeout: 60_000 })
+          .json<unknown>(),
+      ),
+    ...options,
+    onSettled: async (data, error, vars, ctx, mutationContext) => {
+      await queryClient.invalidateQueries({ queryKey: AI_ADMIN_QUERY_KEY });
+      await options?.onSettled?.(data, error, vars, ctx, mutationContext);
     },
   });
 }

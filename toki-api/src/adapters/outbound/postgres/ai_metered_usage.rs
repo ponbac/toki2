@@ -35,8 +35,8 @@ use crate::{
             AiRunStatus, AiSliceRecord, AiSourceOutcome, AiSourceState, AiSourceStatus,
             AiStoredAccountCredit, AiStoredAccountError, AiStoredOrgCredit,
             AiStoredRepositoryMapping, AiStoredScope, AiSummaryKind, AiTokenCounts,
-            AiTrackedModelDay, AiUnassignedKind, AiUsageCheck, AiUsageDateRange, AiUsdNanos,
-            ProjectId, TimeTrackingCompany, UserId, UNATTRIBUTED_PROJECT_KEY,
+            AiTrackedModelDay, AiUnassignedKind, AiUsageCheck, AiUsageDateRange, AiUsageTimeZone,
+            AiUsdNanos, ProjectId, TimeTrackingCompany, UserId, UNATTRIBUTED_PROJECT_KEY,
         },
         ports::outbound::{AiImportLease, AiMeteredUsageRepository},
         AiMeteredUsageError,
@@ -712,6 +712,16 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
             .map_err(storage_error)
     }
 
+    async fn open_from(
+        &self,
+        time_zone: &AiUsageTimeZone,
+        configured_floor: OffsetDateTime,
+    ) -> Result<OffsetDateTime, AiMeteredUsageError> {
+        super::ai_month_close::open_from(&self.pool, time_zone, configured_floor)
+            .await
+            .map_err(storage_error)
+    }
+
     async fn try_lock_import(
         &self,
         payer: AiProvider,
@@ -728,6 +738,28 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         .await
         .map_err(storage_error)?;
         Ok(locked.then(|| Box::new(PostgresImportLease { transaction }) as Box<dyn AiImportLease>))
+    }
+
+    async fn try_hold_imports(
+        &self,
+        payer: AiProvider,
+    ) -> Result<Option<Box<dyn AiImportLease>>, AiMeteredUsageError> {
+        // The import lock shared: it conflicts with an import's exclusive
+        // hold alone, and `import_status` counts only exclusive holders as a
+        // live run.
+        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
+        let held = sqlx::query_scalar!(
+            r#"
+            SELECT pg_try_advisory_xact_lock_shared(
+                hashtextextended('ai_provider_usage_import:' || $1, 0)
+            ) AS "held!"
+            "#,
+            payer.as_str(),
+        )
+        .fetch_one(&mut transaction.executor())
+        .await
+        .map_err(storage_error)?;
+        Ok(held.then(|| Box::new(PostgresImportLease { transaction }) as Box<dyn AiImportLease>))
     }
 
     async fn slices(
@@ -1558,8 +1590,9 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
         .map_err(storage_error)?;
 
         // A `running` row counts only while some session holds the import
-        // lock (`try_lock_import`'s key, as pg_locks splits it): a run whose
-        // process died freed the lock but left its row running.
+        // lock exclusively (`try_lock_import`'s key, as pg_locks splits it):
+        // a run whose process died freed the lock but left its row running,
+        // and a hold on imports (`try_hold_imports`) holds it shared.
         let running = sqlx::query_as!(
             RunRow,
             r#"
@@ -1573,6 +1606,7 @@ impl AiMeteredUsageRepository for PostgresAiMeteredUsageRepository {
                   FROM pg_locks
                   WHERE locktype = 'advisory'
                     AND granted
+                    AND mode = 'ExclusiveLock'
                     AND objsubid = 1
                     AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
                     AND classid = ((hashtextextended('ai_provider_usage_import:' || $1, 0) >> 32)

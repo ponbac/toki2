@@ -84,10 +84,10 @@ export function RepositoriesPanel({
         Usage of these repositories counts for no time-tracking project. A
         repository without a mapping shows its name only to the developers who
         use it. Mapping it shows the name to admins and applies to
-        everyone&apos;s usage of it, including past usage. One that is not
-        client work can be marked {PERSONAL_LABEL} instead: your usage of it is
-        left out of the bill, and nothing is mapped, so admins do not see its
-        name.
+        everyone&apos;s usage of it in months not yet closed; a closed month is
+        corrected on the next month&apos;s bill. One that is not client work can
+        be marked {PERSONAL_LABEL} instead: your usage of it is left out of the
+        bill, and nothing is mapped, so admins do not see its name.
       </p>
       {!configured && (
         <p className="flex max-w-3xl items-start gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs">

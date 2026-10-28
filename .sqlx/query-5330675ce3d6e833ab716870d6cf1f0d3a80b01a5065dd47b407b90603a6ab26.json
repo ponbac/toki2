@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT pg_try_advisory_xact_lock_shared(\n                hashtextextended('ai_provider_usage_import:' || $1, 0)\n            ) AS \"held!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "held!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5330675ce3d6e833ab716870d6cf1f0d3a80b01a5065dd47b407b90603a6ab26"
+}
