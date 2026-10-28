@@ -60,6 +60,15 @@
 //!   one without usage. It is reported apart, as an estimate only
 //!   (`AiPersonalUsage`).
 //!
+//! - **Metered payers.** From the metered cutover on, usage a metered payer
+//!   (GitHub Copilot) pays for bills from the payer's own credits, per UTC
+//!   month, rather than at its estimate: those buckets leave the local-day
+//!   reads and `add_metered_lines` adds the lines `allocate_metered_credits`
+//!   decides (`ai_metered_billing`). They are USD at $0.01 a credit, convert
+//!   per line like API lines, and share the month key and its exchange rate.
+//!   A line's subject is then a user, a provider account, the unknown account
+//!   or a repository (`AiBillingSubject`).
+//!
 //! Usage that no project mapping resolves, including `unattributed` usage,
 //! belongs to the Unassigned project (`None`). It bills as one project, so
 //! the bill is the same whatever made its usage Unassigned. The bill only
@@ -76,8 +85,9 @@ use time::{Date, Month};
 
 use super::{
     resolve_billing_mode, AiBillingDeveloper, AiBillingMode, AiConvertedAmount, AiConvertedBill,
-    AiCurrency, AiMachineId, AiMappedProject, AiProvider, AiSubscription, AiSubscriptionId,
-    AiTokenCounts, AiUsageDateRange, UserId, MAX_SAFE_COUNT,
+    AiCurrency, AiMachineId, AiMappedProject, AiMeteredAllocation, AiMeteredBillInfo,
+    AiMeteredCharge, AiProvider, AiProviderAccountId, AiProviderLogin, AiSubscription,
+    AiSubscriptionId, AiTokenCounts, AiUsageDateRange, UserId, MAX_SAFE_COUNT,
 };
 
 const NANOS_PER_USD: i64 = 1_000_000_000;
@@ -363,15 +373,60 @@ pub enum AiBillingCharge {
         subscription_id: AiSubscriptionId,
         fee: AiFeeAmount,
     },
+    /// Credits a metered payer billed, in USD at its list price.
+    Metered(AiMeteredCharge),
 }
 
-/// One charge of a developer's usage of a provider to one project in a month.
+/// Whom a billing line charges for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AiBillingSubject {
+    /// A developer's usage.
+    User(UserId),
+    /// A metered payer's account that no user owns that day: unlinked or
+    /// external.
+    ProviderAccount {
+        provider: AiProvider,
+        account_id: AiProviderAccountId,
+        login: AiProviderLogin,
+    },
+    /// Credits of accounts Toki never listed: the per-day residual.
+    UnknownAccount { provider: AiProvider },
+    /// Credits a metered payer billed to a repository.
+    Repository { provider: AiProvider, name: String },
+}
+
+impl AiBillingSubject {
+    pub fn user_id(&self) -> Option<UserId> {
+        match self {
+            Self::User(user_id) => Some(*user_id),
+            Self::ProviderAccount { .. }
+            | Self::UnknownAccount { .. }
+            | Self::Repository { .. } => None,
+        }
+    }
+
+    /// Users by id, then provider accounts by lower-cased login and id, the
+    /// unknown account, and repositories by name.
+    pub fn order_key(&self) -> (u8, i64, String, i64) {
+        match self {
+            Self::User(user_id) => (0, i64::from(user_id.as_i32()), String::new(), 0),
+            Self::ProviderAccount {
+                account_id, login, ..
+            } => (1, 0, login.as_str().to_lowercase(), account_id.as_i64()),
+            Self::UnknownAccount { .. } => (2, 0, String::new(), 0),
+            Self::Repository { name, .. } => (3, 0, name.clone(), 0),
+        }
+    }
+}
+
+/// One charge of a subject's usage of a provider to one project in a month:
+/// a developer's, or for a metered payer an account's or a repository's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiBillingLine {
-    pub user_id: UserId,
+    pub subject: AiBillingSubject,
     /// The provider whose usage the line charges for. A subscription line's
     /// can be Pi, on a subscription to Codex; overhead names the
-    /// subscription's provider.
+    /// subscription's provider; a metered line names the payer.
     pub provider: AiProvider,
     /// The time-tracking project, or `None` for Unassigned usage and for
     /// unallocated overhead.
@@ -439,7 +494,7 @@ impl AiBillingLine {
             }
         };
         let currency = match &self.charge {
-            AiBillingCharge::Api => AiCurrency::usd(),
+            AiBillingCharge::Api | AiBillingCharge::Metered(_) => AiCurrency::usd(),
             AiBillingCharge::Subscription { fee, .. }
             | AiBillingCharge::UnallocatedOverhead { fee, .. } => fee.currency.clone(),
         };
@@ -497,9 +552,9 @@ impl AiBillingLine {
             .collect())
     }
 
-    /// What the line bills: a fee share, or an API line's estimate rounded to
-    /// whole US cents. `None` for an API line whose usage is all unpriced, so
-    /// its cost is unknown, not zero.
+    /// What the line bills: a fee share, an API line's estimate rounded to
+    /// whole US cents, or a metered line's credits. `None` for an API line
+    /// whose usage is all unpriced, so its cost is unknown, not zero.
     pub fn billable(&self) -> Option<AiFeeAmount> {
         match &self.charge {
             AiBillingCharge::Api => {
@@ -512,6 +567,7 @@ impl AiBillingLine {
             }
             AiBillingCharge::Subscription { fee, .. }
             | AiBillingCharge::UnallocatedOverhead { fee, .. } => Some(fee.clone()),
+            AiBillingCharge::Metered(charge) => Some(charge.amount.clone()),
         }
     }
 }
@@ -559,13 +615,18 @@ impl AiSubscriptionMonth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiMonthBill {
     pub month: AiBillingMonth,
-    /// Ordered by user id and provider, a subscription line counting under its
-    /// subscription's provider; within them, subscription lines by subscription
-    /// start and the provider used, then API lines, each by project name with
-    /// Unassigned last.
+    /// Users by id, each with their lines by provider, a subscription line
+    /// counting under its subscription's provider (within them, subscription
+    /// lines by subscription start and the provider used, then API lines, each
+    /// by project name with Unassigned last), then their metered credit lines;
+    /// then provider accounts, the unknown account and repositories
+    /// (`AiBillingSubject::order_key`).
     pub lines: Vec<AiBillingLine>,
     /// Subscriptions that cover days of the month, by user id, provider and start.
     pub subscriptions: Vec<AiSubscriptionMonth>,
+    /// The metered payer's lines as a whole, when the month bills them from
+    /// credits; `None` before the cutover.
+    pub metered: Option<AiMeteredBillInfo>,
 }
 
 /// Month totals. Amounts in different currencies are never added together.
@@ -578,6 +639,8 @@ pub struct AiMonthTotals {
     pub api_billed: AiFeeAmount,
     /// Records on API days whose cost is unknown and not in `api_billed`.
     pub api_unpriced_records: i64,
+    /// What metered lines bill, in USD: their credits at $0.01.
+    pub metered_billed: AiFeeAmount,
     /// All usage in the month, whichever way it was billed, with its
     /// unrounded API-equivalent estimate.
     pub usage: AiBillingUsage,
@@ -600,6 +663,7 @@ impl AiMonthBill {
             fees: Vec::new(),
             api_billed: AiFeeAmount::zero(AiCurrency::usd()),
             api_unpriced_records: 0,
+            metered_billed: AiFeeAmount::zero(AiCurrency::usd()),
             usage: AiBillingUsage::default(),
         };
         for line in &self.lines {
@@ -638,6 +702,13 @@ impl AiMonthBill {
                             .checked_add(fee.hundredths)
                             .ok_or(AiBillingError::NumericRange)?;
                     }
+                }
+                AiBillingCharge::Metered(charge) => {
+                    totals.metered_billed.hundredths = totals
+                        .metered_billed
+                        .hundredths
+                        .checked_add(charge.amount.hundredths)
+                        .ok_or(AiBillingError::NumericRange)?;
                 }
             }
         }
@@ -917,7 +988,7 @@ pub fn bill_month(
                         used_providers.into_iter().zip(used_projects).zip(shares)
                     {
                         lines.push(AiBillingLine {
-                            user_id,
+                            subject: AiBillingSubject::User(user_id),
                             provider: used_provider,
                             unassigned: project.unassigned(),
                             project: project.project,
@@ -935,7 +1006,7 @@ pub fn bill_month(
                 }
                 None => {
                     lines.push(AiBillingLine {
-                        user_id,
+                        subject: AiBillingSubject::User(user_id),
                         provider,
                         project: None,
                         charge: AiBillingCharge::UnallocatedOverhead {
@@ -962,7 +1033,7 @@ pub fn bill_month(
 
         for project in api_projects.into_sorted() {
             lines.push(AiBillingLine {
-                user_id,
+                subject: AiBillingSubject::User(user_id),
                 provider,
                 unassigned: project.unassigned(),
                 project: project.project,
@@ -976,8 +1047,51 @@ pub fn bill_month(
         month,
         lines,
         subscriptions: subscription_months,
+        metered: None,
     };
     // Overview, CSV and drill-down must reject the same unsupported month.
+    bill.totals()?;
+    Ok(bill)
+}
+
+/// Adds a metered payer's lines to a month's bill, after each subject's
+/// other lines (`AiMonthBill::lines`): appended, then sorted stably by
+/// subject only, so every earlier line keeps its order, which converting a
+/// subscription's fee relies on. A month whose totals cannot be represented
+/// safely is a range error, as in `bill_month`.
+pub fn add_metered_lines(
+    mut bill: AiMonthBill,
+    allocation: AiMeteredAllocation,
+) -> Result<AiMonthBill, AiBillingError> {
+    if allocation.month != bill.month {
+        return Err(AiBillingError::Invalid(format!(
+            "metered lines of {} cannot join the bill of {}",
+            allocation.month, bill.month
+        )));
+    }
+    let info = allocation.info();
+    let payer = allocation.payer;
+    bill.lines.extend(allocation.lines.into_iter().map(|line| {
+        AiBillingLine {
+            subject: line.subject,
+            provider: payer,
+            project: line.project,
+            unassigned: line
+                .unassigned
+                .map(|kind| {
+                    vec![AiUnassignedUsage {
+                        kind,
+                        usage: line.usage,
+                    }]
+                })
+                .unwrap_or_default(),
+            charge: AiBillingCharge::Metered(line.charge),
+            usage: line.usage,
+        }
+    }));
+    bill.lines
+        .sort_by_cached_key(|line| line.subject.order_key());
+    bill.metered = Some(info);
     bill.totals()?;
     Ok(bill)
 }
@@ -1002,6 +1116,9 @@ pub struct AiDeveloperDayUsage {
     /// The project the key maps to now, or `None` for Unassigned.
     pub project: Option<AiMappedProject>,
     pub usage: AiBillingUsage,
+    /// The row was read as a metered payer's buckets on a UTC day (`day` is a
+    /// UTC date): it bills from the payer's credits.
+    pub metered: bool,
 }
 
 /// A developer's usage in a month of the project keys they marked personal.
@@ -1025,12 +1142,22 @@ pub struct AiMonthOverview {
     pub personal: Vec<AiPersonalUsage>,
 }
 
-/// A developer's day usage with the subscription that pays for it, if any.
+/// How a developer's day usage bills.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiDayBilling {
+    /// At its estimated API cost.
+    Api,
+    /// By the subscription that covers the day.
+    Subscription(AiSubscriptionId),
+    /// From a metered payer's credits.
+    Metered,
+}
+
+/// A developer's day usage with how it bills.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiBilledDayUsage {
     pub usage: AiDeveloperDayUsage,
-    /// `None` when the day bills as API usage.
-    pub subscription_id: Option<AiSubscriptionId>,
+    pub billing: AiDayBilling,
 }
 
 /// A machine's display name.
@@ -1056,8 +1183,10 @@ pub struct AiDeveloperMonth {
     pub machines: Vec<AiMachineLabel>,
 }
 
-/// Marks each day's usage with the subscription that pays for it, as
-/// `resolve_billing_mode` decides.
+/// Marks each day's usage with how it bills: metered rows from the payer's
+/// credits, the others as `resolve_billing_mode` decides. A date alone cannot
+/// tell, since the local rows of the cutover month's first date may hold the
+/// payer's hours from before the cutover.
 pub fn billed_day_usage(
     user_id: UserId,
     usage: Vec<AiDeveloperDayUsage>,
@@ -1066,20 +1195,23 @@ pub fn billed_day_usage(
     usage
         .into_iter()
         .map(|usage| {
-            let subscription_id = match resolve_billing_mode(
-                subscriptions,
-                user_id,
-                usage.billing_provider.unwrap_or(usage.provider),
-                usage.day,
-                usage.chatgpt_sign_in,
-            ) {
-                AiBillingMode::Api => None,
-                AiBillingMode::Subscription(subscription) => Some(subscription.id),
+            let billing = if usage.metered {
+                AiDayBilling::Metered
+            } else {
+                match resolve_billing_mode(
+                    subscriptions,
+                    user_id,
+                    usage.billing_provider.unwrap_or(usage.provider),
+                    usage.day,
+                    usage.chatgpt_sign_in,
+                ) {
+                    AiBillingMode::Api => AiDayBilling::Api,
+                    AiBillingMode::Subscription(subscription) => {
+                        AiDayBilling::Subscription(subscription.id)
+                    }
+                }
             };
-            AiBilledDayUsage {
-                usage,
-                subscription_id,
-            }
+            AiBilledDayUsage { usage, billing }
         })
         .collect()
 }

@@ -1,22 +1,29 @@
 //! Reconciliation of what a metered payer billed (`G`, gross credits) with
 //! what Toki tracked (`T`, Toki's estimate of the usage the payer paid for, at
-//! the payer's price), per account, UTC day and group of (SKU, model). Nothing
-//! here bills: it shows what the T/G rule would attribute.
+//! the payer's price), per account, UTC day and group of (SKU, model). From
+//! the metered cutover on, the bill's lines follow this attribution: the bill
+//! allocates over the same walk of the month (`walk`, `split_group`), so the
+//! two agree on `G`, `T`, attributed and untracked for every account
+//! (`ai_metered_billing`).
 //!
 //! - **Owners.** Each account day belongs to the account's disposition that
 //!   day: a user (linked), External, or nobody (unlinked).
 //! - **Groups.** On linked days, credits form groups of (SKU, normalized
 //!   model). A trackable group's `T` is the user's priced tracked cost of that
-//!   model that day; untrackable and unrecognized groups have `T = 0`;
-//!   repository-billed credits (code review) are left out, since the payer
-//!   bills them per repository. A tracked model without credits that day forms
-//!   a group with Toki usage only (`G = 0`).
-//! - **The rule.** Per day and group, `attributed = min(G, T)` and
-//!   `untracked = G − attributed`. Unpriced usage carries no weight, so a
-//!   group with only unpriced usage has `T = 0`. Free models carry none
-//!   either: their tracked cost is left out of `T` everywhere (old pricing
-//!   basis and tracked without a linked account included), and their groups
-//!   are listed with `T = 0`.
+//!   model that day, per destination (`AiMeteredDestination`: the project its
+//!   key resolves to, a kind of Unassigned, or personal/internal); untrackable
+//!   and unrecognized groups have `T = 0`; repository-billed credits (code
+//!   review) are left out, since the payer bills them per repository. A
+//!   tracked model without credits that day forms a group with Toki usage only
+//!   (`G = 0`).
+//! - **The rule** (`split_group`). Per day and group, `attributed = min(G, T)`
+//!   and `untracked = G − attributed`: `T ≥ G` splits `G` by each
+//!   destination's `T_d`, `T < G` gives each its `T_d`. No destination gets
+//!   more than its `T_d`. Unpriced usage carries no weight, so a group with
+//!   only unpriced usage has `T = 0`. Free models carry none either: their
+//!   tracked cost is left out of `T` everywhere (old pricing basis and tracked
+//!   without a linked account included), and their groups are listed with
+//!   `T = 0`.
 //! - **Imported days.** An account day whose slice was never fetched has no
 //!   `G` to compare with: it is counted as not imported and its `T` is left
 //!   out, rather than read as the payer billing nothing.
@@ -47,9 +54,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use time::{Date, Duration, OffsetDateTime};
 
 use super::{
-    metered_model_status, AiAccountTarget, AiBillingMonth, AiCreditKind, AiDecimal,
-    AiMeteredCredit, AiMeteredModelStatus, AiMeteredOrgCharge, AiMeteredSummaryLine,
-    AiOrgChargeKind, AiProvider, AiProviderAccountId, AiStoredProviderAccount, AiSummaryKind,
+    allocate_largest_remainder, metered_model_status, AiAccountTarget, AiBillingMonth,
+    AiBillingProject, AiBillingUsage, AiCreditKind, AiDecimal, AiMeteredCredit,
+    AiMeteredModelStatus, AiMeteredOrgCharge, AiMeteredSummaryLine, AiOrgChargeKind, AiProvider,
+    AiProviderAccountId, AiStoredProviderAccount, AiSummaryKind, AiTokenCounts, AiUnassignedKind,
     AiUsageDateRange, AiUsdNanos, UserId,
 };
 use crate::domain::AiMeteredUsageError;
@@ -65,12 +73,51 @@ pub const FLAG_MATERIAL_NANOS: i64 = 1_000_000_000;
 /// per-row `G`, count as zero.
 pub const RESIDUAL_TOLERANCE_NANOS: i64 = 100;
 
-/// Toki's tracked usage paid for by the payer, per user, UTC day and model.
+/// Where a metered payer's tracked usage goes: the project its key resolves
+/// to, one kind of Unassigned, or personal/internal (a key its user marked,
+/// included and shown apart rather than dropped).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AiMeteredDestination {
+    Project(AiBillingProject),
+    Personal,
+}
+
+impl AiMeteredDestination {
+    /// Bill order: mapped projects by name, then id; Unassigned unmapped,
+    /// then unattributed; personal last.
+    pub fn order_key(&self) -> (u8, String, String) {
+        match self {
+            Self::Project(AiBillingProject::Mapped(project)) => {
+                (0, project.name.clone(), project.id.to_string())
+            }
+            Self::Project(AiBillingProject::Unassigned(AiUnassignedKind::Unmapped)) => {
+                (1, String::new(), String::new())
+            }
+            Self::Project(AiBillingProject::Unassigned(AiUnassignedKind::Unattributed)) => {
+                (2, String::new(), String::new())
+            }
+            Self::Personal => (3, String::new(), String::new()),
+        }
+    }
+
+    /// What tells destinations apart: a project by its id, whatever its name
+    /// (renamed between two keys' mappings), as the bill merges projects.
+    pub(super) fn identity(&self) -> (u8, String) {
+        let (rank, _, id) = self.order_key();
+        (rank, id)
+    }
+}
+
+/// Toki's tracked usage paid for by the payer, per user, UTC day, model and
+/// destination. The destinations of one user, day and model sum exactly to
+/// that model's rounded cost.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiTrackedModelDay {
     pub user_id: UserId,
     pub day: Date,
     pub model: String,
+    pub destination: AiMeteredDestination,
+    pub tokens: AiTokenCounts,
     /// `T`'s known part: the priced cost.
     pub priced_cost: AiUsdNanos,
     pub records: i64,
@@ -80,6 +127,18 @@ pub struct AiTrackedModelDay {
     pub old_basis_buckets: i64,
     /// The priced cost of buckets before the reprice floor, never repriced.
     pub before_floor_cost: AiUsdNanos,
+}
+
+impl AiTrackedModelDay {
+    /// The usage as billing lines show it.
+    pub fn usage(&self) -> AiBillingUsage {
+        AiBillingUsage {
+            tokens: self.tokens,
+            records: self.records,
+            priced_cost: self.priced_cost,
+            unpriced_records: self.unpriced_records,
+        }
+    }
 }
 
 /// A stored credits row of an account on a UTC day.
@@ -473,18 +532,406 @@ struct AccountSum {
     unknown_model: bool,
     unlinked_days: u32,
     days_not_imported: u32,
-    groups: BTreeMap<(Option<String>, String, AiGroupKind), GroupSum>,
+    groups: BTreeMap<GroupKey, GroupSum>,
 }
 
-/// A user's tracked usage of one model on one day.
-#[derive(Default, Clone, Copy)]
-struct TrackedSum {
-    priced: i128,
-    records: i64,
-    unpriced_records: i64,
-    old_basis: i128,
-    old_basis_buckets: i64,
-    before_floor: i128,
+/// What a day-group is keyed by: (SKU, model, kind); the SKU is `None` for
+/// Toki usage without credits.
+pub(super) type GroupKey = (Option<String>, String, AiGroupKind);
+
+/// A user's tracked usage of one model on one day, or of one destination of
+/// it, in nanodollars.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TrackedSum {
+    pub priced: i128,
+    pub records: i64,
+    pub unpriced_records: i64,
+    pub old_basis: i128,
+    pub old_basis_buckets: i64,
+    pub before_floor: i128,
+    pub tokens: AiTokenCounts,
+}
+
+impl TrackedSum {
+    fn add(&mut self, row: &AiTrackedModelDay) {
+        self.priced += i128::from(row.priced_cost.nanos());
+        self.records = self.records.saturating_add(row.records);
+        self.unpriced_records = self.unpriced_records.saturating_add(row.unpriced_records);
+        self.old_basis += i128::from(row.old_basis_cost.nanos());
+        self.old_basis_buckets = self.old_basis_buckets.saturating_add(row.old_basis_buckets);
+        self.before_floor += i128::from(row.before_floor_cost.nanos());
+        let tokens = &mut self.tokens;
+        tokens.input = tokens.input.saturating_add(row.tokens.input);
+        tokens.cache_read = tokens.cache_read.saturating_add(row.tokens.cache_read);
+        tokens.cache_write = tokens.cache_write.saturating_add(row.tokens.cache_write);
+        tokens.output = tokens.output.saturating_add(row.tokens.output);
+    }
+
+    /// The usage as billing lines show it.
+    pub fn usage(&self) -> Result<AiBillingUsage, AiMeteredUsageError> {
+        let usage = AiBillingUsage {
+            tokens: self.tokens,
+            records: self.records,
+            priced_cost: nanos(self.priced)?,
+            unpriced_records: self.unpriced_records,
+        };
+        usage.ensure_reportable().map_err(|_| out_of_range())?;
+        Ok(usage)
+    }
+}
+
+/// A user's tracked usage of one model on one UTC day, in total and per
+/// destination.
+#[derive(Debug, Default, Clone)]
+pub(super) struct ModelTracked {
+    pub total: TrackedSum,
+    /// In `AiMeteredDestination::order_key` order; they sum to `total`.
+    pub destinations: Vec<(AiMeteredDestination, TrackedSum)>,
+}
+
+impl ModelTracked {
+    fn add(&mut self, row: &AiTrackedModelDay) {
+        self.total.add(row);
+        let identity = row.destination.identity();
+        match self
+            .destinations
+            .iter_mut()
+            .find(|(destination, _)| destination.identity() == identity)
+        {
+            Some((_, sum)) => sum.add(row),
+            None => {
+                let mut sum = TrackedSum::default();
+                sum.add(row);
+                self.destinations.push((row.destination.clone(), sum));
+            }
+        }
+    }
+}
+
+/// One (SKU, model, kind) group of an account's UTC day, classified as the
+/// T/G rule sees it.
+#[derive(Debug, Clone)]
+pub(super) struct DayGroup<'a> {
+    pub key: GroupKey,
+    /// The day's credits rows of the group; none for Toki usage only.
+    pub rows: Vec<&'a AiStoredAccountCredit>,
+    /// `G`, in nanodollars.
+    pub gross: i128,
+    /// The weighed tracked model matched to the group on a linked day: free
+    /// models, untrackable, unrecognized and repository-billed credits and
+    /// unlinked and External days have none.
+    pub total: Option<TrackedSum>,
+    /// `total` per destination: the weights `T_d`.
+    pub tracked: Vec<(AiMeteredDestination, TrackedSum)>,
+    /// `split_group(G, T_d…)` on linked days: one charge per `tracked` entry.
+    /// Empty on other days and for repository-billed credits.
+    pub charges: Vec<i128>,
+    /// What `split_group` left untracked; zero on other days and for
+    /// repository-billed credits.
+    pub untracked: i128,
+}
+
+impl DayGroup<'_> {
+    fn new(key: GroupKey) -> Self {
+        Self {
+            key,
+            rows: Vec::new(),
+            gross: 0,
+            total: None,
+            tracked: Vec::new(),
+            charges: Vec::new(),
+            untracked: 0,
+        }
+    }
+
+    pub fn kind(&self) -> AiGroupKind {
+        self.key.2
+    }
+
+    /// `T`: the weighed tracked cost.
+    pub fn tracked_cost(&self) -> i128 {
+        self.total.map_or(0, |total| total.priced)
+    }
+
+    pub fn sku(&self) -> Option<&String> {
+        self.key.0.as_ref()
+    }
+
+    pub fn model(&self) -> &str {
+        &self.key.1
+    }
+}
+
+/// One reconciled day of an account.
+#[derive(Debug, Clone)]
+pub(super) struct AccountDay<'a> {
+    pub day: Date,
+    pub owner: Option<AiAccountTarget>,
+    /// The account's slice: `None` when it was never fetched, else whether it
+    /// is complete.
+    pub slice: Option<bool>,
+    /// The slice is complete and the day is before the settle days: the payer
+    /// is done posting it.
+    pub settled: bool,
+    /// Empty without a slice.
+    pub groups: Vec<DayGroup<'a>>,
+}
+
+/// One account over the reconciled days.
+#[derive(Debug, Clone)]
+pub(super) struct AccountWalk<'a> {
+    pub account: &'a AiStoredProviderAccount,
+    pub check: Option<&'a AiUsageCheck>,
+    /// It held a seat in the month.
+    pub seated: bool,
+    /// Its own import failed without a seat in the month: its slices are not
+    /// expected, so missing ones are no gap. An interrupted check excuses no
+    /// one.
+    pub excused: bool,
+    /// The reconciled days, only the focused user's in one user's view.
+    pub days: Vec<AccountDay<'a>>,
+}
+
+/// A month walked once per account and day: what reconciliation sums and
+/// what the bill allocates, so the two agree by construction.
+#[derive(Debug)]
+pub(super) struct AiMeteredWalk<'a> {
+    /// The month's imported days through today.
+    pub days: Vec<Date>,
+    pub window: Option<AiUsageDateRange>,
+    /// The first day within the settle days.
+    pub settling_from: Date,
+    /// Tracked usage per user and day on the reconciled days, by model.
+    pub tracked: HashMap<(UserId, Date), BTreeMap<String, ModelTracked>>,
+    /// The user days some account is linked to.
+    pub linked_user_days: HashSet<(UserId, Date)>,
+    pub accounts: Vec<AccountWalk<'a>>,
+    /// A seated account's import failed in the month, or a run stopped
+    /// before finishing an account's month.
+    pub import_failed: bool,
+    pub org_check: Option<&'a AiUsageCheck>,
+}
+
+/// The T/G rule for one day-group, in nanodollars: one charge per tracked
+/// destination (`tracked` holds each one's `T_d`) and the untracked rest.
+///
+/// - `G = 0`: nothing, every charge zero.
+/// - `T ≥ G`: `G` split by `T_d` (`allocate_largest_remainder`, ties to the
+///   earlier destination); nothing untracked.
+/// - `T < G`: each destination gets its `T_d`; `G − T` is untracked.
+///
+/// The charges sum to `min(G, T)`, and none exceeds its `T_d`.
+pub fn split_group(
+    gross: i128,
+    tracked: &[i128],
+) -> Result<(Vec<i128>, i128), AiMeteredUsageError> {
+    if gross < 0 || tracked.iter().any(|weight| *weight < 0) {
+        return Err(out_of_range());
+    }
+    if gross == 0 {
+        return Ok((vec![0; tracked.len()], 0));
+    }
+    let total: i128 = tracked.iter().sum();
+    if total < gross {
+        return Ok((tracked.to_vec(), gross - total));
+    }
+    let weights = tracked
+        .iter()
+        .map(|weight| u128::try_from(*weight).map_err(|_| out_of_range()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let gross_units = i64::try_from(gross).map_err(|_| out_of_range())?;
+    let charges = allocate_largest_remainder(gross_units, &weights)
+        .map_err(|_| out_of_range())?
+        .ok_or_else(out_of_range)?;
+    Ok((charges.into_iter().map(i128::from).collect(), 0))
+}
+
+/// Walks a month: per account and reconciled day, the owner, the slice and
+/// the day-groups with `split_group` applied. See the module documentation.
+pub(super) fn walk(
+    input: &AiReconciliationInput,
+) -> Result<AiMeteredWalk<'_>, AiMeteredUsageError> {
+    let settling_from = input.today - Duration::days(i64::from(input.settle_days));
+    let days: Vec<Date> = input
+        .coverage
+        .keys()
+        .copied()
+        .filter(|day| input.month.contains(*day) && *day <= input.today)
+        .collect();
+    let day_set: HashSet<Date> = days.iter().copied().collect();
+    let window = match (days.first(), days.last()) {
+        (Some(first), Some(last)) => AiUsageDateRange::from_inclusive(*first, *last),
+        _ => None,
+    };
+
+    let mut tracked: HashMap<(UserId, Date), BTreeMap<String, ModelTracked>> = HashMap::new();
+    for row in input
+        .tracked
+        .iter()
+        .filter(|row| day_set.contains(&row.day))
+        .filter(|row| input.focus.is_none_or(|user| row.user_id == user))
+    {
+        tracked
+            .entry((row.user_id, row.day))
+            .or_default()
+            .entry(row.model.clone())
+            .or_default()
+            .add(row);
+    }
+    for models in tracked.values_mut() {
+        for model in models.values_mut() {
+            model
+                .destinations
+                .sort_by_cached_key(|(destination, _)| destination.order_key());
+        }
+    }
+
+    let mut credits_by_account: HashMap<(AiProviderAccountId, Date), Vec<&AiStoredAccountCredit>> =
+        HashMap::new();
+    for row in input
+        .account_credits
+        .iter()
+        .filter(|row| day_set.contains(&row.day))
+    {
+        credits_by_account
+            .entry((row.account_id, row.day))
+            .or_default()
+            .push(row);
+    }
+    let checks_by_account: HashMap<AiProviderAccountId, &AiUsageCheck> = input
+        .checks
+        .iter()
+        .filter_map(|check| check.account_id.map(|account| (account, check)))
+        .collect();
+
+    let mut linked_user_days: HashSet<(UserId, Date)> = HashSet::new();
+    let mut import_failed = false;
+    let mut accounts = Vec::with_capacity(input.accounts.len());
+    for account in &input.accounts {
+        let check = checks_by_account.get(&account.account_id).copied();
+        let seated = held_seat_in(account, input.month, input.today);
+        let failed = check.is_some_and(|check| check.error.is_some());
+        // An interrupted check is no account's own answer: it counts whatever
+        // the seat, and excuses no one.
+        let interrupted = check.is_some_and(|check| check.interrupted);
+        if failed && (seated || interrupted) {
+            import_failed = true;
+        }
+        let mut account_days = Vec::new();
+        for day in &days {
+            let owner = account
+                .disposition_on(*day)
+                .map(|disposition| disposition.terms.target);
+            if let Some(user) = input.focus {
+                if owner != Some(AiAccountTarget::User(user)) {
+                    continue;
+                }
+            }
+            if let Some(AiAccountTarget::User(user)) = owner {
+                linked_user_days.insert((user, *day));
+            }
+            let slice = input
+                .account_slices
+                .get(&(account.account_id, *day))
+                .copied();
+            let groups = match slice {
+                None => Vec::new(),
+                Some(_) => {
+                    let rows = credits_by_account
+                        .get(&(account.account_id, *day))
+                        .map(Vec::as_slice)
+                        .unwrap_or_default();
+                    day_groups(input.payer, owner, *day, rows, &tracked)?
+                }
+            };
+            account_days.push(AccountDay {
+                day: *day,
+                owner,
+                slice,
+                settled: slice == Some(true) && *day < settling_from,
+                groups,
+            });
+        }
+        accounts.push(AccountWalk {
+            account,
+            check,
+            seated,
+            excused: failed && !seated && !interrupted,
+            days: account_days,
+        });
+    }
+
+    Ok(AiMeteredWalk {
+        days,
+        window,
+        settling_from,
+        tracked,
+        linked_user_days,
+        accounts,
+        import_failed,
+        org_check: input.checks.iter().find(|check| check.account_id.is_none()),
+    })
+}
+
+/// An imported account day's groups. Credits form groups of (SKU, model,
+/// kind); on a linked day each weighed tracked model joins the trackable group
+/// of its model, or forms a group of Toki usage only (`G = 0`), and free
+/// models are listed without weight.
+fn day_groups<'a>(
+    payer: AiProvider,
+    owner: Option<AiAccountTarget>,
+    day: Date,
+    rows: &[&'a AiStoredAccountCredit],
+    tracked: &HashMap<(UserId, Date), BTreeMap<String, ModelTracked>>,
+) -> Result<Vec<DayGroup<'a>>, AiMeteredUsageError> {
+    let mut groups: BTreeMap<GroupKey, DayGroup<'a>> = BTreeMap::new();
+    for row in rows {
+        let credit = &row.credit;
+        let key: GroupKey = (
+            Some(credit.sku.clone()),
+            credit.model.model.clone(),
+            AiGroupKind::Credits(credit.kind),
+        );
+        let group = groups
+            .entry(key.clone())
+            .or_insert_with(|| DayGroup::new(key));
+        group.rows.push(row);
+        group.gross += i128::from(row.gross_usd.nanos());
+    }
+
+    let Some(AiAccountTarget::User(user)) = owner else {
+        return Ok(groups.into_values().collect());
+    };
+    if let Some(models) = tracked.get(&(user, day)) {
+        for (model, sums) in models {
+            let trackable = groups
+                .keys()
+                .find(|(_, group_model, kind)| {
+                    group_model == model && *kind == AiGroupKind::Credits(AiCreditKind::Trackable)
+                })
+                .cloned();
+            let key = trackable.unwrap_or_else(|| (None, model.clone(), AiGroupKind::TrackedOnly));
+            let group = groups
+                .entry(key.clone())
+                .or_insert_with(|| DayGroup::new(key));
+            if metered_model_status(payer, model) == Some(AiMeteredModelStatus::Free) {
+                // Free models carry no weight: listed, with `T = 0`.
+                continue;
+            }
+            group.total = Some(sums.total);
+            group.tracked = sums.destinations.clone();
+        }
+    }
+    for group in groups.values_mut() {
+        if group.kind() == AiGroupKind::Credits(AiCreditKind::RepositoryBilled) {
+            continue;
+        }
+        let weights: Vec<i128> = group.tracked.iter().map(|(_, sum)| sum.priced).collect();
+        let (charges, untracked) = split_group(group.gross, &weights)?;
+        group.charges = charges;
+        group.untracked = untracked;
+    }
+    Ok(groups.into_values().collect())
 }
 
 fn nanos(value: i128) -> Result<AiUsdNanos, AiMeteredUsageError> {
@@ -498,7 +945,7 @@ fn signed(value: i128) -> Result<i64, AiMeteredUsageError> {
     i64::try_from(value).map_err(|_| out_of_range())
 }
 
-fn out_of_range() -> AiMeteredUsageError {
+pub(super) fn out_of_range() -> AiMeteredUsageError {
     AiMeteredUsageError::Storage("reconciliation totals exceed the supported range".to_string())
 }
 
@@ -511,111 +958,27 @@ fn sum_decimal(total: &mut AiDecimal, value: &AiDecimal) -> Result<(), AiMetered
 pub fn reconcile(
     input: AiReconciliationInput,
 ) -> Result<AiMeteredReconciliation, AiMeteredUsageError> {
-    let AiReconciliationInput {
-        payer,
-        month,
-        today,
-        settle_days,
-        accounts,
-        account_credits,
-        org_credits,
-        org_charges,
-        summary,
-        tracked,
-        checks,
-        coverage,
-        account_slices,
-        focus,
-    } = input;
-    let settling_from = today - Duration::days(i64::from(settle_days));
-    let days: Vec<Date> = coverage
-        .keys()
-        .copied()
-        .filter(|day| month.contains(*day) && *day <= today)
-        .collect();
-    let day_set: HashSet<Date> = days.iter().copied().collect();
-    let window = match (days.first(), days.last()) {
-        (Some(first), Some(last)) => AiUsageDateRange::from_inclusive(*first, *last),
-        _ => None,
-    };
+    let walk = walk(&input)?;
+    let (payer, month, focus) = (input.payer, input.month, input.focus);
+    let window = walk.window;
+    let org_check = walk.org_check.cloned();
 
-    // The user's tracked usage per day and model.
-    let mut tracked_by_day: HashMap<(UserId, Date), BTreeMap<String, TrackedSum>> = HashMap::new();
-    for row in tracked
-        .iter()
-        .filter(|row| day_set.contains(&row.day))
-        .filter(|row| focus.is_none_or(|user| row.user_id == user))
-    {
-        let sum = tracked_by_day
-            .entry((row.user_id, row.day))
-            .or_default()
-            .entry(row.model.clone())
-            .or_default();
-        sum.priced += i128::from(row.priced_cost.nanos());
-        sum.records += row.records;
-        sum.unpriced_records += row.unpriced_records;
-        sum.old_basis += i128::from(row.old_basis_cost.nanos());
-        sum.old_basis_buckets += row.old_basis_buckets;
-        sum.before_floor += i128::from(row.before_floor_cost.nanos());
-    }
-
-    let mut credits_by_account: HashMap<(AiProviderAccountId, Date), Vec<&AiStoredAccountCredit>> =
-        HashMap::new();
-    for row in account_credits
-        .iter()
-        .filter(|row| day_set.contains(&row.day))
-    {
-        credits_by_account
-            .entry((row.account_id, row.day))
-            .or_default()
-            .push(row);
-    }
-    let checks_by_account: HashMap<AiProviderAccountId, &AiUsageCheck> = checks
-        .iter()
-        .filter_map(|check| check.account_id.map(|account| (account, check)))
-        .collect();
-    let org_check = checks
-        .iter()
-        .find(|check| check.account_id.is_none())
-        .cloned();
-
-    let mut linked_user_days: HashSet<(UserId, Date)> = HashSet::new();
     let mut reconciled: Vec<(AiAccountReconciliation, bool)> = Vec::new();
     let mut totals = AccountSum::default();
-    let mut import_failed = false;
 
-    for account in &accounts {
+    for account_walk in &walk.accounts {
+        let account = account_walk.account;
         let mut sum = AccountSum::default();
-        for day in &days {
-            let owner = account
-                .disposition_on(*day)
-                .map(|disposition| disposition.terms.target);
-            if let Some(user) = focus {
-                if owner != Some(AiAccountTarget::User(user)) {
-                    continue;
-                }
-            }
-            if let Some(AiAccountTarget::User(user)) = owner {
-                linked_user_days.insert((user, *day));
-            }
-            let Some(complete) = account_slices.get(&(account.account_id, *day)).copied() else {
+        for day in &account_walk.days {
+            if day.slice.is_none() {
                 sum.days_not_imported += 1;
                 continue;
-            };
-            let rows = credits_by_account
-                .get(&(account.account_id, *day))
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            let day = AccountDay {
-                day: *day,
-                owner,
-                settled: complete && *day < settling_from,
-            };
-            reconcile_day(payer, &mut sum, day, rows, &tracked_by_day);
+            }
+            reconcile_day(payer, &mut sum, day);
         }
 
-        let check = checks_by_account.get(&account.account_id).copied().cloned();
-        let seated = held_seat_in(account, month, today);
+        let check = account_walk.check.cloned();
+        let seated = account_walk.seated;
         let mut flags = Vec::new();
         let material = i128::from(FLAG_MATERIAL_NANOS);
         if sum.zero_gross_tracked >= material {
@@ -644,7 +1007,6 @@ pub fn reconcile(
             // whatever the seat.
             if check.error.is_some() && (seated || check.interrupted) {
                 flags.push(AiReconciliationFlag::ImportFailed);
-                import_failed = true;
             }
         }
 
@@ -750,8 +1112,8 @@ pub fn reconcile(
     // Tracked usage on days no disposition of the user covers; free models
     // carry no weight.
     let mut unlinked_by_user: BTreeMap<i32, (i128, u32)> = BTreeMap::new();
-    for ((user, day), models) in &tracked_by_day {
-        if linked_user_days.contains(&(*user, *day)) {
+    for ((user, day), models) in &walk.tracked {
+        if walk.linked_user_days.contains(&(*user, *day)) {
             continue;
         }
         let mut weighed = models
@@ -764,7 +1126,7 @@ pub fn reconcile(
             continue;
         }
         let entry = unlinked_by_user.entry(user.as_i32()).or_default();
-        entry.0 += weighed.map(|(_, model)| model.priced).sum::<i128>();
+        entry.0 += weighed.map(|(_, model)| model.total.priced).sum::<i128>();
         entry.1 += 1;
     }
     let mut unlinked_tracked = unlinked_by_user
@@ -808,14 +1170,14 @@ pub fn reconcile(
     }
 
     let residual_days = residual_days(
-        &days,
-        &coverage,
-        &org_credits,
-        &account_credits,
+        &walk.days,
+        &input.coverage,
+        &input.org_credits,
+        &input.account_credits,
         ResidualTrust {
-            settling_from,
-            import_failed,
-            org_check: org_check.as_ref(),
+            settling_from: walk.settling_from,
+            import_failed: walk.import_failed,
+            org_check: walk.org_check,
         },
     )?;
     let (mut unknown, mut unknown_settled, mut incomplete) = (0_i128, 0_i128, 0_i128);
@@ -834,12 +1196,15 @@ pub fn reconcile(
     result_totals.unknown_account_settled = signed(unknown_settled)?;
     result_totals.incomplete_import = signed(incomplete)?;
 
-    let charges: Vec<&AiMeteredOrgCharge> = org_charges
+    let charges: Vec<&AiMeteredOrgCharge> = input
+        .org_charges
         .iter()
         .filter(|charge| month.contains(charge.day))
         .collect();
     let repositories = repository_usage(&charges)?;
-    let by_accounts: i128 = account_credits
+    let day_set: HashSet<Date> = walk.days.iter().copied().collect();
+    let by_accounts: i128 = input
+        .account_credits
         .iter()
         .filter(|row| day_set.contains(&row.day))
         .filter(|row| row.credit.kind == AiCreditKind::RepositoryBilled)
@@ -859,13 +1224,16 @@ pub fn reconcile(
             })
         })
         .transpose()?;
-    let month_org_credits: Vec<AiStoredOrgCredit> = org_credits
+    let month_org_credits: Vec<AiStoredOrgCredit> = input
+        .org_credits
         .iter()
         .filter(|row| month.contains(row.day))
         .cloned()
         .collect();
-    let pool = summary
-        .map(|(lines, fetched_at)| pool_summary(&lines, fetched_at, &month_org_credits))
+    let pool = input
+        .summary
+        .as_ref()
+        .map(|(lines, fetched_at)| pool_summary(lines, *fetched_at, &month_org_credits))
         .transpose()?;
 
     Ok(AiMeteredReconciliation {
@@ -882,68 +1250,44 @@ pub fn reconcile(
     })
 }
 
-/// An imported account day.
-#[derive(Clone, Copy)]
-struct AccountDay {
-    day: Date,
-    owner: Option<AiAccountTarget>,
-    /// The account's slice is complete and the day is before the settle
-    /// days: the payer is done posting it.
-    settled: bool,
-}
-
 /// Adds one imported account day to its sums.
-fn reconcile_day(
-    payer: AiProvider,
-    sum: &mut AccountSum,
-    AccountDay {
-        day,
-        owner,
-        settled,
-    }: AccountDay,
-    rows: &[&AiStoredAccountCredit],
-    tracked_by_day: &HashMap<(UserId, Date), BTreeMap<String, TrackedSum>>,
-) {
+fn reconcile_day(payer: AiProvider, sum: &mut AccountSum, day: &AccountDay<'_>) {
     let mut owned_gross = 0_i128;
-    // Day-groups of the linked user: (G, T) per (SKU, model, kind).
-    let mut day_groups: BTreeMap<(Option<String>, String, AiGroupKind), (i128, i128)> =
-        BTreeMap::new();
-    for row in rows {
-        let gross = i128::from(row.gross_usd.nanos());
-        let credit = &row.credit;
-        let kind = AiGroupKind::Credits(credit.kind);
-        let key = (Some(credit.sku.clone()), credit.model.model.clone(), kind);
-        let group = sum.groups.entry(key.clone()).or_default();
-        group.labels.insert(credit.model.label.clone());
-        group.gross += gross;
-        if credit.model.auto_routed {
-            group.auto_gross += gross;
-        }
-        sum.gross += gross;
-        match credit.kind {
-            AiCreditKind::RepositoryBilled => {
-                sum.repository_billed += gross;
-                continue;
+    for group in &day.groups {
+        let month_group = sum.groups.entry(group.key.clone()).or_default();
+        for row in &group.rows {
+            let gross = i128::from(row.gross_usd.nanos());
+            let credit = &row.credit;
+            month_group.labels.insert(credit.model.label.clone());
+            month_group.gross += gross;
+            if credit.model.auto_routed {
+                month_group.auto_gross += gross;
             }
-            AiCreditKind::Unrecognized => {
-                group.unrecognized = true;
+            sum.gross += gross;
+            match credit.kind {
+                AiCreditKind::RepositoryBilled => {
+                    sum.repository_billed += gross;
+                    continue;
+                }
+                AiCreditKind::Unrecognized => {
+                    month_group.unrecognized = true;
+                    sum.unknown_model = true;
+                }
+                AiCreditKind::Untrackable => sum.untrackable += gross,
+                AiCreditKind::Trackable => {}
+            }
+            if matches!(
+                credit.kind,
+                AiCreditKind::Trackable | AiCreditKind::Untrackable
+            ) && metered_model_status(payer, &credit.model.model).is_none()
+            {
                 sum.unknown_model = true;
             }
-            AiCreditKind::Untrackable => sum.untrackable += gross,
-            AiCreditKind::Trackable => {}
+            owned_gross += gross;
         }
-        if matches!(
-            credit.kind,
-            AiCreditKind::Trackable | AiCreditKind::Untrackable
-        ) && metered_model_status(payer, &credit.model.model).is_none()
-        {
-            sum.unknown_model = true;
-        }
-        owned_gross += gross;
-        day_groups.entry(key).or_default().0 += gross;
     }
 
-    let user = match owner {
+    match day.owner {
         None => {
             sum.unlinked += owned_gross;
             if owned_gross > 0 {
@@ -955,68 +1299,58 @@ fn reconcile_day(
             sum.external += owned_gross;
             return;
         }
-        Some(AiAccountTarget::User(user)) => user,
-    };
-
-    if let Some(models) = tracked_by_day.get(&(user, day)) {
-        for (model, tracked) in models {
-            let status = metered_model_status(payer, model);
-            let trackable = day_groups.keys().find(|(_, group_model, kind)| {
-                group_model == model && *kind == AiGroupKind::Credits(AiCreditKind::Trackable)
-            });
-            let key = match trackable {
-                Some(key) => key.clone(),
-                None => (None, model.clone(), AiGroupKind::TrackedOnly),
-            };
-            if status == Some(AiMeteredModelStatus::Free) {
-                // Free models carry no weight: listed, with `T = 0`.
-                sum.groups.entry(key).or_default();
-                continue;
-            }
-            sum.tracked += tracked.priced;
-            sum.tracked_old_basis += tracked.old_basis;
-            sum.tracked_before_floor += tracked.before_floor;
-            sum.unpriced_records += tracked.unpriced_records;
-            if tracked.old_basis_buckets > 0 {
-                sum.stale = true;
-            }
-            if tracked.priced > 0 && status.is_none() {
-                sum.unknown_model = true;
-            }
-            day_groups.entry(key.clone()).or_default().1 += tracked.priced;
-            let group = sum.groups.entry(key).or_default();
-            if tracked.old_basis_buckets > 0 {
-                group.stale = true;
-            }
-        }
+        Some(AiAccountTarget::User(_)) => {}
     }
 
-    for (key, (gross, tracked)) in day_groups {
-        let attributed = gross.min(tracked);
-        let untracked = gross - attributed;
+    for group in &day.groups {
+        if group.kind() == AiGroupKind::Credits(AiCreditKind::RepositoryBilled) {
+            continue;
+        }
+        let status = metered_model_status(payer, group.model());
+        let month_group = sum.groups.entry(group.key.clone()).or_default();
+        if let Some(total) = &group.total {
+            sum.tracked += total.priced;
+            sum.tracked_old_basis += total.old_basis;
+            sum.tracked_before_floor += total.before_floor;
+            sum.unpriced_records += total.unpriced_records;
+            if total.old_basis_buckets > 0 {
+                sum.stale = true;
+                month_group.stale = true;
+            }
+            if total.priced > 0 && status.is_none() {
+                sum.unknown_model = true;
+            }
+        }
+        let gross = group.gross;
+        let tracked = group.tracked_cost();
+        let attributed: i128 = group.charges.iter().sum();
+        let untracked = group.untracked;
         sum.attributed += attributed;
         sum.untracked += untracked;
-        if key.2 == AiGroupKind::Credits(AiCreditKind::Trackable) {
+        if group.kind() == AiGroupKind::Credits(AiCreditKind::Trackable) {
             sum.share_denominator += gross;
         }
-        let zero_gross = settled && gross == 0 && tracked > 0;
-        let low_ratio = settled
-            && gross > 0
-            && gross * i128::from(LOW_RATIO.1) < i128::from(LOW_RATIO.0) * tracked;
-        let group = sum.groups.entry(key).or_default();
-        group.linked_gross += gross;
-        group.tracked += tracked;
-        group.attributed += attributed;
-        group.untracked += untracked;
+        let zero_gross = day.settled && gross == 0 && tracked > 0;
+        let low_ratio = day.settled && is_low_ratio(gross, tracked);
+        month_group.linked_gross += gross;
+        month_group.tracked += tracked;
+        month_group.attributed += attributed;
+        month_group.untracked += untracked;
         if zero_gross {
-            group.zero_gross_tracked += tracked;
+            month_group.zero_gross_tracked += tracked;
             sum.zero_gross_tracked += tracked;
         }
         if low_ratio {
-            group.low_ratio = true;
+            month_group.low_ratio = true;
             sum.low_ratio = true;
         }
     }
+}
+
+/// Whether a day-group with credits was billed below `LOW_RATIO` of its
+/// tracked usage: `G × 100 < 85 × T`.
+pub(super) fn is_low_ratio(gross: i128, tracked: i128) -> bool {
+    gross > 0 && gross * i128::from(LOW_RATIO.1) < i128::from(LOW_RATIO.0) * tracked
 }
 
 fn month_group(
@@ -1065,16 +1399,17 @@ fn month_group(
 }
 
 /// What a residual day's status weighs besides its own coverage.
-struct ResidualTrust<'a> {
+pub(super) struct ResidualTrust<'a> {
     /// The first day within the settle days.
-    settling_from: Date,
+    pub settling_from: Date,
     /// A seated account's import failed in the month, or a run stopped
     /// before finishing an account's month.
-    import_failed: bool,
-    org_check: Option<&'a AiUsageCheck>,
+    pub import_failed: bool,
+    pub org_check: Option<&'a AiUsageCheck>,
 }
 
-fn residual_days(
+/// The organization's credits minus every account's, per day of `days`.
+pub(super) fn residual_days(
     days: &[Date],
     coverage: &BTreeMap<Date, AiDayCoverage>,
     org_credits: &[AiStoredOrgCredit],

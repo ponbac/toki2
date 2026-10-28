@@ -25,6 +25,10 @@ ai_usage:
   # with TOKI_AI_USAGE__METERED_IMPORT__BACKFILL_FROM.
   metered_import:
     backfill_from: "2026-09-01"
+  # The first UTC month whose bill takes GitHub Copilot's lines from GitHub's own
+  # credits ($0.01 each). Earlier months keep Toki's estimates. Remove it, or set
+  # TOKI_AI_USAGE__METERED_COPILOT_FROM="", to roll back.
+  metered_copilot_from: "2026-10"
   # Monthly average exchange rates to SEK, the billing currency (Riksbank SWEA API).
   exchange_rates:
     base_url: "https://api.riksbank.se/swea/v1"

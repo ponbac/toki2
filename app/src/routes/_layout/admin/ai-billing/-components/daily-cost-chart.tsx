@@ -11,7 +11,7 @@ import {
   USAGE_CHART_THEME,
   USAGE_CHART_TOOLTIP,
 } from "@/lib/chart-theme";
-import type { DayPoint } from "../../-lib/daily";
+import type { DayPoint, StackBy } from "../../-lib/daily";
 import { shortDate } from "../../-lib/format";
 import {
   formatEstimateAmount,
@@ -21,16 +21,20 @@ import { useEstimateMoney } from "../../-lib/use-estimate-money";
 import { PROVIDER_COLOR_VARS } from "../../-lib/providers";
 
 /**
- * API-equivalent cost per local day, stacked by provider. Colors follow the
- * provider; the day table is the chart's table view.
+ * API-equivalent cost per day, stacked by the provider who paid for the
+ * usage or by the tool that made it. Colors follow the provider; the day
+ * table is the chart's table view.
  */
 export function DailyCostChart({
   points,
   billing,
+  stackBy = "provider",
 }: {
   points: readonly DayPoint[];
-  /** How each provider's usage bills on each day, `${day}:${provider}`. */
+  /** How each stacked provider's usage bills on each day,
+   * `${day}:${provider}`. */
   billing: ReadonlyMap<string, string>;
+  stackBy?: StackBy;
 }) {
   const money = useEstimateMoney();
   const { providers, definition } = useMemo(() => {
@@ -131,12 +135,14 @@ export function DailyCostChart({
     <div className="flex flex-col gap-2">
       <ul
         className="flex flex-wrap gap-4 text-xs text-muted-foreground"
-        aria-label="Legend"
+        aria-label={stackBy === "payer" ? "Legend, by who paid" : "Legend"}
       >
         {providers.map((provider) => (
           <li key={provider} className="flex items-center gap-1.5">
             <AiProviderIcon provider={provider} />
-            {AI_PROVIDER_LABELS[provider]}
+            {stackBy === "payer"
+              ? `Paid by ${AI_PROVIDER_LABELS[provider]}`
+              : AI_PROVIDER_LABELS[provider]}
           </li>
         ))}
       </ul>
@@ -144,8 +150,12 @@ export function DailyCostChart({
         definition={definition}
         height={256}
         className="min-w-0"
-        ariaLabel="Daily API-equivalent cost by AI provider"
-        ariaDescription={`Each day's bar stacks the providers' priced usage in ${money.kind === "converted" ? money.currency : "USD"}. Exact values and unpriced usage are listed in the tables below.`}
+        ariaLabel={
+          stackBy === "payer"
+            ? "Daily API-equivalent cost by the provider who paid"
+            : "Daily API-equivalent cost by AI tool"
+        }
+        ariaDescription={`Each day's bar stacks the ${stackBy === "payer" ? "paying providers'" : "tools'"} priced usage in ${money.kind === "converted" ? money.currency : "USD"}. Exact values and unpriced usage are listed in the tables below.`}
         renderTooltipBody={({ primaryPoint }) =>
           primaryPoint ? (
             <DayTooltip

@@ -99,6 +99,11 @@ pub struct AiUsageSettings {
     /// The metered usage import (GitHub Copilot's billing usage).
     #[serde(default)]
     pub metered_import: MeteredImportSettings,
+    /// The first UTC month (`YYYY-MM`) whose bill takes the metered payer's
+    /// (GitHub Copilot's) lines from its own credits. Unset or empty keeps
+    /// every month on Toki's estimates: the rollback switch.
+    #[serde(default)]
+    pub metered_copilot_from: Option<String>,
 }
 
 impl Default for AiUsageSettings {
@@ -108,6 +113,7 @@ impl Default for AiUsageSettings {
             exchange_rates: ExchangeRateSettings::default(),
             reprice_floor: default_ai_usage_reprice_floor(),
             metered_import: MeteredImportSettings::default(),
+            metered_copilot_from: None,
         }
     }
 }
@@ -393,6 +399,26 @@ mod tests {
             AiUsageSettings::default().metered_import.backfill_from,
             time::macros::date!(2026 - 09 - 01)
         );
+    }
+
+    #[test]
+    fn base_config_sets_the_metered_copilot_cutover() {
+        let ai_usage: AiUsageSettings = base_config().get("ai_usage").unwrap();
+        assert_eq!(ai_usage.metered_copilot_from.as_deref(), Some("2026-10"));
+
+        // The rollback: an empty override reaches the router as empty, and
+        // the setting is unset without the key.
+        let settings = config::Config::builder()
+            .add_source(config::File::from(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("config/base.yaml"),
+            ))
+            .set_override("ai_usage.metered_copilot_from", "")
+            .unwrap()
+            .build()
+            .unwrap();
+        let ai_usage: AiUsageSettings = settings.get("ai_usage").unwrap();
+        assert_eq!(ai_usage.metered_copilot_from.as_deref(), Some(""));
+        assert_eq!(AiUsageSettings::default().metered_copilot_from, None);
     }
 
     #[test]

@@ -8,8 +8,11 @@
 //! Estimates are USD numbers of the priced usage only: while `unpricedRecords`
 //! is positive, `apiEquivalentUsd` is a known subtotal, and the rest is unknown.
 //! What a line bills (`billableAmount`) is an exact decimal string in its
-//! currency: a fee share, or an API estimate rounded to whole cents. Totals add
-//! up those amounts per currency. Each amount is also converted to the billing
+//! currency: a fee share, an API estimate rounded to whole cents, or from the
+//! metered cutover on a metered payer's credits at $0.01 each (`metered`,
+//! per UTC month: `meteredPeriod`). A line's `subject` is a user, or for a
+//! metered payer an account no user owns, the unknown account or a
+//! repository. Totals add up those amounts per currency. Each amount is also converted to the billing
 //! currency (`billingCurrency`, SEK) at the month's exchange rate
 //! (`convertedAmount`), and converted totals add up the converted lines; see
 //! `domain::models::ai_exchange_rate`. Completeness reports days, never times
@@ -38,12 +41,14 @@ use crate::{
     domain::{
         models::{
             AiAllocationBasis, AiBilledDayUsage, AiBillingCharge, AiBillingDeveloper,
-            AiBillingLinePart, AiBillingMonth, AiBillingUsage, AiConvertedAmount, AiConvertedBill,
-            AiConvertedTotals, AiCurrency, AiDeveloperCompleteness, AiDeveloperMonth,
-            AiDeveloperReadiness, AiExchangeRate, AiExchangeRateValue, AiFeeAmount,
-            AiMachineCompleteness, AiMappedProject, AiMonthBill, AiMonthCompleteness,
-            AiMonthTotals, AiProviderCompleteness, AiSubscriptionMonth, AiUnassignedKind,
-            AiUsageDateRange, UserId, BILLING_CURRENCY, MACHINE_STALE_AFTER,
+            AiBillingLinePart, AiBillingMonth, AiBillingSubject, AiBillingUsage, AiConvertedAmount,
+            AiConvertedBill, AiConvertedTotals, AiCurrency, AiDayBilling, AiDeveloperCompleteness,
+            AiDeveloperMonth, AiDeveloperReadiness, AiExchangeRate, AiExchangeRateValue,
+            AiFeeAmount, AiMachineCompleteness, AiMappedProject, AiMeteredAccountReason,
+            AiMeteredBillInfo, AiMeteredCharge, AiMeteredChargeKind, AiMeteredCutover,
+            AiMeteredProvisional, AiMonthBill, AiMonthCompleteness, AiMonthTotals,
+            AiProviderCompleteness, AiSubscriptionMonth, AiUnassignedKind, AiUsageDateRange,
+            UserId, BILLING_CURRENCY, MACHINE_STALE_AFTER,
         },
         ports::inbound::AiBillingService,
         AiBillingError,
@@ -113,7 +118,11 @@ async fn month_overview(
     let bill = BillResponse::new(&overview.bill, &overview.converted)?;
 
     Ok(Json(MonthOverviewResponse {
-        period: PeriodResponse::new(month, service.time_zone().as_str()),
+        period: PeriodResponse::new(
+            month,
+            service.time_zone().as_str(),
+            service.metered_cutover(),
+        ),
         developers: overview.developers.iter().map(Into::into).collect(),
         bill,
         personal_usage: overview
@@ -144,7 +153,11 @@ async fn developer_month(
     } = service.developer_month(month, UserId::new(user_id)).await?;
 
     Ok(Json(DeveloperMonthResponse {
-        period: PeriodResponse::new(month, service.time_zone().as_str()),
+        period: PeriodResponse::new(
+            month,
+            service.time_zone().as_str(),
+            service.metered_cutover(),
+        ),
         developer: (&developer).into(),
         bill: BillResponse::new(&bill, &converted)?,
         machines: machines
@@ -169,9 +182,8 @@ async fn month_completeness(
 
     Ok(Json(completeness.into()))
 }
-/// The month's bill as CSV, one row per project (Unassigned per kind), developer,
-/// provider and charge.
-/// The month's bill as CSV, one row per project, developer, provider and charge.
+/// The month's bill as CSV, one row per project (Unassigned per kind),
+/// subject, provider and charge.
 async fn export_csv(
     State(service): State<Arc<dyn AiBillingService>>,
     WithRejection(Path(month), _): PathParam<String>,
@@ -192,7 +204,7 @@ async fn export_csv(
                     .map_err(|_| ApiError::internal("invalid export file name"))?,
             ),
         ],
-        render_csv(&overview)?,
+        render_csv(&overview, service.time_zone().as_str())?,
     )
         .into_response())
 }
@@ -266,7 +278,9 @@ async fn list_users(
     Ok(Json(users.iter().map(Into::into).collect()))
 }
 
-/// The month and the time zone whose calendar it follows.
+/// The month and the time zones whose calendars it follows: the configured
+/// zone's for every line but the metered payer's, which follow UTC from the
+/// cutover on. Both share the month key and its exchange rate.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PeriodResponse {
@@ -277,15 +291,36 @@ struct PeriodResponse {
     /// `YYYY-MM-DD`, inclusive.
     last_day: String,
     time_zone: String,
+    /// The metered payer's cutover, null when none is configured.
+    metered_period: Option<MeteredPeriodResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeteredPeriodResponse {
+    /// The metered payer, `copilot`.
+    provider: AiUsageProvider,
+    /// The first month billed from its credits, `YYYY-MM`.
+    from: String,
+    /// Whether this month's metered lines come from its credits, of the UTC
+    /// month with this key.
+    applies: bool,
+    time_zone: &'static str,
 }
 
 impl PeriodResponse {
-    fn new(month: AiBillingMonth, time_zone: &str) -> Self {
+    fn new(month: AiBillingMonth, time_zone: &str, cutover: Option<AiMeteredCutover>) -> Self {
         Self {
             month: month.to_string(),
             first_day: month.first_day().to_string(),
             last_day: month.last_day().to_string(),
             time_zone: time_zone.to_string(),
+            metered_period: cutover.map(|cutover| MeteredPeriodResponse {
+                provider: cutover.payer.into(),
+                from: cutover.from.to_string(),
+                applies: cutover.applies_to(month),
+                time_zone: "UTC",
+            }),
         }
     }
 }
@@ -310,6 +345,50 @@ struct BillResponse {
     /// including provisional rates being refreshed. A later request sees the
     /// fetched replacement once it arrives.
     pending_rates: Vec<String>,
+    /// The metered payer's lines as a whole, or in a developer's month that
+    /// developer's; null unless the month bills them from credits.
+    metered: Option<MeteredBillResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeteredBillResponse {
+    provider: AiUsageProvider,
+    /// Some metered line may still change, or tracked usage is not imported.
+    provisional: bool,
+    /// Account days whose credits were never imported.
+    days_not_imported: u32,
+    /// Settled day-groups billed below 85% of their tracked usage.
+    low_ratio_groups: u32,
+    /// Tracked usage of the payer on no line, by why.
+    unbilled: MeteredUnbilledResponse,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeteredUnbilledResponse {
+    /// On days no disposition links the user to an account.
+    tracked_unlinked: UsageResponse,
+    /// On days whose credits are not imported.
+    not_imported: UsageResponse,
+    /// Of free models, which the payer does not bill.
+    free_models: UsageResponse,
+}
+
+impl From<&AiMeteredBillInfo> for MeteredBillResponse {
+    fn from(info: &AiMeteredBillInfo) -> Self {
+        Self {
+            provider: info.payer.into(),
+            provisional: info.provisional,
+            days_not_imported: info.days_not_imported,
+            low_ratio_groups: info.low_ratio_groups,
+            unbilled: MeteredUnbilledResponse {
+                tracked_unlinked: (&info.unbilled.tracked_unlinked).into(),
+                not_imported: (&info.unbilled.not_imported).into(),
+                free_models: (&info.unbilled.free_models).into(),
+            },
+        }
+    }
 }
 
 impl BillResponse {
@@ -336,6 +415,7 @@ impl BillResponse {
             exchange_rates: converted.rates.iter().map(Into::into).collect(),
             missing_rates: codes(&converted.missing_rates),
             pending_rates: codes(&converted.pending_rates),
+            metered: bill.metered.as_ref().map(Into::into),
         })
     }
 }
@@ -521,6 +601,173 @@ enum BillingModeResponse {
     Api,
     /// Billed as a share of a subscription fee.
     Subscription,
+    /// Billed from a metered payer's credits, in USD at $0.01 a credit.
+    Metered,
+}
+
+/// Whom a line charges for.
+#[derive(Debug, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+enum SubjectResponse {
+    /// A developer.
+    User { user_id: i32 },
+    /// A metered payer's account no user owns on the billed days.
+    ProviderAccount {
+        provider: AiUsageProvider,
+        account_id: i64,
+        login: String,
+    },
+    /// Accounts Toki never listed: the per-day residual.
+    UnknownAccount { provider: AiUsageProvider },
+    /// A repository a metered payer billed.
+    Repository {
+        provider: AiUsageProvider,
+        name: String,
+    },
+}
+
+impl From<&AiBillingSubject> for SubjectResponse {
+    fn from(subject: &AiBillingSubject) -> Self {
+        match subject {
+            AiBillingSubject::User(user_id) => Self::User {
+                user_id: user_id.as_i32(),
+            },
+            AiBillingSubject::ProviderAccount {
+                provider,
+                account_id,
+                login,
+            } => Self::ProviderAccount {
+                provider: (*provider).into(),
+                account_id: account_id.as_i64(),
+                login: login.as_str().to_string(),
+            },
+            AiBillingSubject::UnknownAccount { provider } => Self::UnknownAccount {
+                provider: (*provider).into(),
+            },
+            AiBillingSubject::Repository { provider, name } => Self::Repository {
+                provider: (*provider).into(),
+                name: name.clone(),
+            },
+        }
+    }
+}
+
+/// What a metered line charges.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum MeteredKindResponse {
+    /// Credits attributed to a project, or to a kind of Unassigned.
+    Project,
+    /// Credits attributed to personal/internal usage: Spinit's.
+    Personal,
+    /// Credits Toki did not track, the cloud agent's included: Spinit's.
+    Untracked,
+    /// Credits on days the account has no disposition: Spinit's.
+    UnlinkedAccount,
+    /// Credits on days the account is External: Spinit's.
+    ExternalAccount,
+    /// The residual of accounts Toki never listed: Spinit's.
+    UnknownAccount,
+    /// Credits the payer billed to a repository.
+    Repository,
+}
+
+/// Why a metered line may still change.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum ProvisionalReasonResponse {
+    MonthInProgress,
+    ImportIncomplete,
+    NotSettled,
+    OldPricingBasis,
+    ProvisionalModel,
+    Unrecognized,
+}
+
+impl From<AiMeteredProvisional> for ProvisionalReasonResponse {
+    fn from(reason: AiMeteredProvisional) -> Self {
+        match reason {
+            AiMeteredProvisional::MonthInProgress => Self::MonthInProgress,
+            AiMeteredProvisional::ImportIncomplete => Self::ImportIncomplete,
+            AiMeteredProvisional::NotSettled => Self::NotSettled,
+            AiMeteredProvisional::OldPricingBasis => Self::OldPricingBasis,
+            AiMeteredProvisional::ProvisionalModel => Self::ProvisionalModel,
+            AiMeteredProvisional::Unrecognized => Self::Unrecognized,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeteredAccountResponse {
+    account_id: i64,
+    login: String,
+}
+
+/// A metered payer's line: its credits and how settled they are.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MeteredLineResponse {
+    kind: MeteredKindResponse,
+    /// Whole credits, in hundredths of a credit as elsewhere: `"1235.00"`. A
+    /// credit is $0.01, so these are `billableAmount`'s cents.
+    credits: String,
+    /// The account billed; null for the unknown account and repositories.
+    account: Option<MeteredAccountResponse>,
+    sku: Option<String>,
+    /// Whether the line may still change: exactly when it has reasons.
+    provisional: bool,
+    provisional_reasons: Vec<ProvisionalReasonResponse>,
+    /// A settled day-group with the line's usage was billed below 85% of its
+    /// tracked usage.
+    low_ratio: bool,
+}
+
+impl From<&AiMeteredCharge> for MeteredLineResponse {
+    fn from(charge: &AiMeteredCharge) -> Self {
+        Self {
+            kind: match charge.kind {
+                AiMeteredChargeKind::Project => MeteredKindResponse::Project,
+                AiMeteredChargeKind::Personal => MeteredKindResponse::Personal,
+                AiMeteredChargeKind::Untracked => MeteredKindResponse::Untracked,
+                AiMeteredChargeKind::Account(AiMeteredAccountReason::Unlinked) => {
+                    MeteredKindResponse::UnlinkedAccount
+                }
+                AiMeteredChargeKind::Account(AiMeteredAccountReason::External) => {
+                    MeteredKindResponse::ExternalAccount
+                }
+                AiMeteredChargeKind::Account(AiMeteredAccountReason::Unknown) => {
+                    MeteredKindResponse::UnknownAccount
+                }
+                AiMeteredChargeKind::Repository => MeteredKindResponse::Repository,
+            },
+            credits: credits_decimal(charge.credits()),
+            account: charge
+                .account
+                .as_ref()
+                .map(|account| MeteredAccountResponse {
+                    account_id: account.account_id.as_i64(),
+                    login: account.login.as_str().to_string(),
+                }),
+            sku: charge.sku.clone(),
+            provisional: !charge.provisional.is_empty(),
+            provisional_reasons: charge
+                .provisional
+                .iter()
+                .map(|&reason| reason.into())
+                .collect(),
+            low_ratio: charge.low_ratio,
+        }
+    }
+}
+
+/// Whole credits as hundredths of a credit, `"1235.00"`.
+fn credits_decimal(credits: i64) -> String {
+    format!("{credits}.00")
 }
 
 /// Why a line's usage is Unassigned.
@@ -542,7 +789,7 @@ impl From<AiUnassignedKind> for UnassignedKindResponse {
     }
 }
 
-/// One charge of a developer's usage of a provider to a project. Unassigned
+/// One charge of a subject's usage of a provider to a project. Unassigned
 /// usage has a line per kind (`unassigned`), which split the one charge the
 /// bill makes for it, in each currency by the largest-remainder method: they
 /// sum to it exactly, but a line's `convertedAmount` need not be its own
@@ -550,21 +797,24 @@ impl From<AiUnassignedKind> for UnassignedKindResponse {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BillingLineResponse {
-    user_id: i32,
+    subject: SubjectResponse,
     /// The provider used. A share of a Codex subscription's fee can be for Pi
     /// usage, which that subscription pays for on Pi's ChatGPT sign-in days, and
     /// a subscription's fee can be for usage of another tool that names it as
     /// its payer, such as OpenCode routed through Copilot.
     provider: AiUsageProvider,
-    /// Null for Unassigned usage and for unallocated overhead.
+    /// Null for Unassigned usage, unallocated overhead and metered lines
+    /// that are Spinit's.
     project: Option<ProjectResponse>,
-    /// Why the usage is Unassigned; null for a project's line and for
-    /// overhead.
+    /// Why the usage is Unassigned; null for a project's line, for overhead
+    /// and for metered lines that are Spinit's.
     unassigned: Option<UnassignedKindResponse>,
     billing_mode: BillingModeResponse,
     /// A subscription fee without usage in the month; it has no project.
     unallocated_overhead: bool,
     subscription_id: Option<i32>,
+    /// Non-null exactly on metered lines.
+    metered: Option<MeteredLineResponse>,
     /// What the line bills, an exact decimal in `billableCurrency`: the fee
     /// share, or for API usage the estimate rounded to whole cents. Null when
     /// all of an API line's usage is unpriced, so its cost is unknown.
@@ -597,6 +847,12 @@ impl BillingLineResponse {
         let converted = &part.converted;
         let (billing_mode, overhead, subscription_id, currency) = match &line.charge {
             AiBillingCharge::Api => (BillingModeResponse::Api, false, None, "USD".to_string()),
+            AiBillingCharge::Metered(charge) => (
+                BillingModeResponse::Metered,
+                false,
+                None,
+                charge.amount.currency.as_str().to_string(),
+            ),
             AiBillingCharge::Subscription {
                 subscription_id,
                 fee,
@@ -618,13 +874,17 @@ impl BillingLineResponse {
         };
 
         Self {
-            user_id: line.user_id.as_i32(),
+            subject: (&line.subject).into(),
             provider: line.provider.into(),
             project: project_response(&line.project),
             unassigned: part.unassigned.map(Into::into),
             billing_mode,
             unallocated_overhead: overhead,
             subscription_id,
+            metered: match &line.charge {
+                AiBillingCharge::Metered(charge) => Some(charge.into()),
+                _ => None,
+            },
             billable_amount: part.billable.as_ref().map(AiFeeAmount::to_decimal),
             billable_currency: currency,
             converted_amount: converted.amount().map(AiFeeAmount::to_decimal),
@@ -736,6 +996,9 @@ struct TotalsResponse {
     api_billed_usd: String,
     /// Records on API days whose cost is unknown and not in `apiBilledUsd`.
     api_unpriced_records: i64,
+    /// What metered lines bill, in USD: their credits at $0.01. An exact
+    /// decimal.
+    metered_billed_usd: String,
     /// All usage, however it bills, with its unrounded API-equivalent estimate.
     usage: UsageResponse,
     /// Totals in the billing currency: sums of the converted lines.
@@ -756,6 +1019,8 @@ struct ConvertedTotalsResponse {
     overhead: Option<String>,
     /// API usage.
     api: Option<String>,
+    /// Metered payers' credits.
+    metered: Option<String>,
 }
 
 impl TotalsResponse {
@@ -768,6 +1033,7 @@ impl TotalsResponse {
                 fees: decimal(&converted.fees),
                 overhead: decimal(&converted.overhead),
                 api: decimal(&converted.api),
+                metered: decimal(&converted.metered),
             },
             fees: totals
                 .fees
@@ -780,6 +1046,7 @@ impl TotalsResponse {
                 .collect(),
             api_billed_usd: totals.api_billed.to_decimal(),
             api_unpriced_records: totals.api_unpriced_records,
+            metered_billed_usd: totals.metered_billed.to_decimal(),
             usage: (&totals.usage).into(),
         }
     }
@@ -793,11 +1060,11 @@ struct MachineLabelResponse {
 }
 
 /// A developer's usage on one local day of one provider, model, machine and
-/// project key.
+/// project key; a metered payer's usage on one UTC day.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DayUsageResponse {
-    /// `YYYY-MM-DD`.
+    /// `YYYY-MM-DD`: a local date, or a UTC date on `metered` rows.
     day: String,
     provider: AiUsageProvider,
     billing_provider: Option<AiUsageProvider>,
@@ -808,8 +1075,11 @@ struct DayUsageResponse {
     project_key: Option<String>,
     /// The project the key maps to now; null is Unassigned.
     project: Option<ProjectResponse>,
-    /// The subscription that pays for the day's usage of the provider, or null
-    /// when it bills at its estimated API cost.
+    /// How the usage bills: at its estimated API cost, by a subscription, or
+    /// from a metered payer's credits.
+    billing_mode: BillingModeResponse,
+    /// The subscription that pays for the day's usage of the provider: non-null
+    /// exactly on subscription rows.
     subscription_id: Option<i32>,
     usage: UsageResponse,
 }
@@ -817,6 +1087,13 @@ struct DayUsageResponse {
 impl From<AiBilledDayUsage> for DayUsageResponse {
     fn from(billed: AiBilledDayUsage) -> Self {
         let usage = billed.usage;
+        let (billing_mode, subscription_id) = match billed.billing {
+            AiDayBilling::Api => (BillingModeResponse::Api, None),
+            AiDayBilling::Subscription(id) => {
+                (BillingModeResponse::Subscription, Some(id.as_i32()))
+            }
+            AiDayBilling::Metered => (BillingModeResponse::Metered, None),
+        };
         Self {
             day: usage.day.to_string(),
             provider: usage.provider.into(),
@@ -825,7 +1102,8 @@ impl From<AiBilledDayUsage> for DayUsageResponse {
             machine_id: usage.machine_id.to_string(),
             project: project_response(&usage.project),
             project_key: usage.project_key,
-            subscription_id: billed.subscription_id.map(|id| id.as_i32()),
+            billing_mode,
+            subscription_id,
             usage: (&usage.usage).into(),
         }
     }

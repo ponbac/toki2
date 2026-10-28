@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AiProviderIcon, AiProviderLabel } from "@/components/ai-provider-icon";
+import { Segmented } from "@/components/segmented";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import {
   aiAdminQueries,
@@ -35,25 +36,30 @@ import { MonthPicker } from "../-components/month-picker";
 import { QueryError } from "../-components/query-error";
 import {
   NO_FILTERS,
+  STACK_BY,
   addUsage,
   breakdown,
   dailySeries,
+  dayBilling,
   emptyUsage,
   filterDays,
   projectFilterValue,
+  stackProvider,
   type Breakdown,
+  type StackBy,
   type UsageFilters,
 } from "../-lib/daily";
 import {
   MONTH_PATTERN,
   formatCount,
   formatTokens,
+  listOf,
   monthLabel,
   previousMonth,
   shortDate,
 } from "../-lib/format";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
-import { UNASSIGNED_LABEL } from "../-lib/billing";
+import { UNASSIGNED_LABEL, meteredName } from "../-lib/billing";
 import { CopilotCard } from "./-components/copilot-card";
 import { PersonalUsage } from "./-components/personal-usage";
 import { BillingTable } from "./-components/billing-table";
@@ -69,6 +75,7 @@ import {
 
 const searchSchema = z.object({
   month: z.string().regex(MONTH_PATTERN).optional().catch(undefined),
+  stackBy: z.enum(STACK_BY).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/_layout/admin/ai-billing/$userId")({
@@ -80,6 +87,7 @@ function DeveloperMonthPage() {
   const { userId: rawUserId } = Route.useParams();
   const search = Route.useSearch();
   const month = search.month ?? previousMonth();
+  const stackBy = search.stackBy ?? "payer";
   const navigate = useNavigate({ from: Route.fullPath });
   const userId = Number(rawUserId);
   const validUser = Number.isInteger(userId) && userId > 0;
@@ -112,6 +120,8 @@ function DeveloperMonthPage() {
             {query.data && (
               <p className="text-sm text-muted-foreground">
                 {query.data.developer.email} · days in {query.data.timeZone}
+                {query.data.meteredPeriod?.applies &&
+                  `; ${meteredName(query.data.meteredPeriod.provider)} in UTC`}
               </p>
             )}
           </div>
@@ -150,6 +160,15 @@ function DeveloperMonthPage() {
               key={query.data.month}
               month={query.data.month}
               data={query.data}
+              stackBy={stackBy}
+              onStackBy={(next) =>
+                navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    stackBy: next === "payer" ? undefined : next,
+                  }),
+                })
+              }
             />
           </div>
         )}
@@ -161,9 +180,13 @@ function DeveloperMonthPage() {
 function DeveloperMonthView({
   month,
   data,
+  stackBy,
+  onStackBy,
 }: {
   month: string;
   data: AiDeveloperMonth;
+  stackBy: StackBy;
+  onStackBy: (stackBy: StackBy) => void;
 }) {
   const [filters, setFilters] = React.useState<UsageFilters>(NO_FILTERS);
   const rows = filterDays(data.dailyUsage, filters);
@@ -173,24 +196,23 @@ function DeveloperMonthView({
       subscription.plan,
     ]),
   );
-  const billing = new Map<string, string>();
-  const billingIds = new Map<string, number | null>();
-  for (const row of rows) {
-    const key = `${row.day}:${row.provider}`;
-    const mixed =
-      billingIds.has(key) && billingIds.get(key) !== row.subscriptionId;
-    if (mixed || billing.get(key) === "Mixed billing") {
-      billing.set(key, "Mixed billing");
-      continue;
-    }
-    billingIds.set(key, row.subscriptionId);
-    billing.set(
-      key,
-      row.subscriptionId === null
-        ? "API"
-        : `Subscription · ${plans.get(row.subscriptionId) ?? "declared plan"}`,
-    );
-  }
+  const meteredLabel = (row: AiDayUsage) =>
+    `${meteredName(row.billingProvider ?? row.provider)} credits`;
+  // How each tool's usage bills per day, for the day table, and how each
+  // stacked provider's does, for the chart.
+  const billing = dayBilling(
+    rows,
+    (row) => `${row.day}:${row.provider}`,
+    plans,
+    meteredLabel,
+  );
+  const chartBilling = dayBilling(
+    rows,
+    (row) => `${row.day}:${stackProvider(row, stackBy)}`,
+    plans,
+    meteredLabel,
+  );
+  const metered = data.meteredPeriod?.applies ? data.meteredPeriod : null;
 
   const personal = (
     <PersonalUsage
@@ -207,10 +229,11 @@ function DeveloperMonthView({
       month={month}
       userId={data.developer.userId}
       name={data.developer.fullName}
+      meteredPeriod={data.meteredPeriod}
     />
   );
 
-  if (data.lines.length === 0) {
+  if (data.lines.length === 0 && data.dailyUsage.length === 0) {
     return (
       <>
         <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
@@ -228,43 +251,52 @@ function DeveloperMonthView({
 
   return (
     <>
-      <section
-        aria-labelledby="developer-billing-heading"
-        className="flex flex-col gap-2"
-      >
-        <h3 id="developer-billing-heading" className="text-lg font-semibold">
-          Billing
-        </h3>
-        <MissingRatesAlert
-          month={month}
-          billingCurrency={data.billingCurrency}
-          missingRates={data.missingRates}
-          pendingRates={data.pendingRates}
-        />
-        <div className="rounded-xl border border-border/60 bg-card/60">
-          <BillingTable
+      {data.lines.length === 0 ? (
+        // Usage without lines: a metered payer's, waiting for its credits or
+        // a linked account.
+        <>
+          <NothingBilledYet month={month} data={data} />
+          {personal}
+        </>
+      ) : (
+        <section
+          aria-labelledby="developer-billing-heading"
+          className="flex flex-col gap-2"
+        >
+          <h3 id="developer-billing-heading" className="text-lg font-semibold">
+            Billing
+          </h3>
+          <MissingRatesAlert
             month={month}
             billingCurrency={data.billingCurrency}
+            missingRates={data.missingRates}
             pendingRates={data.pendingRates}
-            lines={data.lines}
-            developers={[data.developer]}
-            subscriptions={data.subscriptions}
-            groupBy="project"
-            linkDevelopers={false}
           />
-        </div>
-        {data.subscriptions.length > 0 && (
           <div className="rounded-xl border border-border/60 bg-card/60">
-            <SubscriptionMonths
+            <BillingTable
+              month={month}
               billingCurrency={data.billingCurrency}
-              subscriptions={data.subscriptions}
+              pendingRates={data.pendingRates}
+              lines={data.lines}
               developers={[data.developer]}
-              showDeveloper={false}
+              subscriptions={data.subscriptions}
+              groupBy="project"
+              linkDevelopers={false}
             />
           </div>
-        )}
-        {personal}
-      </section>
+          {data.subscriptions.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-card/60">
+              <SubscriptionMonths
+                billingCurrency={data.billingCurrency}
+                subscriptions={data.subscriptions}
+                developers={[data.developer]}
+                showDeveloper={false}
+              />
+            </div>
+          )}
+          {personal}
+        </section>
+      )}
 
       {copilot}
 
@@ -277,20 +309,71 @@ function DeveloperMonthView({
             Usage by day
           </h3>
           <p className="text-sm text-muted-foreground">
-            API-equivalent cost per local day. Admins see usage per day by
-            provider, model, machine and project, never by hour or session.
+            API-equivalent cost per local day
+            {metered &&
+              `; ${meteredName(metered.provider)} usage, which bills its credits, per UTC day`}
+            . Admins see usage per day by provider, model, machine and project,
+            never by hour or session.
           </p>
         </div>
-        <Filters data={data} filters={filters} onChange={setFilters} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Filters data={data} filters={filters} onChange={setFilters} />
+          <Segmented
+            label="Stack by"
+            value={stackBy}
+            onChange={onStackBy}
+            options={[
+              { value: "payer", label: "Paid by" },
+              { value: "provider", label: "Tool" },
+            ]}
+          />
+        </div>
         <div className="rounded-xl border border-border/60 bg-card/60 p-4">
           <DailyCostChart
-            points={dailySeries(rows, data.firstDay, data.lastDay)}
-            billing={billing}
+            points={dailySeries(rows, data.firstDay, data.lastDay, stackBy)}
+            billing={chartBilling}
+            stackBy={stackBy}
           />
         </div>
         <Breakdowns data={data} rows={rows} billing={billing} />
       </section>
     </>
+  );
+}
+
+/**
+ * A month with synced usage but no line yet: a metered payer's usage bills
+ * from its credits, so it waits for them to be imported for its days, or for
+ * an account linked to the developer on them.
+ */
+function NothingBilledYet({
+  month,
+  data,
+}: {
+  month: string;
+  data: AiDeveloperMonth;
+}) {
+  const name = data.developer.fullName;
+  const metered = data.metered;
+  const waits = metered
+    ? [
+        ...(metered.unbilled.notImported.records > 0
+          ? ["they are imported for its days"]
+          : []),
+        ...(metered.unbilled.trackedUnlinked.records > 0
+          ? ["a GitHub account is linked to them"]
+          : []),
+      ]
+    : [];
+  return (
+    <div className="rounded-xl border border-dashed border-border/80 p-8 text-center">
+      <p className="font-medium">Nothing billed yet for {monthLabel(month)}</p>
+      <p className="text-sm text-muted-foreground">
+        {metered && waits.length > 0
+          ? `${name}'s ${meteredName(metered.provider)} usage bills from GitHub's credits once ${listOf(waits, "conjunction")}. It is by day below.`
+          : `${name}'s synced usage this month bills nothing. It is by day below.`}
+      </p>
+    </div>
   );
 }
 

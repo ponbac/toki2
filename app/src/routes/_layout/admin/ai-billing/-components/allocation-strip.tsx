@@ -12,8 +12,10 @@ export const UNDECIDED_FILL =
  * solid segment in the order of the ledger beneath, filled with its step of
  * the billable ramp (deepest for the dearest, the palest for the tail of
  * small ones), the usage without a project hatched, and fees nobody used
- * muted. A segment and the ledger rows it stands for light up together;
- * choosing one opens it in the ledger.
+ * muted. A metered payer's credits that stay with Spinit follow in the same
+ * muted family, solid since where they go is decided: untracked credits
+ * deeper, the rest paler. A segment and the ledger rows it stands for light
+ * up together; choosing one opens it in the ledger.
  */
 export function AllocationStrip({
   segments,
@@ -71,6 +73,11 @@ export function AllocationStrip({
                   "bg-muted text-foreground shadow-[inset_0_0_0_1px_hsl(var(--muted-foreground)/0.35)]",
                 segment.kind === "overhead" &&
                   "bg-muted-foreground/15 text-foreground",
+                segment.kind === "spinit" &&
+                  (segment.entries.length === 1 &&
+                  segment.entries[0]?.spinit === "untracked"
+                    ? "bg-muted-foreground/40 text-foreground"
+                    : "bg-muted-foreground/25 text-foreground"),
                 anyLit && !isLit(segment) && "opacity-35",
               )}
               style={
@@ -155,6 +162,16 @@ function describe(
       return [
         `${UNASSIGNED_LABEL}: ${segmentName(segment)}: ${figures(segment.amount)}`,
       ];
+    case "spinit":
+      return [
+        `${segment.label}: ${figures(segment.amount)}`,
+        ...(segment.entries.length > 1
+          ? segment.entries.map(
+              (entry) =>
+                `${entry.label}: ${figures(entry.totals.converted ?? 0)}`,
+            )
+          : []),
+      ];
     case "project":
     case "overhead":
       return [
@@ -171,6 +188,7 @@ function segmentName(segment: AllocationSegment): string {
     case "unassigned":
     case "others":
     case "overhead":
+    case "spinit":
       return segment.label;
   }
 }

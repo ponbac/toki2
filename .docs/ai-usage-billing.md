@@ -43,8 +43,10 @@ GitHub bills Copilot usage per credit, so Copilot is a metered payer
 (`METERED_PAYERS`): declaring or updating a subscription to `copilot` is refused, the
 subscription form no longer offers it, and a day whose payer is Copilot (Copilot plan
 hints, and buckets with `billingProvider: copilot`, such as OpenCode's through
-Copilot) is never a subscription mismatch. Such usage bills as API usage at its
-estimate. No Copilot subscriptions existed when declaring them was blocked.
+Copilot) is never a subscription mismatch. Before the metered cutover such usage
+bills as API usage at its estimate; from it on, it bills from GitHub's own credits
+(see "GitHub Copilot lines in the bill"). No Copilot subscriptions existed when
+declaring them was blocked.
 
 ## OpenCode
 
@@ -52,16 +54,21 @@ OpenCode (`opencode`) routes requests to other vendors, so like Pi it has no
 subscriptions of its own, and declaring one for it is rejected. It relies on the
 payer above instead: Token Ledger sets `billingProvider` to `copilot` for its
 `github-copilot` route and to `codex` for its `openai` route on a ChatGPT sign-in.
-Its Copilot buckets bill at their estimate, at Copilot's rates. Every other OpenCode
+Its Copilot buckets bill at their estimate, at Copilot's rates, and from the metered
+cutover on from GitHub's credits like any Copilot-paid usage. Every other OpenCode
 bucket has no payer and bills at its API estimate; Pi's ChatGPT sign-in days never
 apply to it. OpenCode sends no plan hints, and Toki rejects an upload with one, since
 no subscription could resolve its mismatch. Roll out Toki's migration accepting
 `opencode` before a Token Ledger release that reads it: even a machine without
 OpenCode reports it as `missing` coverage.
 
-The admin daily response includes nullable `billingProvider`; `subscriptionId`
-identifies the subscription actually used. Daily labels show **Mixed billing** when
-one source used different subscriptions or both API and subscription billing.
+The admin daily response includes nullable `billingProvider`, `billingMode` (`api`,
+`subscription` or `metered`: from a metered payer's credits, see "GitHub Copilot
+lines in the bill") and `subscriptionId`, which identifies the subscription
+actually used and is non-null exactly on subscription rows. Daily labels show
+**Mixed billing** when one source's rows bill in more than one way: different
+subscriptions, or any two of API, subscription and metered (`dayBilling` in
+`app/src/routes/_layout/admin/-lib/daily.ts`).
 
 For the ChatGPT proxy integration, Token Ledger joins the proxy's incoming
 `X-Request-Id` with Copilot's exported `gen_ai.response.id`. The proxy appends:
@@ -195,16 +202,18 @@ $0.01 and $0.00, and at 10 SEK per USD, 0.05 SEK each.
 `daily_usage` keeps the kinds apart in SQL but rounds their costs as one group:
 each kind gets the rounded running total through it, less the one before it.
 Unmapped key names are never returned. The HTTP lines carry `unassigned`
-(`unmapped`, `unattributed` or null), and the CSV has an `unassigned` column,
-last so the other columns keep their places.
+(`unmapped`, `unattributed` or null), and the CSV has an `unassigned` column
+after the original columns, so those keep their places. The metered columns
+follow it (see **CSV** under "GitHub Copilot lines in the bill").
 
 ## Provider accounts and dispositions (GitHub Copilot)
 
 GitHub bills Copilot per seat and per credit to the GitHub account that used it,
 so Copilot's credits can only be billed through accounts. Toki keeps every
 account that ever held a Copilot seat in the organization, and an admin decides
-whose usage each one is. Nothing here changes a bill yet: the bill's Copilot
-lines will read these dispositions.
+whose usage each one is. From the metered cutover on, the bill's Copilot lines
+read these dispositions: a linked account's credits bill to its user's
+destinations, and an unlinked or external account's to a Spinit line.
 
 **Accounts and seats.**
 
@@ -341,10 +350,10 @@ gets suggestions.
 ## GitHub usage import and reconciliation
 
 Toki imports what GitHub billed for Copilot, per account, UTC day and model, and
-reconciles it with Toki's own Copilot-priced usage. Nothing here changes a bill
-yet: the bill's Copilot lines (from `ai_usage.metered_copilot_from`) will read
-these tables, repository mappings will map their repository rows, and month close
-will read their coverage.
+reconciles it with Toki's own Copilot-priced usage. From
+`ai_usage.metered_copilot_from` on, the bill's Copilot lines read these tables
+(below); repository mappings will map their repository rows, and month close will
+read their coverage.
 
 **Port and adapter.** The domain reads a `MeteredUsageSource` (credits of an
 account or the organization for a UTC month or day, the organization's usage rows,
@@ -601,3 +610,189 @@ and run the oracle, which prints booleans and counts only:
 TOKI_METERED_ORACLE_DIR=/path/to/responses SQLX_OFFLINE=true \
   cargo test -p toki-api -- --ignored --nocapture metered_import_reproduces_the_local_raw_files
 ```
+
+## GitHub Copilot lines in the bill
+
+From the metered cutover on, the bill takes Copilot's lines from GitHub's own
+credits, $0.01 each, split by what Toki tracked (`domain/models/ai_metered_billing.rs`,
+`allocate_metered_credits`, pure). Earlier months keep Toki's API-estimate lines.
+
+**Cutover and rollback.** `ai_usage.metered_copilot_from` (`YYYY-MM`, `2026-10` in
+`base.yaml`) is the first month billed from credits. Unset or empty keeps every month
+on estimates: remove the key, or set `TOKI_AI_USAGE__METERED_COPILOT_FROM=""` (the
+config crate keeps empty environment values), to roll back. Any other value that is
+not `YYYY-MM` stops startup. A cutover whose first day precedes
+`ai_usage.metered_import.backfill_from` only logs a warning: its days before the
+backfill show as not imported. Deploy after the import has backfilled the cutover
+month; until then its Copilot usage is "not imported" (provisional).
+
+**Metered buckets.** A bucket is metered when Copilot pays for it
+(`COALESCE(billing_provider, provider) = 'copilot'`: native Copilot, and OpenCode or
+Pi routed through Copilot) and its hour starts at or after the cutover month's first
+day at 00:00 UTC. Copilot routed through ChatGPT (paid by Codex) is never metered.
+The local-day reads (`daily_usage`, `personal_usage`, and the local rows of
+`developer_usage`) leave metered buckets out, and the UTC read (`tracked_usage`)
+feeds the bill of every month key from the cutover on, so every bucket bills exactly
+once. The cutover is an instant, not "the month's buckets": with a 2026-10 cutover,
+Copilot hours of Sept 30 22:00–24:00 UTC fall in Stockholm's October but UTC's
+September, which is not metered, so they keep their API-estimate line in October's
+bill. Without a cutover the reads are exactly today's.
+
+**Months.** A Copilot line belongs to the UTC month of GitHub's day; every other
+provider keeps the months of `ai_usage.time_zone`. Both share the month key
+(`YYYY-MM`) and with it the month's exchange rate. The period response reports both
+bases: `timeZone` and `meteredPeriod: { provider, from, applies, timeZone: "UTC" }`
+(null without a cutover).
+
+**The T/G rule**, per account (through its disposition), UTC day and group of (SKU,
+normalized model), "Auto: X" counting as X (`split_group`): `G` is the group's gross
+credits in dollars and `T_d` Toki's Copilot-priced estimate per destination.
+
+| Case | Result |
+|---|---|
+| T ≥ G | G is split across destinations by T's weights (`allocate_largest_remainder` in nanodollars, ties to the earlier destination) |
+| T < G | Each destination gets its T_d; G − T is untracked Copilot |
+| G = 0 | Nothing is billed |
+| Only unpriced records, or free models | No weight: all of G is untracked. No token or record fallback |
+
+No destination is ever charged more than its own T_d. A settled day-group with
+`G × 100 < 85 × T` flags its lines (`lowRatio`) instead of being scaled silently; a
+group used only through Auto sits at exactly 0.9.
+
+**Groups that never use Toki's weights.** Code review credits ("Code Review model",
+repository-billed) are left out of the account lines: GitHub bills them per
+repository too, and repository mappings will bill them from the organization's rows.
+The cloud agent SKU and unrecognized credits have T = 0, so they bill as the user's
+untracked Copilot on their SKU. Credits on days without a disposition bill as the
+account's "unlinked account" line, and on External days as its "external account"
+line; linking the account moves the amount.
+
+**Destinations.** A user's tracked usage goes to the project its key resolves to (as
+for the bill: only mappings to the configured company), to Unassigned (unmapped keys,
+and `unattributed`), or to personal/internal (keys the user marked, included and
+shown apart). Project and Unassigned destinations bill as project lines, Unassigned
+as today in the Unassigned entries, which mapping fixes for unmapped keys; the
+statement counts unattributed Copilot as Spinit's. Personal/internal bills as a
+Spinit line with an amount, untracked Copilot as Spinit overhead next to unallocated
+overhead, and unlinked, external and unknown accounts as Spinit lines.
+`tracked_usage` rounds a user's day and model as one: each destination gets the
+rounded running total through it less the one before it, so the destinations sum to
+the model's rounded cost and reconciliation keeps its figures. Key names never leave
+the adapter.
+
+**Rounding.** Per account and month, the billed G (gross less code review) is rounded
+half up to cents once and split over the account's lines with
+`allocate_largest_remainder`, weighted by their nanodollar allocations, in a fixed
+order (projects by name, then Unassigned unmapped, unattributed; personal; untracked;
+unlinked; external; each by user and SKU). Each account's lines therefore sum exactly
+to its GitHub gross. A project or personal line is then capped at its tracked cost
+over groups with credits, rounded down to cents; the excess cent moves to the same
+user's untracked line on the destination's SKU. Rounding is Spinit's, so
+`charge_d ≤ T_d` holds in cents too, for every destination. SEK conversion is per line, as for API lines.
+
+**Unknown account.** The month's residual of non-repository credits (the
+organization's credits minus every account's, per UTC day, as on the reconciliation
+tab) over settled and provisional days bills as one "unknown account" line when it is
+positive; zero or less gives no line. Code review is left out on both sides, so the
+line may differ from the tab's unknown-account total by the code review residual. The
+tab already flags the days.
+
+**Provisional.** All of an account's lines share its reasons (`provisionalReasons`):
+`monthInProgress` (the UTC month has not ended), `importIncomplete` (a day of the
+month has no slice or an incomplete one, a run stopped before finishing the account's
+month, whatever its seat, so its days may be half replaced, or days before the
+backfill; excused accounts, whose own import failed without a seat, aside),
+`notSettled` (a day lies within the settle days, or the account's month total is
+absent, failed, interrupted or different), `oldPricingBasis` (a contributing bucket
+in a group with credits is on an old pricing basis, as the reconciliation tab reads
+it: NULL or another basis than its machine's current pricing basis),
+`provisionalModel` (a model the catalog marks provisional with priced tracked usage
+in a group with credits; G is GitHub's number, so a provisional rate only moves a
+split) and `unrecognized` (a credits row priced otherwise than $0.01 a credit, or a
+model outside the catalog). The unknown-account line is provisional while the month
+is in progress, a day is an import gap, or a day is provisional. The bill's `metered`
+block is provisional when a line is, when an account has reasons though it bills no
+line (a day never imported, a month total that differs, days before the backfill),
+when tracked usage is not imported, when an account day is missing, or when the
+unknown account's residual is provisional even though it bills no line
+(`AiMeteredAllocation::unknown_account`): a failed organization check, a failed
+seated or interrupted account check, or an organization slice that is missing,
+leaves its days out of the residual, and credits not imported or a residual not
+computed yet are no settled zero. A developer's `metered` block leaves the unknown
+account out, as it is no developer's, and is provisional over what is theirs: a line
+of theirs, a day of theirs not imported, their tracked usage not imported, or an
+account linked to them on a day of the month that has reasons, whether or not they
+have a line of it (GitHub may still bill a linked account Toki tracked nothing for,
+such as the cloud agent's). So a developer's month is provisional only when the
+overview's is.
+
+**Subjects and charge kinds.** A billing line's subject is a user, a provider account
+(`{ provider, accountId, login }`: unlinked or external), the unknown account, or a
+repository (repository mappings add those lines). A metered line's kind is `project`,
+`personal`, `untracked`, `unlinkedAccount`, `externalAccount`, `unknownAccount` or
+`repository`.
+
+**HTTP.** Lines carry `subject` (instead of `userId`), `billingMode` (`api`,
+`subscription` or `metered`) and `metered` (non-null exactly on metered lines: `kind`,
+`credits` as whole credits in hundredths, `"1235.00"`, `account`, `sku`,
+`provisional`, `provisionalReasons`, `lowRatio`). Totals add `meteredBilledUsd` and
+`converted.metered`; `apiBilledUsd` stays API lines only. The bill's `metered` block
+(`provider`, `provisional`, `daysNotImported`, `lowRatioGroups`, and `unbilled`
+usage: `trackedUnlinked`, `notImported`, `freeModels`) is null unless the month is
+billed from credits; a developer's month has the developer's figures. The routes stay
+browser-only under `/ai-usage/admin`, off the agent OpenAPI document and MCP.
+
+**CSV.** These columns follow `unassigned`, in order: `source` (`estimate`,
+`subscription` or `github`), `credits`, `github_login`, `repository` (repository
+mappings fill it), `sku`, `period_basis` (`UTC` for metered rows, the configured zone
+otherwise), `adjusts_month` and `snapshot_id` (month close fills them) and
+`provisional`. Spinit's metered rows name their project `Untracked Copilot`, `Personal
+/ internal Copilot`, `Unlinked account`, `External account` or `Unknown account`.
+
+**The developer page** allocates every account and keeps the developer's lines
+(`for_user`), so it agrees with the overview to the cent. Its daily rows add
+`billingMode`; metered rows are the developer's metered buckets on UTC days, after the
+local rows of the same date, personal keys left out as before.
+
+**Unbilled usage.** Every tracked row of the UTC month lands in exactly one place: a
+free model's goes to `freeModels`; a day outside the import's coverage, or a linked
+day whose account slice is missing, to `notImported`; a day no disposition links to
+`trackedUnlinked`; any other is a line's usage.
+
+**Agreement with reconciliation.** The bill and the reconciliation tab walk the month
+once per account and day through the same code (`walk`, `split_group` in
+`ai_metered_reconciliation.rs`), so they agree on G, T, attributed and untracked
+(and unlinked and external) for every account. The allocation tests check it on the
+lines themselves: per account, the nanodollars of its project and personal lines are
+the tab's attributed, its untracked, unlinked and external lines the tab's figures,
+and its credits the tab's gross less code review, rounded once. The tab says, from
+the cutover month on, that the bill's Copilot lines follow its attribution.
+
+**In the admin UI** (`app/src/routes/_layout/admin/ai-billing/`, contracts in
+`app/src/lib/api/contracts/ai-admin.ts`, strict, so backend and frontend ship
+together). The statement adds a "GitHub Copilot" figure (`converted.metered`, its
+credits at $0.01 and the UTC month, a provisional mark) beside "API usage", which keeps
+API lines only, and notes tracked usage on no line yet (`notImported`,
+`trackedUnlinked`). Its sentence counts Spinit's credits apart: untracked, personal,
+account lines, and metered Unassigned usage outside any repository, which the ledger
+keeps under Unassigned. The ledger groups Spinit's lines after unallocated overhead
+(`spinit:untracked`, `spinit:personal`, `spinit:accounts`, by subject: an account's
+rows show its login and link to GitHub logins), and the strip draws untracked Copilot
+as one solid muted segment and the rest of Spinit's merged, the credits outside any
+repository included; the other usage outside any repository stays a hatched
+Unassigned segment. Sentence and strip split Unassigned the same way
+(`statementUnassigned`), so their figures agree. Metered lines read
+"GitHub Copilot · N credits", naming the SKU only when no project line bills it (the
+cloud agent's). People show "Copilot credits" under Paid by and, in months billed
+from credits, an Untracked column: the untracked Copilot within a developer's Billed,
+which is Spinit's. The developer page's chart stacks by payer (`stackBy=payer`, the default)
+or tool, and labels metered days "GitHub Copilot credits"; a day and tool whose rows
+bill in more than one way stays "Mixed billing" whatever order its rows come in. A
+developer with synced usage but no line yet (Copilot usage whose credits are not
+imported, or on days no account is linked to them) still gets the usage by day, with
+a note on what it waits for. "How billing works" and the GitHub Copilot tab read
+`meteredPeriod`.
+
+**For month close.** One user can have lines of two accounts in a month (an owner
+change), with the same subject, project, kind, currency and provider; a diff key must
+sum such lines or include the account.

@@ -28,8 +28,9 @@ const NAMED_PROJECTS = 2;
 /**
  * Everyone on the month's bill, dearest first: what their usage bills and
  * its share of the bill, which plans pay for it, whether their uploads are
- * in, what it would have cost at API prices, and what they kept out of the
- * bill as not client work.
+ * in, how much of what they bill is untracked Copilot (in months billed from
+ * a metered payer's credits), what it would have cost at API prices, and
+ * what they kept out of the bill as not client work.
  */
 export function PeopleTable({
   overview,
@@ -48,6 +49,9 @@ export function PeopleTable({
   const currency = overview.billingCurrency;
   const billed = overview.totals.converted.billed;
   const whole = billed === null ? null : Number(billed) * 100;
+  const metered = overview.metered !== null;
+  const untrackedTitle =
+    "Copilot credits GitHub billed that Toki did not track: in Billed, but Spinit's";
 
   return (
     <div className="overflow-hidden rounded-xl border border-border/70 bg-card/60">
@@ -60,6 +64,14 @@ export function PeopleTable({
             <TableHead className="text-right whitespace-nowrap">
               Billed ({currency})
             </TableHead>
+            {metered && (
+              <TableHead
+                className="hidden text-right whitespace-nowrap lg:table-cell"
+                title={untrackedTitle}
+              >
+                Untracked
+              </TableHead>
+            )}
             <TableHead className="hidden text-right whitespace-nowrap md:table-cell">
               At API prices
             </TableHead>
@@ -123,6 +135,21 @@ export function PeopleTable({
                     </div>
                   )}
                 </TableCell>
+                {metered && (
+                  <TableCell
+                    className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums lg:table-cell"
+                    title={untrackedTitle}
+                  >
+                    {person.metered === null ||
+                    person.metered.untracked.amounts.size === 0
+                      ? "—"
+                      : formatConverted(
+                          person.metered.untracked,
+                          currency,
+                          overview.pendingRates,
+                        )}
+                  </TableCell>
+                )}
                 <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">
                   {person.totals === null || person.totals.usage.records === 0
                     ? "—"
@@ -160,8 +187,9 @@ function projectsLine(person: PersonRow): string {
   return parts.join(", ");
 }
 
-/** The plans that paid for a developer's month, or API prices without one,
- * and any plan a tool reported that nobody declared. */
+/** The plans that paid for a developer's month, a metered payer's credits,
+ * or API prices without either, and any plan a tool reported that nobody
+ * declared. */
 function PaidBy({
   person,
   undeclared,
@@ -169,12 +197,23 @@ function PaidBy({
   person: PersonRow;
   undeclared: readonly AiProvider[];
 }) {
+  const credits = person.metered !== null && (
+    <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap">
+      <AiProviderIcon provider="copilot" />
+      Copilot credits
+    </span>
+  );
   return (
     <span className="flex flex-col gap-0.5">
       {person.plans.length === 0 ? (
-        <span className="text-sm text-muted-foreground">
-          {person.totals === null ? "—" : "API prices"}
-        </span>
+        <>
+          {credits}
+          {(person.metered === null || person.api) && (
+            <span className="text-sm text-muted-foreground">
+              {person.totals === null ? "—" : "API prices"}
+            </span>
+          )}
+        </>
       ) : (
         person.plans.map((plan) => (
           <span
@@ -191,6 +230,7 @@ function PaidBy({
           </span>
         ))
       )}
+      {person.plans.length > 0 && credits}
       {undeclared.length > 0 && (
         <span className="inline-flex items-center gap-1 text-xs whitespace-nowrap text-[#a86f00] dark:text-[#fab219]">
           <AlertTriangle className="size-3.5 shrink-0" aria-hidden />

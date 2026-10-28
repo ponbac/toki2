@@ -4,7 +4,9 @@ import { AI_PROVIDERS } from "./ai-usage";
 /*
  * Admin-only AI usage contracts: monthly billing, data completeness, and the
  * team-wide project-key mappings. Billing responses are never finer than one
- * local day per developer; they carry no hours or sessions.
+ * local day per developer; they carry no hours or sessions. From the metered
+ * cutover on, a metered payer's (GitHub Copilot's) lines bill its own credits
+ * per UTC month instead, and a line's subject can be an account no user owns.
  */
 
 const providerSchema = z.enum(AI_PROVIDERS);
@@ -53,21 +55,134 @@ export const usageSchema = z
 export const UNASSIGNED_KINDS = ["unmapped", "unattributed"] as const;
 export type UnassignedKind = (typeof UNASSIGNED_KINDS)[number];
 
+/** Whom a line charges for: a developer, or for a metered payer an account
+ * no user owns on the billed days, the accounts Toki never listed (the
+ * per-day residual), or a repository. */
+const subjectSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("user"), userId: id }).strict(),
+  z
+    .object({
+      kind: z.literal("providerAccount"),
+      provider: providerSchema,
+      accountId: id,
+      login: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal("unknownAccount"), provider: providerSchema })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("repository"),
+      provider: providerSchema,
+      name: z.string().min(1),
+    })
+    .strict(),
+]);
+export type AiBillingSubject = Readonly<z.infer<typeof subjectSchema>>;
+
+/** What a metered line charges: credits attributed to a project (or a kind
+ * of Unassigned), and Spinit's: personal/internal usage, credits Toki did
+ * not track (the cloud agent's included), credits of an unlinked or external
+ * account, and the unknown account's residual; and a repository's credits. */
+export const METERED_LINE_KINDS = [
+  "project",
+  "personal",
+  "untracked",
+  "unlinkedAccount",
+  "externalAccount",
+  "unknownAccount",
+  "repository",
+] as const;
+export type AiMeteredLineKind = (typeof METERED_LINE_KINDS)[number];
+
+/** Why a metered line may still change. */
+export const METERED_PROVISIONAL_REASONS = [
+  "monthInProgress",
+  "importIncomplete",
+  "notSettled",
+  "oldPricingBasis",
+  "provisionalModel",
+  "unrecognized",
+] as const;
+export type AiMeteredProvisionalReason =
+  (typeof METERED_PROVISIONAL_REASONS)[number];
+
+/** The subject kind each metered kind charges. */
+const METERED_SUBJECTS: Readonly<
+  Record<AiMeteredLineKind, AiBillingSubject["kind"]>
+> = {
+  project: "user",
+  personal: "user",
+  untracked: "user",
+  unlinkedAccount: "providerAccount",
+  externalAccount: "providerAccount",
+  unknownAccount: "unknownAccount",
+  repository: "repository",
+};
+
+/** A metered payer's line: its credits and how settled they are. */
+const meteredLineSchema = z
+  .object({
+    kind: z.enum(METERED_LINE_KINDS),
+    /** Whole credits as hundredths of a credit, `1235.00`: a credit is
+     * $0.01, so these are `billableAmount`'s cents. */
+    credits: decimalSchema,
+    /** The account billed; null for the unknown account and repositories. */
+    account: z
+      .object({ accountId: id, login: z.string().min(1) })
+      .strict()
+      .nullable(),
+    sku: z.string().min(1).nullable(),
+    /** Exactly when it has reasons. */
+    provisional: z.boolean(),
+    provisionalReasons: z.array(z.enum(METERED_PROVISIONAL_REASONS)),
+    /** A settled day-group with the line's usage was billed below 85% of its
+     * tracked usage. */
+    lowRatio: z.boolean(),
+  })
+  .strict()
+  .refine(
+    (metered) => metered.provisional === metered.provisionalReasons.length > 0,
+    { message: "provisional must be set exactly when there are reasons" },
+  )
+  .refine(
+    (metered) =>
+      (metered.account === null) ===
+      (metered.kind === "unknownAccount" || metered.kind === "repository"),
+    {
+      message:
+        "every metered line but the unknown account's and a repository's names its account",
+    },
+  );
+export type AiMeteredLine = Readonly<z.infer<typeof meteredLineSchema>>;
+
+/** Metered kinds that bill a project, or Unassigned without one. */
+const PROJECT_METERED_KINDS: ReadonlySet<AiMeteredLineKind> = new Set([
+  "project",
+  "repository",
+]);
+
 const billingLineSchema = z
   .object({
-    userId: id,
+    subject: subjectSchema,
+    /** The provider used; a metered line names its payer. */
     provider: providerSchema,
     project: projectSchema.nullable(),
-    /** The kind of Unassigned usage, exactly when the line has neither a
-     * project nor is overhead. An Unassigned charge has a line per kind;
-     * they split it exactly in each currency, so a line's `convertedAmount`
-     * need not be its own `billableAmount` converted. */
+    /** The kind of Unassigned usage, exactly when the line has no project
+     * and bills one: neither overhead nor a metered line that is Spinit's.
+     * An Unassigned charge has a line per kind; they split it exactly in
+     * each currency, so a line's `convertedAmount` need not be its own
+     * `billableAmount` converted. */
     unassigned: z.enum(UNASSIGNED_KINDS).nullable(),
-    billingMode: z.enum(["api", "subscription"]),
+    billingMode: z.enum(["api", "subscription", "metered"]),
     unallocatedOverhead: z.boolean(),
     subscriptionId: id.nullable(),
-    /** What the line bills in `billableCurrency`: a fee share, or an API
-     * estimate rounded to whole cents; null when its cost is unknown. */
+    /** Exactly on metered lines. */
+    metered: meteredLineSchema.nullable(),
+    /** What the line bills in `billableCurrency`: a fee share, an API
+     * estimate rounded to whole cents, or a metered line's credits in USD;
+     * null when its cost is unknown. */
     billableAmount: decimalSchema.nullable(),
     billableCurrency: currencySchema,
     /** What the line bills in the billing currency (SEK); null when its own
@@ -76,13 +191,44 @@ const billingLineSchema = z
     /** The rate used; null for amounts already in the billing currency. */
     exchangeRate: rateSchema.nullable(),
     missingRate: z.boolean(),
+    /** For a metered line, the tracked usage its credits were split by. */
     usage: usageSchema,
   })
   .strict()
   .refine(
+    (line) => (line.metered !== null) === (line.billingMode === "metered"),
+    { message: "metered must be set exactly on metered lines" },
+  )
+  .refine(
+    (line) =>
+      (line.subscriptionId !== null) === (line.billingMode === "subscription"),
+    { message: "subscriptionId must be set exactly on subscription lines" },
+  )
+  .refine(
+    (line) => !line.unallocatedOverhead || line.billingMode === "subscription",
+    { message: "only a subscription fee can be unallocated overhead" },
+  )
+  .refine(
+    (line) =>
+      line.metered === null
+        ? line.subject.kind === "user"
+        : METERED_SUBJECTS[line.metered.kind] === line.subject.kind,
+    { message: "the subject must match the line's kind" },
+  )
+  .refine(
+    (line) =>
+      line.metered === null ||
+      PROJECT_METERED_KINDS.has(line.metered.kind) ||
+      line.project === null,
+    { message: "a metered line that is Spinit's has no project" },
+  )
+  .refine(
     (line) =>
       (line.unassigned !== null) ===
-      (line.project === null && !line.unallocatedOverhead),
+      (line.project === null &&
+        (line.metered === null
+          ? !line.unallocatedOverhead
+          : PROJECT_METERED_KINDS.has(line.metered.kind))),
     { message: "unassigned must be set exactly on Unassigned usage" },
   );
 
@@ -124,6 +270,8 @@ const totalsSchema = z
     /** The sum of the API lines' rounded amounts, an exact decimal. */
     apiBilledUsd: decimalSchema,
     apiUnpricedRecords: count,
+    /** What metered lines bill in USD: their credits at $0.01. */
+    meteredBilledUsd: decimalSchema,
     usage: usageSchema,
     /** Sums of the converted lines; null when a line it includes has no rate. */
     converted: z
@@ -133,6 +281,8 @@ const totalsSchema = z
         fees: decimalSchema.nullable(),
         overhead: decimalSchema.nullable(),
         api: decimalSchema.nullable(),
+        /** Metered payers' credits. */
+        metered: decimalSchema.nullable(),
       })
       .strict(),
   })
@@ -172,6 +322,31 @@ const exchangeRateSchema = z
   })
   .strict();
 
+/** A metered payer's lines as a whole, or one developer's of them. */
+const meteredBillSchema = z
+  .object({
+    provider: providerSchema,
+    /** Some metered line may still change, or tracked usage is not
+     * imported. */
+    provisional: z.boolean(),
+    /** Account days whose credits were never imported. */
+    daysNotImported: count,
+    /** Settled day-groups billed below 85% of their tracked usage. */
+    lowRatioGroups: count,
+    /** Tracked usage of the payer on no line, by why. */
+    unbilled: z
+      .object({
+        /** On days no disposition links the user to an account. */
+        trackedUnlinked: usageSchema,
+        /** On days whose credits are not imported. */
+        notImported: usageSchema,
+        /** Of free models, which the payer does not bill. */
+        freeModels: usageSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
 /** A bill's lines, subscriptions and totals, with its conversion. */
 const billShape = {
   billingCurrency: currencySchema,
@@ -184,13 +359,30 @@ const billShape = {
   /** Currencies needed by the bill whose fetch is still in progress,
    * including usable provisional rates being refreshed. */
   pendingRates: z.array(currencySchema),
+  /** Null unless the month bills a metered payer's credits. */
+  metered: meteredBillSchema.nullable(),
 };
 
+/** The month, and the calendars it follows: the configured time zone's for
+ * every line but a metered payer's, which follow UTC months from its cutover
+ * on. Both share the month key and its exchange rate. */
 const periodShape = {
   month: monthSchema,
   firstDay: localDateSchema,
   lastDay: localDateSchema,
   timeZone: z.string().min(1),
+  /** The metered payer's cutover; null when none is configured. */
+  meteredPeriod: z
+    .object({
+      provider: providerSchema,
+      /** The first month billed from its credits. */
+      from: monthSchema,
+      /** Whether this month's metered lines come from its credits. */
+      applies: z.boolean(),
+      timeZone: z.literal("UTC"),
+    })
+    .strict()
+    .nullable(),
 };
 
 const billingOverviewSchema = z
@@ -208,6 +400,7 @@ const billingOverviewSchema = z
 
 const dayUsageSchema = z
   .object({
+    /** A local date, or a UTC date on metered rows. */
     day: localDateSchema,
     provider: providerSchema,
     billingProvider: providerSchema.nullable().optional(),
@@ -216,10 +409,18 @@ const dayUsageSchema = z
     // Null sums every key no developer has mapped: their names are withheld.
     projectKey: z.string().min(1).nullable(),
     project: projectSchema.nullable(),
+    /** At its API estimate, by a subscription, or from a metered payer's
+     * credits. */
+    billingMode: z.enum(["api", "subscription", "metered"]),
     subscriptionId: id.nullable(),
     usage: usageSchema,
   })
-  .strict();
+  .strict()
+  .refine(
+    (row) =>
+      (row.subscriptionId !== null) === (row.billingMode === "subscription"),
+    { message: "subscriptionId must be set exactly on subscription rows" },
+  );
 
 const developerMonthSchema = z
   .object({
@@ -297,16 +498,19 @@ export type AiBillingDeveloper = Readonly<z.infer<typeof developerSchema>>;
 export type AiBillingProject = Readonly<z.infer<typeof projectSchema>>;
 /** Summed usage; `apiEquivalentUsd` covers priced records only. */
 export type AiBillingUsage = Readonly<z.infer<typeof usageSchema>>;
-/** One charge of a developer's usage of a provider to a project. */
+/** One charge of a subject's usage of a provider to a project. */
 export type AiBillingLine = Readonly<z.infer<typeof billingLineSchema>>;
 /** A subscription's pro-rated fee for a month and how it was split. */
 export type AiSubscriptionMonth = Readonly<
   z.infer<typeof subscriptionMonthSchema>
 >;
 export type AiBillingTotals = Readonly<z.infer<typeof totalsSchema>>;
+export type AiMeteredBill = Readonly<z.infer<typeof meteredBillSchema>>;
+export type AiMeteredPeriod = NonNullable<AiBillingOverview["meteredPeriod"]>;
 export type AiExchangeRate = Readonly<z.infer<typeof exchangeRateSchema>>;
 export type AiBillingOverview = Readonly<z.infer<typeof billingOverviewSchema>>;
-/** A developer's usage on one local day of one provider, model, machine and key. */
+/** A developer's usage on one local day of one provider, model, machine and
+ * key; a metered payer's usage on one UTC day. */
 export type AiDayUsage = Readonly<z.infer<typeof dayUsageSchema>>;
 export type AiDeveloperMonth = Readonly<z.infer<typeof developerMonthSchema>>;
 export type AiBillingCompleteness = Readonly<

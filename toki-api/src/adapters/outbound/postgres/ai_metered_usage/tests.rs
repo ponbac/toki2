@@ -961,7 +961,7 @@ async fn tracked_usage_is_what_the_payer_paid_for_with_the_old_basis_apart(pool:
         AiUsageDateRange::from_inclusive(date!(2026 - 09 - 30), date!(2026 - 10 - 05)).unwrap();
     let repository = repository(&pool);
     let rows = repository
-        .tracked_usage(COPILOT, dates, floor, None)
+        .tracked_usage(COPILOT, dates, floor, None, None)
         .await
         .unwrap();
     let find = |user: UserId, day: Date, model: &str| {
@@ -1000,10 +1000,174 @@ async fn tracked_usage_is_what_the_payer_paid_for_with_the_old_basis_apart(pool:
 
     // One user's view.
     let only_grace = repository
-        .tracked_usage(COPILOT, dates, floor, Some(grace))
+        .tracked_usage(COPILOT, dates, floor, None, Some(grace))
         .await
         .unwrap();
     assert_eq!(only_grace.len(), 1);
+}
+
+/// A Copilot bucket of `model` on `key` at `hour`, costing exactly `cost`
+/// dollars (a NUMERIC literal).
+async fn insert_keyed_bucket(
+    pool: &PgPool,
+    user: UserId,
+    hour: OffsetDateTime,
+    key: &str,
+    model: &str,
+    cost: &str,
+) {
+    sqlx::query(
+        "INSERT INTO ai_usage_buckets (user_id, machine_id, hour_start, session_key, project_key,
+            provider, model, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,
+            records, estimated_cost_usd, unpriced_records, billing_provider, pricing_basis)
+         VALUES ($1, $2::uuid, $3, '9b1f0c6e2d4a8b7c3e5f1a2b4c6d8e0f', $4, 'copilot', $5,
+            10, 100, 5, 7, 2, $6::text::numeric, 0, NULL, 'copilot-rates@2026-10-24')",
+    )
+    .bind(user.as_i32())
+    .bind(MACHINE)
+    .bind(hour)
+    .bind(key)
+    .bind(model)
+    .bind(cost)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[sqlx::test]
+async fn tracked_usage_goes_to_destinations_that_sum_to_the_models_rounding(pool: PgPool) {
+    use crate::{
+        adapters::outbound::postgres::PostgresAiProjectMappingRepository,
+        domain::{
+            models::{AiMappedProject, AiProjectKey, ProjectId},
+            ports::outbound::AiProjectMappingRepository,
+        },
+    };
+    let (mapped, other_company, unmapped, side) = (
+        "github.com/example-org/widget-api",
+        "github.com/example-org/portal",
+        "github.com/example-org/new-repo",
+        "github.com/ada-lovelace/side-project",
+    );
+    let ada = insert_user(&pool, "ada@example.com", "User").await;
+    let grace = insert_user(&pool, "grace@example.com", "User").await;
+    insert_machine(&pool, ada, MACHINE, Some("copilot-rates@2026-10-24")).await;
+    let company = |id: &str| TimeTrackingCompany {
+        provider: "kleer".to_string(),
+        company_id: id.to_string(),
+    };
+    let mappings = PostgresAiProjectMappingRepository::new(DbPool::from(pool.clone()));
+    let widget = AiMappedProject {
+        id: ProjectId::new("101"),
+        name: "Example Client - Widget API".to_string(),
+    };
+    mappings
+        .upsert(
+            &AiProjectKey::parse(mapped).unwrap(),
+            &company("company-1"),
+            &widget,
+            &ada,
+        )
+        .await
+        .unwrap();
+    // A mapping to another company's project is Unassigned unmapped.
+    mappings
+        .upsert(
+            &AiProjectKey::parse(other_company).unwrap(),
+            &company("company-2"),
+            &widget,
+            &ada,
+        )
+        .await
+        .unwrap();
+    mappings
+        .mark_personal(&ada, &AiProjectKey::parse(side).unwrap())
+        .await
+        .unwrap();
+    let day = datetime!(2026-10-05 08:00 UTC);
+    // Three destinations of 0.4 nanodollars each: 1.2 rounds to 1, and so
+    // do the destinations together.
+    for key in [mapped, unmapped, UNATTRIBUTED_PROJECT_KEY] {
+        insert_keyed_bucket(&pool, ada, day, key, "gpt-6.1-sol", "0.0000000004").await;
+    }
+    insert_keyed_bucket(&pool, ada, day, other_company, "gpt-5.4", "0.25").await;
+    insert_keyed_bucket(&pool, ada, day, side, "gpt-5.4", "0.5").await;
+
+    let repository = repository(&pool);
+    let dates = october().dates();
+    let floor = datetime!(2026-10-01 00:00 UTC);
+    let rows = repository
+        .tracked_usage(COPILOT, dates, floor, Some(&company("company-1")), None)
+        .await
+        .unwrap();
+    let summary: Vec<(String, AiMeteredDestination, i64, i64)> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.model.clone(),
+                row.destination.clone(),
+                row.priced_cost.nanos(),
+                row.tokens.input,
+            )
+        })
+        .collect();
+    let to = |project: AiBillingProject| AiMeteredDestination::Project(project);
+    assert_eq!(
+        summary,
+        [
+            (
+                "gpt-5.4".to_string(),
+                to(AiBillingProject::Unassigned(AiUnassignedKind::Unmapped)),
+                250_000_000,
+                10
+            ),
+            (
+                "gpt-5.4".to_string(),
+                AiMeteredDestination::Personal,
+                500_000_000,
+                10
+            ),
+            (
+                "gpt-6.1-sol".to_string(),
+                to(AiBillingProject::Mapped(widget.clone())),
+                0,
+                10
+            ),
+            (
+                "gpt-6.1-sol".to_string(),
+                to(AiBillingProject::Unassigned(AiUnassignedKind::Unmapped)),
+                1,
+                10
+            ),
+            (
+                "gpt-6.1-sol".to_string(),
+                to(AiBillingProject::Unassigned(AiUnassignedKind::Unattributed)),
+                0,
+                10
+            ),
+        ]
+    );
+    // Without time tracking configured no mapping resolves.
+    let unconfigured = repository
+        .tracked_usage(COPILOT, dates, floor, None, None)
+        .await
+        .unwrap();
+    assert!(unconfigured.iter().all(|row| !matches!(
+        row.destination,
+        AiMeteredDestination::Project(AiBillingProject::Mapped(_))
+    )));
+    // One user's view.
+    assert!(repository
+        .tracked_usage(
+            COPILOT,
+            dates,
+            floor,
+            Some(&company("company-1")),
+            Some(grace)
+        )
+        .await
+        .unwrap()
+        .is_empty());
 }
 
 /// Uploads Copilot usage of `machine` over `window`, priced on `basis`.
@@ -1127,7 +1291,7 @@ async fn the_old_basis_is_any_but_the_latest_basis_the_machine_sent(pool: PgPool
     let dates =
         AiUsageDateRange::from_inclusive(date!(2026 - 10 - 04), date!(2026 - 10 - 06)).unwrap();
     let rows = repository(&pool)
-        .tracked_usage(COPILOT, dates, floor, None)
+        .tracked_usage(COPILOT, dates, floor, None, None)
         .await
         .unwrap();
     let old_basis: Vec<_> = rows

@@ -4,10 +4,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   aiAdminQueries,
   type AiMeteredMonth,
+  type AiMeteredPeriod,
 } from "@/lib/api/queries/ai-admin";
 import { QueryError } from "../../-components/query-error";
 import { monthLabel, plural } from "../../-lib/format";
 import {
+  billingNote,
   formatCredits,
   noDataReason,
   type NoDataReason,
@@ -24,11 +26,14 @@ export function CopilotCard({
   month,
   userId,
   name,
+  meteredPeriod,
 }: {
   /** The UTC month, `YYYY-MM`. */
   month: string;
   userId: number;
   name: string;
+  /** The bill's metered cutover; null when none is configured. */
+  meteredPeriod: AiMeteredPeriod | null;
 }) {
   const query = useQuery(aiAdminQueries.meteredDeveloper(month, userId));
   const developersQuery = useQuery(aiAdminQueries.developers());
@@ -47,8 +52,8 @@ export function CopilotCard({
         </h3>
         <p className="text-sm text-muted-foreground">
           What GitHub billed {name}&apos;s linked accounts in{" "}
-          {monthLabel(month)} (UTC), against what Toki tracked. Nothing here is
-          billed yet.
+          {monthLabel(month)} (UTC), against what Toki tracked.{" "}
+          {billingNote(meteredPeriod)}
         </p>
       </div>
       {query.isPending ? (

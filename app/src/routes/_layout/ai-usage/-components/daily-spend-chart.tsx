@@ -18,12 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  ChartCard,
-  ChartTooltipFrame,
-  LegendItem,
-  Segmented,
-} from "./chart-card";
+import { Segmented } from "@/components/segmented";
+import { ChartCard, ChartTooltipFrame, LegendItem } from "./chart-card";
 import { dailySpend, type DailyRow, type StackBy } from "../-lib/aggregate";
 import { SURFACE_COLOR } from "../-lib/colors";
 import {

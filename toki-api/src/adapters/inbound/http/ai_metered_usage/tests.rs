@@ -168,6 +168,7 @@ fn app(pool: &PgPool, source: AiMeteredSourceState) -> Router {
             reprice_floor: time::macros::datetime!(2026-10-01 00:00 UTC),
             unattended: false,
         },
+        None,
     ));
     let tokens: Arc<dyn ApiTokenAuthenticator> = Arc::new(ApiTokenServiceImpl::new(Arc::new(
         PostgresApiTokenRepository::new(db.clone()),

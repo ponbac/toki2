@@ -315,6 +315,14 @@ pub enum AiMeteredUsageError {
     Storage(String),
 }
 
+/// The bill reads a metered payer's stored usage; failing to is never the
+/// caller's fault.
+impl From<AiMeteredUsageError> for AiBillingError {
+    fn from(error: AiMeteredUsageError) -> Self {
+        Self::Storage(error.to_string())
+    }
+}
+
 impl From<AiProviderAccountError> for AiMeteredUsageError {
     fn from(error: AiProviderAccountError) -> Self {
         match error {

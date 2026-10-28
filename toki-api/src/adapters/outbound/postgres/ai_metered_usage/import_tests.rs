@@ -348,10 +348,11 @@ impl AiMeteredUsageRepository for Clocked {
         payer: AiProvider,
         dates: AiUsageDateRange,
         reprice_floor: OffsetDateTime,
+        mapping_company: Option<&TimeTrackingCompany>,
         user: Option<UserId>,
     ) -> Result<Vec<AiTrackedModelDay>, AiMeteredUsageError> {
         self.inner
-            .tracked_usage(payer, dates, reprice_floor, user)
+            .tracked_usage(payer, dates, reprice_floor, mapping_company, user)
             .await
     }
 }
@@ -384,6 +385,7 @@ fn setup(pool: &PgPool, backfill_from: Date) -> Setup {
             reprice_floor: datetime!(2026-10-01 00:00 UTC),
             unattended: false,
         },
+        None,
     );
     Setup {
         service,

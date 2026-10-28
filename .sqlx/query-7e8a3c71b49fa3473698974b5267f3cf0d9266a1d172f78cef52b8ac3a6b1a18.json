@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                bucket.user_id,\n                SUM(bucket.input_tokens)::int8 AS \"input_tokens!\",\n                SUM(bucket.cache_read_tokens)::int8 AS \"cache_read_tokens!\",\n                SUM(bucket.cache_write_tokens)::int8 AS \"cache_write_tokens!\",\n                SUM(bucket.output_tokens)::int8 AS \"output_tokens!\",\n                SUM(bucket.records)::int8 AS \"records!\",\n                round(COALESCE(SUM(bucket.estimated_cost_usd), 0) * 1000000000)::int8\n                    AS \"priced_cost_nanos!\",\n                SUM(bucket.unpriced_records)::int8 AS \"unpriced_records!\"\n            FROM ai_usage_buckets AS bucket\n            JOIN UNNEST($5::int4[], $6::text[]) AS personal (user_id, project_key)\n                ON personal.user_id = bucket.user_id\n                AND personal.project_key = bucket.project_key\n            WHERE bucket.hour_start >= ($1::date::timestamp AT TIME ZONE $3)\n              AND bucket.hour_start < ($2::date::timestamp AT TIME ZONE $3)\n              AND ($4::int4 IS NULL OR bucket.user_id = $4)\n              AND ($7::text IS NULL\n                   OR COALESCE(bucket.billing_provider, bucket.provider) <> $7\n                   OR bucket.hour_start < $8::timestamptz)\n            GROUP BY bucket.user_id\n            ORDER BY bucket.user_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "ai_usage_buckets",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "input_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "cache_read_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "cache_write_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "output_tokens!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "records!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "priced_cost_nanos!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "unpriced_records!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date",
+        "Text",
+        "Int4",
+        "Int4Array",
+        "TextArray",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "7e8a3c71b49fa3473698974b5267f3cf0d9266a1d172f78cef52b8ac3a6b1a18"
+}

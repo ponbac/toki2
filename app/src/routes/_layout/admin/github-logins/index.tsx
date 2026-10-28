@@ -50,7 +50,9 @@ function GithubLoginsPage() {
         {accountsQuery.data?.directory.namespace || "the organization"}, and
         whose usage each one is: a Toki user&apos;s, or not a Toki user&apos;s
         (Spinit overhead). Dates are UTC calendar days, as GitHub bills, and
-        both ends are included. Changes don&apos;t affect any bill yet.
+        both ends are included. From the Copilot billing cutover on, they decide
+        whose project lines an account&apos;s credits bill to; days without one
+        bill as Spinit&apos;s unlinked account line.
       </p>
 
       {developersQuery.isError && (

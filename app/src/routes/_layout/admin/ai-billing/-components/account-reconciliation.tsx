@@ -42,7 +42,7 @@ const AMOUNT = "text-right tabular-nums whitespace-nowrap";
 
 /**
  * Every listed account's month: GitHub's gross credits (G) against Toki's
- * tracked Copilot usage (T), what the T/G rule would attribute, what stays
+ * tracked Copilot usage (T), what the T/G rule attributes, what stays
  * untracked, and its flags; then the totals and the credits no account
  * explains (unknown account).
  */
@@ -193,7 +193,7 @@ export function AccountReconciliationRows({
               </abbr>
             </TableHead>
             <TableHead className="hidden text-right md:table-cell">
-              <abbr title="What the T/G rule would bill: min(G, T) per UTC day and model">
+              <abbr title="What the T/G rule bills: min(G, T) per UTC day and model">
                 Attributed
               </abbr>
             </TableHead>

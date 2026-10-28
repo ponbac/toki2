@@ -33,4 +33,5 @@ export const PROVIDER_COLOR_SCOPE = [
 export const BILLING_MODE_COLORS = {
   api: "var(--viz-1)",
   subscription: "var(--viz-7)",
+  metered: "var(--viz-3)",
 } as const;

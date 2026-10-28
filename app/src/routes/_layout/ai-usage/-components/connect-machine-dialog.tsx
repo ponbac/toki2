@@ -43,7 +43,7 @@ import {
   type AiUsageRange,
 } from "@/lib/api/queries/ai-usage-report";
 import { cn } from "@/lib/utils";
-import { Segmented } from "./chart-card";
+import { Segmented } from "@/components/segmented";
 import { CopilotSurfaceIcon } from "./copilot-surface-icon";
 import { OsIcon } from "./os-icon";
 import { QueryError } from "./query-state";

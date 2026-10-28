@@ -3,7 +3,8 @@ import type { AiBillingUsage, AiDayUsage } from "@/lib/api/queries/ai-admin";
 
 /*
  * Aggregation of one developer's day usage for the drill-down. Rows are never
- * finer than a local day: the server sends no hours or sessions.
+ * finer than a day: a local day, or a UTC day for a metered payer's usage.
+ * The server sends no hours or sessions.
  */
 
 export type UsageFilters = Readonly<{
@@ -119,10 +120,64 @@ export function daysOf(firstDay: string, lastDay: string): string[] {
   return days;
 }
 
+/** What the daily chart stacks by: the provider who paid for the usage, or
+ * the tool that made it. */
+export const STACK_BY = ["payer", "provider"] as const;
+export type StackBy = (typeof STACK_BY)[number];
+
+/** The provider a row's usage stacks under: its payer (the tool itself
+ * unless another provider paid for it), or the tool. */
+export function stackProvider(row: AiDayUsage, stackBy: StackBy): AiProvider {
+  return stackBy === "payer"
+    ? (row.billingProvider ?? row.provider)
+    : row.provider;
+}
+
+/**
+ * How each group of rows bills, by `key`: at API prices, by a subscription
+ * (named by its plan), from a metered payer's credits, or mixed when its rows
+ * bill in more than one way. A group stays mixed once it is, whatever order
+ * its rows come in.
+ */
+export function dayBilling(
+  rows: readonly AiDayUsage[],
+  key: (row: AiDayUsage) => string,
+  plans: ReadonlyMap<number, string>,
+  meteredLabel: (row: AiDayUsage) => string,
+): Map<string, string> {
+  const billing = new Map<string, string>();
+  const modes = new Map<string, string>();
+  for (const row of rows) {
+    const id = key(row);
+    if (billing.get(id) === MIXED_BILLING) {
+      continue;
+    }
+    const mode = `${row.billingMode}:${row.subscriptionId ?? ""}`;
+    if (modes.has(id) && modes.get(id) !== mode) {
+      billing.set(id, MIXED_BILLING);
+      continue;
+    }
+    modes.set(id, mode);
+    billing.set(
+      id,
+      row.billingMode === "metered"
+        ? meteredLabel(row)
+        : row.subscriptionId === null
+          ? "API"
+          : `Subscription · ${plans.get(row.subscriptionId) ?? "declared plan"}`,
+    );
+  }
+  return billing;
+}
+
+/** A group whose rows bill in more than one way. */
+export const MIXED_BILLING = "Mixed billing";
+
 export function dailySeries(
   rows: readonly AiDayUsage[],
   firstDay: string,
   lastDay: string,
+  stackBy: StackBy = "provider",
 ): DayPoint[] {
   return daysOf(firstDay, lastDay).map((day) => {
     const point: DayPoint = {
@@ -137,7 +192,7 @@ export function dailySeries(
     };
     for (const row of rows) {
       if (row.day === day) {
-        point[row.provider] += row.usage.apiEquivalentUsd;
+        point[stackProvider(row, stackBy)] += row.usage.apiEquivalentUsd;
       }
     }
     return point;

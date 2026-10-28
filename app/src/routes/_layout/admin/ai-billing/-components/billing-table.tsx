@@ -2,8 +2,11 @@ import { Link } from "@tanstack/react-router";
 import {
   Activity,
   AlertTriangle,
+  AtSign,
   Briefcase,
+  Building2,
   CircleDashed,
+  Coins,
   CreditCard,
   UserRound,
 } from "lucide-react";
@@ -36,7 +39,11 @@ import {
   lineBillable,
   lineConverted,
   lineProject,
+  lineUserId,
   lineWarnings,
+  meteredLineLabel,
+  subjectLabel,
+  trackedSkus,
   type LineGroup,
 } from "../../-lib/billing";
 import { formatTokens } from "../../-lib/format";
@@ -54,7 +61,18 @@ const GROUP_ICONS = {
   },
   // A subscription fee nobody used: the same mark as a subscription line.
   overhead: { icon: CreditCard, className: "text-muted-foreground" },
+  // A metered payer's credits that stay with Spinit.
+  spinit: { icon: Building2, className: "text-muted-foreground" },
+  // An account no developer owns, the unknown account or a repository.
+  account: { icon: AtSign, className: "text-muted-foreground" },
 } as const satisfies Record<LineGroup["kind"], unknown>;
+
+/** How each billing mode is marked. */
+const MODE_ICONS = {
+  api: Activity,
+  subscription: CreditCard,
+  metered: Coins,
+} as const satisfies Record<AiBillingLine["billingMode"], unknown>;
 
 const UPLOADS_MISSING =
   "Not every upload for this month is in: these figures may still grow.";
@@ -62,8 +80,9 @@ const UPLOADS_MISSING =
 /**
  * Month × developer × project: every billing line, grouped by project (for
  * invoicing) or by developer. "Billed" is in the billing currency (SEK), and
- * "Original" the fee share for subscription lines or the API-equivalent
- * estimate in whole cents for API lines, in its own currency. A bar beside
+ * "Original" the fee share for subscription lines, the API-equivalent
+ * estimate in whole cents for API lines, or a metered payer's credits in USD,
+ * in its own currency. A bar beside
  * each billed amount shows it against the largest group's, in the color of
  * the line's billing mode.
  */
@@ -95,6 +114,7 @@ export function BillingTable({
   const names = new Map(developers.map((d) => [d.userId, d.fullName]));
   const plans = new Map(subscriptions.map((s) => [s.subscriptionId, s]));
   const groups = groupLines(lines, developers, groupBy);
+  const tracked = trackedSkus(lines);
   const detailHeading = groupBy === "project" ? "Developer" : "Project";
   // Every bar is a share of the largest converted amount on screen. A group
   // with a line that has no rate has no total, but its other lines still
@@ -213,19 +233,21 @@ export function BillingTable({
                 billingCurrency,
                 pendingRates,
               );
+              const userId = lineUserId(line);
               const detail =
                 groupBy === "developer" ? (
                   lineProject(line).label
-                ) : linkDevelopers ? (
+                ) : !linkDevelopers ? null : userId === null ? (
+                  subjectLabel(line.subject, names)
+                ) : (
                   <span className="inline-flex items-center gap-2">
-                    <DeveloperLink month={month} userId={line.userId}>
-                      {names.get(line.userId) ?? `User ${line.userId}`}
+                    <DeveloperLink month={month} userId={userId}>
+                      {subjectLabel(line.subject, names)}
                     </DeveloperLink>
-                    {uploadsMissing?.has(line.userId) && <UploadsPill />}
+                    {uploadsMissing?.has(userId) && <UploadsPill />}
                   </span>
-                ) : null;
-              const ModeIcon =
-                line.billingMode === "api" ? Activity : CreditCard;
+                );
+              const ModeIcon = MODE_ICONS[line.billingMode];
               return (
                 <TableRow key={`${group.key}-${index}`}>
                   <TableCell className="pl-10">{detail}</TableCell>
@@ -238,9 +260,11 @@ export function BillingTable({
                         className="size-3.5 shrink-0 text-muted-foreground"
                         aria-hidden
                       />
-                      {line.billingMode === "api"
-                        ? "API usage"
-                        : `Subscription${subscription ? `, ${subscription.plan}` : ""}`}
+                      {line.metered !== null
+                        ? meteredLineLabel(line, tracked)
+                        : line.billingMode === "api"
+                          ? "API usage"
+                          : `Subscription${subscription ? `, ${subscription.plan}` : ""}`}
                       {warnings.length > 0 && <Warnings warnings={warnings} />}
                     </span>
                   </TableCell>
@@ -265,12 +289,12 @@ export function BillingTable({
                     )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
-                    {line.unallocatedOverhead
+                    {noUsage(line)
                       ? "—"
                       : formatEstimateIn(line.usage, money)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {line.unallocatedOverhead
+                    {noUsage(line)
                       ? "—"
                       : formatTokens(line.usage.tokens.total)}
                   </TableCell>
@@ -318,6 +342,15 @@ function UploadsPill() {
       uploads
       <span className="sr-only">: {UPLOADS_MISSING}</span>
     </AttentionPill>
+  );
+}
+
+/** A fee nobody used, or a metered payer's credits without tracked usage,
+ * such as untracked credits: nothing to estimate. */
+function noUsage(line: AiBillingLine): boolean {
+  return (
+    line.unallocatedOverhead ||
+    (line.metered !== null && line.usage.records === 0)
   );
 }
 
