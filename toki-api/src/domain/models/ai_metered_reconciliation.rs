@@ -46,19 +46,10 @@
 //!   failed seated account or an interrupted one, and days that may still
 //!   change are provisional.
 //! - **Code review check.** Per UTC day, the code review credits billed per
-//!   repository (the organization's rows) minus those billed per account
-//!   (repository-billed groups): the same credits, which the bill takes once,
-//!   per repository. A day whose accounts exceed its repositories (a negative
-//!   difference) is code review the payer billed without a repository, inside
-//!   the IDE aggregate, which bills on no line, or in an unrecognized row
-//!   naming a repository (which makes repository lines provisional itself).
-//!   A day whose repositories exceed its accounts (a positive difference) is
-//!   code review by accounts Toki never listed (the unknown account), whose
-//!   per-account credits are never imported and stay out of the unknown
-//!   account's line, or, on an import gap, by an account whose slice is
-//!   missing or whose month a run left half imported: its repository rows
-//!   bill it once, so the bill is right. The check is informational: it never
-//!   makes a line provisional.
+//!   repository minus those billed per account: the same credits, which the
+//!   bill takes once, per repository. It is informational and never makes a
+//!   line provisional; `.docs/ai-usage-billing.md`, "Repository mappings",
+//!   explains what each sign of the difference means.
 //!
 //! Amounts are nanodollars (a credit is 10^7). Signed figures (residuals) are
 //! plain `i64` nanodollars.
