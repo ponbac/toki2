@@ -61,7 +61,6 @@ export type SeatSummary = Readonly<{
   latest: AiProviderSeat | null;
   /** The day a pending cancellation ends the latest seat. */
   cancelsOn: string | null;
-  ended: boolean;
   /** Seats before the latest. */
   earlier: number;
 }>;
@@ -71,14 +70,13 @@ export function seatSummary(seats: readonly AiProviderSeat[]): SeatSummary {
   const latest = seats.at(-1) ?? null;
   const earlier = Math.max(seats.length - 1, 0);
   if (latest === null) {
-    return { label: "No seat", latest, cancelsOn: null, ended: false, earlier };
+    return { label: "No seat", latest, cancelsOn: null, earlier };
   }
   if (!latest.listed) {
     return {
       label: latest.lastDay ? `Ended ${latest.lastDay}` : "Ended",
       latest,
       cancelsOn: null,
-      ended: true,
       earlier,
     };
   }
@@ -86,7 +84,6 @@ export function seatSummary(seats: readonly AiProviderSeat[]): SeatSummary {
     label: `Since ${latest.firstDay}`,
     latest,
     cancelsOn: latest.pendingCancellationOn,
-    ended: false,
     earlier,
   };
 }
@@ -123,14 +120,6 @@ export function evidenceLabel(
 /** A disposition's days: `2023-04-17 – ongoing` or `… – 2026-10-31`. */
 export function formatPeriod(period: AiAccountPeriod): string {
   return `${period.validFrom} – ${period.validTo ?? "ongoing"}`;
-}
-
-/** The day after `day`, both `YYYY-MM-DD`. */
-export function nextDay(day: string): string {
-  const [year, month, date] = day.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, date + 1))
-    .toISOString()
-    .slice(0, 10);
 }
 
 /** The days from `from` through `through`, both included. */

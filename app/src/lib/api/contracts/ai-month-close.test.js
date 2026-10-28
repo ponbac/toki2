@@ -258,82 +258,57 @@ describe("month close status contract", () => {
     expect(parseAiMonthCloseStatus(closed)).toEqual(closed);
   });
 
+  /** The open month, its readiness changed by `changes`. */
+  const openWith = (changes) => ({
+    ...open,
+    readiness: { ...readiness, ...changes },
+  });
+  /** The closed month, its close's readiness changed by `changes`. */
+  const closedWith = (changes) => ({
+    ...closed,
+    close: { ...closed.close, readiness: { ...waived, ...changes } },
+  });
+
   test.each([
     {
       name: "a waived check without a waiver",
-      input: {
-        ...closed,
-        close: {
-          ...closed.close,
-          readiness: {
-            ...waived,
-            checks: [{ ...waived.checks[0], waiver: null }],
-          },
-        },
-      },
+      input: closedWith({ checks: [{ ...waived.checks[0], waiver: null }] }),
     },
     {
       name: "a waiver on a failed check",
-      input: {
-        ...open,
-        readiness: {
-          ...readiness,
-          checks: [{ ...checks[0], waiver: { reason: "Because." } }],
-        },
-      },
+      input: openWith({
+        checks: [{ ...checks[0], waiver: { reason: "Because." } }],
+      }),
     },
-    {
-      name: "ready with a failed check",
-      input: { ...open, readiness: { ...readiness, ready: true } },
-    },
+    { name: "ready with a failed check", input: openWith({ ready: true }) },
     {
       name: "not ready without a failed check",
-      input: {
-        ...closed,
-        close: { ...closed.close, readiness: { ...waived, ready: false } },
-      },
+      input: closedWith({ ready: false }),
     },
     {
       name: "a check twice",
-      input: {
-        ...open,
-        readiness: { ...readiness, checks: [checks[0], checks[0]] },
-      },
+      input: openWith({ checks: [checks[0], checks[0]] }),
     },
     {
       name: "an unknown check",
-      input: {
-        ...open,
-        readiness: {
-          ...readiness,
-          checks: [{ ...checks[0], id: "seats" }],
-        },
-      },
+      input: openWith({ checks: [{ ...checks[0], id: "seats" }] }),
     },
     {
       name: "an unknown problem",
-      input: {
-        ...open,
-        readiness: {
-          ...readiness,
-          checks: [{ ...checks[0], problems: [{ kind: "late" }] }],
-        },
-      },
+      input: openWith({
+        checks: [{ ...checks[0], problems: [{ kind: "late" }] }],
+      }),
     },
     {
       name: "an unknown key on a problem",
-      input: {
-        ...open,
-        readiness: {
-          ...readiness,
-          checks: [
-            {
-              ...checks[3],
-              problems: [{ kind: "unrecognizedRepositoryRow", sku: "x" }],
-            },
-          ],
-        },
-      },
+      input: openWith({
+        checks: [
+          {
+            ...checks[3],
+            problems: [{ kind: "unrecognizedRepositoryRow", sku: "x" }],
+          },
+        ],
+      }),
     },
     {
       name: "an open month with a close",

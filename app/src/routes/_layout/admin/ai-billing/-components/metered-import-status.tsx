@@ -1,4 +1,3 @@
-import * as React from "react";
 import {
   AlertTriangle,
   ChevronRight,
@@ -17,7 +16,6 @@ import type {
   AiMeteredMonth,
   AiMeteredRun,
 } from "@/lib/api/queries/ai-admin";
-import { cn } from "@/lib/utils";
 import { StatusBadge } from "../../-components/status-badge";
 import {
   formatInstant,
@@ -199,8 +197,6 @@ export function MeteredImportStatus({
 
 /** The sources, account errors and last run, behind a disclosure. */
 function ImportDetails({ data }: { data: AiMeteredMonth }) {
-  const [open, setOpen] = React.useState(false);
-  const id = React.useId();
   const imported = data.import;
   const blockingErrors = imported.accountErrors.filter(blocksImport);
   const last = imported.lastRun;
@@ -209,138 +205,124 @@ function ImportDetails({ data }: { data: AiMeteredMonth }) {
   }
 
   return (
-    <div className="text-sm">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen((current) => !current)}
-        className="flex items-center gap-1 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-      >
+    <details className="group text-sm">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden [&::-webkit-details-marker]:hidden">
         <ChevronRight
-          className={cn(
-            "size-3.5 transition-transform duration-150 motion-reduce:transition-none",
-            open && "rotate-90",
-          )}
+          className="size-3.5 transition-transform duration-150 group-open:rotate-90 motion-reduce:transition-none"
           aria-hidden
         />
         Import details
         {blockingErrors.length > 0 &&
           ` · ${plural(accountsWithErrors(blockingErrors), "account")} not imported`}
-      </button>
-      {open && (
-        <div
-          id={id}
-          className="mt-2 grid gap-4 rounded-md bg-muted/30 p-3 md:grid-cols-2"
-        >
-          <section className="flex flex-col gap-1.5">
-            <h3 className="text-xs font-semibold text-muted-foreground">
-              Sources
-            </h3>
-            <ul className="flex flex-col gap-1">
-              {imported.sources.map((source) => (
-                <li key={source.source} className="flex flex-col">
-                  <span className="font-medium">
-                    {sourceLabel(source.source)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {source.source === "summary"
-                      ? "Read at every import"
-                      : source.importedThrough
-                        ? `Imported through ${shortDate(source.importedThrough)} (UTC)`
-                        : "No day imported completely yet"}
-                    {source.settleLagDays !== null &&
-                      ` · late changes up to ${plural(source.settleLagDays, "day")} after a day ended`}
-                    {source.lastSuccessAt && (
-                      <>
-                        {" "}
-                        · last success <Instant value={source.lastSuccessAt} />
-                      </>
-                    )}
-                  </span>
-                  {source.lastError && (
-                    <span className="text-xs text-destructive">
-                      {source.lastError}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <p className="text-xs text-muted-foreground">
-              Imported from {imported.backfillFrom} (UTC) on.
-            </p>
-          </section>
-          <section className="flex flex-col gap-1.5">
-            <h3 className="text-xs font-semibold text-muted-foreground">
-              Last run
-            </h3>
-            {last ? (
-              <div className="flex flex-col gap-0.5">
-                <span>
-                  {RUN_KINDS[last.kind]} ·{" "}
-                  {listOf(last.months.map(monthLabel), "conjunction")} ·{" "}
-                  {last.status}
+      </summary>
+      <div className="mt-2 grid gap-4 rounded-md bg-muted/30 p-3 md:grid-cols-2">
+        <section className="flex flex-col gap-1.5">
+          <h3 className="text-xs font-semibold text-muted-foreground">
+            Sources
+          </h3>
+          <ul className="flex flex-col gap-1">
+            {imported.sources.map((source) => (
+              <li key={source.source} className="flex flex-col">
+                <span className="font-medium">
+                  {sourceLabel(source.source)}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  <Instant value={last.startedAt} />
-                  {last.finishedAt && (
+                  {source.source === "summary"
+                    ? "Read at every import"
+                    : source.importedThrough
+                      ? `Imported through ${shortDate(source.importedThrough)} (UTC)`
+                      : "No day imported completely yet"}
+                  {source.settleLagDays !== null &&
+                    ` · late changes up to ${plural(source.settleLagDays, "day")} after a day ended`}
+                  {source.lastSuccessAt && (
                     <>
                       {" "}
-                      – <Instant value={last.finishedAt} />
+                      · last success <Instant value={source.lastSuccessAt} />
                     </>
-                  )}{" "}
-                  · {plural(last.requests, "request")} ·{" "}
-                  {plural(last.slicesFetched, "slice")} fetched,{" "}
-                  {last.slicesChanged} changed
+                  )}
                 </span>
-                {last.error && (
-                  <span className="text-xs text-destructive">{last.error}</span>
+                {source.lastError && (
+                  <span className="text-xs text-destructive">
+                    {source.lastError}
+                  </span>
                 )}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">None finished yet.</p>
-            )}
-            {imported.accountErrors.length > 0 && (
-              <>
-                <h3 className="mt-2 text-xs font-semibold text-muted-foreground">
-                  Accounts not imported
-                </h3>
-                <ul className="flex flex-col gap-1">
-                  {imported.accountErrors.map((error) => (
-                    <li
-                      key={`${error.login}:${error.month}`}
-                      className="flex flex-col"
-                    >
-                      <span className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-medium">{error.login}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {monthLabel(error.month)}
-                        </span>
-                        {error.interrupted ? (
-                          <StatusBadge
-                            tone="warning"
-                            label="Run stopped: imported again next run"
-                          />
-                        ) : error.seated ? (
-                          <StatusBadge tone="warning" label="Held a seat" />
-                        ) : (
-                          <StatusBadge
-                            tone="neutral"
-                            label="No seat that month: informational"
-                          />
-                        )}
-                      </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            Imported from {imported.backfillFrom} (UTC) on.
+          </p>
+        </section>
+        <section className="flex flex-col gap-1.5">
+          <h3 className="text-xs font-semibold text-muted-foreground">
+            Last run
+          </h3>
+          {last ? (
+            <div className="flex flex-col gap-0.5">
+              <span>
+                {RUN_KINDS[last.kind]} ·{" "}
+                {listOf(last.months.map(monthLabel), "conjunction")} ·{" "}
+                {last.status}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                <Instant value={last.startedAt} />
+                {last.finishedAt && (
+                  <>
+                    {" "}
+                    – <Instant value={last.finishedAt} />
+                  </>
+                )}{" "}
+                · {plural(last.requests, "request")} ·{" "}
+                {plural(last.slicesFetched, "slice")} fetched,{" "}
+                {last.slicesChanged} changed
+              </span>
+              {last.error && (
+                <span className="text-xs text-destructive">{last.error}</span>
+              )}
+            </div>
+          ) : (
+            <p className="text-muted-foreground">None finished yet.</p>
+          )}
+          {imported.accountErrors.length > 0 && (
+            <>
+              <h3 className="mt-2 text-xs font-semibold text-muted-foreground">
+                Accounts not imported
+              </h3>
+              <ul className="flex flex-col gap-1">
+                {imported.accountErrors.map((error) => (
+                  <li
+                    key={`${error.login}:${error.month}`}
+                    className="flex flex-col"
+                  >
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium">{error.login}</span>
                       <span className="text-xs text-muted-foreground">
-                        {error.error}
+                        {monthLabel(error.month)}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </section>
-        </div>
-      )}
-    </div>
+                      {error.interrupted ? (
+                        <StatusBadge
+                          tone="warning"
+                          label="Run stopped: imported again next run"
+                        />
+                      ) : error.seated ? (
+                        <StatusBadge tone="warning" label="Held a seat" />
+                      ) : (
+                        <StatusBadge
+                          tone="neutral"
+                          label="No seat that month: informational"
+                        />
+                      )}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {error.error}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      </div>
+    </details>
   );
 }
