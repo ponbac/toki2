@@ -289,36 +289,16 @@ AI subscription periods:
   has ended. When every such day is covered there is nothing to set, and the
   account gets no suggestions.
 
-**Suggestions** compare an account's public profile and login with Toki users
-(`domain/models/ai_account_suggestion.rs`). Names are folded first: lower case,
-ø → o, æ → ae, ß → ss, ł → l, đ → d, þ → th, œ → oe, accents dropped. Per family,
-in this order, the first matching rule is evidence:
-
-| Family | Evidence | Rule |
-|---|---|---|
-| email | `email` | the public email is the user's |
-| name | `name` | ≥ 2 name tokens, the user's in order or as the same multiset |
-| name | `nameFirstLast` | ≥ 2 tokens, the user's first and last |
-| name | `nameInitial` | ≥ 2 tokens, the user's first, then the last's initial |
-| name | `nameFirstOnly` | 1 token, a first name no other user has |
-| login | `loginFullName` | the login's core is first+last, last+first or every token |
-| login | `loginInitialSurname` | ≥ 6 characters: the first's initial, then a prefix of the last |
-| login | `loginFirstSurnamePrefix` | the first, then ≥ 2 leading characters of the last |
-| login | `loginFirstOnly` | a first name no other user has |
-
-A login's core drops digit runs and the organization's own words (`spinit` for
-Spinit-AB) and strips them once from either end. A candidate is **verified** only
-with `email` or `name` evidence, as the account's only such candidate, when no
-other account has such evidence for the same user; everything else, login
-evidence and usage activity included, is **probable**. Users already linked
-during the account's default period are left out. Candidates rank by confidence,
-then best evidence (email, name, nameFirstLast, loginFullName, nameInitial,
-loginInitialSurname, loginFirstSurnamePrefix, nameFirstOnly, loginFirstOnly), then
-the user's Copilot-paid cost, records and active days in the review window. "Accept
-all verified" links only accounts without dispositions whose top candidate is
-verified and still the picked user, from the default period; the server
-recomputes the suggestions and skips every other pick with a reason. Probable
-matches need a confirmation per row.
+**Suggestions** compare an account's public profile and login with Toki users. The
+evidence rules, name folding and login cores are documented with the code
+(`domain/models/ai_account_suggestion.rs`). What matters operationally: a candidate
+is **verified** only with email or full-name evidence, as the account's only such
+candidate, when no other account has such evidence for the same user; everything
+else, login evidence and usage activity included, is **probable**. Users already
+linked during the account's default period are left out. "Accept all verified"
+links only accounts without dispositions whose top candidate is verified and still
+the picked user, from the default period; the server recomputes the suggestions and
+skips every other pick with a reason. Probable matches need a confirmation per row.
 
 The committed tests use invented people. To check the rules against real data,
 put `users.tsv` (id, full name and email, tab separated, exported with `BEGIN READ

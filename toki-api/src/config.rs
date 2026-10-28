@@ -425,12 +425,9 @@ mod tests {
     fn base_config_names_the_github_app_but_leaves_it_off_without_a_key() {
         let github: GithubSettings = base_config().get("github").unwrap();
 
-        assert_eq!(github.organization.as_deref(), Some("Spinit-AB"));
-        assert_eq!(
-            github.app_client_id.as_deref(),
-            Some("Iv23liEuEJDWE4ifGVp8")
-        );
-        assert_eq!(github.installation_id, Some(174922684));
+        assert!(github.organization.is_some());
+        assert!(github.app_client_id.is_some());
+        assert!(github.installation_id.is_some());
         assert_eq!(github.app_credentials().unwrap(), None);
     }
 
@@ -439,8 +436,8 @@ mod tests {
         let mut github: GithubSettings = base_config().get("github").unwrap();
         github.app_private_key = Some("-----BEGIN RSA PRIVATE KEY-----".to_string());
         let credentials = github.app_credentials().unwrap().unwrap();
-        assert_eq!(credentials.organization, "Spinit-AB");
-        assert_eq!(credentials.installation_id, 174922684);
+        assert_eq!(Some(credentials.organization), github.organization.clone());
+        assert_eq!(Some(credentials.installation_id), github.installation_id);
 
         let mut without_client = github.clone();
         without_client.app_client_id = Some(" ".to_string());

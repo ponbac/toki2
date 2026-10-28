@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   PENDING_RATES_POLL_MS,
-  readinessAwaitsRates,
   whileRatesArePending,
   whileReadinessAwaitsRates,
   withoutFrozenFetches,
@@ -81,7 +80,7 @@ describe("withoutFrozenFetches", () => {
   });
 });
 
-describe("readinessAwaitsRates", () => {
+describe("whileReadinessAwaitsRates", () => {
   const status = (problems) => ({
     readiness: {
       checks: [
@@ -91,44 +90,39 @@ describe("readinessAwaitsRates", () => {
     },
   });
 
-  test("polls while a corrected month's rate is still being fetched", () => {
-    const pending = status([
-      { kind: "adjustedRatePending", month: "2026-07", currency: "USD" },
-    ]);
-
-    expect(readinessAwaitsRates(pending)).toBe(true);
-    expect(whileReadinessAwaitsRates({ state: { data: pending } })).toBe(
-      PENDING_RATES_POLL_MS,
-    );
+  test.each([
+    {
+      name: "a rate still being fetched",
+      problem: { kind: "ratePending", currency: "USD" },
+    },
+    {
+      name: "a corrected month's rate still being fetched",
+      problem: {
+        kind: "adjustedRatePending",
+        month: "2026-07",
+        currency: "USD",
+      },
+    },
+  ])("polls while readiness awaits $name", ({ problem }) => {
     expect(
-      readinessAwaitsRates(
-        status([
-          {
-            kind: "adjustedRateProvisional",
-            month: "2026-07",
-            currency: "USD",
-          },
-        ]),
-      ),
-    ).toBe(false);
+      whileReadinessAwaitsRates({ state: { data: status([problem]) } }),
+    ).toBe(PENDING_RATES_POLL_MS);
   });
 
-  test("polls while a rate is still being fetched, and stops once it is not", () => {
-    const pending = status([{ kind: "ratePending", currency: "USD" }]);
-    const provisional = status([{ kind: "rateProvisional", currency: "USD" }]);
-
-    expect(readinessAwaitsRates(pending)).toBe(true);
-    expect(whileReadinessAwaitsRates({ state: { data: pending } })).toBe(
-      PENDING_RATES_POLL_MS,
-    );
-    expect(readinessAwaitsRates(provisional)).toBe(false);
-    expect(whileReadinessAwaitsRates({ state: { data: provisional } })).toBe(
-      false,
-    );
-  });
-
-  test("a month in progress or closed has no readiness to wait on", () => {
-    expect(readinessAwaitsRates({ readiness: null })).toBe(false);
-    expect(readinessAwaitsRates(undefined)).toBe(false);
+  test.each([
+    {
+      name: "a provisional rate",
+      data: status([{ kind: "rateProvisional", currency: "USD" }]),
+    },
+    {
+      name: "a corrected month's provisional rate",
+      data: status([
+        { kind: "adjustedRateProvisional", month: "2026-07", currency: "USD" },
+      ]),
+    },
+    { name: "a month in progress or closed", data: { readiness: null } },
+    { name: "no status yet", data: undefined },
+  ])("stops for $name", ({ data }) => {
+    expect(whileReadinessAwaitsRates({ state: { data } })).toBe(false);
   });
 });

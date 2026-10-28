@@ -14,11 +14,8 @@ import {
 
 function seat(extra = {}) {
   return {
-    createdAt: "2025-09-16T10:00:00+02:00",
     firstDay: "2025-09-16",
     pendingCancellationOn: null,
-    lastActivityAt: "2026-10-20T09:00:00Z",
-    lastActivityClient: "vscode/1.143.0/copilot-chat/0.71.0",
     listed: true,
     lastDay: null,
     ...extra,
@@ -28,18 +25,10 @@ function seat(extra = {}) {
 function account(accountId, { suggestions = [], dispositions = [] } = {}) {
   return {
     accountId,
-    login: `login-${accountId}`,
-    profile: null,
-    seats: [seat()],
     dispositions,
-    currentDispositionId: null,
-    uncoveredSeatDays: [],
-    creditsThisMonth: "0.00",
     uncoveredCreditDays: [],
     creditDaysWithoutSeat: 0,
-    needsLook: dispositions.length === 0,
     suggestions,
-    defaultPeriod: { validFrom: "2025-09-16", validTo: null },
   };
 }
 
@@ -163,7 +152,6 @@ describe("seatSummary", () => {
     ).toMatchObject({
       label: "Since 2025-09-16",
       cancelsOn: "2026-10-31",
-      ended: false,
       earlier: 0,
     });
     expect(
@@ -175,7 +163,7 @@ describe("seatSummary", () => {
           lastDay: "2026-10-31",
         }),
       ]),
-    ).toMatchObject({ label: "Ended 2026-10-31", ended: true, earlier: 1 });
+    ).toMatchObject({ label: "Ended 2026-10-31", earlier: 1 });
   });
 });
 

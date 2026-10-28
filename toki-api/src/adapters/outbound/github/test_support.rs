@@ -78,6 +78,8 @@ pub(super) struct Received {
     pub(super) accept: String,
     pub(super) api_version: String,
     pub(super) authorization: String,
+    /// When the fake received it, to check request pacing.
+    pub(super) arrived: std::time::Instant,
 }
 
 /// A registered billing answer: status, extra headers and body.
@@ -143,38 +145,49 @@ pub(super) fn header(headers: &HeaderMap, name: &str) -> String {
 }
 
 /// Checks a GitHub App JWT as GitHub does: RS256 with the app's key, issued by
-/// its client ID, at most ten minutes long, and not issued in the future.
-pub(super) fn jwt_problem(authorization: &str) -> Option<String> {
-    let Some(jwt) = authorization.strip_prefix("Bearer ") else {
-        return Some("no bearer JWT".to_string());
-    };
+/// its client ID, at most ten minutes long, and not issued in the future. A
+/// token that cannot be decoded is a problem too, never a pass.
+pub(super) fn check_jwt(authorization: &str) -> Result<(), String> {
+    let jwt = authorization
+        .strip_prefix("Bearer ")
+        .ok_or("no bearer JWT")?;
     let parts: Vec<&str> = jwt.split('.').collect();
     let [header, claims, signature] = parts.as_slice() else {
-        return Some("not three parts".to_string());
+        return Err("not three parts".to_string());
     };
-    let decode = |part: &str| URL_SAFE_NO_PAD.decode(part).ok();
-    let header: Value = serde_json::from_slice(&decode(header)?).ok()?;
+    let decode = |part: &str| {
+        URL_SAFE_NO_PAD
+            .decode(part)
+            .map_err(|_| format!("{part:?} is not base64url"))
+    };
+    let parse = |part: &str| {
+        serde_json::from_slice::<Value>(&decode(part)?).map_err(|_| format!("{part:?} is not JSON"))
+    };
+    let header = parse(header)?;
     if header != json!({"alg": "RS256", "typ": "JWT"}) {
-        return Some(format!("header {header}"));
+        return Err(format!("header {header}"));
     }
-    let verified = UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA256, &test_key().public_key)
+    UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA256, &test_key().public_key)
         .verify(
             format!("{}.{}", parts[0], parts[1]).as_bytes(),
             &decode(signature)?,
-        );
-    if verified.is_err() {
-        return Some("bad signature".to_string());
-    }
-    let claims: Value = serde_json::from_slice(&decode(claims)?).ok()?;
-    let (iat, exp) = (claims["iat"].as_i64()?, claims["exp"].as_i64()?);
+        )
+        .map_err(|_| "bad signature".to_string())?;
+    let claims = parse(claims)?;
+    let claim_time = |name: &str| {
+        claims[name]
+            .as_i64()
+            .ok_or_else(|| format!("no numeric {name}"))
+    };
+    let (iat, exp) = (claim_time("iat")?, claim_time("exp")?);
     let now = time::OffsetDateTime::now_utc().unix_timestamp();
     if claims["iss"] != CLIENT_ID {
-        return Some(format!("issuer {}", claims["iss"]));
+        return Err(format!("issuer {}", claims["iss"]));
     }
     if exp - iat > 600 || iat > now || exp <= now {
-        return Some(format!("times iat={iat} exp={exp} now={now}"));
+        return Err(format!("times iat={iat} exp={exp} now={now}"));
     }
-    None
+    Ok(())
 }
 
 pub(super) async fn mint(
@@ -182,7 +195,7 @@ pub(super) async fn mint(
     Path(installation): Path<u64>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(problem) = jwt_problem(&header(&headers, "authorization")) {
+    if let Err(problem) = check_jwt(&header(&headers, "authorization")) {
         github.jwt_problems.lock().unwrap().push(problem);
         return (
             StatusCode::UNAUTHORIZED,
@@ -226,6 +239,7 @@ pub(super) fn admit(github: &FakeGithub, path: String, headers: &HeaderMap) -> O
         accept: header(headers, "accept"),
         api_version: header(headers, "x-github-api-version"),
         authorization: authorization.clone(),
+        arrived: std::time::Instant::now(),
     });
     let token = authorization.trim_start_matches("Bearer ");
     let revoked = *github.revoke_every_token.lock().unwrap()

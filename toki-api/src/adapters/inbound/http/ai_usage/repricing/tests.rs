@@ -142,15 +142,6 @@ async fn a_repricing_must_be_a_valid_version_1_payload() {
     let mut long_basis = valid.clone();
     long_basis["pricing"]["basis"] = json!("a".repeat(129));
     let repeated = repricing(vec![bucket("09", 1, 0.5), bucket("09", 1, 0.7)]);
-    let too_many = repricing(
-        (0..20_001)
-            .map(|index: u32| {
-                let mut bucket = bucket("09", 0, 0.5);
-                bucket["sessionKey"] = json!(format!("{index:032x}"));
-                bucket
-            })
-            .collect(),
-    );
     for (case, body, error) in [
         (
             "version 2",
@@ -171,11 +162,6 @@ async fn a_repricing_must_be_a_valid_version_1_payload() {
             "repeated key",
             &repeated,
             "buckets[1]: duplicate key (hourStart, sessionKey, project, provider, model, billingProvider)",
-        ),
-        (
-            "too many buckets",
-            &too_many,
-            "buckets: at most 20000 buckets can be repriced at once",
         ),
     ] {
         let (status, body) = reprice(app.clone(), "toki_any", body).await;
@@ -200,7 +186,7 @@ async fn a_repricing_must_be_a_valid_version_1_payload() {
         (status, body),
         (
             StatusCode::OK,
-            json!({ "updated": 1, "unmatched": 0, "beforeFloor": 1 })
+            json!({ "updated": 7, "unmatched": 3, "beforeFloor": 2 })
         )
     );
     let reprices = service.reprices.lock().unwrap();

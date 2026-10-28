@@ -717,8 +717,6 @@ export type AdjustmentGroup = {
   /** Signed hundredths of the billing currency, each line at the rate of the
    * month it corrects; null when a line has no rate. */
   converted: number | null;
-  /** The currencies of lines without a rate. */
-  missingCurrencies: ReadonlySet<string>;
 };
 
 /** Adjustment lines grouped by the project they correct, as an invoice
@@ -727,18 +725,13 @@ export type AdjustmentGroup = {
 export function groupAdjustments(
   lines: readonly AiAdjustmentLine[],
 ): AdjustmentGroup[] {
-  const groups = new Map<string, AdjustmentGroup>();
+  const groups = new Map<
+    string,
+    { project: BillingProject; lines: AiAdjustmentLine[] }
+  >();
   for (const line of lines) {
     const project = adjustmentProject(line);
-    const group = groups.get(project.key) ?? {
-      key: project.key,
-      label: project.label,
-      kind: project.kind,
-      lines: [],
-      amounts: new Map<string, number>(),
-      converted: 0,
-      missingCurrencies: new Set<string>(),
-    };
+    const group = groups.get(project.key) ?? { project, lines: [] };
     group.lines.push(line);
     groups.set(project.key, group);
   }
@@ -749,7 +742,13 @@ export function groupAdjustments(
     spinit: 3,
   };
   return [...groups.values()]
-    .map((group) => ({ ...group, ...adjustmentTotals(group.lines) }))
+    .map(({ project, lines }) => ({
+      key: project.key,
+      label: project.label,
+      kind: project.kind,
+      lines,
+      ...adjustmentTotals(lines),
+    }))
     .sort(
       (a, b) =>
         kindRank[a.kind] - kindRank[b.kind] || a.label.localeCompare(b.label),
@@ -760,10 +759,9 @@ export function groupAdjustments(
  * currency. */
 export function adjustmentTotals(
   lines: readonly AiAdjustmentLine[],
-): Pick<AdjustmentGroup, "amounts" | "converted" | "missingCurrencies"> {
+): Pick<AdjustmentGroup, "amounts" | "converted"> {
   const amounts = new Map<string, number>();
   let converted: number | null = 0;
-  const missingCurrencies = new Set<string>();
   for (const line of lines) {
     amounts.set(
       line.billableCurrency,
@@ -772,12 +770,11 @@ export function adjustmentTotals(
     );
     if (line.convertedAmount === null) {
       converted = null;
-      missingCurrencies.add(line.billableCurrency);
     } else if (converted !== null) {
       converted += hundredths(line.convertedAmount);
     }
   }
-  return { amounts, converted, missingCurrencies };
+  return { amounts, converted };
 }
 
 /** Signed hundredths with an explicit sign, such as `+12,50 SEK` or

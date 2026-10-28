@@ -135,7 +135,7 @@ async fn month_overview(
     let month = parse_month(&month)?;
     match service.month_overview(month).await? {
         AiMonthView::Open(overview) => {
-            let parts = bill_parts(&overview.bill, &overview.converted)?;
+            let parts = overview.bill.parts(&overview.converted)?;
             Ok(Json(MonthOverviewResponse::new(
                 &overview,
                 &parts,
@@ -453,25 +453,9 @@ impl From<&AiMeteredBillInfo> for MeteredBillResponse {
     }
 }
 
-/// A bill's lines as the bill shows them (`AiBillingLine::parts`).
-fn bill_parts<'a>(
-    bill: &'a AiMonthBill,
-    converted: &AiConvertedBill,
-) -> Result<Vec<AiBillingLinePart<'a>>, AiBillingError> {
-    Ok(bill
-        .lines
-        .iter()
-        .zip(&converted.lines)
-        .map(|(line, converted)| line.parts(converted))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect())
-}
-
 impl BillResponse {
     fn new(bill: &AiMonthBill, converted: &AiConvertedBill) -> Result<Self, AiBillingError> {
-        Self::with_parts(bill, converted, &bill_parts(bill, converted)?)
+        Self::with_parts(bill, converted, &bill.parts(converted)?)
     }
 
     /// The bill with its lines' parts computed already.
@@ -856,24 +840,24 @@ struct MeteredLineResponse {
     low_ratio: bool,
 }
 
+impl From<AiMeteredChargeKind> for MeteredKindResponse {
+    fn from(kind: AiMeteredChargeKind) -> Self {
+        match kind {
+            AiMeteredChargeKind::Project => Self::Project,
+            AiMeteredChargeKind::Personal => Self::Personal,
+            AiMeteredChargeKind::Untracked => Self::Untracked,
+            AiMeteredChargeKind::Account(AiMeteredAccountReason::Unlinked) => Self::UnlinkedAccount,
+            AiMeteredChargeKind::Account(AiMeteredAccountReason::External) => Self::ExternalAccount,
+            AiMeteredChargeKind::Account(AiMeteredAccountReason::Unknown) => Self::UnknownAccount,
+            AiMeteredChargeKind::Repository => Self::Repository,
+        }
+    }
+}
+
 impl From<&AiMeteredCharge> for MeteredLineResponse {
     fn from(charge: &AiMeteredCharge) -> Self {
         Self {
-            kind: match charge.kind {
-                AiMeteredChargeKind::Project => MeteredKindResponse::Project,
-                AiMeteredChargeKind::Personal => MeteredKindResponse::Personal,
-                AiMeteredChargeKind::Untracked => MeteredKindResponse::Untracked,
-                AiMeteredChargeKind::Account(AiMeteredAccountReason::Unlinked) => {
-                    MeteredKindResponse::UnlinkedAccount
-                }
-                AiMeteredChargeKind::Account(AiMeteredAccountReason::External) => {
-                    MeteredKindResponse::ExternalAccount
-                }
-                AiMeteredChargeKind::Account(AiMeteredAccountReason::Unknown) => {
-                    MeteredKindResponse::UnknownAccount
-                }
-                AiMeteredChargeKind::Repository => MeteredKindResponse::Repository,
-            },
+            kind: charge.kind.into(),
             credits: credits_decimal(charge.credits()),
             account: charge
                 .account

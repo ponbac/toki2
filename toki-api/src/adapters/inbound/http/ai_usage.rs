@@ -671,14 +671,13 @@ mod tests {
             _user_id: &UserId,
             repricing: &AiRepricing,
         ) -> Result<AiRepricingReceipt, AiUsageError> {
-            let (repriced, before_floor) = repricing.split_at_floor(REPRICE_FLOOR);
-            let receipt = AiRepricingReceipt {
-                updated: repriced.len() as u64,
-                unmatched: 0,
-                before_floor,
-            };
+            // A fixed receipt: the real floor rule is the Postgres service's.
             self.reprices.lock().unwrap().push(repricing.clone());
-            Ok(receipt)
+            Ok(AiRepricingReceipt {
+                updated: 7,
+                unmatched: 3,
+                before_floor: 2,
+            })
         }
     }
 

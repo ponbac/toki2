@@ -683,6 +683,25 @@ pub struct AiMonthBill {
     pub adjustments: Vec<AiAdjustmentLine>,
 }
 
+impl AiMonthBill {
+    /// The month's lines as the bill shows them, each split into its parts
+    /// (`AiBillingLine::parts`) with `converted`'s matching line.
+    pub fn parts<'a>(
+        &'a self,
+        converted: &AiConvertedBill,
+    ) -> Result<Vec<AiBillingLinePart<'a>>, AiBillingError> {
+        Ok(self
+            .lines
+            .iter()
+            .zip(&converted.lines)
+            .map(|(line, converted)| line.parts(converted))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+}
+
 /// Month totals. Amounts in different currencies are never added together.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiMonthTotals {

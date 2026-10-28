@@ -7,7 +7,7 @@ mod ai_display_rate;
 mod ai_exchange_rate;
 mod ai_metered_billing;
 #[cfg(test)]
-mod ai_metered_fixtures;
+pub(crate) mod ai_metered_fixtures;
 mod ai_metered_import;
 mod ai_metered_reconciliation;
 mod ai_metered_usage;

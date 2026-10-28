@@ -148,12 +148,13 @@ struct CreditsBody {
     #[serde(default)]
     user: Option<String>,
     organization: String,
-    usage_items: Vec<CreditItem>,
+    usage_items: Vec<BillingItem>,
 }
 
+/// A line of a credit or summary response; summary lines name no model.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreditItem {
+struct BillingItem {
     product: String,
     sku: String,
     #[serde(default)]
@@ -198,22 +199,22 @@ struct SummaryBody {
     organization: String,
     #[serde(default)]
     product: Option<String>,
-    usage_items: Vec<SummaryItem>,
+    usage_items: Vec<BillingItem>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SummaryItem {
-    product: String,
-    sku: String,
-    unit_type: String,
-    price_per_unit: Box<RawValue>,
-    gross_quantity: Box<RawValue>,
-    gross_amount: Box<RawValue>,
-    discount_quantity: Box<RawValue>,
-    discount_amount: Box<RawValue>,
-    net_quantity: Box<RawValue>,
-    net_amount: Box<RawValue>,
+impl BillingItem {
+    /// The line's amounts, each parsed exactly.
+    fn amounts(&self) -> Result<AiMeteredAmounts, GithubError> {
+        Ok(AiMeteredAmounts {
+            unit_price: decimal("pricePerUnit", &self.price_per_unit)?,
+            gross_quantity: decimal("grossQuantity", &self.gross_quantity)?,
+            gross_amount: decimal("grossAmount", &self.gross_amount)?,
+            discount_quantity: decimal("discountQuantity", &self.discount_quantity)?,
+            discount_amount: decimal("discountAmount", &self.discount_amount)?,
+            net_quantity: decimal("netQuantity", &self.net_quantity)?,
+            net_amount: decimal("netAmount", &self.net_amount)?,
+        })
+    }
 }
 
 fn invalid(message: impl Into<String>) -> GithubError {
@@ -310,15 +311,7 @@ pub(super) fn parse_credits(
         .usage_items
         .into_iter()
         .map(|item| {
-            let amounts = AiMeteredAmounts {
-                unit_price: decimal("pricePerUnit", &item.price_per_unit)?,
-                gross_quantity: decimal("grossQuantity", &item.gross_quantity)?,
-                gross_amount: decimal("grossAmount", &item.gross_amount)?,
-                discount_quantity: decimal("discountQuantity", &item.discount_quantity)?,
-                discount_amount: decimal("discountAmount", &item.discount_amount)?,
-                net_quantity: decimal("netQuantity", &item.net_quantity)?,
-                net_amount: decimal("netAmount", &item.net_amount)?,
-            };
+            let amounts = item.amounts()?;
             let label = name("model", item.model.unwrap_or_default(), MAX_NAME_CHARS)?;
             let (model, label_kind) = labels::model(&label);
             if model.model.chars().count() > MAX_NAME_CHARS {
@@ -429,15 +422,7 @@ pub(super) fn parse_summary(
     for item in body.usage_items {
         let line = AiMeteredSummaryLine {
             kind: labels::summary_kind(&item.sku),
-            amounts: AiMeteredAmounts {
-                unit_price: decimal("pricePerUnit", &item.price_per_unit)?,
-                gross_quantity: decimal("grossQuantity", &item.gross_quantity)?,
-                gross_amount: decimal("grossAmount", &item.gross_amount)?,
-                discount_quantity: decimal("discountQuantity", &item.discount_quantity)?,
-                discount_amount: decimal("discountAmount", &item.discount_amount)?,
-                net_quantity: decimal("netQuantity", &item.net_quantity)?,
-                net_amount: decimal("netAmount", &item.net_amount)?,
-            },
+            amounts: item.amounts()?,
             product: name("product", item.product, MAX_NAME_CHARS)?,
             sku: name("sku", item.sku, MAX_NAME_CHARS)?,
             unit: name("unitType", item.unit_type, MAX_UNIT_CHARS)?,

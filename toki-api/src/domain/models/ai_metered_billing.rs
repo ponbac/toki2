@@ -1,67 +1,26 @@
 //! The bill's lines for a metered payer (GitHub Copilot) from the cutover on:
-//! what the payer billed (`G`), split by what Toki tracked (`T`).
+//! what the payer billed (`G`), split by what Toki tracked (`T`). The full
+//! policy (cutover, destinations, account lines, unknown account) is in
+//! `.docs/ai-usage-billing.md`, "GitHub Copilot lines in the bill".
 //!
-//! Everything here is pure. The billing service loads the payer's UTC month
-//! (accounts, credits, coverage and Toki's tracked usage per destination) and
-//! `allocate_metered_credits` decides every line, over the same walk of the
-//! month as reconciliation (`ai_metered_reconciliation`), so the bill and the
+//! Everything here is pure. `allocate_metered_credits` walks the month as
+//! reconciliation does (`ai_metered_reconciliation`), so the bill and the
 //! reconciliation tab agree on `G`, `T`, attributed and untracked for every
-//! account.
+//! account. The invariants kept here:
 //!
-//! - **Metered buckets.** From `AiMeteredCutover::starts_at` (the cutover
-//!   month's first day at 00:00 UTC), usage the payer pays for
-//!   (`COALESCE(billing_provider, provider)`) leaves the local-day reads and
-//!   bills here, per UTC month: a line belongs to the UTC month of the payer's
-//!   day. Usage routed elsewhere (Copilot through ChatGPT, paid by Codex)
-//!   never does. Earlier months, and every month without a cutover, keep the
-//!   API-estimate lines.
-//! - **The T/G rule** (`split_group`), per account, UTC day and group of
-//!   (SKU, model), with "Auto: X" as X: `T ≥ G` splits `G` by each
-//!   destination's `T_d`; `T < G` charges each its `T_d` and leaves `G − T` as
-//!   untracked Copilot; `G = 0` bills nothing; unpriced usage and free models
-//!   carry no weight. No destination is charged more than its `T_d`.
-//! - **Groups that never use Toki's weights.** Code review credits per
-//!   account (repository-billed) are left out: the payer's organization rows
-//!   bill the same credits per repository (`repository_lines`), to the
-//!   repository's mapped project or to Unassigned (unmapped repository),
-//!   rounded once per repository and UTC month; a month that rounds to no
-//!   credit gets no line. Only repository credit rows bill this way: code
-//!   review the payer billed without a repository is inside the IDE
-//!   aggregate and bills on no line, like Actions. The cloud agent and
-//!   unrecognized credits have `T = 0`, so they are untracked. Credits on days
-//!   without a disposition bill to an "unlinked account" line, on External
-//!   days to an "external account" line, both Spinit's.
-//! - **Destinations.** A user's tracked usage goes to the project its key
-//!   resolves to, to Unassigned (unmapped or unattributed), or to
-//!   personal/internal (Spinit's line, with an amount).
-//! - **Rounding.** Per account and month, the billed `G` (gross less code
-//!   review) is rounded once to cents and split over the account's lines with
-//!   `allocate_largest_remainder`, weighted by their nanodollar allocations,
-//!   so each account's lines sum exactly to its gross. A project or personal
-//!   line is then capped at its tracked cost of groups with credits, rounded
-//!   down to cents; the excess cent goes to the same user's untracked line,
-//!   Spinit's, as rounding is.
-//! - **Unknown account.** The month's residual (the organization's credits
-//!   minus every account's, code review left out) over settled and provisional
-//!   days bills as one "unknown account" line when it is positive.
-//! - **Provisional.** An account's lines are provisional while the month is
-//!   in progress, a day's import is missing or incomplete (a run stopping
-//!   before it finished the account's month included), a day may still
-//!   change (within the settle days, or the account's month total is not
-//!   confirmed), a contributing bucket is on an old pricing basis, a
-//!   provisional model contributed, or a row is unrecognized
-//!   (`AiMeteredProvisional`). The allocation as a whole is also provisional
-//!   while an account is, whether or not it bills a line, and while the
-//!   unknown account's residual is (an organization slice missing or
-//!   incomplete, its month total failed or unconfirmed, a seated account's
-//!   import failed or an account's was interrupted), even when the residual
-//!   bills no line: credits not imported or not computed yet are no settled
-//!   zero. One user's part is provisional while an account linked to them on
-//!   a day of the month is, whether or not they have a line of it; the
-//!   unknown account is no one's. Likewise for repository credits, from the
-//!   organization's usage slices: a missing one is no settled zero either;
-//!   and an unrecognized organization row naming a repository, which may be
-//!   code review billed on no line, keeps them provisional.
+//! - **The T/G rule** (`split_group`), per account, UTC day and (SKU, model)
+//!   group: `T ≥ G` splits `G` by each destination's `T_d`; `T < G` charges
+//!   each its `T_d` and leaves `G − T` untracked; `G = 0` bills nothing. No
+//!   destination is charged more than its `T_d`.
+//! - **Rounding.** Per account and month, the billed `G` is rounded once to
+//!   cents and split by largest remainder, so an account's lines sum exactly
+//!   to its gross; a project or personal line is capped at its tracked cost
+//!   rounded down, the excess cent going to the user's untracked line.
+//! - **Code review** bills per repository (`repository_lines`), rounded once
+//!   per repository and UTC month, never by Toki's weights.
+//! - **Provisional** (`AiMeteredProvisional`): credits not imported or not
+//!   computed yet are never a settled zero, for accounts, the unknown account
+//!   and repositories alike.
 //!
 //! Amounts are nanodollars until rounding; a credit is $0.01, so a line's
 //! cents are its credits.

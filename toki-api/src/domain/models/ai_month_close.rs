@@ -1,33 +1,18 @@
 //! Month close: a month's whole AI bill frozen as it was invoiced, and the
-//! adjustment lines that bill each later change to it exactly once.
+//! adjustment lines that bill each later change to it exactly once. Scope,
+//! re-opening and the API are in `.docs/ai-usage-billing.md`, "Month close,
+//! snapshots and adjustments".
 //!
 //! Everything here is pure. The billing service loads the closes, the bills
-//! and the snapshots, and these functions decide which months are closed,
-//! where their adjustments post and what each adjustment bills.
-//!
-//! # Closes
-//!
-//! - **Scope.** A close freezes the whole AI bill (`AI_BILL_SCOPE`): API
-//!   lines, subscription fee shares and overhead, metered lines, and the
-//!   adjustment lines posted on the month. A month is closed once it is over
-//!   both in UTC and in the billing time zone (`close_blocker`); there is no
-//!   order: any over month can close, and the netting below stays exact.
-//! - **Active closes.** A re-open keeps its close as history; every
-//!   computation reads the active closes only. A month has at most one.
-//! - **Where adjustments post.** Changes to a closed month `K` post on
-//!   `next_open(K)`, the first month after `K` without an active close
-//!   (`posting_on`). An open month carries them as adjustment lines, apart
-//!   from its own lines; once it closes, its snapshot freezes them with
-//!   `adjusts_month = K`.
-//! - **Re-open.** A month can be re-opened only while no active close holds
-//!   adjustments to it. Re-opening a month whose snapshot froze adjustments to
-//!   earlier months makes those live again, on the new `next_open`.
+//! and the snapshots, and these functions decide which months are closed
+//! (`close_blocker`), where their adjustments post (`posting_on`: the first
+//! month after `K` without an active close, `next_open(K)`) and what each
+//! adjustment bills. Only active closes count; a month has at most one.
 //!
 //! # Adjustments
 //!
 //! For the open month `M` and each closed `K` with `next_open(K) = M`, per
-//! diff key (`AiAdjustmentKey`: subject, project, kind, currency and payer,
-//! the provider or the subscription):
+//! diff key (`AiAdjustmentKey`):
 //!
 //! `adjustment = R − S − F`
 //!
@@ -35,28 +20,18 @@
 //! - `S`: `K`'s snapshot, its own lines;
 //! - `F`: the adjustments to `K` frozen in every active close.
 //!
-//! Parts that share a key are summed: one user's lines from two accounts in a
-//! month (an owner change), a user's untracked lines of two SKUs, the Codex
-//! and Pi shares of one subscription. An unknown amount (an API line whose
-//! usage is all unpriced) counts as zero.
+//! Parts that share a key are summed, and an unknown amount counts as zero.
+//! The SEK amount is `R.sek − S.sek − F.sek`, not the amount converted: `S`
+//! and `F` keep the SEK they were invoiced at, so a rate change alone posts
+//! an SEK-only line. When nothing changed, no line posts.
 //!
-//! - **SEK.** An adjustment's amount in the billing currency is the
-//!   difference of the SEK amounts, `R.sek − S.sek − F.sek`, not its amount
-//!   converted: `S` and `F` keep the SEK they were invoiced at. It carries
-//!   `K`'s current rate, so it bypasses `convert_bill`'s same-month filter. A
-//!   rate change alone (an admin's override on closed `K`) changes only
-//!   `R.sek`, which posts an SEK-only line. A stored row without an SEK amount
-//!   counts as zero (nothing was invoiced in SEK); a recomputed part without a
-//!   rate leaves the difference unknown.
-//! - **When nothing changed**, both differences are zero and no line posts.
+//! # Why every active close
 //!
-//! # Why every active close, and the proof
-//!
-//! The plan's wording nets the adjustments frozen in closed months *before*
-//! `M`. That double-counts once a month between `K` and `M` is re-opened: with
-//! `K` and `K+1` closed (`K+1` holding nothing) and `K+2` holding `A` to `K`,
-//! re-opening `K+1` makes it the first open month, and no close before it
-//! holds `A`, so `A` would bill again. Netting every active close is exact:
+//! Netting only the closes before `M` double-counts once a month between `K`
+//! and `M` is re-opened: with `K` and `K+1` closed (`K+1` holding nothing) and
+//! `K+2` holding `A` to `K`, re-opening `K+1` makes it the first open
+//! month, and no close before it holds `A`, so `A` would bill again. Netting
+//! every active close is exact:
 //! what is invoiced for `K` is always `S + F + A_live = R`, where `A_live` is
 //! the adjustment posted live on `next_open(K)`. Closing that month moves
 //! `A_live` into `F`, unchanged; re-opening a month removes its rows from `F`

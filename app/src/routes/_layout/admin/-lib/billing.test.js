@@ -11,7 +11,6 @@ import {
   groupAdjustments,
   groupLines,
   hundredths,
-  lineProject,
   lineUserId,
   lineWarnings,
   meteredLineLabel,
@@ -80,64 +79,6 @@ const project = {
   projectId: "101",
   projectName: "Example Client - Widget API",
 };
-
-describe("lineProject for a metered payer's lines", () => {
-  test.each([
-    [
-      "a project's credits bill the project",
-      line("project", ADA, { project }),
-      ["project:101", "project", null, null],
-    ],
-    [
-      "credits outside any repository stay Unassigned",
-      line("project", ADA, { unassigned: "unattributed" }),
-      ["unassigned:unattributed", "unassigned", "unattributed", null],
-    ],
-    [
-      "untracked credits are Spinit's",
-      line("untracked", ADA),
-      ["spinit:untracked", "spinit", null, "untracked"],
-    ],
-    [
-      "personal credits are Spinit's",
-      line("personal", ADA),
-      ["spinit:personal", "spinit", null, "personal"],
-    ],
-    [
-      "an unlinked account's credits are Spinit's",
-      line("unlinkedAccount", CONTRACTOR),
-      ["spinit:accounts", "spinit", null, "accounts"],
-    ],
-    [
-      "an external account's credits are Spinit's",
-      line("externalAccount", CONTRACTOR),
-      ["spinit:accounts", "spinit", null, "accounts"],
-    ],
-    [
-      "the unknown account's credits are Spinit's",
-      line("unknownAccount", UNKNOWN),
-      ["spinit:accounts", "spinit", null, "accounts"],
-    ],
-    [
-      "a mapped repository's code review bills its project",
-      line("repository", WIDGET_API, { project }),
-      ["project:101", "project", null, null],
-    ],
-    [
-      "an unmapped repository's code review stays Unassigned on its own",
-      line("repository", WIDGET_API, { unassigned: "unmappedRepository" }),
-      [
-        "unassigned:unmappedRepository",
-        "unassigned",
-        "unmappedRepository",
-        null,
-      ],
-    ],
-  ])("%s", (_, metered, expected) => {
-    const { key, kind, unassigned, spinit } = lineProject(metered);
-    expect([key, kind, unassigned, spinit]).toEqual(expected);
-  });
-});
 
 describe("subjects", () => {
   const names = new Map([[1, "Ada Lovelace"]]);
@@ -441,6 +382,5 @@ describe("adjustment lines", () => {
     ]);
 
     expect(totals.converted).toBeNull();
-    expect([...totals.missingCurrencies]).toEqual(["USD"]);
   });
 });

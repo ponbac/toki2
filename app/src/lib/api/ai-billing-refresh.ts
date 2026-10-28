@@ -45,24 +45,19 @@ export function withoutFrozenFetches<
     : { ...bill, pendingRates: [], adjustedPendingRates: [] };
 }
 
-/** Whether a month's readiness waits for a rate the server is still
- * fetching, its own or a corrected month's, which its next evaluation may
- * have. */
-export function readinessAwaitsRates(
-  status: AiMonthCloseStatus | undefined,
-): boolean {
-  return (status?.readiness?.checks ?? []).some((check) =>
-    check.problems.some(
-      (problem) =>
-        problem.kind === "ratePending" ||
-        problem.kind === "adjustedRatePending",
-    ),
-  );
-}
-
-/** Reloads a month's close status while its readiness awaits a rate. */
+/** Reloads a month's close status while its readiness waits for a rate the
+ * server is still fetching, its own or a corrected month's, which its next
+ * evaluation may have. */
 export function whileReadinessAwaitsRates(query: {
   state: { data?: AiMonthCloseStatus };
 }): number | false {
-  return readinessAwaitsRates(query.state.data) ? PENDING_RATES_POLL_MS : false;
+  const awaitsRates = (query.state.data?.readiness?.checks ?? []).some(
+    (check) =>
+      check.problems.some(
+        (problem) =>
+          problem.kind === "ratePending" ||
+          problem.kind === "adjustedRatePending",
+      ),
+  );
+  return awaitsRates ? PENDING_RATES_POLL_MS : false;
 }

@@ -13,20 +13,13 @@
 //! whatever month (`AiMonthCloseError::ImportRunning`), so the readiness it
 //! keeps never sees a live run.
 //!
-//! 1. **`import`** (metered months): the payer's import is complete through
-//!    the month's end, judged per account and month from the stored slices
-//!    and checks, never from a run's errors (they only describe that run). No
-//!    live run may be importing the month (its plan holds it; this cannot be
-//!    waived), the month must be settled (its last day is before today less
-//!    the measured settle days, at least 3), every day imported from every
-//!    source, and the latest check of every account that held a seat, of
-//!    every account a run left interrupted (whatever its seat), of every
-//!    other account with credits or lines, and of the organization a success
-//!    that matches the payer's month total, made once the month settled.
-//!    Checks are read as the bill reads them: a mark of the live run keeps
-//!    the check it marked, while one a stopped or dead run left is an
-//!    interrupted check. Passing it means no metered line may still change
-//!    for the import's sake.
+//! 1. **`import`** (metered months): the payer's import is complete and
+//!    settled through the month's end, judged from the stored slices and
+//!    checks (never a run's errors), and no live run is importing the month
+//!    (this cannot be waived). Passing it means no metered line may still
+//!    change for the import's sake. The exact rules (settle days, which
+//!    accounts' checks count) are in `.docs/ai-usage-billing.md`, "Month
+//!    close, snapshots and adjustments", and `import_problems`.
 //! 2. **`dispositions`** (metered): no credits bill to an unlinked account.
 //! 3. **`unknownAccount`** (metered): the per-day residual of accounts Toki
 //!    never listed is settled and zero on every day.
