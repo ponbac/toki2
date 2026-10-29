@@ -16,16 +16,14 @@ export function formatCost(usd: number, money: EstimateMoney): string {
 }
 
 /**
- * A cost that may hold usage without a known price, which is never shown as
- * zero: wholly unpriced usage is "Unknown", partly unpriced usage its priced
- * subtotal plus an unknown rest.
+ * A cost that may leave out usage without a known price: "Unknown" when it
+ * has no priced usage at all, else the priced cost. The summary says once
+ * how much usage costs leave out.
  */
 export function formatKnownCost(
   usd: number,
   unpricedRecords: number,
   money: EstimateMoney,
 ): string {
-  if (unpricedRecords > 0 && usd === 0) return "Unknown";
-  const priced = formatCost(usd, money);
-  return unpricedRecords > 0 ? `${priced} + unknown` : priced;
+  return unpricedRecords > 0 && usd === 0 ? "Unknown" : formatCost(usd, money);
 }

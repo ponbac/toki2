@@ -11,7 +11,7 @@ import {
   type PersonStats,
 } from "../../-lib/adoption";
 import { formatCost, formatKnownCost } from "./format";
-import { formatShare, formatTokens } from "../../-lib/format";
+import { formatCount, formatShare, formatTokens } from "../../-lib/format";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
 /** The window in a sentence, with the figures that frame it. */
@@ -39,8 +39,6 @@ export function Summary({
     previous && previous.costUsd > 0 && totals.costUsd > 0
       ? totals.costUsd / previous.costUsd - 1
       : null;
-  const pricedOnly =
-    totals.unpricedRecords > 0 || (previous?.unpricedRecords ?? 0) > 0;
 
   const facts: Array<[string, string]> = [
     [
@@ -83,14 +81,7 @@ export function Summary({
             <b className="font-extrabold tabular-nums">
               {formatShare(Math.abs(change))}
             </b>{" "}
-            {change >= 0 ? "more" : "less"} than the {weeks} weeks before
-            {pricedOnly ? (
-              <span className="text-sm font-semibold text-muted-foreground">
-                {" "}
-                (priced usage only)
-              </span>
-            ) : null}
-            .
+            {change >= 0 ? "more" : "less"} than the {weeks} weeks before.
           </>
         )}{" "}
         Models read and wrote{" "}
@@ -109,6 +100,13 @@ export function Summary({
           </div>
         ))}
       </dl>
+      {totals.unpricedRecords > 0 ? (
+        <p className="max-w-md text-xs text-muted-foreground">
+          Costs leave out {formatCount(totals.unpricedRecords)}{" "}
+          {totals.unpricedRecords === 1 ? "request" : "requests"} to models
+          without an API price.
+        </p>
+      ) : null}
     </section>
   );
 }

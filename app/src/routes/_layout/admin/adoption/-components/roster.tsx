@@ -105,9 +105,10 @@ export function Roster({
               </th>
               <th
                 scope="col"
-                className="px-4 pb-1.5 text-right align-bottom text-xs font-semibold text-muted-foreground"
+                className="px-4 pb-1.5 text-right align-bottom text-xs font-semibold whitespace-nowrap text-muted-foreground"
+                title="How many of the window's work days, Monday to Friday, each person used AI on"
               >
-                Work days
+                Work days with AI
               </th>
               <th aria-hidden className="w-full" />
             </tr>
