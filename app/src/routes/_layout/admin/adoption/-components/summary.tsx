@@ -107,11 +107,11 @@ export function Summary({
           <b className="font-extrabold tabular-nums">
             {formatTokens(totals.tokens)}
           </b>{" "}
-          tokens in the last {weeks} weeks{comparison}, worth{" "}
+          tokens in the last {weeks} weeks{comparison}. The company's AI cost{" "}
           <b className="font-extrabold tabular-nums">
             {formatKnownCost(totals.costUsd, totals.unpricedRecords, money)}
           </b>{" "}
-          at API prices.
+          at API prices over the same weeks.
         </p>
       )}
       <dl className="grid max-w-md grid-cols-2 gap-x-6 gap-y-4">

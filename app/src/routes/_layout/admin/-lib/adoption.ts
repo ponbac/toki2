@@ -136,8 +136,12 @@ export type PersonStats = Readonly<{
   /** Tokens per day with tokens: GitHub reports Copilot in credits, so a day
    * of Copilot alone has none to count. */
   perActiveDayTokens: number;
-  /** Tools used in the window, largest cost first. */
-  tools: readonly AiProvider[];
+  /** Each tool used in the window, with its cost and tokens. */
+  tools: readonly Readonly<{
+    tool: AiProvider;
+    costUsd: number;
+    tokens: number;
+  }>[];
   habit: Habit;
 }>;
 
@@ -152,14 +156,17 @@ export function personStats(
   const workDays = inRange.filter(isWorkDay);
   const used = inRange.filter((day) => byDay?.has(day));
   const activeWorkDays = used.filter(isWorkDay).length;
-  const toolCost = new Map<AiProvider, number>();
+  const tools = new Map<AiProvider, { costUsd: number; tokens: number }>();
   for (const row of days) {
     if (
       row.userId === person.userId &&
       range.from <= row.day &&
       row.day <= range.to
     ) {
-      toolCost.set(row.tool, (toolCost.get(row.tool) ?? 0) + row.costUsd);
+      const tool = tools.get(row.tool) ?? { costUsd: 0, tokens: 0 };
+      tool.costUsd += row.costUsd;
+      tool.tokens += row.tokens;
+      tools.set(row.tool, tool);
     }
   }
   const personDays = used.map((day) => byDay?.get(day)).filter(isPresent);
@@ -178,9 +185,10 @@ export function personStats(
     unpricedRecords: sum(personDays.map((day) => day.unpricedRecords)),
     perActiveDayUsd: used.length > 0 ? costUsd / used.length : 0,
     perActiveDayTokens: tokenDays > 0 ? tokens / tokenDays : 0,
-    tools: [...toolCost.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([tool]) => tool),
+    tools: [...tools.entries()].map(([tool, amounts]) => ({
+      tool,
+      ...amounts,
+    })),
     habit: habitOf(share),
   };
 }
@@ -259,6 +267,17 @@ export function amountOf(
   measure: VolumeMeasure,
 ): number {
   return measure === "cost" ? value.costUsd : (value.tokens ?? 0);
+}
+
+/** The tool with most of a person's `measure`, if any has some. */
+export function mainToolOf(
+  stats: PersonStats,
+  measure: VolumeMeasure,
+): AiProvider | null {
+  const [main] = stats.tools
+    .filter((tool) => amountOf(tool, measure) > 0)
+    .sort((a, b) => amountOf(b, measure) - amountOf(a, measure));
+  return main?.tool ?? null;
 }
 
 /** A person's `measure` per day they used AI. */

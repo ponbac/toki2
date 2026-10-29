@@ -15,6 +15,7 @@ import {
   volumeBars,
   volumeStep,
   amountOf,
+  mainToolOf,
   type DayIndex,
   type DayRange,
   type PersonStats,
@@ -129,6 +130,7 @@ function PersonPage({
     [adoption, measure, person.userId],
   );
   const users = people.filter((entry) => entry.activeDays > 0);
+  const mainTool = mainToolOf(stats, measure);
   const rank = users.filter((entry) => entry.share > stats.share).length + 1;
   const sources = [
     ...person.seats.map(
@@ -194,9 +196,7 @@ function PersonPage({
                         : formatAmount(stats.tokens, measure, money)}
                     </b>
                     {measure === "cost" ? " at API prices" : ""}
-                    {stats.tools[0]
-                      ? `, mostly ${AI_PROVIDER_LABELS[stats.tools[0]]}`
-                      : ""}
+                    {mainTool ? `, mostly ${AI_PROVIDER_LABELS[mainTool]}` : ""}
                   </>
                 )}
                 .

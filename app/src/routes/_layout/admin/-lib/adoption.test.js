@@ -4,6 +4,7 @@ import {
   everyone,
   habitOf,
   indexDays,
+  mainToolOf,
   previousWindow,
   topShare,
   volumeBars,
@@ -83,7 +84,7 @@ describe("everyone", () => {
     expect(ada.activeDays).toBe(4);
     expect(ada.costUsd).toBe(66);
     expect(ada.perActiveDayUsd).toBe(16.5);
-    expect(ada.tools).toEqual(["codex", "claude", "copilot"]);
+    expect(mainToolOf(ada, "cost")).toBe("codex");
     expect(ben.activeWorkDays).toBe(1);
     expect(cy.habit).toBe("unseen");
   });
@@ -109,6 +110,25 @@ test("everyone can be ordered by tokens instead of cost", () => {
     "Cy",
   ]);
   expect(stats[0].perActiveDayTokens).toBe(900);
+});
+
+test("a person's main tool follows the measure", () => {
+  const mixed = {
+    ...ADOPTION,
+    days: [
+      day(1, "2026-10-27", "copilot", 40, 0),
+      day(1, "2026-10-27", "codex", 5, 800),
+    ],
+  };
+  const [ada] = everyone(
+    mixed,
+    indexDays(mixed.days),
+    windowOf("2026-10-28", 1),
+    "cost",
+  );
+  expect(mainToolOf(ada, "cost")).toBe("copilot");
+  // Copilot reports credits, not tokens: it never leads on tokens.
+  expect(mainToolOf(ada, "tokens")).toBe("codex");
 });
 
 test("habits follow the share of work days", () => {
