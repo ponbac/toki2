@@ -27,7 +27,7 @@ import {
 import { formatTokens, shortDate } from "../../-lib/format";
 import { PROVIDER_COLOR_VARS } from "../../-lib/providers";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
-import { formatKnownCost } from "./format";
+import { formatKnownCost, formatTokenCount } from "./format";
 import { SectionHead, Segmented } from "./segmented";
 
 const PERIODS = [
@@ -55,7 +55,7 @@ function formatTotal(
 ): string {
   return measure === "cost"
     ? formatKnownCost(bar.total, bar.unpricedRecords, money)
-    : formatTokens(bar.total);
+    : formatTokenCount(bar.total);
 }
 
 function formatMeasure(
@@ -65,7 +65,7 @@ function formatMeasure(
 ): string {
   return measure === "cost"
     ? formatEstimateAmount(value, money)
-    : formatTokens(value);
+    : formatTokenCount(value);
 }
 
 /**

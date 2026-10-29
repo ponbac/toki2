@@ -17,7 +17,7 @@ import {
 import { formatEstimateAmount } from "../../-lib/estimates";
 import { shortDate, weekdayDate } from "../../-lib/format";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
-import { formatAmount, formatKnownCost } from "./format";
+import { formatAmount, formatKnownCost, formatTokenCount } from "./format";
 import { VOLUME_STEP_COLORS } from "./colors";
 import { SectionHead } from "./segmented";
 
@@ -50,6 +50,11 @@ export function Roster({
   );
   const maxCompany = Math.max(0, ...companyAmounts.values());
   const used = people.filter((stats) => stats.activeDays > 0);
+  // Everyone's total bar shares one scale, so a tenth of the top reads as one.
+  const maxAmount = Math.max(
+    0,
+    ...people.map((stats) => amountOf(stats, measure)),
+  );
   const unseen = people.filter((stats) => stats.activeDays === 0);
   const weeks = Math.round(days.length / 7);
 
@@ -106,7 +111,7 @@ export function Roster({
                 scope="col"
                 className="w-px px-4 pb-1.5 text-right align-bottom text-xs font-semibold whitespace-nowrap text-muted-foreground"
               >
-                {weeks} weeks
+                {measure === "cost" ? "Cost" : "Tokens"}, {weeks} weeks
               </th>
             </tr>
             <tr aria-hidden>
@@ -143,6 +148,7 @@ export function Roster({
                 range={range}
                 index={index}
                 measure={measure}
+                maxAmount={maxAmount}
                 onSelect={onSelect}
               />
             ))}
@@ -161,6 +167,7 @@ export function Roster({
                     range={range}
                     index={index}
                     measure={measure}
+                    maxAmount={maxAmount}
                     onSelect={onSelect}
                   />
                 ))}
@@ -208,6 +215,7 @@ function PersonRow({
   range,
   index,
   measure,
+  maxAmount,
   onSelect,
 }: {
   stats: PersonStats;
@@ -215,8 +223,11 @@ function PersonRow({
   range: DayRange;
   index: DayIndex;
   measure: VolumeMeasure;
+  /** The largest total in the roster: the bar's full length. */
+  maxAmount: number;
   onSelect: (userId: number) => void;
 }) {
+  const amount = amountOf(stats, measure);
   const money = useEstimateMoney();
   const byDay = index.get(stats.person.userId);
   return (
@@ -273,23 +284,38 @@ function PersonRow({
           </td>
         );
       })}
-      <td className="px-3 text-right font-bold whitespace-nowrap tabular-nums group-hover:bg-muted/50">
-        {stats.activeDays > 0 ? (
-          measure === "cost" ? (
-            formatKnownCost(stats.costUsd, stats.unpricedRecords, money)
-          ) : stats.tokens > 0 ? (
-            formatAmount(stats.tokens, measure, money)
-          ) : (
-            <span
-              className="text-xs font-medium text-muted-foreground"
-              title="GitHub reports Copilot in credits, not tokens"
-            >
-              No token data
-            </span>
-          )
-        ) : (
-          "–"
-        )}
+      <td className="px-4 whitespace-nowrap group-hover:bg-muted/50">
+        <div className="flex items-center justify-end gap-3">
+          <span
+            aria-hidden
+            className="block h-2 w-28 overflow-hidden rounded-full bg-[var(--viz-grid)]"
+          >
+            {amount > 0 && maxAmount > 0 ? (
+              <span
+                className="block h-full rounded-full bg-[var(--viz-seq-5)]"
+                style={{ width: `${Math.max(1, (amount / maxAmount) * 100)}%` }}
+              />
+            ) : null}
+          </span>
+          <span className="w-24 text-right font-bold tabular-nums">
+            {stats.activeDays > 0 ? (
+              measure === "cost" ? (
+                formatKnownCost(stats.costUsd, stats.unpricedRecords, money)
+              ) : stats.tokens > 0 ? (
+                formatTokenCount(stats.tokens)
+              ) : (
+                <span
+                  className="text-xs font-medium text-muted-foreground"
+                  title="GitHub reports Copilot in credits, not tokens"
+                >
+                  No token data
+                </span>
+              )
+            ) : (
+              "–"
+            )}
+          </span>
+        </div>
       </td>
     </tr>
   );
