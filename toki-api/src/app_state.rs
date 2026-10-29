@@ -21,9 +21,10 @@ use crate::{
     db::DbPool,
     domain::{
         ports::inbound::{
-            AiBillingService, AiDisplayRateService, AiMeteredUsageService, AiProjectMappingService,
-            AiProviderAccountService, AiRepositoryMappingService, AiSubscriptionService,
-            AiUsageReportService, AiUsageService, ApiTokenService, AvatarService,
+            AiAdoptionService, AiBillingService, AiDisplayRateService, AiMeteredUsageService,
+            AiProjectMappingService, AiProviderAccountService, AiRepositoryMappingService,
+            AiSubscriptionService, AiUsageReportService, AiUsageService, ApiTokenService,
+            AvatarService,
         },
         CachedIdentities, NotificationHandler, PullRequest, RepoConfig, RepoDiffer,
         RepoDifferMessage, RepoKey,
@@ -72,6 +73,7 @@ pub struct AppState {
     pub ai_usage_report_service: Arc<dyn AiUsageReportService>,
     pub ai_project_mapping_service: Arc<dyn AiProjectMappingService>,
     pub ai_subscription_service: Arc<dyn AiSubscriptionService>,
+    pub ai_adoption_service: Arc<dyn AiAdoptionService>,
     pub ai_billing_service: Arc<dyn AiBillingService>,
     pub ai_display_rate_service: Arc<dyn AiDisplayRateService>,
     pub ai_provider_account_service: Arc<dyn AiProviderAccountService>,
@@ -112,6 +114,12 @@ impl FromRef<AppState> for Arc<dyn AiProjectMappingService> {
 impl FromRef<AppState> for Arc<dyn AiSubscriptionService> {
     fn from_ref(state: &AppState) -> Self {
         state.ai_subscription_service.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<dyn AiAdoptionService> {
+    fn from_ref(state: &AppState) -> Self {
+        state.ai_adoption_service.clone()
     }
 }
 
@@ -160,6 +168,7 @@ impl AppState {
         ai_usage_report_service: Arc<dyn AiUsageReportService>,
         ai_project_mapping_service: Arc<dyn AiProjectMappingService>,
         ai_subscription_service: Arc<dyn AiSubscriptionService>,
+        ai_adoption_service: Arc<dyn AiAdoptionService>,
         ai_billing_service: Arc<dyn AiBillingService>,
         ai_display_rate_service: Arc<dyn AiDisplayRateService>,
         ai_provider_account_service: Arc<dyn AiProviderAccountService>,
@@ -248,6 +257,7 @@ impl AppState {
             ai_usage_report_service,
             ai_project_mapping_service,
             ai_subscription_service,
+            ai_adoption_service,
             ai_billing_service,
             ai_display_rate_service,
             ai_provider_account_service,

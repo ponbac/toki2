@@ -1,3 +1,4 @@
+mod ai_adoption;
 mod ai_billing;
 mod ai_exchange_rates;
 mod ai_metered_usage;
@@ -18,6 +19,7 @@ mod time_tracking_user_links;
 mod timer_history;
 mod work_item_provider;
 
+pub use ai_adoption::*;
 pub use ai_billing::*;
 pub use ai_exchange_rates::*;
 pub use ai_metered_usage::*;

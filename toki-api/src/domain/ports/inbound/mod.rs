@@ -1,3 +1,4 @@
+mod ai_adoption;
 mod ai_billing;
 mod ai_display_rates;
 mod ai_metered_usage;
@@ -13,6 +14,7 @@ mod oauth;
 mod time_tracking;
 mod work_items;
 
+pub use ai_adoption::*;
 pub use ai_billing::*;
 pub use ai_display_rates::*;
 pub use ai_metered_usage::*;

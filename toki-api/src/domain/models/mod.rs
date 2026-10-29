@@ -1,6 +1,7 @@
 mod absence;
 mod ai_account_overview;
 mod ai_account_suggestion;
+mod ai_adoption;
 mod ai_billing;
 mod ai_close_readiness;
 mod ai_display_rate;
@@ -32,6 +33,7 @@ mod work_item;
 pub use absence::*;
 pub use ai_account_overview::*;
 pub use ai_account_suggestion::*;
+pub use ai_adoption::*;
 pub use ai_billing::*;
 pub use ai_close_readiness::*;
 pub use ai_display_rate::*;

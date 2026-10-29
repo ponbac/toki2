@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                disposition.user_id AS \"user_id!\",\n                seat.provider,\n                MIN(seat.seat_created_at AT TIME ZONE $2)::date AS \"since!\"\n            FROM ai_provider_seats AS seat\n            JOIN ai_provider_account_dispositions AS disposition\n                ON disposition.provider = seat.provider\n                AND disposition.account_id = seat.account_id\n                AND disposition.target = 'user'\n                AND disposition.valid_from <= $1\n                AND (disposition.valid_to IS NULL OR disposition.valid_to >= $1)\n            WHERE seat.unlisted_at IS NULL\n            GROUP BY disposition.user_id, seat.provider\n            ORDER BY disposition.user_id, seat.provider\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "since!",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "b46696ff579f346ed5bdde7350a195194ca78b344ac93e3ff829e9881e030dd7"
+}

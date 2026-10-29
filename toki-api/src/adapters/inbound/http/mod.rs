@@ -1,3 +1,4 @@
+pub(crate) mod ai_adoption;
 pub(crate) mod ai_billing;
 pub(crate) mod ai_display_rates;
 pub(crate) mod ai_metered_usage;

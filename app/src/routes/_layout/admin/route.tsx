@@ -2,6 +2,7 @@ import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import {
   AtSign,
+  ChartColumnStacked,
   CreditCard,
   GitBranch,
   ReceiptText,
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/_layout/admin")({
 
 const TABS = [
   { to: "/admin/ai-billing", label: "AI billing", icon: ReceiptText },
+  { to: "/admin/adoption", label: "Adoption", icon: ChartColumnStacked },
   { to: "/admin/project-mappings", label: "Project mappings", icon: GitBranch },
   {
     to: "/admin/ai-subscriptions",
@@ -54,7 +56,7 @@ function AdminLayout() {
         <div>
           <h1 className="text-2xl font-bold">Admin</h1>
           <p className="text-sm text-muted-foreground">
-            AI usage billing, and the mappings and subscriptions it depends on.
+            AI usage billing and adoption, and the mappings and subscriptions they depend on.
             Costs at API prices are estimates, not provider bills.
           </p>
         </div>

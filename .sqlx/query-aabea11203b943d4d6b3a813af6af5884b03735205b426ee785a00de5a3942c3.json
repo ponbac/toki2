@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                disposition.user_id AS \"user_id!\",\n                usage.day,\n                SUM(usage.gross_usd_nanos)::int8 AS \"amount!\"\n            FROM ai_provider_account_usage AS usage\n            JOIN ai_provider_account_dispositions AS disposition\n                ON disposition.provider = usage.provider\n                AND disposition.account_id = usage.account_id\n                AND disposition.target = 'user'\n                AND usage.day >= disposition.valid_from\n                AND (disposition.valid_to IS NULL OR usage.day <= disposition.valid_to)\n            WHERE usage.provider = $1\n              AND usage.day >= GREATEST($2::date, $4::date)\n              AND usage.day < $3\n              AND usage.kind <> $5\n            GROUP BY disposition.user_id, usage.day\n            ORDER BY disposition.user_id, usage.day\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "day",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "amount!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Date",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "aabea11203b943d4d6b3a813af6af5884b03735205b426ee785a00de5a3942c3"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH days AS (\n                SELECT day::date AS day\n                FROM generate_series($3::date, $2::date, interval '1 day') AS day\n            ),\n            scopes AS (\n                SELECT 'org_credits' AS source, 0::int8 AS account_id\n                UNION\n                SELECT 'account_credits', disposition.account_id\n                FROM ai_provider_account_dispositions AS disposition\n                WHERE disposition.provider = $1\n                  AND disposition.target = 'user'\n                  AND disposition.valid_from <= $2\n                  AND (disposition.valid_to IS NULL OR disposition.valid_to >= $2)\n            ),\n            first_gap AS (\n                SELECT MIN(days.day) AS day\n                FROM scopes\n                CROSS JOIN days\n                LEFT JOIN ai_provider_usage_slices AS slice\n                    ON slice.provider = $1\n                    AND slice.source = scopes.source\n                    AND slice.account_id = scopes.account_id\n                    AND slice.day = days.day\n                    AND slice.complete_at IS NOT NULL\n                WHERE slice.day IS NULL\n            )\n            SELECT COALESCE((SELECT day FROM first_gap) - 1, $2::date) AS \"through!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "through!",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a86aafb1945ba1b924594d587878cc531bb65095495c85050c35293041867004"
+}

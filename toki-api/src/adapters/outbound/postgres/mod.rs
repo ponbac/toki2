@@ -1,3 +1,4 @@
+mod ai_adoption;
 mod ai_billing;
 mod ai_exchange_rates;
 mod ai_metered_usage;
@@ -14,6 +15,7 @@ mod avatar;
 mod oauth;
 mod timer_history;
 
+pub use ai_adoption::PostgresAiAdoptionRepository;
 pub use ai_billing::PostgresAiBillingRepository;
 pub use ai_exchange_rates::PostgresAiExchangeRateRepository;
 pub use ai_metered_usage::PostgresAiMeteredUsageRepository;
