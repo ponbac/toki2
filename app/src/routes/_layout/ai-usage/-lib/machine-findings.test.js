@@ -20,7 +20,7 @@ const coverage = {
   hasUsage: true,
 };
 
-function machine(cost) {
+function machine(cost, read = coverage) {
   return {
     machineId: "5f0c5a1e-3b8e-4d8e-9a57-0d7b1c1f2e3a",
     label: "work-laptop",
@@ -34,7 +34,7 @@ function machine(cost) {
       records: 374,
       cost,
     },
-    coverage: [coverage],
+    coverage: [read],
   };
 }
 
@@ -56,5 +56,18 @@ describe("machine findings", () => {
   test("missing rates are no warning when every request has a price", () => {
     // Copilot's next edit suggestions cost nothing without any rates.
     expect(findings({ kind: "estimated", usd: 0 })).toEqual([]);
+  });
+
+  test("records skipped on a partial read are no finding", () => {
+    const partial = {
+      ...coverage,
+      status: "partial",
+      malformedLines: 2,
+      skippedRecords: 40,
+      pricing: null,
+    };
+    expect(
+      machineFindings(machine({ kind: "estimated", usd: 12.5 }, partial), 7),
+    ).toEqual([]);
   });
 });

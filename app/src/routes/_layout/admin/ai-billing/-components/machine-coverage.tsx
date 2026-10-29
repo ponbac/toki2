@@ -1,6 +1,7 @@
 import * as React from "react";
 import { AiProviderIcon } from "@/components/ai-provider-icon";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { shownCoverageStatus } from "@/lib/ai-usage";
 import type {
   AiMachineCompleteness,
   AiUploadGap,
@@ -113,8 +114,7 @@ export function MachineCoverage({
                 tone={
                   provider.gaps.length > 0 || provider.status === "failed"
                     ? "critical"
-                    : provider.status === "partial" ||
-                        provider.pricingStatus === "unavailable"
+                    : provider.pricingStatus === "unavailable"
                       ? "warning"
                       : provider.expected
                         ? "good"
@@ -166,7 +166,7 @@ function ProviderStrip({
 function providerLabel(provider: ProviderCoverage): string {
   const parts = [AI_PROVIDER_LABELS[provider.provider]];
   if (provider.status) {
-    parts.push(`last read ${provider.status}`);
+    parts.push(`last read ${shownCoverageStatus(provider.status)}`);
   }
   if (provider.pricingStatus === "unavailable") {
     parts.push("no prices");
