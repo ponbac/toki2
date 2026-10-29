@@ -1,12 +1,12 @@
-import { formatShare } from "../../-lib/format";
-import type { PersonStats } from "../../-lib/adoption";
+import { formatShare, formatTokens } from "../../-lib/format";
 import {
-  formatEstimateAmount,
-  formatEstimateTick,
-  type EstimateMoney,
-} from "../../-lib/estimates";
+  perActiveDayOf,
+  type PersonStats,
+  type VolumeMeasure,
+} from "../../-lib/adoption";
+import { formatEstimateTick, type EstimateMoney } from "../../-lib/estimates";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
-import { formatCost } from "./format";
+import { formatAmount } from "./format";
 import { SectionHead, Segmented } from "./segmented";
 
 export type DepthScale = "linear" | "log";
@@ -16,30 +16,38 @@ const SCALES = [
   { value: "log", label: "Log" },
 ] as const;
 
-/** The smallest amount a log scale shows, in display units. */
-const LOG_FLOOR = 0.1;
-
-/** Display units per dollar: costs are charted in the currency they show in. */
-function unitsPerUsd(money: EstimateMoney): number {
-  return money.kind === "converted" ? money.perUsd : 1;
+/** Display units per dollar: costs are charted in the currency they show
+ * in; tokens are their own unit. */
+function unitsPer(measure: VolumeMeasure, money: EstimateMoney): number {
+  return measure === "cost" && money.kind === "converted" ? money.perUsd : 1;
 }
 
 /**
- * The vertical scale of cost per day with use, in display units: a linear
- * scale from zero, or a log scale over whole powers of ten.
+ * The vertical scale of `measure` per day with use, in display units: a
+ * linear scale from zero, or a log scale over the whole powers of ten from
+ * the smallest value to the largest.
  */
 function depthAxis(
-  maxUnits: number,
+  units: readonly number[],
   scale: DepthScale,
 ): Readonly<{ ticks: number[]; position: (units: number) => number }> {
+  const maxUnits = Math.max(0, ...units);
   if (scale === "log") {
-    const top = Math.max(1, Math.ceil(Math.log10(Math.max(maxUnits, 1))));
-    const bottom = Math.log10(LOG_FLOOR);
-    const ticks = Array.from({ length: top + 1 }, (_, power) => 10 ** power);
+    const smallest = Math.min(...units.filter((value) => value > 0), maxUnits);
+    const bottom = smallest > 0 ? Math.floor(Math.log10(smallest)) : 0;
+    const top = Math.max(
+      bottom + 1,
+      Math.ceil(Math.log10(Math.max(maxUnits, 1))),
+    );
+    const ticks = Array.from(
+      { length: top - bottom + 1 },
+      (_, power) => 10 ** (bottom + power),
+    );
+    const floor = 10 ** bottom;
     return {
       ticks,
-      position: (units) =>
-        (Math.log10(Math.max(units, LOG_FLOOR)) - bottom) / (top - bottom),
+      position: (value) =>
+        (Math.log10(Math.max(value, floor)) - bottom) / (top - bottom),
     };
   }
   const raw = Math.max(maxUnits, 1);
@@ -63,12 +71,14 @@ function depthAxis(
 export function HabitDepth({
   people,
   weeks,
+  measure,
   scale,
   onScale,
   onSelect,
 }: {
   people: readonly PersonStats[];
   weeks: number;
+  measure: VolumeMeasure;
   scale: DepthScale;
   onScale: (scale: DepthScale) => void;
   onSelect: (userId: number) => void;
@@ -88,7 +98,12 @@ export function HabitDepth({
         />
       </SectionHead>
       <div className="rounded-xl border border-border/60 bg-card p-4">
-        <DepthPlot people={people} scale={scale} onSelect={onSelect} />
+        <DepthPlot
+          people={people}
+          measure={measure}
+          scale={scale}
+          onSelect={onSelect}
+        />
       </div>
     </section>
   );
@@ -97,22 +112,28 @@ export function HabitDepth({
 /** The plot alone, also drawn on a person's page with them picked out. */
 export function DepthPlot({
   people,
+  measure,
   scale,
   highlight,
   onSelect,
   height = 320,
 }: {
   people: readonly PersonStats[];
+  measure: VolumeMeasure;
   scale: DepthScale;
   highlight?: number;
   onSelect?: (userId: number) => void;
   height?: number;
 }) {
   const money = useEstimateMoney();
-  const per = unitsPerUsd(money);
+  const per = unitsPer(measure, money);
+  const perDay = (stats: PersonStats) => perActiveDayOf(stats, measure);
+  // People on GitHub Copilot alone have no tokens to place.
   const users = people
-    .filter((stats) => stats.activeDays > 0)
-    .sort((a, b) => a.perActiveDayUsd - b.perActiveDayUsd);
+    .filter((stats) =>
+      measure === "cost" ? stats.activeDays > 0 : stats.perActiveDayTokens > 0,
+    )
+    .sort((a, b) => perDay(a) - perDay(b));
   const width = 560;
   const left = 64;
   const right = 16;
@@ -121,9 +142,13 @@ export function DepthPlot({
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const axis = depthAxis(
-    Math.max(0, ...users.map((stats) => stats.perActiveDayUsd * per)),
+    users.map((stats) => perDay(stats) * per),
     scale,
   );
+  const tickLabel = (tick: number) =>
+    measure === "cost"
+      ? formatEstimateTick(tick / per, money)
+      : formatTokens(tick);
   const x = (share: number) => left + share * plotWidth;
   const y = (units: number) =>
     top + plotHeight - axis.position(units) * plotHeight;
@@ -131,7 +156,7 @@ export function DepthPlot({
   // Dots that would sit on top of each other spread sideways, in order.
   const taken = new Map<string, number>();
   const dots = users.map((stats) => {
-    const cy = y(stats.perActiveDayUsd * per);
+    const cy = y(perDay(stats) * per);
     const key = `${Math.round(stats.share * 40)}:${Math.round(cy / 9)}`;
     const n = taken.get(key) ?? 0;
     taken.set(key, n + 1);
@@ -168,7 +193,7 @@ export function DepthPlot({
               stroke="var(--viz-grid)"
             />
             <text x={left - 8} y={y(tick) + 4} textAnchor="end">
-              {formatEstimateTick(tick / per, money)}
+              {tickLabel(tick)}
             </text>
           </g>
         ))}
@@ -202,7 +227,7 @@ export function DepthPlot({
         ) : null}
       </g>
       {dots.map(({ stats, cx, cy }) => {
-        const label = `${stats.person.fullName}: AI on ${stats.activeWorkDays} of ${stats.workDays} work days, ${formatEstimateAmount(stats.perActiveDayUsd, money)} on a day with AI`;
+        const label = `${stats.person.fullName}: AI on ${stats.activeWorkDays} of ${stats.workDays} work days, ${formatAmount(perDay(stats), measure, money)} on a day with AI`;
         if (highlight !== undefined) {
           return stats.person.userId === highlight ? null : (
             <circle
@@ -263,7 +288,7 @@ export function DepthPlot({
           fill="hsl(var(--foreground))"
         >
           {labelled.stats.person.fullName.split(" ")[0]},{" "}
-          {formatCost(labelled.stats.perActiveDayUsd, money)} a day
+          {formatAmount(perDay(labelled.stats), measure, money)} a day
         </text>
       ) : null}
     </svg>

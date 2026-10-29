@@ -13,6 +13,7 @@ import {
   indexDays,
   windowOf,
   type AdoptionWindow,
+  type VolumeMeasure,
 } from "../-lib/adoption";
 import { estimateMoney } from "../-lib/estimates";
 import { PROVIDER_COLOR_SCOPE } from "../-lib/providers";
@@ -41,6 +42,11 @@ export const Route = createFileRoute("/_layout/admin/adoption/")({
   validateSearch: searchSchema,
   component: AdoptionPage,
 });
+
+const MEASURE_OPTIONS = [
+  { value: "cost", label: "API cost" },
+  { value: "tokens", label: "Tokens" },
+] as const;
 
 const WINDOW_OPTIONS = ADOPTION_WINDOWS.map((weeks) => ({
   value: weeks,
@@ -75,14 +81,16 @@ function Adoption({ adoption }: { adoption: AiAdoption }) {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const weeks: AdoptionWindow = search.weeks ?? 4;
+  // Every view measures the same thing: cost at API prices, or tokens.
+  const measure: VolumeMeasure = search.measure ?? "cost";
   const range = React.useMemo(
     () => windowOf(adoption.today, weeks),
     [adoption.today, weeks],
   );
   const index = React.useMemo(() => indexDays(adoption.days), [adoption.days]);
   const people = React.useMemo(
-    () => everyone(adoption, index, range),
-    [adoption, index, range],
+    () => everyone(adoption, index, range, measure),
+    [adoption, index, range, measure],
   );
 
   // Costs show in the bill's currency at the display rate of today's month,
@@ -126,20 +134,30 @@ function Adoption({ adoption }: { adoption: AiAdoption }) {
             value={weeks}
             onChange={(value) => update({ weeks: value })}
           />
-          <p className="max-w-[70ch] text-[13px] text-muted-foreground">
-            All chat and agent use from Token Ledger and GitHub Copilot. Code
-            completions are left out. Costs are at API prices, and Copilot at
-            the credits GitHub charged.
+          <Segmented
+            label="Measure"
+            options={MEASURE_OPTIONS}
+            value={measure}
+            onChange={(value) => update({ measure: value })}
+          />
+          <p className="max-w-[64ch] text-[13px] text-muted-foreground">
+            {measure === "cost"
+              ? "All chat and agent use from Token Ledger and GitHub Copilot, at API prices; Copilot at the credits GitHub charged. Code completions are left out."
+              : "Every token read and written in chat and agent use, from Token Ledger. GitHub reports Copilot in credits, not tokens. Code completions are left out."}
           </p>
         </div>
 
         <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)]">
-          <Summary adoption={adoption} people={people} range={range} />
+          <Summary
+            adoption={adoption}
+            people={people}
+            range={range}
+            measure={measure}
+          />
           <VolumeChart
             adoption={adoption}
-            measure={search.measure ?? "cost"}
+            measure={measure}
             period={search.period ?? "week"}
-            onMeasure={(measure) => update({ measure })}
             onPeriod={(period) => update({ period })}
           />
         </div>
@@ -149,15 +167,22 @@ function Adoption({ adoption }: { adoption: AiAdoption }) {
           people={people}
           index={index}
           range={range}
+          measure={measure}
           onSelect={select}
         />
 
-        <VolumeStrip adoption={adoption} people={people} range={range} />
+        <VolumeStrip
+          adoption={adoption}
+          people={people}
+          range={range}
+          measure={measure}
+        />
 
         <div className="grid items-start gap-10 lg:grid-cols-2">
           <HabitDepth
             people={people}
             weeks={weeks}
+            measure={measure}
             scale={search.scale ?? "linear"}
             onScale={(scale) => update({ scale })}
             onSelect={select}
@@ -173,6 +198,7 @@ function Adoption({ adoption }: { adoption: AiAdoption }) {
         index={index}
         range={range}
         weeks={weeks}
+        measure={measure}
         scale={search.scale ?? "linear"}
         onClose={() => update({ person: undefined })}
         onClosed={() => opener.current?.focus()}

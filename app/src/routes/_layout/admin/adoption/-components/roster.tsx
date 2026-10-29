@@ -3,19 +3,21 @@ import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import type { AiAdoption } from "@/lib/api/queries/ai-admin";
 import { cn } from "@/lib/utils";
 import {
-  companyCostByDay,
+  amountOf,
+  companyByDay,
   daysOf,
   isWorkDay,
-  VOLUME_STEPS_USD,
+  VOLUME_STEPS,
   volumeStep,
   type DayIndex,
   type DayRange,
   type PersonStats,
+  type VolumeMeasure,
 } from "../../-lib/adoption";
 import { formatEstimateAmount } from "../../-lib/estimates";
 import { shortDate, weekdayDate } from "../../-lib/format";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
-import { formatKnownCost } from "./format";
+import { formatAmount, formatKnownCost } from "./format";
 import { VOLUME_STEP_COLORS } from "./colors";
 import { SectionHead } from "./segmented";
 
@@ -30,21 +32,23 @@ export function Roster({
   people,
   index,
   range,
+  measure,
   onSelect,
 }: {
   adoption: AiAdoption;
   people: readonly PersonStats[];
   index: DayIndex;
   range: DayRange;
+  measure: VolumeMeasure;
   onSelect: (userId: number) => void;
 }) {
   const money = useEstimateMoney();
   const days = React.useMemo(() => daysOf(range), [range]);
-  const companyCosts = React.useMemo(
-    () => companyCostByDay(adoption, range),
-    [adoption, range],
+  const companyAmounts = React.useMemo(
+    () => companyByDay(adoption, range, measure),
+    [adoption, range, measure],
   );
-  const maxCompany = Math.max(0, ...companyCosts.values());
+  const maxCompany = Math.max(0, ...companyAmounts.values());
   const used = people.filter((stats) => stats.activeDays > 0);
   const unseen = people.filter((stats) => stats.activeDays === 0);
   const weeks = Math.round(days.length / 7);
@@ -56,7 +60,7 @@ export function Roster({
         title="Everyone, day by day"
         description="One row per person, most AI first, one square per day, shaded by how much AI was used that day. Select a name to see their page."
       >
-        <RampLegend />
+        <RampLegend measure={measure} />
       </SectionHead>
       <div className="overflow-x-auto rounded-xl border border-border/60 bg-card">
         <table className="w-full border-separate border-spacing-0 text-[13px]">
@@ -73,7 +77,7 @@ export function Roster({
                 Company, per day
               </th>
               {days.map((day) => {
-                const cost = companyCosts.get(day) ?? 0;
+                const amount = companyAmounts.get(day) ?? 0;
                 return (
                   <th
                     key={day}
@@ -82,7 +86,7 @@ export function Roster({
                       "h-14 p-0 pb-1.5 align-bottom",
                       day > range.from && isMonday(day) && "pl-1",
                     )}
-                    title={`${weekdayDate(day)}: ${formatEstimateAmount(cost, money)}`}
+                    title={`${weekdayDate(day)}: ${formatAmount(amount, measure, money)}`}
                   >
                     <span className="sr-only">{weekdayDate(day)}</span>
                     <span
@@ -91,7 +95,7 @@ export function Roster({
                       style={{
                         height:
                           maxCompany > 0
-                            ? `${Math.max(cost > 0 ? 1 : 0, (cost / maxCompany) * 32)}px`
+                            ? `${Math.max(amount > 0 ? 1 : 0, (amount / maxCompany) * 32)}px`
                             : 0,
                       }}
                     />
@@ -138,6 +142,7 @@ export function Roster({
                 days={days}
                 range={range}
                 index={index}
+                measure={measure}
                 onSelect={onSelect}
               />
             ))}
@@ -155,6 +160,7 @@ export function Roster({
                     days={days}
                     range={range}
                     index={index}
+                    measure={measure}
                     onSelect={onSelect}
                   />
                 ))}
@@ -201,12 +207,14 @@ function PersonRow({
   days,
   range,
   index,
+  measure,
   onSelect,
 }: {
   stats: PersonStats;
   days: readonly string[];
   range: DayRange;
   index: DayIndex;
+  measure: VolumeMeasure;
   onSelect: (userId: number) => void;
 }) {
   const money = useEstimateMoney();
@@ -237,7 +245,7 @@ function PersonRow({
             )}
             title={
               use
-                ? `${weekdayDate(day)}: ${formatEstimateAmount(use.costUsd, money)}, ${use.tools.map((tool) => AI_PROVIDER_LABELS[tool]).join(", ")}`
+                ? `${weekdayDate(day)}: ${formatEstimateAmount(use.costUsd, money)}, ${formatAmount(use.tokens, "tokens", money)}, ${use.tools.map((tool) => AI_PROVIDER_LABELS[tool]).join(", ")}`
                 : `${weekdayDate(day)}: no AI`
             }
           >
@@ -253,7 +261,12 @@ function PersonRow({
               )}
               style={
                 use
-                  ? { background: VOLUME_STEP_COLORS[volumeStep(use.costUsd)] }
+                  ? {
+                      background:
+                        VOLUME_STEP_COLORS[
+                          volumeStep(amountOf(use, measure), measure)
+                        ],
+                    }
                   : undefined
               }
             />
@@ -261,24 +274,38 @@ function PersonRow({
         );
       })}
       <td className="px-3 text-right font-bold whitespace-nowrap tabular-nums group-hover:bg-muted/50">
-        {stats.activeDays > 0
-          ? formatKnownCost(stats.costUsd, stats.unpricedRecords, money)
-          : "–"}
+        {stats.activeDays > 0 ? (
+          measure === "cost" ? (
+            formatKnownCost(stats.costUsd, stats.unpricedRecords, money)
+          ) : stats.tokens > 0 ? (
+            formatAmount(stats.tokens, measure, money)
+          ) : (
+            <span
+              className="text-xs font-medium text-muted-foreground"
+              title="GitHub reports Copilot in credits, not tokens"
+            >
+              No token data
+            </span>
+          )
+        ) : (
+          "–"
+        )}
       </td>
     </tr>
   );
 }
 
-/** The squares' ramp, from least to most. */
-function RampLegend() {
+/** The squares' ramp, from least to most `measure`. */
+function RampLegend({ measure }: { measure: VolumeMeasure }) {
   const money = useEstimateMoney();
+  const steps = VOLUME_STEPS[measure];
+  const format = (value: number) => formatAmount(value, measure, money);
   const labels = [
-    `Under ${formatEstimateAmount(VOLUME_STEPS_USD[0], money)}`,
-    ...VOLUME_STEPS_USD.slice(1).map(
-      (step, i) =>
-        `${formatEstimateAmount(VOLUME_STEPS_USD[i], money)} to ${formatEstimateAmount(step, money)}`,
-    ),
-    `Over ${formatEstimateAmount(VOLUME_STEPS_USD.at(-1) ?? 0, money)}`,
+    `Under ${format(steps[0] ?? 0)}`,
+    ...steps
+      .slice(1)
+      .map((step, i) => `${format(steps[i] ?? 0)} to ${format(step)}`),
+    `Over ${format(steps.at(-1) ?? 0)}`,
   ];
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">

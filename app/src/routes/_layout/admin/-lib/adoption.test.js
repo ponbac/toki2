@@ -65,7 +65,7 @@ describe("windows", () => {
 
 describe("everyone", () => {
   const range = windowOf("2026-10-28", 1);
-  const stats = everyone(ADOPTION, indexDays(ADOPTION.days), range);
+  const stats = everyone(ADOPTION, indexDays(ADOPTION.days), range, "cost");
 
   test("is ordered by cost, with people without use last", () => {
     expect(stats.map((entry) => entry.person.fullName)).toEqual([
@@ -87,6 +87,28 @@ describe("everyone", () => {
     expect(ben.activeWorkDays).toBe(1);
     expect(cy.habit).toBe("unseen");
   });
+});
+
+test("everyone can be ordered by tokens instead of cost", () => {
+  const byTokens = {
+    ...ADOPTION,
+    days: [
+      day(1, "2026-10-27", "codex", 50, 10),
+      day(2, "2026-10-27", "copilot", 1, 900),
+    ],
+  };
+  const stats = everyone(
+    byTokens,
+    indexDays(byTokens.days),
+    windowOf("2026-10-28", 1),
+    "tokens",
+  );
+  expect(stats.map((entry) => entry.person.fullName)).toEqual([
+    "Ben",
+    "Ada",
+    "Cy",
+  ]);
+  expect(stats[0].perActiveDayTokens).toBe(900);
 });
 
 test("habits follow the share of work days", () => {
@@ -154,7 +176,12 @@ describe("volume bars", () => {
 });
 
 test("volume steps and shares", () => {
-  expect([0.5, 1, 7, 30, 500].map(volumeStep)).toEqual([0, 1, 2, 3, 4]);
+  expect([0.5, 1, 7, 30, 500].map((v) => volumeStep(v, "cost"))).toEqual([
+    0, 1, 2, 3, 4,
+  ]);
+  expect([1e6, 3e6, 5e7, 2e8, 1e9].map((v) => volumeStep(v, "tokens"))).toEqual(
+    [0, 1, 2, 3, 4],
+  );
   expect(topShare([1, 5, 3, 1], 2, 10)).toBe(0.8);
   expect(topShare([], 3, 0)).toBe(0);
 });

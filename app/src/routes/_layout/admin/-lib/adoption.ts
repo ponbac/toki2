@@ -133,6 +133,9 @@ export type PersonStats = Readonly<{
   unpricedRecords: number;
   /** Cost per day with use. */
   perActiveDayUsd: number;
+  /** Tokens per day with tokens: GitHub reports Copilot in credits, so a day
+   * of Copilot alone has none to count. */
+  perActiveDayTokens: number;
   /** Tools used in the window, largest cost first. */
   tools: readonly AiProvider[];
   habit: Habit;
@@ -161,6 +164,8 @@ export function personStats(
   }
   const personDays = used.map((day) => byDay?.get(day)).filter(isPresent);
   const costUsd = sum(personDays.map((day) => day.costUsd));
+  const tokens = sum(personDays.map((day) => day.tokens));
+  const tokenDays = personDays.filter((day) => day.tokens > 0).length;
   const share = workDays.length > 0 ? activeWorkDays / workDays.length : 0;
   return {
     person,
@@ -169,9 +174,10 @@ export function personStats(
     share,
     activeDays: used.length,
     costUsd,
-    tokens: sum(personDays.map((day) => day.tokens)),
+    tokens,
     unpricedRecords: sum(personDays.map((day) => day.unpricedRecords)),
     perActiveDayUsd: used.length > 0 ? costUsd / used.length : 0,
+    perActiveDayTokens: tokenDays > 0 ? tokens / tokenDays : 0,
     tools: [...toolCost.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([tool]) => tool),
@@ -179,18 +185,19 @@ export function personStats(
   };
 }
 
-/** Everyone listed, with their use over `range`: most cost first, then by
- * name. */
+/** Everyone listed, with their use over `range`: most of `measure` first,
+ * then by name. */
 export function everyone(
   adoption: AiAdoption,
   index: DayIndex,
   range: DayRange,
+  measure: VolumeMeasure,
 ): PersonStats[] {
   return adoption.people
     .map((person) => personStats(person, adoption.days, index, range))
     .sort(
       (a, b) =>
-        b.costUsd - a.costUsd ||
+        amountOf(b, measure) - amountOf(a, measure) ||
         b.activeDays - a.activeDays ||
         a.person.fullName.localeCompare(b.person.fullName),
     );
@@ -222,22 +229,45 @@ export function companyTotals(
   };
 }
 
-/** The company's cost per day of `range`, credits no person carries
- * included. */
-export function companyCostByDay(
+/** The company's `measure` per day of `range`; cost includes the credits no
+ * person carries. */
+export function companyByDay(
   adoption: AiAdoption,
   range: DayRange,
+  measure: VolumeMeasure,
 ): ReadonlyMap<string, number> {
-  const costs = new Map(daysOf(range).map((day) => [day, 0]));
-  for (const row of [...adoption.days, ...adoption.companyDays]) {
-    const cost = costs.get(row.day);
-    if (cost !== undefined) costs.set(row.day, cost + row.costUsd);
+  const amounts = new Map(daysOf(range).map((day) => [day, 0]));
+  const rows =
+    measure === "cost"
+      ? [...adoption.days, ...adoption.companyDays]
+      : adoption.days;
+  for (const row of rows) {
+    const amount = amounts.get(row.day);
+    if (amount !== undefined) {
+      amounts.set(row.day, amount + amountOf(row, measure));
+    }
   }
-  return costs;
+  return amounts;
 }
 
-/** What the volume chart measures. */
+/** What the tab measures: API-equivalent cost, or tokens read and written. */
 export type VolumeMeasure = "cost" | "tokens";
+
+/** Something's cost in USD or its tokens. */
+export function amountOf(
+  value: Readonly<{ costUsd: number; tokens?: number }>,
+  measure: VolumeMeasure,
+): number {
+  return measure === "cost" ? value.costUsd : (value.tokens ?? 0);
+}
+
+/** A person's `measure` per day they used AI. */
+export function perActiveDayOf(
+  stats: PersonStats,
+  measure: VolumeMeasure,
+): number {
+  return measure === "cost" ? stats.perActiveDayUsd : stats.perActiveDayTokens;
+}
 /** One bar per week or per calendar month. */
 export type VolumePeriod = "week" | "month";
 
@@ -354,12 +384,20 @@ export function toolReach(
   }).filter((reach) => reach.people > 0 || reach.weekly.some((n) => n > 0));
 }
 
-/** Cost steps of a day's squares, in USD: under the first is the lightest. */
-export const VOLUME_STEPS_USD = [1, 5, 25, 100] as const;
+/**
+ * The steps of a day's squares, under the first the lightest: cost in USD,
+ * or tokens. The token steps sit at about the same share of person-days as
+ * the cost steps.
+ */
+export const VOLUME_STEPS: Readonly<Record<VolumeMeasure, readonly number[]>> =
+  {
+    cost: [1, 5, 25, 100],
+    tokens: [3e6, 2e7, 1e8, 5e8],
+  };
 
 /** A day's step on the sequential ramp, 0 (least) to 4 (most). */
-export function volumeStep(costUsd: number): number {
-  return VOLUME_STEPS_USD.filter((step) => costUsd >= step).length;
+export function volumeStep(value: number, measure: VolumeMeasure): number {
+  return VOLUME_STEPS[measure].filter((step) => value >= step).length;
 }
 
 export function median(values: readonly number[]): number {

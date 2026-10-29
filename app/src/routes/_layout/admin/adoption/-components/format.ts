@@ -1,8 +1,10 @@
+import type { VolumeMeasure } from "../../-lib/adoption";
 import {
   formatEstimateAmount,
   formatEstimateTick,
   type EstimateMoney,
 } from "../../-lib/estimates";
+import { formatTokens } from "../../-lib/format";
 
 /**
  * A cost in whole units of its currency, or to hundredths while under ten of
@@ -26,4 +28,15 @@ export function formatKnownCost(
   money: EstimateMoney,
 ): string {
   return unpricedRecords > 0 && usd === 0 ? "Unknown" : formatCost(usd, money);
+}
+
+/** An amount of `measure`: a cost, or tokens with their unit. */
+export function formatAmount(
+  value: number,
+  measure: VolumeMeasure,
+  money: EstimateMoney,
+): string {
+  return measure === "cost"
+    ? formatCost(value, money)
+    : `${formatTokens(value)} tokens`;
 }
