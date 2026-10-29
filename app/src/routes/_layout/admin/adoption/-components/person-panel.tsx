@@ -314,8 +314,8 @@ function Calendar({
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
-        From the week of {shortDate(weeks[0] ?? thisWeek)}. The darker the
-        square, the more AI that day.
+        From the week of {shortDate(weeks[0] ?? thisWeek)}, shaded by how much
+        AI was used each day.
       </p>
     </div>
   );

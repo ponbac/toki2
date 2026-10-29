@@ -76,6 +76,7 @@ export function VolumeStrip({
         title="Where the cost is"
         description={`Each block is a share of the ${formatCost(totals.costUsd, money)} of AI in the window. A large share means heavy use on the days AI is used, not that the rest use it less often.`}
       />
+      {/* The ramp flips in dark mode, light to dark, so label ink flips too. */}
       <ul className="flex h-12 gap-0.5 overflow-hidden rounded-lg">
         {blocks.map((block) => (
           <li
@@ -83,8 +84,8 @@ export function VolumeStrip({
             title={`${block.title}: ${formatCost(block.usd, money)}`}
             className={
               block.tone === "own"
-                ? "min-w-0.5 overflow-hidden bg-[var(--viz-seq-5)] px-2 py-1.5 text-xs font-semibold whitespace-nowrap text-white"
-                : "min-w-0.5 overflow-hidden bg-[var(--viz-seq-2)] px-2 py-1.5 text-xs font-semibold whitespace-nowrap text-[#0d366b]"
+                ? "min-w-0.5 overflow-hidden bg-[var(--viz-seq-5)] px-2 py-1.5 text-xs font-semibold whitespace-nowrap text-white dark:text-[#0d366b]"
+                : "min-w-0.5 overflow-hidden bg-[var(--viz-seq-2)] px-2 py-1.5 text-xs font-semibold whitespace-nowrap text-[#0d366b] dark:text-white"
             }
             style={{ flexGrow: block.usd, flexBasis: 0 }}
           >
