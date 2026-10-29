@@ -196,35 +196,39 @@ impl AiAdoptionRepository for PostgresAiAdoptionRepository {
         today: Date,
     ) -> Result<Option<Date>, AiBillingError> {
         // An account that failed to import leaves its owner's credits short
-        // while the organization's are complete, so both bound the date.
+        // while the organization's are complete, and an import can fail for
+        // one month and succeed for the next: the credits are complete up to
+        // the first day, from `credits.from` on, that the organization or an
+        // account someone owns today has not completed.
         let through = sqlx::query_scalar!(
             r#"
-            WITH accounts AS (
-                SELECT
-                    disposition.account_id,
-                    COALESCE(
-                        MAX(slice.day) FILTER (WHERE slice.complete_at IS NOT NULL),
-                        $3::date - 1
-                    ) AS through
+            WITH days AS (
+                SELECT day::date AS day
+                FROM generate_series($3::date, $2::date, interval '1 day') AS day
+            ),
+            scopes AS (
+                SELECT 'org_credits' AS source, 0::int8 AS account_id
+                UNION
+                SELECT 'account_credits', disposition.account_id
                 FROM ai_provider_account_dispositions AS disposition
-                LEFT JOIN ai_provider_usage_slices AS slice
-                    ON slice.provider = disposition.provider
-                    AND slice.source = 'account_credits'
-                    AND slice.account_id = disposition.account_id
                 WHERE disposition.provider = $1
                   AND disposition.target = 'user'
                   AND disposition.valid_from <= $2
                   AND (disposition.valid_to IS NULL OR disposition.valid_to >= $2)
-                GROUP BY disposition.account_id
+            ),
+            first_gap AS (
+                SELECT MIN(days.day) AS day
+                FROM scopes
+                CROSS JOIN days
+                LEFT JOIN ai_provider_usage_slices AS slice
+                    ON slice.provider = $1
+                    AND slice.source = scopes.source
+                    AND slice.account_id = scopes.account_id
+                    AND slice.day = days.day
+                    AND slice.complete_at IS NOT NULL
+                WHERE slice.day IS NULL
             )
-            SELECT LEAST(
-                (
-                    SELECT MAX(day)
-                    FROM ai_provider_usage_slices
-                    WHERE provider = $1 AND source = 'org_credits' AND complete_at IS NOT NULL
-                ),
-                (SELECT MIN(through) FROM accounts)
-            )
+            SELECT COALESCE((SELECT day FROM first_gap) - 1, $2::date) AS "through!"
             "#,
             credits.payer.as_str(),
             today,
@@ -233,7 +237,7 @@ impl AiAdoptionRepository for PostgresAiAdoptionRepository {
         .fetch_one(&self.pool)
         .await
         .map_err(storage_error)?;
-        Ok(through.filter(|day| *day >= credits.from))
+        Ok(Some(through).filter(|day| *day >= credits.from))
     }
 
     async fn people(

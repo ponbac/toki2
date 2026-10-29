@@ -251,6 +251,9 @@ export type VolumeBar = Readonly<{
   partial: boolean;
   tools: Readonly<Partial<Record<AiProvider, number>>>;
   total: number;
+  /** Records without a known cost, when measuring cost: `total` is then a
+   * known subtotal. */
+  unpricedRecords: number;
 }>;
 
 /** How many weeks the weekly chart shows. */
@@ -293,6 +296,7 @@ export function volumeBars(
       partial: last >= today,
       tools: {} as Partial<Record<AiProvider, number>>,
       total: 0,
+      unpricedRecords: 0,
     };
   });
   const barOf = (day: string) =>
@@ -306,6 +310,8 @@ export function volumeBars(
   for (const row of adoption.days) {
     if (userId !== undefined && row.userId !== userId) continue;
     add(row.day, row.tool, measure === "cost" ? row.costUsd : row.tokens);
+    const bar = measure === "cost" ? barOf(row.day) : undefined;
+    if (bar) bar.unpricedRecords += row.unpricedRecords;
   }
   if (measure === "cost" && userId === undefined) {
     for (const row of adoption.companyDays) add(row.day, row.tool, row.costUsd);

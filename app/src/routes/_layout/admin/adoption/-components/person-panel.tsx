@@ -212,7 +212,7 @@ function PersonPage({
         </PanelSection>
       ) : null}
 
-      {bars.some((bar) => bar.total > 0) ? (
+      {bars.some((bar) => bar.total > 0 || bar.unpricedRecords > 0) ? (
         <PanelSection
           title="AI per week, by tool"
           description="At API prices. GitHub Copilot is what GitHub charged in credits."

@@ -131,6 +131,21 @@ describe("volume bars", () => {
     expect(volumeBars(monthEnd, "cost", "month")[0].partial).toBe(false);
   });
 
+  test("cost bars keep usage without a known price", () => {
+    const unpriced = {
+      ...ADOPTION,
+      days: [{ ...day(2, "2026-10-27", "claude", 0), unpricedRecords: 3 }],
+      companyDays: [],
+    };
+    expect(volumeBars(unpriced, "cost", "week").at(-1)).toMatchObject({
+      total: 0,
+      unpricedRecords: 3,
+    });
+    expect(volumeBars(unpriced, "tokens", "week").at(-1).unpricedRecords).toBe(
+      0,
+    );
+  });
+
   test("one person's bars leave the company's credits out", () => {
     const bars = volumeBars(ADOPTION, "cost", "week", 2);
     expect(bars.at(-2).total).toBe(2);

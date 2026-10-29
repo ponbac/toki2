@@ -27,6 +27,7 @@ import {
 import { formatTokens, shortDate } from "../../-lib/format";
 import { PROVIDER_COLOR_VARS } from "../../-lib/providers";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
+import { formatKnownCost } from "./format";
 import { SectionHead, Segmented } from "./segmented";
 
 const MEASURES = [
@@ -48,6 +49,17 @@ function barLabel(bar: VolumeBar, period: VolumePeriod): string {
     timeZone: "UTC",
   });
   return bar.partial ? `${month} so far` : month;
+}
+
+/** A bar's total, never showing usage without a known price as zero. */
+function formatTotal(
+  bar: VolumeBar,
+  measure: VolumeMeasure,
+  money: EstimateMoney,
+): string {
+  return measure === "cost"
+    ? formatKnownCost(bar.total, bar.unpricedRecords, money)
+    : formatTokens(bar.total);
 }
 
 function formatMeasure(
@@ -229,7 +241,7 @@ export function VolumeBars({
                 (tool) =>
                   `${AI_PROVIDER_LABELS[tool]}: ${formatMeasure(bar.tools[tool] ?? 0, measure, money)}`,
               ),
-            `Total: ${formatMeasure(bar.total, measure, money)}`,
+            `Total: ${formatTotal(bar, measure, money)}`,
           ].join("\n");
         },
       },
@@ -240,7 +252,9 @@ export function VolumeBars({
   if (tools.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border/80 p-6 text-center text-sm text-muted-foreground">
-        No AI use in these {period === "week" ? "weeks" : "months"} yet.
+        {bars.some((bar) => bar.unpricedRecords > 0)
+          ? `The AI used in these ${period === "week" ? "weeks" : "months"} has no known price yet.`
+          : `No AI use in these ${period === "week" ? "weeks" : "months"} yet.`}
       </p>
     );
   }
@@ -318,7 +332,7 @@ function BarTooltip({
       ))}
       <div className="mt-1 flex justify-between gap-4 border-t border-border/60 pt-1 font-semibold tabular-nums">
         <span>Total</span>
-        {formatMeasure(bar.total, measure, money)}
+        {formatTotal(bar, measure, money)}
       </div>
     </div>
   );

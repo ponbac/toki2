@@ -276,9 +276,15 @@ async fn credits_belong_to_whoever_owned_the_account_that_day(pool: PgPool) {
     charge_company(&pool, date!(2026 - 08 - 31), 999).await;
     charge_company(&pool, date!(2026 - 09 - 15), 100).await;
     charge_company(&pool, date!(2026 - 10 - 05), 100).await;
-    slice(&pool, 0, date!(2026 - 10 - 04), true).await;
+    // The organization's and account 11's credits are complete from the
+    // first day through 4 October; the organization's 5 October is not yet.
+    let mut day = date!(2026 - 09 - 01);
+    while day <= date!(2026 - 10 - 04) {
+        slice(&pool, 0, day, true).await;
+        slice(&pool, 11, day, true).await;
+        day = day.next_day().unwrap();
+    }
     slice(&pool, 0, date!(2026 - 10 - 05), false).await;
-    slice(&pool, 11, date!(2026 - 10 - 04), true).await;
     let range = dates(date!(2026 - 08 - 01), date!(2026 - 10 - 31));
 
     let credited = repository(&pool)
@@ -314,15 +320,29 @@ async fn credits_belong_to_whoever_owned_the_account_that_day(pool: PgPool) {
         through(&pool, date!(2026 - 10 - 28)).await,
         Some(date!(2026 - 10 - 04))
     );
-    // An account of someone's that never imported holds every person back,
-    // whatever the organization's say.
+    assert_eq!(
+        through(&pool, date!(2026 - 09 - 15)).await,
+        Some(date!(2026 - 09 - 15))
+    );
+    // A day an account's import missed bounds it, whatever came later.
+    sqlx::query(
+        "DELETE FROM ai_provider_usage_slices WHERE account_id = 11 AND day = '2026-09-20'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        through(&pool, date!(2026 - 10 - 28)).await,
+        Some(date!(2026 - 09 - 19))
+    );
+    // An account of someone's that never imported holds everyone back; one
+    // that is not anyone's yet does not.
     insert_account(&pool, 14).await;
     dispose(&pool, 14, Some(first), date!(2026 - 10 - 01), None).await;
     assert_eq!(through(&pool, date!(2026 - 10 - 28)).await, None);
-    // Only accounts that are someone's today count.
     assert_eq!(
         through(&pool, date!(2026 - 09 - 15)).await,
-        Some(date!(2026 - 10 - 04))
+        Some(date!(2026 - 09 - 15))
     );
 
     // Through the service, what the company was charged beyond its people
