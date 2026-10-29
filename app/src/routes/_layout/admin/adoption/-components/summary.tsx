@@ -33,10 +33,14 @@ export function Summary({
     : null;
   const users = people.filter((stats) => stats.activeDays > 0);
   const workDays = daysOf(range).filter(isWorkDay).length;
+  // Costs are known subtotals while usage is unpriced: a window whose
+  // usage has no known cost at all has nothing to compare.
   const change =
-    previous && previous.costUsd > 0
+    previous && previous.costUsd > 0 && totals.costUsd > 0
       ? totals.costUsd / previous.costUsd - 1
       : null;
+  const pricedOnly =
+    totals.unpricedRecords > 0 || (previous?.unpricedRecords ?? 0) > 0;
 
   const facts: Array<[string, string]> = [
     [
@@ -79,7 +83,14 @@ export function Summary({
             <b className="font-extrabold tabular-nums">
               {formatShare(Math.abs(change))}
             </b>{" "}
-            {change >= 0 ? "more" : "less"} than the {weeks} weeks before.
+            {change >= 0 ? "more" : "less"} than the {weeks} weeks before
+            {pricedOnly ? (
+              <span className="text-sm font-semibold text-muted-foreground">
+                {" "}
+                (priced usage only)
+              </span>
+            ) : null}
+            .
           </>
         )}{" "}
         Models read and wrote{" "}
