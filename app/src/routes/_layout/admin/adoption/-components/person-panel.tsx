@@ -14,15 +14,18 @@ import {
   VOLUME_WEEKS,
   volumeBars,
   volumeStep,
+  amountOf,
+  mainToolOf,
   type DayIndex,
   type DayRange,
   type PersonStats,
+  type VolumeMeasure,
 } from "../../-lib/adoption";
 import { formatEstimateAmount } from "../../-lib/estimates";
 import { formatShare, shortDate, weekdayDate } from "../../-lib/format";
 import { PROVIDER_COLOR_SCOPE } from "../../-lib/providers";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
-import { formatKnownCost } from "./format";
+import { formatAmount, formatKnownCost } from "./format";
 import { HABIT_COLORS, HABIT_LABELS, VOLUME_STEP_COLORS } from "./colors";
 import { DepthPlot, type DepthScale } from "./habit-depth";
 import { VolumeBars } from "./volume-chart";
@@ -36,6 +39,7 @@ export function PersonPanel({
   index,
   range,
   weeks,
+  measure,
   scale,
   onClose,
   onClosed,
@@ -46,6 +50,7 @@ export function PersonPanel({
   index: DayIndex;
   range: DayRange;
   weeks: number;
+  measure: VolumeMeasure;
   scale: DepthScale;
   onClose: () => void;
   /** Where focus goes once the panel has closed. */
@@ -85,6 +90,7 @@ export function PersonPanel({
               index={index}
               range={range}
               weeks={weeks}
+              measure={measure}
               scale={scale}
             />
           ) : null}
@@ -101,6 +107,7 @@ function PersonPage({
   index,
   range,
   weeks,
+  measure,
   scale,
 }: {
   adoption: AiAdoption;
@@ -109,6 +116,7 @@ function PersonPage({
   index: DayIndex;
   range: DayRange;
   weeks: number;
+  measure: VolumeMeasure;
   scale: DepthScale;
 }) {
   const money = useEstimateMoney();
@@ -118,10 +126,11 @@ function PersonPage({
     ? personStats(person, adoption.days, index, before)
     : null;
   const bars = React.useMemo(
-    () => volumeBars(adoption, "cost", "week", person.userId),
-    [adoption, person.userId],
+    () => volumeBars(adoption, measure, "week", person.userId),
+    [adoption, measure, person.userId],
   );
   const users = people.filter((entry) => entry.activeDays > 0);
+  const mainTool = mainToolOf(stats, measure);
   const rank = users.filter((entry) => entry.share > stats.share).length + 1;
   const sources = [
     ...person.seats.map(
@@ -173,13 +182,23 @@ function PersonPage({
                   </span>
                 ) : null}
                 .{" "}
-                <b className="font-extrabold tabular-nums">
-                  {formatKnownCost(stats.costUsd, stats.unpricedRecords, money)}
-                </b>{" "}
-                at API prices
-                {stats.tools[0]
-                  ? `, mostly ${AI_PROVIDER_LABELS[stats.tools[0]]}`
-                  : ""}
+                {measure === "tokens" && stats.tokens === 0 ? (
+                  "No token data: GitHub reports Copilot in credits, not tokens"
+                ) : (
+                  <>
+                    <b className="font-extrabold tabular-nums">
+                      {measure === "cost"
+                        ? formatKnownCost(
+                            stats.costUsd,
+                            stats.unpricedRecords,
+                            money,
+                          )
+                        : formatAmount(stats.tokens, measure, money)}
+                    </b>
+                    {measure === "cost" ? " at API prices" : ""}
+                    {mainTool ? `, mostly ${AI_PROVIDER_LABELS[mainTool]}` : ""}
+                  </>
+                )}
                 .
               </>
             ) : (
@@ -195,7 +214,12 @@ function PersonPage({
       </div>
 
       <PanelSection title={`The last ${VOLUME_WEEKS} weeks`}>
-        <Calendar adoption={adoption} index={index} userId={person.userId} />
+        <Calendar
+          adoption={adoption}
+          index={index}
+          userId={person.userId}
+          measure={measure}
+        />
       </PanelSection>
 
       {stats.activeDays > 0 ? (
@@ -205,6 +229,7 @@ function PersonPage({
         >
           <DepthPlot
             people={people}
+            measure={measure}
             scale={scale}
             highlight={person.userId}
             height={240}
@@ -215,9 +240,18 @@ function PersonPage({
       {bars.some((bar) => bar.total > 0 || bar.unpricedRecords > 0) ? (
         <PanelSection
           title="AI per week, by tool"
-          description="At API prices. GitHub Copilot is what GitHub charged in credits."
+          description={
+            measure === "cost"
+              ? "At API prices. GitHub Copilot is what GitHub charged in credits."
+              : "Every token read and written. GitHub reports Copilot in credits, not tokens."
+          }
         >
-          <VolumeBars bars={bars} measure="cost" period="week" money={money} />
+          <VolumeBars
+            bars={bars}
+            measure={measure}
+            period="week"
+            money={money}
+          />
         </PanelSection>
       ) : null}
 
@@ -257,10 +291,12 @@ function Calendar({
   adoption,
   index,
   userId,
+  measure,
 }: {
   adoption: AiAdoption;
   index: DayIndex;
   userId: number;
+  measure: VolumeMeasure;
 }) {
   const money = useEstimateMoney();
   const byDay = index.get(userId);
@@ -291,7 +327,7 @@ function Calendar({
                   key={day}
                   title={
                     use
-                      ? `${weekdayDate(day)}: ${formatEstimateAmount(use.costUsd, money)}, ${use.tools.map((tool) => AI_PROVIDER_LABELS[tool]).join(", ")}`
+                      ? `${weekdayDate(day)}: ${formatEstimateAmount(use.costUsd, money)}, ${formatAmount(use.tokens, "tokens", money)}, ${use.tools.map((tool) => AI_PROVIDER_LABELS[tool]).join(", ")}`
                       : `${weekdayDate(day)}: no AI`
                   }
                   className={
@@ -303,7 +339,9 @@ function Calendar({
                     use
                       ? {
                           background:
-                            VOLUME_STEP_COLORS[volumeStep(use.costUsd)],
+                            VOLUME_STEP_COLORS[
+                              volumeStep(amountOf(use, measure), measure)
+                            ],
                         }
                       : undefined
                   }

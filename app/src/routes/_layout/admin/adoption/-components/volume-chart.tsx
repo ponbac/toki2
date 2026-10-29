@@ -30,10 +30,6 @@ import { useEstimateMoney } from "../../-lib/use-estimate-money";
 import { formatKnownCost } from "./format";
 import { SectionHead, Segmented } from "./segmented";
 
-const MEASURES = [
-  { value: "cost", label: "API cost" },
-  { value: "tokens", label: "Tokens" },
-] as const;
 const PERIODS = [
   { value: "week", label: "Weeks" },
   { value: "month", label: "Months" },
@@ -80,13 +76,11 @@ export function VolumeChart({
   adoption,
   measure,
   period,
-  onMeasure,
   onPeriod,
 }: {
   adoption: AiAdoption;
   measure: VolumeMeasure;
   period: VolumePeriod;
-  onMeasure: (measure: VolumeMeasure) => void;
   onPeriod: (period: VolumePeriod) => void;
 }) {
   const money = useEstimateMoney();
@@ -108,12 +102,6 @@ export function VolumeChart({
             : "Every token read and written, by tool. Token Ledger only: GitHub reports Copilot in credits, not tokens."
         }
       >
-        <Segmented
-          label="Measure"
-          options={MEASURES}
-          value={measure}
-          onChange={onMeasure}
-        />
         <Segmented
           label="Bars per"
           options={PERIODS}

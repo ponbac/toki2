@@ -1,28 +1,33 @@
 import type { AiAdoption } from "@/lib/api/queries/ai-admin";
 import {
+  amountOf,
   companyTotals,
   covers,
   daysOf,
   isWorkDay,
   median,
+  perActiveDayOf,
   previousWindow,
   topShare,
   type DayRange,
   type PersonStats,
+  type VolumeMeasure,
 } from "../../-lib/adoption";
-import { formatCost, formatKnownCost } from "./format";
+import { formatAmount, formatKnownCost } from "./format";
 import { formatCount, formatShare, formatTokens } from "../../-lib/format";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
-/** The window in a sentence, with the figures that frame it. */
+/** The window in a sentence, with the figures that frame it, in `measure`. */
 export function Summary({
   adoption,
   people,
   range,
+  measure,
 }: {
   adoption: AiAdoption;
   people: readonly PersonStats[];
   range: DayRange;
+  measure: VolumeMeasure;
 }) {
   const money = useEstimateMoney();
   const weeks = Math.round(daysOf(range).length / 7);
@@ -31,65 +36,84 @@ export function Summary({
   const previous = covers(adoption, before)
     ? companyTotals(adoption, before)
     : null;
-  const users = people.filter((stats) => stats.activeDays > 0);
+  // Tokens only count people Token Ledger saw: GitHub reports Copilot in
+  // credits, so someone on Copilot alone has no tokens.
+  const users = people.filter((stats) =>
+    measure === "cost" ? stats.activeDays > 0 : stats.tokens > 0,
+  );
   const workDays = daysOf(range).filter(isWorkDay).length;
+  const total = amountOf(totals, measure);
   // Costs are known subtotals while usage is unpriced: a window whose
-  // usage has no known cost at all has nothing to compare.
+  // usage has no known amount at all has nothing to compare.
   const change =
-    previous && previous.costUsd > 0 && totals.costUsd > 0
-      ? totals.costUsd / previous.costUsd - 1
+    previous && amountOf(previous, measure) > 0 && total > 0
+      ? total / amountOf(previous, measure) - 1
       : null;
+  const format = (value: number) => formatAmount(value, measure, money);
 
   const facts: Array<[string, string]> = [
     [
-      formatCost(workDays > 0 ? totals.costUsd / workDays : 0, money),
+      format(workDays > 0 ? total / workDays : 0),
       "per work day across the company",
     ],
     [
       formatShare(
         topShare(
-          users.map((stats) => stats.costUsd),
+          users.map((stats) => amountOf(stats, measure)),
           3,
-          totals.costUsd,
+          total,
         ),
       ),
-      "of the cost is the three largest users'",
+      `of the ${measure === "cost" ? "cost" : "tokens"} is the three largest users'`,
     ],
     [
-      formatCost(median(users.map((stats) => stats.costUsd)), money),
-      `median per person over ${weeks} weeks, of the ${users.length} who used AI`,
+      format(median(users.map((stats) => amountOf(stats, measure)))),
+      `median per person over ${weeks} weeks, of the ${users.length} ${measure === "cost" ? "who used AI" : "with token data"}`,
     ],
     [
-      formatCost(median(users.map((stats) => stats.perActiveDayUsd)), money),
+      format(median(users.map((stats) => perActiveDayOf(stats, measure)))),
       "median per person on a day they use AI",
     ],
   ];
+  const comparison =
+    change === null ? null : (
+      <>
+        ,{" "}
+        <b className="font-extrabold tabular-nums">
+          {formatShare(Math.abs(change))}
+        </b>{" "}
+        {change >= 0 ? "more" : "less"} than the {weeks} weeks before
+      </>
+    );
 
   return (
     <section aria-label="Summary" className="flex flex-col gap-6">
-      <p className="max-w-[34ch] text-xl leading-normal">
-        The company used{" "}
-        <b className="font-extrabold tabular-nums">
-          {formatKnownCost(totals.costUsd, totals.unpricedRecords, money)}
-        </b>{" "}
-        of AI at API prices in the last {weeks} weeks
-        {change === null ? (
-          "."
-        ) : (
-          <>
-            ,{" "}
-            <b className="font-extrabold tabular-nums">
-              {formatShare(Math.abs(change))}
-            </b>{" "}
-            {change >= 0 ? "more" : "less"} than the {weeks} weeks before.
-          </>
-        )}{" "}
-        Models read and wrote{" "}
-        <b className="font-extrabold tabular-nums">
-          {formatTokens(totals.tokens)}
-        </b>{" "}
-        tokens.
-      </p>
+      {measure === "cost" ? (
+        <p className="max-w-[34ch] text-xl leading-normal">
+          The company used{" "}
+          <b className="font-extrabold tabular-nums">
+            {formatKnownCost(totals.costUsd, totals.unpricedRecords, money)}
+          </b>{" "}
+          of AI at API prices in the last {weeks} weeks{comparison}. Models read
+          and wrote{" "}
+          <b className="font-extrabold tabular-nums">
+            {formatTokens(totals.tokens)}
+          </b>{" "}
+          tokens.
+        </p>
+      ) : (
+        <p className="max-w-[34ch] text-xl leading-normal">
+          Models read and wrote{" "}
+          <b className="font-extrabold tabular-nums">
+            {formatTokens(totals.tokens)}
+          </b>{" "}
+          tokens in the last {weeks} weeks{comparison}. The company's AI cost{" "}
+          <b className="font-extrabold tabular-nums">
+            {formatKnownCost(totals.costUsd, totals.unpricedRecords, money)}
+          </b>{" "}
+          at API prices over the same weeks.
+        </p>
+      )}
       <dl className="grid max-w-md grid-cols-2 gap-x-6 gap-y-4">
         {facts.map(([value, label]) => (
           <div key={label} className="flex flex-col-reverse">
@@ -100,7 +124,7 @@ export function Summary({
           </div>
         ))}
       </dl>
-      {totals.unpricedRecords > 0 ? (
+      {measure === "cost" && totals.unpricedRecords > 0 ? (
         <p className="max-w-md text-xs text-muted-foreground">
           Costs leave out {formatCount(totals.unpricedRecords)}{" "}
           {totals.unpricedRecords === 1 ? "request" : "requests"} to models
