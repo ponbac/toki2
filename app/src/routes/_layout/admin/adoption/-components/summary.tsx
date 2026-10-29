@@ -13,8 +13,8 @@ import {
   type PersonStats,
   type VolumeMeasure,
 } from "../../-lib/adoption";
-import { formatAmount, formatKnownCost } from "./format";
-import { formatCount, formatShare, formatTokens } from "../../-lib/format";
+import { formatAmount, formatKnownCost, formatTokenCount } from "./format";
+import { formatCount, formatShare } from "../../-lib/format";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
 
 /** The window in a sentence, with the figures that frame it, in `measure`. */
@@ -97,7 +97,7 @@ export function Summary({
           of AI at API prices in the last {weeks} weeks{comparison}. Models read
           and wrote{" "}
           <b className="font-extrabold tabular-nums">
-            {formatTokens(totals.tokens)}
+            {formatTokenCount(totals.tokens)}
           </b>{" "}
           tokens.
         </p>
@@ -105,7 +105,7 @@ export function Summary({
         <p className="max-w-[34ch] text-xl leading-normal">
           Models read and wrote{" "}
           <b className="font-extrabold tabular-nums">
-            {formatTokens(totals.tokens)}
+            {formatTokenCount(totals.tokens)}
           </b>{" "}
           tokens in the last {weeks} weeks{comparison}. The company's AI cost{" "}
           <b className="font-extrabold tabular-nums">

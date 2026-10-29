@@ -4,7 +4,6 @@ import {
   formatEstimateTick,
   type EstimateMoney,
 } from "../../-lib/estimates";
-import { formatTokens } from "../../-lib/format";
 
 /**
  * A cost in whole units of its currency, or to hundredths while under ten of
@@ -30,6 +29,21 @@ export function formatKnownCost(
   return unpricedRecords > 0 && usd === 0 ? "Unknown" : formatCost(usd, money);
 }
 
+const tokenCount = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+/**
+ * Tokens with exactly one decimal from a thousand up, such as `2.8B` or
+ * `31.0B`, so their widths line up in a column and `2.8B` never reads as
+ * `28B`.
+ */
+export function formatTokenCount(tokens: number): string {
+  return tokens < 1000 ? String(Math.round(tokens)) : tokenCount.format(tokens);
+}
+
 /** An amount of `measure`: a cost, or tokens with their unit. */
 export function formatAmount(
   value: number,
@@ -38,5 +52,5 @@ export function formatAmount(
 ): string {
   return measure === "cost"
     ? formatCost(value, money)
-    : `${formatTokens(value)} tokens`;
+    : `${formatTokenCount(value)} tokens`;
 }
