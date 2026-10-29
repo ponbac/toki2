@@ -16,7 +16,7 @@ import { formatEstimateAmount } from "../../-lib/estimates";
 import { shortDate, weekdayDate } from "../../-lib/format";
 import { useEstimateMoney } from "../../-lib/use-estimate-money";
 import { formatKnownCost } from "./format";
-import { HABIT_COLORS, VOLUME_STEP_COLORS } from "./colors";
+import { VOLUME_STEP_COLORS } from "./colors";
 import { SectionHead } from "./segmented";
 
 /**
@@ -61,7 +61,7 @@ export function Roster({
         <table className="w-full border-separate border-spacing-0 text-[13px]">
           <caption className="sr-only">
             Each person's AI per day over the last {weeks} weeks, with their
-            cost and the share of work days they used AI.
+            cost.
           </caption>
           <thead>
             <tr>
@@ -103,13 +103,6 @@ export function Roster({
               >
                 {weeks} weeks
               </th>
-              <th
-                scope="col"
-                className="px-4 pb-1.5 text-right align-bottom text-xs font-semibold whitespace-nowrap text-muted-foreground"
-                title="How many of the window's work days, Monday to Friday, each person used AI on"
-              >
-                Work days with AI
-              </th>
               <th aria-hidden className="w-full" />
             </tr>
             <tr aria-hidden>
@@ -131,12 +124,11 @@ export function Roster({
               ))}
               <th />
               <th />
-              <th />
             </tr>
           </thead>
           <tbody>
             <GroupRow
-              colSpan={days.length + 4}
+              colSpan={days.length + 3}
               title={`Used AI, ${used.length}`}
               note={`Most AI in the last ${weeks} weeks first`}
             />
@@ -153,7 +145,7 @@ export function Roster({
             {unseen.length > 0 ? (
               <>
                 <GroupRow
-                  colSpan={days.length + 4}
+                  colSpan={days.length + 3}
                   title={`Not seen, ${unseen.length}`}
                   note="No AI use reported. They may use AI Toki cannot see."
                 />
@@ -273,21 +265,6 @@ function PersonRow({
         {stats.activeDays > 0
           ? formatKnownCost(stats.costUsd, stats.unpricedRecords, money)
           : "–"}
-      </td>
-      <td className="px-4 text-right text-xs whitespace-nowrap text-muted-foreground tabular-nums group-hover:bg-muted/50">
-        <span
-          aria-hidden
-          className="mr-2 inline-block h-1.5 w-14 overflow-hidden rounded-full bg-[var(--viz-grid)] align-middle"
-        >
-          <span
-            className="block h-full rounded-full"
-            style={{
-              width: `${stats.share * 100}%`,
-              background: HABIT_COLORS.daily,
-            }}
-          />
-        </span>
-        {stats.activeWorkDays}/{stats.workDays}
       </td>
       <td aria-hidden className="group-hover:bg-muted/50" />
     </tr>
