@@ -314,16 +314,6 @@ impl AiAdoptionRepository for PostgresAiAdoptionRepository {
             })
             .collect())
     }
-
-    async fn user_exists(&self, user_id: &UserId) -> Result<bool, AiBillingError> {
-        sqlx::query_scalar!(
-            r#"SELECT EXISTS (SELECT 1 FROM users WHERE id = $1) AS "exists!""#,
-            user_id.as_i32(),
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(storage_error)
-    }
 }
 
 fn provider(raw: &str) -> Result<AiProvider, AiBillingError> {

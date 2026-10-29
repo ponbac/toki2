@@ -19,7 +19,7 @@ pub trait AiAdoptionService: Send + Sync + 'static {
     ) -> Result<AiAdoption, AiBillingError>;
 
     /// One person's models from `from` through `to`, by default as `adoption`,
-    /// largest first by records.
+    /// largest first by records: none for someone without usage, or no one.
     async fn models(
         &self,
         user_id: &UserId,

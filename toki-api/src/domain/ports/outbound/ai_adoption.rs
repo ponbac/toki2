@@ -65,7 +65,4 @@ pub trait AiAdoptionRepository: Send + Sync + 'static {
         today: Date,
         time_zone: &AiUsageTimeZone,
     ) -> Result<Vec<AiAdoptionPerson>, AiBillingError>;
-
-    /// Whether `user_id` is a user.
-    async fn user_exists(&self, user_id: &UserId) -> Result<bool, AiBillingError>;
 }

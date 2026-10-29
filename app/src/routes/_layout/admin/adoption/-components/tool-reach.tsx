@@ -16,11 +16,8 @@ export function ToolReach({
   weeks: number;
 }) {
   const reach = toolReach(adoption, range);
-  const max = Math.max(
-    1,
-    adoption.people.length * 0.75,
-    ...reach.flatMap((entry) => entry.weekly),
-  );
+  // A bar's height is the share of everyone listed who used the tool.
+  const max = Math.max(1, adoption.people.length);
   return (
     <section aria-labelledby="adoption-tools" className="flex flex-col gap-3">
       <SectionHead

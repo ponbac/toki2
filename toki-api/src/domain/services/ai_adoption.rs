@@ -95,9 +95,6 @@ impl<R: AiAdoptionRepository> AiAdoptionService for AiAdoptionServiceImpl<R> {
         from: Option<Date>,
         to: Option<Date>,
     ) -> Result<(AiUsageDateRange, Vec<AiAdoptionModel>), AiBillingError> {
-        if !self.repository.user_exists(user_id).await? {
-            return Err(AiBillingError::UserNotFound);
-        }
         let (_, dates) = self.dates(from, to).await?;
         let rows = self
             .repository
