@@ -20,8 +20,9 @@ import { VOLUME_STEP_COLORS } from "./colors";
 import { SectionHead } from "./segmented";
 
 /**
- * Everyone, one row each and one square per day of the window: the darker the
- * square, the more AI that day. Most cost first; people without any use in
+ * Everyone, one row each and one square per day of the window, shaded by how
+ * much AI was used that day. The day columns share the width the name and
+ * cost columns leave. Most cost first; people without any use in
  * the window last. Selecting a name opens their page.
  */
 export function Roster({
@@ -53,7 +54,7 @@ export function Roster({
       <SectionHead
         id="adoption-roster"
         title="Everyone, day by day"
-        description="One row per person, most AI first, one square per day. The darker the square, the more AI that day. Select a name to see their page."
+        description="One row per person, most AI first, one square per day, shaded by how much AI was used that day. Select a name to see their page."
       >
         <RampLegend />
       </SectionHead>
@@ -67,7 +68,7 @@ export function Roster({
             <tr>
               <th
                 scope="col"
-                className="sticky left-0 z-10 bg-card px-4 pt-3 pb-1.5 text-left align-bottom text-xs font-semibold text-muted-foreground"
+                className="sticky left-0 z-10 w-px bg-card px-4 pt-3 pb-1.5 text-left align-bottom text-xs font-semibold whitespace-nowrap text-muted-foreground"
               >
                 Company, per day
               </th>
@@ -99,11 +100,10 @@ export function Roster({
               })}
               <th
                 scope="col"
-                className="px-3 pb-1.5 text-right align-bottom text-xs font-semibold text-muted-foreground"
+                className="w-px px-4 pb-1.5 text-right align-bottom text-xs font-semibold whitespace-nowrap text-muted-foreground"
               >
                 {weeks} weeks
               </th>
-              <th aria-hidden className="w-full" />
             </tr>
             <tr aria-hidden>
               <th className="sticky left-0 z-10 bg-card" />
@@ -123,12 +123,11 @@ export function Roster({
                 </th>
               ))}
               <th />
-              <th />
             </tr>
           </thead>
           <tbody>
             <GroupRow
-              colSpan={days.length + 3}
+              colSpan={days.length + 2}
               title={`Used AI, ${used.length}`}
               note={`Most AI in the last ${weeks} weeks first`}
             />
@@ -145,7 +144,7 @@ export function Roster({
             {unseen.length > 0 ? (
               <>
                 <GroupRow
-                  colSpan={days.length + 3}
+                  colSpan={days.length + 2}
                   title={`Not seen, ${unseen.length}`}
                   note="No AI use reported. They may use AI Toki cannot see."
                 />
@@ -245,8 +244,8 @@ function PersonRow({
             <span
               aria-hidden
               className={cn(
-                "my-1 block h-3.5 rounded-[3px]",
-                weekend ? "w-1.5" : "mx-px w-3.5",
+                "mx-px my-1 block h-4 rounded-[3px]",
+                weekend ? "min-w-1.5" : "min-w-3",
                 !use &&
                   (weekend
                     ? "bg-muted/60"
@@ -266,7 +265,6 @@ function PersonRow({
           ? formatKnownCost(stats.costUsd, stats.unpricedRecords, money)
           : "–"}
       </td>
-      <td aria-hidden className="group-hover:bg-muted/50" />
     </tr>
   );
 }

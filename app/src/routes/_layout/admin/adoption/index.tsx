@@ -152,6 +152,8 @@ function Adoption({ adoption }: { adoption: AiAdoption }) {
           onSelect={select}
         />
 
+        <VolumeStrip adoption={adoption} people={people} range={range} />
+
         <div className="grid items-start gap-10 lg:grid-cols-2">
           <HabitDepth
             people={people}
@@ -160,10 +162,7 @@ function Adoption({ adoption }: { adoption: AiAdoption }) {
             onScale={(scale) => update({ scale })}
             onSelect={select}
           />
-          <div className="flex flex-col gap-10">
-            <VolumeStrip adoption={adoption} people={people} range={range} />
-            <ToolReach adoption={adoption} range={range} weeks={weeks} />
-          </div>
+          <ToolReach adoption={adoption} range={range} weeks={weeks} />
         </div>
       </div>
 
