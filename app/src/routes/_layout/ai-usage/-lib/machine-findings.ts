@@ -1,4 +1,5 @@
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
+import { shownCoverageStatus } from "@/lib/ai-usage";
 import type { AiUsageMachine } from "@/lib/api/queries/ai-usage-report";
 import { formatCount } from "./format";
 
@@ -14,7 +15,8 @@ export type Finding = Readonly<{
  * What may be missing or unknown in a machine's figures, last of all its
  * usage in the selected dates that has no known price. A provider without
  * history is only worth a note when the machine uploaded its usage before;
- * otherwise the tool is simply not used there.
+ * otherwise the tool is simply not used there. Skipped lines and records are
+ * no finding: they are worth cents at most.
  */
 export function machineFindings(
   machine: AiUsageMachine,
@@ -30,19 +32,12 @@ export function machineFindings(
   }
   for (const entry of machine.coverage) {
     const tool = AI_PROVIDER_LABELS[entry.provider];
-    switch (entry.status) {
+    switch (shownCoverageStatus(entry.status)) {
       case "failed":
         findings.push({
           key: `${entry.provider}-failed`,
           severity: "critical",
           text: `${tool} history could not be read on the last sync; its stored usage was kept.`,
-        });
-        break;
-      case "partial":
-        findings.push({
-          key: `${entry.provider}-partial`,
-          severity: "warning",
-          text: `${tool} history was only partly readable on the last sync.`,
         });
         break;
       case "missing":
@@ -62,13 +57,6 @@ export function machineFindings(
         key: `${entry.provider}-unreadable`,
         severity: "warning",
         text: `${formatCount(entry.unreadable)} ${tool} history ${entry.unreadable === 1 ? "file" : "files"} could not be read.`,
-      });
-    }
-    if (entry.malformedLines > 0 || entry.skippedRecords > 0) {
-      findings.push({
-        key: `${entry.provider}-skipped`,
-        severity: "note",
-        text: `${tool}: ${formatCount(entry.malformedLines)} malformed lines and ${formatCount(entry.skippedRecords)} records skipped.`,
       });
     }
   }

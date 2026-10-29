@@ -42,6 +42,7 @@ import {
   type AiUsageMachineList,
   type AiUsageRange,
 } from "@/lib/api/queries/ai-usage-report";
+import { shownCoverageStatus } from "@/lib/ai-usage";
 import { cn } from "@/lib/utils";
 import { Segmented } from "@/components/segmented";
 import { CopilotSurfaceIcon } from "./copilot-surface-icon";
@@ -1035,7 +1036,7 @@ function SyncedMachine({
 }) {
   const Icon = known ? Check : PartyPopper;
   const read = machine.coverage
-    .filter((entry) => entry.status === "ok")
+    .filter((entry) => shownCoverageStatus(entry.status) === "ok")
     .map((entry) => entry.provider);
   return (
     <div
@@ -1050,7 +1051,7 @@ function SyncedMachine({
       </p>
       {read.length > 0 ? (
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          History read in full:
+          History read:
           {read.map((provider) => (
             <AiProviderLabel
               key={provider}

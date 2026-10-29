@@ -13,8 +13,8 @@ import {
 import type * as React from "react";
 import { AiProviderLabel } from "@/components/ai-provider-icon";
 import { Button } from "@/components/ui/button";
+import { shownCoverageStatus, type ShownCoverageStatus } from "@/lib/ai-usage";
 import type {
-  AiCoverageStatus,
   AiUsageMachine,
   AiUsageMachineList,
 } from "@/lib/api/queries/ai-usage-report";
@@ -148,15 +148,16 @@ function MachineItem({
       {tools.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="History read">
           {tools.map((entry) => {
-            const { icon: Icon, label, className } = COVERAGE[entry.status];
+            const status = shownCoverageStatus(entry.status);
+            const { icon: Icon, label, className } = COVERAGE[status];
             return (
               <li
                 key={entry.provider}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs",
-                  entry.status === "ok"
+                  status === "ok"
                     ? "border-border/70"
-                    : entry.status === "failed"
+                    : status === "failed"
                       ? "border-destructive/40"
                       : "border-primary/40",
                 )}
@@ -210,16 +211,11 @@ function SyncDot({ stale, fresh }: { stale: boolean; fresh: boolean }) {
 /** How completely a machine read one tool's history, as a mark. */
 const COVERAGE: Readonly<
   Record<
-    AiCoverageStatus,
+    ShownCoverageStatus,
     { icon: React.ElementType; label: string; className: string }
   >
 > = {
-  ok: { icon: Check, label: "read in full", className: "text-[#0ca30c]" },
-  partial: {
-    icon: AlertTriangle,
-    label: "only partly readable",
-    className: "text-primary",
-  },
+  ok: { icon: Check, label: "read", className: "text-[#0ca30c]" },
   missing: {
     icon: AlertTriangle,
     label: "no history found",
