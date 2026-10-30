@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
@@ -202,6 +202,56 @@ pub async fn get_time_entry_day_statuses(
     let statuses = service.get_time_entry_day_statuses((from, to)).await?;
 
     Ok(Json(statuses.into_iter().map(Into::into).collect()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TimeEntryPeriodPayload {
+    from: String,
+    to: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnlockTimeEntriesResponse {
+    still_locked: Vec<String>,
+}
+
+pub async fn lock_time_entries(
+    user: AuthUser,
+    State(app_state): State<AppState>,
+    Json(payload): Json<TimeEntryPeriodPayload>,
+) -> Result<StatusCode, ApiError> {
+    record_user_id(user.id);
+    let service = app_state
+        .time_tracking_factory
+        .create_service(user.id)
+        .await?;
+
+    let from = parse_date(&payload.from)?;
+    let to = parse_date(&payload.to)?;
+    service.lock_time_entries((from, to)).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn unlock_time_entries(
+    user: AuthUser,
+    State(app_state): State<AppState>,
+    Json(payload): Json<TimeEntryPeriodPayload>,
+) -> Result<Json<UnlockTimeEntriesResponse>, ApiError> {
+    record_user_id(user.id);
+    let service = app_state
+        .time_tracking_factory
+        .create_service(user.id)
+        .await?;
+
+    let from = parse_date(&payload.from)?;
+    let to = parse_date(&payload.to)?;
+    let still_locked = service.unlock_time_entries((from, to)).await?;
+
+    Ok(Json(UnlockTimeEntriesResponse {
+        still_locked: still_locked.iter().map(ToString::to_string).collect(),
+    }))
 }
 
 // ============================================================================

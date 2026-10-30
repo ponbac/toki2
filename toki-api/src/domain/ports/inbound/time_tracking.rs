@@ -106,6 +106,15 @@ pub trait TimeTrackingService: Send + Sync + 'static {
         date_range: (Date, Date),
     ) -> Result<Vec<TimeEntryDayStatus>, TimeTrackingError>;
 
+    /// Lock a date range against further changes.
+    async fn lock_time_entries(&self, date_range: (Date, Date)) -> Result<(), TimeTrackingError>;
+
+    /// Unlock a date range, returning the days that stayed locked.
+    async fn unlock_time_entries(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<Date>, TimeTrackingError>;
+
     /// Create a new time entry.
     ///
     /// Creates the entry in the provider and persists to local timer history.

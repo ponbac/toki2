@@ -31,7 +31,6 @@ import {
   TRY_CMD_K_NEXT_TIME_NOTE,
 } from "@/lib/time-tracking-default-notes";
 import { useTimeTrackingTimer } from "@/hooks/useTimeTrackingStore";
-import { NotLockedAlert } from "./-components/not-locked-alert";
 import {
   TimerIcon,
   Plus,
@@ -49,6 +48,8 @@ import { TimelineView } from "./-components/timeline-view";
 import { ReportAbsenceDialog } from "./-components/report-absence-dialog";
 import { AbsencesPanel } from "./-components/absences-panel";
 import { buildAbsenceSearchText } from "./-helpers/absence-display";
+import { SignOffDock } from "./-components/period-lock/sign-off";
+import { weekRange } from "@/lib/period-lock/lock-periods";
 
 dayjs.extend(isoWeek);
 
@@ -80,6 +81,16 @@ export const Route = createFileRoute("/_layout/time-tracking/")({
   },
   component: TimeTrackingPage,
 });
+
+/** The day appears once its week has loaded, so keep looking for a moment. */
+function scrollToDay(date: string, attempts = 15) {
+  const day = document.getElementById(`day-${date}`);
+  if (day) {
+    day.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (attempts > 0) {
+    setTimeout(() => scrollToDay(date, attempts - 1), 200);
+  }
+}
 
 function getCurrentWeekDateRange() {
   const today = dayjs();
@@ -119,6 +130,14 @@ function TimeTrackingPage() {
   const { data: user } = useQuery(userQueries.me());
   const isAdmin = user?.roles.includes("Admin") ?? false;
 
+  const [focusedDay, setFocusedDay] = React.useState<{ date: string } | null>(
+    null,
+  );
+  const showDay = (date: string) => {
+    setDateRange(weekRange(date));
+    setFocusedDay({ date });
+    scrollToDay(date);
+  };
   const { data: timeEntries, isLoading: isTimeEntriesLoading } = useQuery({
     ...timeTrackingQueries.timeEntries({
       from: dateRange.from,
@@ -281,7 +300,9 @@ function TimeTrackingPage() {
 
           {/* Main Content */}
           <main className="mx-auto max-w-[1600px] px-6 py-8">
-            <NotLockedAlert />
+            <div className="mb-8 max-w-md xl:hidden">
+              <SignOffDock onShowDay={showDay} />
+            </div>
 
             {/* Controls Bar */}
             <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -362,6 +383,7 @@ function TimeTrackingPage() {
                         timeEntries={filteredTimeEntries}
                         absenceEntries={filteredAbsences}
                         dateRange={dateRange}
+                        focusedDay={focusedDay}
                       />
                     ) : (
                       <TimeEntriesList
@@ -383,6 +405,9 @@ function TimeTrackingPage() {
 
               {/* Sidebar */}
               <aside className="space-y-6">
+                <div className="hidden xl:contents">
+                  <SignOffDock onShowDay={showDay} />
+                </div>
                 <TimeStats />
                 <AbsencesPanel dateRange={dateRange} />
                 {!!timeEntries?.length && <Summary timeEntries={timeEntries} />}

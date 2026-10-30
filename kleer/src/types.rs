@@ -279,6 +279,17 @@ pub struct KleerEventWritable {
     pub internal_comment: Option<String>,
 }
 
+/// A user's time over one calendar month, the longest range Kleer locks at once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct KleerEventPeriod {
+    pub user_id: KleerIdRef,
+    #[serde(with = "date_format")]
+    pub start_date: Date,
+    #[serde(with = "date_format")]
+    pub end_date: Date,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KleerSavedId {
     pub id: i64,

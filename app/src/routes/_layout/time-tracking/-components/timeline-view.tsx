@@ -55,6 +55,8 @@ type TimelineViewProps = {
   timeEntries: TimeEntry[];
   absenceEntries: AbsenceEntry[];
   dateRange: { from: string; to: string };
+  /** A new object asks to show that day, even when it was asked for before. */
+  focusedDay: { date: string } | null;
 };
 
 type TimelineMode = "day" | "week";
@@ -583,6 +585,7 @@ export function TimelineView({
   timeEntries,
   absenceEntries,
   dateRange,
+  focusedDay,
 }: TimelineViewProps) {
   const [mode, setMode] = useState<TimelineMode>("week");
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
@@ -609,13 +612,19 @@ export function TimelineView({
     getInRangeDate(dateRange.from, dateRange.to),
   );
 
-  // Reset when dateRange changes
+  // Reset when dateRange changes, or show the day that was asked for
   useEffect(() => {
-    const target = getInRangeDate(dateRange.from, dateRange.to);
+    const isFocusInRange =
+      focusedDay &&
+      focusedDay.date >= dateRange.from &&
+      focusedDay.date <= dateRange.to;
+    const target = isFocusInRange
+      ? parseISO(focusedDay.date)
+      : getInRangeDate(dateRange.from, dateRange.to);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentWeekStart(startOfWeek(target, { weekStartsOn: WEEK_STARTS_ON }));
     setSelectedDate(target);
-  }, [dateRange.from, dateRange.to]);
+  }, [dateRange.from, dateRange.to, focusedDay]);
 
   const colorMap = useMemo(
     () => buildProjectColorMap(timeEntries),

@@ -45,6 +45,8 @@ export const timeTrackingMutations = {
   useCreateProjectRegistration,
   useCreateAbsences,
   useDeleteAbsence,
+  useLockTimeEntries,
+  useUnlockTimeEntries,
   useImportKleerUsers,
   useLinkKleerUsersByEmail,
   useUpsertKleerUserLink,
@@ -585,6 +587,53 @@ function useCreateAbsences(
     },
     onSettled: (data, error, v, c, mutationContext) =>
       options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
+  });
+}
+
+type TimeEntryPeriod = { from: string; to: string };
+type UnlockTimeEntriesResponse = { stillLocked: Array<string> };
+
+function refreshLockedTime(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({
+    queryKey: timeTrackingQueries.timeEntriesBaseKey,
+  });
+  queryClient.invalidateQueries({
+    queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
+  });
+}
+
+function useLockTimeEntries(
+  options?: DefaultMutationOptions<TimeEntryPeriod, void>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (body: TimeEntryPeriod) => {
+      await api.post("time-tracking/lock", { json: body });
+    },
+    ...options,
+    onSettled: (...args) => {
+      refreshLockedTime(queryClient);
+      return options?.onSettled?.(...args);
+    },
+  });
+}
+
+function useUnlockTimeEntries(
+  options?: DefaultMutationOptions<TimeEntryPeriod, UnlockTimeEntriesResponse>,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (body: TimeEntryPeriod) =>
+      api
+        .post("time-tracking/unlock", { json: body })
+        .json<UnlockTimeEntriesResponse>(),
+    ...options,
+    onSettled: (...args) => {
+      refreshLockedTime(queryClient);
+      return options?.onSettled?.(...args);
+    },
   });
 }
 

@@ -120,6 +120,8 @@ export function TimeEntriesList(props: {
         return (
           <motion.div
             key={dateKey}
+            id={`day-${dateKey}`}
+            className="scroll-mt-20"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: groupIndex * 0.1 }}

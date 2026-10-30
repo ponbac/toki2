@@ -10,10 +10,18 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import { Link, LinkProps } from "@tanstack/react-router";
+import {
+  Link,
+  LinkProps,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { ScrollArea } from "./ui/scroll-area";
 import { router } from "@/main";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useDueLockAlert } from "@/lib/period-lock/use-lock-days";
+import type { DueLock } from "@/lib/period-lock/lock-periods";
 import { differsQueries } from "@/lib/api/queries/differs";
 import { userQueries } from "@/lib/api/queries/user";
 import { NotificationsPopover } from "./notifications-popover/notifications-popover";
@@ -74,7 +82,35 @@ const BOARD_MENU_ORGANIZATION = "lerumsdjur";
 
 type UsedLink = (typeof MENU_ITEMS)[number]["to"];
 
+const LOCK_REMINDER_KEY = "time-tracking-lock-reminded-on";
+
+/** Overdue time gets one toast a day, wherever the person is working. */
+function useOverdueLockReminder(due: DueLock | null) {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isOverdue = due !== null && due.severity !== "due";
+  const title = due?.title;
+
+  React.useEffect(() => {
+    if (!isOverdue || pathname.startsWith("/time-tracking")) return;
+
+    const today = new Date().toDateString();
+    if (localStorage.getItem(LOCK_REMINDER_KEY) === today) return;
+
+    localStorage.setItem(LOCK_REMINDER_KEY, today);
+    toast.warning(title, {
+      action: {
+        label: "Review",
+        onClick: () => void navigate({ to: "/time-tracking" }),
+      },
+    });
+  }, [isOverdue, pathname, title, navigate]);
+}
+
 export function SideNavWrapper({ children }: { children: React.ReactNode }) {
+  const dueLock = useDueLockAlert();
+  useOverdueLockReminder(dueLock);
+
   const { data: differs } = useQuery({
     ...differsQueries.differs(),
   });
@@ -126,7 +162,7 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
           <div className="mx-2 h-6 w-px bg-border/50 md:mx-0 md:my-3 md:h-px md:w-8" />
 
           {/* Navigation items */}
-          <Nav links={menuItems} />
+          <Nav links={menuItems} dueLock={dueLock} />
 
           {/* Theme switcher - inline on mobile */}
           <div className="flex h-full items-center justify-center md:hidden">
@@ -153,7 +189,9 @@ export function SideNavWrapper({ children }: { children: React.ReactNode }) {
 
 function Nav({
   links,
+  dueLock,
 }: {
+  dueLock: DueLock | null;
   links: readonly {
     title: string;
     label?: string;
@@ -170,7 +208,8 @@ function Nav({
           <NavLink
             key={index}
             title={link.title}
-            label={link.label}
+            label={link.to === "/time-tracking" ? dueLock?.title : link.label}
+            alert={link.to === "/time-tracking" ? dueLock?.severity : undefined}
             link={{
               icon: link.icon,
               to: link.to,
@@ -186,10 +225,12 @@ function Nav({
 function NavLink({
   title,
   label,
+  alert,
   link,
 }: {
   title: string;
   label?: string;
+  alert?: DueLock["severity"];
   link: {
     icon: LucideIcon;
     to: UsedLink;
@@ -218,7 +259,20 @@ function NavLink({
           }}
         >
           <link.icon className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" />
-          <span className="sr-only">{title}</span>
+          <span className="sr-only">
+            {title}
+            {alert ? `, ${label}` : ""}
+          </span>
+          {alert && (
+            <span
+              className={cn(
+                "absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-background",
+                alert === "month-overdue" ? "bg-destructive" : "bg-primary",
+              )}
+            >
+              <span className="absolute inset-0 rounded-full bg-inherit motion-safe:animate-[ping_1.2s_ease-out_2]" />
+            </span>
+          )}
         </Link>
       </TooltipTrigger>
       <TooltipContent

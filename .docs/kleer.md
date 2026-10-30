@@ -68,6 +68,8 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
 - `POST /company/{companyId}/event/{eventId}`
 - `DELETE /company/{companyId}/event/{eventId}`
 - `GET /company/{companyId}/event/statuses`
+- `POST /company/{companyId}/event/approve`
+- `POST /company/{companyId}/event/unlock`
 - `GET /company/{companyId}/payroll/user/{userId}`
 - `GET /company/{companyId}/payroll/user/{userId}/schedule/{startDate}/to/{endDate}`
 - `GET /company/{companyId}/payroll/monthreport/user/{userId}/year/{year}/month/{month}`
@@ -91,6 +93,18 @@ Permanent notes for Toki's Kleer time-tracking integration. Read this before cha
   - `coveredHours`
   - `periodFlexHours`
 - Toki estimates period flex as `coveredHours - scheduledHours`, where `coveredHours = workedHours + absenceHours`. `periodFlexHours` is a selected-period estimate, not Kleer's stored flex balance.
+
+## Locking
+
+Toki's lock and unlock are Kleer's `POST /event/approve` and `POST /event/unlock`, with `{ "user-id": { "id": 1 }, "start-date": "...", "end-date": "..." }`. `POST /event/certify` takes the same body; Toki does not call it. Validated against `test-api` on 2026-10-30; production has not been exercised:
+
+- A range must stay inside one calendar month, otherwise Kleer answers `500` with `Start month and end month must be the same`. This is why Kleer's own menu splits a week crossing a month end. The adapter splits ranges and sends one request per month, so a failure can leave earlier months locked. Locking is idempotent, so a retry finishes the job.
+- A reversed range is accepted with `200` and acts on its mirror image. The domain service rejects it.
+- Locking covers empty and future days. `GET /event/statuses` omits days that were never locked; once locked or unlocked they are listed, as `OPEN` after an unlock.
+- A locked day refuses new and edited events with a `500`.
+- Locking over a day certified by someone else leaves it certified.
+- Unlocking a day certified by someone else answers `200` with a `message` listing the refused days and leaves them certified, so read the statuses back. Two weekend days in a mixed range opened anyway; unexplained, so Toki sends only approved days. A day the integration account certified itself could be unlocked.
+- Kleer records the integration account, not the person, as `registration-user` on the events it locks.
 
 ## Flex Balance
 

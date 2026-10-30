@@ -9,7 +9,7 @@ use std::{
 use async_trait::async_trait;
 use kleer::{
     KleerActivityList, KleerActivityReadable, KleerClient, KleerClientProjectList,
-    KleerClientProjectReadable, KleerCredentials, KleerError, KleerEventReadable,
+    KleerClientProjectReadable, KleerCredentials, KleerError, KleerEventPeriod, KleerEventReadable,
     KleerEventRestrictionList, KleerEventWritable, KleerIdRef,
 };
 use moka::future::Cache;
@@ -538,6 +538,19 @@ impl KleerAdapter {
         Ok(())
     }
 
+    fn month_periods(&self, date_range: (Date, Date)) -> Vec<KleerEventPeriod> {
+        month_ranges(date_range)
+            .into_iter()
+            .map(|(start_date, end_date)| KleerEventPeriod {
+                user_id: KleerIdRef {
+                    id: self.target_user_id,
+                },
+                start_date,
+                end_date,
+            })
+            .collect()
+    }
+
     fn to_domain_day_statuses(statuses: KleerEventRestrictionList) -> Vec<TimeEntryDayStatus> {
         statuses
             .event_restriction_readables
@@ -828,6 +841,26 @@ impl TimeTrackingClient for KleerAdapter {
         Ok(Self::to_domain_day_statuses(statuses))
     }
 
+    async fn lock_time_entries(&self, date_range: (Date, Date)) -> Result<(), TimeTrackingError> {
+        for period in self.month_periods(date_range) {
+            self.client
+                .approve_events(&period)
+                .await
+                .map_err(map_kleer_error)?;
+        }
+        Ok(())
+    }
+
+    async fn unlock_time_entries(&self, date_range: (Date, Date)) -> Result<(), TimeTrackingError> {
+        for period in self.month_periods(date_range) {
+            self.client
+                .unlock_events(&period)
+                .await
+                .map_err(map_kleer_error)?;
+        }
+        Ok(())
+    }
+
     async fn create_time_entry(
         &self,
         request: &CreateTimeEntryRequest,
@@ -1031,6 +1064,27 @@ impl TimeTrackingClient for KleerAdapter {
     }
 }
 
+/// Kleer refuses to lock or unlock a range that crosses a month end.
+fn month_ranges((from, to): (Date, Date)) -> Vec<(Date, Date)> {
+    let mut ranges = Vec::new();
+    let mut start = from;
+
+    while start <= to {
+        let last_of_month = start
+            .replace_day(start.month().length(start.year()))
+            .expect("a month's length is a valid day of it");
+        let end = last_of_month.min(to);
+        ranges.push((start, end));
+
+        match end.next_day() {
+            Some(next) => start = next,
+            None => break,
+        }
+    }
+
+    ranges
+}
+
 fn map_kleer_error(error: KleerError) -> TimeTrackingError {
     match error {
         KleerError::NotFound => TimeTrackingError::TimerNotFound,
@@ -1157,6 +1211,24 @@ mod tests {
     };
 
     const TARGET_USER_ID: i64 = 987;
+
+    #[test]
+    fn month_ranges_split_at_every_month_end() {
+        let date = |month, day| Date::from_calendar_date(2026, month, day).unwrap();
+
+        assert_eq!(
+            month_ranges((date(Month::October, 26), date(Month::October, 31))),
+            [(date(Month::October, 26), date(Month::October, 31))]
+        );
+        assert_eq!(
+            month_ranges((date(Month::September, 28), date(Month::November, 1))),
+            [
+                (date(Month::September, 28), date(Month::September, 30)),
+                (date(Month::October, 1), date(Month::October, 31)),
+                (date(Month::November, 1), date(Month::November, 1)),
+            ]
+        );
+    }
 
     fn activity_assignment(activity_id: i64) -> KleerProjectActivityAssignment {
         KleerProjectActivityAssignment {
