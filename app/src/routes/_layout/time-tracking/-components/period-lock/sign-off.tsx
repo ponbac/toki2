@@ -558,7 +558,7 @@ function ReviewFooter(props: {
         <Button
           variant={tone === "month-overdue" ? "destructive" : "default"}
           className="w-full"
-          disabled={review.isPending}
+          disabled={review.isPending || !review.isReady}
           onClick={() => void review.lockIt(props.onLocked)}
         >
           <LockIcon className="mr-2 h-4 w-4" />
@@ -569,7 +569,7 @@ function ReviewFooter(props: {
           variant="ghost"
           size="sm"
           className="w-full text-muted-foreground"
-          disabled={review.isPending}
+          disabled={review.isPending || !review.isReady}
           onClick={review.unlockIt}
         >
           <LockOpenIcon className="mr-2 h-3.5 w-3.5" />

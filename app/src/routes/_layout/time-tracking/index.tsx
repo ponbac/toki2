@@ -130,8 +130,12 @@ function TimeTrackingPage() {
   const { data: user } = useQuery(userQueries.me());
   const isAdmin = user?.roles.includes("Admin") ?? false;
 
+  const [focusedDay, setFocusedDay] = React.useState<{ date: string } | null>(
+    null,
+  );
   const showDay = (date: string) => {
     setDateRange(weekRange(date));
+    setFocusedDay({ date });
     scrollToDay(date);
   };
   const { data: timeEntries, isLoading: isTimeEntriesLoading } = useQuery({
@@ -379,6 +383,7 @@ function TimeTrackingPage() {
                         timeEntries={filteredTimeEntries}
                         absenceEntries={filteredAbsences}
                         dateRange={dateRange}
+                        focusedDay={focusedDay}
                       />
                     ) : (
                       <TimeEntriesList
