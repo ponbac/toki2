@@ -24,7 +24,7 @@ export type LockDay = {
   hasOverlap: boolean;
   isFuture: boolean;
   isToday: boolean;
-  /** Nothing reported and nothing scheduled, so the day has nothing to lock. */
+  /** Nothing reported and nothing scheduled, so the day has nothing to review. */
   isIdle: boolean;
 };
 
@@ -82,7 +82,8 @@ export function splitAtMonthEnd(range: LockRange): Array<LockRange> | null {
 
 export const isLocked = (day: LockDay) => day.status !== "open";
 
-export const needsLock = (day: LockDay) => day.status === "open" && !day.isIdle;
+/** Every calendar day counts: an empty weekend left open keeps its week open in Kleer. */
+export const needsLock = (day: LockDay) => day.status === "open";
 
 export function daysIn(days: Array<LockDay>, range: LockRange) {
   return days.filter((day) => day.date >= range.from && day.date <= range.to);
@@ -120,13 +121,11 @@ export function scopeAction(days: Array<LockDay>): ScopeAction {
 }
 
 export function summarize(days: Array<LockDay>) {
-  const toLock = days.filter(needsLock);
   const reportedHours = days.reduce((sum, d) => sum + d.reportedHours, 0);
   const scheduledHours = days.reduce((sum, d) => sum + d.scheduledHours, 0);
   const issueDays = days.filter((day) => dayIssues(day).length > 0).length;
 
   return {
-    toLock: toLock.length,
     reportedHours,
     scheduledHours,
     issueDays,

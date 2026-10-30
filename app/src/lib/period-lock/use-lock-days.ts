@@ -99,8 +99,7 @@ function dueWindow(today: Date): LockRange {
 
 /**
  * What's due, for the app shell. Runs on every page, so it reads statuses and
- * schedule only; weekend hours nobody scheduled go unnoticed until the time
- * tracking page loads the entries.
+ * schedule only.
  */
 export function useDueLockAlert() {
   const now = new Date();

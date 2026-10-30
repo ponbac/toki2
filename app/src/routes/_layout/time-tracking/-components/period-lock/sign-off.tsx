@@ -23,6 +23,7 @@ import {
   lockedThrough,
   lockLevel,
   monthRange,
+  needsLock,
   rangesWithStatus,
   scopeAction,
   splitAtMonthEnd,
@@ -150,8 +151,7 @@ function useSignOff() {
     isReady: isInDueWindow || isRangeLoaded,
     summary: summarize(days),
     action: scopeAction(days),
-    isFullyLocked:
-      days.length > 0 && days.every((day) => isLocked(day) || day.isIdle),
+    isFullyLocked: days.length > 0 && days.every(isLocked),
     scopeName: titleOf(selection),
     coversOneWeek,
     parts,
@@ -480,8 +480,11 @@ function ReviewRows(props: {
   onShowDay: ShowDay;
 }) {
   const { review } = props;
-  // Weekends and holidays with nothing on them have nothing to review.
-  const days = review.days.filter((day) => !day.isIdle);
+  // Empty weekends and holidays only get a row when they're all that's left to lock.
+  const hasWorkLeft = review.days.some((day) => needsLock(day) && !day.isIdle);
+  const days = review.days.filter(
+    (day) => !day.isIdle || (needsLock(day) && !hasWorkLeft),
+  );
 
   return (
     <div className={cn(!review.isReady && "opacity-40")}>
@@ -712,7 +715,7 @@ function WeekRows(props: {
     const inRange = daysIn(props.days, weekRange(weekStart));
     const summary = summarize(inRange);
     const first = inRange[0];
-    const isDone = inRange.every((day) => isLocked(day) || day.isIdle);
+    const isDone = inRange.every(isLocked);
 
     return (
       <button
