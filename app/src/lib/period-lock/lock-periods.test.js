@@ -47,6 +47,12 @@ describe("what has to be locked", () => {
     expect(due?.to).toBe("2026-09-30");
   });
 
+  test("an empty weekend left open keeps the week and month due", () => {
+    const due = dueOn("2026-10-30", "2026-10-30");
+    expect(due?.title).toBe("Week 44 and October are due today");
+    expect([due?.from, due?.to]).toEqual(["2026-10-31", "2026-11-01"]);
+  });
+
   test("an unlocked week is overdue once it has ended", () => {
     const due = dueOn("2026-10-27", "2026-10-18");
     expect(due?.title).toBe("Week 43 is overdue");

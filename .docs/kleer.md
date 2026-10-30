@@ -100,6 +100,7 @@ Toki's lock and unlock are Kleer's `POST /event/approve` and `POST /event/unlock
 
 - A range must stay inside one calendar month, otherwise Kleer answers `500` with `Start month and end month must be the same`. This is why Kleer's own menu splits a week crossing a month end. The adapter splits ranges and sends one request per month, so a failure can leave earlier months locked. Locking is idempotent, so a retry finishes the job.
 - A reversed range is accepted with `200` and acts on its mirror image. The domain service rejects it.
+- Every calendar day counts. On 2026-10-30 production had a status for every day of the previous three months, empty weekends included, and Kleer's week page reported a week ending in an open empty Saturday as not locked, while its month page still said `Godkänd`. Toki treats a period as done only when all its days are locked.
 - Locking covers empty and future days. `GET /event/statuses` omits days that were never locked; once locked or unlocked they are listed, as `OPEN` after an unlock.
 - A locked day refuses new and edited events with a `500`.
 - Locking over a day certified by someone else leaves it certified.
