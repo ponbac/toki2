@@ -364,6 +364,26 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
         self.client.get_time_entry_day_statuses(date_range).await
     }
 
+    async fn lock_time_entries(&self, date_range: (Date, Date)) -> Result<(), TimeTrackingError> {
+        ensure_ordered_range(date_range)?;
+        self.client.lock_time_entries(date_range).await
+    }
+
+    async fn unlock_time_entries(
+        &self,
+        date_range: (Date, Date),
+    ) -> Result<Vec<Date>, TimeTrackingError> {
+        ensure_ordered_range(date_range)?;
+        self.client.unlock_time_entries(date_range).await?;
+
+        let statuses = self.client.get_time_entry_day_statuses(date_range).await?;
+        Ok(statuses
+            .into_iter()
+            .filter(|day| day.status != TimeEntryStatus::Open)
+            .map(|day| day.date)
+            .collect())
+    }
+
     async fn create_time_entry(
         &self,
         user_id: &UserId,
@@ -506,6 +526,16 @@ impl<C: TimeTrackingClient, R: TimerHistoryRepository> TimeTrackingService
     }
 }
 
+/// A provider may read a reversed range as its mirror image, so stop it here.
+fn ensure_ordered_range((from, to): (Date, Date)) -> Result<(), TimeTrackingError> {
+    if from > to {
+        return Err(TimeTrackingError::InvalidInput(
+            "The start date must not be after the end date".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,6 +550,8 @@ mod tests {
         absence_children: Vec<AbsenceChild>,
         settled_flex: Option<SettledFlexBalance>,
         time_info_ranges: Mutex<Vec<(Date, Date)>>,
+        day_statuses: Vec<TimeEntryDayStatus>,
+        changed_ranges: Mutex<Vec<(Date, Date)>>,
     }
 
     #[async_trait]
@@ -561,7 +593,23 @@ mod tests {
             &self,
             _date_range: (Date, Date),
         ) -> Result<Vec<TimeEntryDayStatus>, TimeTrackingError> {
-            unused_mock_method()
+            Ok(self.day_statuses.clone())
+        }
+
+        async fn lock_time_entries(
+            &self,
+            date_range: (Date, Date),
+        ) -> Result<(), TimeTrackingError> {
+            self.changed_ranges.lock().unwrap().push(date_range);
+            Ok(())
+        }
+
+        async fn unlock_time_entries(
+            &self,
+            date_range: (Date, Date),
+        ) -> Result<(), TimeTrackingError> {
+            self.changed_ranges.lock().unwrap().push(date_range);
+            Ok(())
         }
 
         async fn create_time_entry(
@@ -736,6 +784,68 @@ mod tests {
         assert!(provider_request.end_time <= after_save);
         assert_eq!(history_end_time, provider_request.end_time);
         assert_eq!(saved_entry.end_time, Some(provider_request.end_time));
+    }
+
+    #[tokio::test]
+    async fn a_reversed_range_never_reaches_the_provider() {
+        let date = |day| Date::from_calendar_date(2026, time::Month::October, day).unwrap();
+        let client = Arc::new(MockTimeTrackingClient::default());
+        let repo = Arc::new(MockTimerHistoryRepository {
+            active_timer: Mutex::new(None),
+            saved_end_time: Mutex::new(None),
+        });
+        let service = TimeTrackingServiceImpl::new(client.clone(), repo);
+        let reversed = (date(30), date(26));
+
+        assert!(matches!(
+            service.lock_time_entries(reversed).await,
+            Err(TimeTrackingError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            service.unlock_time_entries(reversed).await,
+            Err(TimeTrackingError::InvalidInput(_))
+        ));
+        assert!(client.changed_ranges.lock().unwrap().is_empty());
+
+        service
+            .lock_time_entries((date(26), date(26)))
+            .await
+            .unwrap();
+        assert_eq!(client.changed_ranges.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unlocking_reports_the_days_the_provider_kept_locked() {
+        let date = |day| Date::from_calendar_date(2026, time::Month::October, day).unwrap();
+        let client = Arc::new(MockTimeTrackingClient {
+            day_statuses: vec![
+                TimeEntryDayStatus {
+                    date: date(22),
+                    status: TimeEntryStatus::Certified,
+                },
+                TimeEntryDayStatus {
+                    date: date(23),
+                    status: TimeEntryStatus::Approved,
+                },
+                TimeEntryDayStatus {
+                    date: date(26),
+                    status: TimeEntryStatus::Open,
+                },
+            ],
+            ..Default::default()
+        });
+        let repo = Arc::new(MockTimerHistoryRepository {
+            active_timer: Mutex::new(None),
+            saved_end_time: Mutex::new(None),
+        });
+        let service = TimeTrackingServiceImpl::new(client.clone(), repo);
+
+        let still_locked = service
+            .unlock_time_entries((date(22), date(26)))
+            .await
+            .unwrap();
+
+        assert_eq!(still_locked, [date(22), date(23)]);
     }
 
     #[tokio::test]

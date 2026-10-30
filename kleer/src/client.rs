@@ -6,8 +6,8 @@ use time::Date;
 use tracing::{field, Instrument};
 
 use crate::types::{
-    KleerActivityList, KleerClientProjectList, KleerEventList, KleerEventReadable,
-    KleerEventRestrictionList, KleerEventWritable, KleerPayrollMonthReport,
+    KleerActivityList, KleerClientProjectList, KleerEventList, KleerEventPeriod,
+    KleerEventReadable, KleerEventRestrictionList, KleerEventWritable, KleerPayrollMonthReport,
     KleerPayrollUserReadable, KleerSavedId, KleerScheduleMetadataList, KleerUserList, KleerUserMe,
 };
 
@@ -151,6 +151,21 @@ impl KleerClient {
             ],
         )
         .await
+    }
+
+    pub async fn approve_events(
+        &self,
+        body: &KleerEventPeriod,
+    ) -> Result<KleerSavedId, KleerError> {
+        self.send_json(Method::POST, "event/approve", Some(body))
+            .await
+    }
+
+    /// Answers success even for days it refuses to unlock, so read the
+    /// statuses back to see which days opened.
+    pub async fn unlock_events(&self, body: &KleerEventPeriod) -> Result<KleerSavedId, KleerError> {
+        self.send_json(Method::POST, "event/unlock", Some(body))
+            .await
     }
 
     pub async fn create_event(

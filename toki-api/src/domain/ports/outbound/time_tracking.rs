@@ -61,6 +61,17 @@ pub trait TimeTrackingClient: Send + Sync + 'static {
         date_range: (Date, Date),
     ) -> Result<Vec<TimeEntryDayStatus>, TimeTrackingError>;
 
+    /// Lock a date range against further changes.
+    ///
+    /// Days that are already locked stay as they are.
+    async fn lock_time_entries(&self, date_range: (Date, Date)) -> Result<(), TimeTrackingError>;
+
+    /// Unlock a date range.
+    ///
+    /// The provider may leave days it refuses to unlock locked without an
+    /// error; read the day statuses to see them.
+    async fn unlock_time_entries(&self, date_range: (Date, Date)) -> Result<(), TimeTrackingError>;
+
     /// Create a new time entry.
     ///
     /// Returns the registration ID from the provider.

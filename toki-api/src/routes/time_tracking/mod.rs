@@ -6,7 +6,7 @@ pub(crate) mod projects;
 pub(crate) mod timer;
 
 use axum::{
-    routing::{get, put},
+    routing::{get, post, put},
     Router,
 };
 
@@ -43,6 +43,8 @@ pub fn router() -> Router<AppState> {
             "/time-entry-day-statuses",
             get(calendar::get_time_entry_day_statuses),
         )
+        .route("/lock", post(calendar::lock_time_entries))
+        .route("/unlock", post(calendar::unlock_time_entries))
         .route(
             "/time-entries",
             get(calendar::get_time_entries)
