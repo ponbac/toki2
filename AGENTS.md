@@ -40,10 +40,6 @@ GitHub App and its `TOKI_GITHUB__APP_PRIVATE_KEY`, and the admin GitHub logins p
 
 Read `.docs/mcp.md` before changing MCP tools, MCP authentication or Toki's OAuth authorization server. `/mcp` exposes the curated `/openapi.json` agent surface as MCP tools: adding an agent OpenAPI operation requires adding its tool, which a test enforces.
 
-## Version Control
-
-**jj (Jujutsu) is preferred over git.** This repo uses jj for version control. Use `jj` commands instead of `git` when possible.
-
 ## Architecture Principles
 
 **Hexagonal architecture (ports & adapters)** is the target pattern for all backend domain logic. When adding or modifying backend features:
