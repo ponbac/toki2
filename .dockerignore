@@ -30,7 +30,18 @@
 /bin
 /target
 **/target
-videos/**/out
-videos/**/frames
+
+# Only the Rust workspace builds from this context (web builds from app/), so
+# keep unrelated files out to avoid invalidating the cargo build layer.
+app
+videos
+docs
+.docs
+infra
+omarchy-plugin
+.github
+.cursor
+justfile
+*.md
 LICENSE
 README.md
