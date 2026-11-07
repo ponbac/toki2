@@ -19,6 +19,7 @@ import {
   formatRange,
   hoursShort,
   isLocked,
+  isSameRange,
   isoWeekOf,
   lockedThrough,
   lockLevel,
@@ -26,10 +27,11 @@ import {
   needsLock,
   rangesWithStatus,
   scopeAction,
-  splitAtMonthEnd,
   summarize,
   toIsoDate,
+  weekParts,
   weekRange,
+  workweekRange,
   type LockDay,
   type LockRange,
 } from "@/lib/period-lock/lock-periods";
@@ -42,6 +44,7 @@ import { cn, formatHoursMinutes } from "@/lib/utils";
 import { LockGlyph } from "./lock-glyph";
 
 const SETTLE_MS = 1700;
+const WORKWEEK_LABEL = "Mon–Fri";
 
 type Kind = "due" | "week" | "month";
 type Selection = {
@@ -90,6 +93,9 @@ function step({ kind, anchor }: Selection, direction: 1 | -1): string {
 
 function titleOf(selection: Selection) {
   if (selection.name) return selection.name;
+  if (isSameRange(selection.part, workweekRange(selection.anchor))) {
+    return `Week ${isoWeekOf(selection.anchor)}, ${WORKWEEK_LABEL}`;
+  }
   if (selection.part) return formatRange(selection.part);
   if (selection.kind === "month") {
     return format(parseISO(selection.anchor), "MMMM yyyy");
@@ -136,7 +142,12 @@ function useSignOff() {
 
   const coversOneWeek = weekRange(range.from).from === weekRange(range.to).from;
   const parts =
-    selection.kind === "week" ? splitAtMonthEnd(weekRange(selection.anchor)) : null;
+    selection.kind === "week"
+      ? weekParts(selection.anchor).map((part, index) => ({
+          range: part,
+          label: index === 0 ? WORKWEEK_LABEL : formatRange(part),
+        }))
+      : [];
 
   return {
     today,
@@ -176,8 +187,9 @@ function useSignOff() {
       try {
         await lock(range, rangesWithStatus(days, "open"));
       } catch {
-        // The failure has its toast, and the period stays as it was.
-        setPicked(null);
+        // The failure has its toast. Keep what was picked so a retry locks
+        // the same days, even after part of a range crossing months locked.
+        setPicked(picked);
         return;
       }
       setIsJustLocked(true);
@@ -449,27 +461,31 @@ function PeriodControls({ review }: { review: Review }) {
           <ChevronRight className="h-4 w-4" />
         </Button>
       </span>
-      {review.parts?.map((part) => {
-        const isActive =
-          review.selection.part?.from === part.from &&
-          review.selection.part.to === part.to;
-        return (
-          <button
-            key={part.from}
-            type="button"
-            aria-pressed={isActive}
-            onClick={() => review.pickPart(isActive ? null : part)}
-            className={cn(
-              "rounded-md px-2 py-0.5 text-xs transition-colors",
-              isActive
-                ? "bg-primary/15 text-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            {formatRange(part)}
-          </button>
-        );
-      })}
+      {review.parts.length > 0 && (
+        // The chips wrap as one group, never one stray chip on its own line.
+        <span className="flex gap-1">
+          {review.parts.map(({ range, label }) => {
+            const isActive = isSameRange(review.selection.part, range);
+            return (
+              <button
+                key={`${range.from}-${range.to}`}
+                type="button"
+                aria-pressed={isActive}
+                title={formatRange(range)}
+                onClick={() => review.pickPart(isActive ? null : range)}
+                className={cn(
+                  "rounded-md px-2 py-0.5 text-xs transition-colors",
+                  isActive
+                    ? "bg-primary/15 text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </span>
+      )}
     </div>
   );
 }

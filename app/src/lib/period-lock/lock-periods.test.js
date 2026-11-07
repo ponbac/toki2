@@ -5,6 +5,8 @@ import {
   listCheckpoints,
   lockLevel,
   rangesWithStatus,
+  weekParts,
+  workweekRange,
 } from "./lock-periods.ts";
 
 function workdays(from, to, today, lockedThrough) {
@@ -98,4 +100,27 @@ test("unlocking skips certified days instead of spanning them", () => {
     { from: "2026-10-19", to: "2026-10-20" },
     { from: "2026-10-22", to: "2026-10-23" },
   ]);
+});
+
+describe("locking Monday to Friday", () => {
+  test("a Sunday belongs to the week that started six days before", () => {
+    expect(workweekRange("2026-11-08")).toEqual({
+      from: "2026-11-02",
+      to: "2026-11-06",
+    });
+  });
+
+  test("a week crossing a month end keeps its Friday", () => {
+    expect(workweekRange("2026-07-01")).toEqual({
+      from: "2026-06-29",
+      to: "2026-07-03",
+    });
+  });
+
+  test("a month ending on a Friday offers Mon–Fri once", () => {
+    expect(weekParts("2026-07-29")).toEqual([
+      { from: "2026-07-27", to: "2026-07-31" },
+      { from: "2026-08-01", to: "2026-08-02" },
+    ]);
+  });
 });
