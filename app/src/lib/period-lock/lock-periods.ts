@@ -47,6 +47,12 @@ export function weekRange(date: string): LockRange {
   };
 }
 
+/** Monday through Friday, leaving the weekend open. */
+export function workweekRange(date: string): LockRange {
+  const { from } = weekRange(date);
+  return { from, to: toIsoDate(addDays(parseISO(from), 4)) };
+}
+
 export function monthRange(date: string): LockRange {
   const day = parseISO(date);
   return {
@@ -78,6 +84,19 @@ export function splitAtMonthEnd(range: LockRange): Array<LockRange> | null {
     { from: range.from, to: toIsoDate(monthEnd) },
     { from: toIsoDate(addDays(monthEnd, 1)), to: range.to },
   ];
+}
+
+export const isSameRange = (a: LockRange | null, b: LockRange) =>
+  a?.from === b.from && a?.to === b.to;
+
+/** What a week can be locked as: Mon–Fri, then any split at a month end. */
+export function weekParts(date: string): Array<LockRange> {
+  const workweek = workweekRange(date);
+  // A month ending on a Friday would offer Mon–Fri twice.
+  const monthParts = (splitAtMonthEnd(weekRange(date)) ?? []).filter(
+    (part) => !isSameRange(part, workweek),
+  );
+  return [workweek, ...monthParts];
 }
 
 export const isLocked = (day: LockDay) => day.status !== "open";
