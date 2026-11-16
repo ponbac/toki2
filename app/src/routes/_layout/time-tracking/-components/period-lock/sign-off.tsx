@@ -17,6 +17,7 @@ import {
   dayIssues,
   daysIn,
   formatRange,
+  hoursOver,
   hoursShort,
   isLocked,
   isSameRange,
@@ -40,6 +41,7 @@ import {
   useLockActions,
   useLockDays,
 } from "@/lib/period-lock/use-lock-days";
+import { formatSignedHours } from "@/lib/flex-balance";
 import { cn, formatHoursMinutes } from "@/lib/utils";
 import { LockGlyph } from "./lock-glyph";
 
@@ -55,6 +57,9 @@ type Selection = {
 };
 type ShowDay = (date: string) => void;
 type BandTone = "neutral" | "due" | "overdue" | "month-overdue" | "done";
+
+/** The bar's green is too light for small text on the light card. */
+const SURPLUS_TEXT = "text-emerald-700 dark:text-[var(--viz-3)]";
 
 const BAND_STYLES: Record<BandTone, string> = {
   neutral: "bg-muted/30",
@@ -557,12 +562,11 @@ function ReviewFooter(props: {
             difference < -0.2
               ? "text-primary"
               : difference > 0.2
-                ? "text-[var(--viz-3)]"
+                ? SURPLUS_TEXT
                 : "text-muted-foreground",
           )}
         >
-          {difference > 0 ? "+" : ""}
-          {formatHoursMinutes(difference)}
+          {formatSignedHours(difference)}
         </span>
       </p>
 
@@ -672,6 +676,7 @@ function DayRow(props: {
   const { day } = props;
   const issues = dayIssues(day);
   const short = hoursShort(day);
+  const over = hoursOver(day);
 
   return (
     <button
@@ -703,6 +708,10 @@ function DayRow(props: {
           </span>
         ) : day.hasOverlap ? (
           <AlertTriangle className="h-3.5 w-3.5 text-primary" />
+        ) : over > 0 ? (
+          <span className={cn("time-display", SURPLUS_TEXT)}>
+            {formatSignedHours(over)}
+          </span>
         ) : day.isToday ? (
           <span className="text-muted-foreground">Today</span>
         ) : null}
