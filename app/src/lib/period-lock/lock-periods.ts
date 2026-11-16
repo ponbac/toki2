@@ -11,7 +11,7 @@ import {
   startOfWeek,
 } from "date-fns";
 import type { TimeEntry, TimeEntryStatus } from "@/lib/api/queries/time-tracking";
-import { formatHoursMinutes } from "@/lib/utils";
+import { formatHoursMinutes, splitHours } from "@/lib/utils";
 
 export type LockRange = { from: string; to: string };
 
@@ -153,11 +153,27 @@ export function summarize(days: Array<LockDay>) {
 
 export type DayIssue = { kind: "missing" | "short" | "overlap"; text: string };
 
-/** Hours still missing from a finished day; today isn't over, so it has none. */
+/** An open day that's over and had something to review; today isn't over. */
+function isFinishedOpenDay(day: LockDay) {
+  return !(day.isIdle || isLocked(day) || day.isFuture || day.isToday);
+}
+
+/** Hours still missing from a finished day. */
 export function hoursShort(day: LockDay) {
-  if (day.isIdle || isLocked(day) || day.isFuture || day.isToday) return 0;
+  if (!isFinishedOpenDay(day)) return 0;
   const shortBy = day.scheduledHours - day.reportedHours;
   return shortBy >= 0.25 ? shortBy : 0;
+}
+
+/**
+ * Hours a finished day went over its schedule. Unlike a shortfall it isn't an
+ * issue, so there's no tolerance: anything that shows as a whole minute counts.
+ */
+export function hoursOver(day: LockDay) {
+  if (!isFinishedOpenDay(day)) return 0;
+  const overBy = day.reportedHours - day.scheduledHours;
+  const { hours, minutes } = splitHours(overBy);
+  return hours > 0 || minutes > 0 ? overBy : 0;
 }
 
 export function dayIssues(day: LockDay): Array<DayIssue> {
