@@ -6,19 +6,21 @@ on:
     paths:
       - "toki-api/**"
       - "az-devops/**"
-      - "milltime/**"
+      - "kleer/**"
       - "toki-tui/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - ".cargo/audit.toml"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "toki-api/**"
       - "az-devops/**"
-      - "milltime/**"
+      - "kleer/**"
       - "toki-tui/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - ".cargo/audit.toml"
       - ".github/workflows/backend.yml"
 
 env:
@@ -83,14 +85,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: write
     env:
       RUSTC_WRAPPER: ""
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Verify SQLite is absent from the build
+        shell: bash
+        run: |
+          dependencies=$(cargo tree --locked --workspace --all-features --target all -e all --prefix none)
+          if grep -q '^libsqlite3-sys v' <<< "$dependencies"; then
+            echo 'SQLite is in the build. Revisit the RUSTSEC-2026-0459 audit exception.'
+            exit 1
+          fi
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.23.0
+
       - name: Run cargo-audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo audit
