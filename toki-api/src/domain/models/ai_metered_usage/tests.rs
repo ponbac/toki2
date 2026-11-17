@@ -264,6 +264,13 @@ fn the_copilot_catalog_knows_confirmed_provisional_and_free_models() {
         status("gpt-6-astra"),
         Some(AiMeteredModelStatus::Provisional)
     );
+    for model in ["gpt-6.2-astra", "gpt-6.2-sol"] {
+        assert_eq!(
+            status(model),
+            Some(AiMeteredModelStatus::Provisional),
+            "{model}"
+        );
+    }
     assert_eq!(
         status("claude-opus-5.5"),
         Some(AiMeteredModelStatus::Provisional)

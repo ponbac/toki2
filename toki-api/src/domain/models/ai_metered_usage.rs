@@ -724,7 +724,7 @@ impl AiMeteredModelStatus {
 }
 
 /// Copilot's billed models, in Toki's naming. Mirrors Token Ledger's
-/// `copilot-rates.json` (the card of 2026-10-24); keep the two in sync.
+/// `copilot-rates.json` (the card of 2026-11-17); keep the two in sync.
 const COPILOT_CONFIRMED: &[&str] = &[
     "gpt-6.1-sol",
     "gpt-6-sol",
@@ -739,6 +739,8 @@ const COPILOT_CONFIRMED: &[&str] = &[
     "mai-code-1.1-flash",
 ];
 const COPILOT_PROVISIONAL: &[&str] = &[
+    "gpt-6.2-astra",
+    "gpt-6.2-sol",
     "gpt-6-astra",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
