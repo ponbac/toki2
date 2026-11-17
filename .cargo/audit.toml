@@ -19,4 +19,9 @@ ignore = [
     # rewrite), and the only secret it touches is the VAPID signing key, signed
     # in background workers. Drop this once web-push moves to p256 0.14.
     "RUSTSEC-2026-0387",
+    # SQLx's optional SQLite drivers retain libsqlite3-sys in Cargo.lock.
+    # Toki uses Postgres, and Backend CI verifies that no workspace feature
+    # or target builds libsqlite3-sys. Remove this exception when both SQLx
+    # versions can resolve libsqlite3-sys 0.39 or newer.
+    "RUSTSEC-2026-0459",
 ]
