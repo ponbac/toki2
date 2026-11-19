@@ -7,6 +7,7 @@
 Each Pokemon becomes one lossless WebP atlas plus a small JSON manifest in
 `app/public/buddy/`. Only the animations and facing directions the buddy uses are
 kept, and left-facing rows are dropped because the app mirrors the right-facing ones.
+The up-right rows are the back view the battle screen shows for your own buddies.
 
 Get the source (sparse, only the files this script reads):
 
@@ -30,6 +31,7 @@ Then, from `app/`:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -40,19 +42,23 @@ from pathlib import Path
 
 from PIL import Image
 
-# Sheet rows are ordered by facing direction.
-DIRECTION_ROW = {"D": 0, "DR": 1, "R": 2}
+# Sheet rows are ordered by facing direction: D, DR, R, UR, U, UL, L, DL.
+DIRECTION_ROW = {"D": 0, "DR": 1, "R": 2, "UR": 3}
+
+# Facing directions that are packed only when the sheet has them. A Pokemon
+# without them keeps its atlas, and the battle screen falls back to a side view.
+OPTIONAL_DIRECTIONS = {"UR"}
 
 # Animation -> facing directions to keep. Sleep sheets have a single row.
 ANIMATIONS: dict[str, list[str]] = {
-    "Idle": ["D", "DR", "R"],
+    "Idle": ["D", "DR", "R", "UR"],
     "Walk": ["D", "R"],
     "Sleep": ["D"],
     "Hop": ["D"],
-    "Hurt": ["D"],
+    "Hurt": ["D", "UR"],
     "Rotate": ["D"],
-    "Charge": ["D", "R"],
-    "Attack": ["R"],
+    "Charge": ["D", "R", "UR"],
+    "Attack": ["R", "UR"],
     "Swing": ["R"],
     "Double": ["R"],
 }
@@ -138,16 +144,23 @@ def build_species(dex: int, name: str, sprite_dir: Path, out_dir: Path) -> bool:
             return False
 
         row_offsets: dict[str, int] = {}
+        first_row = len(rows)
         for direction in directions:
+            optional = direction in OPTIONAL_DIRECTIONS
+            # A single-row sheet only faces down, so it has no back view.
+            if single_row and optional:
+                continue
             source_row = 0 if single_row else DIRECTION_ROW[direction]
             top = source_row * anim.frame_height
             if top + anim.frame_height > sheet.height:
+                if optional:
+                    continue
                 return False
             rows.append(sheet.crop((0, top, row_width, top + anim.frame_height)))
             row_offsets[direction] = y
             y += anim.frame_height
 
-        first_frame = rows[-len(directions)].crop(
+        first_frame = rows[first_row].crop(
             (0, 0, anim.frame_width, anim.frame_height)
         )
         head, foot = opaque_bounds(first_frame)
@@ -217,6 +230,17 @@ def read_credits(sprite_dir: Path, credit_names: dict[str, str]) -> list[str]:
         if author not in authors:
             authors.append(author)
     return authors
+
+
+def sprites_version(out_dir: Path) -> str:
+    """Short hash of every atlas and manifest. The app adds it to the asset URLs,
+    so a browser cache never pairs an old manifest with a new atlas."""
+    digest = hashlib.sha256()
+    for path in sorted(out_dir.iterdir()):
+        if path.suffix in {".json", ".webp"}:
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
 
 
 def source_revision(source: Path) -> str:
@@ -301,7 +325,10 @@ def main() -> int:
         "/** Pokemon with a complete buddy sprite atlas, as [dex number, name]. */\n"
         "export const BUDDY_SPECIES: ReadonlyArray<readonly [number, string]> = [\n"
         f"{entries}\n"
-        "];\n",
+        "];\n"
+        "\n"
+        "/** Changes whenever an atlas or manifest changes. Added to the asset URLs. */\n"
+        f'export const BUDDY_SPRITES_VERSION = "{sprites_version(args.out)}";\n',
         encoding="utf-8",
     )
 

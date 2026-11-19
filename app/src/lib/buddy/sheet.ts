@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
+import { BUDDY_SPRITES_VERSION } from "./species.generated";
 import type { BuddySpeciesId } from "./species";
 
 /** Animations every buddy atlas contains. */
@@ -36,6 +37,8 @@ const animSchema = z.object({
     D: nonNegativeInt.optional(),
     DR: nonNegativeInt.optional(),
     R: nonNegativeInt.optional(),
+    /** The back view, packed for battle animations when the source has it. */
+    UR: nonNegativeInt.optional(),
   }),
 });
 
@@ -67,8 +70,12 @@ export type BuddySheet = z.infer<typeof sheetSchema> & {
   readonly atlasHeight: number;
 };
 
+/**
+ * The assets are cached without a content hash in their names, so the version
+ * keeps a cached manifest from being paired with a newer atlas.
+ */
 function buddyAssetUrl(file: string): string {
-  return `${import.meta.env.BASE_URL}buddy/${file}`;
+  return `${import.meta.env.BASE_URL}buddy/${file}?v=${BUDDY_SPRITES_VERSION}`;
 }
 
 /** Where the per-sprite credits required by the sprite licence are served. */
