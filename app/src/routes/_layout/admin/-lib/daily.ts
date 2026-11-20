@@ -189,6 +189,7 @@ export function dailySeries(
       copilot: 0,
       pi: 0,
       opencode: 0,
+      antigravity: 0,
     };
     for (const row of rows) {
       if (row.day === day) {

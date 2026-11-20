@@ -1155,6 +1155,31 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn a_subscription_can_be_declared_and_updated_for_antigravity(pool: PgPool) {
+        let service = service(&pool);
+        let dev = insert_user(&pool, "dev@example.com").await;
+        let initial = terms(AiProvider::Antigravity, date!(2026 - 11 - 01), None);
+
+        let created = service.create(&dev, &initial).await.unwrap();
+        assert_eq!(created.terms, initial);
+
+        let ended = terms(
+            AiProvider::Antigravity,
+            date!(2026 - 11 - 01),
+            Some(date!(2026 - 11 - 30)),
+        );
+        let updated = service
+            .update(AiSubscriptionScope::User(dev), created.id, &ended)
+            .await
+            .unwrap();
+        assert_eq!(updated.terms, ended);
+        assert_eq!(
+            service.list(AiSubscriptionScope::User(dev)).await.unwrap(),
+            [updated]
+        );
+    }
+
+    #[sqlx::test]
     async fn the_default_mismatch_search_covers_the_last_ninety_local_days(pool: PgPool) {
         let service = service(&pool);
         let dev = insert_user(&pool, "dev@example.com").await;

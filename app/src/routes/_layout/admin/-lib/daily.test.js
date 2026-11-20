@@ -30,6 +30,7 @@ const ROWS = [
   }),
   row("2026-10-01", "copilot", 2, { billingMode: "metered" }),
   row("2026-10-02", "opencode", 1),
+  row("2026-10-02", "antigravity", 6, { model: "gemini-4-neon" }),
 ];
 
 describe("dailySeries", () => {
@@ -41,14 +42,32 @@ describe("dailySeries", () => {
       "payer",
     );
 
-    expect([first.codex, first.copilot, first.opencode]).toEqual([4, 5, 0]);
-    expect([second.copilot, second.opencode]).toEqual([0, 1]);
+    expect([
+      first.codex,
+      first.copilot,
+      first.opencode,
+      first.antigravity,
+    ]).toEqual([4, 5, 0, 0]);
+    expect([second.copilot, second.opencode, second.antigravity]).toEqual([
+      0, 1, 6,
+    ]);
   });
 
   test("stacks a day by the tool that made the usage", () => {
-    const [first] = dailySeries(ROWS, "2026-10-01", "2026-10-02", "provider");
+    const [first, second] = dailySeries(
+      ROWS,
+      "2026-10-01",
+      "2026-10-02",
+      "provider",
+    );
 
-    expect([first.codex, first.copilot, first.opencode]).toEqual([4, 2, 3]);
+    expect([
+      first.codex,
+      first.copilot,
+      first.opencode,
+      first.antigravity,
+    ]).toEqual([4, 2, 3, 0]);
+    expect(second.antigravity).toBe(6);
   });
 });
 
@@ -78,6 +97,7 @@ describe("dayBilling", () => {
       "2026-10-01:codex": "API",
       "2026-10-01:copilot": "GitHub Copilot credits",
       "2026-10-02:opencode": "API",
+      "2026-10-02:antigravity": "API",
       "2026-10-02:codex": "Subscription · ChatGPT Pro",
       "2026-10-02:copilot": "GitHub Copilot credits",
     });

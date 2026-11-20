@@ -70,6 +70,7 @@ pub enum AiProvider {
     Copilot,
     Pi,
     OpenCode,
+    Antigravity,
 }
 
 impl AiProvider {
@@ -81,6 +82,7 @@ impl AiProvider {
             "copilot" => Some(Self::Copilot),
             "pi" => Some(Self::Pi),
             "opencode" => Some(Self::OpenCode),
+            "antigravity" => Some(Self::Antigravity),
             _ => None,
         }
     }
@@ -88,7 +90,7 @@ impl AiProvider {
     pub fn supports_subscription(self) -> bool {
         match self {
             Self::Pi | Self::OpenCode => false,
-            Self::Codex | Self::Claude | Self::Grok | Self::Copilot => true,
+            Self::Codex | Self::Claude | Self::Grok | Self::Copilot | Self::Antigravity => true,
         }
     }
 
@@ -100,6 +102,7 @@ impl AiProvider {
             Self::Copilot => "copilot",
             Self::Pi => "pi",
             Self::OpenCode => "opencode",
+            Self::Antigravity => "antigravity",
         }
     }
 }

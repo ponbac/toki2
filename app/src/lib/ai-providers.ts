@@ -8,4 +8,5 @@ export const AI_PROVIDER_LABELS: Readonly<Record<AiProvider, string>> = {
   copilot: "Copilot",
   pi: "Pi",
   opencode: "OpenCode",
+  antigravity: "Antigravity",
 };

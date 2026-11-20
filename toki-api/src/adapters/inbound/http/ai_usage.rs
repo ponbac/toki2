@@ -173,6 +173,7 @@ pub enum AiUsageProvider {
     Copilot,
     Pi,
     OpenCode,
+    Antigravity,
 }
 
 /// One session's usage of one model during one UTC hour. The key
@@ -582,6 +583,7 @@ impl From<AiUsageProvider> for AiProvider {
             AiUsageProvider::Copilot => Self::Copilot,
             AiUsageProvider::Pi => Self::Pi,
             AiUsageProvider::OpenCode => Self::OpenCode,
+            AiUsageProvider::Antigravity => Self::Antigravity,
         }
     }
 }
@@ -595,6 +597,7 @@ impl From<AiProvider> for AiUsageProvider {
             AiProvider::Copilot => Self::Copilot,
             AiProvider::Pi => Self::Pi,
             AiProvider::OpenCode => Self::OpenCode,
+            AiProvider::Antigravity => Self::Antigravity,
         }
     }
 }
@@ -1326,6 +1329,110 @@ mod tests {
                 "log"
             ]
             .map(|row| (row.to_string(), "opencode".to_string()))
+        );
+    }
+
+    #[sqlx::test]
+    async fn antigravity_usage_and_payer_rules_are_stored_and_enforced(pool: PgPool) {
+        let tokens = Arc::new(ApiTokenServiceImpl::new(Arc::new(
+            PostgresApiTokenRepository::new(crate::db::DbPool::from(pool.clone())),
+        )));
+        let service = postgres_service(&pool);
+        let app = app(service, tokens.clone());
+        let id: i32 = sqlx::query_scalar(
+            "INSERT INTO users (email, full_name, picture, access_token)
+             VALUES ('dev@example.com', 'Test User', '', '')
+             RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let issued = tokens
+            .create(&UserId::new(id), "token-ledger")
+            .await
+            .unwrap();
+        let secret = issued.secret.as_str();
+        let coverage_entry = |provider: &str, status: &str| {
+            json!({
+                "provider": provider,
+                "status": status,
+                "files": 0,
+                "unreadable": 0,
+                "malformedLines": 0,
+                "skippedRecords": 0,
+                "duplicates": 0
+            })
+        };
+
+        // Self-override is rejected.
+        let mut self_override = payload(1);
+        self_override["version"] = json!(2);
+        self_override["buckets"][0]["provider"] = json!("antigravity");
+        self_override["buckets"][0]["billingProvider"] = json!("antigravity");
+        self_override["coverage"] = json!([coverage_entry("antigravity", "ok")]);
+        self_override["providerHints"] = json!([]);
+        let (status, body) = put(app.clone(), MACHINE, Some(secret), &self_override).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("billingProvider must be a different subscription provider")),
+            "{body}"
+        );
+
+        // Native Antigravity (omitted payer) and another source naming Antigravity as payer.
+        let mut used = payload(2);
+        used["version"] = json!(2);
+        used["buckets"][0]["provider"] = json!("antigravity");
+        used["buckets"][0]["model"] = json!("gemini-4-neon");
+        used["buckets"][1]["provider"] = json!("opencode");
+        used["buckets"][1]["billingProvider"] = json!("antigravity");
+        used["buckets"][1]["model"] = json!("gemini-4-neon");
+        used["coverage"] = json!([
+            coverage_entry("antigravity", "ok"),
+            coverage_entry("opencode", "ok")
+        ]);
+        used["providerHints"] = json!([
+            { "provider": "antigravity", "hourStart": "2026-09-22T08:00:00.000Z", "plan": "ultra" }
+        ]);
+        let (status, body) = put(app.clone(), MACHINE, Some(secret), &used).await;
+        assert_eq!(
+            (status, body),
+            (StatusCode::OK, json!({ "storedBuckets": 2 }))
+        );
+
+        // A machine that never ran Antigravity reports it as missing in every sync.
+        let mut unused = payload(0);
+        unused["coverage"] = json!([coverage_entry("antigravity", "missing")]);
+        unused["providerHints"] = json!([]);
+        let other_machine = "0b7a3c52-9d1e-4f6a-8b2c-3e4d5f6a7b8c";
+        unused["machine"]["id"] = json!(other_machine);
+        let (status, _) = put(app, other_machine, Some(secret), &unused).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let stored: Vec<(String, String)> = sqlx::query_as(
+            "SELECT 'bucket paid by ' || COALESCE(billing_provider, 'native'), provider
+             FROM ai_usage_buckets
+             UNION ALL SELECT 'hint ' || plan, provider FROM ai_usage_provider_hints
+             UNION ALL SELECT 'coverage ' || status, provider FROM ai_usage_machine_coverage
+             UNION ALL SELECT 'log', provider FROM ai_usage_coverage_log
+             ORDER BY 1, 2",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored,
+            vec![
+                ("bucket paid by antigravity".into(), "opencode".into()),
+                ("bucket paid by native".into(), "antigravity".into()),
+                ("coverage missing".into(), "antigravity".into()),
+                ("coverage ok".into(), "antigravity".into()),
+                ("coverage ok".into(), "opencode".into()),
+                ("hint ultra".into(), "antigravity".into()),
+                ("log".into(), "antigravity".into()),
+                ("log".into(), "opencode".into()),
+            ]
         );
     }
 }

@@ -3,7 +3,8 @@
 Token Ledger uploads a source tool as `provider`. Sync payload version 2 additionally
 accepts an optional `billingProvider` on an hourly usage bucket. It names the
 subscription provider that should pay for those records; it must differ from the
-source and support subscriptions (`codex`, `claude`, `grok`, or `copilot`). Version 1
+source and support subscriptions (`codex`, `claude`, `grok`, `copilot`, or
+`antigravity`). Version 1
 continues to work and rejects non-null overrides so clients cannot silently rely on
 metadata an older server ignores. `copilot` stays a valid payer although no
 subscription to it can be declared (see below): it is how usage routed through
@@ -88,6 +89,15 @@ payer splits; keep mixed client versions from syncing the same installation.
 
 Token Ledger's `docs/billing-hints.md` describes platform paths, optional config,
 failure isolation, append ordering, and required log retention for backfills.
+
+## Antigravity
+
+Antigravity (`antigravity`) supports declared subscriptions (such as Google AI
+Pro or Google AI Ultra), billed like Codex, Claude, and Grok: days covered by an
+`antigravity` subscription share its monthly fee, and uncovered days bill at
+their API estimate. Roll out Toki's migration accepting `antigravity` before a
+Token Ledger release that reads it: even a machine without Antigravity reports
+it as `missing` coverage.
 
 ## Partly priced buckets (version 3)
 

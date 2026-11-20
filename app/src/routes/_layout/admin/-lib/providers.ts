@@ -3,7 +3,7 @@ import type { AiProvider } from "@/lib/api/queries/ai-usage";
 /**
  * Chart colors per provider. Color follows the provider, never its rank, so a
  * filter never repaints the others. The order is the validated categorical
- * order (slots 1–6, checked for color-vision deficiency against the app's card
+ * order (slots 1–7, checked for color-vision deficiency against the app's card
  * surfaces in both themes); stacks draw providers in this order.
  */
 export const PROVIDER_COLOR_VARS: Record<AiProvider, string> = {
@@ -13,6 +13,7 @@ export const PROVIDER_COLOR_VARS: Record<AiProvider, string> = {
   copilot: "var(--ai-provider-copilot)",
   pi: "var(--ai-provider-pi)",
   opencode: "var(--ai-provider-opencode)",
+  antigravity: "var(--ai-provider-antigravity)",
 };
 
 /** Tailwind classes that define the provider colors for light and dark. */
@@ -23,6 +24,7 @@ export const PROVIDER_COLOR_SCOPE = [
   "[--ai-provider-copilot:#eda100] dark:[--ai-provider-copilot:#c98500]",
   "[--ai-provider-pi:#e87ba4] dark:[--ai-provider-pi:#d55181]",
   "[--ai-provider-opencode:#008300] dark:[--ai-provider-opencode:#008300]",
+  "[--ai-provider-antigravity:#4a3aa7] dark:[--ai-provider-antigravity:#9085e9]",
   "[--ai-series-1:#2a78d6] dark:[--ai-series-1:#3987e5]",
 ].join(" ");
 
