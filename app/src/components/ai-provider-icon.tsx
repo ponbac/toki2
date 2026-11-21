@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import type { AiProvider } from "@/lib/api/contracts/ai-usage";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import { cn } from "@/lib/utils";
@@ -34,10 +36,165 @@ const PI_BRAND = [
 ] as const;
 
 /**
+ * Blurred colour layers of Antigravity's four-colour mark, clipped to
+ * `PATHS.antigravity`, from `@lobehub/icons-static-svg` `antigravity-color`
+ * (MIT).
+ */
+const ANTIGRAVITY_BRAND_LAYERS = [
+  {
+    fill: "#FFE432",
+    d: "M-1.018-3.992c-.408 3.591 2.686 6.89 6.91 7.37 4.225.48 7.98-2.043 8.387-5.633.408-3.59-2.686-6.89-6.91-7.37-4.225-.479-7.98 2.043-8.387 5.633z",
+    x: -3.288,
+    y: -11.917,
+    width: 19.838,
+    height: 17.587,
+    stdDeviation: 1.117,
+  },
+  {
+    fill: "#FC413D",
+    d: "M15.269 7.747c1.058 4.557 5.691 7.374 10.348 6.293 4.657-1.082 7.575-5.653 6.516-10.21-1.058-4.556-5.691-7.374-10.348-6.292-4.657 1.082-7.575 5.653-6.516 10.21z",
+    x: 4.251,
+    y: -13.493,
+    width: 38.9,
+    height: 38.565,
+    stdDeviation: 5.4,
+  },
+  {
+    fill: "#00B95C",
+    d: "M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z",
+    x: -21.889,
+    y: -10.592,
+    width: 40.955,
+    height: 36.517,
+    stdDeviation: 4.591,
+  },
+  {
+    fill: "#00B95C",
+    d: "M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z",
+    x: -21.889,
+    y: -10.592,
+    width: 40.955,
+    height: 36.517,
+    stdDeviation: 4.591,
+  },
+  {
+    fill: "#00B95C",
+    d: "M-7.608 14.703c3.352 3.424 9.126 3.208 12.896-.483 3.77-3.69 4.108-9.459.756-12.883C2.69-2.087-3.083-1.871-6.853 1.82c-3.77 3.69-4.108 9.458-.755 12.883z",
+    x: -19.099,
+    y: -10.278,
+    width: 36.632,
+    height: 36.595,
+    stdDeviation: 4.591,
+  },
+  {
+    fill: "#3186FF",
+    d: "M9.932 27.617c1.04 4.482 5.384 7.303 9.7 6.3 4.316-1.002 6.971-5.448 5.93-9.93-1.04-4.483-5.384-7.304-9.7-6.301-4.316 1.002-6.971 5.448-5.93 9.93z",
+    x: 0.981,
+    y: 8.758,
+    width: 33.533,
+    height: 34.087,
+    stdDeviation: 4.363,
+  },
+  {
+    fill: "#FBBC04",
+    d: "M2.572-8.185C.392-3.329 2.778 2.472 7.9 4.771c5.122 2.3 11.042.227 13.222-4.63 2.18-4.855-.205-10.656-5.327-12.955-5.122-2.3-11.042-.227-13.222 4.63z",
+    x: -6.143,
+    y: -21.659,
+    width: 35.978,
+    height: 35.276,
+    stdDeviation: 3.954,
+  },
+  {
+    fill: "#3186FF",
+    d: "M-3.267 38.686c-5.277-2.072 3.742-19.117 5.984-24.83 2.243-5.712 8.34-8.664 13.616-6.592 5.278 2.071 11.533 13.482 9.29 19.195-2.242 5.713-23.613 14.298-28.89 12.227z",
+    x: -11.96,
+    y: -0.46,
+    width: 45.114,
+    height: 46.523,
+    stdDeviation: 3.531,
+  },
+  {
+    fill: "#749BFF",
+    d: "M28.71 17.471c-1.413 1.649-5.1.808-8.236-1.878-3.135-2.687-4.531-6.201-3.118-7.85 1.412-1.649 5.1-.808 8.235 1.878s4.532 6.2 3.119 7.85z",
+    x: 10.485,
+    y: 0.58,
+    width: 25.094,
+    height: 24.054,
+    stdDeviation: 3.159,
+  },
+  {
+    fill: "#FC413D",
+    d: "M18.163 9.077c5.81 3.93 12.502 4.19 14.946.577 2.443-3.612-.287-9.727-6.098-13.658-5.81-3.931-12.502-4.19-14.946-.577-2.443 3.612.287 9.727 6.098 13.658z",
+    x: 5.833,
+    y: -12.467,
+    width: 33.508,
+    height: 30.007,
+    stdDeviation: 2.669,
+  },
+  {
+    fill: "#FFEE48",
+    d: "M-.915 2.684c-1.44 3.473-.97 6.967 1.05 7.804 2.02.837 4.824-1.3 6.264-4.772 1.44-3.473.97-6.967-1.05-7.804-2.02-.837-4.824 1.3-6.264 4.772z",
+    x: -8.355,
+    y: -8.876,
+    width: 22.194,
+    height: 26.151,
+    stdDeviation: 3.303,
+  },
+] as const;
+
+function AntigravityBrandMark() {
+  const id = useId();
+  const maskId = `${id}-ag-mask`;
+  return (
+    <>
+      <mask
+        id={maskId}
+        maskUnits="userSpaceOnUse"
+        x={0}
+        y={1}
+        width={24}
+        height={23}
+      >
+        <path d={PATHS.antigravity} fill="#fff" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        {ANTIGRAVITY_BRAND_LAYERS.map((layer, index) => (
+          <g key={index} filter={`url(#${id}-ag-f${index})`}>
+            <path d={layer.d} fill={layer.fill} />
+          </g>
+        ))}
+      </g>
+      <defs>
+        {ANTIGRAVITY_BRAND_LAYERS.map((layer, index) => (
+          <filter
+            key={index}
+            id={`${id}-ag-f${index}`}
+            colorInterpolationFilters="sRGB"
+            filterUnits="userSpaceOnUse"
+            x={layer.x}
+            y={layer.y}
+            width={layer.width}
+            height={layer.height}
+          >
+            <feFlood floodOpacity="0" result="BackgroundImageFix" />
+            <feBlend
+              in="SourceGraphic"
+              in2="BackgroundImageFix"
+              result="shape"
+            />
+            <feGaussianBlur stdDeviation={layer.stdDeviation} />
+          </filter>
+        ))}
+      </defs>
+    </>
+  );
+}
+
+/**
  * Each provider's chart colour (`--viz-1` to `--viz-7` in `index.css`), so a
- * mark matches its bars. A text-colour class on the icon overrides it. Pi's
- * mark has its own colours unless the icon is plain, so its tint shows only
- * then and as the wash of its tile.
+ * mark matches its bars. A text-colour class on the icon overrides it. Pi and
+ * Antigravity have their own brand colours unless the icon is plain, so their
+ * tint shows only then and as the wash of their tile.
  */
 const TINTS: Readonly<Record<AiProvider, string>> = {
   codex: "text-[color:var(--viz-1)]",
@@ -76,6 +233,8 @@ export function AiProviderIcon({
         PI_BRAND.map((part) => (
           <path key={part.fill} d={part.d} fill={part.fill} />
         ))
+      ) : provider === "antigravity" && !plain ? (
+        <AntigravityBrandMark />
       ) : (
         <path d={PATHS[provider]} />
       )}
