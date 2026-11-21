@@ -1068,6 +1068,51 @@ fn opencode_usage_bills_to_its_named_payer_and_otherwise_as_api_usage() {
 }
 
 #[test]
+fn antigravity_usage_bills_to_its_subscription_and_otherwise_as_api_usage() {
+    let antigravity = subscription(
+        3,
+        DEV,
+        AiProvider::Antigravity,
+        "250",
+        "USD",
+        date!(2026 - 09 - 01),
+        Some(date!(2026 - 09 - 15)),
+    );
+    let bill = bill_month(
+        september(),
+        &[
+            day_usage(
+                DEV,
+                AiProvider::Antigravity,
+                date!(2026 - 09 - 05),
+                client_a(),
+                priced(40, 2),
+            ),
+            day_usage(
+                DEV,
+                AiProvider::Antigravity,
+                date!(2026 - 09 - 20),
+                client_a(),
+                priced(60, 3),
+            ),
+        ],
+        &[antigravity],
+    )
+    .unwrap();
+
+    assert_eq!(
+        provider_lines(&bill),
+        [
+            (
+                AiProvider::Antigravity,
+                line("Client A", "subscription", Some("125.00 USD"), 40)
+            ),
+            (AiProvider::Antigravity, line("Client A", "api", None, 60)),
+        ]
+    );
+}
+
+#[test]
 fn keys_mapped_to_one_project_bill_as_that_project() {
     let bill = bill_month(
         september(),

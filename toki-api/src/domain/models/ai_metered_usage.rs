@@ -777,7 +777,8 @@ pub fn metered_model_status(payer: AiProvider, model: &str) -> Option<AiMeteredM
         | AiProvider::Claude
         | AiProvider::Grok
         | AiProvider::Pi
-        | AiProvider::OpenCode => None,
+        | AiProvider::OpenCode
+        | AiProvider::Antigravity => None,
     }
 }
 

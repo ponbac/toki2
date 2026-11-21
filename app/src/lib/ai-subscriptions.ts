@@ -17,6 +17,7 @@ export const PLAN_SUGGESTIONS: Record<AiProvider, readonly string[]> = {
   copilot: [],
   pi: [],
   opencode: [],
+  antigravity: ["Google AI Pro", "Google AI Ultra"],
 };
 
 /**

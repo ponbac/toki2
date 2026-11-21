@@ -754,3 +754,26 @@ async fn readiness_reads_old_basis_estimates_and_logged_syncs(pool: PgPool) {
         .unwrap()
         .is_empty());
 }
+
+#[sqlx::test]
+async fn snapshot_lines_store_and_load_antigravity_provider(pool: PgPool) {
+    let by = admin(&pool).await;
+    let repository = PostgresAiMonthCloseRepository::new(db(&pool));
+    let mut entry = api(4_200, 44_100);
+    entry.key.payer = AiKeyPayer::Provider(AiProvider::Antigravity);
+    entry.provider = AiProvider::Antigravity;
+
+    let closed = store(
+        &repository,
+        month("2026-11"),
+        by,
+        vec![line(0, 0, None, entry.clone())],
+    )
+    .await
+    .unwrap();
+
+    let loaded = repository.own_entries(closed.id).await.unwrap();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].provider, AiProvider::Antigravity);
+    assert_eq!(loaded[0].key.payer, entry.key.payer);
+}

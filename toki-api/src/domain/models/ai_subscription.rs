@@ -244,7 +244,9 @@ impl AiSubscriptionTerms {
                 "copilot takes no subscription: GitHub bills Copilot usage per credit, so it \
                  bills at its estimated cost",
             )),
-            AiProvider::Codex | AiProvider::Claude | AiProvider::Grok => Ok(()),
+            AiProvider::Codex | AiProvider::Claude | AiProvider::Grok | AiProvider::Antigravity => {
+                Ok(())
+            }
         }
     }
 }
@@ -308,9 +310,11 @@ pub fn subscription_provider(provider: AiProvider, chatgpt_sign_in: bool) -> Opt
     match provider {
         AiProvider::Pi => chatgpt_sign_in.then_some(AiProvider::Codex),
         AiProvider::OpenCode => None,
-        AiProvider::Codex | AiProvider::Claude | AiProvider::Grok | AiProvider::Copilot => {
-            Some(provider)
-        }
+        AiProvider::Codex
+        | AiProvider::Claude
+        | AiProvider::Grok
+        | AiProvider::Copilot
+        | AiProvider::Antigravity => Some(provider),
     }
 }
 

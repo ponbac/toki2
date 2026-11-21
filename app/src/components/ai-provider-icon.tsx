@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import type { AiProvider } from "@/lib/api/contracts/ai-usage";
 import { AI_PROVIDER_LABELS } from "@/lib/ai-providers";
 import { cn } from "@/lib/utils";
@@ -19,6 +21,8 @@ const PATHS: Readonly<Record<AiProvider, string>> = {
     "M19.245 5.364c1.322 1.36 1.877 3.216 2.11 5.817.622 0 1.2.135 1.592.654l.73.964c.21.278.323.61.323.955v2.62c0 .339-.173.669-.453.868C20.239 19.602 16.157 21.5 12 21.5c-4.6 0-9.205-2.583-11.547-4.258-.28-.2-.452-.53-.453-.868v-2.62c0-.345.113-.679.321-.956l.73-.963c.392-.517.974-.654 1.593-.654l.029-.297c.25-2.446.81-4.213 2.082-5.52 2.461-2.54 5.71-2.851 7.146-2.864h.198c1.436.013 4.685.323 7.146 2.864zm-7.244 4.328c-.284 0-.613.016-.962.05-.123.447-.305.85-.57 1.108-1.05 1.023-2.316 1.18-2.994 1.18-.638 0-1.306-.13-1.851-.464-.516.165-1.012.403-1.044.996a65.882 65.882 0 00-.063 2.884l-.002.48c-.002.563-.005 1.126-.013 1.69.002.326.204.63.51.765 2.482 1.102 4.83 1.657 6.99 1.657 2.156 0 4.504-.555 6.985-1.657a.854.854 0 00.51-.766c.03-1.682.006-3.372-.076-5.053-.031-.596-.528-.83-1.046-.996-.546.333-1.212.464-1.85.464-.677 0-1.942-.157-2.993-1.18-.266-.258-.447-.661-.57-1.108-.32-.032-.64-.049-.96-.05zm-2.525 4.013c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zm5 0c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zM7.635 5.087c-1.05.102-1.935.438-2.385.906-.975 1.037-.765 3.668-.21 4.224.405.394 1.17.657 1.995.657h.09c.649-.013 1.785-.176 2.73-1.11.435-.41.705-1.433.675-2.47-.03-.834-.27-1.52-.63-1.813-.39-.336-1.275-.482-2.265-.394zm6.465.394c-.36.292-.6.98-.63 1.813-.03 1.037.24 2.06.675 2.47.968.957 2.136 1.104 2.776 1.11h.044c.825 0 1.59-.263 1.995-.657.555-.556.765-3.187-.21-4.224-.45-.468-1.335-.804-2.385-.906-.99-.088-1.875.058-2.265.394zM12 7.615c-.24 0-.525.015-.84.044.03.16.045.336.06.526l-.001.159a2.94 2.94 0 01-.014.25c.225-.022.425-.027.612-.028h.366c.187 0 .387.006.612.028-.015-.146-.015-.277-.015-.409.015-.19.03-.365.06-.526a9.29 9.29 0 00-.84-.044z",
   pi: "M2 2h15v10h-5v5H7v5H2zM7 7v5h5V7zM17 12h5v10h-5z",
   opencode: "M16 6H8v12h8V6zm4 16H4V2h16v20z",
+  antigravity:
+    "M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z",
 };
 
 /**
@@ -32,10 +36,165 @@ const PI_BRAND = [
 ] as const;
 
 /**
- * Each provider's chart colour (`--viz-1` to `--viz-6` in `index.css`), so a
- * mark matches its bars. A text-colour class on the icon overrides it. Pi's
- * mark has its own colours unless the icon is plain, so its tint shows only
- * then and as the wash of its tile.
+ * Blurred colour layers of Antigravity's four-colour mark, clipped to
+ * `PATHS.antigravity`, from `@lobehub/icons-static-svg` `antigravity-color`
+ * (MIT).
+ */
+const ANTIGRAVITY_BRAND_LAYERS = [
+  {
+    fill: "#FFE432",
+    d: "M-1.018-3.992c-.408 3.591 2.686 6.89 6.91 7.37 4.225.48 7.98-2.043 8.387-5.633.408-3.59-2.686-6.89-6.91-7.37-4.225-.479-7.98 2.043-8.387 5.633z",
+    x: -3.288,
+    y: -11.917,
+    width: 19.838,
+    height: 17.587,
+    stdDeviation: 1.117,
+  },
+  {
+    fill: "#FC413D",
+    d: "M15.269 7.747c1.058 4.557 5.691 7.374 10.348 6.293 4.657-1.082 7.575-5.653 6.516-10.21-1.058-4.556-5.691-7.374-10.348-6.292-4.657 1.082-7.575 5.653-6.516 10.21z",
+    x: 4.251,
+    y: -13.493,
+    width: 38.9,
+    height: 38.565,
+    stdDeviation: 5.4,
+  },
+  {
+    fill: "#00B95C",
+    d: "M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z",
+    x: -21.889,
+    y: -10.592,
+    width: 40.955,
+    height: 36.517,
+    stdDeviation: 4.591,
+  },
+  {
+    fill: "#00B95C",
+    d: "M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z",
+    x: -21.889,
+    y: -10.592,
+    width: 40.955,
+    height: 36.517,
+    stdDeviation: 4.591,
+  },
+  {
+    fill: "#00B95C",
+    d: "M-7.608 14.703c3.352 3.424 9.126 3.208 12.896-.483 3.77-3.69 4.108-9.459.756-12.883C2.69-2.087-3.083-1.871-6.853 1.82c-3.77 3.69-4.108 9.458-.755 12.883z",
+    x: -19.099,
+    y: -10.278,
+    width: 36.632,
+    height: 36.595,
+    stdDeviation: 4.591,
+  },
+  {
+    fill: "#3186FF",
+    d: "M9.932 27.617c1.04 4.482 5.384 7.303 9.7 6.3 4.316-1.002 6.971-5.448 5.93-9.93-1.04-4.483-5.384-7.304-9.7-6.301-4.316 1.002-6.971 5.448-5.93 9.93z",
+    x: 0.981,
+    y: 8.758,
+    width: 33.533,
+    height: 34.087,
+    stdDeviation: 4.363,
+  },
+  {
+    fill: "#FBBC04",
+    d: "M2.572-8.185C.392-3.329 2.778 2.472 7.9 4.771c5.122 2.3 11.042.227 13.222-4.63 2.18-4.855-.205-10.656-5.327-12.955-5.122-2.3-11.042-.227-13.222 4.63z",
+    x: -6.143,
+    y: -21.659,
+    width: 35.978,
+    height: 35.276,
+    stdDeviation: 3.954,
+  },
+  {
+    fill: "#3186FF",
+    d: "M-3.267 38.686c-5.277-2.072 3.742-19.117 5.984-24.83 2.243-5.712 8.34-8.664 13.616-6.592 5.278 2.071 11.533 13.482 9.29 19.195-2.242 5.713-23.613 14.298-28.89 12.227z",
+    x: -11.96,
+    y: -0.46,
+    width: 45.114,
+    height: 46.523,
+    stdDeviation: 3.531,
+  },
+  {
+    fill: "#749BFF",
+    d: "M28.71 17.471c-1.413 1.649-5.1.808-8.236-1.878-3.135-2.687-4.531-6.201-3.118-7.85 1.412-1.649 5.1-.808 8.235 1.878s4.532 6.2 3.119 7.85z",
+    x: 10.485,
+    y: 0.58,
+    width: 25.094,
+    height: 24.054,
+    stdDeviation: 3.159,
+  },
+  {
+    fill: "#FC413D",
+    d: "M18.163 9.077c5.81 3.93 12.502 4.19 14.946.577 2.443-3.612-.287-9.727-6.098-13.658-5.81-3.931-12.502-4.19-14.946-.577-2.443 3.612.287 9.727 6.098 13.658z",
+    x: 5.833,
+    y: -12.467,
+    width: 33.508,
+    height: 30.007,
+    stdDeviation: 2.669,
+  },
+  {
+    fill: "#FFEE48",
+    d: "M-.915 2.684c-1.44 3.473-.97 6.967 1.05 7.804 2.02.837 4.824-1.3 6.264-4.772 1.44-3.473.97-6.967-1.05-7.804-2.02-.837-4.824 1.3-6.264 4.772z",
+    x: -8.355,
+    y: -8.876,
+    width: 22.194,
+    height: 26.151,
+    stdDeviation: 3.303,
+  },
+] as const;
+
+function AntigravityBrandMark() {
+  const id = useId();
+  const maskId = `${id}-ag-mask`;
+  return (
+    <>
+      <mask
+        id={maskId}
+        maskUnits="userSpaceOnUse"
+        x={0}
+        y={1}
+        width={24}
+        height={23}
+      >
+        <path d={PATHS.antigravity} fill="#fff" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        {ANTIGRAVITY_BRAND_LAYERS.map((layer, index) => (
+          <g key={index} filter={`url(#${id}-ag-f${index})`}>
+            <path d={layer.d} fill={layer.fill} />
+          </g>
+        ))}
+      </g>
+      <defs>
+        {ANTIGRAVITY_BRAND_LAYERS.map((layer, index) => (
+          <filter
+            key={index}
+            id={`${id}-ag-f${index}`}
+            colorInterpolationFilters="sRGB"
+            filterUnits="userSpaceOnUse"
+            x={layer.x}
+            y={layer.y}
+            width={layer.width}
+            height={layer.height}
+          >
+            <feFlood floodOpacity="0" result="BackgroundImageFix" />
+            <feBlend
+              in="SourceGraphic"
+              in2="BackgroundImageFix"
+              result="shape"
+            />
+            <feGaussianBlur stdDeviation={layer.stdDeviation} />
+          </filter>
+        ))}
+      </defs>
+    </>
+  );
+}
+
+/**
+ * Each provider's chart colour (`--viz-1` to `--viz-7` in `index.css`), so a
+ * mark matches its bars. A text-colour class on the icon overrides it. Pi and
+ * Antigravity have their own brand colours unless the icon is plain, so their
+ * tint shows only then and as the wash of their tile.
  */
 const TINTS: Readonly<Record<AiProvider, string>> = {
   codex: "text-[color:var(--viz-1)]",
@@ -44,6 +203,7 @@ const TINTS: Readonly<Record<AiProvider, string>> = {
   copilot: "text-[color:var(--viz-4)]",
   pi: "text-[color:var(--viz-5)]",
   opencode: "text-[color:var(--viz-6)]",
+  antigravity: "text-[color:var(--viz-7)]",
 };
 
 /**
@@ -73,6 +233,8 @@ export function AiProviderIcon({
         PI_BRAND.map((part) => (
           <path key={part.fill} d={part.d} fill={part.fill} />
         ))
+      ) : provider === "antigravity" && !plain ? (
+        <AntigravityBrandMark />
       ) : (
         <path d={PATHS[provider]} />
       )}

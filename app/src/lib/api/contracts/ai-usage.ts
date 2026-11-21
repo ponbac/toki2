@@ -7,6 +7,7 @@ export const aiProviderSchema = z.enum([
   "copilot",
   "pi",
   "opencode",
+  "antigravity",
 ]);
 
 /** A calendar date in the server's AI usage time zone, `YYYY-MM-DD`. */

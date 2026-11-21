@@ -306,6 +306,7 @@ pub enum AiProvider {
     Copilot,
     Pi,
     OpenCode,
+    Antigravity,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
