@@ -2,6 +2,10 @@ import { queryOptions } from "@tanstack/react-query";
 import { HTTPError } from "ky";
 import { api } from "../api";
 import dayjs from "dayjs";
+import {
+  type FlexBalanceReply,
+  loadFlexBalanceBeforeToday,
+} from "../../flex-breakdown";
 
 export type DateRangeQuery = {
   from: string;
@@ -52,8 +56,8 @@ const timeTrackingQueryKeys = {
     ] as const,
   timeInfo: (query?: DateRangeQuery) =>
     [...timeTrackingQueryKeys.timeInfoBase, query?.from, query?.to] as const,
-  flexBalance: (through: string) =>
-    [...timeTrackingQueryKeys.flexBalanceBase, through] as const,
+  flexBalanceBeforeToday: (today: string) =>
+    [...timeTrackingQueryKeys.flexBalanceBase, "before-today", today] as const,
   timeEntryDayStatuses: (query: DateRangeQuery) =>
     [
       ...timeTrackingQueryKeys.timeEntryDayStatusesBase,
@@ -195,22 +199,11 @@ export const timeTrackingQueries = {
           .json<WeeklyStats>();
       },
     }),
-  /** `null` when the provider keeps no flex balance for the user. */
-  flexBalance: (through: string) =>
+  /** `null` when no flex balance can be shown for the user. */
+  flexBalanceBeforeToday: (today: string) =>
     queryOptions({
-      queryKey: timeTrackingQueryKeys.flexBalance(through),
-      queryFn: async () => {
-        try {
-          return await api
-            .get("time-tracking/flex-balance", { searchParams: { through } })
-            .json<FlexBalance>();
-        } catch (error) {
-          if (error instanceof HTTPError && error.response.status === 404) {
-            return null;
-          }
-          throw error;
-        }
-      },
+      queryKey: timeTrackingQueryKeys.flexBalanceBeforeToday(today),
+      queryFn: () => loadFlexBalanceBeforeToday(today, fetchFlexBalance),
     }),
   timeEntries: (query?: TimeEntriesQuery) =>
     queryOptions({
@@ -476,3 +469,18 @@ export type TimeTrackingAdminUserLink = {
   providerUserName: string | null;
   updatedAt: string;
 };
+
+async function fetchFlexBalance(through: string): Promise<FlexBalanceReply> {
+  try {
+    return await api
+      .get("time-tracking/flex-balance", { searchParams: { through } })
+      .json<FlexBalance>();
+  } catch (error) {
+    if (error instanceof HTTPError) {
+      // A date before the day the provider has settled through.
+      if (error.response.status === 400) return "before-settlement";
+      if (error.response.status === 404) return "none";
+    }
+    throw error;
+  }
+}

@@ -5,8 +5,10 @@ import { FlexBalanceBreakdown } from "@/components/flex-balance";
 import {
   formatSignedHours,
   signedHoursColor,
-  useFlexBalance,
+  useFlexBreakdown,
 } from "@/lib/flex-balance";
+import { useLocalDate } from "@/hooks/useLocalDate";
+import dayjs from "dayjs";
 import { endOfWeek, format, startOfWeek } from "date-fns";
 import {
   CalendarClockIcon,
@@ -25,14 +27,15 @@ const PROGRESS_GLOW_STYLE = {
 } as const;
 
 export const TimeStats = () => {
+  const today = useLocalDate();
+  const todayDate = dayjs(today).toDate();
   const { data: timeInfo } = useQuery({
     ...timeTrackingQueries.timeInfo({
-      from: format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
-      to: format(endOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      from: format(startOfWeek(todayDate, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      to: format(endOfWeek(todayDate, { weekStartsOn: 1 }), "yyyy-MM-dd"),
     }),
     staleTime: 5 * 60 * 1000,
   });
-  const { data: flexBalance } = useFlexBalance();
 
   const workedHours = timeInfo ? timeInfo.workedHours : 0;
   const scheduledHours = timeInfo ? timeInfo.scheduledHours : 40;
@@ -147,22 +150,27 @@ export const TimeStats = () => {
           </Tooltip>
         </div>
 
-        {flexBalance && (
-          <div className="mt-4 border-t border-border/50 pt-4">
-            <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-              <PiggyBankIcon className="h-4 w-4" />
-              <span className="text-xs font-medium tracking-wider uppercase">
-                Flex balance
-              </span>
-            </div>
-            <FlexBalanceBreakdown
-              balance={flexBalance}
-              showTotal
-              className="text-sm"
-            />
-          </div>
-        )}
+        <FlexBalanceSection today={today} />
       </div>
     </div>
   );
 };
+
+/** Its own component, so the running timer's every-second tick re-renders
+ * only this section. */
+function FlexBalanceSection(props: { today: string }) {
+  const { breakdown } = useFlexBreakdown(props.today);
+  if (!breakdown) return null;
+
+  return (
+    <div className="mt-4 border-t border-border/50 pt-4">
+      <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+        <PiggyBankIcon className="h-4 w-4" />
+        <span className="text-xs font-medium tracking-wider uppercase">
+          Flex balance
+        </span>
+      </div>
+      <FlexBalanceBreakdown breakdown={breakdown} className="text-sm" />
+    </div>
+  );
+}
