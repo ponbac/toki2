@@ -28,8 +28,9 @@ export function useFlexBreakdown(today: string) {
   };
 }
 
+/** With a true minus sign, as wide as the plus in the monospaced digits. */
 export function formatSignedHours(hours: number) {
-  return `${hours > 0 ? "+" : ""}${formatHoursMinutes(hours)}`;
+  return `${hours > 0 ? "+" : ""}${formatHoursMinutes(hours).replace("-", "\u2212")}`;
 }
 
 export function signedHoursColor(hours: number) {

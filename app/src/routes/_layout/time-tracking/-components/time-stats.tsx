@@ -164,7 +164,7 @@ function FlexBalanceSection(props: { today: string }) {
 
   return (
     <div className="mt-4 border-t border-border/50 pt-4">
-      <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+      <div className="mb-3 flex items-center gap-2 text-muted-foreground">
         <PiggyBankIcon className="h-4 w-4" />
         <span className="text-xs font-medium tracking-wider uppercase">
           Flex balance

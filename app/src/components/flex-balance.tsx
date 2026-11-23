@@ -3,29 +3,16 @@ import type { FlexBreakdown } from "@/lib/flex-breakdown";
 import { formatSignedHours, signedHoursColor } from "@/lib/flex-balance";
 import { cn, formatHoursMinutes } from "@/lib/utils";
 
-const SETTLED_SWATCH_STYLE = {
-  background: "hsl(var(--primary))",
-} as const;
-
-const ESTIMATED_SWATCH_STYLE = {
-  background:
-    "repeating-linear-gradient(135deg, hsl(var(--primary) / 0.55) 0 2px, transparent 2px 5px)",
-  boxShadow: "inset 0 0 0 1px hsl(var(--primary) / 0.5)",
-} as const;
-
-const TODAY_SWATCH_STYLE = {
-  borderRadius: "9999px",
-  boxShadow: "inset 0 0 0 1.5px hsl(var(--primary) / 0.7)",
-} as const;
-
 /**
- * The flex balance written out as a sum: what the provider has settled and
+ * The flex balance written out as two sums: what the provider has settled and
  * the estimate up to yesterday make the balance before today, and today's
- * hours so far follow it.
+ * hours so far take it to the balance if you stop now. Only the totals are
+ * coloured.
  */
 export function FlexBalanceBreakdown(props: {
   breakdown: FlexBreakdown;
-  /** Keeps the total at the rows' size, for tooltips. */
+  /** Keeps the total at the rows' size and leaves out today's bar, for
+   * tooltips. */
   compact?: boolean;
   className?: string;
 }) {
@@ -35,15 +22,13 @@ export function FlexBalanceBreakdown(props: {
   const total = beforeToday ?? nowHours;
 
   return (
-    <div className={cn("flex flex-col gap-1", props.className)}>
-      <BreakdownRow
-        swatchStyle={SETTLED_SWATCH_STYLE}
+    <div className={cn("flex flex-col leading-6", props.className)}>
+      <PartRow
         label={`Settled in Kleer, ${dayjs(settled.through).format("MMM D")}`}
         hours={settled.hours}
       />
       {earlier && (
-        <BreakdownRow
-          swatchStyle={ESTIMATED_SWATCH_STYLE}
+        <PartRow
           label={
             earlier.from === earlier.through
               ? "Yesterday"
@@ -53,21 +38,17 @@ export function FlexBalanceBreakdown(props: {
         />
       )}
       {timerHours !== null && (
-        <BreakdownRow
-          swatchStyle={TODAY_SWATCH_STYLE}
-          label="Running timer"
-          hours={timerHours}
-        />
+        <PartRow label="Running timer" hours={timerHours} />
       )}
       {total !== null && (
-        <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-border/50 pt-2 font-semibold">
-          <span>
+        <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-border pt-2.5">
+          <span className="font-semibold">
             {beforeToday === null ? "Preliminary total" : "Before today"}
           </span>
           <span
             className={cn(
               "time-display",
-              !props.compact && "text-xl",
+              !props.compact && "text-2xl leading-none tracking-tight",
               signedHoursColor(total),
             )}
           >
@@ -77,33 +58,34 @@ export function FlexBalanceBreakdown(props: {
       )}
       {today && nowHours !== null && (
         <>
-          <div className="mt-2">
-            <BreakdownRow
-              swatchStyle={TODAY_SWATCH_STYLE}
+          <div className={props.compact ? "mt-1" : "mt-4"}>
+            <PartRow
               label={
-                today.scheduledHours > 0
-                  ? `Today, ${formatHoursMinutes(today.coveredHours)} of ${formatHoursMinutes(today.scheduledHours)}`
-                  : "Today"
+                <>
+                  Today
+                  {today.scheduledHours > 0 && (
+                    <span className="time-display ml-2 text-xs text-muted-foreground">
+                      {formatHoursMinutes(today.coveredHours)} of{" "}
+                      {formatHoursMinutes(today.scheduledHours)}
+                    </span>
+                  )}
+                </>
               }
               hours={today.hours}
             />
-            {today.scheduledHours > 0 && (
-              <div
-                aria-hidden
-                className="mt-1 ml-4.5 h-1 overflow-hidden rounded-full bg-muted"
-              >
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{
-                    width: `${Math.min(today.coveredHours / today.scheduledHours, 1) * 100}%`,
-                  }}
-                />
-              </div>
+            {!props.compact && today.scheduledHours > 0 && (
+              <TodayBar
+                coveredHours={today.coveredHours}
+                scheduledHours={today.scheduledHours}
+                nowHours={nowHours}
+              />
             )}
           </div>
-          <div className="flex items-baseline justify-between gap-4 text-muted-foreground">
-            <span>If you stop now</span>
-            <span className="time-display">{formatSignedHours(nowHours)}</span>
+          <div className="flex items-baseline justify-between gap-4">
+            <span className="text-muted-foreground">If you stop now</span>
+            <span className={cn("time-display", signedHoursColor(nowHours))}>
+              {formatSignedHours(nowHours)}
+            </span>
           </div>
         </>
       )}
@@ -111,24 +93,84 @@ export function FlexBalanceBreakdown(props: {
   );
 }
 
-function BreakdownRow(props: {
-  swatchStyle: React.CSSProperties;
-  label: string;
-  hours: number;
-}) {
+function PartRow(props: { label: React.ReactNode; hours: number }) {
   return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="flex items-center gap-2">
-        <span
-          aria-hidden
-          className="size-2.5 shrink-0 rounded-[3px]"
-          style={props.swatchStyle}
-        />
-        {props.label}
-      </span>
-      <span className={cn("time-display", signedHoursColor(props.hours))}>
-        {formatSignedHours(props.hours)}
-      </span>
+    <div className="flex items-baseline justify-between gap-4 text-foreground/80">
+      <span>{props.label}</span>
+      <span className="time-display">{formatSignedHours(props.hours)}</span>
     </div>
+  );
+}
+
+/**
+ * Today's hours against the schedule, with a tick where the balance crosses
+ * zero: fill past it and the day ends ahead even if you stop now. Hours past
+ * the schedule run on in green after a tick at the full day.
+ */
+function TodayBar(props: {
+  coveredHours: number;
+  scheduledHours: number;
+  nowHours: number;
+}) {
+  const length = Math.max(props.scheduledHours, props.coveredHours);
+  const at = (hours: number) => `${(hours / length) * 100}%`;
+  // Every hour worked adds one to the balance, so it reaches zero this many
+  // hours into the day.
+  const zeroAt = props.coveredHours - props.nowHours;
+  const showZero = zeroAt > 0 && zeroAt < length;
+  const over = props.coveredHours > props.scheduledHours;
+
+  return (
+    <div aria-hidden className="mt-2">
+      <div className="relative h-1.5 rounded-full bg-muted">
+        <div
+          className={cn(
+            "absolute inset-y-0 left-0 bg-primary",
+            over ? "rounded-l-full" : "rounded-full",
+          )}
+          style={{
+            width: at(Math.min(props.coveredHours, props.scheduledHours)),
+          }}
+        />
+        {over && (
+          <>
+            <div
+              className="absolute inset-y-0 right-0 rounded-r-full bg-emerald-500"
+              style={{ left: at(props.scheduledHours) }}
+            />
+            <Tick at={at(props.scheduledHours)} />
+          </>
+        )}
+        {showZero && <Tick at={at(zeroAt)} />}
+      </div>
+      <div className="relative mt-1 h-3.5 font-mono text-[10.5px] leading-3.5 text-muted-foreground">
+        {showZero && <TickLabel at={at(zeroAt)}>0</TickLabel>}
+        {over && (
+          <TickLabel at={at(props.scheduledHours)}>
+            {Number(props.scheduledHours.toFixed(2))} h
+          </TickLabel>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Tick(props: { at: string }) {
+  return (
+    <div
+      className="absolute -inset-y-1 w-px bg-foreground/45"
+      style={{ left: props.at }}
+    />
+  );
+}
+
+function TickLabel(props: { at: string; children: React.ReactNode }) {
+  return (
+    <span
+      className="absolute top-0 -translate-x-1/2 whitespace-nowrap"
+      style={{ left: props.at }}
+    >
+      {props.children}
+    </span>
   );
 }
