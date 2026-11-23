@@ -25,12 +25,16 @@ import {
   cancelTimeTrackingRangeQueries,
   findCachedAbsence,
   findCachedEntry,
-  markTimeTrackingListsStale,
+  invalidateFlexBalance,
+  reloadQueries,
+  NO_RANGES,
+  type OptimisticRanges,
   removeAbsenceFromCachedRanges,
   removeEntryFromCachedRanges,
   replaceAbsencesInCachedRanges,
   replaceEntryInCachedRanges,
   setTimerCache,
+  settleRangeMutation,
   upsertAbsenceInCachedRanges,
   upsertEntryInCachedRanges,
 } from "../time-tracking-cache";
@@ -131,7 +135,7 @@ function useSaveTimer(
       // Before the optimistic update below, so the buddy sees today's total without this entry.
       emitBuddyEvent({ type: "saveStarted" });
       await queryClient.cancelQueries({ queryKey: timerQuery.queryKey });
-      await cancelTimeTrackingRangeQueries(queryClient);
+      const ranges = await cancelTimeTrackingRangeQueries(queryClient);
 
       const previousTimer = queryClient.getQueryData(timerQuery.queryKey);
       const previousTimerState = useTimeTrackingStore.getState().timer;
@@ -145,9 +149,10 @@ function useSaveTimer(
         : null;
 
       if (optimisticEntry) {
-        upsertEntryInCachedRanges(queryClient, optimisticEntry);
+        upsertEntryInCachedRanges(queryClient, ranges, optimisticEntry);
         applyTimeInfoDelta(
           queryClient,
+          ranges,
           optimisticEntry.date,
           optimisticEntry.hours,
         );
@@ -176,6 +181,7 @@ function useSaveTimer(
 
       const optionsContext = await options?.onMutate?.(vars, mutationContext);
       return {
+        ranges,
         previousTimer,
         previousTimerState,
         optimisticEntry,
@@ -184,10 +190,30 @@ function useSaveTimer(
       };
     },
     onSuccess: (data, v, c, mutationContext) => {
+      const ranges = c?.ranges ?? NO_RANGES;
       if (c?.optimisticEntry) {
-        replaceEntryInCachedRanges(queryClient, c.optimisticId, data.entry);
+        replaceEntryInCachedRanges(
+          queryClient,
+          ranges,
+          c.optimisticId,
+          data.entry,
+        );
+        // The server books the entry on its start's UTC date and with its own
+        // end time, so the optimistic hours move to what it booked.
+        applyTimeInfoDelta(
+          queryClient,
+          ranges,
+          c.optimisticEntry.date,
+          -c.optimisticEntry.hours,
+        );
+        applyTimeInfoDelta(
+          queryClient,
+          ranges,
+          data.entry.date,
+          data.entry.hours,
+        );
       } else {
-        upsertEntryInCachedRanges(queryClient, data.entry);
+        upsertEntryInCachedRanges(queryClient, ranges, data.entry);
       }
       setTimerCache(queryClient, data.timer);
       setTimer(
@@ -195,7 +221,7 @@ function useSaveTimer(
           ? { visible: true, state: "running", timeSeconds: 0 }
           : { visible: false, state: "stopped", timeSeconds: null },
       );
-      markTimeTrackingListsStale(queryClient);
+      invalidateFlexBalance(queryClient);
       emitBuddyEvent({
         type: "saved",
         seconds: Math.round(data.entry.hours * 3600),
@@ -205,9 +231,10 @@ function useSaveTimer(
     },
     onError: (error, v, c, mutationContext) => {
       if (c?.optimisticEntry) {
-        removeEntryFromCachedRanges(queryClient, c.optimisticId);
+        removeEntryFromCachedRanges(queryClient, c.ranges, c.optimisticId);
         applyTimeInfoDelta(
           queryClient,
+          c.ranges,
           c.optimisticEntry.date,
           -c.optimisticEntry.hours,
         );
@@ -220,8 +247,16 @@ function useSaveTimer(
       }
       return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
-    onSettled: (data, error, v, c, mutationContext) =>
-      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
+    onSettled: (data, error, v, c, mutationContext) => {
+      settleRangeMutation(queryClient, c?.ranges);
+      return options?.onSettled?.(
+        data,
+        error,
+        v,
+        c?.optionsContext,
+        mutationContext,
+      );
+    },
   });
 }
 
@@ -309,7 +344,7 @@ function useEditProjectRegistration(
         .json<TimeEntry>(),
     ...options,
     onMutate: async (vars, mutationContext) => {
-      await cancelTimeTrackingRangeQueries(queryClient);
+      const ranges = await cancelTimeTrackingRangeQueries(queryClient);
 
       const previousEntry = findCachedEntry(
         queryClient,
@@ -322,28 +357,36 @@ function useEditProjectRegistration(
 
       replaceEntryInCachedRanges(
         queryClient,
+        ranges,
         vars.projectRegistrationId,
         optimisticEntry,
       );
       if (previousEntry) {
         applyTimeInfoDelta(
           queryClient,
+          ranges,
           previousEntry.date,
           -previousEntry.hours,
         );
       }
       applyTimeInfoDelta(
         queryClient,
+        ranges,
         optimisticEntry.date,
         optimisticEntry.hours,
       );
 
       const optionsContext = await options?.onMutate?.(vars, mutationContext);
-      return { previousEntry, optimisticEntry, optionsContext };
+      return { ranges, previousEntry, optimisticEntry, optionsContext };
     },
     onSuccess: (data, v, c, mutationContext) => {
-      replaceEntryInCachedRanges(queryClient, v.projectRegistrationId, data);
-      markTimeTrackingListsStale(queryClient);
+      replaceEntryInCachedRanges(
+        queryClient,
+        c?.ranges ?? NO_RANGES,
+        v.projectRegistrationId,
+        data,
+      );
+      invalidateFlexBalance(queryClient);
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
         refetchType: "none",
@@ -351,26 +394,37 @@ function useEditProjectRegistration(
       return options?.onSuccess?.(data, v, c?.optionsContext, mutationContext);
     },
     onError: (error, v, c, mutationContext) => {
-      removeEntryFromCachedRanges(queryClient, v.projectRegistrationId);
+      const ranges = c?.ranges ?? NO_RANGES;
+      removeEntryFromCachedRanges(queryClient, ranges, v.projectRegistrationId);
       if (c?.optimisticEntry) {
         applyTimeInfoDelta(
           queryClient,
+          ranges,
           c.optimisticEntry.date,
           -c.optimisticEntry.hours,
         );
       }
       if (c?.previousEntry) {
-        upsertEntryInCachedRanges(queryClient, c.previousEntry);
+        upsertEntryInCachedRanges(queryClient, ranges, c.previousEntry);
         applyTimeInfoDelta(
           queryClient,
+          ranges,
           c.previousEntry.date,
           c.previousEntry.hours,
         );
       }
       return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
-    onSettled: (data, error, v, c, mutationContext) =>
-      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
+    onSettled: (data, error, v, c, mutationContext) => {
+      settleRangeMutation(queryClient, c?.ranges);
+      return options?.onSettled?.(
+        data,
+        error,
+        v,
+        c?.optionsContext,
+        mutationContext,
+      );
+    },
   });
 }
 
@@ -387,22 +441,31 @@ function useDeleteProjectRegistration(
       }),
     ...options,
     onMutate: async (vars, mutationContext) => {
-      await cancelTimeTrackingRangeQueries(queryClient);
+      const ranges = await cancelTimeTrackingRangeQueries(queryClient);
 
       const removedEntry = findCachedEntry(
         queryClient,
         vars.projectRegistrationId,
       );
-      removeEntryFromCachedRanges(queryClient, vars.projectRegistrationId);
+      removeEntryFromCachedRanges(
+        queryClient,
+        ranges,
+        vars.projectRegistrationId,
+      );
       if (removedEntry) {
-        applyTimeInfoDelta(queryClient, removedEntry.date, -removedEntry.hours);
+        applyTimeInfoDelta(
+          queryClient,
+          ranges,
+          removedEntry.date,
+          -removedEntry.hours,
+        );
       }
 
       const optionsContext = await options?.onMutate?.(vars, mutationContext);
-      return { removedEntry, optionsContext };
+      return { ranges, removedEntry, optionsContext };
     },
     onSuccess: (data, v, c, mutationContext) => {
-      markTimeTrackingListsStale(queryClient);
+      invalidateFlexBalance(queryClient);
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
         refetchType: "none",
@@ -411,17 +474,26 @@ function useDeleteProjectRegistration(
     },
     onError: (error, v, c, mutationContext) => {
       if (c?.removedEntry) {
-        upsertEntryInCachedRanges(queryClient, c.removedEntry);
+        upsertEntryInCachedRanges(queryClient, c.ranges, c.removedEntry);
         applyTimeInfoDelta(
           queryClient,
+          c.ranges,
           c.removedEntry.date,
           c.removedEntry.hours,
         );
       }
       return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
-    onSettled: (data, error, v, c, mutationContext) =>
-      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
+    onSettled: (data, error, v, c, mutationContext) => {
+      settleRangeMutation(queryClient, c?.ranges);
+      return options?.onSettled?.(
+        data,
+        error,
+        v,
+        c?.optionsContext,
+        mutationContext,
+      );
+    },
   });
 }
 
@@ -440,30 +512,32 @@ function useCreateProjectRegistration(
         .json<TimeEntry>(),
     ...options,
     onMutate: async (vars, mutationContext) => {
-      await cancelTimeTrackingRangeQueries(queryClient);
+      const ranges = await cancelTimeTrackingRangeQueries(queryClient);
 
       const optimisticId = `optimistic:create:${crypto.randomUUID()}`;
       const optimisticEntry = buildTimeEntryFromCreatePayload(
         vars,
         optimisticId,
       );
-      upsertEntryInCachedRanges(queryClient, optimisticEntry);
+      upsertEntryInCachedRanges(queryClient, ranges, optimisticEntry);
       applyTimeInfoDelta(
         queryClient,
+        ranges,
         optimisticEntry.date,
         optimisticEntry.hours,
       );
 
       const optionsContext = await options?.onMutate?.(vars, mutationContext);
-      return { optimisticId, optimisticEntry, optionsContext };
+      return { ranges, optimisticId, optimisticEntry, optionsContext };
     },
     onSuccess: (data, v, c, mutationContext) => {
       replaceEntryInCachedRanges(
         queryClient,
+        c?.ranges ?? NO_RANGES,
         c?.optimisticId ?? data.registrationId,
         data,
       );
-      markTimeTrackingListsStale(queryClient);
+      invalidateFlexBalance(queryClient);
       queryClient.invalidateQueries({
         queryKey: timeTrackingQueries.timeEntryDayStatusesBaseKey,
         refetchType: "none",
@@ -474,36 +548,37 @@ function useCreateProjectRegistration(
       if (c?.optimisticEntry) {
         removeEntryFromCachedRanges(
           queryClient,
+          c.ranges,
           c.optimisticEntry.registrationId,
         );
         applyTimeInfoDelta(
           queryClient,
+          c.ranges,
           c.optimisticEntry.date,
           -c.optimisticEntry.hours,
         );
       }
       return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
-    onSettled: (data, error, v, c, mutationContext) =>
-      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
+    onSettled: (data, error, v, c, mutationContext) => {
+      settleRangeMutation(queryClient, c?.ranges);
+      return options?.onSettled?.(
+        data,
+        error,
+        v,
+        c?.optionsContext,
+        mutationContext,
+      );
+    },
   });
 }
 
+/** The absence lists and hours reload when the mutation settles. */
 function invalidateAbsenceQueries(
   queryClient: ReturnType<typeof useQueryClient>,
 ) {
-  queryClient.invalidateQueries({
-    queryKey: timeTrackingQueries.absenceEntriesBaseKey,
-  });
-  queryClient.invalidateQueries({
-    queryKey: timeTrackingQueries.absenceDayDefaultsBaseKey,
-  });
-  queryClient.invalidateQueries({
-    queryKey: timeTrackingQueries.timeInfoBaseKey,
-  });
-  queryClient.invalidateQueries({
-    queryKey: timeTrackingQueries.flexBalanceBaseKey,
-  });
+  reloadQueries(queryClient, timeTrackingQueries.absenceDayDefaultsBaseKey);
+  invalidateFlexBalance(queryClient);
 }
 
 function buildOptimisticAbsences(
@@ -527,11 +602,17 @@ function buildOptimisticAbsences(
 
 function applyAbsenceEntriesTimeInfoDelta(
   queryClient: ReturnType<typeof useQueryClient>,
+  ranges: OptimisticRanges,
   entries: Array<AbsenceEntry>,
   direction: 1 | -1,
 ) {
   for (const entry of entries) {
-    applyAbsenceTimeInfoDelta(queryClient, entry.date, entry.hours * direction);
+    applyAbsenceTimeInfoDelta(
+      queryClient,
+      ranges,
+      entry.date,
+      entry.hours * direction,
+    );
   }
 }
 
@@ -550,27 +631,34 @@ function useCreateAbsences(
         .json<Array<AbsenceEntry>>(),
     ...options,
     onMutate: async (vars, mutationContext) => {
-      await cancelAbsenceQueries(queryClient);
+      const ranges = await cancelAbsenceQueries(queryClient);
 
       const optimisticEntries = buildOptimisticAbsences(vars);
       for (const entry of optimisticEntries) {
-        upsertAbsenceInCachedRanges(queryClient, entry);
+        upsertAbsenceInCachedRanges(queryClient, ranges, entry);
       }
-      applyAbsenceEntriesTimeInfoDelta(queryClient, optimisticEntries, 1);
+      applyAbsenceEntriesTimeInfoDelta(
+        queryClient,
+        ranges,
+        optimisticEntries,
+        1,
+      );
 
       const optionsContext = await options?.onMutate?.(vars, mutationContext);
-      return { optimisticEntries, optionsContext };
+      return { ranges, optimisticEntries, optionsContext };
     },
     onSuccess: (data, v, c, mutationContext) => {
+      const ranges = c?.ranges ?? NO_RANGES;
       if (c?.optimisticEntries) {
         replaceAbsencesInCachedRanges(
           queryClient,
+          ranges,
           c.optimisticEntries.map((entry) => entry.absenceId),
           data,
         );
       } else {
         for (const entry of data) {
-          upsertAbsenceInCachedRanges(queryClient, entry);
+          upsertAbsenceInCachedRanges(queryClient, ranges, entry);
         }
       }
       invalidateAbsenceQueries(queryClient);
@@ -579,14 +667,27 @@ function useCreateAbsences(
     onError: (error, v, c, mutationContext) => {
       if (c?.optimisticEntries) {
         for (const entry of c.optimisticEntries) {
-          removeAbsenceFromCachedRanges(queryClient, entry.absenceId);
+          removeAbsenceFromCachedRanges(queryClient, c.ranges, entry.absenceId);
         }
-        applyAbsenceEntriesTimeInfoDelta(queryClient, c.optimisticEntries, -1);
+        applyAbsenceEntriesTimeInfoDelta(
+          queryClient,
+          c.ranges,
+          c.optimisticEntries,
+          -1,
+        );
       }
       return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
-    onSettled: (data, error, v, c, mutationContext) =>
-      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
+    onSettled: (data, error, v, c, mutationContext) => {
+      settleRangeMutation(queryClient, c?.ranges);
+      return options?.onSettled?.(
+        data,
+        error,
+        v,
+        c?.optionsContext,
+        mutationContext,
+      );
+    },
   });
 }
 
@@ -650,16 +751,21 @@ function useDeleteAbsence(
       }),
     ...options,
     onMutate: async (vars, mutationContext) => {
-      await cancelAbsenceQueries(queryClient);
+      const ranges = await cancelAbsenceQueries(queryClient);
 
       const removedAbsence = findCachedAbsence(queryClient, vars.absenceId);
       if (removedAbsence) {
-        removeAbsenceFromCachedRanges(queryClient, vars.absenceId);
-        applyAbsenceEntriesTimeInfoDelta(queryClient, [removedAbsence], -1);
+        removeAbsenceFromCachedRanges(queryClient, ranges, vars.absenceId);
+        applyAbsenceEntriesTimeInfoDelta(
+          queryClient,
+          ranges,
+          [removedAbsence],
+          -1,
+        );
       }
 
       const optionsContext = await options?.onMutate?.(vars, mutationContext);
-      return { removedAbsence, optionsContext };
+      return { ranges, removedAbsence, optionsContext };
     },
     onSuccess: (data, v, c, mutationContext) => {
       invalidateAbsenceQueries(queryClient);
@@ -667,13 +773,26 @@ function useDeleteAbsence(
     },
     onError: (error, v, c, mutationContext) => {
       if (c?.removedAbsence) {
-        upsertAbsenceInCachedRanges(queryClient, c.removedAbsence);
-        applyAbsenceEntriesTimeInfoDelta(queryClient, [c.removedAbsence], 1);
+        upsertAbsenceInCachedRanges(queryClient, c.ranges, c.removedAbsence);
+        applyAbsenceEntriesTimeInfoDelta(
+          queryClient,
+          c.ranges,
+          [c.removedAbsence],
+          1,
+        );
       }
       return options?.onError?.(error, v, c?.optionsContext, mutationContext);
     },
-    onSettled: (data, error, v, c, mutationContext) =>
-      options?.onSettled?.(data, error, v, c?.optionsContext, mutationContext),
+    onSettled: (data, error, v, c, mutationContext) => {
+      settleRangeMutation(queryClient, c?.ranges);
+      return options?.onSettled?.(
+        data,
+        error,
+        v,
+        c?.optionsContext,
+        mutationContext,
+      );
+    },
   });
 }
 

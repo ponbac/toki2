@@ -15,8 +15,9 @@ import { FlexBalanceBreakdown } from "./flex-balance";
 import {
   formatSignedHours,
   signedHoursColor,
-  useFlexBalance,
+  useFlexBreakdown,
 } from "@/lib/flex-balance";
+import { useLocalDate } from "@/hooks/useLocalDate";
 import { timeTrackingQueries } from "@/lib/api/queries/time-tracking";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { timeTrackingMutations } from "@/lib/api/mutations/time-tracking";
@@ -571,12 +572,7 @@ export const FloatingTimer = () => {
                 </div>
               </div>
             </div>
-            <TimeSummary
-              className="pt-2"
-              timerHours={Number.parseInt(hours, 10)}
-              timerMinutes={Number.parseInt(minutes, 10)}
-              timerSeconds={Number.parseInt(seconds, 10)}
-            />
+            <TimeSummary className="pt-2" />
           </div>
         </div>
       )}
@@ -612,20 +608,16 @@ export const FloatingTimer = () => {
   ) : null;
 };
 
-function TimeSummary(props: {
-  className?: string;
-  timerHours: number;
-  timerMinutes: number;
-  timerSeconds: number;
-}) {
+function TimeSummary(props: { className?: string }) {
+  const today = useLocalDate();
   const { data: timeInfo } = useQuery({
     ...timeTrackingQueries.timeInfo({
-      from: dayjs()
+      from: dayjs(today)
         .subtract(1, "day")
         .startOf("week")
         .add(1, "day")
         .format("YYYY-MM-DD"),
-      to: dayjs()
+      to: dayjs(today)
         .subtract(1, "day")
         .endOf("week")
         .add(1, "day")
@@ -634,36 +626,27 @@ function TimeSummary(props: {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: timeInfoToday } = useQuery({
-    ...timeTrackingQueries.timeInfo({
-      from: dayjs().format("YYYY-MM-DD"),
-      to: dayjs().format("YYYY-MM-DD"),
-    }),
-    staleTime: 60 * 1000,
-  });
-
-  const { data: flexBalance } = useFlexBalance();
+  const {
+    breakdown: flex,
+    todayInfo: timeInfoToday,
+    timerSeconds,
+  } = useFlexBreakdown(today);
 
   if (!timeInfo || !timeInfoToday) {
     return null;
   }
 
-  const timerHours = props.timerHours + props.timerMinutes / 60;
+  const timerHours = timerSeconds / 3600;
   const timeLeft = timeInfo.remainingHours - timerHours;
   const weekFlex = timeInfo.periodFlexHours + timerHours;
-  const flexTime = flexBalance
-    ? flexBalance.balanceHours + timerHours
-    : weekFlex;
+  const flexTime = flex?.nowHours ?? weekFlex;
 
   const {
     hours: timeTodayHours,
     minutes: timeTodayMinutes,
     seconds: timeTodaySeconds,
   } = secondsToHoursMinutesSeconds(
-    timeInfoToday.coveredHours * 3600 +
-      props.timerHours * 3600 +
-      props.timerMinutes * 60 +
-      props.timerSeconds,
+    timeInfoToday.coveredHours * 3600 + timerSeconds,
   );
 
   return (
@@ -682,12 +665,9 @@ function TimeSummary(props: {
       <SummaryIcon
         icon={<PiggyBankIcon size={20} />}
         tooltip={
-          flexBalance ? (
+          flex ? (
             <div className="flex min-w-60 flex-col gap-1">
-              <FlexBalanceBreakdown
-                balance={flexBalance}
-                unbookedHours={timerHours}
-              />
+              <FlexBalanceBreakdown breakdown={flex} compact />
               <div className="flex justify-between gap-4 text-muted-foreground">
                 <span>This week</span>
                 <span className="time-display">

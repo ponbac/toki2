@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import {
   type AbsenceEntry,
@@ -79,15 +79,31 @@ export function buildTimeEntryFromSave(
   );
 }
 
+/**
+ * A mutation's hold on the cached ranges of the query families it changes.
+ * It changes only the ranges loaded when it began (`loaded`), whose loads it
+ * cancelled so a stale answer can't overwrite its changes. A range still on
+ * its first load is left to finish untouched, so a rollback never takes back
+ * what was never added. Once the last pending mutation settles, every range
+ * of the families they changed reloads from the server.
+ */
+export type OptimisticRanges = {
+  loaded: ReadonlySet<string>;
+  families: ReadonlyArray<QueryKey>;
+};
+
+export const NO_RANGES: OptimisticRanges = { loaded: new Set(), families: [] };
+
 export function upsertEntryInCachedRanges(
   queryClient: QueryClient,
+  ranges: OptimisticRanges,
   entry: TimeEntry,
 ) {
-  for (const { params } of getTimeEntryCaches(queryClient)) {
+  for (const { params, queryKey } of entryRanges(queryClient, ranges)) {
     if (!isEntryInRange(params, entry)) continue;
 
-    const query = timeTrackingQueries.timeEntries(params);
-    queryClient.setQueryData(query.queryKey, (current = []) => {
+    queryClient.setQueryData(queryKey, (current) => {
+      if (!current) return current;
       const withoutEntry = current.filter(
         (item) => item.registrationId !== entry.registrationId,
       );
@@ -99,12 +115,13 @@ export function upsertEntryInCachedRanges(
 
 export function replaceEntryInCachedRanges(
   queryClient: QueryClient,
+  ranges: OptimisticRanges,
   oldId: string,
   entry: TimeEntry,
 ) {
-  for (const { params } of getTimeEntryCaches(queryClient)) {
-    const query = timeTrackingQueries.timeEntries(params);
-    queryClient.setQueryData(query.queryKey, (current = []) => {
+  for (const { params, queryKey } of entryRanges(queryClient, ranges)) {
+    queryClient.setQueryData(queryKey, (current) => {
+      if (!current) return current;
       const withoutOld = current.filter(
         (item) => item.registrationId !== oldId,
       );
@@ -121,25 +138,26 @@ export function replaceEntryInCachedRanges(
 
 export function removeEntryFromCachedRanges(
   queryClient: QueryClient,
+  ranges: OptimisticRanges,
   registrationId: string,
 ) {
-  for (const { params } of getTimeEntryCaches(queryClient)) {
-    const query = timeTrackingQueries.timeEntries(params);
-    queryClient.setQueryData(query.queryKey, (current = []) =>
-      current.filter((entry) => entry.registrationId !== registrationId),
+  for (const { queryKey } of entryRanges(queryClient, ranges)) {
+    queryClient.setQueryData(queryKey, (current) =>
+      current?.filter((entry) => entry.registrationId !== registrationId),
     );
   }
 }
 
 export function upsertAbsenceInCachedRanges(
   queryClient: QueryClient,
+  ranges: OptimisticRanges,
   entry: AbsenceEntry,
 ) {
-  for (const { params } of getAbsenceEntryCaches(queryClient)) {
+  for (const { params, queryKey } of absenceRanges(queryClient, ranges)) {
     if (!isDateInRange(params, entry.date)) continue;
 
-    const query = timeTrackingQueries.absenceEntries(params);
-    queryClient.setQueryData(query.queryKey, (current = []) => {
+    queryClient.setQueryData(queryKey, (current) => {
+      if (!current) return current;
       const withoutEntry = current.filter(
         (item) => item.absenceId !== entry.absenceId,
       );
@@ -150,6 +168,7 @@ export function upsertAbsenceInCachedRanges(
 
 export function replaceAbsencesInCachedRanges(
   queryClient: QueryClient,
+  ranges: OptimisticRanges,
   oldIds: Array<string>,
   entries: Array<AbsenceEntry>,
 ) {
@@ -158,9 +177,9 @@ export function replaceAbsencesInCachedRanges(
     ...entries.map((entry) => entry.absenceId),
   ]);
 
-  for (const { params } of getAbsenceEntryCaches(queryClient)) {
-    const query = timeTrackingQueries.absenceEntries(params);
-    queryClient.setQueryData(query.queryKey, (current = []) => {
+  for (const { params, queryKey } of absenceRanges(queryClient, ranges)) {
+    queryClient.setQueryData(queryKey, (current) => {
+      if (!current) return current;
       const withoutOld = current.filter(
         (item) => !idsToReplace.has(item.absenceId),
       );
@@ -174,26 +193,26 @@ export function replaceAbsencesInCachedRanges(
 
 export function removeAbsenceFromCachedRanges(
   queryClient: QueryClient,
+  ranges: OptimisticRanges,
   absenceId: string,
 ) {
-  for (const { params } of getAbsenceEntryCaches(queryClient)) {
-    const query = timeTrackingQueries.absenceEntries(params);
-    queryClient.setQueryData(query.queryKey, (current = []) =>
-      current.filter((entry) => entry.absenceId !== absenceId),
+  for (const { queryKey } of absenceRanges(queryClient, ranges)) {
+    queryClient.setQueryData(queryKey, (current) =>
+      current?.filter((entry) => entry.absenceId !== absenceId),
     );
   }
 }
 
 export function applyTimeInfoDelta(
   queryClient: QueryClient,
+  ranges: OptimisticRanges,
   date: string,
   deltaHours: number,
 ) {
-  for (const params of getTimeInfoCacheParams(queryClient)) {
+  for (const { params, queryKey } of timeInfoRanges(queryClient, ranges)) {
     if (!isDateInRange(params, date)) continue;
 
-    const query = timeTrackingQueries.timeInfo(params);
-    queryClient.setQueryData(query.queryKey, (current) => {
+    queryClient.setQueryData(queryKey, (current) => {
       if (!current) return current;
 
       return {
@@ -209,14 +228,14 @@ export function applyTimeInfoDelta(
 
 export function applyAbsenceTimeInfoDelta(
   queryClient: QueryClient,
+  ranges: OptimisticRanges,
   date: string,
   deltaHours: number,
 ) {
-  for (const params of getTimeInfoCacheParams(queryClient)) {
+  for (const { params, queryKey } of timeInfoRanges(queryClient, ranges)) {
     if (!isDateInRange(params, date)) continue;
 
-    const query = timeTrackingQueries.timeInfo(params);
-    queryClient.setQueryData(query.queryKey, (current) => {
+    queryClient.setQueryData(queryKey, (current) => {
       if (!current) return current;
 
       return {
@@ -230,41 +249,109 @@ export function applyAbsenceTimeInfoDelta(
   }
 }
 
-export function markTimeTrackingListsStale(queryClient: QueryClient) {
-  queryClient.invalidateQueries({
-    queryKey: timeTrackingQueries.timeEntriesBaseKey,
-    refetchType: "none",
-  });
-  queryClient.invalidateQueries({
-    queryKey: timeTrackingQueries.timeInfoBaseKey,
-    refetchType: "none",
-  });
-  // The flex balance has no optimistic updates to keep, so it reloads at once.
-  queryClient.invalidateQueries({
-    queryKey: timeTrackingQueries.flexBalanceBaseKey,
-  });
+/** The flex balance has no optimistic updates to keep, so it reloads at once;
+ * the time entry ranges reload when their mutations settle. */
+export function invalidateFlexBalance(queryClient: QueryClient) {
+  reloadQueries(queryClient, timeTrackingQueries.flexBalanceBaseKey);
 }
 
-export async function cancelTimeTrackingRangeQueries(queryClient: QueryClient) {
-  await Promise.all([
-    queryClient.cancelQueries({
-      queryKey: timeTrackingQueries.timeEntriesBaseKey,
-    }),
-    queryClient.cancelQueries({
-      queryKey: timeTrackingQueries.timeInfoBaseKey,
-    }),
+/** Reloads queries the server just changed. A first load still under way
+ * would be reused by the refetch and may predate the change, so it is
+ * cancelled for a new request. */
+export function reloadQueries(queryClient: QueryClient, queryKey: QueryKey) {
+  void queryClient
+    .cancelQueries({ queryKey })
+    .then(() => queryClient.invalidateQueries({ queryKey }));
+}
+
+export function cancelTimeTrackingRangeQueries(queryClient: QueryClient) {
+  return beginRangeMutation(queryClient, [
+    timeTrackingQueries.timeEntriesBaseKey,
+    timeTrackingQueries.timeInfoBaseKey,
   ]);
 }
 
-export async function cancelAbsenceQueries(queryClient: QueryClient) {
-  await Promise.all([
-    queryClient.cancelQueries({
-      queryKey: timeTrackingQueries.absenceEntriesBaseKey,
-    }),
-    queryClient.cancelQueries({
-      queryKey: timeTrackingQueries.timeInfoBaseKey,
-    }),
+export function cancelAbsenceQueries(queryClient: QueryClient) {
+  return beginRangeMutation(queryClient, [
+    timeTrackingQueries.absenceEntriesBaseKey,
+    timeTrackingQueries.timeInfoBaseKey,
   ]);
+}
+
+type RangeMutations = {
+  pending: Set<OptimisticRanges>;
+  /** Families to reload once no range mutation is pending. */
+  toReload: Map<string, QueryKey>;
+};
+
+const rangeMutations = new WeakMap<QueryClient, RangeMutations>();
+
+function rangeMutationsOf(queryClient: QueryClient) {
+  let state = rangeMutations.get(queryClient);
+  if (!state) {
+    state = { pending: new Set(), toReload: new Map() };
+    rangeMutations.set(queryClient, state);
+  }
+  return state;
+}
+
+async function beginRangeMutation(
+  queryClient: QueryClient,
+  families: Array<QueryKey>,
+): Promise<OptimisticRanges> {
+  const loaded = families.flatMap((queryKey) =>
+    queryClient.getQueryCache().findAll({
+      queryKey,
+      predicate: (query) => query.state.data !== undefined,
+    }),
+  );
+  const ranges = {
+    loaded: new Set(loaded.map((query) => query.queryHash)),
+    families,
+  };
+  // Pending before the await, so no reload starts meanwhile.
+  rangeMutationsOf(queryClient).pending.add(ranges);
+  await Promise.all(
+    loaded.map((query) =>
+      queryClient.cancelQueries({ queryKey: query.queryKey, exact: true }),
+    ),
+  );
+  return ranges;
+}
+
+/**
+ * Ends a mutation's hold. Once no range mutation is pending, every range of
+ * the families the settled mutations changed reloads from the server, so the
+ * cache ends up matching it however their answers and requests interleaved.
+ * A reload waits while any mutation is pending, since it would replace the
+ * optimistic changes that mutation's rollback expects to find.
+ */
+export function settleRangeMutation(
+  queryClient: QueryClient,
+  ranges: OptimisticRanges | undefined,
+) {
+  const state = rangeMutationsOf(queryClient);
+  if (ranges) {
+    state.pending.delete(ranges);
+    for (const family of ranges.families) {
+      state.toReload.set(JSON.stringify(family), family);
+    }
+  }
+  if (state.pending.size > 0 || state.toReload.size === 0) return;
+
+  const families = [...state.toReload.values()];
+  // A first load still under way would be reused by a refetch, so every
+  // request is cancelled for one sent after the mutations.
+  void Promise.all(
+    families.map((queryKey) => queryClient.cancelQueries({ queryKey })),
+  ).then(() => {
+    // A mutation that began meanwhile reloads them when it settles.
+    if (state.pending.size > 0) return;
+    state.toReload.clear();
+    for (const queryKey of families) {
+      queryClient.invalidateQueries({ queryKey });
+    }
+  });
 }
 
 export function findCachedEntry(
@@ -341,16 +428,59 @@ function getAbsenceEntryCaches(queryClient: QueryClient) {
     });
 }
 
-function getTimeInfoCacheParams(
+function optimisticQueries(
   queryClient: QueryClient,
-): Array<DateRangeQuery> {
-  return queryClient
-    .getQueryCache()
-    .findAll({ queryKey: timeTrackingQueries.timeInfoBaseKey })
-    .flatMap((query) => {
-      const params = parseTimeInfoQueryKey(query.queryKey);
-      return params ? [params] : [];
-    });
+  queryKey: QueryKey,
+  ranges: OptimisticRanges,
+) {
+  return queryClient.getQueryCache().findAll({
+    queryKey,
+    predicate: (query) => ranges.loaded.has(query.queryHash),
+  });
+}
+
+function entryRanges(queryClient: QueryClient, ranges: OptimisticRanges) {
+  return optimisticQueries(
+    queryClient,
+    timeTrackingQueries.timeEntriesBaseKey,
+    ranges,
+  ).flatMap((query) => {
+    const params = parseTimeEntriesQueryKey(query.queryKey);
+    return params
+      ? [{ params, queryKey: timeTrackingQueries.timeEntries(params).queryKey }]
+      : [];
+  });
+}
+
+function absenceRanges(queryClient: QueryClient, ranges: OptimisticRanges) {
+  return optimisticQueries(
+    queryClient,
+    timeTrackingQueries.absenceEntriesBaseKey,
+    ranges,
+  ).flatMap((query) => {
+    const params = parseAbsenceEntriesQueryKey(query.queryKey);
+    return params
+      ? [
+          {
+            params,
+            queryKey: timeTrackingQueries.absenceEntries(params).queryKey,
+          },
+        ]
+      : [];
+  });
+}
+
+function timeInfoRanges(queryClient: QueryClient, ranges: OptimisticRanges) {
+  return optimisticQueries(
+    queryClient,
+    timeTrackingQueries.timeInfoBaseKey,
+    ranges,
+  ).flatMap((query) => {
+    const params = parseTimeInfoQueryKey(query.queryKey);
+    return params
+      ? [{ params, queryKey: timeTrackingQueries.timeInfo(params).queryKey }]
+      : [];
+  });
 }
 
 function isEntryInRange(params: TimeEntriesQuery, entry: TimeEntry) {
